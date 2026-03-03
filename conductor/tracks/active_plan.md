@@ -15,9 +15,9 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
     - Use `SandboxManager` with snapshot-based warm-start for tools.
 
 ## 3. Implement MAP-Elites Mutator (Evolution Pillar)
-- [ ] Implement code mutation logic using LLM.
-- [ ] Implement evaluation scoring (fitness) using SOTA MARL solvers.
-- [ ] Implement the population management for MAP-Elites.
+- [x] Implement code mutation logic using LLM (`LLMMutator`).
+- [x] Implement evaluation scoring (fitness) using Sandbox (`SandboxEvaluator`).
+- [x] Implement the population management for MAP-Elites (`Population`).
 
 ## 4. Verification
 - [ ] Run full system tests with the flagship `sage-discover` agent.

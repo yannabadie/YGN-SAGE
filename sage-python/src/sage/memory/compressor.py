@@ -5,7 +5,7 @@ import logging
 from typing import Any, Protocol, List
 from datetime import datetime, timezone
 
-from sage.llm.base import BaseLLM
+from sage.llm.base import LLMProvider
 from sage.memory.working import WorkingMemory
 
 class GraphDatabase(Protocol):
@@ -22,7 +22,7 @@ class MemoryCompressor:
 
     def __init__(
         self,
-        llm: BaseLLM,
+        llm: LLMProvider,
         graph_db: GraphDatabase | None = None,
         vector_db: VectorDatabase | None = None,
         compression_threshold: int = 20,
@@ -44,8 +44,7 @@ class MemoryCompressor:
         
         # 1. Identify events to compress
         to_compress = working_memory.recent_events(working_memory.event_count() - self.keep_recent)
-        context = "
-".join([f"[{e['type']}] {e['content']}" for e in to_compress])
+        context = "\n".join([f"[{e['type']}] {e['content']}" for e in to_compress])
 
         # 2. Generate Summary & Key Discoveries via LLM
         prompt = f"""Analyze the following agent execution history and provide:
@@ -66,8 +65,7 @@ DISCOVERIES:
         # Simple parsing (could be improved with structured output)
         summary = ""
         discoveries = []
-        lines = response.split("
-")
+        lines = response.split("\n")
         current_section = None
         for line in lines:
             if line.startswith("SUMMARY:"):
