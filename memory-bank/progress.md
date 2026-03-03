@@ -17,12 +17,18 @@
 - [x] **Tools Pillar (SOTA)**:
     - Implemented `DockerSandboxManager` with `checkpoint` (docker commit) and `restore` capabilities for fast agent sandboxing.
 - [x] **Agent Integration**: Hooked up `MemoryCompressor` and `SandboxManager` into the core `Agent` loop.
+- [x] **Evolution Pillar**:
+    - Implemented `LLMMutator` for SEARCH/REPLACE code mutation.
+    - Implemented `SandboxEvaluator` to score mutants securely.
+    - Wired `Population` MAP-Elites into `EvolutionEngine`.
+- [x] **Flagship Agent**: 
+    - Wired up `sage-discover` (`DiscoverWorkflow`) to use the full SOTA SDK capabilities (Evolution, Strategy, Memory, Sandbox).
 
 ## Doing
 
-- [ ] **Evolution Pillar**: Implement MAP-Elites mutation engine for strategy and tool code.
+- [ ] **Topology Pillar**: Implement dynamic multi-agent delegation (parent-child patterns) in `sage-core`.
 
 ## Next
 
-- [ ] **Topology Pillar**: Implement dynamic multi-agent delegation (parent-child patterns).
-- [ ] **Flagship Agent**: Wire up `sage-discover` to use the full SOTA SDK capabilities.
+- [ ] Real-world test run: Deploy `sage-discover` on a live algorithmic optimization task.
+- [ ] Connect `sage-core` (Rust) hyper-performant memory graph to Python SDK.

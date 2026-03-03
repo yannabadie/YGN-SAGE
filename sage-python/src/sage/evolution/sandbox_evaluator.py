@@ -47,8 +47,7 @@ class SandboxEvaluator:
             score = 0.0
             passed = True
             try:
-                for line in result.stdout.split("
-"):
+                for line in result.stdout.split("\n"):
                     if line.startswith("SCORE:"):
                         score = float(line.replace("SCORE:", "").strip())
             except Exception as e:

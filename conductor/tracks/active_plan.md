@@ -6,7 +6,7 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
 - [x] Implement `MemoryCompressor` logic in `sage-python/src/sage/memory/compressor.py`.
 - [x] Create concrete drivers for **Neo4j** (GraphDatabase protocol).
 - [x] Create concrete drivers for **Qdrant** (VectorDatabase protocol).
-- [ ] Test the full compression cycle with a mocked LLM.
+- [x] Test the full compression cycle with a mocked LLM.
 
 ## 2. Integrate SOTA Components into `Agent` Loop
 - [x] Update `sage-python/src/sage/agent.py` to:
@@ -20,6 +20,6 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
 - [x] Implement the population management for MAP-Elites (`Population`).
 
 ## 4. Verification
-- [ ] Run full system tests with the flagship `sage-discover` agent.
-- [ ] Measure restore times for Docker snapshots (< 1s target).
-- [ ] Verify GraphRAG retrieval accuracy.
+- [x] Run full system tests with the flagship `sage-discover` agent.
+- [x] Measure restore times for Docker snapshots (< 1s target).
+- [x] Verify GraphRAG retrieval accuracy.

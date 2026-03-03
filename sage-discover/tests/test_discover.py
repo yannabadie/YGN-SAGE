@@ -1,8 +1,9 @@
 """Tests for the sage-discover flagship agent."""
 import pytest
-from discover.researcher import ResearchAgent, Hypothesis
+from unittest.mock import AsyncMock
+from discover.researcher import ResearchAgent, Hypothesis, Discovery
 from discover.workflow import DiscoverWorkflow, DiscoverConfig
-
+from sage.llm.base import LLMProvider, LLMResponse
 
 # --- ResearchAgent Tests ---
 
@@ -52,82 +53,80 @@ def test_researcher_stats():
 
 # --- Workflow Tests ---
 
+@pytest.fixture
+def mock_llm():
+    llm = AsyncMock(spec=LLMProvider)
+    llm.generate.return_value = LLMResponse(content="- Finding 1\n- Finding 2")
+    return llm
+
 @pytest.mark.asyncio
-async def test_workflow_exploration():
+async def test_workflow_exploration(mock_llm):
     config = DiscoverConfig(domain="math", goal="Find primes faster")
-    workflow = DiscoverWorkflow(config)
+    workflow = DiscoverWorkflow(config, llm_provider=mock_llm)
+    workflow.main_agent.run = AsyncMock(return_value="- Sieve of Eratosthenes is O(n log log n)\n- Wheel factorization improves constants")
 
-    async def mock_explore(goal: str) -> list[str]:
-        return ["Sieve of Eratosthenes is O(n log log n)", "Wheel factorization improves constants"]
-
-    findings = await workflow.run_exploration(mock_explore)
+    findings = await workflow.run_exploration()
     assert len(findings) == 2
     assert workflow.phase == "exploring"
 
 
 @pytest.mark.asyncio
-async def test_workflow_hypothesis_generation():
+async def test_workflow_hypothesis_generation(mock_llm):
     config = DiscoverConfig(domain="math", goal="test")
-    workflow = DiscoverWorkflow(config)
+    workflow = DiscoverWorkflow(config, llm_provider=mock_llm)
+    workflow.main_agent.run = AsyncMock(return_value="- Hypothesis A: faster primes\n- Hypothesis B: better memory")
 
-    async def mock_generate(goal: str, findings: list[str]) -> list[str]:
-        return ["Hypothesis A: faster primes", "Hypothesis B: better memory"]
-
-    hypotheses = await workflow.run_hypothesis_generation(mock_generate, ["finding1"])
+    hypotheses = await workflow.run_hypothesis_generation(["finding1"])
     assert len(hypotheses) == 2
     assert workflow.researcher.hypotheses[0].statement == "Hypothesis A: faster primes"
 
 
 @pytest.mark.asyncio
-async def test_workflow_full_iteration():
-    config = DiscoverConfig(domain="optimization", goal="Find sorting improvement")
-    workflow = DiscoverWorkflow(config)
+async def test_workflow_full_iteration(mock_llm):
+    config = DiscoverConfig(domain="optimization", goal="Find sorting improvement", evolution_generations=1)
+    workflow = DiscoverWorkflow(config, llm_provider=mock_llm)
 
-    async def explore(goal: str) -> list[str]:
-        return ["quicksort is average O(n log n)", "timsort uses runs"]
+    # Mock exploration
+    workflow.run_exploration = AsyncMock(return_value=["quicksort is average O(n log n)", "timsort uses runs"])
+    
+    # Mock hypothesis generation
+    h = workflow.researcher.add_hypothesis("Hybrid approach")
+    workflow.run_hypothesis_generation = AsyncMock(return_value=[h])
+    
+    # Mock evolution to return a high score
+    workflow.run_evolution = AsyncMock(return_value=("def hybrid_sort(arr): return sorted(arr)", 0.85))
 
-    async def hypothesize(goal: str, findings: list[str]) -> list[str]:
-        return ["Hybrid approach combining quicksort and timsort"]
-
-    async def evolve(h: Hypothesis) -> tuple[str, float]:
-        return "def hybrid_sort(arr): return sorted(arr)", 0.85
-
-    async def evaluate(code: str) -> float:
-        return 0.9
-
-    discoveries = await workflow.run_iteration(explore, hypothesize, evolve, evaluate)
+    discoveries = await workflow.run_iteration()
     assert len(discoveries) == 1
-    assert discoveries[0].score == 0.9
+    assert discoveries[0].score == 0.85
     assert workflow.iteration == 1
     assert workflow.phase == "complete"
 
 
 @pytest.mark.asyncio
-async def test_workflow_rejection():
-    config = DiscoverConfig(domain="test", goal="test")
-    workflow = DiscoverWorkflow(config)
+async def test_workflow_rejection(mock_llm):
+    config = DiscoverConfig(domain="test", goal="test", evolution_generations=1)
+    workflow = DiscoverWorkflow(config, llm_provider=mock_llm)
 
-    async def explore(goal: str) -> list[str]:
-        return ["fact"]
+    # Mock exploration
+    workflow.run_exploration = AsyncMock(return_value=["fact"])
+    
+    # Mock hypothesis generation
+    h = workflow.researcher.add_hypothesis("Bad hypothesis")
+    workflow.run_hypothesis_generation = AsyncMock(return_value=[h])
+    
+    # Mock evolution to return a low score
+    workflow.run_evolution = AsyncMock(return_value=("bad code", 0.2))
 
-    async def hypothesize(goal: str, findings: list[str]) -> list[str]:
-        return ["Bad hypothesis"]
-
-    async def evolve(h: Hypothesis) -> tuple[str, float]:
-        return "bad code", 0.1
-
-    async def evaluate(code: str) -> float:
-        return 0.2  # Below threshold
-
-    discoveries = await workflow.run_iteration(explore, hypothesize, evolve, evaluate)
+    discoveries = await workflow.run_iteration()
     assert len(discoveries) == 0
     assert workflow.researcher.hypotheses[0].status == "rejected"
 
 
 @pytest.mark.asyncio
-async def test_workflow_stats():
+async def test_workflow_stats(mock_llm):
     config = DiscoverConfig(domain="test", goal="test")
-    workflow = DiscoverWorkflow(config)
+    workflow = DiscoverWorkflow(config, llm_provider=mock_llm)
     stats = workflow.stats()
     assert stats["iteration"] == 0
     assert stats["phase"] == "idle"
