@@ -25,11 +25,13 @@
     - Wired up `sage-discover` (`DiscoverWorkflow`) to use the full SOTA SDK capabilities (Evolution, Strategy, Memory, Sandbox).
 - [x] **Topology Pillar**: 
     - Implemented dynamic multi-agent delegation (parent-child patterns) in `sage-core` (Rust). Added `children_ids` to `Agent` state and `get_children` lookup in `AgentPool`.
+- [x] **Performance Optimization**: 
+    - Connected `sage-core` (Rust) hyper-performant memory graph to Python SDK via PyO3 bindings. `WorkingMemory` in Python now wraps the Rust backend.
 
 ## Doing
 
-- [ ] Connect `sage-core` (Rust) hyper-performant memory graph and AgentPool to Python SDK via PyO3 bindings.
+- [ ] Real-world test run: Deploy `sage-discover` on a live algorithmic optimization task.
 
 ## Next
 
-- [ ] Real-world test run: Deploy `sage-discover` on a live algorithmic optimization task.
+- [ ] Optimize PyO3 bindings further for large memory graphs.

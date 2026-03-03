@@ -1,15 +1,34 @@
+use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 
 /// A single event in working memory
+#[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryEvent {
+    #[pyo3(get)]
     pub id: String,
+    #[pyo3(get)]
     pub event_type: String,
+    #[pyo3(get)]
     pub content: String,
     pub timestamp: DateTime<Utc>,
+    #[pyo3(get)]
     pub is_summary: bool,
+}
+
+#[pymethods]
+impl MemoryEvent {
+    #[new]
+    pub fn py_new(event_type: &str, content: &str) -> Self {
+        Self::new(event_type, content)
+    }
+
+    #[getter]
+    pub fn timestamp_str(&self) -> String {
+        self.timestamp.to_rfc3339()
+    }
 }
 
 impl MemoryEvent {
@@ -35,20 +54,20 @@ impl MemoryEvent {
 }
 
 /// In-memory working memory for a single agent execution
+#[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkingMemory {
+    #[pyo3(get)]
     pub agent_id: String,
     events: Vec<MemoryEvent>,
     children: Vec<String>,
 }
 
+#[pymethods]
 impl WorkingMemory {
-    pub fn new(agent_id: String) -> Self {
-        Self {
-            agent_id,
-            events: Vec::new(),
-            children: Vec::new(),
-        }
+    #[new]
+    pub fn py_new(agent_id: String) -> Self {
+        Self::new(agent_id)
     }
 
     /// Add an event and return its ID
@@ -57,17 +76,6 @@ impl WorkingMemory {
         let id = event.id.clone();
         self.events.push(event);
         id
-    }
-
-    /// Get an event by ID
-    pub fn get_event(&self, id: &str) -> Option<&MemoryEvent> {
-        self.events.iter().find(|e| e.id == id)
-    }
-
-    /// Get recent N events (oldest first within the window)
-    pub fn recent_events(&self, n: usize) -> Vec<&MemoryEvent> {
-        let start = self.events.len().saturating_sub(n);
-        self.events[start..].iter().collect()
     }
 
     /// Total event count
@@ -81,8 +89,8 @@ impl WorkingMemory {
     }
 
     /// Get child agent IDs
-    pub fn child_agents(&self) -> &[String] {
-        &self.children
+    pub fn child_agents(&self) -> Vec<String> {
+        self.children.clone()
     }
 
     /// Compress old events: keep the last `keep_recent` events,
@@ -96,5 +104,26 @@ impl WorkingMemory {
         self.events.clear();
         self.events.push(MemoryEvent::summary(summary_text));
         self.events.extend(recent);
+    }
+
+    /// Get an event by ID
+    pub fn get_event(&self, id: &str) -> Option<MemoryEvent> {
+        self.events.iter().find(|e| e.id == id).cloned()
+    }
+
+    /// Get recent N events (oldest first within the window)
+    pub fn recent_events(&self, n: usize) -> Vec<MemoryEvent> {
+        let start = self.events.len().saturating_sub(n);
+        self.events[start..].iter().cloned().collect()
+    }
+}
+
+impl WorkingMemory {
+    pub fn new(agent_id: String) -> Self {
+        Self {
+            agent_id,
+            events: Vec::new(),
+            children: Vec::new(),
+        }
     }
 }
