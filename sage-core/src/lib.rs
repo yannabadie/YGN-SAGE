@@ -4,6 +4,7 @@ pub mod types;
 pub mod agent;
 pub mod pool;
 pub mod memory;
+pub mod hardware;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -15,5 +16,6 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pool::AgentPool>()?;
     m.add_class::<memory::MemoryEvent>()?;
     m.add_class::<memory::WorkingMemory>()?;
+    m.add_class::<hardware::HardwareProfile>()?;
     Ok(())
 }
