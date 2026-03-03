@@ -19,7 +19,11 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
 - [x] Implement evaluation scoring (fitness) using Sandbox (`SandboxEvaluator`).
 - [x] Implement the population management for MAP-Elites (`Population`).
 
-## 4. Verification
+## 4. Topology Pillar
+- [x] Implement dynamic multi-agent delegation in `sage-core` (Rust). Added `children_ids` tracking and `get_children` API to `AgentPool`.
+
+## 5. Verification
 - [x] Run full system tests with the flagship `sage-discover` agent.
-- [x] Measure restore times for Docker snapshots (< 1s target).
-- [x] Verify GraphRAG retrieval accuracy.
+- [ ] Measure restore times for Docker snapshots (< 1s target).
+- [ ] Verify GraphRAG retrieval accuracy.
+

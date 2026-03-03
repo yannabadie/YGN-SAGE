@@ -23,12 +23,13 @@
     - Wired `Population` MAP-Elites into `EvolutionEngine`.
 - [x] **Flagship Agent**: 
     - Wired up `sage-discover` (`DiscoverWorkflow`) to use the full SOTA SDK capabilities (Evolution, Strategy, Memory, Sandbox).
+- [x] **Topology Pillar**: 
+    - Implemented dynamic multi-agent delegation (parent-child patterns) in `sage-core` (Rust). Added `children_ids` to `Agent` state and `get_children` lookup in `AgentPool`.
 
 ## Doing
 
-- [ ] **Topology Pillar**: Implement dynamic multi-agent delegation (parent-child patterns) in `sage-core`.
+- [ ] Connect `sage-core` (Rust) hyper-performant memory graph and AgentPool to Python SDK via PyO3 bindings.
 
 ## Next
 
 - [ ] Real-world test run: Deploy `sage-discover` on a live algorithmic optimization task.
-- [ ] Connect `sage-core` (Rust) hyper-performant memory graph to Python SDK.

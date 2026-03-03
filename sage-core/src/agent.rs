@@ -8,6 +8,7 @@ pub struct Agent {
     pub status: AgentStatus,
     pub step_count: u32,
     pub result: Option<String>,
+    pub children_ids: Vec<String>,
 }
 
 impl Agent {
@@ -17,6 +18,7 @@ impl Agent {
             status: AgentStatus::Created,
             step_count: 0,
             result: None,
+            children_ids: Vec::new(),
         }
     }
 }
