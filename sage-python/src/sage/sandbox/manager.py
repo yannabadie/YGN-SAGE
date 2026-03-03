@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Dict
 
 
 @dataclass
@@ -91,6 +91,7 @@ class Sandbox:
             )
         except asyncio.TimeoutError:
             proc.kill()
+            # Attempt to kill the process in the container
             await asyncio.create_subprocess_shell(f"docker kill {self.container_id}")
             return SandboxResult(stdout="", stderr="Timed out", exit_code=137, timed_out=True)
 
@@ -111,13 +112,19 @@ class SandboxManager:
 
     def __init__(self, use_docker: bool = False):
         self._sandboxes: dict[str, Sandbox] = {}
+        self._snapshots: dict[str, str] = {}  # snapshot_name -> image_id
         self._use_docker = use_docker
 
-    async def create(self, config: SandboxConfig | None = None) -> Sandbox:
-        """Create a new sandbox."""
+    async def create(self, config: SandboxConfig | None = None, from_snapshot: str | None = None) -> Sandbox:
+        """Create a new sandbox, optionally from a saved snapshot."""
         config = config or SandboxConfig()
-        sandbox_id = str(uuid.uuid4())[:8]
+        
+        if from_snapshot:
+            if from_snapshot not in self._snapshots:
+                raise ValueError(f"Snapshot '{from_snapshot}' not found.")
+            config.image = self._snapshots[from_snapshot]
 
+        sandbox_id = str(uuid.uuid4())[:8]
         container_id = None
         if self._use_docker:
             container_id = await self._create_container(sandbox_id, config)
@@ -125,6 +132,34 @@ class SandboxManager:
         sandbox = Sandbox(sandbox_id=sandbox_id, config=config, container_id=container_id)
         self._sandboxes[sandbox_id] = sandbox
         return sandbox
+
+    async def checkpoint(self, sandbox_id: str, snapshot_name: str) -> str:
+        """SOTA 2026: Take a snapshot of a running sandbox using docker commit.
+        
+        Returns the new image ID.
+        """
+        if not self._use_docker:
+            raise RuntimeError("Checkpointing requires Docker.")
+            
+        sandbox = await self.get(sandbox_id)
+        if not sandbox or not sandbox.container_id:
+            raise ValueError(f"Sandbox '{sandbox_id}' not found or has no container.")
+
+        # docker commit creates a new image from the container's current state
+        cmd = f"docker commit {sandbox.container_id} sage-snapshot:{snapshot_name}"
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        
+        if proc.returncode != 0:
+            raise RuntimeError(f"Failed to create snapshot: {stderr.decode()}")
+            
+        image_id = stdout.decode().strip()
+        self._snapshots[snapshot_name] = image_id
+        return image_id
 
     async def get(self, sandbox_id: str) -> Sandbox | None:
         """Get a sandbox by ID."""

@@ -1,0 +1,104 @@
+"""Memory Compressor: uses LLMs to summarize and persist memory to Graph/Vector DBs."""
+from __future__ import annotations
+
+import logging
+from typing import Any, Protocol, List
+from datetime import datetime, timezone
+
+from sage.llm.base import BaseLLM
+from sage.memory.working import WorkingMemory
+
+class GraphDatabase(Protocol):
+    """Protocol for Neo4j or similar graph DB interaction."""
+    def create_node(self, label: str, properties: dict[str, Any]) -> str: ...
+    def create_relationship(self, from_id: str, to_id: str, rel_type: str) -> None: ...
+
+class VectorDatabase(Protocol):
+    """Protocol for Qdrant or similar vector DB interaction."""
+    def upsert(self, collection: str, text: str, metadata: dict[str, Any]) -> str: ...
+
+class MemoryCompressor:
+    """Agent that monitors working memory and performs SOTA compression & persistence."""
+
+    def __init__(
+        self,
+        llm: BaseLLM,
+        graph_db: GraphDatabase | None = None,
+        vector_db: VectorDatabase | None = None,
+        compression_threshold: int = 20,
+        keep_recent: int = 5,
+    ):
+        self.llm = llm
+        self.graph_db = graph_db
+        self.vector_db = vector_db
+        self.compression_threshold = compression_threshold
+        self.keep_recent = keep_recent
+        self.logger = logging.getLogger(__name__)
+
+    async def step(self, working_memory: WorkingMemory) -> bool:
+        """Check and perform compression if threshold is met."""
+        if working_memory.event_count() < self.compression_threshold:
+            return False
+
+        self.logger.info(f"Compressing memory for agent {working_memory.agent_id}")
+        
+        # 1. Identify events to compress
+        to_compress = working_memory.recent_events(working_memory.event_count() - self.keep_recent)
+        context = "
+".join([f"[{e['type']}] {e['content']}" for e in to_compress])
+
+        # 2. Generate Summary & Key Discoveries via LLM
+        prompt = f"""Analyze the following agent execution history and provide:
+1. A concise summary of actions and results.
+2. A list of KEY DISCOVERIES (facts, code patterns, or bugs) worth long-term storage.
+
+History:
+{context}
+
+Format:
+SUMMARY: <text>
+DISCOVERIES:
+- <discovery 1>
+- <discovery 2>
+"""
+        response = await self.llm.generate(prompt)
+        
+        # Simple parsing (could be improved with structured output)
+        summary = ""
+        discoveries = []
+        lines = response.split("
+")
+        current_section = None
+        for line in lines:
+            if line.startswith("SUMMARY:"):
+                summary = line.replace("SUMMARY:", "").strip()
+            elif line.startswith("DISCOVERIES:"):
+                current_section = "discoveries"
+            elif current_section == "discoveries" and line.strip().startswith("-"):
+                discoveries.append(line.strip().replace("-", "", 1).strip())
+
+        # 3. Persist to Graph & Vector DBs (GraphRAG Sync)
+        summary_node_id = None
+        if self.graph_db:
+            summary_node_id = self.graph_db.create_node("SummaryEvent", {
+                "agent_id": working_memory.agent_id,
+                "content": summary,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+            
+            for discovery in discoveries:
+                disc_node_id = self.graph_db.create_node("Discovery", {
+                    "content": discovery,
+                    "agent_id": working_memory.agent_id
+                })
+                self.graph_db.create_relationship(summary_node_id, disc_node_id, "CONTAINS_DISCOVERY")
+                
+                if self.vector_db:
+                    self.vector_db.upsert("discoveries", discovery, {
+                        "agent_id": working_memory.agent_id,
+                        "graph_node_id": disc_node_id
+                    })
+
+        # 4. Update Working Memory
+        working_memory.compress(self.keep_recent, summary)
+        return True
