@@ -13,16 +13,16 @@
     - Verified with comprehensive tests (`tests/test_sota_solvers.py`).
 - [x] **Memory Pillar (SOTA)**:
     - Implemented `MemoryCompressor` agent for automated history summarization and GraphRAG persistence (Neo4j/Vector DB).
+    - Created concrete drivers `Neo4jMemoryDriver` and `QdrantMemoryDriver`.
 - [x] **Tools Pillar (SOTA)**:
     - Implemented `DockerSandboxManager` with `checkpoint` (docker commit) and `restore` capabilities for fast agent sandboxing.
+- [x] **Agent Integration**: Hooked up `MemoryCompressor` and `SandboxManager` into the core `Agent` loop.
 
 ## Doing
 
-- [ ] Integrating `MemoryCompressor` and `SandboxManager` snapshots into the `Agent` runtime.
-- [ ] Implementing the Neo4j/Qdrant concrete drivers for `MemoryCompressor`.
+- [ ] **Evolution Pillar**: Implement MAP-Elites mutation engine for strategy and tool code.
 
 ## Next
 
-- [ ] **Evolution Pillar**: Implement MAP-Elites mutation engine for strategy and tool code.
 - [ ] **Topology Pillar**: Implement dynamic multi-agent delegation (parent-child patterns).
 - [ ] **Flagship Agent**: Wire up `sage-discover` to use the full SOTA SDK capabilities.

@@ -4,12 +4,12 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
 
 ## 1. Finalize `MemoryCompressor` Agent
 - [x] Implement `MemoryCompressor` logic in `sage-python/src/sage/memory/compressor.py`.
-- [ ] Create concrete drivers for **Neo4j** (GraphDatabase protocol).
-- [ ] Create concrete drivers for **Qdrant** (VectorDatabase protocol).
+- [x] Create concrete drivers for **Neo4j** (GraphDatabase protocol).
+- [x] Create concrete drivers for **Qdrant** (VectorDatabase protocol).
 - [ ] Test the full compression cycle with a mocked LLM.
 
 ## 2. Integrate SOTA Components into `Agent` Loop
-- [ ] Update `sage-python/src/sage/agent.py` to:
+- [x] Update `sage-python/src/sage/agent.py` to:
     - Automatically call `MemoryCompressor.step()` during the execution loop.
     - Support `StrategyEngine` with `vad_cfr` or `shor_psro` by default.
     - Use `SandboxManager` with snapshot-based warm-start for tools.
