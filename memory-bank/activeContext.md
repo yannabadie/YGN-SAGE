@@ -1,20 +1,18 @@
-# Active Context (March 3, 2026)
+# Active Context (March 2026)
 
 ## Current Status
-We have successfully implemented and integrated the core SOTA components for the **Strategy**, **Memory**, **Tools**, and **Evolution** pillars into the flagship `sage-discover` agent. The agent now possesses a fully functional MAP-Elites evolutionary pipeline, GraphRAG memory compression, and Docker-based snapshot evaluation, orchestrated by a game-theoretic strategy engine. 
+Following a successful SOTA integration (MAP-Elites, GraphRAG, VAD-CFR) and a critical architectural audit by **Gemini 3.1 Pro Preview**, YGN-SAGE is pivoting to **Phase 2: ASI Architecture**. The current Python/Rust boundary (PyO3) and String-based allocations have been identified as major bottlenecks for ASI-level scalability. 
 
-Additionally, the **Topology Pillar** and **Performance** constraints have been addressed.
+The immediate goal is to implement deep hardware-aware optimizations (SIMD, contiguous memory buffers) to bypass Python object overhead completely.
 
 ## Recent Changes
-- **Topology Pillar**: Implemented dynamic multi-agent delegation (parent-child patterns) directly in the `sage-core` Rust backend (`Agent` and `AgentPool`).
-- **Performance**: The Python SDK's `WorkingMemory` has been completely rewritten to act as a thin wrapper around the `sage-core` (Rust) hyper-performant memory graph via PyO3 bindings.
-- **Evolution Engine**: Added `LLMMutator` for SEARCH/REPLACE code mutations using the LLM and `SandboxEvaluator` to securely test mutated code in Docker.
-- **Discovery Workflow Integration**: Completely refactored `DiscoverWorkflow` in `sage-discover` to natively use `EvolutionEngine`, `Agent`, `MemoryCompressor`, `SandboxManager`, and `StrategyEngine`.
-- **Database Drivers**: Implemented concrete `Neo4jMemoryDriver` and `QdrantMemoryDriver` for the GraphRAG implementation.
+- **Architectural Audit**: Completed a comprehensive review of the codebase using Gemini 3.1 Pro Preview. The report (`docs/plans/ygn_sage_future_evaluation.md`) validated the "H7 Hypothesis" (using contiguous arrays and SIMD) and proposed a roadmap to eliminate Docker and PyO3 serialization bottlenecks.
+- **Roadmap Shift**: Conductor tracking files updated to reflect the new ASI Pillars (Hardware Auto-Discovery, Zero-Copy Arrow Memory, eBPF Sandboxing).
 
 ## Immediate Focus
-- **Real-World Testing**: Deploy `sage-discover` on a live algorithmic optimization task to evaluate the end-to-end performance of the SOTA integrations.
+- **Hardware Auto-Discovery**: Implementing `sage-core/src/hardware.rs` to dynamically detect host capabilities (SIMD, AVX-512, CPU topology) so the Python SDK can route operations to the most optimized execution paths.
+- **ULID Migration**: Replacing `uuid::Uuid` (String) with `ulid::Ulid` (128-bit integers) in the Rust memory backend to halt heap fragmentation before moving to Apache Arrow.
 
 ## Active Decisions
-- **Decision: MAP-Elites Evolution**: Chose MAP-Elites over standard Genetic Algorithms to maintain a diverse population of solutions based on behavioral characteristics (complexity vs. creativity).
-- **Decision: Rust-backed Memory**: Decided to push `WorkingMemory` operations to Rust (`sage-core`) to handle massive context scales required by long-running SOTA agents without Python overhead.
+- **Decision: Zero-Copy over PyO3 Serialization**: We are moving away from serializing Rust structs into Python dictionaries. Future memory operations will use Apache Arrow buffers where Python only holds pointers, enabling instantaneous graph traversal via SIMD.
+- **Decision: Deprecate Docker**: Sandboxing will transition from Docker to kernel-level eBPF or Firecracker microVMs for sub-millisecond evaluation latency, critical for high-frequency MAP-Elites evolution.

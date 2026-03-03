@@ -1,0 +1,152 @@
+{
+  "iteration": 1,
+  "phase": "evolving",
+  "strategy": {
+    "strategy_names": [
+      "explore",
+      "exploit",
+      "evolve"
+    ],
+    "weights": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "rounds": 0,
+    "dominant": "explore"
+  },
+  "evolution": {
+    "generation": 3,
+    "population_size": 7,
+    "coverage": 0.07,
+    "best_score": 0.1,
+    "best_id": "41ca3787"
+  },
+  "log_entries": 6,
+  "domain": "sorting",
+  "goal": "Produce a functional Python function 'solution(arr)' that implements an optimized sorting logic.",
+  "total_hypotheses": 8,
+  "confirmed": 0,
+  "rejected": 3,
+  "pending": 5,
+  "discoveries": 0,
+  "best_score": 0.0,
+  "hypotheses_detail": [
+    {
+      "id": "H1",
+      "statement": "Hypothesis 1: Dynamic Routing to Block-Copy Counting Sort**",
+      "status": "rejected",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls.",
+        "Rejected: Score too low: 0.1"
+      ]
+    },
+    {
+      "id": "H2",
+      "statement": "Premise:* We can beat the $O(N \\log N)$ bound of native Timsort for dense integer distributions by dynamically routing to a non-comparison sort, while mitigating Python's loop overhead using C-level allocation primitives.",
+      "status": "rejected",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls.",
+        "Rejected: Score too low: 0.1"
+      ]
+    },
+    {
+      "id": "H3",
+      "statement": "Concrete Code Change:* Implement a type and range check at the beginning of `solution(arr)`. If the array contains integers and the range ($\\Delta = \\max(arr) - \\min(arr)$) is less than or equal to a heuristic threshold (e.g., $2N$), route the execution to a custom Counting Sort. This Counting Sort will allocate a frequency array, populate it via a single iteration over `arr`, and reconstruct the sorted array strictly using `result.extend([val] * count)` to leverage C-level block-copy operations instead of using a nested loop with `.append()`. If the condition is not met, fallback to `arr.sort()`.",
+      "status": "rejected",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls.",
+        "Rejected: Score too low: 0.1"
+      ]
+    },
+    {
+      "id": "H4",
+      "statement": "Testable Outcome:* For dense integer arrays where $\\Delta \\le 2N$, this implementation will yield statistically significant lower execution times compared to calling Python's native `sorted(arr)`.",
+      "status": "proposed",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls."
+      ]
+    },
+    {
+      "id": "H5",
+      "statement": "Hypothesis 2: Contiguous Memory Delegation via NumPy**",
+      "status": "proposed",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls."
+      ]
+    },
+    {
+      "id": "H6",
+      "statement": "Premise:* The scattered `PyObject` memory layout of standard Python lists destroys cache locality, creating a bottleneck for large-scale sorting that pure Python logic cannot overcome.",
+      "status": "proposed",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls."
+      ]
+    },
+    {
+      "id": "H7",
+      "statement": "Concrete Code Change:* Modify `solution(arr)` to completely abandon pure Python list sorting for large inputs. Introduce a dependency on NumPy to cast the input list into a contiguous memory buffer using `buffer = numpy.array(arr, dtype=numpy.int32)` (or `int64` depending on architecture). Sort the buffer using `numpy.sort(buffer, kind='quicksort')` to exploit SIMD vectorized instructions and cache locality, and finally return the result back to standard Python space using `buffer.tolist()`.",
+      "status": "proposed",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls."
+      ]
+    },
+    {
+      "id": "H8",
+      "statement": "Testable Outcome:* Despite the $O(N)$ overhead of converting between Python lists and NumPy arrays, this implementation will outperform native `list.sort()` on sufficiently large arrays (e.g., $N > 10^5$) due to the massive constant-factor reduction achieved by contiguous memory locality and branchless SIMD operations.",
+      "status": "proposed",
+      "confidence": 0.0,
+      "evidence": [
+        "C-API Delegation vs. Bytecode Overhead:** Python's native `sorted()` and `list.sort()` utilize Timsort, a hybrid algorithm (Merge Sort + Insertion Sort) implemented entirely in C. Because of the CPython interpreter's bytecode execution overhead, implementing standard $O(N \\log N)$ comparison sorts (like Quicksort or Mergesort) in pure Python is strictly suboptimal. The most performant general-purpose sorting logic in Python is always delegation to the native C backend.",
+        "Domain-Aware Asymptotic Optimization:** The $\\Omega(N \\log N)$ lower bound applies strictly to comparison-based sorting. By dynamically analyzing input priors (as demonstrated in the `solution` function), we can route dense integer arrays to a non-comparison Counting Sort. This achieves $O(N + \\Delta)$ time complexity, successfully outperforming native Timsort on specific distributions by exploiting the data's bounded range ($\\Delta$).",
+        "Constant-Factor Reduction via C-Level Primitives:** When writing custom sorting logic in Python, loop overhead is the primary bottleneck. The provided Counting Sort implementation mitigates this by utilizing `list.extend([val] * count)`. This leverages highly optimized, underlying C-level memory allocation and block-copy operations, avoiding the dynamic reallocation penalties associated with iterative `.append()` calls."
+      ]
+    }
+  ],
+  "log": [
+    {
+      "phase": "explore",
+      "findings_count": 4
+    },
+    {
+      "phase": "hypothesize",
+      "count": 8
+    },
+    {
+      "phase": "evolve",
+      "hypothesis": "H1",
+      "score": 0.1
+    },
+    {
+      "phase": "evolve",
+      "hypothesis": "H2",
+      "score": 0.1
+    },
+    {
+      "phase": "evolve",
+      "hypothesis": "H3",
+      "score": 0.1
+    }
+  ]
+}

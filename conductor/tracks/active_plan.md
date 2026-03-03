@@ -1,30 +1,21 @@
-# Active Plan: Memory Pillar & SOTA Integration
+# Active Plan: Phase 2 - ASI & Hardware-Aware Optimization
 
-This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating all SOTA components into the core `Agent` runtime.
+Based on the architectural audit by Gemini 3.1 Pro Preview, we are pivoting towards an ASI-ready, hardware-aware architecture. The first step is to enable `sage-core` (Rust) to dynamically evaluate the host machine's hardware capabilities.
 
-## 1. Finalize `MemoryCompressor` Agent
-- [x] Implement `MemoryCompressor` logic in `sage-python/src/sage/memory/compressor.py`.
-- [x] Create concrete drivers for **Neo4j** (GraphDatabase protocol).
-- [x] Create concrete drivers for **Qdrant** (VectorDatabase protocol).
-- [x] Test the full compression cycle with a mocked LLM.
+## 1. Hardware Auto-Discovery Module (`sage-core`)
+- [ ] Implement `sage-core/src/hardware.rs` to detect CPU topology (cores, threads).
+- [ ] Implement detection for advanced instruction sets (SIMD, AVX-512, ARM NEON).
+- [ ] Implement basic GPU/VRAM detection (if available).
+- [ ] Expose `HardwareProfile` to Python via PyO3.
 
-## 2. Integrate SOTA Components into `Agent` Loop
-- [x] Update `sage-python/src/sage/agent.py` to:
-    - Automatically call `MemoryCompressor.step()` during the execution loop.
-    - Support `StrategyEngine` with `vad_cfr` or `shor_psro` by default.
-    - Use `SandboxManager` with snapshot-based warm-start for tools.
+## 2. Refactor Memory Identifiers (ULID)
+- [ ] Replace `uuid::Uuid` with `ulid::Ulid` in `sage-core/src/memory.rs`.
+  - *Rationale*: ULIDs are lexicographically sortable by time and integer-based, drastically reducing heap fragmentation compared to String UUIDs.
 
-## 3. Implement MAP-Elites Mutator (Evolution Pillar)
-- [x] Implement code mutation logic using LLM (`LLMMutator`).
-- [x] Implement evaluation scoring (fitness) using Sandbox (`SandboxEvaluator`).
-- [x] Implement the population management for MAP-Elites (`Population`).
+## 3. Arrow Integration Prep
+- [ ] Update `Cargo.toml` to include `arrow` and `ndarray` crates.
+- [ ] Draft the new contiguous `WorkingMemory` struct using Arrow columnar formats.
 
-## 4. Topology Pillar
-- [x] Implement dynamic multi-agent delegation in `sage-core` (Rust). Added `children_ids` tracking and `get_children` API to `AgentPool`.
-
-## 5. Verification
-- [x] Run full system tests with the flagship `sage-discover` agent.
-- [x] Deploy `sage-discover` on a live algorithmic optimization task (`example_run.py`).
-- [ ] Measure restore times for Docker snapshots (< 1s target).
-- [ ] Verify GraphRAG retrieval accuracy.
-
+## 4. Python SDK Integration
+- [ ] Update `sage-python/src/sage/memory/working.py` to handle the new ULID formats.
+- [ ] Expose the hardware profile to the `Agent` so it can dynamically decide whether to generate vectorized code (like the NumPy approach in H7).

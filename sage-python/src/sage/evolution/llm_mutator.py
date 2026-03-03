@@ -26,25 +26,25 @@ class LLMMutator:
         Features are a 2D tuple representing:
         (complexity_score, creativity_score) mapped to 0-9 bins.
         """
-        prompt = f"""You are an expert AI code optimizer.
-Your objective is: {objective}
+        prompt = f"""You are a SOTA AI Research Engineer (Mars 2026).
+Your objective is to produce PRODUCTION-READY Python code for: {objective}
 
-Given the following code, propose a mutation to improve it towards the objective.
-You MUST output your mutation in SEARCH/REPLACE format.
-You MUST also provide two behavioral scores from 0 to 9 for the resulting code:
-1. Complexity: 0 (very simple) to 9 (highly complex).
-2. Creativity: 0 (standard approach) to 9 (highly novel/creative approach).
+CRITICAL INSTRUCTIONS:
+1. Propose a precise mutation in SEARCH/REPLACE format.
+2. The code MUST be functionally complete and optimized for performance.
+3. NO CHITCHAT. No introductory text. 
+4. You MUST provide two behavioral scores (0-9).
 
 Format:
 <<<SEARCH
 [exact original code lines]
 ===
-[new code lines]
+[new optimized code lines]
 >>>REPLACE: [brief description]
 
 FEATURES: Complexity=<0-9>, Creativity=<0-9>
 
-CODE:
+CODE CONTEXT:
 ```python
 {code}
 ```"""

@@ -26,7 +26,12 @@ class GoogleProvider:
 
         client = genai.Client(api_key=self.api_key)
 
-        model = config.model if config else "gemini-2.0-flash"
+        # SOTA March 2026 Default
+        model = "gemini-3.1-pro-preview"
+        if config and config.model:
+            model = config.model
+            
+        print(f"DEBUG: Using model {model}")
 
         # Convert messages to Gemini format
         contents = []
@@ -51,7 +56,11 @@ class GoogleProvider:
         if system_instruction:
             kwargs["config"]["system_instruction"] = system_instruction
 
-        response = await client.aio.models.generate_content(**kwargs)
+        try:
+            response = await client.aio.models.generate_content(**kwargs)
+        except Exception as e:
+            print(f"DEBUG: API Error: {e}")
+            raise e
 
         return LLMResponse(
             content=response.text or "",
