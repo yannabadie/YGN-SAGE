@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use ulid::Ulid;
 use chrono::{DateTime, Utc};
 
 /// A single event in working memory
@@ -34,7 +34,7 @@ impl MemoryEvent {
 impl MemoryEvent {
     pub fn new(event_type: &str, content: &str) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Ulid::new().to_string(),
             event_type: event_type.to_string(),
             content: content.to_string(),
             timestamp: Utc::now(),
@@ -44,7 +44,7 @@ impl MemoryEvent {
 
     pub fn summary(content: &str) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Ulid::new().to_string(),
             event_type: "summary".to_string(),
             content: content.to_string(),
             timestamp: Utc::now(),

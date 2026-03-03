@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use ulid::Ulid;
 use chrono::{DateTime, Utc};
 
 /// Memory scope determines how an agent accesses shared memory.
@@ -91,7 +91,7 @@ impl AgentConfig {
 impl AgentConfig {
     pub fn new(name: String, model: String, system_prompt: String) -> Self {
         Self {
-            id: Uuid::new_v4().to_string(),
+            id: Ulid::new().to_string(),
             name,
             model,
             system_prompt,

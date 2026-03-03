@@ -11,13 +11,13 @@
 - [x] **Evolution Pillar**: Implemented `LLMMutator` and `SandboxEvaluator` for MAP-Elites.
 - [x] **Validation**: Deployed `sage-discover` on a live algorithmic optimization task.
 - [x] **Architectural Audit**: Ran Gemini 3.1 Pro Preview over the codebase. Identified PyO3 serialization and UUID string allocation as major bottlenecks. Conceived "Phase 2: ASI Architecture".
+- [x] **Hardware Auto-Discovery**: Implement Rust module to detect SIMD, AVX-512, and CPU/GPU topology dynamically.
+- [x] **ULID Migration**: Replace String-based UUIDs with 128-bit ULIDs in `sage-core` to eliminate heap fragmentation.
 
 ## Doing
 
-- [ ] **Hardware Auto-Discovery**: Implement Rust module to detect SIMD, AVX-512, and CPU/GPU topology dynamically.
-- [ ] **ULID Migration**: Replace String-based UUIDs with 128-bit ULIDs in `sage-core` to eliminate heap fragmentation.
+- [ ] **Zero-Copy Arrow Memory**: Rewrite `WorkingMemory` in Rust using Apache Arrow for contiguous memory layouts.
 
 ## Next
 
-- [ ] **Zero-Copy Arrow Memory**: Rewrite `WorkingMemory` in Rust using Apache Arrow for contiguous memory layouts.
 - [ ] **eBPF Sandboxing**: Replace Docker with kernel-level eBPF and Wasm runtimes for sub-millisecond evaluation.
