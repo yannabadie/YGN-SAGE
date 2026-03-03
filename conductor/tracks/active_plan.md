@@ -24,6 +24,7 @@ This plan focuses on finalizing the `Memory Pillar` (GraphRAG) and integrating a
 
 ## 5. Verification
 - [x] Run full system tests with the flagship `sage-discover` agent.
+- [x] Deploy `sage-discover` on a live algorithmic optimization task (`example_run.py`).
 - [ ] Measure restore times for Docker snapshots (< 1s target).
 - [ ] Verify GraphRAG retrieval accuracy.
 
