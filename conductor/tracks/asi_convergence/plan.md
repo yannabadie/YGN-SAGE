@@ -12,7 +12,7 @@ Based on deep audits of NotebookLM research synthesis, this track represents the
   - Agents must update a unified semantic node instead of linearly appending context (Active Forgetting).
 
 ## Phase 2: Neuro-Symbolic Wasm/eBPF Execution
-- [ ] **Task 3: Deprecate Docker**
+- [x] **Task 3: Deprecate Docker**
   - Replace legacy Docker fallback with Firecracker micro-VMs or extended `wasmtime`.
   - Implement SnapBPF memory restoration hooking into OS page cache.
 - [x] **Task 4: SMT Firewall (Z3 Validator)**
