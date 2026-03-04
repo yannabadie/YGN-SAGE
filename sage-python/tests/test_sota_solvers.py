@@ -36,19 +36,21 @@ def test_shor_psro_annealing():
     solver = SHORPSROSolver(n_actions=3, total_iters=10)
     
     # Start params
-    b0, t0, d0 = solver._get_params()
+    b0, t0, d0, m0 = solver._get_params()
     assert b0 == pytest.approx(0.30)
     assert t0 == pytest.approx(0.50)
+    assert m0 == pytest.approx(0.50)
     
     # Update
     for _ in range(10):
         solver.update([1.0, 0.5, 0.0], 0)
         
     # End params
-    b1, t1, d1 = solver._get_params()
+    b1, t1, d1, m1 = solver._get_params()
     assert b1 == pytest.approx(0.05)
     assert t1 == pytest.approx(0.01)
     assert d1 == pytest.approx(0.001)
+    assert m1 == pytest.approx(0.50)
 
 def test_shor_psro_strategy_blending():
     solver = SHORPSROSolver(n_actions=2)

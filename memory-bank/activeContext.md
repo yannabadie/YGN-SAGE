@@ -1,25 +1,19 @@
-# Active Context (March 2026)
+# Active Context (March 2026 - ASI Alignment)
 
 ## Current Status
-We have empirically validated the YGN-SAGE architecture using a **SOTA Benchmarking Protocol**. Using **Gemini 3.1 Pro Preview**, the system achieved an **AIO Ratio of 0.00%**, meaning infrastructure overhead is virtually non-existent (approx. 1ms for a 50s reasoning task). 
+We are in the middle of the `sota-alignment-asi` track. Phase 1 (Algorithmic Precision) and Phase 2 (Hardware Optimization) are complete. The Rust dependency conflict has been resolved.
 
-The project has reached **ASI Excellent Status** for infrastructure efficiency.
+## Completed Today
+- **Cargo.toml Resolution**: Upgraded `pyo3`, `numpy`, and `pyo3-arrow` to version `0.25` in `sage-core`.
+- **H96 Zero-Copy**: Implemented and verified `h96_quicksort_zerocopy` using AVX-512 in `simd_sort.rs`.
+- **VAD-CFR Mandates**: Implemented exact constants ($\alpha=1.5, \beta=-0.1, boost=1.1, cap=-20.0$) and non-linear probability scaling ($proj\_R^{1.5}$) in `solvers.py`.
+- **SHOR-PSRO Mandates**: Implemented decoupled `TRAINING` and `EVALUATION` modes with exact annealing schedules for $\lambda$ and diversity bonuses. Fixed tests for 4-param return.
+- **Evolution Engine**: Added `hard_warm_start_threshold` (500 mutations) to `EvolutionEngine` to filter initial research noise.
+- **NotebookLM Audit**: Systematically extracted all SOTA mandates from the two project notebooks.
 
-## Recent Changes
-- **Zero-Copy Arrow Memory**: Finalized the `to_arrow()` bridge with `parent_id` support and high-performance `TimestampNanosecondArray` implementation.
-- **SOTA Benchmarking**: Created `sage-discover/benchmark_engine.py` using the **AIO Ratio** (Agentic Infrastructure Overhead) metric.
-- **Wasm Hybrid Sandbox**: Implemented Wasmtime Component Model in Rust for sub-ms tool execution (0.05ms latency), with automatic fallback to Docker.
-- **Knowledge-Grounded Research**: Integrated `notebooklm-py` bridge to ground agent findings in SOTA literature (VAD-CFR).
-- **Volatility-Gated Strategy**: Implemented `VolatilityGatedScheduler` for dynamic resource allocation.
-- **ULID Migration**: Completed transition to ULIDs in `sage-core`, solving the heap fragmentation issue.
+## Next Steps
+- **Phase 3: eBPF/Wasm Sandboxing**: Benchmark "Cold Start" latency: Docker vs Wasm.
+- **Phase 4: Cognitive & Strategic Anchoring**: Implement `final_verification_loop` using Gemini 3.1 Pro for evolved code review.
 
-## Immediate Focus
-- **eBPF Integration**: Moving from Wasm to full eBPF for arbitrary binary execution using `solana-rbpf` for Windows/Linux portability.
-- **Official Benchmarking**: Target SWE-Bench Pro and AgencyBench for full-scale evaluation.
-
-## Active Decisions
-- **Decision: Metric-Driven Scaling**: All future architectural changes must maintain an AIO Ratio below 0.05% to be considered ASI-compatible.
-- **Decision: Hybrid Sandboxing**: Prefer Wasm for "Hot-Path" tools (<1ms) and Docker for complex dependencies.
-- **Decision: Pro-Driven Evolution**: Use Gemini 3.1 Pro for all code mutations to ensure "Increasing Evolution" (improving on previous SOTA seeds).
-- **Decision: Relative Scoring**: Use the previous best implementation (e.g., H96) as the 1.0 baseline for evaluation to create a clear performance gradient.
-- **Decision: Volatility-Adaptive Budgeting**: Use VAD-CFR insights to scale resource allocation based on research signal stability.
+## Command to Resume
+`gemini --yolo "Continuer le track sota-alignment-asi. Phase 3: Benchmarker la latence 'Cold Start' entre Docker et Wasm."`

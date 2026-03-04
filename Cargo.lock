@@ -1796,6 +1796,7 @@ dependencies = [
  "arrow-array",
  "chrono",
  "dashmap",
+ "numpy",
  "pyo3",
  "pyo3-arrow",
  "raw-cpuid",

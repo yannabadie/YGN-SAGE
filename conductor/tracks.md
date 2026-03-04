@@ -14,4 +14,5 @@ This registry tracks the major development efforts (tracks) of the YGN-SAGE proj
 | `memory-arrow` | ASI Pillar: Zero-Copy Arrow Memory | [DONE] | Replace UUIDs with ULIDs and migrate `WorkingMemory` to Apache Arrow contiguous buffers. |
 | `tools-ebpf` | ASI Pillar: eBPF & Wasm Sandboxing | [DONE] | Replace Docker with sub-millisecond eBPF and Wasm execution environments. |
 | `knowledge-grounded-asi` | Cognitive Pillar: NotebookLM Grounding | [ACTIVE] | Anchor the `ResearchAgent` to NotebookLM via `knowledge-bridge` (SDK 2026). |
+| `asi_convergence` | ASI Convergence: S-MMU, DGM, SAMPO | [PLANNED] | Implement the ultimate 2026 roadmap (TierMem, Neuro-Symbolic eBPF, System 3 AI). |
 | `topology-liquid` | ASI Pillar: Liquid Neural Routing | [PLANNED] | Implement a dynamic LNN-based routing layer to replace static topologies. |

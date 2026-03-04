@@ -6,8 +6,15 @@ and advanced SOTA variants like VAD-CFR and SHOR-PSRO.
 from __future__ import annotations
 
 import math
+from enum import Enum
 import numpy as np
 from typing import Any, List
+
+
+class SolverMode(Enum):
+    """Execution mode for decoupled SOTA solvers."""
+    TRAINING = "training"
+    EVALUATION = "evaluation"
 
 
 class RegretMatcher:
@@ -78,12 +85,16 @@ class VolatilityAdaptiveSolver:
         self._iterations += 1
         
         # 1. Update Volatility (EWMA)
+        # SOTA Mandate: Taux de décroissance de 0.1 pour magnitude et 0.9 pour précédent.
         inst_regrets = action_utilities - action_utilities[chosen_action]
         inst_mag = np.max(np.abs(inst_regrets))
         self._ewma_volatility = 0.1 * inst_mag + 0.9 * self._ewma_volatility
-        v_t = min(1.0, self._ewma_volatility / 2.0)
+        
+        # SOTA Mandate: Sensibilité à la volatilité fixée à 0.5.
+        v_t = min(1.0, 0.5 * self._ewma_volatility)
 
         # 2. Adaptive Discounting (alpha for positive, beta for negative)
+        # SOTA Mandate: Base alpha=1.5, Base beta=-0.1.
         alpha = max(0.1, 1.5 - 0.5 * v_t)
         beta = min(alpha, -0.1 - 0.5 * v_t)
         
@@ -92,23 +103,34 @@ class VolatilityAdaptiveSolver:
         d_neg = (t**beta) / (t**beta + 1.0)
 
         # 3. Update Regrets with Boosting
+        # SOTA Mandate: Boost factor of 1.1 for positive regrets.
         for i in range(self.n_actions):
             r_boosted = inst_regrets[i] * 1.1 if inst_regrets[i] > 0 else inst_regrets[i]
             discount = d_pos if self._cumulative_regret[i] >= 0 else d_neg
             self._cumulative_regret[i] = (self._cumulative_regret[i] * discount) + r_boosted
-            # Lower cap for stability
+            
+            # SOTA Mandate: Cap for negative regret at -20.0.
             self._cumulative_regret[i] = max(-20.0, self._cumulative_regret[i])
 
         # 4. Policy Accumulation with Hard Warm-Start
+        # SOTA Mandate: Seuil de démarrage à chaud de 500 itérations.
         if self._iterations >= self.warm_start_threshold:
+            # SOTA Mandate: Gamma base 2.0 max 4.0.
             gamma = min(4.0, 2.0 + 1.5 * v_t)
             w_time = t**gamma
             w_mag = (1.0 + (inst_mag / 2.0))**0.5
             w_stable = 1.0 / (1.0 + inst_mag**1.5)
             final_weight = w_time * w_mag * w_stable
             
+            # Non-linear scaling mandate: proj_R ** 1.5
             current_strategy = self.get_strategy()
-            self._cumulative_policy += final_weight * current_strategy
+            scaled_strategy = np.power(np.maximum(0.0, current_strategy), 1.5)
+            if np.sum(scaled_strategy) > 1e-12:
+                scaled_strategy /= np.sum(scaled_strategy)
+            else:
+                scaled_strategy = current_strategy
+                
+            self._cumulative_policy += final_weight * scaled_strategy
 
     def average_strategy(self) -> np.ndarray:
         """Get the time-averaged policy (Nash equilibrium convergence)."""
@@ -122,40 +144,51 @@ class SHORPSROSolver:
     """Smoothed Hybrid Optimistic Regret PSRO (SHOR-PSRO) Solver.
 
     SOTA 2026: Blends Optimistic Regret Matching with Smoothed Softmax
-    using a dynamic annealing schedule for exploration/exploitation.
+    using decoupled training/evaluation modes and annealing.
     """
 
-    def __init__(self, n_actions: int, total_iters: int = 75):
+    def __init__(self, n_actions: int, total_iters: int = 75, mode: SolverMode = SolverMode.TRAINING):
         self.n_actions = n_actions
         self.total_iters = total_iters
+        self.mode = mode
         self._regret_matcher = RegretMatcher(n_actions)
         self._iterations = 0
 
-    def _get_params(self) -> tuple[float, float, float]:
-        """Dynamic Annealing Schedule."""
+    def _get_params(self) -> tuple[float, float, float, float]:
+        """Dynamic Annealing Schedule based on Mandate."""
+        if self.mode == SolverMode.EVALUATION:
+            # SOTA Mandate: Fixed strict params for evaluation
+            return 0.01, 0.001, 0.0, 0.2  # lambda, temp, diversity, momentum
+            
+        # TRAINING Mode
         p = min(1.0, self._iterations / self.total_iters)
-        blend = 0.30 - (0.25 * p)  # Lambda
-        temp = 0.50 - (0.49 * p)   # Tau (Softmax Temperature)
-        div = 0.05 - (0.049 * p)   # Diversity bonus
-        return blend, temp, div
+        # SOTA Mandate: lambda 0.3 -> 0.05
+        blend = 0.30 - (0.25 * p)
+        # SOTA Mandate: temp 0.5 -> 0.01
+        temp = 0.50 - (0.49 * p)
+        # SOTA Mandate: diversity 0.05 -> 0.001
+        div = 0.05 - (0.049 * p)
+        # SOTA Mandate: momentum 0.5
+        momentum = 0.5
+        return blend, temp, div, momentum
 
     def get_strategy(self, payoffs: np.ndarray | List[float]) -> np.ndarray:
         """Hybrid Blend Strategy calculation."""
         payoffs = np.array(payoffs)
-        blend, temp, div = self._get_params()
+        blend, temp, div, momentum = self._get_params()
 
         # 1. Optimistic Regret Matching Strategy
-        # Note: Simplified ORM here using diversity-boosted RM
-        boosted_payoffs = payoffs + div * (1.0 - self._regret_matcher.get_strategy())
-        # We simulate one internal iteration for ORM-like behavior
         sigma_orm = self._regret_matcher.get_strategy()
+        
+        # Apply diversity bonus as mandated
+        boosted_payoffs = payoffs + div * (1.0 - sigma_orm)
 
         # 2. Smoothed Softmax (Best Pure Strategy)
-        stable_payoffs = payoffs - np.max(payoffs)
+        stable_payoffs = boosted_payoffs - np.max(boosted_payoffs)
         exp_vals = np.exp(stable_payoffs / temp)
         sigma_pure = exp_vals / np.sum(exp_vals)
 
-        # 3. Blending
+        # 3. Blending (Mandate: σ_hybrid = (1-λ)σ_ORM + λσ_Softmax)
         return (1.0 - blend) * sigma_orm + blend * sigma_pure
 
     def update(self, action_utilities: np.ndarray | List[float], chosen_action: int) -> None:

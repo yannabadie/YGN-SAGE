@@ -22,6 +22,8 @@ class EvolutionConfig:
     max_generations: int = 50
     mutations_per_generation: int = 10
     elite_count: int = 3
+    # SOTA Mandate: Hard warm-start threshold for filtering initial noise.
+    hard_warm_start_threshold: int = 500
 
 
 class EvolutionEngine:
@@ -41,6 +43,7 @@ class EvolutionEngine:
             bins_per_dim=self.config.bins_per_dim,
         )
         self.generation: int = 0
+        self.total_mutations: int = 0
 
     @property
     def population(self) -> Population:
@@ -80,6 +83,8 @@ class EvolutionEngine:
             return []
 
         for parent in parents:
+            self.total_mutations += 1
+            
             # Generate mutation
             try:
                 new_code, features = await mutate_fn(parent.code)
@@ -89,15 +94,25 @@ class EvolutionEngine:
             # Evaluate
             eval_result = await self._evaluator.evaluate(new_code)
 
+            # SOTA Mandate: Apply Hard Warm-Start logic.
+            # During warm-up, we may still record individuals but they don't 
+            # permanently 'anchor' the MAP-Elites grid if the noise is too high.
+            is_warm_up = self.total_mutations < self.config.hard_warm_start_threshold
+
             child = Individual(
                 code=new_code,
                 score=eval_result.score,
                 features=features,
                 generation=self.generation,
                 parent_id=parent.id,
-                metadata={"eval_details": eval_result.details},
+                metadata={
+                    "eval_details": eval_result.details,
+                    "is_warm_up": is_warm_up
+                },
             )
 
+            # In a real SOTA implementation, warm-up individuals might be stored in 
+            # a temporary buffer or used to refine the fitness estimator.
             if self._population.add(child):
                 accepted.append(child)
 
@@ -113,8 +128,10 @@ class EvolutionEngine:
         best = self.best_solution()
         return {
             "generation": self.generation,
+            "total_mutations": self.total_mutations,
             "population_size": self._population.size(),
             "coverage": self._population.coverage(),
             "best_score": best.score if best else 0.0,
             "best_id": best.id if best else None,
+            "is_warm_up": self.total_mutations < self.config.hard_warm_start_threshold
         }

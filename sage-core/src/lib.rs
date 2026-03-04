@@ -25,6 +25,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Add SIMD functions
     m.add_function(wrap_pyfunction!(simd_sort::vectorized_partition_h96, m)?)?;
     m.add_function(wrap_pyfunction!(simd_sort::h96_quicksort, m)?)?;
+    m.add_function(wrap_pyfunction!(simd_sort::h96_quicksort_zerocopy, m)?)?;
     
     Ok(())
 }
