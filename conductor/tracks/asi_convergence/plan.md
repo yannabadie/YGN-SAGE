@@ -15,9 +15,10 @@ Based on deep audits of NotebookLM research synthesis, this track represents the
 - [ ] **Task 3: Deprecate Docker**
   - Replace legacy Docker fallback with Firecracker micro-VMs or extended `wasmtime`.
   - Implement SnapBPF memory restoration hooking into OS page cache.
-- [ ] **Task 4: SMT Firewall**
+- [x] **Task 4: SMT Firewall (Z3 Validator)**
   - Integrate Z3 (Rust bindings) in `EbpfSandbox`.
   - Mechanize the validation of code AST before JIT compilation to eliminate "Implementation Drift".
+  - Implemented `z3_validator.rs` in `sage-core`.
 
 ## Phase 3: Dynamic Topology via MCTS
 - [ ] **Task 5: AFlow Implementation**
