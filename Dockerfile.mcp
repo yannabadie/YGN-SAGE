@@ -1,0 +1,48 @@
+# YGN-SAGE Enterprise MCP Gateway - SOTA 2026
+# Optimized for Google Cloud Run (Serverless, Scale-to-Zero)
+
+FROM python:3.13-slim
+
+# Install system dependencies for Rust, eBPF (Solana), and Z3 bindings
+RUN apt-get update && apt-get install -y \
+    curl \
+    build-essential \
+    clang \
+    libclang-dev \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust toolchain
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.js | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /app
+
+# Copy Rust core and build it
+COPY sage-core/ /app/sage-core/
+RUN pip install --no-cache-dir maturin \
+    && cd /app/sage-core \
+    && maturin build --release --out /app/wheels
+
+# Install Python dependencies and the built Rust core
+COPY sage-python/pyproject.toml /app/sage-python/
+RUN pip install --no-cache-dir mcp-use z3-solver \
+    && pip install --no-cache-dir /app/wheels/*.whl
+
+# Copy application code
+COPY sage-python/src/ /app/sage-python/src/
+COPY sage-discover/ /app/sage-discover/
+COPY docs/ /app/docs/
+COPY ui/ /app/ui/
+
+# Expose the MCP Gateway port
+EXPOSE 8080
+
+# Environment variables for execution
+ENV PYTHONPATH="/app/sage-python/src"
+ENV HOST="0.0.0.0"
+ENV PORT="8080"
+
+# Entrypoint for the MCP Server
+CMD ["python", "sage-discover/mcp_gateway.py"]
