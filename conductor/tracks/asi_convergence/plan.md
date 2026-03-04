@@ -21,7 +21,7 @@ Based on deep audits of NotebookLM research synthesis, this track represents the
   - Implemented `z3_validator.rs` in `sage-core`.
 
 ## Phase 3: Dynamic Topology via MCTS
-- [ ] **Task 5: AFlow Implementation**
+- [x] **Task 5: AFlow Implementation**
   - Replace static agent workflows with a `TopologyPlanner`.
   - Use Stochastic Differentiable Tree Search (S-DTS) to explore agent DAG configurations.
   - Use the newly built H96 Zero-Copy router to rapidly evaluate node probabilities.
