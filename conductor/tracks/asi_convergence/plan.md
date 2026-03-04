@@ -3,11 +3,11 @@
 Based on deep audits of NotebookLM research synthesis, this track represents the leap from SOTA to an ASI baseline by refactoring the core pillars of YGN-SAGE.
 
 ## Phase 1: Cognitive Memory Refactoring (S-MMU)
-- [ ] **Task 1: TierMem Architecture**
+- [x] **Task 1: TierMem Architecture**
   - Implement a two-tier memory hierarchy in `sage-core`.
   - Retain `WorkingMemory` (Arrow) for high-density execution tensors.
   - Integrate a Rust-based DAG (e.g., `petgraph`) for contextual memory.
-- [ ] **Task 2: Context-Aware MCP (CA-MCP)**
+- [x] **Task 2: Context-Aware MCP (CA-MCP)**
   - Implement the A-MEM / MEM1 standard.
   - Agents must update a unified semantic node instead of linearly appending context (Active Forgetting).
 

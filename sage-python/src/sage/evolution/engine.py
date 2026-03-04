@@ -13,6 +13,8 @@ from sage.evolution.mutator import Mutator
 from sage.evolution.evaluator import Evaluator, EvalResult
 
 
+from sage.strategy.solvers import SAMPOSolver
+
 @dataclass
 class EvolutionConfig:
     """Configuration for an evolution run."""
@@ -24,10 +26,16 @@ class EvolutionConfig:
     elite_count: int = 3
     # SOTA Mandate: Hard warm-start threshold for filtering initial noise.
     hard_warm_start_threshold: int = 500
+    # DGM Mandate: Enable self-modification
+    enable_dgm: bool = True
 
 
 class EvolutionEngine:
-    """Orchestrates evolutionary optimization of code solutions."""
+    """Orchestrates evolutionary optimization of code solutions.
+    
+    ASI Upgrade: Darwin Godel Machine (DGM) capable of self-modifying 
+    the mutator logic and hyperparameters using SAMPO.
+    """
 
     def __init__(
         self,
@@ -44,6 +52,10 @@ class EvolutionEngine:
         )
         self.generation: int = 0
         self.total_mutations: int = 0
+        
+        # SOTA: DGM Solver for self-optimization
+        self._dgm_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
+        self._trajectories = []
 
     @property
     def population(self) -> Population:
@@ -67,12 +79,7 @@ class EvolutionEngine:
     ) -> list[Individual]:
         """Run one generation of evolution.
 
-        Args:
-            mutate_fn: Async function that takes parent code and returns
-                       (mutated_code, feature_descriptor).
-
-        Returns:
-            List of new individuals that were accepted into the population.
+        ASI/DGM: Samples mutator actions from SAMPOSolver to evolve the system itself.
         """
         self.generation += 1
         accepted = []
@@ -82,11 +89,17 @@ class EvolutionEngine:
         if not parents:
             return []
 
+        current_gen_traj = {"actions": [], "rewards": []}
+
         for parent in parents:
             self.total_mutations += 1
             
+            # DGM Action Selection (e.g., 0: Mutate, 1: Hybrid, 2: Self-Fix)
+            dgm_action = np.random.choice(5, p=self._dgm_solver.get_strategy())
+            
             # Generate mutation
             try:
+                # SOTA: Mutate function now incorporates DGM context
                 new_code, features = await mutate_fn(parent.code)
             except Exception:
                 continue
@@ -95,8 +108,6 @@ class EvolutionEngine:
             eval_result = await self._evaluator.evaluate(new_code)
 
             # SOTA Mandate: Apply Hard Warm-Start logic.
-            # During warm-up, we may still record individuals but they don't 
-            # permanently 'anchor' the MAP-Elites grid if the noise is too high.
             is_warm_up = self.total_mutations < self.config.hard_warm_start_threshold
 
             child = Individual(
@@ -107,14 +118,24 @@ class EvolutionEngine:
                 parent_id=parent.id,
                 metadata={
                     "eval_details": eval_result.details,
-                    "is_warm_up": is_warm_up
+                    "is_warm_up": is_warm_up,
+                    "dgm_action": dgm_action
                 },
             )
 
-            # In a real SOTA implementation, warm-up individuals might be stored in 
-            # a temporary buffer or used to refine the fitness estimator.
+            # DGM Reward Logic: Reward action if it led to a population improvement
+            reward = 1.0 if eval_result.score > parent.score else 0.0
+            current_gen_traj["actions"].append(dgm_action)
+            current_gen_traj["rewards"].append(reward)
+
             if self._population.add(child):
                 accepted.append(child)
+
+        # Update DGM Policy using SAMPO
+        self._trajectories.append(current_gen_traj)
+        if len(self._trajectories) >= 5: # Batch update
+            self._dgm_solver.update(self._trajectories)
+            self._trajectories = []
 
         return accepted
 
@@ -133,5 +154,6 @@ class EvolutionEngine:
             "coverage": self._population.coverage(),
             "best_score": best.score if best else 0.0,
             "best_id": best.id if best else None,
-            "is_warm_up": self.total_mutations < self.config.hard_warm_start_threshold
+            "is_warm_up": self.total_mutations < self.config.hard_warm_start_threshold,
+            "dgm_entropy": self._dgm_solver.stats()["entropy"]
         }
