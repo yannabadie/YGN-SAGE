@@ -2,9 +2,9 @@ use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 use chrono::{DateTime, Utc};
-use arrow::array::{StringBuilder, BooleanArray};
+use arrow::array::{StringBuilder, BooleanArray, TimestampNanosecondArray};
 use arrow::record_batch::RecordBatch;
-use arrow::datatypes::{DataType, Field, Schema};
+use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use std::sync::Arc;
 
 /// A single event in working memory
@@ -32,6 +32,11 @@ impl MemoryEvent {
     #[getter]
     pub fn timestamp_str(&self) -> String {
         self.timestamp.to_rfc3339()
+    }
+    
+    #[getter]
+    pub fn timestamp_ns(&self) -> i64 {
+        self.timestamp.timestamp_nanos_opt().unwrap_or(0)
     }
 }
 
@@ -64,6 +69,8 @@ impl MemoryEvent {
 pub struct WorkingMemory {
     #[pyo3(get)]
     pub agent_id: String,
+    #[pyo3(get)]
+    pub parent_id: Option<String>,
     events: Vec<MemoryEvent>,
     children: Vec<String>,
 }
@@ -71,8 +78,9 @@ pub struct WorkingMemory {
 #[pymethods]
 impl WorkingMemory {
     #[new]
-    pub fn py_new(agent_id: String) -> Self {
-        Self::new(agent_id)
+    #[pyo3(signature = (agent_id, parent_id=None))]
+    pub fn py_new(agent_id: String, parent_id: Option<String>) -> Self {
+        Self::new(agent_id, parent_id)
     }
 
     /// Add an event and return its ID
@@ -124,32 +132,45 @@ impl WorkingMemory {
 
     /// ASI FEATURE: Export memory to Apache Arrow RecordBatch for high-speed analysis.
     /// Returns a PyObject compatible with PyArrow.
-    pub fn to_arrow(&self, _py: Python<'_>) -> PyResult<PyObject> {
+    pub fn to_arrow(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let len = self.events.len();
         let schema = Arc::new(Schema::new(vec![
+            Field::new("agent_id", DataType::Utf8, false),
+            Field::new("parent_id", DataType::Utf8, true),
             Field::new("id", DataType::Utf8, false),
             Field::new("event_type", DataType::Utf8, false),
             Field::new("content", DataType::Utf8, false),
-            Field::new("timestamp", DataType::Utf8, false), 
+            Field::new("timestamp", DataType::Timestamp(TimeUnit::Nanosecond, None), false), 
             Field::new("is_summary", DataType::Boolean, false),
         ]));
 
-        let mut id_builder = StringBuilder::new();
-        let mut type_builder = StringBuilder::new();
-        let mut content_builder = StringBuilder::new();
-        let mut ts_builder = StringBuilder::new();
-        let mut summary_builder = BooleanArray::builder(self.events.len());
+        let mut agent_id_builder = StringBuilder::with_capacity(len, len * self.agent_id.len());
+        let mut parent_id_builder = StringBuilder::with_capacity(len, len * self.parent_id.as_ref().map_or(0, |s| s.len()));
+        let mut id_builder = StringBuilder::with_capacity(len, len * 26); // ULID is 26 chars
+        let mut type_builder = StringBuilder::with_capacity(len, len * 10);
+        let mut content_builder = StringBuilder::with_capacity(len, len * 50);
+        let mut ts_builder = TimestampNanosecondArray::builder(len);
+        let mut summary_builder = BooleanArray::builder(len);
 
         for e in &self.events {
+            agent_id_builder.append_value(&self.agent_id);
+            if let Some(ref pid) = self.parent_id {
+                parent_id_builder.append_value(pid);
+            } else {
+                parent_id_builder.append_null();
+            }
             id_builder.append_value(&e.id);
             type_builder.append_value(&e.event_type);
             content_builder.append_value(&e.content);
-            ts_builder.append_value(e.timestamp.to_rfc3339());
+            ts_builder.append_value(e.timestamp.timestamp_nanos_opt().unwrap_or(0));
             summary_builder.append_value(e.is_summary);
         }
 
-        let _batch = RecordBatch::try_new(
+        let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
+                Arc::new(agent_id_builder.finish()),
+                Arc::new(parent_id_builder.finish()),
                 Arc::new(id_builder.finish()),
                 Arc::new(type_builder.finish()),
                 Arc::new(content_builder.finish()),
@@ -158,15 +179,17 @@ impl WorkingMemory {
             ],
         ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Arrow error: {}", e)))?;
 
-        // This is a placeholder for real zero-copy if the direct method fails compilation
-        Err(PyErr::new::<pyo3::exceptions::PyNotImplementedError, _>("Zero-copy Arrow export requires complex FFI setup. Columnar storage foundation is READY."))
+        // Use the pyo3-arrow crate for zero-copy Arrow export.
+        let py_batch = pyo3_arrow::PyRecordBatch::new(batch);
+        Ok(py_batch.to_pyarrow(py)?)
     }
 }
 
 impl WorkingMemory {
-    pub fn new(agent_id: String) -> Self {
+    pub fn new(agent_id: String, parent_id: Option<String>) -> Self {
         Self {
             agent_id,
+            parent_id,
             events: Vec::new(),
             children: Vec::new(),
         }

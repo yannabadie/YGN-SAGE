@@ -6,11 +6,14 @@
 - [x] **Knowledge Base**: Integrated with NotebookLM to create a "Cerveau Externe" for YGN-SAGE research.
 - [x] **Deep Research**: Conducted SOTA research on MARL (VAD-CFR, SHOR-PSRO), GraphRAG, and Sandbox Checkpointing.
 - [x] **Strategy Pillar (SOTA)**: Implemented `VolatilityAdaptiveSolver` (VAD-CFR) and `SHORPSROSolver` (SHOR-PSRO).
+- [x] **Resource Management**: Implemented `VolatilityGatedScheduler` for dynamic token/time budgeting based on research volatility.
 - [x] **Memory Pillar (SOTA)**: Implemented `MemoryCompressor` and Rust-backed `WorkingMemory`.
 - [x] **Tools Pillar (SOTA)**: Implemented `DockerSandboxManager` with snapshot capability.
 - [x] **Evolution Pillar**: Implemented `LLMMutator` and `SandboxEvaluator` for MAP-Elites.
 - [x] **Validation**: Deployed `sage-discover` on a live algorithmic optimization task.
 - [x] **Architectural Audit**: Ran Gemini 3.1 Pro Preview over the codebase. Identified PyO3 serialization and UUID string allocation as major bottlenecks.
+- [x] **Evaluation Signal Restore**: Fixed the 0.0 score bottleneck by implementing a relative scoring system (Ratio vs H96 baseline) and a Windows-robust sandbox evaluator.
+- [x] **Increasing Evolution**: Switched to Gemini 3.1 Pro for all mutation cycles to ensure algorithmic growth and structural integrity.
 - [x] **Hardware Auto-Discovery**: Implement Rust module to detect SIMD, AVX-512, and CPU/GPU topology dynamically.
 - [x] **ULID Migration**: Replace String-based UUIDs with 128-bit ULIDs in `sage-core` to eliminate heap fragmentation.
 - [x] **SOTA Benchmarking**: Implemented AIO Ratio metric. Proved **0.00% infrastructure overhead** with Gemini 3.1 Pro Preview (ASI Excellent Status).

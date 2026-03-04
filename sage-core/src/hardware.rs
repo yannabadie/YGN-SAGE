@@ -47,16 +47,17 @@ impl HardwareProfile {
 
         let mut has_avx2 = false;
         let mut has_avx512 = false;
-        let mut has_neon = false;
+        let has_neon;
 
         // Check for x86 instructions via raw_cpuid
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         {
             let cpuid = CpuId::new();
-            if let Some(feature_info) = cpuid.get_feature_info() {
+            if let Some(_feature_info) = cpuid.get_feature_info() {
                 has_avx2 = cpuid.get_extended_feature_info().map_or(false, |ext| ext.has_avx2());
                 has_avx512 = cpuid.get_extended_feature_info().map_or(false, |ext| ext.has_avx512f());
             }
+            has_neon = false;
         }
 
         // Check for ARM NEON
@@ -64,6 +65,12 @@ impl HardwareProfile {
         {
             // ARM NEON is standard on aarch64
             has_neon = true;
+        }
+
+        // Fallback for other architectures
+        #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            has_neon = false;
         }
 
         HardwareProfile {

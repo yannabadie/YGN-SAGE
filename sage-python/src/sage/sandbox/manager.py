@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+import json
 from dataclasses import dataclass, field
 from typing import Any, Dict
+import sage_core
 
 
 @dataclass
@@ -25,32 +27,74 @@ class SandboxResult:
     stdout: str
     stderr: str
     exit_code: int
+    result: Any = None
     timed_out: bool = False
 
 
 class Sandbox:
     """A single sandboxed execution environment."""
 
-    def __init__(self, sandbox_id: str, config: SandboxConfig, container_id: str | None = None):
+    def __init__(
+        self, 
+        sandbox_id: str, 
+        config: SandboxConfig, 
+        container_id: str | None = None,
+        wasm_engine: sage_core.WasmSandbox | None = None
+    ):
         self.id = sandbox_id
         self.config = config
         self.container_id = container_id
+        self.wasm_engine = wasm_engine
         self._alive = True
 
     @property
     def alive(self) -> bool:
         return self._alive
 
-    async def execute(self, command: str) -> SandboxResult:
-        """Execute a command in this sandbox."""
+    async def execute(self, command: str, wasm_module: bytes | None = None) -> SandboxResult:
+        """Execute a command in this sandbox.
+        
+        If wasm_module is provided, use the high-performance Wasm sandbox.
+        Otherwise, fallback to Docker or local execution.
+        """
         if not self._alive:
             return SandboxResult(stdout="", stderr="Sandbox is not alive", exit_code=1)
+
+        if wasm_module and self.wasm_engine:
+            return await self._execute_wasm(command, wasm_module)
 
         if self.container_id is None:
             # Fallback: run locally via subprocess (no Docker)
             return await self._execute_local(command)
 
         return await self._execute_docker(command)
+
+    async def _execute_wasm(self, command: str, module_bytes: bytes) -> SandboxResult:
+        """SOTA 2026: Fast-path execution via Wasm Component Model."""
+        try:
+            # Command is expected to be tool name in this case
+            # Args are typically passed via env or command string (JSON)
+            tool_name = command
+            args_json = json.dumps(self.config.env) # For now, pass env as args for demo
+            
+            # Execute synchronously in a thread to not block event loop
+            res = await asyncio.to_thread(
+                self.wasm_engine.execute,
+                self.id, # Using sandbox ID for module caching
+                module_bytes,
+                tool_name,
+                args_json,
+                self.config.env
+            )
+            
+            return SandboxResult(
+                stdout=res.get("stdout", ""),
+                stderr=res.get("stderr", ""),
+                exit_code=res.get("exit_code", 0),
+                result=res.get("result")
+            )
+        except Exception as e:
+            return SandboxResult(stdout="", stderr=f"Wasm execution failed: {e}", exit_code=1)
 
     async def _execute_local(self, command: str) -> SandboxResult:
         """Fallback: execute locally when Docker is not available."""
@@ -114,6 +158,11 @@ class SandboxManager:
         self._sandboxes: dict[str, Sandbox] = {}
         self._snapshots: dict[str, str] = {}  # snapshot_name -> image_id
         self._use_docker = use_docker
+        try:
+            self._wasm_engine = sage_core.WasmSandbox()
+        except (AttributeError, Exception):
+            # sage_core might not have WasmSandbox if compilation failed or not exposed
+            self._wasm_engine = None
 
     async def create(self, config: SandboxConfig | None = None, from_snapshot: str | None = None) -> Sandbox:
         """Create a new sandbox, optionally from a saved snapshot."""
@@ -129,7 +178,12 @@ class SandboxManager:
         if self._use_docker:
             container_id = await self._create_container(sandbox_id, config)
 
-        sandbox = Sandbox(sandbox_id=sandbox_id, config=config, container_id=container_id)
+        sandbox = Sandbox(
+            sandbox_id=sandbox_id, 
+            config=config, 
+            container_id=container_id,
+            wasm_engine=self._wasm_engine
+        )
         self._sandboxes[sandbox_id] = sandbox
         return sandbox
 

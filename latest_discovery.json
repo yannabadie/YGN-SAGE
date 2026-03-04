@@ -1,0 +1,33 @@
+{
+  "iteration": 4,
+  "phase": "evolving",
+  "strategy": {
+    "strategy_names": [
+      "explore",
+      "exploit",
+      "evolve"
+    ],
+    "weights": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "rounds": 4,
+    "dominant": "explore"
+  },
+  "evolution": {
+    "generation": 20,
+    "population_size": 1,
+    "coverage": 0.01,
+    "best_score": 1.0,
+    "best_id": "42cba1c5"
+  },
+  "domain": "hardware_optimized_sorting",
+  "goal": "Design a hybrid sorting algorithm that leverages SIMD-like block moves and branchless partitioning to maximize throughput on modern CPUs.",
+  "total_hypotheses": 4,
+  "confirmed": 0,
+  "rejected": 4,
+  "pending": 0,
+  "discoveries": 0,
+  "best_score": 0.0
+}

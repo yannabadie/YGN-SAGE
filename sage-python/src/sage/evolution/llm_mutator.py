@@ -20,20 +20,21 @@ class LLMMutator:
         self.mutator = mutator or Mutator()
         self.logger = logging.getLogger(__name__)
 
-    async def mutate(self, code: str, objective: str) -> Tuple[str, Tuple[int, int]]:
+    async def mutate(self, code: str, objective: str, config: Any | None = None) -> Tuple[str, Tuple[int, int]]:
         """Mutates code using LLM and returns (new_code, features).
         
         Features are a 2D tuple representing:
         (complexity_score, creativity_score) mapped to 0-9 bins.
         """
         prompt = f"""You are a SOTA AI Research Engineer (Mars 2026).
-Your objective is to produce PRODUCTION-READY Python code for: {objective}
+Objective: {objective}
 
-CRITICAL INSTRUCTIONS:
-1. Propose a precise mutation in SEARCH/REPLACE format.
-2. The code MUST be functionally complete and optimized for performance.
-3. NO CHITCHAT. No introductory text. 
-4. You MUST provide two behavioral scores (0-9).
+CRITICAL RULES:
+1. Provide a precise SEARCH/REPLACE diff.
+2. The evolved code MUST always maintain a function named 'solution(arr)'.
+3. If using numpy, ensure 'import numpy as np' is present or added.
+4. Focus on SIMD-like logic, branchless code, and cache locality.
+5. NO CHITCHAT. No preamble.
 
 Format:
 <<<SEARCH
@@ -50,7 +51,8 @@ CODE CONTEXT:
 ```"""
 
         messages = [Message(role=Role.USER, content=prompt)]
-        response = await self.llm.generate(messages)
+        # Use provided config or default
+        response = await self.llm.generate(messages, config=config)
         content = response.content or ""
 
         # Parse Diff

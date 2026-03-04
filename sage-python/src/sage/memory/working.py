@@ -12,13 +12,17 @@ import sage_core
 class WorkingMemory:
     """In-memory working memory for a single agent execution."""
 
-    def __init__(self, agent_id: str):
-        self._inner = sage_core.WorkingMemory(agent_id)
+    def __init__(self, agent_id: str, parent_id: str | None = None):
+        self._inner = sage_core.WorkingMemory(agent_id, parent_id)
         self.logger = logging.getLogger(__name__)
 
     @property
     def agent_id(self) -> str:
         return self._inner.agent_id
+
+    @property
+    def parent_id(self) -> str | None:
+        return self._inner.parent_id
 
     def add_event(self, event_type: str, content: str) -> str:
         """Add an event and return its ID."""

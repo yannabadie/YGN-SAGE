@@ -70,3 +70,70 @@ class ResourceAllocator:
             ))
 
         return allocations
+
+
+class VolatilityGatedScheduler:
+    """SOTA 2026: Resource scheduler gated by process volatility.
+    
+    Implements VAD-CFR inspired adaptive budgeting:
+    - High Volatility: Dampen resource allocation to prevent over-optimization on noisy signals.
+    - Low Volatility: Aggressively increase allocation to push past local optima.
+    - Hard Warm-Start: Constant allocation for initial T=500 steps.
+    """
+
+    def __init__(
+        self, 
+        base_allocator: ResourceAllocator,
+        warm_start_steps: int = 500,
+        volatility_window: int = 10
+    ):
+        self.allocator = base_allocator
+        self.warm_start_steps = warm_start_steps
+        self.volatility_history: list[float] = []
+        self.window = volatility_window
+        self.steps = 0
+        self._ewma_volatility = 0.0
+
+    def step(self, current_volatility: float) -> float:
+        """Update internal volatility tracking and return the resource multiplier."""
+        self.steps += 1
+        
+        # Update EWMA Volatility (SOTA 2026 approach)
+        self._ewma_volatility = 0.1 * current_volatility + 0.9 * self._ewma_volatility
+        
+        if self.steps < self.warm_start_steps:
+            return 1.0 # Constant during warm-start
+            
+        # VAD Multiplier: v_t normalized to [0, 1]
+        v_t = min(1.0, self._ewma_volatility / 2.0)
+        
+        # Adaptive Multiplier: 
+        # If volatility is high, we want to spend LESS (exploration-only)
+        # If volatility is low, we want to spend MORE (exploitation-push)
+        multiplier = max(0.5, 2.0 - 1.5 * v_t)
+        
+        return multiplier
+
+    def get_adjusted_allocation(
+        self, 
+        strategy_names: list[str], 
+        weights: list[float],
+        volatility: float
+    ) -> list[Allocation]:
+        """Get resource allocations adjusted by the volatility gate."""
+        multiplier = self.step(volatility)
+        
+        # Apply multiplier to allocator's base budget temporarily
+        orig_tokens = self.allocator.total_tokens
+        orig_time = self.allocator.total_time
+        
+        self.allocator.total_tokens = int(orig_tokens * multiplier)
+        self.allocator.total_time = orig_time * multiplier
+        
+        allocations = self.allocator.allocate(strategy_names, weights)
+        
+        # Restore original budget
+        self.allocator.total_tokens = orig_tokens
+        self.allocator.total_time = orig_time
+        
+        return allocations

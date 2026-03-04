@@ -27,30 +27,44 @@ class SandboxEvaluator:
     async def evaluate(self, code: str) -> EvalResult:
         """Run the mutated code in a fresh sandbox and parse its score."""
         sandbox = await self.sandbox_manager.create()
+        import tempfile
+        import os
+        
         try:
             # Prepare the test script
-            script = self.test_script_template.format(code=code)
+            script_content = self.test_script_template.format(code=code)
             
-            # Write script to sandbox
-            # In a real environment, you'd write to a file, but here we can pipe it
-            # assuming it's a python script
-            cmd = f'python3 -c "{_shell_escape(script)}"'
-            
-            result = await sandbox.execute(cmd)
+            # Windows-friendly execution: write to a temp file
+            # In a containerized world, we'd mount this, but for local execution:
+            fd, path = tempfile.mkstemp(suffix=".py")
+            try:
+                with os.fdopen(fd, 'w') as tmp:
+                    tmp.write(script_content)
+                
+                # Use current python executable for stability
+                python_exe = sys.executable or "python"
+                cmd = f'{python_exe} "{path}"'
+                
+                result = await sandbox.execute(cmd)
+            finally:
+                if os.path.exists(path):
+                    os.remove(path)
             
             if result.timed_out:
                 return EvalResult(score=0.0, passed=False, stage="sandbox", error="Execution timed out")
             if result.exit_code != 0:
                 return EvalResult(score=0.0, passed=False, stage="sandbox", error=f"Exit code {result.exit_code}: {result.stderr}")
 
-            # Parse score from stdout (e.g. expecting "SCORE: 0.95")
+            # Parse score from stdout
             score = 0.0
             passed = True
             try:
                 for line in result.stdout.split("\n"):
+                    line = line.strip()
                     if line.startswith("SCORE:"):
                         score = float(line.replace("SCORE:", "").strip())
             except Exception as e:
+                self.logger.error(f"Score parse error: {e}")
                 return EvalResult(score=0.0, passed=False, stage="sandbox", error=f"Failed to parse score: {e}")
 
             return EvalResult(
@@ -62,6 +76,7 @@ class SandboxEvaluator:
         finally:
             await self.sandbox_manager.destroy(sandbox.id)
 
+import sys
 def _shell_escape(s: str) -> str:
     """Escape a string for safe shell usage."""
     return s.replace('"', '"').replace('$', '\$').replace('`', '`')
