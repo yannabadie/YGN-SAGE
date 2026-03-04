@@ -36,9 +36,24 @@ impl EbpfSandbox {
         Ok(())
     }
 
-    pub fn execute(&mut self, _mem: Vec<u8>) -> PyResult<u64> {
+    /// Load raw eBPF instruction bytes directly (useful for testing without a C compiler)
+    pub fn load_raw(&mut self, raw_bytes: &[u8]) -> PyResult<()> {
+        let sbpf_version = SBPFVersion::V2;
+        let function_registry = FunctionRegistry::default();
+        let executable = Executable::<TestContextObject>::from_text_bytes(
+            raw_bytes,
+            self.loader.clone(),
+            sbpf_version,
+            function_registry,
+        ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Raw load error: {}", e)))?;
+        
+        self.executable = Some(Arc::new(executable));
+        Ok(())
+    }
+
+    pub fn execute(&mut self, _mem: Vec<u8>) -> PyResult<(u64, u64)> {
         let executable = self.executable.as_ref()
-            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("No ELF loaded"))?;
+            .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("No ELF/Raw loaded"))?;
         
         let mut context_object = TestContextObject::new(100_000);
         let config = Config::default();
@@ -55,11 +70,11 @@ impl EbpfSandbox {
             4096,
         );
         
-        let (_instruction_count, res) = vm.execute_program(executable, true);
+        let (instruction_count, res) = vm.execute_program(executable, true);
         let res_std: Result<u64, _> = res.into();
         let res_val = res_std.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Execution error: {:?}", e)))?;
             
-        Ok(res_val)
+        Ok((instruction_count, res_val))
     }
 }
 

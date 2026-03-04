@@ -20,47 +20,37 @@ class EbpfEvaluator(Evaluator):
         self.logger = logging.getLogger(__name__)
 
     async def evaluate(self, code: str | bytes) -> EvalResult:
-        """Run the provided ELF bytes in the eBPF sandbox.
+        """Run the provided ELF bytes or raw bytecode in the eBPF sandbox.
         
         Args:
-            code: The ELF binary bytes to execute. If a string is provided, 
-                  this evaluator assumes it's a path to a pre-compiled ELF file,
-                  or it will attempt to mock a success for DGM string-based evolution.
-                  (In a pure ASI loop, the DGM string should first be compiled via Z3/LLVM).
+            code: The ELF binary bytes or raw eBPF bytecode.
         """
         sandbox = sage_core.EbpfSandbox()
         
-        elf_bytes = b""
-        if isinstance(code, str):
-            # In Phase 2, we are transitioning from Python string mutations
-            # to binary mutations. For now, if passed a string, we mock or load from path.
-            import os
-            if os.path.exists(code):
-                with open(code, "rb") as f:
-                    elf_bytes = f.read()
-            else:
-                self.logger.warning("EbpfEvaluator received a string instead of ELF bytes/path. Mocking execution for DGM test loop.")
-                return EvalResult(score=1.0, passed=True, stage="ebpf_mock", details={"note": "mocked string eval"})
-        else:
-            elf_bytes = code
-
         try:
             start_time = time.perf_counter()
             
-            # Load ELF via the solana_rbpf bridge in Rust
-            sandbox.load_elf(elf_bytes)
+            # SOTA 2026: Direct raw bytecode execution without C-compiler overhead
+            if isinstance(code, bytes):
+                # We attempt to load it as RAW text bytes for benchmark proofs
+                try:
+                    sandbox.load_raw(code)
+                except Exception:
+                    # Fallback to ELF loader if it's a full ELF
+                    sandbox.load_elf(code)
+            else:
+                self.logger.error("EbpfEvaluator requires binary bytes.")
+                return EvalResult(score=0.0, passed=False, stage="ebpf_sandbox", error="Code must be bytes")
             
             # Allocate 1MB of working memory for the VM
             mem = bytearray(1024 * 1024)
             
             # Execute with sub-millisecond precision
-            # In Rust, the signature is execute(&mut self, mem: Vec<u8>) -> PyResult<u64>
-            # The returned u64 represents the instruction result/score.
-            result_code = sandbox.execute(list(mem))
+            instruction_count, result_code = sandbox.execute(list(mem))
             
             exec_time_ms = (time.perf_counter() - start_time) * 1000.0
 
-            # Convert result_code to a float score (e.g., if result_code is a mapped reward)
+            # Convert result_code to a float score
             score = float(result_code)
             passed = (result_code > 0)
 
@@ -70,8 +60,9 @@ class EbpfEvaluator(Evaluator):
                 stage="ebpf_sandbox",
                 details={
                     "execution_time_ms": exec_time_ms,
+                    "instruction_count": instruction_count,
                     "result_code": result_code,
-                    "backend": "solana_rbpf"
+                    "backend": "solana_rbpf (Raw BPF/ELF)"
                 }
             )
 
