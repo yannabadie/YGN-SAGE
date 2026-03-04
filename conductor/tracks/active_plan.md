@@ -21,17 +21,17 @@ Based on the architectural audit by Gemini 3.1 Pro Preview, we are pivoting towa
 - [x] Implement `sage-discover/benchmark_engine.py` to calculate the **Agentic Infrastructure Overhead (AIO)**.
 - [x] Compare AIO Ratio between pure Python and Rust/Arrow implementations.
   - *Result*: Rust memory/Arrow export is up to 10x faster for large memory graphs.
-- [ ] Run YGN-SAGE on **SWE-Bench Pro** mock tasks to measure SIMD retrieval gains.
+- [x] Run YGN-SAGE on **SWE-Bench Pro** mock tasks to measure SIMD retrieval gains.
 
 ## 5. Phase 3: eBPF/Wasm Sandboxing (Sub-ms Isolation)
 - [x] Research `rbpf` and `wasmtime` integration for executing untrusted bytecode.
 - [x] Implement `sage-core/src/sandbox/wasm.rs` for hot-path tool execution.
   - *Result*: Achieved **0.05ms** latency per execution.
 - [x] Integrate `WasmSandbox` into Python `SandboxManager` for automatic fallback.
-- [ ] Benchmark "Cold Start" latency: Docker vs Wasm.
+- [x] Benchmark "Cold Start" latency: Docker vs Wasm.
 
 ## 6. Phase 4: Cognitive & Strategic Anchoring
 - [x] Implement `KnowledgeBridge` using `notebooklm-py` for SOTA grounding.
 - [x] Implement `ModelRouter` for Hybrid Pro/Flash orchestration.
 - [x] Implement `VolatilityGatedScheduler` (VAD-CFR) for dynamic resource allocation.
-- [ ] Implement `final_verification_loop` using Gemini 3.1 Pro for evolved code review.
+- [x] Implement `final_verification_loop` using Gemini 3.1 Pro for evolved code review.
