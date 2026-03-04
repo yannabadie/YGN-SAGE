@@ -61,6 +61,7 @@ class VolatilityAdaptiveSolver:
 
     SOTA 2026: Adjusts regrets and policy accumulation based on EWMA volatility.
     Includes a hard warm-start mechanism to filter initial exploration noise.
+    As derived from YGN-SAGE Core Research.
     """
 
     def __init__(self, n_actions: int, warm_start_threshold: int = 500):
@@ -88,6 +89,8 @@ class VolatilityAdaptiveSolver:
         # SOTA Mandate: Taux de décroissance de 0.1 pour magnitude et 0.9 pour précédent.
         inst_regrets = action_utilities - action_utilities[chosen_action]
         inst_mag = np.max(np.abs(inst_regrets))
+        
+        # SOTA Core Research Mandate: Decay factor (gamma) is exactly 0.9
         self._ewma_volatility = 0.1 * inst_mag + 0.9 * self._ewma_volatility
         
         # SOTA Mandate: Sensibilité à la volatilité fixée à 0.5.
@@ -103,7 +106,7 @@ class VolatilityAdaptiveSolver:
         d_neg = (t**beta) / (t**beta + 1.0)
 
         # 3. Update Regrets with Boosting
-        # SOTA Mandate: Boost factor of 1.1 for positive regrets.
+        # SOTA Core Research Mandate: Boost factor of exactly 1.1 for positive regrets.
         for i in range(self.n_actions):
             r_boosted = inst_regrets[i] * 1.1 if inst_regrets[i] > 0 else inst_regrets[i]
             discount = d_pos if self._cumulative_regret[i] >= 0 else d_neg
@@ -113,7 +116,7 @@ class VolatilityAdaptiveSolver:
             self._cumulative_regret[i] = max(-20.0, self._cumulative_regret[i])
 
         # 4. Policy Accumulation with Hard Warm-Start
-        # SOTA Mandate: Seuil de démarrage à chaud de 500 itérations.
+        # SOTA Core Research Mandate: Seuil de démarrage à chaud de 500 itérations.
         if self._iterations >= self.warm_start_threshold:
             # SOTA Mandate: Gamma base 2.0 max 4.0.
             gamma = min(4.0, 2.0 + 1.5 * v_t)
