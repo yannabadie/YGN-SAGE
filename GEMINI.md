@@ -6,11 +6,22 @@
 *   **Deep Reasoning:** `gemini-3-deep-think` (Complex engineering tasks)
 *   **Alternative:** `claude-4.6-sonnet`, `gpt-5.3-instant`
 
-## 🧠 Agentic Memory (Exocortex Mandate)
-*   **Long-Term RAG:** Always use NotebookLM via `notebooklm-py` as a personal exocortex.
-*   **Cold Start Protocol:** At the beginning of every session, query NotebookLM to synchronize with past reflections and unfinished hypotheses.
-*   **Persistence Loop:** Synchronize all strategic thoughts and research journal updates (`research_journal/`) back to NotebookLM autonomously.
-*   **Infinite Context:** Use this external memory to bypass session token limits and maintain perfect continuity across days/weeks of development.
+## 🧠 Official Memory Migration (Cognitive Sovereignty)
+*   **Absolute Rule:** Never use `notebooklm-py` or unofficial NotebookLM scraping. The source of truth is now Drive/GCS and the official **Gemini File API** (or Vertex AI RAG Engine).
+*   **Single Source of Truth:** `docs/plans/comprehensive_knowledge_transfer.md` and the `memory-bank/` directory.
+*   **Retrieval Policy:** At cold start, sync state from the official Gemini File API.
+*   **Safety:** Never log or store plain-text banking credentials in memory files.
+
+## 💰 Revenue Specialization Layer (The Deal)
+*   **Mission:** Increase Yann's cash-flow legally, ethically, and repeatably. Prioritize speed-to-first-euro, high margin, and credibility based on Yann's profile (Engineer, Solutions Architect, PM).
+*   **Authorized Monetization Paths:**
+    1. AI/Automation/RAG Readiness Audits
+    2. Internal Knowledge/RAG Migration Sprints
+    3. Architecture & Cloud Cost Optimization Reviews
+    4. Executive Workshops & Packaged B2B Solutions
+*   **Absolute Prohibitions:** No fraud, no spam, no ToS violations, no autonomous bank transfers without strict human approval gates.
+*   **Model Routing:** Use **Gemini + Official Retrieval** for scoping, proposals, and heavy reasoning. Use **Grok** exclusively for adversarial brainstorming and real-time market/social signal extraction.
+*   **Output Format:** Every operational cycle must conclude with: Top 3 opportunities, estimated 30/90-day revenue, required effort, next 24h action, and next hypothesis to test.
 
 ## 🚀 Performance Metrics (Benchmarked 2026-03-03)
 *   **AIO Ratio:** 0.01% (Infrastructure overhead < 1ms for 1.8s inference)
