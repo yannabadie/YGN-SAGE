@@ -66,9 +66,13 @@ class WorkingMemory:
         """Compress old events into a summary."""
         self._inner.compress_old_events(keep_recent, summary)
 
-    def to_arrow(self) -> Any:
-        """ASI FEATURE: Export memory to Apache Arrow RecordBatch for high-speed analysis."""
-        return self._inner.to_arrow()
+    def compact_to_arrow(self) -> int:
+        """ASI Feature: Compact active buffer into an immutable Arrow RecordBatch and register it in the S-MMU graph."""
+        return self._inner.compact_to_arrow()
+
+    def get_latest_arrow_chunk(self) -> Any:
+        """Export the latest compacted Arrow chunk to Python (Zero-Copy)."""
+        return self._inner.get_latest_arrow_chunk()
 
     @property
     def _events(self) -> list[dict[str, Any]]:

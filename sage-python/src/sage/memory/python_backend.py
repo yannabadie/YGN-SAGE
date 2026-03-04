@@ -37,8 +37,13 @@ class PythonWorkingMemory:
     def recent_events(self, n: int):
         return self.events[-n:]
 
-    def to_arrow(self):
+    def compact_to_arrow(self) -> int:
+        return len(self.events)
+
+    def get_latest_arrow_chunk(self):
         import pyarrow as pa
+        if not self.events:
+            return None
         # Pure Python way to create Arrow batch (slow)
         data = {
             "agent_id": [self.agent_id for _ in self.events],
@@ -49,7 +54,9 @@ class PythonWorkingMemory:
             "timestamp": [e.timestamp.isoformat() for e in self.events],
             "is_summary": [e.is_summary for e in self.events],
         }
-        return pa.RecordBatch.from_pydict(data)
+        batch = pa.RecordBatch.from_pydict(data)
+        self.events.clear()
+        return batch
 
     @property
     def _events(self):

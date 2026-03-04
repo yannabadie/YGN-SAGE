@@ -43,9 +43,10 @@ async def run_benchmark(name: str, model: str, use_rust: bool = True):
     
     # Also test Arrow export time
     export_start = time.perf_counter()
-    batch = agent.working_memory.to_arrow()
+    chunk_id = agent.working_memory.compact_to_arrow()
+    batch = agent.working_memory.get_latest_arrow_chunk()
     export_time = time.perf_counter() - export_start
-    print(f"🏹 Arrow Export Time: {export_time:.6f}s")
+    print(f"🏹 Arrow Compaction & Zero-Copy Export Time (Chunk {chunk_id}): {export_time:.6f}s")
     
     stats = agent.get_aio_stats()
     stats["export_time"] = export_time

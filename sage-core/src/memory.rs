@@ -6,6 +6,8 @@ use arrow::array::{StringBuilder, BooleanArray, TimestampNanosecondArray};
 use arrow::record_batch::RecordBatch;
 use arrow::datatypes::{DataType, Field, Schema, TimeUnit};
 use std::sync::Arc;
+use petgraph::graph::{DiGraph, NodeIndex};
+use std::collections::HashMap;
 
 /// A single event in working memory
 #[pyclass]
@@ -62,16 +64,71 @@ impl MemoryEvent {
     }
 }
 
+/// SOTA 2026: Semantic Memory Management Unit (S-MMU)
+/// Maps high-level semantic concepts to physical Arrow chunks.
+#[derive(Debug, Clone)]
+pub struct ChunkMetadata {
+    pub chunk_id: usize,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub summary: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct SemanticMMU {
+    pub graph: DiGraph<ChunkMetadata, f32>, // Nodes are chunks, Edges are semantic similarity
+    pub chunk_map: HashMap<usize, NodeIndex>,
+    next_chunk_id: usize,
+}
+
+impl SemanticMMU {
+    pub fn new() -> Self {
+        Self {
+            graph: DiGraph::new(),
+            chunk_map: HashMap::new(),
+            next_chunk_id: 0,
+        }
+    }
+
+    pub fn register_chunk(&mut self, start_time: i64, end_time: i64, summary: &str) -> usize {
+        let id = self.next_chunk_id;
+        self.next_chunk_id += 1;
+
+        let meta = ChunkMetadata {
+            chunk_id: id,
+            start_time,
+            end_time,
+            summary: summary.to_string(),
+        };
+
+        let node_idx = self.graph.add_node(meta);
+        self.chunk_map.insert(id, node_idx);
+        
+        // Link to previous chunk (temporal edge)
+        if id > 0 {
+            if let Some(&prev_idx) = self.chunk_map.get(&(id - 1)) {
+                self.graph.add_edge(prev_idx, node_idx, 1.0);
+            }
+        }
+        id
+    }
+}
+
 /// In-memory working memory for a single agent execution.
-/// ASI Upgrade: Supports Apache Arrow export for zero-copy performance.
+/// ASI Upgrade: TierMem Architecture (Active Buffer + Immutable Arrow Chunks + S-MMU)
 #[pyclass]
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone)]
 pub struct WorkingMemory {
     #[pyo3(get)]
     pub agent_id: String,
     #[pyo3(get)]
     pub parent_id: Option<String>,
-    events: Vec<MemoryEvent>,
+    // Tier 1: Fast append-only buffer for Python agents
+    active_buffer: Vec<MemoryEvent>,
+    // Tier 2: Zero-copy immutable column storage
+    arrow_chunks: Vec<Arc<RecordBatch>>,
+    // Cognitive Router
+    smmu: SemanticMMU,
     children: Vec<String>,
 }
 
@@ -83,17 +140,35 @@ impl WorkingMemory {
         Self::new(agent_id, parent_id)
     }
 
-    /// Add an event and return its ID
+    /// Add an event to the active buffer (O(1))
     pub fn add_event(&mut self, event_type: &str, content: &str) -> String {
         let event = MemoryEvent::new(event_type, content);
         let id = event.id.clone();
-        self.events.push(event);
+        self.active_buffer.push(event);
         id
     }
 
-    /// Total event count
+    /// Total event count (active + compacted)
     pub fn event_count(&self) -> usize {
-        self.events.len()
+        let compacted_len: usize = self.arrow_chunks.iter().map(|batch| batch.num_rows()).sum();
+        compacted_len + self.active_buffer.len()
+    }
+
+    /// Get an event by ID (only searches active buffer for now)
+    pub fn get_event(&self, id: &str) -> Option<MemoryEvent> {
+        self.active_buffer.iter().find(|e| e.id == id).cloned()
+    }
+
+    /// Compress old events in the active buffer
+    pub fn compress_old_events(&mut self, keep_recent: usize, summary_text: &str) {
+        if self.active_buffer.len() <= keep_recent {
+            return;
+        }
+        let split_point = self.active_buffer.len() - keep_recent;
+        let recent: Vec<MemoryEvent> = self.active_buffer.drain(split_point..).collect();
+        self.active_buffer.clear();
+        self.active_buffer.push(MemoryEvent::summary(summary_text));
+        self.active_buffer.extend(recent);
     }
 
     /// Register a child agent
@@ -106,34 +181,14 @@ impl WorkingMemory {
         self.children.clone()
     }
 
-    /// Compress old events: keep the last `keep_recent` events,
-    /// replace everything before with a single summary event.
-    pub fn compress_old_events(&mut self, keep_recent: usize, summary_text: &str) {
-        if self.events.len() <= keep_recent {
-            return;
+    /// ASI Feature: Compact active buffer into an immutable Arrow RecordBatch
+    /// and register it in the S-MMU graph.
+    pub fn compact_to_arrow(&mut self) -> PyResult<usize> {
+        if self.active_buffer.is_empty() {
+            return Ok(0);
         }
-        let split_point = self.events.len() - keep_recent;
-        let recent: Vec<MemoryEvent> = self.events.drain(split_point..).collect();
-        self.events.clear();
-        self.events.push(MemoryEvent::summary(summary_text));
-        self.events.extend(recent);
-    }
 
-    /// Get an event by ID
-    pub fn get_event(&self, id: &str) -> Option<MemoryEvent> {
-        self.events.iter().find(|e| e.id == id).cloned()
-    }
-
-    /// Get recent N events (oldest first within the window)
-    pub fn recent_events(&self, n: usize) -> Vec<MemoryEvent> {
-        let start = self.events.len().saturating_sub(n);
-        self.events[start..].iter().cloned().collect()
-    }
-
-    /// ASI FEATURE: Export memory to Apache Arrow RecordBatch for high-speed analysis.
-    /// Returns a PyObject compatible with PyArrow.
-    pub fn to_arrow(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let len = self.events.len();
+        let len = self.active_buffer.len();
         let schema = Arc::new(Schema::new(vec![
             Field::new("agent_id", DataType::Utf8, false),
             Field::new("parent_id", DataType::Utf8, true),
@@ -146,13 +201,16 @@ impl WorkingMemory {
 
         let mut agent_id_builder = StringBuilder::with_capacity(len, len * self.agent_id.len());
         let mut parent_id_builder = StringBuilder::with_capacity(len, len * self.parent_id.as_ref().map_or(0, |s| s.len()));
-        let mut id_builder = StringBuilder::with_capacity(len, len * 26); // ULID is 26 chars
+        let mut id_builder = StringBuilder::with_capacity(len, len * 26);
         let mut type_builder = StringBuilder::with_capacity(len, len * 10);
         let mut content_builder = StringBuilder::with_capacity(len, len * 50);
         let mut ts_builder = TimestampNanosecondArray::builder(len);
         let mut summary_builder = BooleanArray::builder(len);
 
-        for e in &self.events {
+        let mut start_time = i64::MAX;
+        let mut end_time = i64::MIN;
+
+        for e in &self.active_buffer {
             agent_id_builder.append_value(&self.agent_id);
             if let Some(ref pid) = self.parent_id {
                 parent_id_builder.append_value(pid);
@@ -162,7 +220,12 @@ impl WorkingMemory {
             id_builder.append_value(&e.id);
             type_builder.append_value(&e.event_type);
             content_builder.append_value(&e.content);
-            ts_builder.append_value(e.timestamp.timestamp_nanos_opt().unwrap_or(0));
+            
+            let ts = e.timestamp.timestamp_nanos_opt().unwrap_or(0);
+            ts_builder.append_value(ts);
+            start_time = start_time.min(ts);
+            end_time = end_time.max(ts);
+            
             summary_builder.append_value(e.is_summary);
         }
 
@@ -179,9 +242,31 @@ impl WorkingMemory {
             ],
         ).map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Arrow error: {}", e)))?;
 
-        // Use the pyo3-arrow crate for zero-copy Arrow export.
-        let py_batch = pyo3_arrow::PyRecordBatch::new(batch);
-        Ok(py_batch.to_pyarrow(py)?)
+        self.arrow_chunks.push(Arc::new(batch));
+        
+        // Register in S-MMU
+        let chunk_id = self.smmu.register_chunk(start_time, end_time, "Compacted context block");
+        
+        // Clear active buffer
+        self.active_buffer.clear();
+        
+        Ok(chunk_id)
+    }
+
+    /// Legacy support: returns the active buffer for simple tools.
+    pub fn recent_events(&self, n: usize) -> Vec<MemoryEvent> {
+        let start = self.active_buffer.len().saturating_sub(n);
+        self.active_buffer[start..].iter().cloned().collect()
+    }
+
+    /// Export the latest compacted Arrow chunk to Python (Zero-Copy)
+    pub fn get_latest_arrow_chunk(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+        if let Some(batch) = self.arrow_chunks.last() {
+            let py_batch = pyo3_arrow::PyRecordBatch::new(batch.as_ref().clone());
+            Ok(Some(py_batch.to_pyarrow(py)?))
+        } else {
+            Ok(None)
+        }
     }
 }
 
@@ -190,7 +275,9 @@ impl WorkingMemory {
         Self {
             agent_id,
             parent_id,
-            events: Vec::new(),
+            active_buffer: Vec::new(),
+            arrow_chunks: Vec::new(),
+            smmu: SemanticMMU::new(),
             children: Vec::new(),
         }
     }
