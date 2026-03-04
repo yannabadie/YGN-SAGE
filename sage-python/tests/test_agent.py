@@ -16,8 +16,6 @@ def mock_llm():
         return_value=LLMResponse(content="I'm done.", tool_calls=[])
     )
     return provider
-
-
 @pytest.fixture
 def basic_config():
     return AgentConfig(
@@ -25,6 +23,7 @@ def basic_config():
         llm=LLMConfig(provider="mock", model="mock-model"),
         system_prompt="You are a helpful assistant.",
         max_steps=5,
+        enforce_system3=False
     )
 
 

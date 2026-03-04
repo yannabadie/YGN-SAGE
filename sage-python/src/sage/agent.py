@@ -11,6 +11,7 @@ from sage.tools.registry import ToolRegistry
 from sage.memory.working import WorkingMemory
 from sage.memory.compressor import MemoryCompressor
 from sage.sandbox.manager import SandboxManager
+from sage.topology.kg_rlvr import ProcessRewardModel
 
 
 @dataclass
@@ -23,6 +24,7 @@ class AgentConfig:
     tools: list[str] | None = None  # Tool names to use (None = all in registry)
     use_docker_sandbox: bool = False
     snapshot_to_restore: str | None = None
+    enforce_system3: bool = True
 
 
 class Agent:
@@ -48,6 +50,7 @@ class Agent:
         self.memory_compressor = memory_compressor
         self.sandbox_manager = sandbox_manager or SandboxManager(use_docker=config.use_docker_sandbox)
         self.sandbox = None
+        self.prm = ProcessRewardModel()
         
         # Benchmarking stats
         self.total_inference_time: float = 0.0
@@ -70,13 +73,17 @@ class Agent:
         self.start_time = time.perf_counter()
         await self.initialize_sandbox()
         
+        system_prompt = self.config.system_prompt
+        if self.config.enforce_system3:
+            system_prompt += "\n\nCRITICAL: You MUST use <think>...</think> tags to reason step-by-step before answering. Your reasoning is evaluated by a Process Reward Model."
+        
         try:
             # Initialize conversation
             self._messages = [
-                Message(role=Role.SYSTEM, content=self.config.system_prompt),
+                Message(role=Role.SYSTEM, content=system_prompt),
                 Message(role=Role.USER, content=task),
             ]
-            self.working_memory.add_event("SYSTEM", self.config.system_prompt)
+            self.working_memory.add_event("SYSTEM", system_prompt)
             self.working_memory.add_event("USER", task)
 
             # Get tool definitions
@@ -101,7 +108,21 @@ class Agent:
                 )
                 self.total_inference_time += (time.perf_counter() - inf_start)
                 
-                self.working_memory.add_event("ASSISTANT", response.content or "Tool Calls Generated")
+                content = response.content or "Tool Calls Generated"
+                
+                # SOTA 2026: KG-RLVR System 3 Reasoning Check
+                if self.config.enforce_system3 and response.content:
+                    r_path, details = self.prm.calculate_r_path(response.content)
+                    if r_path < 0.0:
+                        # Agent failed to use System 3 reasoning. Intercept and force correction.
+                        warning = "SYSTEM: You failed to use <think> tags. You must break down the problem structurally before answering."
+                        self._messages.append(Message(role=Role.USER, content=warning))
+                        self.working_memory.add_event("SYSTEM_WARNING", warning)
+                        continue
+                    else:
+                        self.working_memory.add_event("REWARD", f"R_path={r_path:.2f} Verifiable={details['verifiable_ratio']:.0%}")
+                
+                self.working_memory.add_event("ASSISTANT", content)
 
                 # If no tool calls, we're done
                 if not response.tool_calls:
