@@ -1,155 +1,102 @@
-"""Meta-tools: tools that create and manage other tools dynamically.
+"""Meta-tools for dynamic tool synthesis (OpenSage).
 
-This implements the self-programming aspect of YGN-SAGE, allowing agents
-to synthesize new tools at runtime from natural language descriptions.
+Enables agents to write, register, and manage their own tools dynamically.
 """
 from __future__ import annotations
 
-import textwrap
-from typing import Any
+import os
+import ast
+import json
+import logging
+from typing import Any, Dict
 
-from sage.tools.base import Tool, ToolResult
+from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
-from sage.sandbox.manager import SandboxManager, Sandbox
+
+logger = logging.getLogger(__name__)
+
+# SOTA OpenSage: Tools to write tools
+@Tool.define(
+    name="create_python_tool",
+    description="Dynamically writes and registers a new Python tool for the agent to use. The code must define an async function and use the @Tool.define decorator. The tool will be immediately available.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "The name of the new tool"},
+            "code": {"type": "string", "description": "The complete Python code for the tool, including imports and @Tool.define"}
+        },
+        "required": ["name", "code"]
+    }
+)
+async def create_python_tool(name: str, code: str, registry: ToolRegistry = None) -> str:
+    if not registry:
+        return "Error: Tool registry not available for dynamic registration."
+        
+    try:
+        # Validate syntax
+        ast.parse(code)
+        
+        # We need a safe namespace to execute the dynamic code
+        namespace = {
+            "Tool": Tool,
+            "os": os,
+            "json": json,
+            "Any": Any,
+            "Dict": Dict
+        }
+        
+        # Execute the code to define the tool in the namespace
+        exec(code, namespace)
+        
+        # Find the defined tool in the namespace
+        new_tool = None
+        for obj_name, obj in namespace.items():
+            if isinstance(obj, Tool) and obj.name == name:
+                new_tool = obj
+                break
+                
+        if new_tool:
+            registry.register(new_tool)
+            return f"Success: Tool '{name}' has been compiled and registered. You can now use it."
+        else:
+            return f"Error: Could not find a Tool named '{name}' in the provided code. Did you use @Tool.define?"
+            
+    except Exception as e:
+        return f"Error compiling dynamic tool: {str(e)}"
 
 
-class MetaToolFactory:
-    """Factory for creating meta-tools that allow agents to build new tools."""
+@Tool.define(
+    name="create_bash_tool",
+    description="Creates a reusable tool that wraps a specific bash command or script.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Name of the new tool"},
+            "description": {"type": "string", "description": "What the tool does"},
+            "script": {"type": "string", "description": "The bash script to execute"}
+        },
+        "required": ["name", "description", "script"]
+    }
+)
+async def create_bash_tool(name: str, description: str, script: str, registry: ToolRegistry = None) -> str:
+    if not registry:
+         return "Error: Tool registry not available."
+         
+    # Generate the python wrapper
+    code = f"""
+from sage.tools.base import Tool
+import subprocess
 
-    def __init__(self, registry: ToolRegistry, sandbox_manager: SandboxManager):
-        self._registry = registry
-        self._sandbox = sandbox_manager
-
-    def create_tool_from_code(
-        self,
-        name: str,
-        description: str,
-        parameters: dict[str, Any],
-        code: str,
-    ) -> Tool:
-        """Create a tool from Python code string.
-
-        The code must define an async function named `execute` that
-        takes keyword arguments matching the parameters schema.
-        """
-        # Compile the code to verify syntax
-        compiled = compile(code, f"<tool:{name}>", "exec")
-
-        namespace: dict[str, Any] = {}
-        exec(compiled, namespace)
-
-        if "execute" not in namespace:
-            raise ValueError(f"Tool code must define an 'execute' function. Got: {list(namespace.keys())}")
-
-        handler = namespace["execute"]
-        tool = Tool(
-            spec=__import__("sage.llm.base", fromlist=["ToolDef"]).ToolDef(
-                name=name,
-                description=description,
-                parameters=parameters,
-            ),
-            handler=handler,
-        )
-        return tool
-
-    def register_dynamic_tool(
-        self,
-        name: str,
-        description: str,
-        parameters: dict[str, Any],
-        code: str,
-    ) -> str:
-        """Create and register a new tool. Returns the tool name."""
-        tool = self.create_tool_from_code(name, description, parameters, code)
-        self._registry.register(tool)
-        return name
-
-    def build_create_tool_tool(self) -> Tool:
-        """Build the 'create_tool' meta-tool that agents can use to create new tools."""
-        factory = self
-
-        @Tool.define(
-            name="create_tool",
-            description=(
-                "Create a new tool from Python code. The code must define an async function "
-                "named 'execute' that takes keyword arguments. The tool will be registered "
-                "and immediately available for use."
-            ),
-            parameters={
-                "type": "object",
-                "properties": {
-                    "name": {"type": "string", "description": "Name for the new tool"},
-                    "description": {"type": "string", "description": "What the tool does"},
-                    "parameters": {
-                        "type": "object",
-                        "description": "JSON Schema for the tool's parameters",
-                    },
-                    "code": {
-                        "type": "string",
-                        "description": "Python code defining an async 'execute' function",
-                    },
-                },
-                "required": ["name", "description", "parameters", "code"],
-            },
-        )
-        async def create_tool(
-            name: str, description: str, parameters: dict, code: str
-        ) -> str:
-            try:
-                factory.register_dynamic_tool(name, description, parameters, code)
-                return f"Tool '{name}' created and registered successfully."
-            except Exception as e:
-                return f"Error creating tool: {e}"
-
-        return create_tool
-
-    def build_list_tools_tool(self) -> Tool:
-        """Build the 'list_tools' meta-tool."""
-        registry = self._registry
-
-        @Tool.define(
-            name="list_tools",
-            description="List all currently available tools with their descriptions.",
-            parameters={"type": "object", "properties": {}},
-        )
-        async def list_tools() -> str:
-            tools = registry.get_tool_defs()
-            lines = [f"- {t.name}: {t.description}" for t in tools]
-            return "\n".join(lines) if lines else "No tools registered."
-
-        return list_tools
-
-    def build_search_tools_tool(self) -> Tool:
-        """Build the 'search_tools' meta-tool."""
-        registry = self._registry
-
-        @Tool.define(
-            name="search_tools",
-            description="Search for tools by name or description keyword.",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Search query"},
-                },
-                "required": ["query"],
-            },
-        )
-        async def search_tools(query: str) -> str:
-            results = registry.search(query)
-            if not results:
-                return f"No tools found matching '{query}'."
-            lines = [f"- {t.spec.name}: {t.spec.description}" for t in results]
-            return "\n".join(lines)
-
-        return search_tools
-
-    def register_all_meta_tools(self) -> list[str]:
-        """Register all meta-tools and return their names."""
-        tools = [
-            self.build_create_tool_tool(),
-            self.build_list_tools_tool(),
-            self.build_search_tools_tool(),
-        ]
-        for tool in tools:
-            self._registry.register(tool)
-        return [t.spec.name for t in tools]
+@Tool.define(
+    name="{name}",
+    description="{description}",
+    parameters={{"type": "object", "properties": {{}}}}
+)
+async def {name}() -> str:
+    try:
+        result = subprocess.run({repr(script)}, shell=True, capture_output=True, text=True, timeout=60)
+        return f"STDOUT:\\n{{result.stdout}}\\nSTDERR:\\n{{result.stderr}}"
+    except Exception as e:
+        return f"Execution error: {{e}}"
+"""
+    return await create_python_tool(name, code, registry)

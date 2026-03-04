@@ -52,6 +52,9 @@ class Agent:
         self.sandbox = None
         self.prm = ProcessRewardModel()
         
+        # OpenSage: Unified sub-agent pool
+        self.agent_pool: dict[str, Agent] = {}
+        
         # Benchmarking stats
         self.total_inference_time: float = 0.0
         self.start_time: float = 0.0
@@ -143,7 +146,20 @@ class Agent:
                     if tool is None:
                         tool_output = f"Error: Unknown tool '{tc.name}'"
                     else:
-                        result = await tool.execute(tc.arguments)
+                        # OpenSage injection: pass context to agent-mgmt tools
+                        kwargs = tc.arguments.copy()
+                        props = {}
+                        if hasattr(tool, 'tool_def') and tool.tool_def:
+                            props = tool.tool_def.parameters.get("properties", {})
+                            
+                        if "agent_pool" in props:
+                            kwargs["agent_pool"] = self.agent_pool
+                        if "parent_agent" in props:
+                            kwargs["parent_agent"] = self
+                        if "registry" in props:
+                            kwargs["registry"] = self._tools
+                            
+                        result = await tool.execute(kwargs)
                         tool_output = result.output
 
                     self.working_memory.add_event("TOOL", f"{tc.name} -> {tool_output}")
