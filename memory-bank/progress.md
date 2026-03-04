@@ -17,12 +17,18 @@
 - [x] **Hardware Auto-Discovery**: Implement Rust module to detect SIMD, AVX-512, and CPU/GPU topology dynamically.
 - [x] **ULID Migration**: Replace String-based UUIDs with 128-bit ULIDs in `sage-core` to eliminate heap fragmentation.
 - [x] **SOTA Benchmarking**: Implemented AIO Ratio metric. Proved **0.00% infrastructure overhead** with Gemini 3.1 Pro Preview (ASI Excellent Status).
+- [x] **Zero-Copy Arrow Memory**: Finalized the `to_arrow()` bridge for high-speed columnar memory analysis.
+- [x] **SOTA Infrastructure Consolidation**: Fixed `CodexExecProvider` for Windows (`shell=True`), enabling stable structural reviews.
+- [x] **H96 AVX-512 Implementation**: Created `simd_sort.rs` in `sage-core` with in-place vectorized partitioning using `vcompressps`.
+- [x] **Native Google Grounding**: Integrated Google Search Retrieval directly into `GoogleProvider`, replacing `notebooklm-py` for real-time SOTA research.
+- [x] **PyO3 eBPF Bridge**: Exposed `EbpfSandbox` skeleton to Python, enabling sub-ms execution of arbitrary binaries in the evolution loop.
 
 ## Doing
 
-- [ ] **Zero-Copy Arrow Memory**: Finalizing the `to_arrow()` bridge for high-speed columnar memory analysis.
+- [ ] **SOTA Quicksort Tuning**: Further optimize `partition_inplace` in Rust to outperform NumPy on arrays > 100k elements using better cache blocking.
+- [ ] **eBPF ELF Loading**: Complete the real ELF loading logic in `EbpfSandbox` using the `solana_rbpf` 0.8.5 API.
+- [ ] **Evolution Engine Integration**: Connect the new SOTA providers (Codex Review + Google Search) into the main `EvolutionEngine` loop.
 
 ## Next
 
-- [ ] **eBPF Sandboxing**: Replace Docker with kernel-level eBPF and Wasm runtimes for sub-millisecond evaluation.
 - [ ] **Official Benchmarking**: Target SWE-Bench Pro and AgencyBench for full-scale evaluation.

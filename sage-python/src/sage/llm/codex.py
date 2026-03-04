@@ -37,7 +37,16 @@ class CodexExecProvider:
             cmd = [codex_path, "exec", full_prompt, "--json"]
             try:
                 self.logger.info(f"Using local codex CLI at {codex_path}")
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True, encoding="utf-8")
+                # Use shell=True on Windows to handle script aliases/extensions correctly
+                use_shell = sys.platform == "win32"
+                result = subprocess.run(
+                    cmd, 
+                    capture_output=True, 
+                    text=True, 
+                    check=True, 
+                    encoding="utf-8",
+                    shell=use_shell
+                )
                 if result and result.stdout:
                     for line in reversed(result.stdout.splitlines()):
                         try:

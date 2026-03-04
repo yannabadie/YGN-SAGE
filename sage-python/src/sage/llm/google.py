@@ -2,11 +2,14 @@
 from __future__ import annotations
 
 import os
+import logging
+from typing import Any
 from sage.llm.base import LLMConfig, LLMResponse, Message, ToolCall, ToolDef
 
+logger = logging.getLogger(__name__)
 
 class GoogleProvider:
-    """LLM provider for Google Gemini models."""
+    """LLM provider for Google Gemini models with native SOTA grounding."""
 
     name = "google"
 
@@ -18,9 +21,11 @@ class GoogleProvider:
         messages: list[Message],
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
+        use_google_search: bool = True,
     ) -> LLMResponse:
         try:
             from google import genai
+            from google.genai import types
         except ImportError:
             raise ImportError("Install google-genai: pip install 'ygn-sage[google]'")
 
@@ -31,7 +36,7 @@ class GoogleProvider:
         if config and config.model:
             model = config.model
             
-        print(f"DEBUG: Using model {model}")
+        logger.info(f"Using Google Gemini model: {model}")
 
         # Convert messages to Gemini format
         contents = []
@@ -41,29 +46,39 @@ class GoogleProvider:
                 system_instruction = msg.content
             else:
                 role = "model" if msg.role.value == "assistant" else "user"
-                contents.append({"role": role, "parts": [{"text": msg.content}]})
+                contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg.content)]))
 
-        generate_config = {}
-        if config:
-            generate_config["max_output_tokens"] = config.max_tokens
-            generate_config["temperature"] = config.temperature
+        # Configure SOTA Grounding (Google Search Retrieval)
+        gemini_tools = []
+        if use_google_search:
+            gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
 
-        kwargs: dict = {
-            "model": model,
-            "contents": contents,
-            "config": generate_config,
-        }
-        if system_instruction:
-            kwargs["config"]["system_instruction"] = system_instruction
+        generate_config = types.GenerateContentConfig(
+            max_output_tokens=config.max_tokens if config else None,
+            temperature=config.temperature if config else 0.1,
+            system_instruction=system_instruction,
+            tools=gemini_tools if gemini_tools else None,
+        )
 
         try:
-            response = await client.aio.models.generate_content(**kwargs)
+            response = await client.aio.models.generate_content(
+                model=model,
+                contents=contents,
+                config=generate_config,
+            )
         except Exception as e:
-            print(f"DEBUG: API Error: {e}")
+            logger.error(f"Gemini API Error: {e}")
             raise e
 
+        # Extract grounding metadata if available
+        grounding_metadata = getattr(response, 'grounding_metadata', None)
+        content_text = response.text or ""
+        
+        if grounding_metadata and getattr(grounding_metadata, 'search_entry_point', None):
+            logger.info("Grounding sources detected in response.")
+
         return LLMResponse(
-            content=response.text or "",
+            content=content_text,
             tool_calls=[],
             model=model,
         )
