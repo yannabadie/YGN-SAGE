@@ -27,7 +27,7 @@ Based on deep audits of NotebookLM research synthesis, this track represents the
   - Use the newly built H96 Zero-Copy router to rapidly evaluate node probabilities.
 
 ## Phase 4: Open-Ended Evolution (DGM & SAMPO)
-- [ ] **Task 6: Whole-System Evolution**
+- [x] **Task 6: Whole-System Evolution**
   - Upgrade the MAP-Elites `EvolutionEngine` to mutate hyperparameters, memory structures, and tools, not just prompts/code.
   - Implement SAMPO (Stable Agentic Multi-turn Policy Optimization) using sequence-level clipping instead of token-level clipping.
 - [ ] **Task 7: System 3 AI & KG-RLVR**

@@ -98,6 +98,17 @@ class EvolutionEngine:
             # DGM Action Selection (e.g., 0: Mutate, 1: Hybrid, 2: Self-Fix)
             dgm_action = np.random.choice(5, p=self._dgm_solver.get_strategy())
             
+            # --- DGM Self-Modification Logic (ASI Phase 2) ---
+            if dgm_action == 2:
+                # Action 2: Expand search space (Engine Hyperparameter)
+                self.config.mutations_per_generation = min(50, self.config.mutations_per_generation + 2)
+            elif dgm_action == 3:
+                # Action 3: Tighten SAMPO clipping (Solver Hyperparameter)
+                self._dgm_solver.clip_epsilon = max(0.05, self._dgm_solver.clip_epsilon * 0.9)
+            elif dgm_action == 4:
+                # Action 4: Relax SAMPO filtering (Solver Hyperparameter)
+                self._dgm_solver.filter_threshold = max(2, self._dgm_solver.filter_threshold - 1)
+            
             # Generate mutation
             try:
                 # SOTA: Mutate function now incorporates DGM context
