@@ -21,6 +21,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<hardware::HardwareProfile>()?;
     m.add_class::<sandbox::wasm::WasmSandbox>()?;
     m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
+    m.add_class::<sandbox::z3_validator::Z3Validator>()?;
     
     // Add SIMD functions
     m.add_function(wrap_pyfunction!(simd_sort::vectorized_partition_h96, m)?)?;

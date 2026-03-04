@@ -1,12 +1,16 @@
+use pyo3::prelude::*;
 use z3::{Config, Context, Solver, ast::Int, ast::Bool, ast::Ast};
 
 /// SOTA 2026: Z3-based SMT Firewall for evolved code validation.
 /// Ensures formal correctness of AST invariants before execution.
+#[pyclass]
 pub struct Z3Validator {
     ctx: Context,
 }
 
+#[pymethods]
 impl Z3Validator {
+    #[new]
     pub fn new() -> Self {
         let cfg = Config::new();
         Self {

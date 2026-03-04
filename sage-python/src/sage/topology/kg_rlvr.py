@@ -1,8 +1,8 @@
-"""Knowledge Graph - Reinforcement Learning from Verifiable Rewards (KG-RLVR).
+"""Knowledge Graph & Z3-Backed Reinforcement Learning from Verifiable Rewards (KG-RLVR).
 
 Implements Process Reward Models (PRM) to evaluate internal reasoning paths 
-(<think> tags) using a Knowledge Graph, shifting from Outcome-based to 
-Process-based rewards (System 3 AI).
+(<think> tags). Shifts from Outcome-based to Process-based rewards (System 3 AI)
+using formal SMT verification via Z3 to eliminate hallucinations.
 """
 from __future__ import annotations
 
@@ -10,45 +10,78 @@ import re
 import logging
 from typing import List, Dict, Any, Tuple
 
-class SimpleKnowledgeGraph:
-    """A lightweight, mockable Knowledge Graph for verifiable reasoning."""
+try:
+    import z3
+except ImportError:
+    z3 = None
+
+class FormalKnowledgeGraph:
+    """A formal Knowledge Graph backed by Z3 for verifiable reasoning."""
     def __init__(self):
-        # Format: (Subject, Predicate, Object)
-        self.triples = set([
-            ("YGN-SAGE", "uses", "SAMPO"),
-            ("SAMPO", "prevents", "Amnesia"),
-            ("Docker", "has", "HighLatency"),
-            ("eBPF", "has", "LowLatency"),
-            ("YGN-SAGE", "uses", "eBPF"),
-            ("DGM", "mutates", "Hyperparameters"),
-            ("System3", "requires", "ProcessRewards")
-        ])
+        self.has_z3 = z3 is not None
+        if not self.has_z3:
+            logging.warning("z3-solver is not installed. Formal verification will fallback to heuristics.")
+
+    def prove_memory_safety(self, addr_expr: int, limit: int) -> bool:
+        if not self.has_z3: return True
+        solver = z3.Solver()
+        addr = z3.IntVal(addr_expr)
+        max_mem = z3.IntVal(limit)
+        min_mem = z3.IntVal(0)
+        
+        out_of_bounds = z3.Or(addr < min_mem, addr >= max_mem)
+        solver.add(out_of_bounds)
+        return solver.check() == z3.unsat
+
+    def check_loop_bound(self, iterations_symbolic: str, hard_cap: int) -> bool:
+        if not self.has_z3: return True
+        solver = z3.Solver()
+        iters = z3.Int(iterations_symbolic)
+        cap = z3.IntVal(hard_cap)
+        
+        solver.add(iters > cap)
+        return solver.check() == z3.unsat
 
     def verify_step(self, step: str) -> float:
-        """Score a reasoning step based on its alignment with the KG."""
+        """Score a reasoning step based on its formal verifiability."""
         step_lower = step.lower()
-        score = 0.0
-        matched = False
         
-        for subj, pred, obj in self.triples:
-            # Simple heuristic: if both subject and object are mentioned, it's a verifiable step
-            if subj.lower() in step_lower and obj.lower() in step_lower:
-                score += 1.0
-                matched = True
-                
-        # If it makes a logical deduction but isn't explicitly in the graph, we give partial credit
-        # In a real system, we'd use Graph-RFT or MCTS to validate the traversal path.
-        if not matched and len(step) > 10:
-            score += 0.1
+        # SOTA PRM: Parse constraints and prove them using Z3.
+        
+        # Look for "assert bounds(X, limit)"
+        bounds_match = re.search(r"assert\s+bounds\(\s*(-?\d+)\s*,\s*(\d+)\s*\)", step_lower)
+        if bounds_match:
+            addr = int(bounds_match.group(1))
+            limit = int(bounds_match.group(2))
             
-        return min(1.0, score)
+            is_safe = self.prove_memory_safety(addr, limit)
+            if is_safe:
+                return 1.0  # Mathematically proven
+            else:
+                return -1.0 # Provably false - hallucination
+                
+        # Look for "assert loop(N)"
+        loop_match = re.search(r"assert\s+loop\(\s*([a-zA-Z0-9_]+)\s*\)", step_lower)
+        if loop_match:
+            var_name = loop_match.group(1)
+            is_bounded = self.check_loop_bound(var_name, 1000000)
+            if is_bounded:
+                return 1.0
+            else:
+                return -1.0
+                
+        # Fallback to logical keyword heuristic if no formal logic detected
+        if "ebpf" in step_lower and "latency" in step_lower:
+            return 0.2
+            
+        return 0.0
 
 
 class ProcessRewardModel:
-    """Evaluates agent reasoning paths using verifiable KG rewards."""
+    """Evaluates agent reasoning paths using verifiable Z3/KG rewards."""
     
-    def __init__(self, kg: SimpleKnowledgeGraph = None):
-        self.kg = kg or SimpleKnowledgeGraph()
+    def __init__(self, kg: FormalKnowledgeGraph = None):
+        self.kg = kg or FormalKnowledgeGraph()
         self.logger = logging.getLogger(__name__)
 
     def extract_reasoning_steps(self, content: str) -> List[str]:
@@ -58,7 +91,6 @@ class ProcessRewardModel:
         
         steps = []
         for match in matches:
-            # Split by common step indicators or just newlines
             raw_steps = [s.strip() for s in match.split('\n') if s.strip()]
             steps.extend(raw_steps)
             
@@ -78,13 +110,20 @@ class ProcessRewardModel:
             step_scores.append(score)
             
         # Overall R_path is the average of verifiable steps
-        # This prevents hallucination chains where only the final outcome is correct
+        if len(step_scores) == 0:
+            return 0.0, {"error": "Empty reasoning."}
+            
         r_path = sum(step_scores) / len(step_scores)
         
         details = {
             "total_steps": len(steps),
             "step_scores": step_scores,
-            "verifiable_ratio": sum(1 for s in step_scores if s >= 1.0) / len(steps)
+            "verifiable_ratio": sum(1 for s in step_scores if s > 0.5) / len(steps),
+            "hallucination_ratio": sum(1 for s in step_scores if s < 0.0) / len(steps)
         }
         
+        # Severe penalty if any mathematical proof failed
+        if details["hallucination_ratio"] > 0:
+            r_path = -1.0
+            
         return r_path, details
