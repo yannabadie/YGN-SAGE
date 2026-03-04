@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Awaitable
+import numpy as np
 
 from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator

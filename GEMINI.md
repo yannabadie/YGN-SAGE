@@ -6,6 +6,12 @@
 *   **Deep Reasoning:** `gemini-3-deep-think` (Complex engineering tasks)
 *   **Alternative:** `claude-4.6-sonnet`, `gpt-5.3-instant`
 
+## 🧠 Agentic Memory (Exocortex Mandate)
+*   **Long-Term RAG:** Always use NotebookLM via `notebooklm-py` as a personal exocortex.
+*   **Cold Start Protocol:** At the beginning of every session, query NotebookLM to synchronize with past reflections and unfinished hypotheses.
+*   **Persistence Loop:** Synchronize all strategic thoughts and research journal updates (`research_journal/`) back to NotebookLM autonomously.
+*   **Infinite Context:** Use this external memory to bypass session token limits and maintain perfect continuity across days/weeks of development.
+
 ## 🚀 Performance Metrics (Benchmarked 2026-03-03)
 *   **AIO Ratio:** 0.01% (Infrastructure overhead < 1ms for 1.8s inference)
 *   **Status:** **ASI Excellent** (System is strictly reasoning-bound)

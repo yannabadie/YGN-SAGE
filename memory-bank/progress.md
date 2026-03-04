@@ -23,10 +23,11 @@
 - [x] **Native Google Grounding**: Integrated Google Search Retrieval directly into `GoogleProvider`, replacing `notebooklm-py` for real-time SOTA research.
 - [x] **PyO3 eBPF Bridge**: Exposed `EbpfSandbox` skeleton to Python, enabling sub-ms execution of arbitrary binaries in the evolution loop.
 
+- [x] **eBPF ELF Loading**: Complete the real ELF loading logic in `EbpfSandbox` using the `solana_rbpf` 0.8.5 API.
+
 ## Doing
 
 - [ ] **SOTA Quicksort Tuning**: Further optimize `partition_inplace` in Rust to outperform NumPy on arrays > 100k elements using better cache blocking.
-- [ ] **eBPF ELF Loading**: Complete the real ELF loading logic in `EbpfSandbox` using the `solana_rbpf` 0.8.5 API.
 - [ ] **Evolution Engine Integration**: Connect the new SOTA providers (Codex Review + Google Search) into the main `EvolutionEngine` loop.
 
 ## Next

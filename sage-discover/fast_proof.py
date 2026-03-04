@@ -12,17 +12,12 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
 sys.path.append(os.path.join(os.path.dirname(__file__), "../sage-python/src"))
 
 from discover.workflow import DiscoverWorkflow, DiscoverConfig
-from sage.llm.google import GoogleProvider
+from sage.llm.codex import CodexProvider
 from sage.llm.base import LLMConfig
 
 async def main():
     print("⚡ Starting REFACTORED YGN-SAGE Sprint Run (SOTA Proof)...")
-    print("🧠 Engine: Gemini 3.1 Pro Preview")
-    
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        print("❌ ERROR: GOOGLE_API_KEY not found in .env")
-        return
+    print("🧠 Engine: Codex CLI 5.3 (SOTA 2026)")
 
     # SOTA configuration - Forced precision
     config = DiscoverConfig(
@@ -34,15 +29,15 @@ async def main():
         solver_type="vad_cfr"
     )
     
-    # Gemini 3.1 Pro Preview
+    # Codex configuration
     llm_config = LLMConfig(
-        provider="google",
-        model="gemini-3.1-pro-preview", 
+        provider="codex",
+        model="codex", 
         max_tokens=4096,
-        temperature=0.3 # Lower temperature for strictly functional code
+        temperature=0.3
     )
     
-    provider = GoogleProvider()
+    provider = CodexProvider()
     
     workflow = DiscoverWorkflow(
         config=config,

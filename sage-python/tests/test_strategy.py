@@ -1,6 +1,6 @@
 """Tests for the strategy engine."""
 import pytest
-from sage.strategy.solvers import RegretMatcher, PRDSolver
+from sage.strategy.solvers import RegretMatcher, SAMPOSolver
 from sage.strategy.allocator import ResourceAllocator
 from sage.strategy.engine import StrategyEngine
 
@@ -34,30 +34,21 @@ def test_regret_matcher_converges():
     assert avg[0] > avg[1]
 
 
-# --- PRDSolver Tests ---
+# --- SAMPOSolver Tests ---
 
-def test_prd_initial_uniform():
-    prd = PRDSolver(3)
-    strategy = prd.get_strategy()
+def test_sampo_initial_uniform():
+    sampo = SAMPOSolver(3)
+    strategy = sampo.get_strategy()
     assert abs(sum(strategy) - 1.0) < 1e-6
 
 
-def test_prd_update_favors_better():
-    prd = PRDSolver(3, learning_rate=0.5)
+def test_sampo_update_favors_better():
+    sampo = SAMPOSolver(3)
     # Action 0 has highest payoff
     for _ in range(20):
-        prd.update([1.0, 0.3, 0.1])
-    strategy = prd.get_strategy()
-    assert strategy[0] > strategy[1] > strategy[2]
-
-
-def test_prd_entropy_decreases():
-    prd = PRDSolver(3, learning_rate=0.5)
-    initial_entropy = prd.entropy()
-    for _ in range(50):
-        prd.update([1.0, 0.1, 0.1])
-    final_entropy = prd.entropy()
-    assert final_entropy < initial_entropy
+        sampo.update([{"actions": [0, 1], "rewards": [1.0, 0.0]}])
+    strategy = sampo.get_strategy()
+    assert strategy[0] > strategy[1]
 
 
 # --- ResourceAllocator Tests ---
@@ -99,8 +90,8 @@ def test_engine_report_outcome():
     assert stats["rounds"] == 2
 
 
-def test_engine_prd_solver():
-    engine = StrategyEngine(["a", "b", "c"], solver_type="prd")
+def test_engine_sampo_solver():
+    engine = StrategyEngine(["a", "b", "c"], solver_type="sampo")
     for _ in range(20):
         engine.report_outcome(0, [1.0, 0.3, 0.1])
     strategy = engine.get_strategy()
@@ -118,3 +109,4 @@ def test_engine_stats_dominant():
 def test_engine_invalid_solver():
     with pytest.raises(ValueError):
         StrategyEngine(["a"], solver_type="invalid")
+

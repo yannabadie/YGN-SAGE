@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, List
 import numpy as np
 
-from sage.strategy.solvers import RegretMatcher, PRDSolver, VolatilityAdaptiveSolver, SHORPSROSolver
+from sage.strategy.solvers import RegretMatcher, SAMPOSolver, VolatilityAdaptiveSolver, SHORPSROSolver
 from sage.strategy.allocator import ResourceAllocator, Allocation
 
 
@@ -27,8 +27,8 @@ class StrategyEngine:
 
         if solver_type == "regret":
             self._solver = RegretMatcher(n)
-        elif solver_type == "prd":
-            self._solver = PRDSolver(n)
+        elif solver_type == "sampo":
+            self._solver = SAMPOSolver(n, **solver_kwargs)
         elif solver_type == "vad_cfr":
             self._solver = VolatilityAdaptiveSolver(n, **solver_kwargs)
         elif solver_type == "shor_psro":
@@ -53,8 +53,10 @@ class StrategyEngine:
         """
         if isinstance(self._solver, (RegretMatcher, VolatilityAdaptiveSolver, SHORPSROSolver)):
             self._solver.update(outcomes, strategy_index)
-        elif isinstance(self._solver, PRDSolver):
-            self._solver.update(outcomes)
+        elif isinstance(self._solver, SAMPOSolver):
+            # Convert single round to a trajectory for SAMPO
+            traj = [{"actions": [strategy_index], "rewards": outcomes}]
+            self._solver.update(traj)
 
         self._history.append({
             "chosen": strategy_index,
