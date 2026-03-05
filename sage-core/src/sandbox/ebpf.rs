@@ -1,3 +1,4 @@
+use dashmap::DashMap;
 use pyo3::prelude::*;
 use solana_rbpf::{
     elf::Executable,
@@ -78,20 +79,84 @@ impl EbpfSandbox {
     }
 }
 
-/// SOTA 2026: SnapBPF execution engine.
-/// High-speed micro-VM snapshotting using eBPF hooks on page cache.
-pub struct SnapBPF {}
+/// Userspace CoW memory snapshotting for sub-ms mutation rollback.
+#[pyclass]
+pub struct SnapBPF {
+    snapshots: DashMap<String, Arc<Vec<u8>>>,
+}
 
+#[pymethods]
 impl SnapBPF {
-    pub async fn new() -> Result<Self, String> {
-        Ok(Self {})
+    #[new]
+    pub fn new() -> Self {
+        Self {
+            snapshots: DashMap::new(),
+        }
     }
 
-    pub async fn attach_hook(&self, _kernel_fn: &str) -> Result<(), String> {
-        Ok(())
+    /// Snapshot the current VM memory state.
+    pub fn snapshot(&self, snapshot_id: &str, memory: Vec<u8>) {
+        self.snapshots.insert(snapshot_id.to_string(), Arc::new(memory));
+    }
+
+    /// Restore a snapshot. Returns a cloned Vec (CoW isolation).
+    pub fn restore(&self, snapshot_id: &str) -> Option<Vec<u8>> {
+        self.snapshots.get(snapshot_id).map(|s| s.as_ref().clone())
+    }
+
+    /// Delete a snapshot. Returns true if it existed.
+    pub fn delete(&self, snapshot_id: &str) -> bool {
+        self.snapshots.remove(snapshot_id).is_some()
+    }
+
+    /// Number of stored snapshots.
+    pub fn count(&self) -> usize {
+        self.snapshots.len()
     }
 }
 
-pub fn restore_page_cow(vm_id: &str, page_addr: u64) {
-    println!("Restoring page {:x} for VM {} via SnapBPF...", page_addr, vm_id);
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_snapbpf_snapshot_and_restore() {
+        let snap = SnapBPF::new();
+        let memory = vec![1u8, 2, 3, 4, 5];
+
+        snap.snapshot("test-1", memory.clone());
+
+        let restored = snap.restore("test-1");
+        assert!(restored.is_some());
+        assert_eq!(restored.unwrap(), memory);
+    }
+
+    #[test]
+    fn test_snapbpf_restore_nonexistent() {
+        let snap = SnapBPF::new();
+        assert!(snap.restore("nope").is_none());
+    }
+
+    #[test]
+    fn test_snapbpf_delete() {
+        let snap = SnapBPF::new();
+        snap.snapshot("del-me", vec![10, 20, 30]);
+        assert!(snap.delete("del-me"));
+        assert!(snap.restore("del-me").is_none());
+        assert!(!snap.delete("del-me")); // Already gone
+    }
+
+    #[test]
+    fn test_snapbpf_cow_isolation() {
+        let snap = SnapBPF::new();
+        let original = vec![0u8; 1024];
+        snap.snapshot("base", original.clone());
+
+        // Restore and mutate — original snapshot should be unchanged
+        let mut copy = snap.restore("base").unwrap();
+        copy[0] = 0xFF;
+
+        let original_again = snap.restore("base").unwrap();
+        assert_eq!(original_again[0], 0); // CoW: original is pristine
+    }
 }
