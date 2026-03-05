@@ -60,6 +60,7 @@ def _extract_code_blocks(text: str) -> list[str]:
 
 
 S2_MAX_RETRIES_BEFORE_ESCALATION = 2
+S2_AVR_MAX_ITERATIONS = 3  # Max Act-Verify-Refine iterations per code block
 
 
 def _shell_quote(code: str) -> str:
@@ -253,12 +254,12 @@ class AgentLoop:
                 else:
                     self._prm_retries = 0  # Reset on success
 
-            # System 2 validation (Empirical — sandbox or CoT)
+            # System 2 validation (Empirical — AVR: Act-Verify-Refine)
             elif self.config.validation_level == 2 and content:
                 code_blocks = _extract_code_blocks(content)
 
                 if code_blocks and self.sandbox_manager:
-                    # Empirical: execute first code block in sandbox
+                    # AVR loop: execute, verify, refine
                     sandbox = await self.sandbox_manager.create()
                     try:
                         result = await sandbox.execute(
@@ -266,18 +267,30 @@ class AgentLoop:
                         )
                         if result.exit_code != 0:
                             self._prm_retries += 1
+                            budget_left = self._max_prm_retries - self._prm_retries + 1
+                            self._emit(LoopPhase.THINK,
+                                       validation="s2_avr_fail",
+                                       avr_iteration=self._prm_retries,
+                                       avr_budget_left=budget_left,
+                                       stderr=result.stderr[:200])
                             if self._prm_retries <= self._max_prm_retries:
-                                log.info("S2 sandbox fail (exit %d), retrying.", result.exit_code)
-                                self._emit(LoopPhase.THINK, validation="s2_sandbox_fail",
-                                           stderr=result.stderr[:200])
+                                log.info("S2 AVR fail (iteration %d/%d), refining.",
+                                         self._prm_retries, self._max_prm_retries)
                                 messages.append(Message(
                                     role=Role.USER,
-                                    content=f"SYSTEM: Your code produced an error:\n{result.stderr[:500]}\nPlease fix it.",
+                                    content=(
+                                        f"SYSTEM [AVR iteration {self._prm_retries}/{self._max_prm_retries}]: "
+                                        f"Code execution failed (exit code {result.exit_code}).\n"
+                                        f"stderr:\n{result.stderr[:500]}\n\n"
+                                        f"Refine your code to fix this error. "
+                                        f"You have {budget_left} attempt(s) remaining before escalation to formal verification."
+                                    ),
                                 ))
                                 continue
-                            # Fall through to escalation check below
                         else:
-                            self._emit(LoopPhase.THINK, validation="s2_sandbox_pass")
+                            self._emit(LoopPhase.THINK,
+                                       validation="s2_avr_pass",
+                                       stdout=result.stdout[:200])
                             self._prm_retries = 0
                     finally:
                         await self.sandbox_manager.destroy(sandbox.id)
@@ -297,10 +310,11 @@ class AgentLoop:
 
                 # S2 -> S3 escalation if max retries exhausted
                 if self._prm_retries > self._max_prm_retries and self.config.validation_level == 2:
-                    log.info("S2 validation exhausted — escalating to S3 (formal verification).")
+                    log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
                     self.config.validation_level = 3
                     self._prm_retries = 0
-                    self._emit(LoopPhase.THINK, escalation="s2_to_s3")
+                    self._emit(LoopPhase.THINK, escalation="s2_to_s3",
+                               reason="AVR budget exhausted")
                     messages.append(Message(
                         role=Role.USER,
                         content="SYSTEM: Escalating to formal verification. Use <think> tags for rigorous step-by-step reasoning.",

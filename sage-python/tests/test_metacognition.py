@@ -131,7 +131,8 @@ def test_s2_validation_detects_code_block():
     assert len(blocks) == 0
 
 
-def test_s2_escalation_threshold():
-    """S2->S3 escalation constant is defined."""
-    from sage.agent_loop import S2_MAX_RETRIES_BEFORE_ESCALATION
+def test_s2_avr_loop_constants():
+    """S2 AVR loop has configurable constants."""
+    from sage.agent_loop import S2_MAX_RETRIES_BEFORE_ESCALATION, S2_AVR_MAX_ITERATIONS
     assert S2_MAX_RETRIES_BEFORE_ESCALATION == 2
+    assert S2_AVR_MAX_ITERATIONS == 3
