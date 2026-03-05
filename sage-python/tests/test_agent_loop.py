@@ -159,3 +159,24 @@ async def test_agent_loop_learn_updates_memory(mock_llm):
     loop = AgentLoop(config=config, llm_provider=mock_llm)
     await loop.run("test task")
     assert loop.working_memory.event_count() > 0
+
+
+@pytest.mark.asyncio
+async def test_compressor_generates_internal_state():
+    """MEM1: compressor generates rolling <IS_t> every step."""
+    from sage.memory.compressor import MemoryCompressor
+    from sage.llm.mock import MockProvider
+
+    provider = MockProvider(responses=[
+        "Current state: user asked about sorting algorithms.",
+        "Current state: user asked about sorting. Explored quicksort and mergesort.",
+    ])
+    compressor = MemoryCompressor(llm=provider, compression_threshold=20, keep_recent=5)
+
+    is_1 = await compressor.generate_internal_state("User asked: explain sorting algorithms")
+    assert is_1 != ""
+    assert compressor.internal_state == is_1
+
+    is_2 = await compressor.generate_internal_state("Assistant explained quicksort and mergesort")
+    assert is_2 != ""
+    assert compressor.internal_state == is_2

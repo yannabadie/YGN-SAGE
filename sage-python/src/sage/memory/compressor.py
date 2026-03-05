@@ -34,6 +34,31 @@ class MemoryCompressor:
         self.compression_threshold = compression_threshold
         self.keep_recent = keep_recent
         self.logger = logging.getLogger(__name__)
+        self.internal_state: str = ""
+
+    async def generate_internal_state(self, new_observation: str) -> str:
+        """MEM1: generate rolling internal state by merging previous IS with new observation."""
+        if self.internal_state:
+            prompt = (
+                f"You are maintaining a rolling internal state for an AI agent.\n"
+                f"Previous state:\n{self.internal_state}\n\n"
+                f"New observation:\n{new_observation}\n\n"
+                f"Produce an updated internal state that merges the previous state "
+                f"with the new observation. Be concise (max 3 sentences). "
+                f"Drop details that are no longer relevant."
+            )
+        else:
+            prompt = (
+                f"You are maintaining a rolling internal state for an AI agent.\n"
+                f"First observation:\n{new_observation}\n\n"
+                f"Produce a concise internal state summary (max 2 sentences)."
+            )
+
+        response = await self.llm.generate(
+            messages=[Message(role=Role.USER, content=prompt)]
+        )
+        self.internal_state = response.content or new_observation[:200]
+        return self.internal_state
 
     async def step(self, working_memory: WorkingMemory) -> bool:
         """Check and perform compression if threshold is met (memory pressure trigger)."""

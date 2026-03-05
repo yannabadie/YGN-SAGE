@@ -230,6 +230,12 @@ class AgentLoop:
                 brake=brake,
             )
 
+            # MEM1: generate rolling internal state every step
+            if self.memory_compressor and content:
+                await self.memory_compressor.generate_internal_state(
+                    f"[Step {self.step_count}] {content[:300]}"
+                )
+
             # System 3 validation (Z3 PRM) -- max 2 retries then accept
             if self.config.validation_level >= 3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
