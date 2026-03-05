@@ -125,3 +125,58 @@ async def test_episodic_memory_list_keys():
     await mem.store("key-b", "content b")
     keys = mem.list_keys()
     assert set(keys) == {"key-a", "key-b"}
+
+
+@pytest.mark.asyncio
+async def test_store_memory_tool():
+    """store_memory tool stores entries in episodic memory."""
+    from sage.tools.memory_tools import create_memory_tools
+    from sage.memory.working import WorkingMemory
+
+    wm = WorkingMemory(agent_id="test")
+    episodic = EpisodicMemory()
+
+    tools = create_memory_tools(wm, episodic, None)
+    store_tool = next(t for t in tools if t.spec.name == "store_memory")
+
+    result = await store_tool.execute({"key": "finding-1", "content": "Bug in parser line 42"})
+    assert not result.is_error
+    assert "stored" in result.output.lower()
+
+    search_tool = next(t for t in tools if t.spec.name == "search_memory")
+    result = await search_tool.execute({"query": "parser bug"})
+    assert "parser" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_retrieve_context_tool():
+    """retrieve_context tool returns recent working memory events."""
+    from sage.tools.memory_tools import create_memory_tools
+    from sage.memory.working import WorkingMemory
+
+    wm = WorkingMemory(agent_id="test")
+    wm.add_event("USER", "What is quicksort?")
+    wm.add_event("ASSISTANT", "Quicksort is a divide-and-conquer sorting algorithm.")
+
+    tools = create_memory_tools(wm, EpisodicMemory(), None)
+    retrieve_tool = next(t for t in tools if t.spec.name == "retrieve_context")
+
+    result = await retrieve_tool.execute({"n": 2})
+    assert "quicksort" in result.output.lower()
+
+
+@pytest.mark.asyncio
+async def test_delete_memory_tool():
+    """delete_memory tool removes entries from episodic memory."""
+    from sage.tools.memory_tools import create_memory_tools
+    from sage.memory.working import WorkingMemory
+
+    episodic = EpisodicMemory()
+    await episodic.store("temp", "Temporary note")
+
+    tools = create_memory_tools(WorkingMemory(agent_id="test"), episodic, None)
+    delete_tool = next(t for t in tools if t.spec.name == "delete_memory")
+
+    result = await delete_tool.execute({"key": "temp"})
+    assert not result.is_error
+    assert episodic.list_keys() == []
