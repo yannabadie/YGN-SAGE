@@ -163,8 +163,14 @@ class AgentLoop:
         system_prompt = self.config.system_prompt
         if self.config.validation_level >= 3:
             system_prompt += (
-                "\n\nCRITICAL: Use <think>...</think> tags to reason step-by-step. "
-                "Your reasoning is evaluated by a Process Reward Model."
+                "\n\nCRITICAL: Use <think>...</think> tags for formal reasoning. "
+                "Include Z3-verifiable assertions in your reasoning steps:\n"
+                "- assert bounds(address, limit) — prove memory safety\n"
+                "- assert loop(variable) — prove loop termination\n"
+                "- assert arithmetic(expression, expected) — prove arithmetic correctness\n"
+                "- assert invariant(\"precondition\", \"postcondition\") — prove logical invariants\n"
+                "Your reasoning is verified by Z3 SMT solver. "
+                "Steps with proven assertions score 1.0. Steps without score 0.0."
             )
         elif self.config.validation_level >= 2:
             system_prompt += (
@@ -246,7 +252,14 @@ class AgentLoop:
                     if self._prm_retries <= self._max_prm_retries:
                         messages.append(Message(
                             role=Role.USER,
-                            content="SYSTEM: Use <think> tags for structured reasoning.",
+                            content=(
+                                "SYSTEM: Your reasoning lacks formal assertions. "
+                                "Use <think> tags with Z3 assertions:\n"
+                                "- assert bounds(addr, limit)\n"
+                                "- assert loop(var)\n"
+                                "- assert arithmetic(expr, expected)\n"
+                                "Include at least one formal assertion per reasoning step."
+                            ),
                         ))
                         continue
                     # Max retries reached -- accept response as-is
@@ -317,7 +330,11 @@ class AgentLoop:
                                reason="AVR budget exhausted")
                     messages.append(Message(
                         role=Role.USER,
-                        content="SYSTEM: Escalating to formal verification. Use <think> tags for rigorous step-by-step reasoning.",
+                        content=(
+                            "SYSTEM: Escalating to formal verification. Use <think> tags "
+                            "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
+                            "assert invariant) for rigorous step-by-step reasoning."
+                        ),
                     ))
                     continue
 
