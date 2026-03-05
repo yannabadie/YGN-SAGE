@@ -31,7 +31,7 @@ from sage.tools.registry import ToolRegistry
 from sage.memory.compressor import MemoryCompressor
 from sage.sandbox.manager import SandboxManager
 from sage.memory.episodic import EpisodicMemory
-from sage.tools.memory_tools import create_search_memory_tool
+from sage.tools.memory_tools import create_memory_tools
 
 
 @dataclass
@@ -144,10 +144,8 @@ def boot_agent_system(
     # Sandbox manager for S2 empirical validation (local fallback, no Docker required)
     sandbox_manager = SandboxManager(use_docker=False)
 
-    # Episodic memory + on-demand search tool (two-stage retrieval)
+    # Episodic memory
     episodic_memory = EpisodicMemory()
-    search_tool = create_search_memory_tool(episodic_memory)
-    tool_registry.register(search_tool)
 
     # Agent config
     config = AgentConfig(
@@ -173,6 +171,10 @@ def boot_agent_system(
     loop.topology_population = topology_population
     loop.episodic_memory = episodic_memory
     loop.sandbox_manager = sandbox_manager
+
+    # AgeMem: 7 memory tools (3 STM + 4 LTM)
+    for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
+        tool_registry.register(tool)
 
     return AgentSystem(
         agent_loop=loop,

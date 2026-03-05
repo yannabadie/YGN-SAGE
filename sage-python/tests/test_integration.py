@@ -97,12 +97,24 @@ async def test_full_cycle_with_mock():
 
 
 def test_boot_registers_meta_tools():
-    """Boot sequence registers create_python_tool, create_bash_tool, and search_memory."""
+    """Boot sequence registers create_python_tool, create_bash_tool, and memory tools."""
     system = boot_agent_system(use_mock_llm=True)
     tool_names = system.tool_registry.list_tools()
     assert "create_python_tool" in tool_names
     assert "create_bash_tool" in tool_names
     assert "search_memory" in tool_names
+    assert "store_memory" in tool_names
+
+
+def test_boot_registers_all_memory_tools():
+    """Boot sequence registers all 7 AgeMem memory tools."""
+    system = boot_agent_system(use_mock_llm=True)
+    tool_names = system.tool_registry.list_tools()
+    for expected in [
+        "retrieve_context", "summarize_context", "filter_context",
+        "search_memory", "store_memory", "update_memory", "delete_memory",
+    ]:
+        assert expected in tool_names, f"Missing tool: {expected}"
 
 
 def test_boot_wires_compressor_and_sandbox():
