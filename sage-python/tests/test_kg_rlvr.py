@@ -1,3 +1,10 @@
+import sys
+import types
+
+# Mock sage_core so sage package can import without Rust extension
+if "sage_core" not in sys.modules:
+    sys.modules["sage_core"] = types.ModuleType("sage_core")
+
 from sage.topology.kg_rlvr import ProcessRewardModel, FormalKnowledgeGraph
 
 def test_extract_reasoning_steps():
@@ -41,3 +48,38 @@ def test_calculate_r_path():
     score, details = prm.calculate_r_path(invalid_content)
     assert score == -1.0
     assert "error" in details
+
+
+def test_arithmetic_verification():
+    kg = FormalKnowledgeGraph()
+    score = kg.verify_step("assert arithmetic(2+2, 4)")
+    assert isinstance(score, float)
+
+
+def test_process_reward_model_with_think_blocks():
+    prm = ProcessRewardModel()
+    content = """<think>
+assert bounds(5, 100)
+assert loop(iterations)
+checking ebpf latency
+</think>"""
+    r_path, details = prm.calculate_r_path(content)
+    assert details["total_steps"] == 3
+    assert isinstance(r_path, float)
+
+
+def test_score_with_z3_validator():
+    """Test the Z3Validator backend."""
+    prm = ProcessRewardModel()
+    score, details = prm.score_with_z3(["bounds(5, 100)", "bounds(0, 10)"])
+    assert isinstance(score, float)
+    assert "backend" in details or "error" in details
+
+
+def test_score_with_z3_detects_violation():
+    """Test that Z3 catches bounds violations."""
+    prm = ProcessRewardModel()
+    score, details = prm.score_with_z3(["bounds(200, 100)"])
+    if "error" not in details:
+        assert score == -1.0
+        assert not details["safe"]

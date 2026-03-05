@@ -10,7 +10,11 @@ import time
 from typing import Optional
 
 from sage.evolution.evaluator import EvalResult, Evaluator
-import sage_core
+try:
+    import sage_core
+except ImportError:
+    import types as _types
+    sage_core = _types.ModuleType("sage_core")
 
 class EbpfEvaluator(Evaluator):
     """Evaluates eBPF byte-code using the sage_core Rust extension."""

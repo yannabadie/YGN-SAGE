@@ -5,7 +5,7 @@ import logging
 from typing import Any, Protocol, List
 from datetime import datetime, timezone
 
-from sage.llm.base import LLMProvider
+from sage.llm.base import LLMProvider, Message, Role
 from sage.memory.working import WorkingMemory
 
 class GraphDatabase(Protocol):
@@ -60,7 +60,10 @@ DISCOVERIES:
 - <discovery 1>
 - <discovery 2>
 """
-        response = await self.llm.generate(prompt)
+        response_obj = await self.llm.generate(
+            messages=[Message(role=Role.USER, content=prompt)]
+        )
+        response = response_obj.content or ""
         
         # Simple parsing (could be improved with structured output)
         summary = ""

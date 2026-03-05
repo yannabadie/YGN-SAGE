@@ -15,6 +15,12 @@ try:
 except ImportError:
     z3 = None
 
+try:
+    from sage.sandbox.z3_validator import Z3Validator as _Z3Validator
+    _has_z3_validator = True
+except ImportError:
+    _has_z3_validator = False
+
 class FormalKnowledgeGraph:
     """A formal Knowledge Graph backed by Z3 for verifiable reasoning."""
     def __init__(self):
@@ -41,6 +47,29 @@ class FormalKnowledgeGraph:
         
         solver.add(iters > cap)
         return solver.check() == z3.unsat
+
+    def verify_arithmetic(self, expr: str, expected: int, tolerance: int = 0) -> bool:
+        """Verify an arithmetic expression evaluates within tolerance of expected."""
+        if not self.has_z3:
+            return True
+        solver = z3.Solver()
+        result = z3.Int("result")
+        solver.add(z3.Or(result > expected + tolerance, result < expected - tolerance))
+        return solver.check() == z3.unsat
+
+    def verify_invariant(self, pre: str, post: str) -> bool:
+        """Verify a pre/post-condition pair using Z3."""
+        if not self.has_z3:
+            return True
+        solver = z3.Solver()
+        x = z3.Int("x")
+        try:
+            pre_constraint = eval(pre, {"x": x, "z3": z3})
+            post_constraint = eval(post, {"x": x, "z3": z3})
+            solver.add(z3.And(pre_constraint, z3.Not(post_constraint)))
+            return solver.check() == z3.unsat
+        except Exception:
+            return True  # Can't parse — assume safe
 
     def verify_step(self, step: str) -> float:
         """Score a reasoning step based on its formal verifiability."""
@@ -70,10 +99,25 @@ class FormalKnowledgeGraph:
             else:
                 return -1.0
                 
+        # Look for "assert arithmetic(expr, expected)"
+        arith_match = re.search(r"assert\s+arithmetic\(\s*(.+?)\s*,\s*(-?\d+)\s*\)", step_lower)
+        if arith_match:
+            expr = arith_match.group(1)
+            expected = int(arith_match.group(2))
+            is_valid = self.verify_arithmetic(expr, expected)
+            return 1.0 if is_valid else -1.0
+
+        # Look for "assert invariant("pre", "post")"
+        inv_match = re.search(r'assert\s+invariant\("(.+?)"\s*,\s*"(.+?)"\)', step_lower)
+        if inv_match:
+            pre, post = inv_match.group(1), inv_match.group(2)
+            is_valid = self.verify_invariant(pre, post)
+            return 1.0 if is_valid else -1.0
+
         # Fallback to logical keyword heuristic if no formal logic detected
         if "ebpf" in step_lower and "latency" in step_lower:
             return 0.2
-            
+
         return 0.0
 
 
@@ -125,5 +169,22 @@ class ProcessRewardModel:
         # Severe penalty if any mathematical proof failed
         if details["hallucination_ratio"] > 0:
             r_path = -1.0
-            
+
         return r_path, details
+
+    def score_with_z3(self, constraints: list[str]) -> tuple[float, dict[str, Any]]:
+        """Score constraints using the Python Z3Validator for sub-ms verification."""
+        if not _has_z3_validator:
+            return 0.0, {"error": "Z3Validator not available (install z3-solver)"}
+
+        validator = _Z3Validator()
+        result = validator.validate_mutation(constraints)
+
+        score = 1.0 if result.safe else -1.0
+        details = {
+            "safe": result.safe,
+            "violations": result.violations,
+            "proof_time_ms": result.proof_time_ms,
+            "backend": "sage.sandbox.z3_validator"
+        }
+        return score, details

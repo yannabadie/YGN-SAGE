@@ -3,278 +3,1368 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YGN-SAGE | Sovereign Agent Dashboard</title>
-    <style>
-        :root {
-            --bg-color: #0b0f19;
-            --panel-bg: #111827;
-            --border-color: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --accent: #38bdf8;
-            --success: #10b981;
-            --warning: #f59e0b;
-            --error: #ef4444;
-            --system: #a855f7;
+    <title>YGN-SAGE | Control Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'Consolas', 'monospace'],
+                    },
+                    colors: {
+                        sage: {
+                            900: '#0f172a',
+                            800: '#1e293b',
+                            700: '#334155',
+                            600: '#475569',
+                            500: '#64748b',
+                        },
+                        phase: {
+                            perceive: '#818cf8',
+                            think: '#38bdf8',
+                            act: '#f59e0b',
+                            learn: '#10b981',
+                        }
+                    }
+                }
+            }
         }
+    </script>
+    <style>
+        /* ------------------------------------------------------------------ */
+        /* CSS Custom Properties                                              */
+        /* ------------------------------------------------------------------ */
+        :root {
+            --bg-deep:        #0f172a;
+            --bg-card:        #1e293b;
+            --bg-inset:       #0f172a;
+            --border:         #334155;
+            --text-primary:   #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted:     #64748b;
+            --accent:         #38bdf8;
+            --success:        #10b981;
+            --warning:        #f59e0b;
+            --error:          #ef4444;
+            --phase-perceive: #818cf8;
+            --phase-think:    #38bdf8;
+            --phase-act:      #f59e0b;
+            --phase-learn:    #10b981;
+        }
+
+        * { box-sizing: border-box; }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
+            font-family: 'Inter', system-ui, sans-serif;
+            background: var(--bg-deep);
+            color: var(--text-primary);
             margin: 0;
-            padding: 20px;
-            display: grid;
-            grid-template-columns: 300px 1fr;
-            grid-template-rows: auto 1fr;
-            gap: 20px;
+            padding: 0;
+            overflow: hidden;
             height: 100vh;
-            box-sizing: border-box;
         }
 
-        header {
+        /* ------------------------------------------------------------------ */
+        /* Main layout grid                                                   */
+        /* ------------------------------------------------------------------ */
+        .app-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr 240px;
+            grid-template-rows: 56px 1fr;
+            height: 100vh;
+            gap: 0;
+        }
+
+        /* Header */
+        .app-header {
             grid-column: 1 / -1;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 15px;
+            grid-row: 1;
+            border-bottom: 1px solid var(--border);
         }
 
-        h1 {
-            margin: 0;
-            font-size: 1.5rem;
-            color: var(--accent);
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        /* Left sidebar */
+        .sidebar-left {
+            grid-column: 1;
+            grid-row: 2;
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
         }
 
-        .status-badge {
-            padding: 6px 12px;
-            border-radius: 9999px;
-            background: rgba(16, 185, 129, 0.1);
-            color: var(--success);
-            font-size: 0.875rem;
-            font-weight: 600;
+        /* Main content */
+        .main-content {
+            grid-column: 2;
+            grid-row: 2;
+            overflow-y: auto;
+        }
+
+        /* Right sidebar */
+        .sidebar-right {
+            grid-column: 3;
+            grid-row: 2;
+            border-left: 1px solid var(--border);
+            overflow-y: auto;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Cards                                                              */
+        /* ------------------------------------------------------------------ */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .card-inset {
+            background: var(--bg-inset);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Phase indicator                                                    */
+        /* ------------------------------------------------------------------ */
+        .phase-step {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
             display: flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            border: 2px solid var(--border);
+            position: relative;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            flex-shrink: 0;
         }
-        
-        .pulse {
+
+        .phase-step.active {
+            transform: scale(1.15);
+        }
+
+        .phase-step.active::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid currentColor;
+            opacity: 0.4;
+            animation: phase-glow 2s ease-in-out infinite;
+        }
+
+        .phase-connector {
+            flex: 1;
+            height: 2px;
+            background: var(--border);
+            min-width: 16px;
+            max-width: 60px;
+            transition: background 0.4s ease;
+        }
+
+        .phase-connector.active {
+            background: var(--accent);
+        }
+
+        @keyframes phase-glow {
+            0%, 100% { opacity: 0.2; transform: scale(1); }
+            50%      { opacity: 0.6; transform: scale(1.1); }
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Pulse dot                                                          */
+        /* ------------------------------------------------------------------ */
+        .pulse-dot {
             width: 8px;
             height: 8px;
-            background-color: var(--success);
             border-radius: 50%;
-            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-            animation: pulse 1.5s infinite;
+            animation: pulse-ring 1.5s infinite;
         }
 
-        @keyframes pulse {
-            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
-            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        @keyframes pulse-ring {
+            0%   { box-shadow: 0 0 0 0 currentColor; opacity: 0.7; }
+            70%  { box-shadow: 0 0 0 6px transparent; opacity: 0; }
+            100% { box-shadow: 0 0 0 0 transparent; opacity: 0; }
         }
 
-        .panel {
-            background: var(--panel-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .panel h2 {
-            margin-top: 0;
-            font-size: 1rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-        }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 15px;
-        }
-
-        .metric-card {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 15px;
-            border-radius: 6px;
-            border: 1px solid var(--border-color);
-        }
-
-        .metric-value {
-            font-size: 2rem;
-            font-weight: 700;
-            font-family: 'JetBrains Mono', monospace;
-            margin: 5px 0;
-        }
-        .metric-label {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-        }
-
-        #log-container {
-            flex: 1;
-            overflow-y: auto;
-            font-family: 'JetBrains Mono', Consolas, monospace;
-            font-size: 0.9rem;
-            line-height: 1.5;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
+        /* ------------------------------------------------------------------ */
+        /* Event log                                                          */
+        /* ------------------------------------------------------------------ */
         .log-entry {
-            padding: 8px 12px;
+            padding: 6px 10px;
             border-radius: 4px;
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(255,255,255,0.02);
             border-left: 3px solid transparent;
-            word-wrap: break-word;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.78rem;
+            line-height: 1.45;
+            transition: opacity 0.3s ease;
+            word-break: break-word;
+        }
+        .log-entry.new-entry {
+            animation: flash-in 0.5s ease;
+        }
+        @keyframes flash-in {
+            0%   { background: rgba(56,189,248,0.12); }
+            100% { background: rgba(255,255,255,0.02); }
         }
 
-        .log-time {
-            color: var(--text-muted);
+        .log-PERCEIVE { border-left-color: var(--phase-perceive); }
+        .log-THINK    { border-left-color: var(--phase-think); }
+        .log-ACT      { border-left-color: var(--phase-act); }
+        .log-LEARN    { border-left-color: var(--phase-learn); }
+        .log-SYSTEM   { border-left-color: #a855f7; }
+        .log-METRIC   { border-left-color: var(--success); }
+        .log-ACTION   { border-left-color: var(--accent); }
+        .log-ERROR    { border-left-color: var(--error); background: rgba(239,68,68,0.06); }
+
+        /* ------------------------------------------------------------------ */
+        /* AIO gauge                                                          */
+        /* ------------------------------------------------------------------ */
+        .gauge-ring {
+            transform: rotate(-90deg);
+        }
+        .gauge-track {
+            fill: none;
+            stroke: var(--border);
+            stroke-width: 6;
+        }
+        .gauge-fill {
+            fill: none;
+            stroke: var(--accent);
+            stroke-width: 6;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Scrollbar                                                          */
+        /* ------------------------------------------------------------------ */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        /* ------------------------------------------------------------------ */
+        /* Sub-agent list                                                     */
+        /* ------------------------------------------------------------------ */
+        .agent-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        /* ------------------------------------------------------------------ */
+        /* Quick action button                                                */
+        /* ------------------------------------------------------------------ */
+        .action-btn {
+            background: var(--bg-inset);
+            border: 1px solid var(--border);
+            color: var(--text-secondary);
+            border-radius: 6px;
+            padding: 6px 12px;
             font-size: 0.75rem;
-            margin-right: 10px;
+            font-family: 'Inter', sans-serif;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .action-btn:hover {
+            border-color: var(--accent);
+            color: var(--text-primary);
+        }
+        .action-btn.danger:hover {
+            border-color: var(--error);
+            color: var(--error);
         }
 
-        .log-type-SYSTEM { border-left-color: var(--system); }
-        .log-type-ACTION { border-left-color: var(--accent); }
-        .log-type-METRIC { border-left-color: var(--success); }
-        .log-type-ERROR  { border-left-color: var(--error); background: rgba(239, 68, 68, 0.1); }
-        .log-type-THINK  { border-left-color: var(--warning); background: rgba(245, 158, 11, 0.05); font-style: italic; }
-
-        .type-badge {
-            font-size: 0.7rem;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-right: 8px;
-            font-weight: bold;
-        }
-        
-        .badge-SYSTEM { background: rgba(168, 85, 247, 0.2); color: var(--system); }
-        .badge-ACTION { background: rgba(56, 189, 248, 0.2); color: var(--accent); }
-        .badge-METRIC { background: rgba(16, 185, 129, 0.2); color: var(--success); }
-        .badge-THINK  { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
-        
-        ::-webkit-scrollbar {
-            width: 8px;
-        }
-        ::-webkit-scrollbar-track {
-            background: var(--bg-color);
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border-radius: 4px;
+        /* ------------------------------------------------------------------ */
+        /* Responsive: 1440px and below -- collapse right sidebar             */
+        /* ------------------------------------------------------------------ */
+        @media (max-width: 1500px) {
+            .app-grid {
+                grid-template-columns: 260px 1fr 220px;
+            }
         }
     </style>
 </head>
 <body>
+    <div class="app-grid">
 
-    <header>
-        <h1>YGN-SAGE <span style="color:var(--text-muted); font-size:1rem; font-weight:normal;">| Sovereign Agent Telemetry</span></h1>
-        <div class="status-badge" id="conn-status"><div class="pulse"></div> CONNECTING...</div>
-    </header>
-
-    <div class="panel">
-        <h2>Live Telemetry (eBPF VM)</h2>
-        <div class="metrics-grid">
-            <div class="metric-card">
-                <div class="metric-label">Execution Latency (P99)</div>
-                <div class="metric-value" id="val-latency" style="color: var(--accent);">-- ms</div>
+        <!-- ============================================================== -->
+        <!-- HEADER BAR                                                      -->
+        <!-- ============================================================== -->
+        <header class="app-header flex items-center justify-between px-5" style="background: var(--bg-card);">
+            <!-- Logo + title -->
+            <div class="flex items-center gap-3">
+                <!-- Neural circuit logo SVG -->
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <circle cx="16" cy="16" r="14" stroke="#38bdf8" stroke-width="1.5" opacity="0.3"/>
+                    <circle cx="16" cy="8" r="2.5" fill="#818cf8"/>
+                    <circle cx="8" cy="20" r="2.5" fill="#38bdf8"/>
+                    <circle cx="24" cy="20" r="2.5" fill="#f59e0b"/>
+                    <circle cx="16" cy="24" r="2.5" fill="#10b981"/>
+                    <circle cx="16" cy="16" r="3" fill="#38bdf8" opacity="0.8"/>
+                    <line x1="16" y1="10.5" x2="16" y2="13" stroke="#818cf8" stroke-width="1.2" opacity="0.6"/>
+                    <line x1="10" y1="19" x2="13.5" y2="17" stroke="#38bdf8" stroke-width="1.2" opacity="0.6"/>
+                    <line x1="22" y1="19" x2="18.5" y2="17" stroke="#f59e0b" stroke-width="1.2" opacity="0.6"/>
+                    <line x1="16" y1="19" x2="16" y2="22" stroke="#10b981" stroke-width="1.2" opacity="0.6"/>
+                    <line x1="10.5" y1="19" x2="13.5" y2="22.5" stroke="#334155" stroke-width="0.8"/>
+                    <line x1="21.5" y1="19" x2="18.5" y2="22.5" stroke="#334155" stroke-width="0.8"/>
+                    <line x1="16" y1="8" x2="8" y2="20" stroke="#334155" stroke-width="0.6" stroke-dasharray="2 2"/>
+                    <line x1="16" y1="8" x2="24" y2="20" stroke="#334155" stroke-width="0.6" stroke-dasharray="2 2"/>
+                </svg>
+                <div>
+                    <span class="font-bold text-base tracking-tight" style="color: var(--accent);">YGN-SAGE</span>
+                    <span class="text-xs ml-2" style="color: var(--text-muted);">Control Dashboard</span>
+                </div>
             </div>
-            <div class="metric-card">
-                <div class="metric-label">Assets Under Management</div>
-                <div class="metric-value" id="val-aum" style="color: var(--success);">$--</div>
-            </div>
-            <div class="metric-card">
-                <div class="metric-label">Execution Cycles</div>
-                <div class="metric-value" id="val-cycles">0</div>
-            </div>
-        </div>
-    </div>
 
-    <div class="panel">
-        <h2>Agent Stream (System 1 & System 2)</h2>
-        <div id="log-container">
-            <!-- Logs injected here via WebSocket -->
-        </div>
-    </div>
+            <!-- Center: phase badge -->
+            <div class="flex items-center gap-3">
+                <span class="text-xs font-mono" style="color: var(--text-muted);">PHASE</span>
+                <span id="header-phase-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold font-mono"
+                      style="background: rgba(100,116,139,0.15); color: var(--text-secondary);">
+                    IDLE
+                </span>
+            </div>
 
+            <!-- Right: status + connection -->
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs" style="color: var(--text-muted);">Agent</span>
+                    <span id="agent-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                          style="background: rgba(100,116,139,0.15); color: var(--text-secondary);">
+                        <span class="agent-dot" style="background: var(--text-muted);"></span>
+                        IDLE
+                    </span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs" style="color: var(--text-muted);">WS</span>
+                    <span id="conn-status" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                          style="background: rgba(239,68,68,0.1); color: var(--error);">
+                        <span class="pulse-dot" style="background: var(--error); color: rgba(239,68,68,0.4);"></span>
+                        OFFLINE
+                    </span>
+                </div>
+            </div>
+        </header>
+
+        <!-- ============================================================== -->
+        <!-- LEFT SIDEBAR                                                    -->
+        <!-- ============================================================== -->
+        <aside class="sidebar-left p-3 flex flex-col gap-3" style="background: var(--bg-deep);">
+
+            <!-- Task input -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Submit Task</h3>
+                <textarea id="task-input" rows="3" placeholder="Describe the agent task..."
+                    class="w-full rounded-md p-2 text-xs font-mono resize-none focus:outline-none focus:ring-1"
+                    style="background: var(--bg-inset); border: 1px solid var(--border); color: var(--text-primary); focus-ring-color: var(--accent);"></textarea>
+                <button id="btn-submit-task" class="w-full mt-2 py-1.5 rounded-md text-xs font-semibold transition-colors"
+                    style="background: var(--accent); color: var(--bg-deep);"
+                    onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
+                    Run Agent
+                </button>
+            </div>
+
+            <!-- Sub-agent pool -->
+            <div class="card p-3 flex-1 min-h-0 flex flex-col">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Sub-Agent Pool</h3>
+                <div id="agent-pool-list" class="flex flex-col gap-1.5 overflow-y-auto flex-1" style="min-height: 0;">
+                    <div class="text-xs italic" style="color: var(--text-muted);">No sub-agents registered</div>
+                </div>
+            </div>
+
+            <!-- LLM providers (real tiers from ModelRouter) -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">LLM Providers</h3>
+                <div class="flex flex-col gap-1.5" id="llm-providers">
+                    <div class="card-inset p-2 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="agent-dot" style="background: var(--success);"></span>
+                            <span class="text-xs font-medium">GPT-5.3 Codex</span>
+                        </div>
+                        <span class="text-xs font-mono" style="color: var(--text-muted);">codex</span>
+                    </div>
+                    <div class="card-inset p-2 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="agent-dot" style="background: var(--success);"></span>
+                            <span class="text-xs font-medium">GPT-5.2</span>
+                        </div>
+                        <span class="text-xs font-mono" style="color: var(--text-muted);">codex_max</span>
+                    </div>
+                    <div class="card-inset p-2 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="agent-dot" id="dot-gemini" style="background: var(--text-muted);"></span>
+                            <span class="text-xs font-medium">Gemini 3.1 Pro</span>
+                        </div>
+                        <span class="text-xs font-mono" style="color: var(--text-muted);">reasoner</span>
+                    </div>
+                    <div class="card-inset p-2 flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <span class="agent-dot" id="dot-flash" style="background: var(--text-muted);"></span>
+                            <span class="text-xs font-medium">Gemini 3.1 Flash Lite</span>
+                        </div>
+                        <span class="text-xs font-mono" style="color: var(--text-muted);">fast</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick actions -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Actions</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button class="action-btn danger" id="btn-stop">Stop Agent</button>
+                    <button class="action-btn" id="btn-clear-log">Clear Log</button>
+                    <button class="action-btn" id="btn-reset">Reset</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ============================================================== -->
+        <!-- MAIN CONTENT                                                    -->
+        <!-- ============================================================== -->
+        <main class="main-content p-4 flex flex-col gap-4">
+
+            <!-- Agent Loop Phase Indicator -->
+            <div class="card p-4">
+                <div class="flex items-center justify-center gap-0">
+                    <!-- PERCEIVE -->
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div id="phase-perceive" class="phase-step" style="border-color: var(--border); color: var(--phase-perceive);">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1" opacity="0.4"/><line x1="10" y1="2" x2="10" y2="5" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="15" x2="10" y2="18" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="10" x2="5" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="15" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
+                        </div>
+                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Perceive</span>
+                    </div>
+                    <div class="phase-connector" id="conn-p-t"></div>
+
+                    <!-- THINK -->
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div id="phase-think" class="phase-step" style="border-color: var(--border); color: var(--phase-think);">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3C6.5 3 4 5.5 4 8.5C4 11 5.5 12.5 7 13.5V15.5C7 16 7.5 16.5 8 16.5H12C12.5 16.5 13 16 13 15.5V13.5C14.5 12.5 16 11 16 8.5C16 5.5 13.5 3 10 3Z" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="18" x2="12" y2="18" stroke="currentColor" stroke-width="1.2"/></svg>
+                        </div>
+                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Think</span>
+                    </div>
+                    <div class="phase-connector" id="conn-t-a"></div>
+
+                    <!-- ACT -->
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div id="phase-act" class="phase-step" style="border-color: var(--border); color: var(--phase-act);">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><polygon points="10,2 18,18 2,18" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="10" y1="8" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="15" r="0.8" fill="currentColor"/></svg>
+                        </div>
+                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Act</span>
+                    </div>
+                    <div class="phase-connector" id="conn-a-l"></div>
+
+                    <!-- LEARN -->
+                    <div class="flex flex-col items-center gap-1.5">
+                        <div id="phase-learn" class="phase-step" style="border-color: var(--border); color: var(--phase-learn);">
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 14L10 4L17 14" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="6" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.2"/><circle cx="10" cy="15" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
+                        </div>
+                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Learn</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Telemetry cards row -->
+            <div class="grid grid-cols-5 gap-3">
+                <!-- AIO Ratio gauge -->
+                <div class="card p-3 flex flex-col items-center justify-center">
+                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">AIO Ratio</span>
+                    <div class="relative" style="width:72px;height:72px;">
+                        <svg width="72" height="72" viewBox="0 0 72 72" class="gauge-ring">
+                            <circle cx="36" cy="36" r="30" class="gauge-track"/>
+                            <circle cx="36" cy="36" r="30" class="gauge-fill" id="aio-gauge"
+                                stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
+                        </svg>
+                        <div class="absolute inset-0 flex items-center justify-center">
+                            <span id="val-aio" class="font-mono font-bold text-sm" style="color: var(--accent);">0%</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step count -->
+                <div class="card p-3 flex flex-col items-center justify-center">
+                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">Steps</span>
+                    <span id="val-steps" class="font-mono font-bold text-2xl" style="color: var(--text-primary);">0</span>
+                </div>
+
+                <!-- LLM cost -->
+                <div class="card p-3 flex flex-col items-center justify-center">
+                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">LLM Cost</span>
+                    <span id="val-cost" class="font-mono font-bold text-2xl" style="color: var(--warning);">$0.00</span>
+                </div>
+
+                <!-- Memory events -->
+                <div class="card p-3 flex flex-col items-center justify-center">
+                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">Memory</span>
+                    <span id="val-memory" class="font-mono font-bold text-2xl" style="color: var(--phase-perceive);">0</span>
+                </div>
+
+                <!-- Metacognitive system -->
+                <div class="card p-3 flex flex-col items-center justify-center">
+                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">System</span>
+                    <span id="val-system" class="font-mono font-bold text-2xl" style="color: var(--success);">S1</span>
+                </div>
+            </div>
+
+            <!-- Bottom: Event stream + Evolution grid side-by-side -->
+            <div class="flex-1 grid grid-cols-3 gap-3 min-h-0">
+
+                <!-- Live Event Stream (2/3 width) -->
+                <div class="col-span-2 card flex flex-col min-h-0">
+                    <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color: var(--border);">
+                        <div class="flex items-center gap-2">
+                            <h3 class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">Live Event Stream</h3>
+                            <span id="event-count" class="text-xs font-mono px-1.5 py-0.5 rounded" style="background: var(--bg-inset); color: var(--text-muted);">0</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="flex items-center gap-1 text-xs cursor-pointer" style="color: var(--text-muted);">
+                                <input type="checkbox" id="auto-scroll" checked class="rounded" style="accent-color: var(--accent);">
+                                Auto-scroll
+                            </label>
+                        </div>
+                    </div>
+                    <div id="log-container" class="flex-1 overflow-y-auto p-2 flex flex-col gap-1" style="min-height: 0;">
+                        <!-- Log entries injected here -->
+                    </div>
+                </div>
+
+                <!-- Evolution Grid (1/3 width) -->
+                <div class="card flex flex-col min-h-0">
+                    <div class="flex items-center justify-between px-4 py-2.5 border-b" style="border-color: var(--border);">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">Evolution Grid</h3>
+                        <span class="text-xs font-mono" style="color: var(--text-muted);">MAP-Elites</span>
+                    </div>
+                    <div class="flex-1 flex flex-col items-center justify-center p-3 gap-2">
+                        <canvas id="evo-canvas" width="200" height="200" style="border-radius: 4px;"></canvas>
+                        <div class="flex items-center gap-4">
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-xs" style="color: var(--text-muted);">Cells:</span>
+                                <span id="evo-cells" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
+                            </div>
+                            <div class="flex items-center gap-1.5">
+                                <span class="text-xs" style="color: var(--text-muted);">Best:</span>
+                                <span id="evo-best" class="text-xs font-mono font-semibold" style="color: var(--success);">0.00</span>
+                            </div>
+                        </div>
+                        <!-- Legend -->
+                        <div class="flex items-center gap-1 mt-1">
+                            <span class="text-xs" style="color: var(--text-muted);">0</span>
+                            <div style="width:80px;height:8px;border-radius:2px;background:linear-gradient(to right, #1e293b, #38bdf8, #10b981, #f59e0b);"></div>
+                            <span class="text-xs" style="color: var(--text-muted);">1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- ============================================================== -->
+        <!-- RIGHT SIDEBAR                                                   -->
+        <!-- ============================================================== -->
+        <aside class="sidebar-right p-3 flex flex-col gap-3" style="background: var(--bg-deep);">
+
+            <!-- Metacognitive routing -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Cognitive Routing</h3>
+                <div class="flex flex-col gap-2">
+                    <!-- System 1 bar -->
+                    <div class="card-inset p-2.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-semibold" style="color: var(--accent);">System 1</span>
+                            <span class="text-xs font-mono" style="color: var(--text-muted);">Fast / Heuristic</span>
+                        </div>
+                        <div class="w-full rounded-full h-1.5" style="background: var(--border);">
+                            <div id="bar-s1" class="h-1.5 rounded-full transition-all duration-500" style="width: 100%; background: var(--accent);"></div>
+                        </div>
+                    </div>
+                    <!-- System 3 bar -->
+                    <div class="card-inset p-2.5">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-xs font-semibold" style="color: var(--phase-perceive);">System 3</span>
+                            <span class="text-xs font-mono" style="color: var(--text-muted);">Formal / Z3</span>
+                        </div>
+                        <div class="w-full rounded-full h-1.5" style="background: var(--border);">
+                            <div id="bar-s3" class="h-1.5 rounded-full transition-all duration-500" style="width: 0%; background: var(--phase-perceive);"></div>
+                        </div>
+                    </div>
+                    <!-- Active indicator -->
+                    <div class="flex items-center justify-center mt-1">
+                        <span class="text-xs" style="color: var(--text-muted);">Active:</span>
+                        <span id="active-system" class="ml-2 text-sm font-mono font-bold" style="color: var(--accent);">System 1</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Z3 Verification -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Z3 Verification</h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="card-inset p-2.5 text-center">
+                        <div class="text-xs" style="color: var(--text-muted);">Pass</div>
+                        <div id="val-z3-pass" class="font-mono font-bold text-lg" style="color: var(--success);">0</div>
+                    </div>
+                    <div class="card-inset p-2.5 text-center">
+                        <div class="text-xs" style="color: var(--text-muted);">Fail</div>
+                        <div id="val-z3-fail" class="font-mono font-bold text-lg" style="color: var(--error);">0</div>
+                    </div>
+                </div>
+                <!-- pass rate bar -->
+                <div class="mt-2">
+                    <div class="w-full rounded-full h-1.5 flex overflow-hidden" style="background: var(--border);">
+                        <div id="z3-pass-bar" class="h-1.5 transition-all duration-500" style="width: 0%; background: var(--success);"></div>
+                        <div id="z3-fail-bar" class="h-1.5 transition-all duration-500" style="width: 0%; background: var(--error);"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance metrics -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Performance</h3>
+                <div class="flex flex-col gap-2">
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">Inference</span>
+                        <span id="val-inference" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0 ms</span>
+                    </div>
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">Wall Time</span>
+                        <span id="val-wall" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0.0s</span>
+                    </div>
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">LLM Calls</span>
+                        <span id="val-llm-calls" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
+                    </div>
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">Events</span>
+                        <span id="val-total-events" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Self-braking indicator -->
+            <div class="card p-3">
+                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Self-Braking (CGRS)</h3>
+                <div class="flex flex-col gap-2">
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">Entropy</span>
+                        <span id="val-entropy" class="text-xs font-mono font-semibold" style="color: var(--accent);">--</span>
+                    </div>
+                    <div class="card-inset p-2.5 flex items-center justify-between">
+                        <span class="text-xs" style="color: var(--text-muted);">Brake</span>
+                        <span id="val-brake" class="text-xs font-mono font-semibold" style="color: var(--success);">OFF</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+    </div><!-- /app-grid -->
+
+    <!-- ================================================================== -->
+    <!-- JAVASCRIPT                                                          -->
+    <!-- ================================================================== -->
     <script>
-        const logContainer = document.getElementById('log-container');
-        const connStatus = document.getElementById('conn-status');
-        const valLatency = document.getElementById('val-latency');
-        const valAum = document.getElementById('val-aum');
-        const valCycles = document.getElementById('val-cycles');
+    (function () {
+        'use strict';
 
-        function connect() {
-            const ws = new WebSocket(`ws://${window.location.host}/ws`);
+        // -----------------------------------------------------------------
+        // DOM references
+        // -----------------------------------------------------------------
+        const $ = (id) => document.getElementById(id);
 
-            ws.onopen = () => {
-                connStatus.innerHTML = '<div class="pulse"></div> SOVEREIGN MODE ACTIVE';
-                connStatus.style.color = 'var(--success)';
-            };
+        const dom = {
+            // Header
+            headerPhase:     $('header-phase-badge'),
+            agentStatus:     $('agent-status-badge'),
+            connStatus:      $('conn-status'),
+            // Phases
+            phasePerceive:   $('phase-perceive'),
+            phaseThink:      $('phase-think'),
+            phaseAct:        $('phase-act'),
+            phaseLearn:      $('phase-learn'),
+            connPT:          $('conn-p-t'),
+            connTA:          $('conn-t-a'),
+            connAL:          $('conn-a-l'),
+            // Telemetry
+            aioGauge:        $('aio-gauge'),
+            valAio:          $('val-aio'),
+            valSteps:        $('val-steps'),
+            valCost:         $('val-cost'),
+            valMemory:       $('val-memory'),
+            valSystem:       $('val-system'),
+            // Event stream
+            logContainer:    $('log-container'),
+            eventCount:      $('event-count'),
+            autoScroll:      $('auto-scroll'),
+            // Evolution
+            evoCanvas:       $('evo-canvas'),
+            evoCells:        $('evo-cells'),
+            evoBest:         $('evo-best'),
+            // Right sidebar
+            barS1:           $('bar-s1'),
+            barS3:           $('bar-s3'),
+            activeSystem:    $('active-system'),
+            valZ3Pass:       $('val-z3-pass'),
+            valZ3Fail:       $('val-z3-fail'),
+            z3PassBar:       $('z3-pass-bar'),
+            z3FailBar:       $('z3-fail-bar'),
+            valInference:    $('val-inference'),
+            valWall:         $('val-wall'),
+            valLlmCalls:     $('val-llm-calls'),
+            valTotalEvents:  $('val-total-events'),
+            valEntropy:      $('val-entropy'),
+            valBrake:        $('val-brake'),
+            // Controls
+            taskInput:       $('task-input'),
+            btnSubmit:       $('btn-submit-task'),
+            btnStop:         $('btn-stop'),
+            btnClear:        $('btn-clear-log'),
+            btnReset:        $('btn-reset'),
+            agentPoolList:   $('agent-pool-list'),
+        };
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    appendLog(data);
-                    
-                    // Update metrics if present
-                    if (data.type === 'METRIC' && data.meta) {
-                        valLatency.textContent = `${data.meta.latency_ms} ms`;
-                        valAum.textContent = `$${data.meta.total_aum.toLocaleString()}`;
-                        valCycles.textContent = data.meta.cycle;
+        // -----------------------------------------------------------------
+        // State
+        // -----------------------------------------------------------------
+        let logCount = 0;
+        let wsConnected = false;
+        let ws = null;
+        let startTs = Date.now();
+        const MAX_LOG_ENTRIES = 200;
+
+        // Evolution grid data (10x10)
+        const evoGrid = new Float32Array(100);
+
+        // Phase colors map
+        const PHASE_COLORS = {
+            perceive: '#818cf8',
+            think:    '#38bdf8',
+            act:      '#f59e0b',
+            learn:    '#10b981',
+        };
+
+        const PHASE_BG = {
+            perceive: 'rgba(129,140,248,0.15)',
+            think:    'rgba(56,189,248,0.15)',
+            act:      'rgba(245,158,11,0.15)',
+            learn:    'rgba(16,185,129,0.15)',
+        };
+
+        const TYPE_COLORS = {
+            PERCEIVE: '#818cf8',
+            THINK:    '#38bdf8',
+            ACT:      '#f59e0b',
+            LEARN:    '#10b981',
+            SYSTEM:   '#a855f7',
+            METRIC:   '#10b981',
+            ACTION:   '#38bdf8',
+            ERROR:    '#ef4444',
+        };
+
+        // -----------------------------------------------------------------
+        // Phase indicator
+        // -----------------------------------------------------------------
+        const phaseOrder = ['perceive', 'think', 'act', 'learn'];
+        const phaseElements = {
+            perceive: dom.phasePerceive,
+            think:    dom.phaseThink,
+            act:      dom.phaseAct,
+            learn:    dom.phaseLearn,
+        };
+        const connectors = [dom.connPT, dom.connTA, dom.connAL];
+
+        function setActivePhase(phase) {
+            if (!phase) {
+                // Clear all
+                phaseOrder.forEach((p) => {
+                    phaseElements[p].classList.remove('active');
+                    phaseElements[p].style.borderColor = 'var(--border)';
+                    phaseElements[p].style.background = 'transparent';
+                });
+                connectors.forEach((c) => c.classList.remove('active'));
+                dom.headerPhase.textContent = 'IDLE';
+                dom.headerPhase.style.background = 'rgba(100,116,139,0.15)';
+                dom.headerPhase.style.color = 'var(--text-secondary)';
+                return;
+            }
+
+            const phaseLower = phase.toLowerCase();
+            const idx = phaseOrder.indexOf(phaseLower);
+            if (idx < 0) return;
+
+            phaseOrder.forEach((p, i) => {
+                const el = phaseElements[p];
+                if (p === phaseLower) {
+                    el.classList.add('active');
+                    el.style.borderColor = PHASE_COLORS[p];
+                    el.style.background = PHASE_BG[p];
+                } else {
+                    el.classList.remove('active');
+                    if (i < idx) {
+                        el.style.borderColor = PHASE_COLORS[p];
+                        el.style.background = 'transparent';
+                    } else {
+                        el.style.borderColor = 'var(--border)';
+                        el.style.background = 'transparent';
                     }
-                } catch (e) {
-                    console.error("Error parsing log event", e);
                 }
-            };
+            });
 
-            ws.onclose = () => {
-                connStatus.innerHTML = 'DISCONNECTED (Reconnecting...)';
-                connStatus.style.color = 'var(--error)';
-                setTimeout(connect, 2000);
-            };
+            connectors.forEach((c, i) => {
+                if (i < idx) {
+                    c.classList.add('active');
+                    c.style.background = PHASE_COLORS[phaseOrder[i]];
+                } else {
+                    c.classList.remove('active');
+                    c.style.background = 'var(--border)';
+                }
+            });
+
+            dom.headerPhase.textContent = phaseLower.toUpperCase();
+            dom.headerPhase.style.background = PHASE_BG[phaseLower] || 'rgba(100,116,139,0.15)';
+            dom.headerPhase.style.color = PHASE_COLORS[phaseLower] || 'var(--text-secondary)';
         }
 
-        function appendLog(data) {
-            const time = new Date(data.timestamp).toLocaleTimeString();
-            const div = document.createElement('div');
-            div.className = `log-entry log-type-${data.type}`;
-            
-            // Format content. If it contains <think>, highlight it.
-            let contentHTML = data.content;
-            contentHTML = contentHTML.replace(/<think>/g, '<div style="color:var(--warning); margin:5px 0;"><strong>[System 3 Reasoning]</strong><br>');
-            contentHTML = contentHTML.replace(/<\/think>/g, '</div>');
+        // -----------------------------------------------------------------
+        // Agent status badge
+        // -----------------------------------------------------------------
+        function setAgentStatus(status) {
+            const badge = dom.agentStatus;
+            const dotEl = badge.querySelector('.agent-dot');
+            const colors = {
+                idle:    { bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8', dot: '#64748b' },
+                running: { bg: 'rgba(56,189,248,0.15)',  fg: '#38bdf8', dot: '#38bdf8' },
+                error:   { bg: 'rgba(239,68,68,0.1)',    fg: '#ef4444', dot: '#ef4444' },
+                stopped: { bg: 'rgba(245,158,11,0.1)',   fg: '#f59e0b', dot: '#f59e0b' },
+            };
+            const c = colors[status] || colors.idle;
+            badge.style.background = c.bg;
+            badge.style.color = c.fg;
+            dotEl.style.background = c.dot;
+            badge.lastChild.textContent = ' ' + status.toUpperCase();
+        }
 
-            div.innerHTML = `
-                <span class="log-time">[${time}]</span>
-                <span class="type-badge badge-${data.type}">${data.type}</span>
-                <span>${contentHTML}</span>
-            `;
-            
-            logContainer.appendChild(div);
-            // Auto-scroll
-            logContainer.scrollTop = logContainer.scrollHeight;
-            
-            // Limit to 100 entries to prevent DOM bloat
-            if (logContainer.children.length > 100) {
-                logContainer.removeChild(logContainer.firstChild);
+        // -----------------------------------------------------------------
+        // Connection status
+        // -----------------------------------------------------------------
+        function setConnStatus(connected) {
+            wsConnected = connected;
+            const el = dom.connStatus;
+            const dotEl = el.querySelector('.pulse-dot');
+            if (connected) {
+                el.style.background = 'rgba(16,185,129,0.1)';
+                el.style.color = '#10b981';
+                dotEl.style.background = '#10b981';
+                dotEl.style.color = 'rgba(16,185,129,0.4)';
+                el.lastChild.textContent = ' LIVE';
+            } else {
+                el.style.background = 'rgba(239,68,68,0.1)';
+                el.style.color = '#ef4444';
+                dotEl.style.background = '#ef4444';
+                dotEl.style.color = 'rgba(239,68,68,0.4)';
+                el.lastChild.textContent = ' OFFLINE';
             }
         }
 
-        connect();
+        // -----------------------------------------------------------------
+        // AIO Gauge
+        // -----------------------------------------------------------------
+        function setAioGauge(ratio) {
+            const circumference = 2 * Math.PI * 30; // r=30
+            const offset = circumference * (1 - Math.min(1, ratio));
+            dom.aioGauge.style.strokeDashoffset = offset;
+            dom.valAio.textContent = Math.round(ratio * 100) + '%';
+        }
+
+        // -----------------------------------------------------------------
+        // Evolution heatmap (canvas)
+        // -----------------------------------------------------------------
+        function drawEvoGrid() {
+            const canvas = dom.evoCanvas;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+            const cellW = w / 10;
+            const cellH = h / 10;
+
+            ctx.clearRect(0, 0, w, h);
+
+            for (let y = 0; y < 10; y++) {
+                for (let x = 0; x < 10; x++) {
+                    const val = evoGrid[y * 10 + x];
+                    ctx.fillStyle = fitnessColor(val);
+                    ctx.fillRect(x * cellW, y * cellH, cellW - 1, cellH - 1);
+                }
+            }
+
+            // Grid lines
+            ctx.strokeStyle = 'rgba(51,65,85,0.4)';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i <= 10; i++) {
+                ctx.beginPath();
+                ctx.moveTo(i * cellW, 0);
+                ctx.lineTo(i * cellW, h);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(0, i * cellH);
+                ctx.lineTo(w, i * cellH);
+                ctx.stroke();
+            }
+        }
+
+        function fitnessColor(val) {
+            if (val <= 0) return '#1e293b';
+            // Gradient: dark -> sky-400 -> emerald-500 -> amber-400
+            if (val < 0.33) {
+                return lerpColor('#1e293b', '#38bdf8', val / 0.33);
+            } else if (val < 0.66) {
+                return lerpColor('#38bdf8', '#10b981', (val - 0.33) / 0.33);
+            } else {
+                return lerpColor('#10b981', '#f59e0b', (val - 0.66) / 0.34);
+            }
+        }
+
+        function lerpColor(a, b, t) {
+            const ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
+            const br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
+            const r = Math.round(ar + (br - ar) * t);
+            const g = Math.round(ag + (bg - ag) * t);
+            const blue = Math.round(ab + (bb - ab) * t);
+            return '#' + [r, g, blue].map(c => c.toString(16).padStart(2, '0')).join('');
+        }
+
+        // Initialize evo grid with some random low-fitness cells for visual appeal
+        function seedEvoGrid() {
+            for (let i = 0; i < 100; i++) {
+                evoGrid[i] = Math.random() < 0.15 ? Math.random() * 0.4 : 0;
+            }
+            drawEvoGrid();
+        }
+
+        // -----------------------------------------------------------------
+        // Log entry rendering
+        // -----------------------------------------------------------------
+        function appendLogEntry(evt) {
+            const container = dom.logContainer;
+
+            const div = document.createElement('div');
+            const evtType = (evt.type || 'SYSTEM').toUpperCase();
+            div.className = 'log-entry log-' + evtType + ' new-entry';
+
+            // Timestamp
+            let timeStr = '';
+            if (evt.timestamp) {
+                const d = typeof evt.timestamp === 'string'
+                    ? new Date(evt.timestamp)
+                    : new Date(evt.timestamp * 1000);
+                if (!isNaN(d.getTime())) {
+                    timeStr = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                }
+            }
+
+            // Build content text
+            let contentText = evt.content || '';
+            if (!contentText && evt.meta) {
+                const parts = [];
+                for (const [k, v] of Object.entries(evt.meta)) {
+                    if (typeof v === 'object') continue;
+                    parts.push(k + '=' + v);
+                }
+                contentText = parts.join('  ');
+            }
+            if (!contentText) {
+                contentText = JSON.stringify(evt);
+            }
+
+            // Sanitize HTML
+            contentText = contentText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+            // Badge color
+            const badgeColor = TYPE_COLORS[evtType] || '#94a3b8';
+            const badgeBg = badgeColor + '22';
+
+            div.innerHTML =
+                '<span style="color:var(--text-muted);font-size:0.7rem;margin-right:8px;">' + timeStr + '</span>' +
+                '<span style="font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:8px;font-weight:600;background:' + badgeBg + ';color:' + badgeColor + ';">' + evtType + '</span>' +
+                '<span style="color:var(--text-secondary);">' + contentText + '</span>';
+
+            container.appendChild(div);
+            logCount++;
+            dom.eventCount.textContent = logCount;
+
+            // Remove 'new-entry' animation class after it plays
+            setTimeout(() => div.classList.remove('new-entry'), 600);
+
+            // Cap entries
+            while (container.children.length > MAX_LOG_ENTRIES) {
+                container.removeChild(container.firstChild);
+            }
+
+            // Auto-scroll
+            if (dom.autoScroll.checked) {
+                requestAnimationFrame(() => {
+                    container.scrollTop = container.scrollHeight;
+                });
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // Process incoming JSONL event
+        // -----------------------------------------------------------------
+        function processEvent(evt) {
+            const evtType = (evt.type || '').toUpperCase();
+            const meta = evt.meta || {};
+
+            // Update phase indicator
+            if (['PERCEIVE', 'THINK', 'ACT', 'LEARN'].includes(evtType)) {
+                setActivePhase(evtType.toLowerCase());
+                setAgentStatus('running');
+            }
+
+            // Update step count
+            if (evt.step !== undefined && evt.step > 0) {
+                dom.valSteps.textContent = evt.step;
+            }
+            if (meta.cycle !== undefined) {
+                dom.valSteps.textContent = meta.cycle;
+            }
+
+            // AIO ratio
+            if (meta.aio_ratio !== undefined) {
+                setAioGauge(meta.aio_ratio);
+            }
+
+            // Memory events
+            if (meta.events !== undefined) {
+                dom.valMemory.textContent = meta.events;
+            }
+
+            // System routing
+            if (meta.system !== undefined) {
+                const sys = meta.system;
+                dom.valSystem.textContent = 'S' + sys;
+                dom.valSystem.style.color = sys === 3 ? '#818cf8' : '#38bdf8';
+                dom.activeSystem.textContent = 'System ' + sys;
+                dom.activeSystem.style.color = sys === 3 ? '#818cf8' : '#38bdf8';
+                if (sys === 3) {
+                    dom.barS1.style.width = '30%';
+                    dom.barS3.style.width = '100%';
+                } else {
+                    dom.barS1.style.width = '100%';
+                    dom.barS3.style.width = '20%';
+                }
+            }
+
+            // Z3 verification
+            if (meta.r_path !== undefined) {
+                if (meta.r_path >= 0) {
+                    const v = parseInt(dom.valZ3Pass.textContent) + 1;
+                    dom.valZ3Pass.textContent = v;
+                } else {
+                    const v = parseInt(dom.valZ3Fail.textContent) + 1;
+                    dom.valZ3Fail.textContent = v;
+                }
+                updateZ3Bar();
+            }
+
+            // Inference latency
+            if (meta.latency_ms !== undefined) {
+                dom.valInference.textContent = meta.latency_ms.toFixed(1) + ' ms';
+            }
+
+            // Entropy / braking
+            if (meta.entropy !== undefined) {
+                dom.valEntropy.textContent = meta.entropy.toFixed(3);
+            }
+            if (meta.brake !== undefined) {
+                dom.valBrake.textContent = meta.brake ? 'ON' : 'OFF';
+                dom.valBrake.style.color = meta.brake ? '#ef4444' : '#10b981';
+            }
+
+            // Evolution data
+            if (meta.evo_cell !== undefined) {
+                const cx = meta.evo_cell.x || 0;
+                const cy = meta.evo_cell.y || 0;
+                const cf = meta.evo_cell.fitness || 0;
+                evoGrid[cy * 10 + cx] = Math.min(1, cf);
+                drawEvoGrid();
+            }
+
+            // Revenue / cost (from HFT-style stream)
+            if (meta.total_aum !== undefined) {
+                dom.valCost.textContent = '$' + meta.total_aum.toLocaleString();
+                dom.valCost.style.color = '#10b981';
+            }
+
+            // Completion
+            if (meta.result === 'complete') {
+                setAgentStatus('idle');
+                setActivePhase(null);
+            }
+
+            appendLogEntry(evt);
+        }
+
+        function updateZ3Bar() {
+            const pass = parseInt(dom.valZ3Pass.textContent) || 0;
+            const fail = parseInt(dom.valZ3Fail.textContent) || 0;
+            const total = pass + fail;
+            if (total === 0) {
+                dom.z3PassBar.style.width = '0%';
+                dom.z3FailBar.style.width = '0%';
+            } else {
+                dom.z3PassBar.style.width = (pass / total * 100) + '%';
+                dom.z3FailBar.style.width = (fail / total * 100) + '%';
+            }
+        }
+
+        // -----------------------------------------------------------------
+        // WebSocket connection (with exponential backoff)
+        // -----------------------------------------------------------------
+        let wsBackoff = 2000;
+        const WS_BACKOFF_MAX = 30000;
+
+        function connectWebSocket() {
+            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(protocol + '//' + location.host + '/ws');
+
+            ws.onopen = function () {
+                setConnStatus(true);
+                startTs = Date.now();
+                wsBackoff = 2000; // reset on successful connect
+            };
+
+            ws.onmessage = function (event) {
+                try {
+                    const evt = JSON.parse(event.data);
+                    processEvent(evt);
+                } catch (e) {
+                    // Non-JSON line, show as raw
+                    appendLogEntry({ type: 'SYSTEM', content: event.data, timestamp: Date.now() / 1000 });
+                }
+            };
+
+            ws.onclose = function () {
+                setConnStatus(false);
+                setTimeout(connectWebSocket, wsBackoff);
+                wsBackoff = Math.min(wsBackoff * 1.5, WS_BACKOFF_MAX);
+            };
+
+            ws.onerror = function () {
+                setConnStatus(false);
+            };
+        }
+
+        // -----------------------------------------------------------------
+        // State polling (every 2s)
+        // -----------------------------------------------------------------
+        function pollState() {
+            fetch('/api/state')
+                .then(r => r.json())
+                .then(state => {
+                    // Update values from server state
+                    if (state.agent_status) setAgentStatus(state.agent_status);
+                    if (state.current_phase) setActivePhase(state.current_phase);
+                    else if (state.agent_status === 'idle') setActivePhase(null);
+
+                    if (state.step_count !== undefined) dom.valSteps.textContent = state.step_count;
+                    if (state.memory_events !== undefined) dom.valMemory.textContent = state.memory_events;
+                    if (state.llm_calls !== undefined) dom.valLlmCalls.textContent = state.llm_calls;
+                    if (state.total_events !== undefined) dom.valTotalEvents.textContent = state.total_events;
+                    if (state.aio_ratio !== undefined) setAioGauge(state.aio_ratio);
+                    if (state.inference_time_ms !== undefined) dom.valInference.textContent = state.inference_time_ms.toFixed(1) + ' ms';
+
+                    // Wall time
+                    const elapsed = (Date.now() - startTs) / 1000;
+                    dom.valWall.textContent = elapsed.toFixed(1) + 's';
+
+                    // Metacognitive system
+                    if (state.metacognitive_system !== undefined) {
+                        const sys = state.metacognitive_system;
+                        dom.valSystem.textContent = 'S' + sys;
+                    }
+
+                    // Z3
+                    if (state.z3_pass !== undefined) dom.valZ3Pass.textContent = state.z3_pass;
+                    if (state.z3_fail !== undefined) dom.valZ3Fail.textContent = state.z3_fail;
+                    updateZ3Bar();
+
+                    // Evolution stats
+                    if (state.evolution_stats) {
+                        dom.evoCells.textContent = state.evolution_stats.grid_size || 0;
+                        dom.evoBest.textContent = (state.evolution_stats.best_fitness || 0).toFixed(2);
+                        if (state.evolution_stats.cells && state.evolution_stats.cells.length > 0) {
+                            for (const c of state.evolution_stats.cells) {
+                                evoGrid[c.y * 10 + c.x] = Math.min(1, c.fitness);
+                            }
+                            drawEvoGrid();
+                        }
+                    }
+
+                    // Sub-agents
+                    if (state.sub_agents && state.sub_agents.length > 0) {
+                        renderSubAgents(state.sub_agents);
+                    }
+                })
+                .catch(() => { /* silently ignore poll errors */ });
+        }
+
+        // -----------------------------------------------------------------
+        // Sub-agent pool rendering
+        // -----------------------------------------------------------------
+        function renderSubAgents(agents) {
+            const list = dom.agentPoolList;
+            list.innerHTML = '';
+            if (!agents || agents.length === 0) {
+                list.innerHTML = '<div class="text-xs italic" style="color: var(--text-muted);">No sub-agents registered</div>';
+                return;
+            }
+            agents.forEach(a => {
+                const statusColor = a.running ? '#38bdf8' : (a.has_result ? '#10b981' : '#64748b');
+                const statusLabel = a.running ? 'running' : (a.has_result ? 'done' : 'idle');
+                const div = document.createElement('div');
+                div.className = 'card-inset p-2 flex items-center justify-between';
+                div.innerHTML =
+                    '<div class="flex items-center gap-2">' +
+                        '<span class="agent-dot" style="background:' + statusColor + ';"></span>' +
+                        '<span class="text-xs font-medium">' + escapeHtml(a.name) + '</span>' +
+                    '</div>' +
+                    '<span class="text-xs font-mono" style="color:var(--text-muted);">' + escapeHtml(a.role || statusLabel) + '</span>';
+                list.appendChild(div);
+            });
+        }
+
+        function escapeHtml(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        // -----------------------------------------------------------------
+        // Button handlers
+        // -----------------------------------------------------------------
+        dom.btnSubmit.addEventListener('click', function () {
+            const task = dom.taskInput.value.trim();
+            if (!task) return;
+            fetch('/api/task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task: task }),
+            })
+            .then(r => r.json())
+            .then(resp => {
+                appendLogEntry({
+                    type: 'SYSTEM',
+                    content: 'Task submitted: ' + task,
+                    timestamp: Date.now() / 1000,
+                });
+                dom.taskInput.value = '';
+                setAgentStatus('running');
+                setActivePhase('perceive');
+            })
+            .catch(err => {
+                appendLogEntry({
+                    type: 'ERROR',
+                    content: 'Failed to submit task: ' + err.message,
+                    timestamp: Date.now() / 1000,
+                });
+            });
+        });
+
+        dom.btnStop.addEventListener('click', function () {
+            fetch('/api/stop', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => {
+                    setAgentStatus('stopped');
+                    setActivePhase(null);
+                    appendLogEntry({
+                        type: 'SYSTEM',
+                        content: 'Agent stopped by user',
+                        timestamp: Date.now() / 1000,
+                    });
+                });
+        });
+
+        dom.btnClear.addEventListener('click', function () {
+            dom.logContainer.innerHTML = '';
+            logCount = 0;
+            dom.eventCount.textContent = '0';
+        });
+
+        dom.btnReset.addEventListener('click', function () {
+            fetch('/api/reset', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => {
+                    dom.logContainer.innerHTML = '';
+                    logCount = 0;
+                    dom.eventCount.textContent = '0';
+                    dom.valSteps.textContent = '0';
+                    dom.valCost.textContent = '$0.00';
+                    dom.valCost.style.color = '#f59e0b';
+                    dom.valMemory.textContent = '0';
+                    dom.valSystem.textContent = 'S1';
+                    dom.valZ3Pass.textContent = '0';
+                    dom.valZ3Fail.textContent = '0';
+                    dom.valInference.textContent = '0 ms';
+                    dom.valWall.textContent = '0.0s';
+                    dom.valLlmCalls.textContent = '0';
+                    dom.valTotalEvents.textContent = '0';
+                    dom.valEntropy.textContent = '--';
+                    dom.valBrake.textContent = 'OFF';
+                    dom.valBrake.style.color = '#10b981';
+                    setAioGauge(0);
+                    setAgentStatus('idle');
+                    setActivePhase(null);
+                    evoGrid.fill(0);
+                    seedEvoGrid();
+                    startTs = Date.now();
+                    appendLogEntry({
+                        type: 'SYSTEM',
+                        content: 'Dashboard reset',
+                        timestamp: Date.now() / 1000,
+                    });
+                });
+        });
+
+        // Allow Ctrl+Enter in textarea to submit
+        dom.taskInput.addEventListener('keydown', function (e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                dom.btnSubmit.click();
+            }
+        });
+
+        // -----------------------------------------------------------------
+        // Wall-time clock (updates every second)
+        // -----------------------------------------------------------------
+        setInterval(function () {
+            const elapsed = (Date.now() - startTs) / 1000;
+            dom.valWall.textContent = elapsed.toFixed(1) + 's';
+        }, 1000);
+
+        // -----------------------------------------------------------------
+        // Boot
+        // -----------------------------------------------------------------
+        seedEvoGrid();
+        connectWebSocket();
+        setInterval(pollState, 2000);
+
+        // Simulate gentle evo grid mutation for visual interest when idle
+        setInterval(function () {
+            const x = Math.floor(Math.random() * 10);
+            const y = Math.floor(Math.random() * 10);
+            const current = evoGrid[y * 10 + x];
+            if (current > 0) {
+                evoGrid[y * 10 + x] = Math.min(1, current + (Math.random() - 0.4) * 0.05);
+            } else if (Math.random() < 0.03) {
+                evoGrid[y * 10 + x] = Math.random() * 0.2;
+            }
+            drawEvoGrid();
+        }, 3000);
+
+    })();
     </script>
 </body>
 </html>

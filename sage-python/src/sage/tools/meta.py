@@ -16,7 +16,11 @@ from typing import Any, Dict
 
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
-import sage_core
+try:
+    import sage_core
+except ImportError:
+    import types as _types
+    sage_core = _types.ModuleType("sage_core")
 
 logger = logging.getLogger(__name__)
 

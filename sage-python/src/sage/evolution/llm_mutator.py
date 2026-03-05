@@ -1,83 +1,97 @@
-"""LLM-based Mutator for MAP-Elites evolution.
-
-Connects the BaseLLM to the Mutator pipeline, generating new code variants
-and their behavioral feature descriptors for the MAP-Elites population grid.
-"""
+"""LLM-based code mutator using Gemini/Codex with structured JSON output."""
 from __future__ import annotations
 
+import json
 import logging
-from typing import Tuple
+from dataclasses import dataclass, field
+from typing import Any
 
-from sage.llm.base import LLMProvider, Message, Role
-from sage.evolution.mutator import Mutator, Mutation
+from pydantic import BaseModel
+
+from sage.llm.base import LLMConfig, Message, Role
+from sage.llm.router import ModelRouter
+
+log = logging.getLogger(__name__)
+
+MUTATION_SYSTEM_PROMPT = """You are an expert code evolution engine. Given source code and an objective,
+generate SEARCH/REPLACE mutations that improve the code toward the objective.
+
+Rules:
+1. Each mutation must have an exact `search` string (verbatim from the code) and a `replace` string.
+2. Mutations must be syntactically valid and maintain the function signature.
+3. Provide `features` as a list of 2 integers (0-9) describing behavioral dimensions.
+4. Provide brief `reasoning` explaining the improvement.
+"""
+
+
+class MutationItem(BaseModel):
+    search: str
+    replace: str
+    description: str
+
+
+class MutationResponse(BaseModel):
+    mutations: list[MutationItem]
+    features: list[int]
+    reasoning: str
+
+
+@dataclass
+class MutationRequest:
+    code: str
+    objective: str
+    context: str = ""
 
 
 class LLMMutator:
-    """Generates code mutations using an LLM."""
+    """Generates code mutations via LLM with structured JSON output."""
 
-    def __init__(self, llm: LLMProvider, mutator: Mutator | None = None):
-        self.llm = llm
-        self.mutator = mutator or Mutator()
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, llm_tier: str = "mutator"):
+        self.llm_tier = llm_tier
 
-    async def mutate(self, code: str, objective: str, config: Any | None = None) -> Tuple[str, Tuple[int, int]]:
-        """Mutates code using LLM and returns (new_code, features).
-        
-        Features are a 2D tuple representing:
-        (complexity_score, creativity_score) mapped to 0-9 bins.
-        """
-        prompt = f"""You are a SOTA AI Research Engineer (Mars 2026).
-Objective: {objective}
+    def _build_mutation_prompt(self, code: str, objective: str, context: str) -> str:
+        prompt = f"## Objective\n{objective}\n\n"
+        if context:
+            prompt += f"## Context\n{context}\n\n"
+        prompt += f"## Source Code\n```\n{code}\n```\n\n"
+        prompt += "Generate 1-3 mutations as SEARCH/REPLACE pairs. Respond in the required JSON format."
+        return prompt
 
-CRITICAL RULES:
-1. Provide a precise SEARCH/REPLACE diff.
-2. The evolved code MUST always maintain a function named 'solution(arr)'.
-3. If using numpy, ensure 'import numpy as np' is present or added.
-4. Focus on SIMD-like logic, branchless code, and cache locality.
-5. NO CHITCHAT. No preamble.
+    async def mutate(self, request: MutationRequest) -> MutationResponse:
+        """Generate mutations using LLM with structured output."""
+        config = ModelRouter.get_config(
+            self.llm_tier,
+            temperature=0.8,
+            json_schema=MutationResponse,
+        )
 
-Format:
-<<<SEARCH
-[exact original code lines]
-===
-[new optimized code lines]
->>>REPLACE: [brief description]
+        prompt = self._build_mutation_prompt(
+            request.code, request.objective, request.context
+        )
 
-FEATURES: Complexity=<0-9>, Creativity=<0-9>
+        messages = [
+            Message(role=Role.SYSTEM, content=MUTATION_SYSTEM_PROMPT),
+            Message(role=Role.USER, content=prompt),
+        ]
 
-CODE CONTEXT:
-```python
-{code}
-```"""
+        # Get provider based on tier
+        if config.provider == "codex":
+            from sage.llm.codex import CodexProvider
+            provider = CodexProvider()
+        else:
+            from sage.llm.google import GoogleProvider
+            provider = GoogleProvider()
 
-        messages = [Message(role=Role.USER, content=prompt)]
-        # Use provided config or default
-        response = await self.llm.generate(messages, config=config)
-        content = response.content or ""
+        response = await provider.generate(messages, config=config)
 
-        # Parse Diff
-        mutations = self.mutator.parse_diff(content)
-        new_code = self.mutator.apply_mutations(code, mutations)
-
-        # Parse Features
-        complexity = 5
-        creativity = 5
         try:
-            for line in content.split("\n"):
-                if line.startswith("FEATURES:"):
-                    parts = line.replace("FEATURES:", "").split(",")
-                    for part in parts:
-                        key, val = part.split("=")
-                        key = key.strip().lower()
-                        if key == "complexity":
-                            complexity = int(val.strip())
-                        elif key == "creativity":
-                            creativity = int(val.strip())
+            return MutationResponse.model_validate_json(response.content)
         except Exception as e:
-            self.logger.warning(f"Failed to parse features, using default 5,5: {e}")
-
-        # Clamp features to 0-9 (assuming 10 bins)
-        complexity = max(0, min(9, complexity))
-        creativity = max(0, min(9, creativity))
-
-        return new_code, (complexity, creativity)
+            log.warning(f"Failed to parse mutation response: {e}")
+            # Attempt lenient JSON extraction
+            text = response.content
+            start = text.find("{")
+            end = text.rfind("}") + 1
+            if start >= 0 and end > start:
+                return MutationResponse.model_validate_json(text[start:end])
+            raise

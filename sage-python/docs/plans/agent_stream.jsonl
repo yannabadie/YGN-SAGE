@@ -1,0 +1,85 @@
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716730.687185, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716730.689695, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716730.6909087, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716740.453225, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716740.45473, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716740.4560525, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716741.8701031, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716741.8714697, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716741.8730693, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716795.7264354, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716795.7285488, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716795.730097, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716799.878599, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716799.880071, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716799.8809266, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772716832.734842, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772716832.7364452, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772716832.7375422, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772717801.3110743, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772717801.3131397, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772717801.3149776, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772717801.3158503, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772717816.1936476, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772717816.1957817, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772717816.1979086, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772717816.2603652, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772717816.262141, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772717816.2648122, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772717816.2657816, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772717844.7555368, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772717844.756424, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772717844.7568963, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772717844.7926967, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772717844.7935739, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772717844.7944667, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772717844.7949615, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772718231.7102726, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772718231.712451, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772718231.713742, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772718231.7615356, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772718231.7623699, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772718231.7632408, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772718231.763712, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772718869.9138458, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772718869.916097, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772718869.9176166, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772718870.2628932, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772718870.2637084, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772718870.2651434, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772718870.2660694, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772719591.7293549, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772719591.730713, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772719591.7314742, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772719591.856513, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772719591.8573804, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772719591.8596509, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772719591.861508, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772719906.9364004, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772719906.937733, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772719906.9384007, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772719907.0122952, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772719907.0131617, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772719907.0141609, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772719907.0147305, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772720679.7764583, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772720679.7790806, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772720679.780035, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772720680.0851245, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772720680.0867589, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772720680.0916033, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772720680.093396, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772720972.5918274, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772720972.5950458, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772720972.597458, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772720972.8077552, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772720972.8089244, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772720972.8104, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772720972.8116703, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772722193.4787223, "meta": {"task": "test task", "agent": "test"}}
+{"type": "THINK", "step": 1, "timestamp": 1772722193.4806213, "meta": {"model": "mock", "step": 1}}
+{"type": "LEARN", "step": 1, "timestamp": 1772722193.4818406, "meta": {"result": "complete", "steps": 1}}
+{"type": "PERCEIVE", "step": 0, "timestamp": 1772722193.692495, "meta": {"task": "What is 2+2?", "agent": "sage-main"}}
+{"type": "THINK", "step": 1, "timestamp": 1772722193.6944752, "meta": {"model": "gemini-3.1-flash-lite-preview", "step": 1}}
+{"type": "THINK", "step": 1, "timestamp": 1772722193.6965842, "meta": {"r_path": 0.0, "details": {"total_steps": 1, "step_scores": [0.0], "verifiable_ratio": 0.0, "hallucination_ratio": 0.0}}}
+{"type": "LEARN", "step": 1, "timestamp": 1772722193.697665, "meta": {"result": "complete", "steps": 1}}

@@ -2,7 +2,7 @@ use sage_core::memory::WorkingMemory;
 
 #[test]
 fn test_add_and_get_event() {
-    let mut mem = WorkingMemory::new("agent-1".to_string());
+    let mut mem = WorkingMemory::new("agent-1".to_string(), None);
 
     let event_id = mem.add_event("tool_call", "Called bash with 'ls'");
     let event = mem.get_event(&event_id);
@@ -15,7 +15,7 @@ fn test_add_and_get_event() {
 
 #[test]
 fn test_add_child_agent() {
-    let mut mem = WorkingMemory::new("parent".to_string());
+    let mut mem = WorkingMemory::new("parent".to_string(), None);
     mem.add_child_agent("child-1".to_string());
 
     let children = mem.child_agents();
@@ -25,7 +25,7 @@ fn test_add_child_agent() {
 
 #[test]
 fn test_get_recent_events() {
-    let mut mem = WorkingMemory::new("agent".to_string());
+    let mut mem = WorkingMemory::new("agent".to_string(), None);
     for i in 0..10 {
         mem.add_event("step", &format!("Step {i}"));
     }
@@ -38,7 +38,7 @@ fn test_get_recent_events() {
 
 #[test]
 fn test_summarize_compresses() {
-    let mut mem = WorkingMemory::new("agent".to_string());
+    let mut mem = WorkingMemory::new("agent".to_string(), None);
     for i in 0..20 {
         mem.add_event("step", &format!("Step {i}"));
     }

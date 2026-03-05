@@ -29,6 +29,10 @@ class GoogleProvider:
         except ImportError:
             raise ImportError("Install google-genai: pip install 'ygn-sage[google]'")
 
+        if not self.api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY not set. Set it via environment variable or pass api_key= to GoogleProvider."
+            )
         client = genai.Client(api_key=self.api_key)
 
         # SOTA March 2026 Default
@@ -53,11 +57,24 @@ class GoogleProvider:
         if use_google_search:
             gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
 
+        # Structured JSON output support
+        response_mime_type = None
+        response_json_schema = None
+        if config and config.json_schema is not None:
+            schema = config.json_schema
+            # If it's a Pydantic model class, extract its JSON schema
+            if isinstance(schema, type) and hasattr(schema, 'model_json_schema'):
+                schema = schema.model_json_schema()
+            response_mime_type = 'application/json'
+            response_json_schema = schema
+
         generate_config = types.GenerateContentConfig(
             max_output_tokens=config.max_tokens if config else None,
             temperature=config.temperature if config else 0.1,
             system_instruction=system_instruction,
             tools=gemini_tools if gemini_tools else None,
+            response_mime_type=response_mime_type,
+            response_schema=response_json_schema,
         )
 
         try:

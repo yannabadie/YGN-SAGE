@@ -53,6 +53,7 @@ class LLMConfig:
     top_p: float = 1.0
     api_key: str | None = None
     base_url: str | None = None
+    json_schema: type | dict | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
 
