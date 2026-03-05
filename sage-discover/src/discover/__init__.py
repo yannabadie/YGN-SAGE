@@ -9,5 +9,12 @@ __version__ = "0.1.0"
 
 from discover.workflow import DiscoverWorkflow, DiscoverConfig
 from discover.researcher import ResearchAgent
+from discover.pipeline import run_pipeline, PipelineReport
 
-__all__ = ["DiscoverWorkflow", "DiscoverConfig", "ResearchAgent"]
+__all__ = [
+    "DiscoverWorkflow",
+    "DiscoverConfig",
+    "ResearchAgent",
+    "run_pipeline",
+    "PipelineReport",
+]

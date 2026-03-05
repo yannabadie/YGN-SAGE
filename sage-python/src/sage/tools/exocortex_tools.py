@@ -39,4 +39,47 @@ def create_exocortex_tools(exocortex: Any) -> list[Tool]:
         return result
 
     tools.append(search_exocortex)
+
+    @Tool.define(
+        name="refresh_knowledge",
+        description=(
+            "Trigger on-demand knowledge discovery: scan arXiv, Semantic Scholar, "
+            "and HuggingFace for new papers, curate them, and ingest into ExoCortex. "
+            "Use when you need the latest research on a specific topic."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Research topic to search for"},
+                "domain": {
+                    "type": "string",
+                    "description": "Optional domain: marl, cognitive_architectures, formal_verification, evolutionary_computation, memory_systems",
+                },
+            },
+            "required": [],
+        },
+    )
+    async def refresh_knowledge(query: str | None = None, domain: str | None = None) -> str:
+        try:
+            from discover.pipeline import run_pipeline
+
+            domains = [domain] if domain else None
+            report = await run_pipeline(
+                mode="on-demand" if query else "nightly",
+                query=query,
+                domains=domains,
+                exocortex=exocortex,
+            )
+            return (
+                f"Knowledge refresh complete: "
+                f"{report.discovered} discovered, "
+                f"{report.curated} curated, "
+                f"{report.ingested} ingested."
+            )
+        except ImportError:
+            return "Knowledge pipeline not available. Install sage-discover."
+        except Exception as e:
+            return f"Knowledge refresh failed: {e}"
+
+    tools.append(refresh_knowledge)
     return tools
