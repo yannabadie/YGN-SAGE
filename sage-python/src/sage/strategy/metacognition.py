@@ -1,6 +1,10 @@
-"""Metacognitive Controller: SOFAI-style System 1/3 routing + self-braking.
+"""Metacognitive Controller: Stanovich tripartite S1/S2/S3 routing + self-braking.
 
-Uses Gemini 3.1 Flash Lite for LLM-based task assessment (~$0.0005/call, <1s).
+System 1 (autonomous mind): Gemini Flash Lite, no validation (~$0.0005/call, <1s).
+System 2 (algorithmic mind): Gemini Flash/Pro, empirical validation (~$0.0015/1K).
+System 3 (reflective mind): Codex/Reasoner, Z3 PRM formal verification (~$0.03/1K).
+
+Uses Gemini 2.5 Flash Lite for LLM-based task assessment.
 Falls back to heuristic if GOOGLE_API_KEY is not set.
 """
 from __future__ import annotations
@@ -25,10 +29,11 @@ class CognitiveProfile:
 @dataclass
 class RoutingDecision:
     """Which system and LLM tier to use."""
-    system: int           # 1 = fast/intuitive, 3 = formal/deliberate
+    system: int           # 1 = fast/intuitive, 2 = algorithmic/deliberate, 3 = formal/verified
     llm_tier: str         # fast, mutator, reasoner, codex
     max_tokens: int
     use_z3: bool          # Whether to validate with Z3 PRM
+    validation_level: int = 1  # 1=none, 2=empirical, 3=formal(Z3)
 
 
 # Structured output schema for Gemini Flash Lite routing
@@ -65,50 +70,60 @@ Task: {task}"""
 
 
 class MetacognitiveController:
-    """Routes tasks between System 1 (fast) and System 3 (formal reasoning).
+    """Routes tasks between System 1, 2, and 3 (Stanovich tripartite model).
 
-    Primary: LLM-based assessment via Gemini Flash Lite (structured JSON output).
-    Fallback: keyword heuristic if no Google API key.
+    System 1: Fast/intuitive (Gemini Flash Lite, no validation)
+    System 2: Algorithmic/deliberate (Gemini Flash/Pro, empirical validation)
+    System 3: Formal/verified (Codex/Reasoner, Z3 PRM validation)
 
-    Self-braking (CGRS): monitors output entropy to detect convergence
-    and suppress unnecessary reasoning loops.
+    Self-braking (CGRS): monitors output entropy to detect convergence.
     """
 
     def __init__(
         self,
-        complexity_threshold: float = 0.5,
-        uncertainty_threshold: float = 0.4,
+        s1_complexity_ceil: float = 0.35,
+        s1_uncertainty_ceil: float = 0.3,
+        s3_complexity_floor: float = 0.7,
+        s3_uncertainty_floor: float = 0.6,
         brake_window: int = 3,
         brake_entropy_threshold: float = 0.15,
     ):
-        self.complexity_threshold = complexity_threshold
-        self.uncertainty_threshold = uncertainty_threshold
+        self.s1_complexity_ceil = s1_complexity_ceil
+        self.s1_uncertainty_ceil = s1_uncertainty_ceil
+        self.s3_complexity_floor = s3_complexity_floor
+        self.s3_uncertainty_floor = s3_uncertainty_floor
         self.brake_window = brake_window
         self.brake_entropy_threshold = brake_entropy_threshold
         self._entropy_history: deque[float] = deque(maxlen=10)
-        self._llm_available: bool | None = None  # Lazy check
+        self._llm_available: bool | None = None
 
     def route(self, profile: CognitiveProfile) -> RoutingDecision:
-        """Decide which cognitive system to engage."""
-        needs_system3 = (
-            profile.complexity > self.complexity_threshold
-            or profile.uncertainty > self.uncertainty_threshold
-            or profile.tool_required
-        )
+        """Decide which cognitive system to engage (S1/S2/S3)."""
+        c, u = profile.complexity, profile.uncertainty
 
-        if needs_system3:
-            tier = "reasoner"
-            if profile.complexity > 0.8:
-                tier = "codex"
+        # System 3: high complexity OR high uncertainty
+        if c > self.s3_complexity_floor or u > self.s3_uncertainty_floor:
+            tier = "codex" if c > 0.8 else "reasoner"
             return RoutingDecision(
                 system=3, llm_tier=tier,
-                max_tokens=8192, use_z3=True,
+                max_tokens=8192, use_z3=True, validation_level=3,
             )
-        else:
+
+        # System 1: low complexity AND low uncertainty AND no tools
+        if (c <= self.s1_complexity_ceil
+                and u <= self.s1_uncertainty_ceil
+                and not profile.tool_required):
             return RoutingDecision(
                 system=1, llm_tier="fast",
-                max_tokens=2048, use_z3=False,
+                max_tokens=2048, use_z3=False, validation_level=1,
             )
+
+        # System 2: everything in between
+        tier = "reasoner" if c > 0.55 else "mutator"
+        return RoutingDecision(
+            system=2, llm_tier=tier,
+            max_tokens=4096, use_z3=False, validation_level=2,
+        )
 
     def record_output_entropy(self, entropy: float) -> None:
         """Record the entropy of the latest LLM output for self-braking."""
