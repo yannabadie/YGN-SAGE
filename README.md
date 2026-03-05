@@ -4,7 +4,7 @@
 
 It combines a Rust execution core (`sage-core`) with a Python orchestration layer (`sage-python`), a tripartite cognitive routing system (S1/S2/S3), and a real-time control dashboard.
 
-> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 162 passing tests. Not yet battle-tested in production environments.
+> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 175 Python tests + 38 Rust tests passing. Not yet battle-tested in production environments.
 
 ## Core Architecture
 
@@ -36,8 +36,8 @@ It combines a Rust execution core (`sage-core`) with a Python orchestration laye
 |--------|--------|-------------|
 | **Topology** | `evo_topology.py` | MAP-Elites evolutionary search on agent DAG topologies |
 | **Tools** | `tools/registry.py` | Dynamic tool creation, registration, and sandboxed execution |
-| **Memory** | `memory_agent.py` | Entity extraction + MEM1 rolling internal state + 7 AgeMem tools |
-| **Evolution** | `llm_mutator.py` | LLM-driven code mutation + eBPF sub-ms evaluation |
+| **Memory** | `memory_agent.py` | Entity extraction + MEM1 rolling internal state + 7 AgeMem tools + ExoCortex |
+| **Evolution** | `llm_mutator.py` | LLM-driven code mutation with DGM context + eBPF sub-ms evaluation + SnapBPF |
 | **Strategy** | `metacognition.py` | Stanovich S1/S2/S3 tripartite routing + CGRS self-braking |
 
 ### Cognitive Routing (S1/S2/S3)
@@ -52,21 +52,29 @@ YGN-SAGE implements a **tripartite cognitive model** inspired by Stanovich (2011
 
 The **MetacognitiveController** assesses task complexity and uncertainty, then routes to the appropriate system. S2's **Act-Verify-Refine (AVR)** loop executes code in a sandbox, checks results, and retries with structured error feedback before escalating to S3.
 
+**S3 Z3 Alignment**: The S3 prompt teaches the LLM the exact Z3 DSL assertion syntax expected by the Process Reward Model (`assert bounds`, `assert loop`, `assert arithmetic`, `assert invariant`). The retry and escalation prompts reinforce this syntax, ensuring LLM output is parseable by the Z3 validator.
+
 See [ADR-001: System 2 Cognitive Routing](docs/ADR-cognitive-routing-system2.md) for the full decision record.
 
 ### Memory System
 
-YGN-SAGE uses a **two-tier memory architecture** inspired by MEM1 and AgeMem research:
+YGN-SAGE uses a **three-tier memory architecture**:
 
-**Working Memory (STM)** — Rust-backed Arrow buffer for the current session:
+**Working Memory (STM)** -- Rust-backed Arrow buffer for the current session:
 - Per-step **MEM1 internal state** (`<IS_t>`): the MemoryCompressor generates a rolling summary every step, merging previous state with new observations
 - Pressure-triggered **bulk compression**: when event count exceeds threshold, LLM summarizes old events and prunes the buffer
 
-**Episodic Memory (LTM)** — In-memory store with keyword search (graph DB persistence planned):
+**Episodic Memory (LTM)** -- In-memory store with keyword search:
 - CRUD operations (store, update, delete, search, list)
 - Automatic storage of significant agent outputs during the LEARN phase
 
-**7 AgeMem Memory Tools** — exposed to the LLM as callable tools:
+**ExoCortex (Persistent RAG)** -- Google GenAI File Search API:
+- Persistent managed stores with automatic chunking and embedding
+- Replaces the fragile NotebookLM CLI bridge with native SDK integration
+- Injected into Gemini `generate()` calls via `types.FileSearch`
+- Results cached by FIFO+TTL Rust cache (`sage_core.RagCache`) with Python fallback
+
+**7 AgeMem Memory Tools** -- exposed to the LLM as callable tools:
 
 | Tool | Memory Tier | Description |
 |------|-------------|-------------|
@@ -77,6 +85,22 @@ YGN-SAGE uses a **two-tier memory architecture** inspired by MEM1 and AgeMem res
 | `store_memory` | LTM | Store a new episodic entry |
 | `update_memory` | LTM | Update an existing entry by key |
 | `delete_memory` | LTM | Delete an entry by key |
+
+### Evolution System
+
+The evolution engine uses **SAMPO game-theoretic solver** (DGM) to choose among 5 strategic actions per mutation step:
+
+| Action | Directive |
+|--------|-----------|
+| 0 | Optimize execution performance and reduce latency |
+| 1 | Improve correctness and fix edge cases |
+| 2 | Expand search space -- explore novel algorithmic approaches |
+| 3 | Tighten constraints -- make code more robust and safe |
+| 4 | Simplify and reduce complexity while maintaining functionality |
+
+The chosen action's semantic directive is injected into the LLM mutation prompt ("DGM Directive" section), so mutations are **strategically guided** rather than blind. Context includes action, description, parent score, and generation number.
+
+**SnapBPF** provides sub-ms CoW memory snapshots for mutation rollback (Rust, DashMap-backed).
 
 ### LLM Providers
 
@@ -101,13 +125,15 @@ YGN-SAGE uses a tiered model router with automatic fallback:
 
 All providers support **structured JSON output** (via `--output-schema` for Codex, `response_schema` for Gemini).
 
+`GoogleProvider.generate()` also accepts `file_search_store_names` for ExoCortex grounding.
+
 ### Sandbox Execution
 
 Code execution uses `SandboxManager` with three backends (in priority order):
 
-1. **Wasm** (via `sage-core` + `wasmtime`/`solana_rbpf`) — sub-ms, highest isolation
-2. **Docker** (`use_docker=True`) — container-level isolation, requires Docker Desktop
-3. **Local subprocess** (`use_docker=False`, current default) — no isolation, for development only
+1. **Wasm** (via `sage-core` + `wasmtime`/`solana_rbpf`) -- sub-ms, highest isolation
+2. **Docker** (`use_docker=True`) -- container-level isolation, requires Docker Desktop
+3. **Local subprocess** (`use_docker=False`, current default) -- no isolation, for development only
 
 > **Note**: The default is local subprocess execution. For untrusted code, enable Docker (`SandboxManager(use_docker=True)`) or use the Wasm path.
 
@@ -118,7 +144,7 @@ Code execution uses `SandboxManager` with three backends (in priority order):
 - Python 3.12+
 - A Google AI API key ([get one here](https://aistudio.google.com/apikey))
 - [Codex CLI](https://github.com/openai/codex) with a ChatGPT Pro account (optional, for `codex` tier)
-- Rust 1.90+ (optional, for `sage-core` native bindings)
+- Rust 1.90+ (optional, for `sage-core` native performance: SnapBPF, RagCache, Arrow memory)
 
 ### Installation
 
@@ -141,14 +167,15 @@ export GOOGLE_API_KEY="your_google_api_key"
 # 5. (Optional) Build Rust core for native performance
 pip install maturin
 cd sage-core && maturin develop && cd ..
+
+# 6. Verify installation
+cd sage-python && python -m pytest tests/ -v
+# Expected: 175 passed, 1 skipped
 ```
 
 ### Running the Dashboard
 
 ```bash
-# Install dashboard dependencies (if not already via [all])
-cd sage-python && pip install -e ".[ui]" && cd ..
-
 # From the repo root:
 python ui/app.py
 ```
@@ -207,10 +234,15 @@ result = await system.run("Test task")
 ### Running Tests
 
 ```bash
+# Python tests
 cd sage-python
 python -m pytest tests/ -v
+# Expected: 175 passed, 1 skipped
 
-# Current status: 162 tests, all passing
+# Rust tests (requires Rust 1.90+)
+cd sage-core
+cargo test
+# Expected: 38 passed
 ```
 
 ## Project Structure
@@ -219,27 +251,27 @@ python -m pytest tests/ -v
 YGN-SAGE/
 |-- sage-core/              # Rust core (PyO3 bindings)
 |   +-- src/
-|       |-- memory/         # Arrow-backed working memory (SIMD/AVX-512)
-|       |-- sandbox/        # eBPF + Wasm sandboxing (solana_rbpf)
+|       |-- memory/         # Arrow-backed working memory + RagCache (FIFO+TTL)
+|       |-- sandbox/        # eBPF executor (solana_rbpf) + SnapBPF (CoW snapshots)
 |       +-- z3/             # Z3 formal verification bindings
 |-- sage-python/            # Python SDK
 |   +-- src/sage/
 |       |-- llm/            # LLM providers (Google, Codex, Mock)
 |       |   |-- base.py     # LLMConfig, LLMResponse, Message types
-|       |   |-- google.py   # Google Gemini provider (from google import genai)
+|       |   |-- google.py   # Google Gemini provider + FileSearch grounding
 |       |   |-- codex.py    # OpenAI Codex CLI provider (+ Google fallback)
 |       |   |-- router.py   # ModelRouter with 7 tiers
 |       |   +-- mock.py     # Mock provider for testing
 |       |-- tools/          # Tool registry + meta-tools (Python, Bash) + memory tools
-|       |-- memory/         # Working memory + Memory Agent + episodic + compressor
-|       |-- topology/       # KG-RLVR, Z3 validator, evo topology
-|       |-- evolution/      # LLM mutator, eBPF evaluator, fitness cascade
+|       |-- memory/         # Working memory + episodic + compressor + ExoCortex + RAG cache
+|       |-- topology/       # KG-RLVR (Z3 PRM), Z3 validator, evo topology
+|       |-- evolution/      # LLM mutator (DGM context), eBPF evaluator, fitness cascade
 |       |-- strategy/       # Metacognitive controller + PSRO/CFR solvers
 |       |-- sandbox/        # Sandbox manager (Wasm > Docker > local subprocess)
 |       |-- agent.py        # Core Agent class
 |       |-- agent_loop.py   # Structured perceive->think->act->learn runtime
 |       |-- agent_pool.py   # Dynamic sub-agent pool
-|       +-- boot.py         # Boot sequence (wires all pillars)
+|       +-- boot.py         # Boot sequence (wires all pillars + ExoCortex)
 |-- sage-discover/          # Flagship research agent + MCP Gateway
 |-- ui/                     # Control Dashboard
 |   |-- app.py              # FastAPI backend (REST + WebSocket)
@@ -259,6 +291,7 @@ YGN-SAGE/
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GOOGLE_API_KEY` | Yes | Google AI API key for Gemini models |
+| `SAGE_EXOCORTEX_STORE` | No | Google GenAI File Search store resource name (e.g. `projects/.../fileSearchStores/...`) |
 
 Codex CLI authenticates via `codex login` (ChatGPT Pro account).
 
@@ -283,32 +316,37 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 | Layer | Technology | Purpose |
 |-------|-----------|---------|
-| Orchestration | Rust 1.90+ (PyO3) | High-performance core, memory, sandboxing |
+| Orchestration | Rust 1.90+ (PyO3) | High-performance core: memory, sandboxing, caching |
 | SDK | Python 3.12+ | Agent logic, LLM providers, tools |
 | Primary LLM | OpenAI Codex CLI (gpt-5.3) | Agentic coding |
-| Secondary LLM | Google Gemini 3.x (`google-genai`) | Multi-tier routing, fallback |
+| Secondary LLM | Google Gemini 3.x (`google-genai`) | Multi-tier routing, fallback, File Search |
 | Dashboard | FastAPI + WebSocket | Real-time control interface |
 | Verification | Z3 Solver 4.16 | Formal reasoning validation (S3) |
 | Sandbox | Wasm (`wasmtime`) + eBPF (`solana_rbpf`) + Docker | Multi-tier code isolation |
 | Serialization | Apache Arrow (PyArrow) | Zero-copy memory compaction |
+| Caching | DashMap (Rust) | Lock-free FIFO+TTL RAG cache, CoW snapshots |
 
 ## Status (March 2026)
 
-- **162/162 tests passing** (Python SDK)
+- **175 Python tests passing** + 1 skipped (SnapBPF skip when Rust uncompiled)
+- **38 Rust tests passing** (memory, sandbox, SnapBPF, RagCache, types)
 - **Dashboard**: Functional with real-time telemetry, response pane, and event streaming
 - **Cognitive Routing**: Tripartite S1/S2/S3 with AVR sandbox loop (S2) and Z3 formal proofs (S3)
-- **LLM Integration**: Google Gemini fully wired, Codex CLI optional
+- **Z3 Prompt Alignment**: S3/retry/escalation prompts teach Z3 DSL syntax to LLM
+- **LLM Integration**: Google Gemini fully wired (incl. File Search grounding), Codex CLI optional
 - **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking
-- **Memory**: MEM1 per-step internal state + 7 AgeMem tools + Arrow compaction
-- **Evolution**: MAP-Elites topology search + LLM-driven mutation + eBPF evaluation
+- **Memory**: MEM1 per-step internal state + 7 AgeMem tools + Arrow compaction + ExoCortex persistent RAG
+- **Evolution**: MAP-Elites topology search + LLM-driven mutation with DGM context + eBPF evaluation + SnapBPF
 - **Strategy**: PSRO meta-solver with VAD-CFR and SHOR-PSRO variants
+- **RAG Cache**: Rust FIFO+TTL cache with Python fallback
 
 ### Known Limitations
 
-- **Sandbox default is local subprocess** — enable Docker or Wasm for isolation
-- **Episodic memory is in-memory only** — no cross-session persistence yet (graph DB planned)
-- **No CI pipeline** — tests are run locally
-- **Model IDs are hardcoded** in `router.py` — externalize to config if needed
+- **Sandbox default is local subprocess** -- enable Docker or Wasm for isolation
+- **Episodic memory is in-memory only** -- no cross-session persistence yet
+- **No CI pipeline** -- tests are run locally
+- **Model IDs are hardcoded** in `router.py` -- externalize to config if needed
+- **ExoCortex is instantiated but not yet auto-queried** during agent loop -- manual `file_search_store_names` injection required
 
 ## Documentation
 
@@ -317,6 +355,8 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 | [CLAUDE.md](CLAUDE.md) | Development instructions for Claude Code |
 | [GEMINI.md](GEMINI.md) | Gemini CLI memory and strategic directives |
 | [ADR-001: S2 Routing](docs/ADR-cognitive-routing-system2.md) | System 2 cognitive routing decision record |
+| [Phase 3 Design](docs/plans/2026-03-05-exocortex-dgm-z3-design.md) | ExoCortex, DGM, Z3 design decisions |
+| [Phase 3 Implementation](docs/plans/2026-03-05-phase3-implementation.md) | TDD implementation plan (5 tasks) |
 | [Codebase Audit](docs/plans/2026-03-05-codebase-audit.md) | Full connectivity audit (March 2026) |
 | [OpenSAGE-surpass Plan](docs/plans/2026-03-05-opensage-surpass-implementation.md) | 5-pillar implementation plan |
 | [Architecture Design](docs/plans/2026-03-02-ygn-sage-architecture-design.md) | Original architecture spec |

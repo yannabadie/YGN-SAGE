@@ -13,19 +13,29 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 - `Researches/` - Research papers (OpenSage, AlphaEvolve, PSRO, etc.)
 
 ### Key Python Modules (sage-python/src/sage/)
-- `boot.py` - Boot sequence, wires all pillars into `AgentSystem`
-- `agent_loop.py` - Structured perceive→think→act→learn runtime with S2 AVR loop
+- `boot.py` - Boot sequence, wires all pillars + ExoCortex into `AgentSystem`
+- `agent_loop.py` - Structured perceive->think->act->learn runtime with S2 AVR loop and Z3-aligned S3 prompts
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `llm/router.py` - Model Router with 7 tiers (fast/mutator/reasoner/codex/codex_max/budget/fallback)
-- `llm/google.py` - Google Gemini provider (`from google import genai`)
+- `llm/google.py` - Google Gemini provider + File Search grounding (`file_search_store_names`)
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
 - `strategy/metacognition.py` - Stanovich S1/S2/S3 tripartite routing + CGRS self-braking
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
-- `evolution/llm_mutator.py` - LLM-driven code mutation with structured JSON
+- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL: `assert bounds/loop/arithmetic/invariant`)
+- `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
+- `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM)
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression
 - `memory/episodic.py` - In-memory episodic store with CRUD + keyword search
+- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API) + RagCacheFallback
 - `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
+
+### Key Rust Modules (sage-core/src/)
+- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging
+- `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
+- `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
+- `sandbox/wasm.rs` - Wasm sandbox (wasmtime)
+- `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: REST API + WebSocket event streaming
@@ -38,7 +48,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-pytest                          # Run tests (162 passing)
+python -m pytest tests/ -v     # Run tests (175 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -51,14 +61,16 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 
 ### Rust Core
 ```bash
+cd sage-core
 cargo build                    # Build Rust core
-cargo test                     # Run Rust tests
+cargo test                     # Run Rust tests (38 passing)
 cargo clippy                   # Lint Rust code
+maturin develop                # Build + install Python bindings
 ```
 
 ### Full Build
 ```bash
-cargo build --release
+cd sage-core && maturin develop && cd ..
 cd sage-python && pip install -e ".[all,dev]"
 ```
 
@@ -77,7 +89,8 @@ cd sage-python && pip install -e ".[all,dev]"
 
 ### Required Environment Variables
 ```bash
-export GOOGLE_API_KEY="..."     # Required for Gemini models
+export GOOGLE_API_KEY="..."                  # Required for Gemini models
+export SAGE_EXOCORTEX_STORE="projects/..."   # Optional: File Search store for ExoCortex
 # Codex CLI uses ChatGPT Pro account (codex login)
 ```
 
@@ -86,57 +99,69 @@ export GOOGLE_API_KEY="..."     # Required for Gemini models
 - Gemini: `response_schema=PydanticModel.model_json_schema()`
 
 ## Tech Stack
-- Rust 1.90+ (orchestrator, via PyO3)
+- Rust 1.90+ (orchestrator, via PyO3) -- SnapBPF, RagCache, Arrow memory, eBPF
 - Python 3.12+ (SDK, agents)
 - OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
-- Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback)
-- FastAPI + WebSocket (dashboard — install via `pip install -e ".[ui]"`)
+- Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
+- FastAPI + WebSocket (dashboard -- install via `pip install -e ".[ui]"`)
 - Z3 Solver 4.16 (formal verification, S3)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
 - Wasm (wasmtime) + eBPF (solana_rbpf) + Docker (multi-tier sandboxing)
+- DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
 
 ## Memory System
 - **MEM1 Internal State**: `MemoryCompressor.generate_internal_state()` runs every agent step, producing a rolling `<IS_t>` summary
 - **Pressure Compression**: When `event_count >= threshold`, LLM summarizes old events and prunes the buffer
-- **Episodic Memory**: In-memory keyword-search store with CRUD (graph DB persistence planned, not yet wired)
+- **Episodic Memory**: In-memory keyword-search store with CRUD
+- **ExoCortex**: Persistent RAG via Google GenAI File Search API (`memory/remote_rag.py`). Stores persist, free storage, auto chunking/embedding. Injected into `GoogleProvider.generate()` via `file_search_store_names`
+- **RAG Cache**: FIFO+TTL cache (`sage_core.RagCache` in Rust, `RagCacheFallback` in Python). Factory: `get_rag_cache()`
 - **7 AgeMem Tools**: `retrieve_context`, `summarize_context`, `filter_context` (STM) + `search_memory`, `store_memory`, `update_memory`, `delete_memory` (LTM)
-- **S2 AVR Loop**: Act-Verify-Refine cycle — sandbox execution, structured error feedback, retry budget (`S2_AVR_MAX_ITERATIONS=3`), escalation to S3
+- **S2 AVR Loop**: Act-Verify-Refine cycle -- sandbox execution, structured error feedback, retry budget (`S2_AVR_MAX_ITERATIONS=3`), escalation to S3
+
+## Evolution System
+- **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Action + description + parent_score + generation passed to LLM mutator as `dgm_context` dict. Prompt includes "## DGM Directive" section
+- **SnapBPF**: Rust CoW memory snapshots (`DashMap<String, Arc<Vec<u8>>>`). `snapshot()`, `restore()`, `delete()`, `count()` via PyO3
+- **DGM_ACTION_DESCRIPTIONS**: Maps actions 0-4 to semantic directives (optimize perf, fix bugs, explore, constrain, simplify)
+
+## Z3 Formal Verification (S3)
+- S3 system prompt teaches Z3 DSL: `assert bounds(addr, limit)`, `assert loop(var)`, `assert arithmetic(expr, val)`, `assert invariant("pre", "post")`
+- S3 retry prompt reinforces syntax when PRM score is low
+- S2->S3 escalation prompt mentions all 4 assertion types
+- `kg_rlvr.py` parses `<think>` blocks, scores each step via regex + Z3
 
 ## Key Design Principles
 - AI-centered: agents create their own topology, tools, and memory
-- Self-evolving: evolutionary pipeline improves all components
+- Self-evolving: evolutionary pipeline with DGM strategic context improves all components
 - Game-theoretic: PSRO-based strategy for multi-agent orchestration
 - Multi-provider: Codex CLI (primary), Gemini (fallback), Mock (testing)
 - Metacognitive: SOFAI S1/S2/S3 tripartite cognitive routing with CGRS self-braking
+- Rust-accelerated: SnapBPF, RagCache, Arrow memory, eBPF -- Python fallbacks when Rust unavailable
 
-## NotebookLM Integration
+## ExoCortex (replaces NotebookLM)
 
-Package `notebooklm-py` (v0.3.2) is installed. CLI at `sage-python/.venv/Scripts/notebooklm.exe`.
+The ExoCortex module (`memory/remote_rag.py`) replaces the fragile `notebooklm-py` CLI bridge with the native Google GenAI File Search API.
 
-### Available Notebooks (research knowledge base)
-| ID prefix | Title | Use for |
-|-----------|-------|---------|
-| `34d65dbb` | YGN-SAGE: Core Research & MARL | Game theory, PSRO, VAD-CFR, SHOR-PSRO, MARL |
-| `ba22b122` | YGN-SAGE: Technical Implementation | Architecture, metacognition, agent loop, memory |
-| `dcf45958` | Discover AI: Frontiers of Agentic Reasoning | SOTA research, dual-process, reflection, reasoning |
-| `097c4c5c` | MetaScaffold_Core | Meta-reasoning, cognitive architectures, scaffolding |
-| `7ab1d708` | YGN-ExoCortex | Memory architecture, S-MMU, Arrow, graph memory |
+```python
+from sage.memory.remote_rag import ExoCortex
 
-### CLI Protocol
-```bash
-# IMPORTANT: Always set PYTHONIOENCODING=utf-8 on Windows to avoid encoding errors
-PYTHONIOENCODING=utf-8 sage-python/.venv/Scripts/notebooklm.exe use <ID_PREFIX>
-PYTHONIOENCODING=utf-8 sage-python/.venv/Scripts/notebooklm.exe ask "<question>"
+exo = ExoCortex()  # Reads SAGE_EXOCORTEX_STORE env var
+tool = exo.get_file_search_tool()  # Returns types.Tool or None
 
-# Other useful commands:
-notebooklm list                    # List all notebooks
-notebooklm status                  # Show current notebook context
-notebooklm source list             # List sources in current notebook
-notebooklm history                 # Get conversation history
+# Or create a new store:
+store_name = await exo.create_store("my-research")
+await exo.upload("paper.pdf")
 ```
 
-### Best Practices
-- Present the project context and problem in detail when asking questions
-- Query multiple notebooks in parallel for cross-referenced insights
-- Conversations persist (use `notebooklm history` to review)
-- Each notebook has different source material — pick the right one for your question
+The ExoCortex is instantiated in `boot.py` and attached to `AgentLoop` as `loop.exocortex`.
+
+### Legacy NotebookLM Reference
+
+Package `notebooklm-py` (v0.3.2) is still installed but deprecated. Use ExoCortex instead.
+
+| ID prefix | Title | Use for |
+|-----------|-------|---------|
+| `34d65dbb` | YGN-SAGE: Core Research & MARL | Game theory, PSRO, VAD-CFR |
+| `ba22b122` | YGN-SAGE: Technical Implementation | Architecture, metacognition |
+| `dcf45958` | Discover AI: Frontiers of Agentic Reasoning | SOTA research |
+| `097c4c5c` | MetaScaffold_Core | Meta-reasoning, cognitive architectures |
+| `7ab1d708` | YGN-ExoCortex | Memory architecture, S-MMU, Arrow |
