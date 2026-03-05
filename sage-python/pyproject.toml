@@ -8,8 +8,6 @@ dependencies = [
     "pydantic>=2.10",
     "rich>=13",
     "anyio>=4",
-    "neo4j>=5.17",
-    "qdrant-client>=1.8",
 ]
 
 [project.optional-dependencies]
