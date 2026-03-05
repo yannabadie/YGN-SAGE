@@ -22,6 +22,7 @@ class GoogleProvider:
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
         use_google_search: bool = True,
+        file_search_store_names: list[str] | None = None,
     ) -> LLMResponse:
         try:
             from google import genai
@@ -56,6 +57,17 @@ class GoogleProvider:
         gemini_tools = []
         if use_google_search:
             gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
+
+        # File Search grounding (ExoCortex)
+        if file_search_store_names:
+            try:
+                gemini_tools.append(types.Tool(
+                    file_search=types.FileSearch(
+                        file_search_store_names=file_search_store_names
+                    )
+                ))
+            except (AttributeError, TypeError) as e:
+                logger.warning(f"FileSearch tool injection failed: {e}")
 
         # Structured JSON output support
         response_mime_type = None

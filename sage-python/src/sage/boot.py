@@ -31,6 +31,7 @@ from sage.tools.registry import ToolRegistry
 from sage.memory.compressor import MemoryCompressor
 from sage.sandbox.manager import SandboxManager
 from sage.memory.episodic import EpisodicMemory
+from sage.memory.remote_rag import ExoCortex
 from sage.tools.memory_tools import create_memory_tools
 
 
@@ -146,6 +147,9 @@ def boot_agent_system(
 
     # Episodic memory
     episodic_memory = EpisodicMemory()
+
+    # ExoCortex (persistent RAG via Google GenAI File Search)
+    exocortex = ExoCortex()
 
     # Agent config
     config = AgentConfig(
