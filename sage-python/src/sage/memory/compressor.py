@@ -9,12 +9,12 @@ from sage.llm.base import LLMProvider, Message, Role
 from sage.memory.working import WorkingMemory
 
 class GraphDatabase(Protocol):
-    """Protocol for Neo4j or similar graph DB interaction."""
+    """Protocol for graph DB interaction (e.g. Neo4j). Not yet wired."""
     def create_node(self, label: str, properties: dict[str, Any]) -> str: ...
     def create_relationship(self, from_id: str, to_id: str, rel_type: str) -> None: ...
 
 class VectorDatabase(Protocol):
-    """Protocol for Qdrant or similar vector DB interaction."""
+    """Protocol for vector DB interaction (e.g. Qdrant). Not yet wired."""
     def upsert(self, collection: str, text: str, metadata: dict[str, Any]) -> str: ...
 
 class MemoryCompressor:

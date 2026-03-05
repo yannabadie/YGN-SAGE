@@ -19,8 +19,9 @@ class ExtractionResult:
 class MemoryAgent:
     """Runs asynchronously to compress working memory into graph knowledge.
 
-    Extracts entities and relationships from agent events, stores in
-    Neo4j/Qdrant for cross-session persistence.
+    Extracts entities and relationships from agent events using heuristic
+    or LLM-powered extraction. Currently stores in-memory; graph DB
+    persistence (Neo4j/Qdrant) is a planned future enhancement.
     """
 
     def __init__(

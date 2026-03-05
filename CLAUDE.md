@@ -14,7 +14,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 
 ### Key Python Modules (sage-python/src/sage/)
 - `boot.py` - Boot sequence, wires all pillars into `AgentSystem`
-- `agent_loop.py` - Structured perceive→think→act→learn runtime
+- `agent_loop.py` - Structured perceive→think→act→learn runtime with S2 AVR loop
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `llm/router.py` - Model Router with 7 tiers (fast/mutator/reasoner/codex/codex_max/budget/fallback)
 - `llm/google.py` - Google Gemini provider (`from google import genai`)
@@ -22,7 +22,10 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 - `strategy/metacognition.py` - Stanovich S1/S2/S3 tripartite routing + CGRS self-braking
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `evolution/llm_mutator.py` - LLM-driven code mutation with structured JSON
-- `memory/memory_agent.py` - Autonomous entity extraction agent
+- `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM)
+- `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression
+- `memory/episodic.py` - In-memory episodic store with CRUD + keyword search
+- `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: REST API + WebSocket event streaming
@@ -87,10 +90,17 @@ export GOOGLE_API_KEY="..."     # Required for Gemini models
 - Python 3.12+ (SDK, agents)
 - OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
 - Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback)
-- FastAPI + WebSocket (dashboard)
+- FastAPI + WebSocket (dashboard — install via `pip install -e ".[ui]"`)
 - Z3 Solver 4.16 (formal verification, S3)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
-- eBPF via solana_rbpf (sub-ms code evaluation)
+- Wasm (wasmtime) + eBPF (solana_rbpf) + Docker (multi-tier sandboxing)
+
+## Memory System
+- **MEM1 Internal State**: `MemoryCompressor.generate_internal_state()` runs every agent step, producing a rolling `<IS_t>` summary
+- **Pressure Compression**: When `event_count >= threshold`, LLM summarizes old events and prunes the buffer
+- **Episodic Memory**: In-memory keyword-search store with CRUD (graph DB persistence planned, not yet wired)
+- **7 AgeMem Tools**: `retrieve_context`, `summarize_context`, `filter_context` (STM) + `search_memory`, `store_memory`, `update_memory`, `delete_memory` (LTM)
+- **S2 AVR Loop**: Act-Verify-Refine cycle — sandbox execution, structured error feedback, retry budget (`S2_AVR_MAX_ITERATIONS=3`), escalation to S3
 
 ## Key Design Principles
 - AI-centered: agents create their own topology, tools, and memory

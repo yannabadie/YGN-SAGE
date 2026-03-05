@@ -5,7 +5,7 @@ from typing import Any
 
 
 class EpisodicMemory:
-    """Simple in-memory episodic store. Replace with Qdrant/Neo4j for production."""
+    """In-memory episodic store with keyword search, CRUD, and key listing."""
 
     def __init__(self) -> None:
         self._entries: list[dict[str, Any]] = []
@@ -24,11 +24,7 @@ class EpisodicMemory:
         })
 
     async def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
-        """Search episodic memory by keyword matching.
-
-        In production, this uses vector similarity via Qdrant.
-        This in-memory version uses simple substring matching.
-        """
+        """Search episodic memory by keyword matching (substring scoring)."""
         query_lower = query.lower()
         scored = []
         for entry in self._entries:

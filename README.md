@@ -2,7 +2,9 @@
 
 **YGN-SAGE** (Yann's Generative Neural Self-Adaptive Generation Engine) is an Agent Development Kit built on **5 cognitive pillars**: Topology, Tools, Memory, Evolution, Strategy.
 
-It combines a high-performance Rust execution core (`sage-core`) with a Python orchestration layer (`sage-python`), a tripartite cognitive routing system (S1/S2/S3), and a real-time control dashboard.
+It combines a Rust execution core (`sage-core`) with a Python orchestration layer (`sage-python`), a tripartite cognitive routing system (S1/S2/S3), and a real-time control dashboard.
+
+> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 162 passing tests. Not yet battle-tested in production environments.
 
 ## Core Architecture
 
@@ -33,8 +35,8 @@ It combines a high-performance Rust execution core (`sage-core`) with a Python o
 | Pillar | Module | Description |
 |--------|--------|-------------|
 | **Topology** | `evo_topology.py` | MAP-Elites evolutionary search on agent DAG topologies |
-| **Tools** | `tools/registry.py` | Dynamic tool creation, registration, and Docker-sandboxed execution |
-| **Memory** | `memory_agent.py` | Entity extraction, Rust-backed Arrow working memory |
+| **Tools** | `tools/registry.py` | Dynamic tool creation, registration, and sandboxed execution |
+| **Memory** | `memory_agent.py` | Entity extraction + MEM1 rolling internal state + 7 AgeMem tools |
 | **Evolution** | `llm_mutator.py` | LLM-driven code mutation + eBPF sub-ms evaluation |
 | **Strategy** | `metacognition.py` | Stanovich S1/S2/S3 tripartite routing + CGRS self-braking |
 
@@ -45,12 +47,36 @@ YGN-SAGE implements a **tripartite cognitive model** inspired by Stanovich (2011
 | System | Role | LLM Tier | Validation | Latency |
 |--------|------|----------|------------|---------|
 | **S1** (Autonomous) | Fast heuristic responses | `fast` (Gemini Flash Lite) | None | <1s |
-| **S2** (Algorithmic) | Step-by-step reasoning | `mutator`/`reasoner` (Gemini Flash/Pro) | Empirical (CoT enforcement) | 2-5s |
+| **S2** (Algorithmic) | Step-by-step reasoning | `mutator`/`reasoner` (Gemini Flash/Pro) | Empirical (AVR sandbox loop) | 2-5s |
 | **S3** (Reflective) | Formal verified reasoning | `codex`/`reasoner` (GPT-5.3/Gemini Pro) | Z3 PRM formal proofs | 5-30s |
 
-The **MetacognitiveController** assesses task complexity and uncertainty, then routes to the appropriate system. S2 offloads ~80% of moderate tasks from expensive S3, reducing cost by ~20x.
+The **MetacognitiveController** assesses task complexity and uncertainty, then routes to the appropriate system. S2's **Act-Verify-Refine (AVR)** loop executes code in a sandbox, checks results, and retries with structured error feedback before escalating to S3.
 
 See [ADR-001: System 2 Cognitive Routing](docs/ADR-cognitive-routing-system2.md) for the full decision record.
+
+### Memory System
+
+YGN-SAGE uses a **two-tier memory architecture** inspired by MEM1 and AgeMem research:
+
+**Working Memory (STM)** — Rust-backed Arrow buffer for the current session:
+- Per-step **MEM1 internal state** (`<IS_t>`): the MemoryCompressor generates a rolling summary every step, merging previous state with new observations
+- Pressure-triggered **bulk compression**: when event count exceeds threshold, LLM summarizes old events and prunes the buffer
+
+**Episodic Memory (LTM)** — In-memory store with keyword search (graph DB persistence planned):
+- CRUD operations (store, update, delete, search, list)
+- Automatic storage of significant agent outputs during the LEARN phase
+
+**7 AgeMem Memory Tools** — exposed to the LLM as callable tools:
+
+| Tool | Memory Tier | Description |
+|------|-------------|-------------|
+| `retrieve_context` | STM | Get recent working memory events |
+| `summarize_context` | STM | Get the current MEM1 internal state |
+| `filter_context` | STM | Search working memory by keyword |
+| `search_memory` | LTM | Search episodic memory |
+| `store_memory` | LTM | Store a new episodic entry |
+| `update_memory` | LTM | Update an existing entry by key |
+| `delete_memory` | LTM | Delete an entry by key |
 
 ### LLM Providers
 
@@ -60,8 +86,8 @@ YGN-SAGE uses a tiered model router with automatic fallback:
 
 | Tier | Model | Usage |
 |------|-------|-------|
-| `codex` | `gpt-5.3-codex` | SOTA agentic coding (default) |
-| `codex_max` | `gpt-5.2` | Most powerful general reasoning |
+| `codex` | `gpt-5.3-codex` | Agentic coding (default) |
+| `codex_max` | `gpt-5.2` | Complex general reasoning |
 
 **Google Gemini (via `google-genai` SDK):**
 
@@ -74,6 +100,16 @@ YGN-SAGE uses a tiered model router with automatic fallback:
 | `fallback` | `gemini-2.5-flash` | If 3.x unavailable |
 
 All providers support **structured JSON output** (via `--output-schema` for Codex, `response_schema` for Gemini).
+
+### Sandbox Execution
+
+Code execution uses `SandboxManager` with three backends (in priority order):
+
+1. **Wasm** (via `sage-core` + `wasmtime`/`solana_rbpf`) — sub-ms, highest isolation
+2. **Docker** (`use_docker=True`) — container-level isolation, requires Docker Desktop
+3. **Local subprocess** (`use_docker=False`, current default) — no isolation, for development only
+
+> **Note**: The default is local subprocess execution. For untrusted code, enable Docker (`SandboxManager(use_docker=True)`) or use the Wasm path.
 
 ## Quickstart
 
@@ -110,11 +146,14 @@ cd sage-core && maturin develop && cd ..
 ### Running the Dashboard
 
 ```bash
+# Install dashboard dependencies (if not already via [all])
+cd sage-python && pip install -e ".[ui]" && cd ..
+
 # From the repo root:
 python ui/app.py
 ```
 
-This starts the **FastAPI backend AND the frontend** on **http://localhost:8000**. A single command launches everything:
+This starts the **FastAPI backend AND the frontend** on **http://localhost:8000**:
 
 - **Backend**: FastAPI server with REST API + WebSocket event streaming
 - **Frontend**: Single-file HTML dashboard served at `/` via `StaticFiles`
@@ -191,12 +230,12 @@ YGN-SAGE/
 |       |   |-- codex.py    # OpenAI Codex CLI provider (+ Google fallback)
 |       |   |-- router.py   # ModelRouter with 7 tiers
 |       |   +-- mock.py     # Mock provider for testing
-|       |-- tools/          # Tool registry + meta-tools (Python, Bash)
-|       |-- memory/         # Working memory + Memory Agent + episodic
+|       |-- tools/          # Tool registry + meta-tools (Python, Bash) + memory tools
+|       |-- memory/         # Working memory + Memory Agent + episodic + compressor
 |       |-- topology/       # KG-RLVR, Z3 validator, evo topology
 |       |-- evolution/      # LLM mutator, eBPF evaluator, fitness cascade
 |       |-- strategy/       # Metacognitive controller + PSRO/CFR solvers
-|       |-- sandbox/        # Docker sandbox manager
+|       |-- sandbox/        # Sandbox manager (Wasm > Docker > local subprocess)
 |       |-- agent.py        # Core Agent class
 |       |-- agent_loop.py   # Structured perceive->think->act->learn runtime
 |       |-- agent_pool.py   # Dynamic sub-agent pool
@@ -204,7 +243,7 @@ YGN-SAGE/
 |-- sage-discover/          # Flagship research agent + MCP Gateway
 |-- ui/                     # Control Dashboard
 |   |-- app.py              # FastAPI backend (REST + WebSocket)
-|   +-- static/index.html   # Single-file production dashboard
+|   +-- static/index.html   # Single-file dashboard (Tailwind + vanilla JS)
 |-- docs/                   # Architecture Decision Records + plans
 |-- conductor/              # Strategic track planning
 |-- memory-bank/            # AI agent context persistence
@@ -234,7 +273,7 @@ system = boot_agent_system(llm_tier="budget")
 # Use the reasoning model for complex analysis
 system = boot_agent_system(llm_tier="reasoner")
 
-# Use Codex for SOTA coding
+# Use Codex for coding tasks
 system = boot_agent_system(llm_tier="codex")
 ```
 
@@ -246,24 +285,30 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 |-------|-----------|---------|
 | Orchestration | Rust 1.90+ (PyO3) | High-performance core, memory, sandboxing |
 | SDK | Python 3.12+ | Agent logic, LLM providers, tools |
-| Primary LLM | OpenAI Codex CLI (gpt-5.3) | SOTA agentic coding |
+| Primary LLM | OpenAI Codex CLI (gpt-5.3) | Agentic coding |
 | Secondary LLM | Google Gemini 3.x (`google-genai`) | Multi-tier routing, fallback |
 | Dashboard | FastAPI + WebSocket | Real-time control interface |
 | Verification | Z3 Solver 4.16 | Formal reasoning validation (S3) |
-| Sandbox | eBPF (solana_rbpf) + Docker | Sub-ms code evaluation |
+| Sandbox | Wasm (`wasmtime`) + eBPF (`solana_rbpf`) + Docker | Multi-tier code isolation |
 | Serialization | Apache Arrow (PyArrow) | Zero-copy memory compaction |
 
 ## Status (March 2026)
 
 - **162/162 tests passing** (Python SDK)
-- **Dashboard**: Production-ready with real-time telemetry and response pane
-- **Cognitive Routing**: Tripartite S1/S2/S3 with validation levels (none/empirical/formal)
+- **Dashboard**: Functional with real-time telemetry, response pane, and event streaming
+- **Cognitive Routing**: Tripartite S1/S2/S3 with AVR sandbox loop (S2) and Z3 formal proofs (S3)
 - **LLM Integration**: Google Gemini fully wired, Codex CLI optional
 - **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking
-- **Z3 Verification**: Formal safety gate on reasoning steps (S3)
-- **Memory**: Rust-backed Arrow working memory + heuristic entity extraction
+- **Memory**: MEM1 per-step internal state + 7 AgeMem tools + Arrow compaction
 - **Evolution**: MAP-Elites topology search + LLM-driven mutation + eBPF evaluation
 - **Strategy**: PSRO meta-solver with VAD-CFR and SHOR-PSRO variants
+
+### Known Limitations
+
+- **Sandbox default is local subprocess** — enable Docker or Wasm for isolation
+- **Episodic memory is in-memory only** — no cross-session persistence yet (graph DB planned)
+- **No CI pipeline** — tests are run locally
+- **Model IDs are hardcoded** in `router.py` — externalize to config if needed
 
 ## Documentation
 
