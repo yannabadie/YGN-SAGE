@@ -66,6 +66,15 @@ class EvolutionEngine:
         self.total_mutations: int = 0
         self.z3_rejections: int = 0
 
+        # eBPF evaluator: wire as default first stage (sub-ms execution)
+        try:
+            from sage.evolution.ebpf_evaluator import EbpfEvaluator
+            ebpf = EbpfEvaluator()
+            self._evaluator.add_stage("ebpf_sandbox", ebpf.evaluate, threshold=0.0, weight=1.0)
+            log.info("eBPF evaluator wired as default evolution stage")
+        except Exception:
+            log.debug("eBPF evaluator not available — evolution runs without hardware sandbox")
+
         # Z3 Safety Gate
         self._z3: Z3Validator | None = None
         if self.config.z3_safety_gate and _Z3_AVAILABLE:
