@@ -1,29 +1,42 @@
 # YGN-SAGE Enterprise MCP Gateway - SOTA 2026
 # Optimized for Google Cloud Run (Serverless, Scale-to-Zero)
 
-FROM python:3.13-slim
+# Stage 1: Build Rust core
+FROM rust:slim AS builder
 
-# Install system dependencies for Rust, eBPF (Solana), and Z3 bindings
 RUN apt-get update && apt-get install -y \
-    curl \
-    build-essential \
     clang \
     libclang-dev \
     pkg-config \
     libssl-dev \
+    python3 \
+    python3-pip \
+    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust toolchain
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.js | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
 WORKDIR /app
-
-# Copy Rust core and build it
+COPY Cargo.toml Cargo.lock /app/
 COPY sage-core/ /app/sage-core/
+
+# Use a virtual environment for maturin to avoid PEP 668 issues
+RUN python3 -m venv /venv
+ENV PATH="/venv/bin:$PATH"
+
 RUN pip install --no-cache-dir maturin \
     && cd /app/sage-core \
     && maturin build --release --out /app/wheels
+
+# Stage 2: Final Python Runtime
+FROM python:3.13-slim
+
+RUN apt-get update && apt-get install -y \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy the built wheels from the builder stage
+COPY --from=builder /app/wheels /app/wheels
 
 # Install Python dependencies and the built Rust core
 COPY sage-python/pyproject.toml /app/sage-python/

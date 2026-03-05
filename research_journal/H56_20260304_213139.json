@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Hypothesis 1: Volatility-Adaptive SIMD Block Sizing via eBPF Map Updates (Based on VAD-CFR & Memory Hierarchy)**",
+  "code_hex": "b7000000ff0000009500000000000000",
+  "perf_score": 255.0,
+  "structural_score": 1.0,
+  "combined_score": 153.4
+}

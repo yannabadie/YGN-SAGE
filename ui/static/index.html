@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YGN-SAGE | Sovereign Agent Dashboard</title>
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: #111827;
+            --border-color: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --error: #ef4444;
+            --system: #a855f7;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            margin: 0;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            grid-template-rows: auto 1fr;
+            gap: 20px;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        header {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 15px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 1.5rem;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 9999px;
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .pulse {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success);
+            border-radius: 50%;
+            box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+        }
+
+        .panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel h2 {
+            margin-top: 0;
+            font-size: 1rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .metric-card {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        .metric-value {
+            font-size: 2rem;
+            font-weight: 700;
+            font-family: 'JetBrains Mono', monospace;
+            margin: 5px 0;
+        }
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        #log-container {
+            flex: 1;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', Consolas, monospace;
+            font-size: 0.9rem;
+            line-height: 1.5;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            border-radius: 4px;
+            background: rgba(255, 255, 255, 0.03);
+            border-left: 3px solid transparent;
+            word-wrap: break-word;
+        }
+
+        .log-time {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-right: 10px;
+        }
+
+        .log-type-SYSTEM { border-left-color: var(--system); }
+        .log-type-ACTION { border-left-color: var(--accent); }
+        .log-type-METRIC { border-left-color: var(--success); }
+        .log-type-ERROR  { border-left-color: var(--error); background: rgba(239, 68, 68, 0.1); }
+        .log-type-THINK  { border-left-color: var(--warning); background: rgba(245, 158, 11, 0.05); font-style: italic; }
+
+        .type-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 8px;
+            font-weight: bold;
+        }
+        
+        .badge-SYSTEM { background: rgba(168, 85, 247, 0.2); color: var(--system); }
+        .badge-ACTION { background: rgba(56, 189, 248, 0.2); color: var(--accent); }
+        .badge-METRIC { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+        .badge-THINK  { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-color);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>YGN-SAGE <span style="color:var(--text-muted); font-size:1rem; font-weight:normal;">| Sovereign Agent Telemetry</span></h1>
+        <div class="status-badge" id="conn-status"><div class="pulse"></div> CONNECTING...</div>
+    </header>
+
+    <div class="panel">
+        <h2>Live Telemetry (eBPF VM)</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Execution Latency (P99)</div>
+                <div class="metric-value" id="val-latency" style="color: var(--accent);">-- ms</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Assets Under Management</div>
+                <div class="metric-value" id="val-aum" style="color: var(--success);">$--</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Execution Cycles</div>
+                <div class="metric-value" id="val-cycles">0</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2>Agent Stream (System 1 & System 2)</h2>
+        <div id="log-container">
+            <!-- Logs injected here via WebSocket -->
+        </div>
+    </div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const connStatus = document.getElementById('conn-status');
+        const valLatency = document.getElementById('val-latency');
+        const valAum = document.getElementById('val-aum');
+        const valCycles = document.getElementById('val-cycles');
+
+        function connect() {
+            const ws = new WebSocket(`ws://${window.location.host}/ws`);
+
+            ws.onopen = () => {
+                connStatus.innerHTML = '<div class="pulse"></div> SOVEREIGN MODE ACTIVE';
+                connStatus.style.color = 'var(--success)';
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    appendLog(data);
+                    
+                    // Update metrics if present
+                    if (data.type === 'METRIC' && data.meta) {
+                        valLatency.textContent = `${data.meta.latency_ms} ms`;
+                        valAum.textContent = `$${data.meta.total_aum.toLocaleString()}`;
+                        valCycles.textContent = data.meta.cycle;
+                    }
+                } catch (e) {
+                    console.error("Error parsing log event", e);
+                }
+            };
+
+            ws.onclose = () => {
+                connStatus.innerHTML = 'DISCONNECTED (Reconnecting...)';
+                connStatus.style.color = 'var(--error)';
+                setTimeout(connect, 2000);
+            };
+        }
+
+        function appendLog(data) {
+            const time = new Date(data.timestamp).toLocaleTimeString();
+            const div = document.createElement('div');
+            div.className = `log-entry log-type-${data.type}`;
+            
+            // Format content. If it contains <think>, highlight it.
+            let contentHTML = data.content;
+            contentHTML = contentHTML.replace(/<think>/g, '<div style="color:var(--warning); margin:5px 0;"><strong>[System 3 Reasoning]</strong><br>');
+            contentHTML = contentHTML.replace(/<\/think>/g, '</div>');
+
+            div.innerHTML = `
+                <span class="log-time">[${time}]</span>
+                <span class="type-badge badge-${data.type}">${data.type}</span>
+                <span>${contentHTML}</span>
+            `;
+            
+            logContainer.appendChild(div);
+            // Auto-scroll
+            logContainer.scrollTop = logContainer.scrollHeight;
+            
+            // Limit to 100 entries to prevent DOM bloat
+            if (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.firstChild);
+            }
+        }
+
+        connect();
+    </script>
+</body>
+</html>

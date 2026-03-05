@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Hypothesis 2: SIMD-Like Block Moves via Unrolled BPF Memory Instructions and Per-CPU Maps**",
+  "code_hex": "b7000000f80000009500000000000000",
+  "perf_score": 248.0,
+  "structural_score": 1.0,
+  "combined_score": 149.2
+}

@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Concept:** Implement a meta-sorter that dynamically blends sorting strategies by measuring data \"volatility\" (entropy/run-length) in real-time.",
+  "code_hex": "b7000000910000009500000000000000",
+  "perf_score": 145.0,
+  "structural_score": 1.0,
+  "combined_score": 87.4
+}

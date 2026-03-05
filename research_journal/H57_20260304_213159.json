@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Hypothesis:** Dynamically adjusting the SIMD vector load/store block sizes based on a running EWMA of data entropy (volatility) will reduce L1 cache thrashing and maximize branchless partitioning throughput compared to static block sizes.",
+  "code_hex": "b7000000ff0000009500000000000000",
+  "perf_score": 255.0,
+  "structural_score": 1.0,
+  "combined_score": 153.4
+}

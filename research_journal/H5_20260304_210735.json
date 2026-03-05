@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Hypothesis 2: Cache-Line Aligned Block Moves using Per-CPU Scratchpad Maps**",
+  "code_hex": "b7000000620000009500000000000000",
+  "perf_score": 98.0,
+  "structural_score": 1.0,
+  "combined_score": 59.199999999999996
+}

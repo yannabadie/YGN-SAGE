@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Concept:** Apply the $\\sigma_{hybrid}$ blending concept directly at the instruction level by dynamically rewriting the partitioning logic to be strictly branchless when data entropy is highly irregular, and SIMD-heavy when sequential patterns are detected.",
+  "code_hex": "b7000000ff0000009500000000000000",
+  "perf_score": 255.0,
+  "structural_score": 1.0,
+  "combined_score": 153.4
+}

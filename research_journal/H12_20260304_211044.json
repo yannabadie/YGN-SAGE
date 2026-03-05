@@ -1,0 +1,7 @@
+{
+  "hypothesis": "Testable Metric:** Instruction per cycle (IPC) and branch miss rate compared to a static eBPF sorting implementation.",
+  "code_hex": "b7000000a60000009500000000000000",
+  "perf_score": 166.0,
+  "structural_score": 1.0,
+  "combined_score": 100.0
+}

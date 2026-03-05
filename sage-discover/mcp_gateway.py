@@ -81,4 +81,5 @@ if __name__ == "__main__":
     print(" Exposing: eBPF Execution (<1ms) & Z3 Formal Verification")
     print("===================================================================")
     # Exposing the server via streamable HTTP for cross-platform agent consumption
-    server.run(transport="streamable-http", port=8080, debug=True)
+    port = int(os.environ.get("PORT", 8080))
+    server.run(transport="streamable-http", host="0.0.0.0", port=port, debug=True)

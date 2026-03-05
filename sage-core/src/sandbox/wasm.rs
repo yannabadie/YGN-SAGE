@@ -49,9 +49,15 @@ impl WasmSandbox {
         args_json: String,
         env: HashMap<String, String>
     ) -> PyResult<PyObject> {
-        let component = self.component_cache.entry(name.clone()).or_insert_with(|| {
-            Component::new(&self.engine, &wasm_bytes).expect("Failed to compile Wasm component")
+        let component_result = self.component_cache.entry(name.clone()).or_try_insert_with(|| -> PyResult<Component> {
+            Component::new(&self.engine, &wasm_bytes)
+                .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!("Failed to compile Wasm component: {}", e)))
         });
+        
+        let component = match component_result {
+            Ok(entry) => entry.value().clone(),
+            Err(e) => return Err(e),
+        };
 
         let mut store = Store::new(&self.engine, ());
         let linker = Linker::new(&self.engine);
