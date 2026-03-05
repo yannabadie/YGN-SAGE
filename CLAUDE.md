@@ -89,12 +89,42 @@ export GOOGLE_API_KEY="..."     # Required for Gemini models
 - Google Gemini 3.x (secondary LLM, fallback)
 - FastAPI + WebSocket (dashboard)
 - Z3 Solver (formal verification)
-- Neo4j (graph memory, episodic + semantic)
-- Qdrant (vector memory)
 
 ## Key Design Principles
 - AI-centered: agents create their own topology, tools, and memory
 - Self-evolving: evolutionary pipeline improves all components
 - Game-theoretic: PSRO-based strategy for multi-agent orchestration
 - Multi-provider: Codex CLI (primary), Gemini (fallback), Mock (testing)
-- Metacognitive: SOFAI routing between System 1 (fast) and System 3 (formal reasoning)
+- Metacognitive: SOFAI S1/S2/S3 tripartite cognitive routing with CGRS self-braking
+
+## NotebookLM Integration
+
+Package `notebooklm-py` (v0.3.2) is installed. CLI at `sage-python/.venv/Scripts/notebooklm.exe`.
+
+### Available Notebooks (research knowledge base)
+| ID prefix | Title | Use for |
+|-----------|-------|---------|
+| `34d65dbb` | YGN-SAGE: Core Research & MARL | Game theory, PSRO, VAD-CFR, SHOR-PSRO, MARL |
+| `ba22b122` | YGN-SAGE: Technical Implementation | Architecture, metacognition, agent loop, memory |
+| `dcf45958` | Discover AI: Frontiers of Agentic Reasoning | SOTA research, dual-process, reflection, reasoning |
+| `097c4c5c` | MetaScaffold_Core | Meta-reasoning, cognitive architectures, scaffolding |
+| `7ab1d708` | YGN-ExoCortex | Memory architecture, S-MMU, Arrow, graph memory |
+
+### CLI Protocol
+```bash
+# IMPORTANT: Always set PYTHONIOENCODING=utf-8 on Windows to avoid encoding errors
+PYTHONIOENCODING=utf-8 sage-python/.venv/Scripts/notebooklm.exe use <ID_PREFIX>
+PYTHONIOENCODING=utf-8 sage-python/.venv/Scripts/notebooklm.exe ask "<question>"
+
+# Other useful commands:
+notebooklm list                    # List all notebooks
+notebooklm status                  # Show current notebook context
+notebooklm source list             # List sources in current notebook
+notebooklm history                 # Get conversation history
+```
+
+### Best Practices
+- Present the project context and problem in detail when asking questions
+- Query multiple notebooks in parallel for cross-referenced insights
+- Conversations persist (use `notebooklm history` to review)
+- Each notebook has different source material — pick the right one for your question
