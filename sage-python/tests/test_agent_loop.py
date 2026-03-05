@@ -116,6 +116,39 @@ async def test_agent_loop_emits_events(mock_llm):
     assert LoopPhase.THINK in phases
 
 @pytest.mark.asyncio
+async def test_agent_loop_compresses_memory_on_pressure():
+    """Memory compressor fires when event count exceeds threshold."""
+    from sage.memory.compressor import MemoryCompressor
+    from sage.llm.mock import MockProvider
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+
+    provider = MockProvider(responses=["SUMMARY: test summary\nDISCOVERIES:\n- discovery 1"])
+    compressor = MemoryCompressor(
+        llm=provider,
+        compression_threshold=3,
+        keep_recent=1,
+    )
+
+    config = AgentConfig(
+        name="test", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=3, validation_level=1,
+    )
+    loop = AgentLoop(config=config, llm_provider=MockProvider(responses=["Done."]))
+    loop.memory_compressor = compressor
+
+    # Manually add events to exceed threshold
+    for i in range(4):
+        loop.working_memory.add_event("TEST", f"event {i}")
+
+    # Run compression step directly
+    compressed = await compressor.step(loop.working_memory)
+    assert compressed is True
+    # After compression, event count should be reduced (at most keep_recent + summary)
+    assert loop.working_memory.event_count() < 4
+
+
+@pytest.mark.asyncio
 async def test_agent_loop_learn_updates_memory(mock_llm):
     from sage.agent import AgentConfig
     from sage.llm.base import LLMConfig

@@ -28,6 +28,7 @@ from sage.strategy.metacognition import MetacognitiveController
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
 from sage.memory.memory_agent import MemoryAgent
 from sage.tools.registry import ToolRegistry
+from sage.memory.compressor import MemoryCompressor
 
 
 @dataclass
@@ -125,6 +126,13 @@ def boot_agent_system(
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm)
 
+    # Memory compressor (fires on pressure — MEM1 pattern)
+    memory_compressor = MemoryCompressor(
+        llm=provider,
+        compression_threshold=20,
+        keep_recent=5,
+    )
+
     # Agent config
     config = AgentConfig(
         name=agent_name,
@@ -142,6 +150,7 @@ def boot_agent_system(
         config=config,
         llm_provider=provider,
         tool_registry=tool_registry,
+        memory_compressor=memory_compressor,
     )
     loop.agent_pool = agent_pool
     loop.metacognition = metacognition

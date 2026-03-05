@@ -36,14 +36,17 @@ class MemoryCompressor:
         self.logger = logging.getLogger(__name__)
 
     async def step(self, working_memory: WorkingMemory) -> bool:
-        """Check and perform compression if threshold is met."""
+        """Check and perform compression if threshold is met (memory pressure trigger)."""
         if working_memory.event_count() < self.compression_threshold:
             return False
 
         self.logger.info(f"Compressing memory for agent {working_memory.agent_id}")
-        
-        # 1. Identify events to compress
-        to_compress = working_memory.recent_events(working_memory.event_count() - self.keep_recent)
+
+        # 1. Identify events to compress (all except keep_recent)
+        all_events = working_memory.recent_events(working_memory.event_count())
+        if len(all_events) <= self.keep_recent:
+            return False
+        to_compress = all_events[:-self.keep_recent] if self.keep_recent > 0 else all_events
         context = "\n".join([f"[{e['type']}] {e['content']}" for e in to_compress])
 
         # 2. Generate Summary & Key Discoveries via LLM
@@ -100,6 +103,6 @@ DISCOVERIES:
                         "graph_node_id": disc_node_id
                     })
 
-        # 4. Update Working Memory
-        working_memory.compress(self.keep_recent, summary)
+        # 4. Update Working Memory — compress_old_events keeps N recent + prepends summary
+        working_memory.compress(self.keep_recent, summary or "No summary generated.")
         return True
