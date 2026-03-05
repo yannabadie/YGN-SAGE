@@ -11,12 +11,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-anthropic = ["anthropic>=0.52"]
-openai = ["openai>=1.82"]
 google = ["google-genai>=1"]
 arrow = ["pyarrow>=18"]
 z3 = ["z3-solver>=4.13"]
-all = ["ygn-sage[anthropic,openai,google,arrow,z3]"]
+all = ["ygn-sage[google,arrow,z3]"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.25",

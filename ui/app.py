@@ -115,6 +115,9 @@ dashboard_state: dict = {
     "inference_time_ms": 0.0,
     "wall_time_s": 0.0,
     "total_events": 0,
+    "last_query": "",
+    "last_response": "",
+    "last_response_system": 1,
 }
 
 
@@ -145,12 +148,21 @@ def _update_state_from_event(evt: dict) -> None:
         dashboard_state["memory_events"] = meta["events"]
 
     # LLM calls (each THINK event is an LLM call)
-    if etype == "THINK" and "model" in meta:
-        dashboard_state["llm_calls"] += 1
+    if etype == "THINK":
+        if "model" in meta:
+            dashboard_state["llm_calls"] += 1
+        if "content" in meta:
+            # Real-time update for dashboard response pane
+            dashboard_state["last_response"] = meta["content"]
 
     # System routing (from PERCEIVE or THINK)
     if "system" in meta:
         dashboard_state["metacognitive_system"] = meta["system"]
+        dashboard_state["last_response_system"] = meta["system"]
+
+    # Sub-agents from pool
+    if "sub_agents" in meta:
+        dashboard_state["sub_agents"] = meta["sub_agents"]
 
     # Validation level
     if "validation_level" in meta:
@@ -180,6 +192,12 @@ def _update_state_from_event(evt: dict) -> None:
         dashboard_state["evolution_stats"]["cells"] = meta["evo_cells"]
         dashboard_state["evolution_stats"]["grid_size"] = meta.get("evo_grid_size", 0)
         dashboard_state["evolution_stats"]["best_fitness"] = meta.get("evo_best", 0.0)
+
+    # Agent response (from completion event)
+    if "response_text" in meta:
+        dashboard_state["last_response"] = meta["response_text"]
+    if "task" in meta and meta.get("result") == "complete":
+        dashboard_state["last_query"] = meta["task"]
 
     # Completion
     if meta.get("result") == "complete":
@@ -275,6 +293,12 @@ async def reset_state():
     dashboard_state["wall_time_s"] = 0.0
     dashboard_state["agent_status"] = "idle"
     dashboard_state["current_phase"] = None
+    dashboard_state["metacognitive_system"] = 1
+    dashboard_state["validation_level"] = 1
+    dashboard_state["last_query"] = ""
+    dashboard_state["last_response"] = ""
+    dashboard_state["last_response_system"] = 1
+    dashboard_state["sub_agents"] = []
     dashboard_state["evolution_stats"] = {
         "grid_size": 0, "best_fitness": 0.0,
         "generation": 0, "cells": [],

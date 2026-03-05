@@ -6,7 +6,11 @@ import uuid
 import json
 from dataclasses import dataclass, field
 from typing import Any, Dict
-import sage_core
+try:
+    import sage_core
+except ImportError:
+    import types as _types
+    sage_core = _types.ModuleType("sage_core")
 
 
 @dataclass

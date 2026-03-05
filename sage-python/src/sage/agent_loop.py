@@ -202,8 +202,11 @@ class AgentLoop:
                 self.metacognition.record_output_entropy(entropy)
                 brake = self.metacognition.should_brake()
 
+            # Emit THINK results (including content for dashboard real-time display)
             self._emit(
                 LoopPhase.THINK,
+                model=model_name,
+                content=content,
                 latency_ms=round(inference_ms, 1),
                 cost_usd=round(self.total_cost_usd, 4),
                 entropy=round(entropy, 3),
@@ -226,6 +229,21 @@ class AgentLoop:
                     log.warning("PRM retry limit reached, accepting response without <think> tags.")
                 else:
                     self._prm_retries = 0  # Reset on success
+
+            # System 2 validation (Empirical/Heuristic)
+            elif self.config.validation_level == 2 and content:
+                # S2 requires step-by-step reasoning but not Z3.
+                # If first step has no reasoning structure, ask for it.
+                has_reasoning = "<think>" in content or "Step " in content or "Reasoning:" in content
+                if not has_reasoning and self.step_count == 1:
+                    self._prm_retries += 1
+                    if self._prm_retries <= self._max_prm_retries:
+                        log.info("S2 validation: missing reasoning, requesting CoT.")
+                        messages.append(Message(
+                            role=Role.USER,
+                            content="SYSTEM: Provide step-by-step reasoning for this task using <think> tags.",
+                        ))
+                        continue
 
             # CGRS: stop if converged
             if brake:
@@ -272,6 +290,10 @@ class AgentLoop:
                 "cost_usd": round(self.total_cost_usd, 4),
             }
 
+            # Sub-agent pool status (if wired)
+            if self.agent_pool and hasattr(self.agent_pool, "list_agents"):
+                learn_meta["sub_agents"] = self.agent_pool.list_agents()
+
             # Evolution grid snapshot (if wired)
             if self.topology_population and self.topology_population.size() > 0:
                 try:
@@ -288,10 +310,12 @@ class AgentLoop:
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 
-        # Final completion event
+        # Final completion event (includes response text for dashboard)
         self._emit(LoopPhase.LEARN,
                    result="complete", steps=self.step_count,
-                   cost_usd=round(self.total_cost_usd, 4))
+                   cost_usd=round(self.total_cost_usd, 4),
+                   response_text=result_text or "",
+                   task=task)
         return result_text or f"Agent finished at step {self.step_count}"
 
     def _compute_aio(self) -> float:
