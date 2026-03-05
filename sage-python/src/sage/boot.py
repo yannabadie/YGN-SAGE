@@ -175,6 +175,7 @@ def boot_agent_system(
     loop.topology_population = topology_population
     loop.episodic_memory = episodic_memory
     loop.sandbox_manager = sandbox_manager
+    loop.exocortex = exocortex
 
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):

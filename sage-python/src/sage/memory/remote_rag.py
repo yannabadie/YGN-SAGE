@@ -43,39 +43,55 @@ class ExoCortex:
 
     async def create_store(self, display_name: str) -> str:
         """Create a new FileSearchStore. Returns the store resource name."""
+        import asyncio
         from google import genai
-        client = genai.Client(api_key=self._api_key)
-        store = client.file_search_stores.create(
-            config={"display_name": display_name}
-        )
+
+        def _create():
+            client = genai.Client(api_key=self._api_key)
+            return client.file_search_stores.create(
+                config={"display_name": display_name}
+            )
+
+        store = await asyncio.to_thread(_create)
         self.store_name = store.name
-        log.info(f"Created ExoCortex store: {store.name}")
+        log.info("Created ExoCortex store: %s", store.name)
         return store.name
 
     async def upload(self, file_path: str, display_name: str | None = None) -> None:
         """Upload and index a file into the store."""
         if not self.store_name:
             raise RuntimeError("No store configured. Call create_store() first.")
+        import asyncio
         from google import genai
-        import time
-        client = genai.Client(api_key=self._api_key)
-        operation = client.file_search_stores.upload_to_file_search_store(
-            file=file_path,
-            file_search_store_name=self.store_name,
-            config={"display_name": display_name or file_path},
-        )
-        # Wait for indexing to complete
-        while not operation.done:
-            time.sleep(2)
-            operation = client.operations.get(operation)
-        log.info(f"Uploaded {file_path} to ExoCortex store")
+
+        def _upload():
+            import time
+            client = genai.Client(api_key=self._api_key)
+            operation = client.file_search_stores.upload_to_file_search_store(
+                file=file_path,
+                file_search_store_name=self.store_name,
+                config={"display_name": display_name or file_path},
+            )
+            while not operation.done:
+                time.sleep(2)
+                operation = client.operations.get(operation)
+
+        await asyncio.to_thread(_upload)
+        log.info("Uploaded %s to ExoCortex store", file_path)
 
     async def delete_store(self) -> None:
         """Delete the current store."""
         if not self.store_name:
             return
+        import asyncio
         from google import genai
-        client = genai.Client(api_key=self._api_key)
-        client.file_search_stores.delete(name=self.store_name)
-        log.info(f"Deleted ExoCortex store: {self.store_name}")
+
+        store_name = self.store_name
+
+        def _delete():
+            client = genai.Client(api_key=self._api_key)
+            client.file_search_stores.delete(name=store_name)
+
+        await asyncio.to_thread(_delete)
+        log.info("Deleted ExoCortex store: %s", self.store_name)
         self.store_name = None
