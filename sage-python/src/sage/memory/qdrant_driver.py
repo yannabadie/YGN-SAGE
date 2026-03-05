@@ -42,16 +42,27 @@ class QdrantMemoryDriver:
         if not self.client.collection_exists(collection_name=collection):
             self.client.create_collection(
                 collection_name=collection,
-                vectors_config=VectorParams(size=self.vector_size, distance=Distance.COSINE),
+                vectors_config=VectorParams(size=768, distance=Distance.COSINE),
             )
-        
-        # Placeholder for real embedding
-        # SOTA: we would use openai text-embedding-3-small or similar here.
-        import numpy as np
-        vector = np.random.rand(self.vector_size).tolist()
-        
-        point_id = str(uuid.uuid4())
-        
+
+        # Real embedding using google-genai
+        try:
+            from google import genai
+            import os
+            api_key = os.getenv("GOOGLE_API_KEY")
+            if not api_key:
+                raise ValueError("GOOGLE_API_KEY not set")
+            genai_client = genai.Client(api_key=api_key)
+            result = genai_client.models.embed_content(
+                model='text-embedding-004',
+                contents=text,
+            )
+            vector = result.embeddings[0].values
+        except Exception as e:
+            self.logger.error(f"Embedding failed, falling back to zeros: {e}")
+            vector = [0.0] * 768
+
+        point_id = str(uuid.uuid4())        
         # Add text to metadata for retrieval
         full_metadata = metadata.copy()
         full_metadata["text"] = text

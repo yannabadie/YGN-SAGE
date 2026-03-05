@@ -9,20 +9,16 @@ RUN apt-get update && apt-get install -y \
     libclang-dev \
     pkg-config \
     libssl-dev \
-    python3 \
+    python3-full \
     python3-pip \
-    python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY Cargo.toml Cargo.lock /app/
+COPY Cargo.toml /app/
 COPY sage-core/ /app/sage-core/
 
-# Use a virtual environment for maturin to avoid PEP 668 issues
-RUN python3 -m venv /venv
-ENV PATH="/venv/bin:$PATH"
-
-RUN pip install --no-cache-dir maturin \
+# Use PEP 668 bypass for builder stage
+RUN pip install --no-cache-dir maturin --break-system-packages \
     && cd /app/sage-core \
     && maturin build --release --out /app/wheels
 
