@@ -23,7 +23,7 @@ def basic_config():
         llm=LLMConfig(provider="mock", model="mock-model"),
         system_prompt="You are a helpful assistant.",
         max_steps=5,
-        enforce_system3=False
+        validation_level=1
     )
 
 

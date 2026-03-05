@@ -49,15 +49,13 @@ class AgentSystem:
         # 2. Apply routing decision
         current_provider = self.agent_loop.config.llm.provider
 
-        # enforce_system3 only for Gemini (which supports <think> tags)
-        # Codex CLI refuses <think> tags — it reasons internally
+        # Set validation level based on routing decision
         actual_provider = self.agent_loop.config.llm.provider
         if actual_provider == "codex":
-            self.agent_loop.config.enforce_system3 = False
-        elif decision.system == 1:
-            self.agent_loop.config.enforce_system3 = False
+            # Codex CLI reasons internally — no external validation needed
+            self.agent_loop.config.validation_level = 1
         else:
-            self.agent_loop.config.enforce_system3 = True
+            self.agent_loop.config.validation_level = decision.validation_level
 
         # Only switch LLM if the target provider is available AND different
         new_config = ModelRouter.get_config(decision.llm_tier)
@@ -136,7 +134,7 @@ def boot_agent_system(
             "Think step-by-step. Be concise. Answer the user task directly."
         ),
         max_steps=20,
-        enforce_system3=(llm_config.provider != "codex"),
+        validation_level=1 if llm_config.provider == "codex" else 2,
     )
 
     # Agent loop

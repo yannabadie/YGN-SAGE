@@ -107,7 +107,7 @@ async def test_agent_loop_emits_events(mock_llm):
     events = []
     config = AgentConfig(
         name="test", llm=LLMConfig(provider="mock", model="mock"),
-        max_steps=3, enforce_system3=False,
+        max_steps=3, validation_level=1,
     )
     loop = AgentLoop(config=config, llm_provider=mock_llm, on_event=events.append)
     result = await loop.run("test task")
@@ -121,7 +121,7 @@ async def test_agent_loop_learn_updates_memory(mock_llm):
     from sage.llm.base import LLMConfig
     config = AgentConfig(
         name="test", llm=LLMConfig(provider="mock", model="mock"),
-        max_steps=3, enforce_system3=False,
+        max_steps=3, validation_level=1,
     )
     loop = AgentLoop(config=config, llm_provider=mock_llm)
     await loop.run("test task")

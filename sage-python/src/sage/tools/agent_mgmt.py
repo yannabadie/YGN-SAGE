@@ -40,7 +40,7 @@ async def create_agent(agent_name: str, role: str, instruction: str, tools: list
         system_prompt=f"Role: {role}\n\nInstructions:\n{instruction}",
         tools=tools,
         use_docker_sandbox=parent_agent.config.use_docker_sandbox,
-        enforce_system3=parent_agent.config.enforce_system3
+        validation_level=parent_agent.config.validation_level
     )
     
     # Create agent instance

@@ -142,10 +142,15 @@ class AgentLoop:
         self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 
         system_prompt = self.config.system_prompt
-        if self.config.enforce_system3:
+        if self.config.validation_level >= 3:
             system_prompt += (
                 "\n\nCRITICAL: Use <think>...</think> tags to reason step-by-step. "
                 "Your reasoning is evaluated by a Process Reward Model."
+            )
+        elif self.config.validation_level >= 2:
+            system_prompt += (
+                "\n\nUse step-by-step reasoning to solve this task. "
+                "Show your work clearly."
             )
 
         messages: list[Message] = [
@@ -205,7 +210,7 @@ class AgentLoop:
             )
 
             # System 3 validation (Z3 PRM) -- max 2 retries then accept
-            if self.config.enforce_system3 and content:
+            if self.config.validation_level >= 3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
                 if r_path < 0.0 and "error" in details:

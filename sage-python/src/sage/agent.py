@@ -24,7 +24,7 @@ class AgentConfig:
     tools: list[str] | None = None  # Tool names to use (None = all in registry)
     use_docker_sandbox: bool = False
     snapshot_to_restore: str | None = None
-    enforce_system3: bool = True
+    validation_level: int = 1  # 1=none(S1), 2=empirical(S2), 3=formal/Z3(S3)
 
 
 class Agent:
@@ -77,8 +77,10 @@ class Agent:
         await self.initialize_sandbox()
         
         system_prompt = self.config.system_prompt
-        if self.config.enforce_system3:
+        if self.config.validation_level >= 3:
             system_prompt += "\n\nCRITICAL: You MUST use <think>...</think> tags to reason step-by-step before answering. Your reasoning is evaluated by a Process Reward Model."
+        elif self.config.validation_level >= 2:
+            system_prompt += "\n\nUse step-by-step reasoning to solve this task. Show your work clearly."
         
         try:
             # Initialize conversation
@@ -114,7 +116,7 @@ class Agent:
                 content = response.content or "Tool Calls Generated"
                 
                 # SOTA 2026: KG-RLVR System 3 Reasoning Check
-                if self.config.enforce_system3 and response.content:
+                if self.config.validation_level >= 3 and response.content:
                     r_path, details = self.prm.calculate_r_path(response.content)
                     if r_path < 0.0:
                         # Agent failed to use System 3 reasoning. Intercept and force correction.
