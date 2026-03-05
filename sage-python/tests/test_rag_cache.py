@@ -20,7 +20,8 @@ def test_fallback_cache_eviction():
     cache = RagCacheFallback(max_entries=2, ttl_seconds=3600)
     cache.put(1, b"a")
     cache.put(2, b"b")
-    cache.put(3, b"c")  # evicts oldest
+    cache.put(3, b"c")  # evicts oldest (key 1)
+    assert cache.get(1) is None  # evicted
     assert cache.get(3) == b"c"
 
 

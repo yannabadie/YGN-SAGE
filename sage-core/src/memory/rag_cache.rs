@@ -1,4 +1,5 @@
-//! LRU + TTL cache for File Search query results.
+//! FIFO + TTL cache for File Search query results.
+//! Evicts oldest-inserted entry at capacity (not LRU — no access-time refresh).
 //! Stores results as raw bytes (Arrow IPC or msgpack).
 
 use dashmap::DashMap;
