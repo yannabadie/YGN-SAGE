@@ -52,7 +52,7 @@ class LLMMutator:
     def _build_mutation_prompt(self, code: str, objective: str, context: str) -> str:
         prompt = f"## Objective\n{objective}\n\n"
         if context:
-            prompt += f"## Context\n{context}\n\n"
+            prompt += f"## DGM Directive\n{context}\n\n"
         prompt += f"## Source Code\n```\n{code}\n```\n\n"
         prompt += "Generate 1-3 mutations as SEARCH/REPLACE pairs. Respond in the required JSON format."
         return prompt

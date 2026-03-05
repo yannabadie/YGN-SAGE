@@ -24,6 +24,14 @@ from sage.strategy.solvers import SAMPOSolver
 
 log = logging.getLogger(__name__)
 
+DGM_ACTION_DESCRIPTIONS = {
+    0: "Optimize execution performance and reduce latency",
+    1: "Improve correctness and fix edge cases",
+    2: "Expand search space — explore novel algorithmic approaches",
+    3: "Tighten constraints — make code more robust and safe",
+    4: "Simplify and reduce complexity while maintaining functionality",
+}
+
 @dataclass
 class EvolutionConfig:
     """Configuration for an evolution run."""
@@ -105,7 +113,7 @@ class EvolutionEngine:
 
     async def evolve_step(
         self,
-        mutate_fn: Callable[[str], Awaitable[tuple[str, tuple[int, ...]]]],
+        mutate_fn: Callable[..., Awaitable[tuple[str, tuple[int, ...]]]],
     ) -> list[Individual]:
         """Run one generation of evolution.
 
@@ -141,7 +149,13 @@ class EvolutionEngine:
             # Generate mutation
             try:
                 # SOTA: Mutate function now incorporates DGM context
-                new_code, features = await mutate_fn(parent.code)
+                dgm_context = {
+                    "action": int(dgm_action),
+                    "description": DGM_ACTION_DESCRIPTIONS.get(int(dgm_action), ""),
+                    "parent_score": parent.score,
+                    "generation": self.generation,
+                }
+                new_code, features = await mutate_fn(parent.code, dgm_context=dgm_context)
             except Exception:
                 continue
 
