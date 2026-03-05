@@ -4,7 +4,7 @@
 
 It combines a Rust execution core (`sage-core`) with a Python orchestration layer (`sage-python`), a tripartite cognitive routing system (S1/S2/S3), and a real-time control dashboard.
 
-> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 175 Python tests + 38 Rust tests passing. Not yet battle-tested in production environments.
+> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 217 Python tests + 38 Rust tests passing. Not yet battle-tested in production environments.
 
 ## Core Architecture
 
@@ -71,8 +71,17 @@ YGN-SAGE uses a **three-tier memory architecture**:
 **ExoCortex (Persistent RAG)** -- Google GenAI File Search API:
 - Persistent managed stores with automatic chunking and embedding
 - Replaces the fragile NotebookLM CLI bridge with native SDK integration
-- Injected into Gemini `generate()` calls via `types.FileSearch`
+- **Passive grounding**: automatically injected into every `_think()` call via `file_search_store_names`
+- **Active grounding**: `search_exocortex` agent tool for targeted research queries
 - Results cached by FIFO+TTL Rust cache (`sage_core.RagCache`) with Python fallback
+
+**Knowledge Pipeline** (`sage-discover`) -- Auto-refreshing research paper ingestion:
+- **Discovery**: Scans arXiv, Semantic Scholar, HuggingFace across 5 domains (MARL, cognitive architectures, formal verification, evolutionary computation, memory systems)
+- **Curation**: Two-stage filtering (heuristic + LLM scoring with Gemini Flash)
+- **Ingestion**: PDF download + ExoCortex upload with `custom_metadata` + local manifest dedup
+- **Migration**: One-time NotebookLM Q&A export bootstrap
+- **CLI**: `python -m discover.pipeline --mode nightly|on-demand|migrate`
+- **Agent tool**: `refresh_knowledge` triggers on-demand pipeline from within the agent loop
 
 **7 AgeMem Memory Tools** -- exposed to the LLM as callable tools:
 
@@ -85,6 +94,8 @@ YGN-SAGE uses a **three-tier memory architecture**:
 | `store_memory` | LTM | Store a new episodic entry |
 | `update_memory` | LTM | Update an existing entry by key |
 | `delete_memory` | LTM | Delete an entry by key |
+| `search_exocortex` | ExoCortex | Search research papers in ExoCortex store |
+| `refresh_knowledge` | ExoCortex | Trigger on-demand knowledge pipeline (discover + curate + ingest) |
 
 ### Evolution System
 
@@ -168,9 +179,12 @@ export GOOGLE_API_KEY="your_google_api_key"
 pip install maturin
 cd sage-core && maturin develop && cd ..
 
-# 6. Verify installation
+# 6. (Optional) Install sage-discover for Knowledge Pipeline
+cd sage-discover && pip install -e . && cd ..
+
+# 7. Verify installation
 cd sage-python && python -m pytest tests/ -v
-# Expected: 175 passed, 1 skipped
+# Expected: 182 passed, 1 skipped
 ```
 
 ### Running the Dashboard
@@ -231,13 +245,32 @@ system = boot_agent_system(use_mock_llm=True)
 result = await system.run("Test task")
 ```
 
+### Running the Knowledge Pipeline
+
+```bash
+# Nightly: discover + curate + ingest papers from yesterday
+python -m discover.pipeline --mode nightly
+
+# On-demand: search for a specific topic
+python -m discover.pipeline --mode on-demand --query "attention mechanism pruning"
+
+# Migrate: bootstrap ExoCortex from NotebookLM exports
+# First: save NotebookLM Q&A as markdowns in ~/.sage/migration/
+python -m discover.pipeline --mode migrate
+```
+
 ### Running Tests
 
 ```bash
-# Python tests
+# Python tests (sage-python)
 cd sage-python
 python -m pytest tests/ -v
-# Expected: 175 passed, 1 skipped
+# Expected: 182 passed, 1 skipped
+
+# Discovery pipeline tests (sage-discover)
+cd sage-discover
+python -m pytest tests/ -v
+# Expected: 35 passed
 
 # Rust tests (requires Rust 1.90+)
 cd sage-core
@@ -272,7 +305,14 @@ YGN-SAGE/
 |       |-- agent_loop.py   # Structured perceive->think->act->learn runtime
 |       |-- agent_pool.py   # Dynamic sub-agent pool
 |       +-- boot.py         # Boot sequence (wires all pillars + ExoCortex)
-|-- sage-discover/          # Flagship research agent + MCP Gateway
+|-- sage-discover/          # Flagship research agent + Knowledge Pipeline
+|   +-- src/discover/
+|       |-- discovery.py    # arXiv + Semantic Scholar + HuggingFace scanning
+|       |-- curator.py      # Heuristic filter + LLM relevance scoring
+|       |-- ingestion.py    # ExoCortex upload + manifest tracking
+|       |-- migration.py    # NotebookLM bootstrap to ExoCortex
+|       |-- pipeline.py     # Orchestrator (nightly/on-demand/migrate)
+|       +-- __main__.py     # CLI entry point
 |-- ui/                     # Control Dashboard
 |   |-- app.py              # FastAPI backend (REST + WebSocket)
 |   +-- static/index.html   # Single-file dashboard (Tailwind + vanilla JS)
@@ -291,7 +331,7 @@ YGN-SAGE/
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `GOOGLE_API_KEY` | Yes | Google AI API key for Gemini models |
-| `SAGE_EXOCORTEX_STORE` | No | Google GenAI File Search store resource name (e.g. `projects/.../fileSearchStores/...`) |
+| `SAGE_EXOCORTEX_STORE` | No | Google GenAI File Search store resource name (e.g. `file_search_stores/...`). Enables passive + active ExoCortex grounding. |
 
 Codex CLI authenticates via `codex login` (ChatGPT Pro account).
 
@@ -328,16 +368,16 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 ## Status (March 2026)
 
-- **175 Python tests passing** + 1 skipped (SnapBPF skip when Rust uncompiled)
-- **38 Rust tests passing** (memory, sandbox, SnapBPF, RagCache, types)
+- **217 Python tests passing** (182 sage-python + 35 sage-discover) + 38 Rust tests
 - **Dashboard**: Functional with real-time telemetry, response pane, and event streaming
 - **Cognitive Routing**: Tripartite S1/S2/S3 with AVR sandbox loop (S2) and Z3 formal proofs (S3)
 - **Z3 Prompt Alignment**: S3/retry/escalation prompts teach Z3 DSL syntax to LLM
 - **LLM Integration**: Google Gemini fully wired (incl. File Search grounding), Codex CLI optional
-- **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking
-- **Memory**: MEM1 per-step internal state + 7 AgeMem tools + Arrow compaction + ExoCortex persistent RAG
+- **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking + ExoCortex passive grounding
+- **Memory**: MEM1 per-step internal state + 9 agent tools (7 AgeMem + 2 ExoCortex) + Arrow compaction
 - **Evolution**: MAP-Elites topology search + LLM-driven mutation with DGM context + eBPF evaluation + SnapBPF
 - **Strategy**: PSRO meta-solver with VAD-CFR and SHOR-PSRO variants
+- **Knowledge Pipeline**: Auto-refreshing research ingestion (arXiv/S2/HF -> curate -> ExoCortex)
 - **RAG Cache**: Rust FIFO+TTL cache with Python fallback
 
 ### Known Limitations
@@ -346,7 +386,6 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 - **Episodic memory is in-memory only** -- no cross-session persistence yet
 - **No CI pipeline** -- tests are run locally
 - **Model IDs are hardcoded** in `router.py` -- externalize to config if needed
-- **ExoCortex is instantiated but not yet auto-queried** during agent loop -- manual `file_search_store_names` injection required
 
 ## Documentation
 
@@ -357,6 +396,8 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 | [ADR-001: S2 Routing](docs/ADR-cognitive-routing-system2.md) | System 2 cognitive routing decision record |
 | [Phase 3 Design](docs/plans/2026-03-05-exocortex-dgm-z3-design.md) | ExoCortex, DGM, Z3 design decisions |
 | [Phase 3 Implementation](docs/plans/2026-03-05-phase3-implementation.md) | TDD implementation plan (5 tasks) |
+| [Knowledge Pipeline Design](docs/plans/2026-03-05-knowledge-pipeline-design.md) | ExoCortex auto-refreshing pipeline design |
+| [Knowledge Pipeline Plan](docs/plans/2026-03-05-knowledge-pipeline.md) | Implementation plan (6 tasks, TDD) |
 | [Codebase Audit](docs/plans/2026-03-05-codebase-audit.md) | Full connectivity audit (March 2026) |
 | [OpenSAGE-surpass Plan](docs/plans/2026-03-05-opensage-surpass-implementation.md) | 5-pillar implementation plan |
 | [Architecture Design](docs/plans/2026-03-02-ygn-sage-architecture-design.md) | Original architecture spec |

@@ -7,7 +7,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ## Architecture
 - `sage-core/` - Rust orchestrator (PyO3 bindings to Python)
 - `sage-python/` - Python SDK for building agents
-- `sage-discover/` - Flagship Research & Discovery agent
+- `sage-discover/` - Flagship Research & Discovery agent + Knowledge Pipeline
 - `ui/` - Control Dashboard (FastAPI + Tailwind + WebSocket)
 - `docs/plans/` - Architecture and implementation plans
 - `Researches/` - Research papers (OpenSage, AlphaEvolve, PSRO, etc.)
@@ -27,8 +27,17 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM)
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression
 - `memory/episodic.py` - In-memory episodic store with CRUD + keyword search
-- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API) + RagCacheFallback
+- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API) + `query()` method + RagCacheFallback
 - `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
+- `tools/exocortex_tools.py` - `search_exocortex` + `refresh_knowledge` agent tools
+
+### Key Discovery Modules (sage-discover/src/discover/)
+- `discovery.py` - Scan arXiv, Semantic Scholar, HuggingFace across 5 domains (MARL, cog arch, formal verif, evo comp, memory)
+- `curator.py` - Two-stage curation: heuristic filter + LLM scoring (threshold >= 6)
+- `ingestion.py` - ExoCortex upload with `custom_metadata` + JSON manifest dedup (`~/.sage/manifest.json`)
+- `migration.py` - One-time NotebookLM markdown bootstrap + arXiv ID re-discovery
+- `pipeline.py` - Orchestrator: `run_pipeline(mode="nightly"|"on-demand"|"migrate")`
+- `__main__.py` - CLI: `python -m discover.pipeline --mode nightly`
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging
@@ -48,7 +57,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (175 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (182 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -68,10 +77,19 @@ cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 ```
 
+### Discovery Pipeline
+```bash
+cd sage-discover
+pip install -e .               # Install sage-discover
+python -m pytest tests/ -v     # Run tests (35 passed)
+python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
+```
+
 ### Full Build
 ```bash
 cd sage-core && maturin develop && cd ..
 cd sage-python && pip install -e ".[all,dev]"
+cd sage-discover && pip install -e .
 ```
 
 ## LLM Configuration
@@ -113,9 +131,10 @@ export SAGE_EXOCORTEX_STORE="projects/..."   # Optional: File Search store for E
 - **MEM1 Internal State**: `MemoryCompressor.generate_internal_state()` runs every agent step, producing a rolling `<IS_t>` summary
 - **Pressure Compression**: When `event_count >= threshold`, LLM summarizes old events and prunes the buffer
 - **Episodic Memory**: In-memory keyword-search store with CRUD
-- **ExoCortex**: Persistent RAG via Google GenAI File Search API (`memory/remote_rag.py`). Stores persist, free storage, auto chunking/embedding. Injected into `GoogleProvider.generate()` via `file_search_store_names`
+- **ExoCortex**: Persistent RAG via Google GenAI File Search API (`memory/remote_rag.py`). **Passive grounding** in `_think()` (auto-injects `file_search_store_names`). **Active grounding** via `search_exocortex` tool. `query()` method for synchronous tool use.
+- **Knowledge Pipeline**: `sage-discover` auto-refreshes ExoCortex: discovery (arXiv/S2/HF) -> curator (heuristic+LLM) -> ingestion (upload+manifest). `refresh_knowledge` agent tool triggers on-demand.
 - **RAG Cache**: FIFO+TTL cache (`sage_core.RagCache` in Rust, `RagCacheFallback` in Python). Factory: `get_rag_cache()`
-- **7 AgeMem Tools**: `retrieve_context`, `summarize_context`, `filter_context` (STM) + `search_memory`, `store_memory`, `update_memory`, `delete_memory` (LTM)
+- **9 Agent Tools**: 7 AgeMem (3 STM + 4 LTM) + `search_exocortex` + `refresh_knowledge`
 - **S2 AVR Loop**: Act-Verify-Refine cycle -- sandbox execution, structured error feedback, retry budget (`S2_AVR_MAX_ITERATIONS=3`), escalation to S3
 
 ## Evolution System
@@ -153,10 +172,21 @@ await exo.upload("paper.pdf")
 ```
 
 The ExoCortex is instantiated in `boot.py` and attached to `AgentLoop` as `loop.exocortex`.
+`agent_loop.py` `_think()` automatically passes `file_search_store_names` to `generate()` when ExoCortex is available.
+
+### Knowledge Pipeline (sage-discover)
+Auto-refreshing research paper ingestion. Single store `ygn-sage-research` with `custom_metadata` for domain filtering.
+```bash
+python -m discover.pipeline --mode nightly           # Papers from yesterday
+python -m discover.pipeline --mode on-demand --query "PSRO"  # Targeted search
+python -m discover.pipeline --mode migrate           # Bootstrap from ~/.sage/migration/*.md
+```
+Pipeline: `discover()` -> `curate()` -> `ingest_all()` -> ExoCortex store.
+Manifest dedup: `~/.sage/manifest.json`. PDFs cached in `~/.sage/papers/{domain}/`.
 
 ### Legacy NotebookLM Reference
 
-Package `notebooklm-py` (v0.3.2) is still installed but deprecated. Use ExoCortex instead.
+Package `notebooklm-py` (v0.3.2) is still installed but deprecated. Use ExoCortex + Knowledge Pipeline instead.
 
 | ID prefix | Title | Use for |
 |-----------|-------|---------|
