@@ -33,7 +33,7 @@ async def run_scievo_tte_protocol():
     seed_bytecode = b"\xb7\x00\x00\x00\x0a\x00\x00\x00\x95\x00\x00\x00\x00\x00\x00\x00"
     engine.seed([Individual(code=seed_bytecode, score=0.0, features=(0, 0), generation=0)])
     
-    async def scievo_mutate(code: bytes) -> tuple[bytes, tuple[int, int]]:
+    async def scievo_mutate(code: bytes, dgm_context=None) -> tuple[bytes, tuple[int, int]]:
         import random
         mutated_code = bytearray(code)
         # Evolve the return value logically

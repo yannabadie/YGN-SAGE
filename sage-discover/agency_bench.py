@@ -14,7 +14,7 @@ from sage.evolution.population import Individual
 # SOTA: Real eBPF bytecode instead of mocked strings
 # base: mov64 r0, <SCORE> (b7 00 00 00 <XX> 00 00 00)
 # exit: (95 00 00 00 00 00 00 00)
-async def real_ebpf_mutate(code: bytes) -> tuple[bytes, tuple[int, int]]:
+async def real_ebpf_mutate(code: bytes, dgm_context=None) -> tuple[bytes, tuple[int, int]]:
     """Mutates real eBPF bytecode to improve its score."""
     import random
     

@@ -171,7 +171,7 @@ async def test_engine_evolve_step():
     engine = EvolutionEngine(config=config, evaluator=ev)
     engine.seed([Individual(code="x=1", score=0.5, features=(0,))])
 
-    async def mutate(code: str) -> tuple[str, tuple[int, ...]]:
+    async def mutate(code: str, dgm_context=None) -> tuple[str, tuple[int, ...]]:
         return code + "\n# mutated", (1,)
 
     accepted = await engine.evolve_step(mutate)

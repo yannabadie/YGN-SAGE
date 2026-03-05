@@ -154,7 +154,7 @@ class DiscoverWorkflow:
         base_score = 42.0 
         self.evolution.seed([Individual(code=initial_code, score=base_score, features=(8,8))])
         
-        async def real_ebpf_mutate(code: bytes):
+        async def real_ebpf_mutate(code: bytes, dgm_context=None):
             import random
             mutated_code = bytearray(code)
             current_score = code[4]
