@@ -29,6 +29,7 @@ from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
 from sage.memory.memory_agent import MemoryAgent
 from sage.tools.registry import ToolRegistry
 from sage.memory.compressor import MemoryCompressor
+from sage.sandbox.manager import SandboxManager
 from sage.memory.episodic import EpisodicMemory
 from sage.tools.memory_tools import create_search_memory_tool
 
@@ -135,6 +136,9 @@ def boot_agent_system(
         keep_recent=5,
     )
 
+    # Sandbox manager for S2 empirical validation (local fallback, no Docker required)
+    sandbox_manager = SandboxManager(use_docker=False)
+
     # Episodic memory + on-demand search tool (two-stage retrieval)
     episodic_memory = EpisodicMemory()
     search_tool = create_search_memory_tool(episodic_memory)
@@ -163,6 +167,7 @@ def boot_agent_system(
     loop.metacognition = metacognition
     loop.topology_population = topology_population
     loop.episodic_memory = episodic_memory
+    loop.sandbox_manager = sandbox_manager
 
     return AgentSystem(
         agent_loop=loop,

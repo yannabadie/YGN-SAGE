@@ -115,3 +115,23 @@ def test_assess_complexity_has_reasoning():
     ctrl = MetacognitiveController()
     profile = ctrl.assess_complexity('Hello')
     assert profile.reasoning == 'heuristic'
+
+
+def test_s2_validation_detects_code_block():
+    """S2 validation identifies code blocks for sandbox execution."""
+    from sage.agent_loop import _extract_code_blocks
+
+    content_with_code = "Here is the solution:\n```python\nprint('hello')\n```\nDone."
+    blocks = _extract_code_blocks(content_with_code)
+    assert len(blocks) == 1
+    assert "print('hello')" in blocks[0]
+
+    content_no_code = "The answer is 42. Step 1: think about it."
+    blocks = _extract_code_blocks(content_no_code)
+    assert len(blocks) == 0
+
+
+def test_s2_escalation_threshold():
+    """S2->S3 escalation constant is defined."""
+    from sage.agent_loop import S2_MAX_RETRIES_BEFORE_ESCALATION
+    assert S2_MAX_RETRIES_BEFORE_ESCALATION == 2
