@@ -1,7 +1,7 @@
 """YGN-SAGE Control Dashboard -- FastAPI backend with WebSocket event streaming.
 
 Wires the real AgentSystem (boot.py) so that POST /api/task runs the full
-perceive->think->act->learn loop via Gemini (or Codex fallback).
+perceive->think->act->learn loop via Codex CLI (or Gemini fallback).
 """
 from __future__ import annotations
 
@@ -12,6 +12,13 @@ import os
 import sys
 import time
 from pathlib import Path
+
+# Load .env from project root (for GOOGLE_API_KEY, etc.)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+except ImportError:
+    pass
 
 from fastapi import FastAPI, WebSocket, Request
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -140,7 +147,7 @@ def _update_state_from_event(evt: dict) -> None:
     if etype == "THINK" and "model" in meta:
         dashboard_state["llm_calls"] += 1
 
-    # System routing
+    # System routing (from PERCEIVE or THINK)
     if "system" in meta:
         dashboard_state["metacognitive_system"] = meta["system"]
 
@@ -151,13 +158,30 @@ def _update_state_from_event(evt: dict) -> None:
         else:
             dashboard_state["z3_fail"] += 1
 
+    # Cost tracking
+    if "cost_usd" in meta:
+        dashboard_state["total_cost_usd"] = meta["cost_usd"]
+
+    # Latency
+    if "latency_ms" in meta:
+        dashboard_state["inference_time_ms"] = meta["latency_ms"]
+
+    # Wall time
+    if "wall_time_s" in meta:
+        dashboard_state["wall_time_s"] = meta["wall_time_s"]
+
+    # Evolution grid
+    if "evo_cells" in meta:
+        dashboard_state["evolution_stats"]["cells"] = meta["evo_cells"]
+        dashboard_state["evolution_stats"]["grid_size"] = meta.get("evo_grid_size", 0)
+        dashboard_state["evolution_stats"]["best_fitness"] = meta.get("evo_best", 0.0)
+
     # Completion
     if meta.get("result") == "complete":
         dashboard_state["agent_status"] = "idle"
+        dashboard_state["current_phase"] = None
 
-    # Latency / cycle metrics (from HFT-style stream)
-    if "latency_ms" in meta:
-        dashboard_state["inference_time_ms"] = meta["latency_ms"]
+    # Cycle (legacy HFT compat)
     if "cycle" in meta:
         dashboard_state["step_count"] = max(
             dashboard_state["step_count"], meta["cycle"]

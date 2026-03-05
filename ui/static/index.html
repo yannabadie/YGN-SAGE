@@ -935,13 +935,6 @@
             return '#' + [r, g, blue].map(c => c.toString(16).padStart(2, '0')).join('');
         }
 
-        // Initialize evo grid with some random low-fitness cells for visual appeal
-        function seedEvoGrid() {
-            for (let i = 0; i < 100; i++) {
-                evoGrid[i] = Math.random() < 0.15 ? Math.random() * 0.4 : 0;
-            }
-            drawEvoGrid();
-        }
 
         // -----------------------------------------------------------------
         // Log entry rendering
@@ -1083,19 +1076,20 @@
                 dom.valBrake.style.color = meta.brake ? '#ef4444' : '#10b981';
             }
 
-            // Evolution data
-            if (meta.evo_cell !== undefined) {
-                const cx = meta.evo_cell.x || 0;
-                const cy = meta.evo_cell.y || 0;
-                const cf = meta.evo_cell.fitness || 0;
-                evoGrid[cy * 10 + cx] = Math.min(1, cf);
+            // Evolution data (array of {x, y, fitness} from LEARN events)
+            if (meta.evo_cells !== undefined && Array.isArray(meta.evo_cells)) {
+                for (const c of meta.evo_cells) {
+                    evoGrid[(c.y || 0) * 10 + (c.x || 0)] = Math.min(1, c.fitness || 0);
+                }
+                dom.evoCells.textContent = meta.evo_grid_size || meta.evo_cells.length;
+                dom.evoBest.textContent = (meta.evo_best || 0).toFixed(2);
                 drawEvoGrid();
             }
 
-            // Revenue / cost (from HFT-style stream)
-            if (meta.total_aum !== undefined) {
-                dom.valCost.textContent = '$' + meta.total_aum.toLocaleString();
-                dom.valCost.style.color = '#10b981';
+            // LLM cost tracking
+            if (meta.cost_usd !== undefined) {
+                dom.valCost.textContent = '$' + meta.cost_usd.toFixed(4);
+                dom.valCost.style.color = meta.cost_usd > 0.1 ? '#f59e0b' : '#10b981';
             }
 
             // Completion
@@ -1175,10 +1169,17 @@
                     if (state.total_events !== undefined) dom.valTotalEvents.textContent = state.total_events;
                     if (state.aio_ratio !== undefined) setAioGauge(state.aio_ratio);
                     if (state.inference_time_ms !== undefined) dom.valInference.textContent = state.inference_time_ms.toFixed(1) + ' ms';
+                    if (state.total_cost_usd !== undefined) {
+                        dom.valCost.textContent = '$' + state.total_cost_usd.toFixed(4);
+                    }
 
                     // Wall time
-                    const elapsed = (Date.now() - startTs) / 1000;
-                    dom.valWall.textContent = elapsed.toFixed(1) + 's';
+                    if (state.wall_time_s !== undefined && state.wall_time_s > 0) {
+                        dom.valWall.textContent = state.wall_time_s.toFixed(1) + 's';
+                    } else {
+                        const elapsed = (Date.now() - startTs) / 1000;
+                        dom.valWall.textContent = elapsed.toFixed(1) + 's';
+                    }
 
                     // Metacognitive system
                     if (state.metacognitive_system !== undefined) {
@@ -1345,24 +1346,36 @@
         }, 1000);
 
         // -----------------------------------------------------------------
+        // Provider status (fetch once on boot)
+        // -----------------------------------------------------------------
+        async function fetchProviders() {
+            try {
+                const resp = await fetch('/api/providers');
+                const providers = await resp.json();
+                const container = document.getElementById('llm-providers');
+                if (!container) return;
+                container.innerHTML = '';
+                for (const p of providers) {
+                    const dot = p.available ? 'var(--success)' : 'var(--text-muted)';
+                    container.innerHTML += `
+                        <div class="card-inset p-2 flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="agent-dot" style="background: ${dot};"></span>
+                                <span class="text-xs font-medium">${p.name}</span>
+                            </div>
+                            <span class="text-xs font-mono" style="color: var(--text-muted);">${p.tier}</span>
+                        </div>`;
+                }
+            } catch (e) { /* ignore */ }
+        }
+
+        // -----------------------------------------------------------------
         // Boot
         // -----------------------------------------------------------------
-        seedEvoGrid();
+        drawEvoGrid();  // Draw empty grid on boot
         connectWebSocket();
         setInterval(pollState, 2000);
-
-        // Simulate gentle evo grid mutation for visual interest when idle
-        setInterval(function () {
-            const x = Math.floor(Math.random() * 10);
-            const y = Math.floor(Math.random() * 10);
-            const current = evoGrid[y * 10 + x];
-            if (current > 0) {
-                evoGrid[y * 10 + x] = Math.min(1, current + (Math.random() - 0.4) * 0.05);
-            } else if (Math.random() < 0.03) {
-                evoGrid[y * 10 + x] = Math.random() * 0.2;
-            }
-            drawEvoGrid();
-        }, 3000);
+        fetchProviders();
 
     })();
     </script>

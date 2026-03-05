@@ -1,6 +1,7 @@
 """Structured agent runtime: perceive -> think -> act -> learn."""
 from __future__ import annotations
 
+import math
 import time
 import json
 import logging
@@ -20,6 +21,35 @@ from sage.topology.kg_rlvr import ProcessRewardModel
 log = logging.getLogger(__name__)
 
 STREAM_FILE = Path("docs/plans/agent_stream.jsonl")
+
+# Approximate cost per 1K tokens (USD) for dashboard estimation
+_COST_PER_1K = {
+    "gpt-5.3-codex": 0.03,
+    "gpt-5.2": 0.06,
+    "gemini-3.1-pro-preview": 0.007,
+    "gemini-3-flash-preview": 0.0015,
+    "gemini-3.1-flash-lite-preview": 0.0005,
+    "gemini-2.5-flash-lite": 0.0003,
+    "gemini-2.5-flash": 0.001,
+}
+
+
+def _estimate_tokens(text: str) -> int:
+    """Rough token estimate (~4 chars per token)."""
+    return max(1, len(text) // 4)
+
+
+def _text_entropy(text: str) -> float:
+    """Shannon entropy of character distribution (normalised 0-1)."""
+    if not text:
+        return 0.0
+    freq: dict[str, int] = {}
+    for ch in text:
+        freq[ch] = freq.get(ch, 0) + 1
+    n = len(text)
+    ent = -sum((c / n) * math.log2(c / n) for c in freq.values() if c > 0)
+    max_ent = math.log2(max(len(freq), 2))
+    return ent / max_ent if max_ent > 0 else 0.0
 
 
 class LoopPhase(str, Enum):
@@ -56,10 +86,14 @@ class AgentLoop:
         self.memory_compressor = memory_compressor
         self.prm = ProcessRewardModel()
         self.agent_pool: dict[str, Any] = {}
+        # Injected by boot.py
+        self.metacognition: Any = None
+        self.topology_population: Any = None
 
         # Stats
         self.step_count = 0
         self.total_inference_time = 0.0
+        self.total_cost_usd = 0.0
         self.start_time = 0.0
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
@@ -84,9 +118,22 @@ class AgentLoop:
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle."""
         self.start_time = time.perf_counter()
+        self.total_cost_usd = 0.0
 
         # === PERCEIVE: Gather context ===
-        self._emit(LoopPhase.PERCEIVE, task=task, agent=self.config.name)
+        perceive_meta: dict[str, Any] = {"task": task, "agent": self.config.name}
+
+        # Metacognitive routing (if wired)
+        if self.metacognition:
+            profile = self.metacognition.assess_complexity(task)
+            decision = self.metacognition.route(profile)
+            perceive_meta["system"] = decision.system
+            perceive_meta["routed_tier"] = decision.llm_tier
+            perceive_meta["use_z3"] = decision.use_z3
+            perceive_meta["complexity"] = round(profile.complexity, 2)
+            perceive_meta["uncertainty"] = round(profile.uncertainty, 2)
+
+        self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 
         system_prompt = self.config.system_prompt
         if self.config.enforce_system3:
@@ -116,7 +163,8 @@ class AgentLoop:
                     messages = self._rebuild_messages(system_prompt)
 
             # === THINK: Call LLM ===
-            self._emit(LoopPhase.THINK, model=self.config.llm.model, step=self.step_count)
+            model_name = self.config.llm.model
+            self._emit(LoopPhase.THINK, model=model_name, step=self.step_count)
 
             t0 = time.perf_counter()
             response = await self._llm.generate(
@@ -124,11 +172,33 @@ class AgentLoop:
                 tools=tool_defs if tool_defs else None,
                 config=self.config.llm,
             )
-            self.total_inference_time += (time.perf_counter() - t0)
+            inference_ms = (time.perf_counter() - t0) * 1000
+            self.total_inference_time += inference_ms / 1000
 
             content = response.content or ""
 
-            # System 3 validation
+            # Cost estimation
+            tokens = _estimate_tokens(content)
+            cost_per_k = _COST_PER_1K.get(model_name, 0.001)
+            step_cost = (tokens / 1000) * cost_per_k
+            self.total_cost_usd += step_cost
+
+            # Entropy for CGRS self-braking
+            entropy = _text_entropy(content)
+            brake = False
+            if self.metacognition:
+                self.metacognition.record_output_entropy(entropy)
+                brake = self.metacognition.should_brake()
+
+            self._emit(
+                LoopPhase.THINK,
+                latency_ms=round(inference_ms, 1),
+                cost_usd=round(self.total_cost_usd, 4),
+                entropy=round(entropy, 3),
+                brake=brake,
+            )
+
+            # System 3 validation (Z3 PRM)
             if self.config.enforce_system3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
@@ -138,6 +208,13 @@ class AgentLoop:
                         content="SYSTEM: Use <think> tags for structured reasoning.",
                     ))
                     continue
+
+            # CGRS: stop if converged
+            if brake:
+                log.info("CGRS self-brake triggered — stopping reasoning loop.")
+                result_text = content
+                messages.append(Message(role=Role.ASSISTANT, content=content))
+                break
 
             self.working_memory.add_event("ASSISTANT", content)
 
@@ -169,9 +246,34 @@ class AgentLoop:
 
             # === LEARN: Update memory and stats ===
             aio = self._compute_aio()
-            self._emit(LoopPhase.LEARN, aio_ratio=aio, events=self.working_memory.event_count())
+            wall = time.perf_counter() - self.start_time
+            learn_meta: dict[str, Any] = {
+                "aio_ratio": aio,
+                "events": self.working_memory.event_count(),
+                "wall_time_s": round(wall, 1),
+                "cost_usd": round(self.total_cost_usd, 4),
+            }
 
-        self._emit(LoopPhase.LEARN, result="complete", steps=self.step_count)
+            # Evolution grid snapshot (if wired)
+            if self.topology_population and self.topology_population.size() > 0:
+                try:
+                    cells = []
+                    best_fitness = 0.0
+                    for (x, y), (genome, score) in self.topology_population._grid.items():
+                        cells.append({"x": x, "y": y, "fitness": round(score, 2)})
+                        best_fitness = max(best_fitness, score)
+                    learn_meta["evo_cells"] = cells
+                    learn_meta["evo_best"] = round(best_fitness, 2)
+                    learn_meta["evo_grid_size"] = len(cells)
+                except Exception:
+                    pass
+
+            self._emit(LoopPhase.LEARN, **learn_meta)
+
+        # Final completion event
+        self._emit(LoopPhase.LEARN,
+                   result="complete", steps=self.step_count,
+                   cost_usd=round(self.total_cost_usd, 4))
         return result_text or f"Agent finished at step {self.step_count}"
 
     def _compute_aio(self) -> float:

@@ -1,8 +1,22 @@
 """Boot sequence: initialize the full YGN-SAGE agent stack."""
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+# Load .env if present (for GOOGLE_API_KEY etc.)
+try:
+    from dotenv import load_dotenv
+    # Walk up to find .env (works from sage-python/ or repo root)
+    for parent in [Path.cwd()] + list(Path.cwd().parents):
+        env_file = parent / ".env"
+        if env_file.exists():
+            load_dotenv(env_file)
+            break
+except ImportError:
+    pass
 
 from sage.agent import AgentConfig
 from sage.agent_loop import AgentLoop
@@ -33,7 +47,21 @@ class AgentSystem:
         decision = self.metacognition.route(profile)
 
         # 2. Update agent LLM tier based on routing
-        self.agent_loop.config.llm = ModelRouter.get_config(decision.llm_tier)
+        # Only switch to a Google tier if the key is available
+        import os
+        new_tier = decision.llm_tier
+        new_config = ModelRouter.get_config(new_tier)
+        if new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
+            # Stay on current provider (Codex) if Google isn't available
+            pass
+        else:
+            self.agent_loop.config.llm = new_config
+            if new_config.provider == "codex":
+                from sage.llm.codex import CodexProvider
+                self.agent_loop._llm = CodexProvider()
+            elif new_config.provider == "google":
+                from sage.llm.google import GoogleProvider
+                self.agent_loop._llm = GoogleProvider()
 
         # 3. Run the agent loop
         return await self.agent_loop.run(task)
@@ -51,7 +79,6 @@ def boot_agent_system(
                   available provider: Codex CLI if installed, else Google
                   Gemini if GOOGLE_API_KEY is set, else raises.
     """
-    import os
     import shutil
 
     # LLM
@@ -106,6 +133,8 @@ def boot_agent_system(
         tool_registry=tool_registry,
     )
     loop.agent_pool = agent_pool
+    loop.metacognition = metacognition
+    loop.topology_population = topology_population
 
     return AgentSystem(
         agent_loop=loop,
