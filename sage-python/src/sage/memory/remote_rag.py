@@ -95,3 +95,45 @@ class ExoCortex:
         await asyncio.to_thread(_delete)
         log.info("Deleted ExoCortex store: %s", self.store_name)
         self.store_name = None
+
+
+class RagCacheFallback:
+    """Pure-Python LRU+TTL cache (fallback when sage_core unavailable)."""
+
+    def __init__(self, max_entries: int = 1000, ttl_seconds: int = 3600):
+        self._cache: dict[int, tuple[float, bytes]] = {}
+        self._max = max_entries
+        self._ttl = ttl_seconds
+
+    def put(self, query_hash: int, data: bytes) -> None:
+        import time
+        if len(self._cache) >= self._max:
+            oldest_key = min(self._cache, key=lambda k: self._cache[k][0])
+            del self._cache[oldest_key]
+        self._cache[query_hash] = (time.time(), data)
+
+    def get(self, query_hash: int) -> bytes | None:
+        import time
+        entry = self._cache.get(query_hash)
+        if entry is None:
+            return None
+        ts, data = entry
+        if time.time() - ts > self._ttl:
+            del self._cache[query_hash]
+            return None
+        return data
+
+    def stats(self) -> tuple[int, int, int]:
+        return (0, 0, len(self._cache))  # No hit/miss tracking in fallback
+
+    def clear(self) -> None:
+        self._cache.clear()
+
+
+def get_rag_cache(max_entries: int = 1000, ttl_seconds: int = 3600):
+    """Get the best available RAG cache (Rust or Python fallback)."""
+    try:
+        import sage_core
+        return sage_core.RagCache(max_entries, ttl_seconds)
+    except (ImportError, AttributeError):
+        return RagCacheFallback(max_entries, ttl_seconds)

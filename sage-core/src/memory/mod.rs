@@ -9,6 +9,7 @@ pub mod event;
 pub mod arrow_tier;
 pub mod smmu;
 pub mod paging;
+pub mod rag_cache;
 
 // Re-export public types so that `memory::MemoryEvent` and `memory::WorkingMemory`
 // continue to work without changing import paths.
