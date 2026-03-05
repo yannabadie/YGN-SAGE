@@ -47,3 +47,25 @@ def test_assess_complexity_complex():
     profile = ctrl.assess_complexity("Debug and fix the crash in the authentication system, then run the test suite")
     assert profile.complexity > 0.5
     assert profile.tool_required
+
+
+@pytest.mark.asyncio
+async def test_assess_complexity_async_fallback():
+    """Without GOOGLE_API_KEY, async falls back to heuristic."""
+    import os
+    saved = os.environ.pop('GOOGLE_API_KEY', None)
+    try:
+        ctrl = MetacognitiveController()
+        ctrl._llm_available = False  # Force fallback
+        profile = await ctrl.assess_complexity_async('Debug the crash in auth')
+        assert profile.complexity > 0.5
+        assert profile.reasoning == 'heuristic'
+    finally:
+        if saved:
+            os.environ['GOOGLE_API_KEY'] = saved
+
+
+def test_assess_complexity_has_reasoning():
+    ctrl = MetacognitiveController()
+    profile = ctrl.assess_complexity('Hello')
+    assert profile.reasoning == 'heuristic'

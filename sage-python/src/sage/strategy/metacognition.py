@@ -1,7 +1,12 @@
-"""Metacognitive Controller: SOFAI-style System 1/3 routing + self-braking."""
+"""Metacognitive Controller: SOFAI-style System 1/3 routing + self-braking.
+
+Uses Gemini 3.1 Flash Lite for LLM-based task assessment (~$0.0005/call, <1s).
+Falls back to heuristic if GOOGLE_API_KEY is not set.
+"""
 from __future__ import annotations
 
 import logging
+import os
 from collections import deque
 from dataclasses import dataclass
 
@@ -14,6 +19,7 @@ class CognitiveProfile:
     complexity: float     # 0.0 = trivial, 1.0 = extremely complex
     uncertainty: float    # 0.0 = certain, 1.0 = highly uncertain
     tool_required: bool   # Whether tool use is expected
+    reasoning: str = ""   # LLM explanation of the assessment
 
 
 @dataclass
@@ -25,11 +31,44 @@ class RoutingDecision:
     use_z3: bool          # Whether to validate with Z3 PRM
 
 
+# Structured output schema for Gemini Flash Lite routing
+_ROUTING_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "complexity": {
+            "type": "number",
+            "description": "Task complexity from 0.0 (trivial) to 1.0 (extremely complex)",
+        },
+        "uncertainty": {
+            "type": "number",
+            "description": "Epistemic uncertainty from 0.0 (certain) to 1.0 (highly uncertain)",
+        },
+        "tool_required": {
+            "type": "boolean",
+            "description": "Whether the task likely requires tool use (file I/O, search, execution)",
+        },
+        "reasoning": {
+            "type": "string",
+            "description": "Brief (1-2 sentence) explanation of the assessment",
+        },
+    },
+    "required": ["complexity", "uncertainty", "tool_required", "reasoning"],
+}
+
+_ROUTING_PROMPT = """You are a metacognitive router. Assess the following task and return a JSON object with:
+- complexity (0.0-1.0): how hard is this task? 0=trivial factual, 0.3=simple, 0.5=moderate, 0.7=hard reasoning, 1.0=multi-step research
+- uncertainty (0.0-1.0): how uncertain is the answer? 0=well-known fact, 0.5=requires analysis, 1.0=open-ended/speculative
+- tool_required (bool): does this need file access, code execution, search, or external tools?
+- reasoning: 1-2 sentence explanation
+
+Task: {task}"""
+
+
 class MetacognitiveController:
     """Routes tasks between System 1 (fast) and System 3 (formal reasoning).
 
-    SOFAI pattern: evaluates task complexity and model confidence to decide
-    whether to use fast heuristic LLM or full Z3-backed reasoning pipeline.
+    Primary: LLM-based assessment via Gemini Flash Lite (structured JSON output).
+    Fallback: keyword heuristic if no Google API key.
 
     Self-braking (CGRS): monitors output entropy to detect convergence
     and suppress unnecessary reasoning loops.
@@ -47,6 +86,7 @@ class MetacognitiveController:
         self.brake_window = brake_window
         self.brake_entropy_threshold = brake_entropy_threshold
         self._entropy_history: deque[float] = deque(maxlen=10)
+        self._llm_available: bool | None = None  # Lazy check
 
     def route(self, profile: CognitiveProfile) -> RoutingDecision:
         """Decide which cognitive system to engage."""
@@ -57,16 +97,14 @@ class MetacognitiveController:
         )
 
         if needs_system3:
-            # High complexity: use formal reasoning
             tier = "reasoner"
             if profile.complexity > 0.8:
-                tier = "codex"  # Hardest tasks get agentic Codex
+                tier = "codex"
             return RoutingDecision(
                 system=3, llm_tier=tier,
                 max_tokens=8192, use_z3=True,
             )
         else:
-            # Simple task: fast heuristic
             return RoutingDecision(
                 system=1, llm_tier="fast",
                 max_tokens=2048, use_z3=False,
@@ -77,21 +115,73 @@ class MetacognitiveController:
         self._entropy_history.append(entropy)
 
     def should_brake(self) -> bool:
-        """Determine if the agent should stop reasoning (convergence detected).
-
-        CGRS: If the last N outputs all have low entropy, the model has
-        implicitly converged and further reasoning is wasteful.
-        """
+        """CGRS: stop if last N outputs all have low entropy (convergence)."""
         if len(self._entropy_history) < self.brake_window:
             return False
         recent = list(self._entropy_history)[-self.brake_window:]
         return all(e < self.brake_entropy_threshold for e in recent)
 
+    async def assess_complexity_async(self, task: str) -> CognitiveProfile:
+        """LLM-based task assessment via Gemini Flash Lite.
+
+        Cost: ~$0.0005 per call. Latency: <1s.
+        Falls back to heuristic if Google API key is missing.
+        """
+        if self._llm_available is None:
+            self._llm_available = bool(os.environ.get("GOOGLE_API_KEY"))
+
+        if self._llm_available:
+            try:
+                return await self._assess_via_llm(task)
+            except Exception as e:
+                log.warning(f"LLM routing failed ({e}), falling back to heuristic")
+
+        return self._assess_heuristic(task)
+
     def assess_complexity(self, task: str) -> CognitiveProfile:
-        """Quick heuristic assessment of task complexity."""
+        """Synchronous assessment (heuristic only). Use assess_complexity_async for LLM."""
+        # Sync callers get heuristic; async callers get LLM
+        return self._assess_heuristic(task)
+
+    async def _assess_via_llm(self, task: str) -> CognitiveProfile:
+        """Call Gemini Flash Lite with structured JSON output."""
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        prompt = _ROUTING_PROMPT.format(task=task[:2000])  # Cap input length
+
+        config = types.GenerateContentConfig(
+            max_output_tokens=256,
+            temperature=0.0,  # Deterministic routing
+            response_mime_type="application/json",
+            response_schema=_ROUTING_SCHEMA,
+        )
+
+        response = await client.aio.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
+            config=config,
+        )
+
+        import json
+        data = json.loads(response.text)
+
+        profile = CognitiveProfile(
+            complexity=max(0.0, min(1.0, float(data.get("complexity", 0.5)))),
+            uncertainty=max(0.0, min(1.0, float(data.get("uncertainty", 0.3)))),
+            tool_required=bool(data.get("tool_required", False)),
+            reasoning=str(data.get("reasoning", "")),
+        )
+        log.info(f"LLM routing: c={profile.complexity:.2f} u={profile.uncertainty:.2f} "
+                 f"tool={profile.tool_required} — {profile.reasoning}")
+        return profile
+
+    def _assess_heuristic(self, task: str) -> CognitiveProfile:
+        """Fast keyword-based fallback (no LLM call)."""
         lower = task.lower()
 
-        complexity = 0.3  # Base
+        complexity = 0.3
         if any(w in lower for w in ["debug", "fix", "error", "crash"]):
             complexity += 0.3
         if any(w in lower for w in ["optimize", "evolve", "design", "architect"]):
@@ -113,4 +203,5 @@ class MetacognitiveController:
             complexity=min(1.0, complexity),
             uncertainty=min(1.0, uncertainty),
             tool_required=tool_required,
+            reasoning="heuristic",
         )

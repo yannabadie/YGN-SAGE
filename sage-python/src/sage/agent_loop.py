@@ -136,6 +136,8 @@ class AgentLoop:
             perceive_meta["use_z3"] = decision.use_z3
             perceive_meta["complexity"] = round(profile.complexity, 2)
             perceive_meta["uncertainty"] = round(profile.uncertainty, 2)
+            if profile.reasoning:
+                perceive_meta["routing_reason"] = profile.reasoning
 
         self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 

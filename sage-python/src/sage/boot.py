@@ -43,7 +43,7 @@ class AgentSystem:
 
     async def run(self, task: str) -> str:
         # 1. Assess task complexity
-        profile = self.metacognition.assess_complexity(task)
+        profile = await self.metacognition.assess_complexity_async(task)
         decision = self.metacognition.route(profile)
 
         # 2. Apply routing decision
