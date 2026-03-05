@@ -10,7 +10,7 @@ import json
 import logging
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -87,6 +87,10 @@ async def download_pdf(url: str, dest: Path) -> bool:
 
     def _download() -> bool:
         try:
+            # Only allow HTTPS URLs for security
+            if not url.startswith("https://"):
+                logger.warning("Refusing non-HTTPS URL: %s", url)
+                return False
             dest.parent.mkdir(parents=True, exist_ok=True)
             urllib.request.urlretrieve(url, str(dest))
             logger.info("Downloaded PDF: %s -> %s", url, dest)
@@ -152,7 +156,7 @@ async def ingest(
         "domain": paper.candidate.domain,
         "source": paper.candidate.source,
         "relevance_score": paper.relevance_score,
-        "ingested_at": datetime.utcnow().isoformat(),
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
     }
     save_manifest(manifest, manifest_path)
     logger.info("Ingested paper: %s", pid)

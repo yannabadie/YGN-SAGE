@@ -99,7 +99,7 @@ async def run_pipeline(
 
             llm = GoogleProvider()
             logger.info("Created GoogleProvider for curation")
-        except (ImportError, ValueError) as exc:
+        except Exception as exc:
             logger.warning("Could not create LLM provider: %s", exc)
 
     # --- Default since ---
