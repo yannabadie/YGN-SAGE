@@ -95,6 +95,8 @@ class AgentLoop:
         self.total_inference_time = 0.0
         self.total_cost_usd = 0.0
         self.start_time = 0.0
+        self._prm_retries = 0
+        self._max_prm_retries = 2
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = LoopEvent(phase=phase, data=data, step=self.step_count)
@@ -119,6 +121,8 @@ class AgentLoop:
         """Execute the full perceive -> think -> act -> learn cycle."""
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
+        self._prm_retries = 0
+        self.step_count = 0
 
         # === PERCEIVE: Gather context ===
         perceive_meta: dict[str, Any] = {"task": task, "agent": self.config.name}
@@ -198,16 +202,22 @@ class AgentLoop:
                 brake=brake,
             )
 
-            # System 3 validation (Z3 PRM)
+            # System 3 validation (Z3 PRM) -- max 2 retries then accept
             if self.config.enforce_system3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
                 if r_path < 0.0 and "error" in details:
-                    messages.append(Message(
-                        role=Role.USER,
-                        content="SYSTEM: Use <think> tags for structured reasoning.",
-                    ))
-                    continue
+                    self._prm_retries += 1
+                    if self._prm_retries <= self._max_prm_retries:
+                        messages.append(Message(
+                            role=Role.USER,
+                            content="SYSTEM: Use <think> tags for structured reasoning.",
+                        ))
+                        continue
+                    # Max retries reached -- accept response as-is
+                    log.warning("PRM retry limit reached, accepting response without <think> tags.")
+                else:
+                    self._prm_retries = 0  # Reset on success
 
             # CGRS: stop if converged
             if brake:

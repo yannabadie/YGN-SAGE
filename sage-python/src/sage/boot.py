@@ -46,14 +46,28 @@ class AgentSystem:
         profile = self.metacognition.assess_complexity(task)
         decision = self.metacognition.route(profile)
 
-        # 2. Update agent LLM tier based on routing
-        # Only switch to a Google tier if the key is available
-        import os
-        new_tier = decision.llm_tier
-        new_config = ModelRouter.get_config(new_tier)
-        if new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
-            # Stay on current provider (Codex) if Google isn't available
-            pass
+        # 2. Apply routing decision
+        current_provider = self.agent_loop.config.llm.provider
+
+        # enforce_system3 only for Gemini (which supports <think> tags)
+        # Codex CLI refuses <think> tags — it reasons internally
+        actual_provider = self.agent_loop.config.llm.provider
+        if actual_provider == "codex":
+            self.agent_loop.config.enforce_system3 = False
+        elif decision.system == 1:
+            self.agent_loop.config.enforce_system3 = False
+        else:
+            self.agent_loop.config.enforce_system3 = True
+
+        # Only switch LLM if the target provider is available AND different
+        new_config = ModelRouter.get_config(decision.llm_tier)
+
+        # Don't downgrade from Codex to Gemini Flash for simple tasks —
+        # Codex handles everything and always produces <think> tags
+        if current_provider == "codex" and new_config.provider == "google":
+            pass  # Keep Codex
+        elif new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
+            pass  # Google unavailable, keep current
         else:
             self.agent_loop.config.llm = new_config
             if new_config.provider == "codex":
@@ -118,12 +132,11 @@ def boot_agent_system(
         name=agent_name,
         llm=llm_config,
         system_prompt=(
-            "You are YGN-SAGE, an advanced AI agent with 5 cognitive pillars: "
-            "Topology, Tools, Memory, Evolution, Strategy. "
-            "Use <think> tags for structured reasoning."
+            "You are YGN-SAGE, a precise AI assistant. "
+            "Think step-by-step. Be concise. Answer the user task directly."
         ),
-        max_steps=100,
-        enforce_system3=True,
+        max_steps=20,
+        enforce_system3=(llm_config.provider != "codex"),
     )
 
     # Agent loop

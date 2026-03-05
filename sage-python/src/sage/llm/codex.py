@@ -87,17 +87,21 @@ class CodexProvider:
         tools: Optional[List[ToolDef]] = None,
         config: Optional[LLMConfig] = None,
     ) -> LLMResponse:
-        # Build prompt from messages
-        prompt_parts = []
+        # Codex CLI works best with direct task instructions.
+        # System messages are skipped (Codex has its own agent persona).
+        parts: list[str] = []
         for msg in messages:
-            if msg.role == Role.SYSTEM:
-                prompt_parts.append(f"System: {msg.content}")
-            elif msg.role == Role.USER:
-                prompt_parts.append(f"User: {msg.content}")
+            if msg.role == Role.USER:
+                parts.append(msg.content)
             elif msg.role == Role.ASSISTANT:
-                prompt_parts.append(f"Assistant: {msg.content}")
+                parts.append(f"[Previous response]: {msg.content}")
+            elif msg.role == Role.TOOL:
+                name = getattr(msg, "name", "tool")
+                parts.append(f"[Tool result ({name})]: {msg.content}")
+            # System messages intentionally skipped for Codex CLI
 
-        full_prompt = "\n".join(prompt_parts)
+        full_prompt = "\n\n".join(parts)
+
         model = config.model if config and config.model else DEFAULT_MODEL
 
         codex_path = shutil.which("codex")
