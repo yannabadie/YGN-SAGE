@@ -171,7 +171,7 @@ result = await system.run("Test task")
 cd sage-python
 python -m pytest tests/ -v
 
-# Current status: 146 tests, all passing
+# Current status: 152 tests, all passing
 ```
 
 ## Project Structure
@@ -255,7 +255,7 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 ## Status (March 2026)
 
-- **146/146 tests passing** (Python SDK)
+- **152/152 tests passing** (Python SDK)
 - **Dashboard**: Production-ready with real-time telemetry and response pane
 - **Cognitive Routing**: Tripartite S1/S2/S3 with validation levels (none/empirical/formal)
 - **LLM Integration**: Google Gemini fully wired, Codex CLI optional

@@ -35,7 +35,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-pytest                          # Run tests (146 passing)
+pytest                          # Run tests (152 passing)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
