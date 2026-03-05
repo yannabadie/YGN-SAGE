@@ -258,6 +258,7 @@ class AgentLoop:
                                 "- assert bounds(addr, limit)\n"
                                 "- assert loop(var)\n"
                                 "- assert arithmetic(expr, expected)\n"
+                                "- assert invariant(\"precondition\", \"postcondition\")\n"
                                 "Include at least one formal assertion per reasoning step."
                             ),
                         ))

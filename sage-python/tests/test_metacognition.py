@@ -152,12 +152,17 @@ def test_s3_system_prompt_contains_z3_dsl():
     )
     loop = AgentLoop(config=config, llm_provider=MockProvider())
 
-    # The system prompt should contain Z3 DSL examples when validation_level >= 3
-    # We need to check what gets built — run() builds it, but we can check the constant
-    # by triggering the prompt construction path
-    import sage.agent_loop as al
-    # Verify the Z3 DSL keywords exist in the prompt augmentation
-    assert "assert bounds" in str(al.__dict__) or True  # placeholder — real test below
+    # Build the system prompt the same way run() does
+    system_prompt = config.system_prompt
+    if config.validation_level >= 3:
+        # The AgentLoop should augment the prompt with Z3 DSL
+        # Check via source code that the augmentation exists
+        import inspect
+        source = inspect.getsource(AgentLoop)
+        assert "assert bounds" in source, "S3 prompt must teach assert bounds"
+        assert "assert loop" in source, "S3 prompt must teach assert loop"
+        assert "assert arithmetic" in source, "S3 prompt must teach assert arithmetic"
+        assert "assert invariant" in source, "S3 prompt must teach assert invariant"
 
 
 def test_s3_prompt_produces_parseable_z3_output():
