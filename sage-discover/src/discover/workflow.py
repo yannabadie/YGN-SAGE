@@ -68,7 +68,7 @@ class DiscoverWorkflow:
         self._iteration = 0
         self._phase = "idle"
         self._log: list[dict[str, Any]] = []
-        
+
         # Ensure Journal Directory exists
         os.makedirs("research_journal", exist_ok=True)
         
@@ -91,8 +91,8 @@ class DiscoverWorkflow:
             evaluator=self.evaluator
         )
 
-        # Agent Setup (System 3 Enforced)
-        agent_config = AgentConfig(name="SageDiscover_Main", llm=ModelRouter.get_config("fast"), system_prompt="You are a SOTA AI Researcher.", enforce_system3=True)
+        # Agent Setup (System 3 = formal verification via validation_level=3)
+        agent_config = AgentConfig(name="SageDiscover_Main", llm=ModelRouter.get_config("fast"), system_prompt="You are a SOTA AI Researcher.", validation_level=3)
         self.main_agent = Agent(
             config=agent_config,
             llm_provider=self.llm,
@@ -103,6 +103,18 @@ class DiscoverWorkflow:
         # OpenSAGE Topology Planner
         self.topology_engine = TopologyEngine()
         self.topology_planner = TopologyPlanner(self.topology_engine, self.llm)
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    @property
+    def iteration(self) -> int:
+        return self._iteration
+
+    @property
+    def researcher(self) -> ResearchAgent:
+        return self._researcher
 
     async def run_exploration(self) -> list[str]:
         self._phase = "exploring"
@@ -214,8 +226,12 @@ class DiscoverWorkflow:
 
     def _checkpoint(self):
         data = self.stats()
-        with open("docs/plans/latest_discovery.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2)
+        try:
+            os.makedirs("docs/plans", exist_ok=True)
+            with open("docs/plans/latest_discovery.json", "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+        except OSError:
+            pass
 
     def stats(self) -> dict[str, Any]:
         return {

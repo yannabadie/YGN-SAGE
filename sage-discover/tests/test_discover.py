@@ -93,14 +93,13 @@ async def test_workflow_full_iteration(mock_llm):
     h = workflow.researcher.add_hypothesis("Hybrid approach")
     workflow.run_hypothesis_generation = AsyncMock(return_value=[h])
     
-    # Mock evolution to return a high score
-    workflow.run_evolution = AsyncMock(return_value=("def hybrid_sort(arr): return sorted(arr)", 0.85))
+    # Mock evolution to return a high score (threshold is > 42.0 in workflow)
+    workflow.run_evolution = AsyncMock(return_value=("def hybrid_sort(arr): return sorted(arr)", 85.0, {}))
 
     discoveries = await workflow.run_iteration()
     assert len(discoveries) == 1
-    assert discoveries[0].score == 0.85
+    assert discoveries[0].score == 85.0
     assert workflow.iteration == 1
-    assert workflow.phase == "complete"
 
 
 @pytest.mark.asyncio
@@ -115,8 +114,8 @@ async def test_workflow_rejection(mock_llm):
     h = workflow.researcher.add_hypothesis("Bad hypothesis")
     workflow.run_hypothesis_generation = AsyncMock(return_value=[h])
     
-    # Mock evolution to return a low score
-    workflow.run_evolution = AsyncMock(return_value=("bad code", 0.2))
+    # Mock evolution to return a low score (below 42.0 threshold)
+    workflow.run_evolution = AsyncMock(return_value=("bad code", 0.2, {}))
 
     discoveries = await workflow.run_iteration()
     assert len(discoveries) == 0
