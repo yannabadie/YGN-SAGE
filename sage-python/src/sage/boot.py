@@ -181,6 +181,11 @@ def boot_agent_system(
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
         tool_registry.register(tool)
 
+    # ExoCortex tools (search)
+    from sage.tools.exocortex_tools import create_exocortex_tools
+    for tool in create_exocortex_tools(exocortex):
+        tool_registry.register(tool)
+
     return AgentSystem(
         agent_loop=loop,
         agent_pool=agent_pool,

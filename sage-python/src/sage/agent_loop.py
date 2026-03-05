@@ -107,6 +107,7 @@ class AgentLoop:
         self.topology_population: Any = None
         self.episodic_memory: Any = None  # EpisodicMemory for cross-session storage
         self.sandbox_manager: Any = None  # SandboxManager for S2 validation
+        self.exocortex: Any = None  # ExoCortex for File Search grounding
 
         # Stats
         self.step_count = 0
@@ -203,10 +204,17 @@ class AgentLoop:
             self._emit(LoopPhase.THINK, model=model_name, step=self.step_count)
 
             t0 = time.perf_counter()
+            # ExoCortex passive grounding
+            exo_store_names = None
+            if self.exocortex and hasattr(self.exocortex, "store_name") and self.exocortex.store_name:
+                if hasattr(self.exocortex, "is_available") and self.exocortex.is_available:
+                    exo_store_names = [self.exocortex.store_name]
+
             response = await self._llm.generate(
                 messages=messages,
                 tools=tool_defs if tool_defs else None,
                 config=self.config.llm,
+                file_search_store_names=exo_store_names,
             )
             inference_ms = (time.perf_counter() - t0) * 1000
             self.total_inference_time += inference_ms / 1000

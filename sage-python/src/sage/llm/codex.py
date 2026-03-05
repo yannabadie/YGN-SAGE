@@ -86,6 +86,7 @@ class CodexProvider:
         messages: List[Message],
         tools: Optional[List[ToolDef]] = None,
         config: Optional[LLMConfig] = None,
+        file_search_store_names: Optional[List[str]] = None,
     ) -> LLMResponse:
         # Codex CLI works best with direct task instructions.
         # System messages are skipped (Codex has its own agent persona).

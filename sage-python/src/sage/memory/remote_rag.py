@@ -96,6 +96,34 @@ class ExoCortex:
         log.info("Deleted ExoCortex store: %s", self.store_name)
         self.store_name = None
 
+    def query(self, question: str, domain: str | None = None) -> str:
+        """Synchronous query for tool use. Returns grounded answer or empty string."""
+        if not self.store_name or not self._api_key:
+            return ""
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=self._api_key)
+            tools = [types.Tool(
+                file_search=types.FileSearch(
+                    file_search_store_names=[self.store_name]
+                )
+            )]
+            config = types.GenerateContentConfig(
+                tools=tools,
+                system_instruction="Answer based on the indexed documents. Be precise and cite sources.",
+            )
+            response = client.models.generate_content(
+                model="gemini-3.1-flash-lite-preview",
+                contents=question,
+                config=config,
+            )
+            return response.text or ""
+        except Exception as e:
+            log.warning("ExoCortex query failed: %s", e)
+            return ""
+
 
 class RagCacheFallback:
     """Pure-Python LRU+TTL cache (fallback when sage_core unavailable)."""
