@@ -94,3 +94,20 @@ async def test_full_cycle_with_mock():
     result = await system.run("What is 2+2?")
     assert result is not None
     assert system.agent_loop.step_count > 0
+
+
+def test_boot_registers_meta_tools():
+    """Boot sequence registers create_python_tool, create_bash_tool, and search_memory."""
+    system = boot_agent_system(use_mock_llm=True)
+    tool_names = system.tool_registry.list_tools()
+    assert "create_python_tool" in tool_names
+    assert "create_bash_tool" in tool_names
+    assert "search_memory" in tool_names
+
+
+def test_boot_wires_compressor_and_sandbox():
+    """Boot sequence wires MemoryCompressor, EpisodicMemory, and SandboxManager."""
+    system = boot_agent_system(use_mock_llm=True)
+    assert system.agent_loop.memory_compressor is not None
+    assert system.agent_loop.episodic_memory is not None
+    assert system.agent_loop.sandbox_manager is not None

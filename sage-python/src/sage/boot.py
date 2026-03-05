@@ -136,6 +136,11 @@ def boot_agent_system(
         keep_recent=5,
     )
 
+    # Runtime tool synthesis (Agent0/AutoTool pattern)
+    from sage.tools.meta import create_python_tool, create_bash_tool
+    tool_registry.register(create_python_tool)
+    tool_registry.register(create_bash_tool)
+
     # Sandbox manager for S2 empirical validation (local fallback, no Docker required)
     sandbox_manager = SandboxManager(use_docker=False)
 
