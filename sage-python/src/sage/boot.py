@@ -29,6 +29,8 @@ from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
 from sage.memory.memory_agent import MemoryAgent
 from sage.tools.registry import ToolRegistry
 from sage.memory.compressor import MemoryCompressor
+from sage.memory.episodic import EpisodicMemory
+from sage.tools.memory_tools import create_search_memory_tool
 
 
 @dataclass
@@ -133,6 +135,11 @@ def boot_agent_system(
         keep_recent=5,
     )
 
+    # Episodic memory + on-demand search tool (two-stage retrieval)
+    episodic_memory = EpisodicMemory()
+    search_tool = create_search_memory_tool(episodic_memory)
+    tool_registry.register(search_tool)
+
     # Agent config
     config = AgentConfig(
         name=agent_name,
@@ -155,6 +162,7 @@ def boot_agent_system(
     loop.agent_pool = agent_pool
     loop.metacognition = metacognition
     loop.topology_population = topology_population
+    loop.episodic_memory = episodic_memory
 
     return AgentSystem(
         agent_loop=loop,

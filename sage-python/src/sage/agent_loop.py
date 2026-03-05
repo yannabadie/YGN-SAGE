@@ -89,6 +89,8 @@ class AgentLoop:
         # Injected by boot.py
         self.metacognition: Any = None
         self.topology_population: Any = None
+        self.episodic_memory: Any = None  # EpisodicMemory for cross-session storage
+        self.sandbox_manager: Any = None  # SandboxManager for S2 validation
 
         # Stats
         self.step_count = 0
@@ -253,6 +255,17 @@ class AgentLoop:
                 break
 
             self.working_memory.add_event("ASSISTANT", content)
+
+            # Store significant responses in episodic memory (if wired)
+            if self.episodic_memory and len(content) > 100:
+                try:
+                    await self.episodic_memory.store(
+                        key=f"step-{self.step_count}",
+                        content=content[:500],
+                        metadata={"task": task, "step": self.step_count},
+                    )
+                except Exception:
+                    pass  # Episodic storage is best-effort
 
             # No tool calls -> final answer
             if not response.tool_calls:

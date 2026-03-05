@@ -63,3 +63,17 @@ async def test_episodic_memory_empty_search():
     mem = EpisodicMemory()
     results = await mem.search("nonexistent query")
     assert len(results) == 0
+
+
+@pytest.mark.asyncio
+async def test_search_memory_tool():
+    """search_memory tool queries episodic memory and returns results."""
+    from sage.tools.memory_tools import create_search_memory_tool
+
+    episodic = EpisodicMemory()
+    await episodic.store("debug-session", "Found null pointer bug in parser.py line 42")
+    await episodic.store("architecture", "Agent uses perceive-think-act-learn loop")
+
+    tool = create_search_memory_tool(episodic)
+    result = await tool.execute({"query": "parser bug", "top_k": 3})
+    assert "null pointer" in result.output
