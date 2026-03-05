@@ -108,7 +108,8 @@ dashboard_state: dict = {
     },
     "memory_events": 0,
     "aio_ratio": 0.0,
-    "metacognitive_system": 1,     # 1 or 3
+    "metacognitive_system": 1,     # 1, 2, or 3
+    "validation_level": 1,         # 1=none, 2=empirical, 3=formal
     "z3_pass": 0,
     "z3_fail": 0,
     "inference_time_ms": 0.0,
@@ -150,6 +151,10 @@ def _update_state_from_event(evt: dict) -> None:
     # System routing (from PERCEIVE or THINK)
     if "system" in meta:
         dashboard_state["metacognitive_system"] = meta["system"]
+
+    # Validation level
+    if "validation_level" in meta:
+        dashboard_state["validation_level"] = meta["validation_level"]
 
     # Z3 verification
     if "r_path" in meta:

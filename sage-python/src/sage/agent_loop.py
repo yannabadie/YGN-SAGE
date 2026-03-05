@@ -134,6 +134,7 @@ class AgentLoop:
             perceive_meta["system"] = decision.system
             perceive_meta["routed_tier"] = decision.llm_tier
             perceive_meta["use_z3"] = decision.use_z3
+            perceive_meta["validation_level"] = decision.validation_level
             perceive_meta["complexity"] = round(profile.complexity, 2)
             perceive_meta["uncertainty"] = round(profile.uncertainty, 2)
             if profile.reasoning:
