@@ -77,3 +77,51 @@ async def test_search_memory_tool():
     tool = create_search_memory_tool(episodic)
     result = await tool.execute({"query": "parser bug", "top_k": 3})
     assert "null pointer" in result.output
+
+
+@pytest.mark.asyncio
+async def test_episodic_memory_update():
+    """AgeMem: agent can update existing memory entries."""
+    mem = EpisodicMemory()
+    await mem.store("auth-fix", "Fixed auth by checking token expiry")
+    updated = await mem.update("auth-fix", content="Fixed auth by adding JWT refresh + token expiry check")
+    assert updated is True
+    results = await mem.search("auth")
+    assert "JWT refresh" in results[0]["content"]
+
+
+@pytest.mark.asyncio
+async def test_episodic_memory_update_nonexistent():
+    mem = EpisodicMemory()
+    updated = await mem.update("nonexistent", content="new")
+    assert updated is False
+
+
+@pytest.mark.asyncio
+async def test_episodic_memory_delete():
+    """AgeMem: agent can delete obsolete memory entries."""
+    mem = EpisodicMemory()
+    await mem.store("temp-debug", "Temporary debug finding")
+    await mem.store("permanent", "Important architecture note")
+    deleted = await mem.delete("temp-debug")
+    assert deleted is True
+    results = await mem.search("debug")
+    assert len(results) == 0
+    results = await mem.search("architecture")
+    assert len(results) == 1
+
+
+@pytest.mark.asyncio
+async def test_episodic_memory_delete_nonexistent():
+    mem = EpisodicMemory()
+    deleted = await mem.delete("nonexistent")
+    assert deleted is False
+
+
+@pytest.mark.asyncio
+async def test_episodic_memory_list_keys():
+    mem = EpisodicMemory()
+    await mem.store("key-a", "content a")
+    await mem.store("key-b", "content b")
+    keys = mem.list_keys()
+    assert set(keys) == {"key-a", "key-b"}

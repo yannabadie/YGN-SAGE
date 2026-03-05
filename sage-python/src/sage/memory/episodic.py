@@ -44,3 +44,31 @@ class EpisodicMemory:
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [entry for _, entry in scored[:top_k]]
+
+    async def update(
+        self,
+        key: str,
+        content: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> bool:
+        """Update an existing memory entry by key. Returns False if not found."""
+        for entry in self._entries:
+            if entry["key"] == key:
+                if content is not None:
+                    entry["content"] = content
+                if metadata is not None:
+                    entry["metadata"] = metadata
+                return True
+        return False
+
+    async def delete(self, key: str) -> bool:
+        """Delete a memory entry by key. Returns False if not found."""
+        for i, entry in enumerate(self._entries):
+            if entry["key"] == key:
+                self._entries.pop(i)
+                return True
+        return False
+
+    def list_keys(self) -> list[str]:
+        """List all memory entry keys."""
+        return [e["key"] for e in self._entries]
