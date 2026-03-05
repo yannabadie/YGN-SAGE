@@ -16,10 +16,10 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 - `boot.py` - Boot sequence, wires all pillars into `AgentSystem`
 - `agent_loop.py` - Structured perceive→think→act→learn runtime
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
-- `llm/router.py` - Model Router with 6 tiers (fast/mutator/reasoner/codex/budget/fallback)
-- `llm/google.py` - Google Gemini provider (primary LLM)
-- `llm/codex.py` - OpenAI Codex CLI provider (fallback: Google)
-- `strategy/metacognition.py` - SOFAI System 1/3 routing + CGRS self-braking
+- `llm/router.py` - Model Router with 7 tiers (fast/mutator/reasoner/codex/codex_max/budget/fallback)
+- `llm/google.py` - Google Gemini provider (`from google import genai`)
+- `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
+- `strategy/metacognition.py` - Stanovich S1/S2/S3 tripartite routing + CGRS self-braking
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `evolution/llm_mutator.py` - LLM-driven code mutation with structured JSON
 - `memory/memory_agent.py` - Autonomous entity extraction agent
@@ -27,7 +27,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: REST API + WebSocket event streaming
 - `ui/static/index.html` - Single-file production dashboard (Tailwind + vanilla JS)
-- Endpoints: `GET /`, `GET /api/state`, `POST /api/task`, `POST /api/stop`, `POST /api/reset`, `WS /ws`
+- Endpoints: `GET /`, `GET /api/state`, `POST /api/task`, `POST /api/stop`, `POST /api/reset`, `GET /api/providers`, `WS /ws`
 
 ## Development Commands
 
@@ -35,7 +35,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-pytest                          # Run tests (59 passing)
+pytest                          # Run tests (146 passing)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -86,9 +86,11 @@ export GOOGLE_API_KEY="..."     # Required for Gemini models
 - Rust 1.90+ (orchestrator, via PyO3)
 - Python 3.12+ (SDK, agents)
 - OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
-- Google Gemini 3.x (secondary LLM, fallback)
+- Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback)
 - FastAPI + WebSocket (dashboard)
-- Z3 Solver (formal verification)
+- Z3 Solver 4.16 (formal verification, S3)
+- Apache Arrow / PyArrow (zero-copy memory compaction)
+- eBPF via solana_rbpf (sub-ms code evaluation)
 
 ## Key Design Principles
 - AI-centered: agents create their own topology, tools, and memory
