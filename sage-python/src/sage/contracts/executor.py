@@ -12,6 +12,7 @@ from typing import Any, Callable, Awaitable
 from sage.contracts.dag import TaskDAG
 from sage.contracts.verification import pre_check, post_check
 from sage.contracts.policy import PolicyVerifier, PolicyViolation
+from sage.contracts.cost_tracker import CostTracker
 
 log = logging.getLogger(__name__)
 
@@ -71,6 +72,7 @@ class DAGExecutor:
         self.total_budget_usd = total_budget_usd
         self.max_fan_in = max_fan_in
         self.max_fan_out = max_fan_out
+        self.cost_tracker = CostTracker(budget_usd=total_budget_usd)
 
     async def execute(self, initial_data: dict[str, Any]) -> DAGExecutionResult:
         """Execute the DAG in topological order with VF checks."""
@@ -141,6 +143,19 @@ class DAGExecutor:
                     output=output,
                     post_check_passed=False,
                     error=post_result.message,
+                )
+                result.node_results[node_id] = nr
+                result.success = False
+                return result
+
+            # Cumulative cost tracking
+            if actual_cost > 0:
+                self.cost_tracker.record(node_id, actual_cost)
+            if self.cost_tracker.is_over_budget:
+                nr = NodeResult(
+                    node_id=node_id,
+                    output=output,
+                    error=f"Budget exceeded: spent {self.cost_tracker.total_spent:.2f} > {self.total_budget_usd:.2f}",
                 )
                 result.node_results[node_id] = nr
                 result.success = False

@@ -53,6 +53,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `contracts/executor.py` - DAGExecutor: topo execution with VF pre/post checks + policy gate
 - `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
 - `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
+- `contracts/cost_tracker.py` - CostTracker: cumulative per-node cost accounting with budget cap
 - `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
 
 ### Key Rust Modules (sage-core/src/)
@@ -74,7 +75,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (557 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (578 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```

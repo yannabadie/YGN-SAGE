@@ -99,7 +99,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (557 tests total, 6 E2E integration tests)
+**Evidence:** tested-unit + tested-integration (578 tests total, 6 E2E + 14 stress tests)
 
 **Components:**
 | Component | Module | Tests |
@@ -116,6 +116,8 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | CausalMemory | `memory/causal.py` | 10 unit tests |
 | WriteGate | `memory/write_gate.py` | 9 unit tests |
 | Synthetic Failure Lab | `tests/test_failure_modes.py` | 10 tests (MAST taxonomy) |
+| CostTracker | `contracts/cost_tracker.py` | 7 unit tests |
+| Contract Stress Tests | `tests/test_stress_contracts.py` | 14 stress tests |
 | Phase 3 Integration | `tests/test_integration_phase3.py` | 6 E2E tests |
 
 **Key capabilities:**
@@ -125,6 +127,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - **DyTopo routing:** Capability-constrained model selection with adaptive feedback
 - **Causal memory:** Directed causal edges with BFS chain traversal + ancestor queries
 - **Write gating:** Confidence-based abstention ("better to forget than to store noise")
+- **Cost tracking:** Cumulative per-node cost accounting with mid-loop budget halt
 
 **Known limitations:**
 - Z3 verifies structural properties, not semantic correctness of LLM outputs
