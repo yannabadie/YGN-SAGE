@@ -77,8 +77,10 @@ if "sage_core" not in sys.modules:
     _mock.WorkingMemory = _WM
     sys.modules["sage_core"] = _mock
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException, Security
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -95,6 +97,32 @@ system = None  # lazily booted AgentSystem
 _agent_task: asyncio.Task | None = None
 
 app = FastAPI(title="YGN-SAGE v2 Control Dashboard")
+
+# ---------------------------------------------------------------------------
+# Auth + CORS
+# ---------------------------------------------------------------------------
+DASHBOARD_TOKEN = os.environ.get("SAGE_DASHBOARD_TOKEN", "")
+
+_security = HTTPBearer(auto_error=False)
+
+
+async def verify_token(
+    credentials: HTTPAuthorizationCredentials | None = Security(_security),
+) -> None:
+    """Verify bearer token. No token configured = open access (dev mode)."""
+    if not DASHBOARD_TOKEN:
+        return  # Dev mode: no token required
+    if credentials is None or credentials.credentials != DASHBOARD_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing token")
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Mount static files (resolve path relative to this file, not cwd)
 _static_dir = Path(__file__).resolve().parent / "static"
@@ -148,7 +176,7 @@ async def root():
         return HTMLResponse(f.read())
 
 
-@app.get("/api/state")
+@app.get("/api/state", dependencies=[Depends(verify_token)])
 async def get_state():
     """Return current dashboard stats derived from event_bus."""
     events = event_bus.query(last_n=5000)
@@ -214,7 +242,7 @@ async def get_state():
     })
 
 
-@app.post("/api/task")
+@app.post("/api/task", dependencies=[Depends(verify_token)])
 async def submit_task(request: Request):
     """Accept a new task and run it through the AgentSystem in background."""
     global _agent_task
@@ -254,7 +282,7 @@ async def submit_task(request: Request):
     return JSONResponse({"status": "started"})
 
 
-@app.post("/api/stop")
+@app.post("/api/stop", dependencies=[Depends(verify_token)])
 async def stop_agent():
     """Cancel the currently running agent task."""
     global _agent_task
@@ -264,7 +292,7 @@ async def stop_agent():
     return JSONResponse({"status": "stopped"})
 
 
-@app.post("/api/reset")
+@app.post("/api/reset", dependencies=[Depends(verify_token)])
 async def reset_state():
     """Clear event bus buffer and reset system reference."""
     global system, _agent_task
@@ -273,15 +301,13 @@ async def reset_state():
         _agent_task.cancel()
     _agent_task = None
 
-    # Clear the ring buffer (EventBus has no clear() -- replace it)
-    event_bus._buffer.clear()
-    event_bus._async_queues.clear()
+    event_bus.clear()
 
     system = None
     return JSONResponse({"status": "reset"})
 
 
-@app.get("/api/providers")
+@app.get("/api/providers", dependencies=[Depends(verify_token)])
 async def list_providers():
     """Return available LLM providers from ModelRegistry or fallback."""
     try:
@@ -305,7 +331,7 @@ async def list_providers():
     ])
 
 
-@app.post("/api/benchmark")
+@app.post("/api/benchmark", dependencies=[Depends(verify_token)])
 async def run_benchmark(request: Request):
     """Launch a benchmark run in background."""
     body = await request.json()
@@ -349,7 +375,7 @@ async def run_benchmark(request: Request):
     return JSONResponse({"status": "started", "type": bench_type})
 
 
-@app.get("/api/memory/stats")
+@app.get("/api/memory/stats", dependencies=[Depends(verify_token)])
 async def memory_stats():
     """Return 4-tier memory statistics."""
     stats = {"stm": 0, "episodic": 0, "semantic": 0, "exocortex": False}
@@ -371,7 +397,7 @@ async def memory_stats():
     return JSONResponse(stats)
 
 
-@app.get("/api/topology")
+@app.get("/api/topology", dependencies=[Depends(verify_token)])
 async def get_topology():
     """Return active agent pool topology."""
     agents = []
@@ -385,7 +411,7 @@ async def get_topology():
     return JSONResponse({"agents": agents})
 
 
-@app.get("/api/evolution")
+@app.get("/api/evolution", dependencies=[Depends(verify_token)])
 async def get_evolution():
     """Return evolution engine state."""
     evo = {"generation": 0, "population_size": 0, "best_score": 0.0, "cells": []}
