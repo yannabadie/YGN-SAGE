@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo:*)",
+      "Bash(curl:*)",
+      "Read(//c/Code/YGN-SAGE/$HOME/.local/bin/**)",
+      "Bash(\"$HOME/.local/bin/forge.exe\" --version)",
+      "Bash(echo:*)",
+      "Bash(reg query:*)",
+      "Bash(powershell.exe:*)",
+      "Read(//c/Code/YGN-SAGE/**)",
+      "Read(//c/Code/YGN-SAGE/$HOME/.ssl/**)",
+      "Bash(SSL_CERT_FILE=\"$HOME/.ssl/windows-ca-bundle.pem\" curl:*)",
+      "Bash(openssl s_client -connect api.x.ai:443 -servername api.x.ai -showcerts)",
+      "Read(//BEGIN CERTIFICATE/,/**)",
+      "Read(//tmp/**)",
+      "Read(//c/Code/YGN-SAGE/$HOME/.config/**)",
+      "Read(//c/Code/YGN-SAGE/$HOME/**)",
+      "Read(//c/Code/YGN-SAGE/$APPDATA/**)",
+      "Bash(forge:*)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}

@@ -164,6 +164,9 @@ class ModelRegistry:
         for profile in self._profiles.values():
             if not profile.available:
                 continue
+            # Skip models without verified benchmark data (cost=0 means no TOML profile)
+            if profile.cost_input <= 0 and profile.cost_output <= 0:
+                continue
             if max_cost is not None and profile.cost_input > max_cost:
                 continue
             if min_context is not None and (
@@ -184,7 +187,8 @@ class ModelRegistry:
             quality += needs.get("code", 0.0) * p.code_score
             quality += needs.get("reasoning", 0.0) * p.reasoning_score
             quality += needs.get("tool_use", 0.0) * p.tool_use_score
-            cost_factor = max(p.cost_input, 0.01)
+            # Use blended cost (input + output) to avoid favoring cheap-input/expensive-output models
+            cost_factor = max(p.cost_input + p.cost_output * 0.3, 0.01)
             return quality / cost_factor
 
         return max(candidates, key=_score)

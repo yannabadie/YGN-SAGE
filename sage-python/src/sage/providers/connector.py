@@ -120,6 +120,14 @@ class ProviderConnector:
 
     # ── Per-SDK discovery methods ─────────────────────────────────────────
 
+    # Non-text model prefixes to skip during discovery
+    _SKIP_PREFIXES = (
+        "dall-e", "tts-", "whisper-", "text-embedding", "sora-",
+        "omni-moderation", "gpt-image", "chatgpt-image",
+        "imagen-", "veo-", "gemma-", "aqa", "nano-banana",
+        "grok-imagine", "embedding",
+    )
+
     async def _discover_google(self, api_key: str) -> list[DiscoveredModel]:
         """Discover models via google-genai SDK."""
         try:
@@ -136,6 +144,12 @@ class ProviderConnector:
             # API returns "models/gemini-..." -- strip the prefix
             model_id = name.removeprefix("models/")
             if not model_id:
+                continue
+            # Filter non-text models
+            if any(model_id.lower().startswith(p) for p in self._SKIP_PREFIXES):
+                continue
+            # Skip audio/tts/image specialized models
+            if any(x in model_id.lower() for x in ("-tts", "-audio", "-image", "native-audio")):
                 continue
 
             ctx = getattr(m, "input_token_limit", None)
@@ -174,6 +188,11 @@ class ProviderConnector:
         for m in response:
             model_id = m.id
             if not model_id:
+                continue
+            # Filter non-text models
+            if any(model_id.lower().startswith(p) for p in self._SKIP_PREFIXES):
+                continue
+            if any(x in model_id.lower() for x in ("-tts", "-audio", "-image", "-transcribe", "realtime", "search-api", "search-preview")):
                 continue
             models.append(DiscoveredModel(
                 id=model_id,
