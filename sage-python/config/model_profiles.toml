@@ -1,0 +1,219 @@
+# YGN-SAGE Model Profiles Knowledge Base
+# Human-maintained benchmark scores and pricing data.
+# Scores are 0.0-1.0 based on public benchmarks.
+# Prices are $/1M tokens.
+# Last updated: 2026-03-06
+
+[models."gemini-3.1-pro-preview"]
+provider = "google"
+family = "gemini-3.1"
+code_score = 0.81
+reasoning_score = 0.92
+tool_use_score = 0.85
+cost_input = 1.25
+cost_output = 10.00
+latency_ttft_ms = 3000
+tokens_per_second = 150
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = false
+supports_file_search = true
+
+[models."gemini-3.1-flash-lite-preview"]
+provider = "google"
+family = "gemini-3.1"
+code_score = 0.65
+reasoning_score = 0.78
+tool_use_score = 0.70
+cost_input = 0.025
+cost_output = 1.50
+latency_ttft_ms = 1000
+tokens_per_second = 379
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = false
+supports_file_search = true
+
+[models."gemini-3-flash-preview"]
+provider = "google"
+family = "gemini-3"
+code_score = 0.72
+reasoning_score = 0.85
+tool_use_score = 0.80
+cost_input = 0.15
+cost_output = 3.50
+latency_ttft_ms = 1500
+tokens_per_second = 250
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = false
+supports_file_search = true
+
+[models."gemini-2.5-flash"]
+provider = "google"
+family = "gemini-2.5"
+code_score = 0.60
+reasoning_score = 0.72
+tool_use_score = 0.70
+cost_input = 0.015
+cost_output = 0.60
+latency_ttft_ms = 800
+tokens_per_second = 300
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+supports_file_search = true
+
+[models."gpt-5.4"]
+provider = "openai"
+family = "gpt-5.4"
+code_score = 0.85
+reasoning_score = 0.95
+tool_use_score = 0.90
+cost_input = 2.00
+cost_output = 16.00
+latency_ttft_ms = 3000
+tokens_per_second = 100
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."gpt-5.2"]
+provider = "openai"
+family = "gpt-5.2"
+code_score = 0.80
+reasoning_score = 0.93
+tool_use_score = 0.88
+cost_input = 1.75
+cost_output = 14.00
+latency_ttft_ms = 3000
+tokens_per_second = 100
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."gpt-5-mini"]
+provider = "openai"
+family = "gpt-5"
+code_score = 0.60
+reasoning_score = 0.70
+tool_use_score = 0.65
+cost_input = 0.25
+cost_output = 2.00
+latency_ttft_ms = 1500
+tokens_per_second = 200
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."gpt-5-nano"]
+provider = "openai"
+family = "gpt-5"
+code_score = 0.45
+reasoning_score = 0.50
+tool_use_score = 0.40
+cost_input = 0.05
+cost_output = 0.40
+latency_ttft_ms = 500
+tokens_per_second = 400
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."gpt-5.3-codex"]
+provider = "openai"
+family = "gpt-5.3"
+code_score = 0.85
+reasoning_score = 0.93
+tool_use_score = 0.90
+cost_input = 1.75
+cost_output = 14.00
+latency_ttft_ms = 4000
+tokens_per_second = 100
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."grok-4-1-fast-reasoning"]
+provider = "xai"
+family = "grok-4.1"
+code_score = 0.75
+reasoning_score = 0.82
+tool_use_score = 0.80
+cost_input = 0.20
+cost_output = 0.50
+latency_ttft_ms = 2000
+tokens_per_second = 100
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."grok-3"]
+provider = "xai"
+family = "grok-3"
+code_score = 0.70
+reasoning_score = 0.80
+tool_use_score = 0.75
+cost_input = 3.00
+cost_output = 15.00
+latency_ttft_ms = 2000
+tokens_per_second = 69
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."deepseek-chat"]
+provider = "deepseek"
+family = "deepseek-v3.2"
+code_score = 0.72
+reasoning_score = 0.75
+tool_use_score = 0.70
+cost_input = 0.28
+cost_output = 0.42
+latency_ttft_ms = 1500
+tokens_per_second = 150
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."deepseek-reasoner"]
+provider = "deepseek"
+family = "deepseek-v3.2"
+code_score = 0.75
+reasoning_score = 0.90
+tool_use_score = 0.70
+cost_input = 0.28
+cost_output = 0.42
+latency_ttft_ms = 3000
+tokens_per_second = 80
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."MiniMax-M2.5"]
+provider = "minimax"
+family = "minimax-m2.5"
+code_score = 0.80
+reasoning_score = 0.85
+tool_use_score = 0.80
+cost_input = 0.30
+cost_output = 1.20
+latency_ttft_ms = 2000
+tokens_per_second = 50
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."kimi-k2.5"]
+provider = "kimi"
+family = "kimi-k2.5"
+code_score = 0.78
+reasoning_score = 0.88
+tool_use_score = 0.80
+cost_input = 0.60
+cost_output = 2.50
+latency_ttft_ms = 2000
+tokens_per_second = 100
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
