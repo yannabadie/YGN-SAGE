@@ -77,6 +77,8 @@ class GoogleProvider:
                 schema = schema.model_json_schema()
             response_mime_type = 'application/json'
             response_json_schema = schema
+            # Gemini API: structured output (response_mime_type) is incompatible with tools
+            gemini_tools = []
 
         generate_config = types.GenerateContentConfig(
             max_output_tokens=config.max_tokens if config else None,

@@ -190,10 +190,17 @@ class CodexProvider:
         tools: Optional[List[ToolDef]],
         config: Optional[LLMConfig],
     ) -> LLMResponse:
-        """Fall back to GoogleProvider."""
+        """Fall back to GoogleProvider with a Gemini model (not the Codex model ID)."""
         self.logger.info("Falling back to GoogleProvider.")
         fallback = GoogleProvider()
-        return await fallback.generate(messages, tools, config)
+        # Override model to a valid Gemini model — Codex model IDs don't work on Gemini
+        from sage.llm.router import ModelRouter
+        fallback_config = ModelRouter.get_config("fast")
+        if config:
+            fallback_config.temperature = config.temperature
+            fallback_config.max_tokens = config.max_tokens
+            fallback_config.json_schema = config.json_schema
+        return await fallback.generate(messages, tools, fallback_config)
 
 
 class CodexExecProvider:

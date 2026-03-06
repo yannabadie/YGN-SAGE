@@ -22,6 +22,19 @@ def _repo_root() -> Path:
     return here.parents[3]
 
 
+def _load_env() -> None:
+    """Load .env file for API keys (same logic as boot.py)."""
+    try:
+        from dotenv import load_dotenv
+        for parent in [Path.cwd()] + list(Path.cwd().parents):
+            env_file = parent / ".env"
+            if env_file.exists():
+                load_dotenv(env_file)
+                break
+    except ImportError:
+        pass
+
+
 async def _run_humaneval(output: str | None, limit: int | None) -> None:
     from sage.bench.humaneval import HumanEvalBench
 
@@ -31,7 +44,7 @@ async def _run_humaneval(output: str | None, limit: int | None) -> None:
         from sage.events.bus import EventBus
 
         bus = EventBus()
-        system = boot_agent_system(use_mock_llm=False, event_bus=bus)
+        system = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus)
         bench = HumanEvalBench(system=system, event_bus=bus)
     else:
         bench = HumanEvalBench()  # No system = direct mode
@@ -150,6 +163,8 @@ def main() -> None:
         help="Limit the number of problems (humaneval only)",
     )
     args = parser.parse_args()
+
+    _load_env()
 
     if args.type == "routing" or args.type == "all":
         asyncio.run(_run_routing(args.output))
