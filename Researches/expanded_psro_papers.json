@@ -1,0 +1,140 @@
+[
+  {
+    "arxiv_id": "2403.02227",
+    "title": "Policy Space Response Oracles: A Survey",
+    "abstract": "Game theory provides a mathematical way to study the interaction between multiple decision makers. However, classical game-theoretic analysis is limited in scalability due to the large number of strategies, precluding direct application to more complex scenarios. This survey provides a comprehensive overview of a framework for large games, known as Policy Space Response Oracles (PSRO), which holds promise to improve scalability by focusing attention on sufficient subsets of strategies.",
+    "relevance": "Definitive PSRO survey (IJCAI 2024). Maps the entire PSRO landscape including meta-solvers, best-response oracles, and diversity mechanisms. Essential reference for YGN-SAGE's PSRO and SHOR-PSRO implementations — provides taxonomy of all variants and open problems."
+  },
+  {
+    "arxiv_id": "2405.21027",
+    "title": "Fusion-PSRO: Nash Policy Fusion for Policy Space Response Oracles",
+    "abstract": "For solving zero-sum games involving non-transitivity, a useful approach is to maintain a policy population to approximate the Nash Equilibrium (NE). Previous studies have shown that PSRO is an effective framework for solving such games. However, current methods initialize a new policy from scratch or inherit a single historical policy in Best Response (BR), missing the opportunity to leverage past policies to generate a better BR. Fusion-PSRO employs Nash Policy Fusion to initialize new BR training.",
+    "relevance": "Directly applicable to YGN-SAGE's PSRO meta-solver. Fusion-PSRO's Nash Policy Fusion technique could be integrated into the agent_pool.py best-response training loop to warm-start new policies from existing population mixtures, accelerating convergence."
+  },
+  {
+    "arxiv_id": "2410.22776",
+    "title": "Conflux-PSRO: Effectively Leveraging Collective Advantages in Policy Space Response Oracles",
+    "abstract": "PSRO with policy population construction has been demonstrated as an effective method for approximating Nash Equilibrium in zero-sum games. Existing studies have attempted to improve diversity in policy space by incorporating diversity regularization into the Best Response. However, these methods cause BR to deviate from maximizing rewards. Conflux-PSRO fully exploits the diversity of the population by adaptively selecting and training policies at state-level using a routing policy.",
+    "relevance": "State-level policy routing from the population is highly relevant to YGN-SAGE's topology/evo_topology.py MAP-Elites system. The routing policy mechanism could enhance sub-agent selection in agent_pool.py, enabling finer-grained strategy composition beyond root-level mixing."
+  },
+  {
+    "arxiv_id": "2602.06599",
+    "title": "Sample-Efficient Policy Space Response Oracles with Joint Experience Best Response",
+    "abstract": "Multi-agent reinforcement learning (MARL) offers a scalable alternative to exact game-theoretic analysis but suffers from non-stationarity and the need to maintain diverse populations of strategies that capture non-transitive interactions. PSRO addresses these issues by iteratively expanding a restricted game with approximate best responses, yet per-agent BR training makes it prohibitively expensive in many-agent settings. Joint Experience Best Response (JEBR) is introduced to reduce training costs.",
+    "relevance": "Very recent (Feb 2026). JEBR directly addresses YGN-SAGE's scalability challenge — training sub-agents in agent_pool.py is expensive. JEBR's shared experience mechanism could dramatically reduce the LLM/compute budget needed for evolving agent populations."
+  },
+  {
+    "arxiv_id": "2404.11144",
+    "title": "Self-adaptive PSRO: Towards an Automatic Population-based Game Solver",
+    "abstract": "PSRO as a general algorithmic framework has achieved state-of-the-art performance in learning equilibrium policies of two-player zero-sum games. However, the hand-crafted hyperparameter value selection in most existing works requires extensive domain knowledge. This work proposes a parametric PSRO that unifies GDA and different PSRO variants, then casts hyperparameter selection as an HPO problem solved by a Transformer-based offline HPO policy.",
+    "relevance": "Directly addresses YGN-SAGE's metacognition challenge. The Transformer-based HPO policy for auto-tuning PSRO hyperparameters aligns with strategy/metacognition.py's S1/S2/S3 routing — could replace hand-tuned PSRO parameters with learned adaptive selection."
+  },
+  {
+    "arxiv_id": "2207.06541",
+    "title": "Self-Play PSRO: Toward Optimal Populations in Two-Player Zero-Sum Games",
+    "abstract": "In competitive two-agent environments, deep RL methods based on the Double Oracle algorithm, such as PSRO and Anytime PSRO, iteratively add RL best response policies to a population. Eventually, an optimal mixture of these population policies will approximate a Nash equilibrium. However, these methods might need to add all deterministic policies before converging. Self-Play PSRO introduces approximately optimal stochastic policies to the population alongside deterministic BRs.",
+    "relevance": "SP-PSRO's stochastic policy addition is directly relevant to YGN-SAGE's evolution/engine.py. Instead of only adding deterministic best responses to the agent population, SP-PSRO's approach could yield faster NE convergence with fewer evolutionary iterations."
+  },
+  {
+    "arxiv_id": "2006.08555",
+    "title": "Pipeline PSRO: A Scalable Approach for Finding Approximate Nash Equilibria in Large Games",
+    "abstract": "Finding approximate Nash equilibria in zero-sum imperfect-information games is challenging when the number of information states is large. PSRO is guaranteed to converge to an approximate Nash equilibrium but requires training an RL policy at each iteration. Pipeline PSRO (P2SRO) parallelizes PSRO with convergence guarantees by maintaining a hierarchical pipeline of RL workers, each training against policies generated by lower levels.",
+    "relevance": "Foundational for parallel PSRO. YGN-SAGE's agent_pool.py could adopt P2SRO's hierarchical pipeline to parallelize sub-agent training across multiple LLM workers, dramatically speeding up population-based evolution while maintaining convergence guarantees."
+  },
+  {
+    "arxiv_id": "2202.00633",
+    "title": "Efficient Policy Space Response Oracles",
+    "abstract": "PSRO methods provide a general solution to learn Nash equilibrium in two-player zero-sum games but suffer from two drawbacks: computation inefficiency due to consistent meta-game evaluation via simulations, and exploration inefficiency due to finding best response against a fixed meta-strategy. EPSRO introduces no-regret optimization on the unrestricted-restricted (URR) game, enabling game evaluation and best response computation in one forward pass with monotonic exploitability improvement.",
+    "relevance": "EPSRO's monotonic exploitability improvement guarantee is a critical missing property in most PSRO variants. Could be integrated into YGN-SAGE's PSRO meta-solver to ensure each evolution iteration strictly reduces exploitability — aligning with the DGM SAMPO strategic actions."
+  },
+  {
+    "arxiv_id": "2103.06426",
+    "title": "XDO: A Double Oracle Algorithm for Extensive-Form Games",
+    "abstract": "PSRO is an RL algorithm for two-player zero-sum games that has been empirically shown to find approximate Nash equilibria in large games. Although PSRO is guaranteed to converge, it may take exponentially many iterations. XDO is an extensive-form double oracle algorithm that mixes best responses at every infostate rather than only at the root, converging linearly in the number of infostates. Neural XDO (NXDO) learns best responses through deep RL.",
+    "relevance": "XDO's infostate-level mixing (vs. PSRO's root-level mixing) is architecturally significant for YGN-SAGE. Could inspire a more granular version of agent_pool.py where sub-agent strategies are mixed at each decision point rather than selecting a single agent per task."
+  },
+  {
+    "arxiv_id": "2202.07415",
+    "title": "NeuPL: Neural Population Learning",
+    "abstract": "Learning in strategy games requires discovery of diverse policies. This is often achieved by iteratively training new policies against existing ones, growing a robust policy population. This iterative approach suffers from two issues: under finite budget, approximate best-response operators produce under-trained good-responses; and repeated learning of basic skills wastes training budget. NeuPL represents a population within a single conditional model, enabling transfer learning across policies.",
+    "relevance": "NeuPL's single conditional model for an entire population is a paradigm shift relevant to YGN-SAGE. Instead of maintaining separate sub-agents in agent_pool.py, a single conditional LLM could represent the entire population, with strategy conditioning enabling efficient transfer learning."
+  },
+  {
+    "arxiv_id": "2401.05133",
+    "title": "Neural Population Learning beyond Symmetric Zero-sum Games",
+    "abstract": "We study computationally efficient methods for finding equilibria in n-player general-sum games that afford complex visuomotor skills. We introduce NeuPL-JPSRO, a neural population learning algorithm that benefits from transfer learning of skills and converges to a Coarse Correlated Equilibrium (CCE) of the game. We show empirical convergence in OpenSpiel games, validate adaptive coordination in a MuJoCo domain and skill transfer in capture-the-flag.",
+    "relevance": "Extends NeuPL to general-sum multi-player games with CCE convergence. Highly relevant to YGN-SAGE's multi-agent orchestration where agents cooperate and compete simultaneously. NeuPL-JPSRO's CCE convergence guarantee is stronger than what YGN-SAGE currently provides."
+  },
+  {
+    "arxiv_id": "2511.08174",
+    "title": "Deep (Predictive) Discounted Counterfactual Regret Minimization",
+    "abstract": "CFR is a family of algorithms for effectively solving imperfect-information games. To enhance CFR's applicability in large games, researchers use neural networks to approximate its behavior. However, existing methods are mainly based on vanilla CFR and struggle to integrate advanced CFR variants. This work proposes VR-DeepDCFR+ and VR-DeepPDCFR+, efficient model-free neural CFR algorithms that approximate DCFR+ and PDCFR+ with variance-reduced sampled advantages and bootstrapped cumulative advantages.",
+    "relevance": "Directly extends YGN-SAGE's VAD-CFR implementation. VR-DeepDCFR+ and VR-DeepPDCFR+ are neural approximations of advanced CFR variants with variance reduction — could replace or augment the current VAD-CFR with neural function approximation for larger strategy spaces."
+  },
+  {
+    "arxiv_id": "2404.13891",
+    "title": "Minimizing Weighted Counterfactual Regret with Optimistic Online Mirror Descent",
+    "abstract": "CFR decomposes total regret into counterfactual regrets, using local regret minimization algorithms like Regret Matching (RM) or RM+ to minimize them. Recent research establishes a connection between Online Mirror Descent (OMD) and RM+, enabling optimistic variant PRM+ and PCFR+. However, PCFR+ assigns uniform weights for each iteration. This work proposes weighted CFR variants (WCFR+, WPCFR+) that assign non-uniform weights, achieving faster convergence.",
+    "relevance": "WCFR+ and WPCFR+ extend the CFR family that YGN-SAGE builds on. The non-uniform weighting scheme could improve VAD-CFR convergence by prioritizing recent iterations more heavily, directly applicable to the regret minimization core in topology/kg_rlvr.py."
+  },
+  {
+    "arxiv_id": "2309.03084",
+    "title": "Accelerating Nash Equilibrium Convergence in Monte Carlo Settings Through Counterfactual Value Based Fictitious Play",
+    "abstract": "CFR and its variants are widely recognized as effective algorithms for solving extensive-form imperfect information games. Recently, many improvements have focused on enhancing convergence speed. However, most variants are not applicable under Monte Carlo (MC) conditions, making them unsuitable for large-scale games. MCCFVFP combines CFR's counterfactual value calculations with fictitious play's best response strategy, achieving 20-50% faster convergence than advanced MCCFR variants.",
+    "relevance": "Monte Carlo CFR is critical for scaling YGN-SAGE to large strategy spaces. MCCFVFP's 20-50% speedup over MCCFR variants could significantly improve the agent_loop.py runtime when doing game-theoretic reasoning at scale, especially in the S2 AVR loop."
+  },
+  {
+    "arxiv_id": "2503.12770",
+    "title": "Asynchronous Predictive Counterfactual Regret Minimization+ Algorithm in Solving Extensive-Form Games",
+    "abstract": "CFR algorithms are widely used to compute Nash equilibrium in two-player zero-sum imperfect-information extensive-form games. Predictive CFR+ (PCFR+) achieves exceptionally fast empirical convergence via prediction but degrades significantly if predictions are inaccurate. APCFR+ employs adaptive asynchronization of step-sizes between implicit and explicit accumulated counterfactual regret updates to mitigate prediction inaccuracy impact, dynamically reducing step-sizes during prediction updates.",
+    "relevance": "APCFR+ addresses a fundamental robustness problem in predictive CFR methods. Since YGN-SAGE's VAD-CFR uses prediction-based updates, APCFR+'s adaptive step-size mechanism could make the regret minimization more robust to noisy LLM-generated predictions."
+  },
+  {
+    "arxiv_id": "2510.04407",
+    "title": "Scale-Invariant Regret Matching and Online Learning with Optimal Convergence: Bridging Theory and Practice in Zero-Sum Games",
+    "abstract": "A considerable chasm has existed between theory and practice in zero-sum game solving through first-order methods. Although T^{-1} convergence has been established, the most effective paradigm in practice is CFR based on regret matching. State of the art is predictive regret matching+ (PRM+), but it can exhibit slower convergence. IREG-PRM+ achieves T^{-1/2} best-iterate and T^{-1} optimal average-iterate convergence guarantees while remaining competitive on benchmarks.",
+    "relevance": "IREG-PRM+ bridges the theory-practice gap in regret matching, which is the foundation of CFR methods used in YGN-SAGE. Optimal convergence guarantees with practical competitiveness could upgrade YGN-SAGE's regret minimization backend from standard RM+ to IREG-PRM+."
+  },
+  {
+    "arxiv_id": "2509.13653",
+    "title": "Efficient Last-Iterate Convergence in Regret Minimization via Adaptive Reward Transformation",
+    "abstract": "Regret minimization is a powerful method for finding Nash equilibria in Normal-Form and Extensive-Form Games, but typically guarantees convergence only for the average strategy. The Reward Transformation (RT) framework achieves last-iterate convergence through regularization but is highly sensitive to manually tuned parameters. This work proposes adaptive techniques for RTRM and RTCFR that dynamically adjust parameters, achieving linear last-iterate convergence and outperforming state-of-the-art.",
+    "relevance": "Last-iterate convergence eliminates the need to track average strategies, reducing memory overhead. For YGN-SAGE's memory-constrained agents (memory/compressor.py), adaptive RTCFR could provide convergent strategies without maintaining full history — critical for the S-MMU paging system."
+  },
+  {
+    "arxiv_id": "2508.07699",
+    "title": "Last-Iterate Convergence in Adaptive Regret Minimization for Approximate Extensive-Form Perfect Equilibrium",
+    "abstract": "Nash Equilibrium assumes rational play in imperfect-information Extensive-Form Games but fails to ensure optimal strategies for off-equilibrium branches. Extensive-Form Perfect Equilibrium (EFPE) introduces controlled perturbations to model player errors. This work proposes Reward Transformation CFR (RTCFR) with dynamically adjusted perturbations via Information Set Nash Equilibrium (ISNE), achieving last-iterate convergence to EFPE in two-player zero-sum EFGs.",
+    "relevance": "EFPE is a stronger solution concept than NE, accounting for player errors — relevant to YGN-SAGE's robustness goals. RTCFR's approach to handling off-equilibrium play maps well to the S2 AVR loop where agent execution may deviate from planned strategies."
+  },
+  {
+    "arxiv_id": "2504.18868",
+    "title": "Approximating Nash Equilibria in General-Sum Games via Meta-Learning",
+    "abstract": "Nash equilibrium is the best-known solution concept in game theory, but finding one in general-sum games is PPAD-complete. Regret minimization efficiently approximates NE in two-player zero-sum games but only converges to coarse-correlated equilibrium (CCE) in general-sum games. This work uses meta-learning to minimize correlations in strategies produced by a regret minimizer, encouraging convergence closer to Nash equilibrium while still guaranteeing CCE convergence.",
+    "relevance": "Meta-learned regret minimization is a natural fit for YGN-SAGE's metacognition system. The S1/S2/S3 tripartite routing could leverage meta-learned regret minimizers to handle general-sum multi-agent scenarios where pure NE is intractable but closer-to-NE solutions are desired."
+  },
+  {
+    "arxiv_id": "2310.19786",
+    "title": "From External to Swap Regret 2.0: An Efficient Reduction and Oblivious Adversary for Large Action Spaces",
+    "abstract": "This work provides a novel reduction from swap-regret minimization to external-regret minimization that does not require finiteness of the action space. For learning with expert advice, swap regret bounded by epsilon is achievable after log(N)^{O(1/epsilon)} rounds with O(N) per iteration complexity, where N is the number of experts. Classical reductions require O(N/epsilon^2) rounds and Omega(N^2) per iteration complexity. The TreeSwap algorithm achieves this through a hierarchical tree structure.",
+    "relevance": "Swap regret minimization leads to correlated equilibria, which are relevant when YGN-SAGE agents need to coordinate. The TreeSwap algorithm's efficiency for large action spaces is crucial since LLM-based agents have exponentially large action spaces (natural language generation)."
+  },
+  {
+    "arxiv_id": "2103.07927",
+    "title": "Modelling Behavioural Diversity for Learning in Open-Ended Games",
+    "abstract": "Promoting behavioural diversity is critical for solving games with non-transitive dynamics where strategic cycles exist. This work offers a geometric interpretation of behavioural diversity in games and introduces a novel diversity metric based on determinantal point processes (DPP). By incorporating DPP-based diversity into best-response dynamics, the authors develop diverse fictitious play and diverse policy-space response oracle (D-PSRO) for normal-form and open-ended games.",
+    "relevance": "DPP-based diversity metric is directly applicable to YGN-SAGE's MAP-Elites evolutionary topology (topology/evo_topology.py). D-PSRO could replace or augment the current diversity mechanism in agent population evolution, with mathematical guarantees on gamescape coverage."
+  },
+  {
+    "arxiv_id": "2505.06617",
+    "title": "Adversarial Coevolutionary Illumination with Generational Adversarial MAP-Elites",
+    "abstract": "Quality-Diversity algorithms seek to discover diverse, high-performing solutions across a behavior space. Adversarial problems present unique challenges for QD approaches. GAME (Generational Adversarial MAP-Elites) is a coevolutionary QD algorithm that evolves both sides by alternating which side is evolved at each generation. Findings show evolutionary dynamics sometimes resemble arms races, starting from scratch increases open-endedness, and keeping neutral mutations preserves stepping stones.",
+    "relevance": "GAME directly extends YGN-SAGE's MAP-Elites topology search (topology/evo_topology.py) to adversarial multi-agent settings. The coevolutionary approach where both sides evolve alternately is a natural fit for YGN-SAGE's evolution/engine.py DGM-driven population evolution."
+  },
+  {
+    "arxiv_id": "2412.20523",
+    "title": "Game Theory and Multi-Agent Reinforcement Learning: From Nash Equilibria to Evolutionary Dynamics",
+    "abstract": "This paper explores advanced topics in complex multi-agent systems. It examines four fundamental challenges in MARL: non-stationarity, partial observability, scalability with large agent populations, and decentralized learning. The paper provides mathematical formulations and analysis of recent algorithmic advancements designed to address these challenges, with focus on integration with game-theoretic concepts including Nash equilibria, evolutionary game theory, and correlated equilibrium.",
+    "relevance": "Comprehensive recent survey (Dec 2024) linking game theory and MARL. Provides the theoretical grounding for YGN-SAGE's multi-agent architecture — covers non-stationarity (addressed by PSRO), scalability (Pipeline PSRO), and evolutionary dynamics (MAP-Elites topology)."
+  }
+]

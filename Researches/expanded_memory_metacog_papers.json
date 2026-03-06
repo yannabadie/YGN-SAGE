@@ -1,0 +1,202 @@
+[
+  {
+    "arxiv_id": "2502.12110",
+    "title": "A-MEM: Agentic Memory for LLM Agents",
+    "abstract": "A-MEM proposes a novel agentic memory system for LLM agents that dynamically organizes memories following the Zettelkasten method to create interconnected knowledge networks through dynamic indexing and linking. When a new memory is added, the system generates a comprehensive note with structured attributes including contextual descriptions, keywords, and tags. Empirical experiments on six foundation models demonstrate superior performance compared to existing SOTA baselines.",
+    "relevance": "Directly relevant to YGN-SAGE's AgeMem system. A-MEM's Zettelkasten-inspired dynamic indexing could enhance the 7-tool memory system (3 STM + 4 LTM) with richer inter-memory linking and structured attribute generation.",
+    "year": 2025,
+    "topics": ["agent_memory", "zettelkasten", "dynamic_indexing"]
+  },
+  {
+    "arxiv_id": "2506.06326",
+    "title": "MemoryOS: Memory Operating System of AI Agent",
+    "abstract": "MemoryOS is a Memory Operating System for comprehensive and efficient memory management for AI agents, designed with a hierarchical storage architecture comprising four modules: Memory Storage, Updating, Retrieval, and Generation. Three storage levels: short-term memory, mid-term memory, and long-term personal memory, with dynamic updates following a dialogue-chain-based FIFO principle and segmented page organization strategy. EMNLP 2025 Oral.",
+    "relevance": "Directly mirrors YGN-SAGE's memory hierarchy (STM/LTM). The segmented page organization strategy parallels the S-MMU paging concept in sage-core. The FIFO-based update policy aligns with MEM1 pressure-triggered compression.",
+    "year": 2025,
+    "topics": ["memory_os", "hierarchical_memory", "agent_memory"]
+  },
+  {
+    "arxiv_id": "2506.15841",
+    "title": "MEM1: Learning to Synergize Memory and Reasoning for Efficient Long-Horizon Agents",
+    "abstract": "MEM1 is an end-to-end RL framework enabling agents to operate with constant memory across long multi-turn tasks by updating a compact shared internal state that jointly supports memory consolidation and reasoning. The internal state integrates prior memory with new observations while strategically discarding irrelevant information. MEM1-7B improves performance 3.5x while reducing memory usage 3.7x compared to Qwen2.5-14B on augmented multi-hop QA.",
+    "relevance": "Shares the exact name with YGN-SAGE's MEM1 internal state system. The compact shared internal state updated per-step is the same principle as MemoryCompressor.generate_internal_state(). RL-based training of the compression policy could improve YGN-SAGE's pressure-triggered compression.",
+    "year": 2025,
+    "topics": ["mem1", "internal_state", "memory_compression", "reinforcement_learning"]
+  },
+  {
+    "arxiv_id": "2512.13564",
+    "title": "Memory in the Age of AI Agents: A Survey",
+    "abstract": "Comprehensive survey proposing a finer-grained taxonomy distinguishing factual, experiential, and working memory, analyzing how memory is formed, evolved, and retrieved over time. Addresses emerging research frontiers including memory automation, reinforcement learning integration, multimodal memory, multi-agent memory, and trustworthiness issues. Includes extensive paper list and taxonomy.",
+    "relevance": "Essential reference survey for YGN-SAGE's entire memory subsystem. The taxonomy (factual/experiential/working) maps onto YGN-SAGE's episodic + semantic + working memory layers. Covers multi-agent memory coordination relevant to agent_pool.py.",
+    "year": 2025,
+    "topics": ["survey", "agent_memory", "taxonomy", "multi_agent_memory"]
+  },
+  {
+    "arxiv_id": "2502.06975",
+    "title": "Position: Episodic Memory is the Missing Piece for Long-Term LLM Agents",
+    "abstract": "Argues that episodic memory—detailed, time-stamped records of past experiences—is the critical missing component for long-term LLM agents. Discusses forgetting mechanisms that remove less useful tokens, sparsification strategies that optimize memory by restricting attention computations to relevant parts, reducing both storage and computational overhead. Proposes design principles for episodic memory in agents.",
+    "relevance": "Directly addresses YGN-SAGE's episodic.py module. The forgetting mechanisms and sparsification strategies could improve the in-memory episodic store. Validates the design decision to include episodic memory with CRUD + keyword search.",
+    "year": 2025,
+    "topics": ["episodic_memory", "forgetting", "long_term_agents"]
+  },
+  {
+    "arxiv_id": "2512.12856",
+    "title": "Forgetful but Faithful: A Cognitive Memory Architecture and Benchmark for Privacy-Aware Generative Agents",
+    "abstract": "Presents MaRS, a cognitively inspired architecture organizing episodic, semantic, social, and task memories as typed, provenance-tracked nodes with multiple indices for efficient retrieval. Formalizes six forgetting policies: FIFO, LRU, Priority Decay, Reflection-Summary, Random-Drop, and Hybrid. Includes privacy-awareness benchmark for agent memory systems.",
+    "relevance": "The six forgetting policies provide concrete alternatives to YGN-SAGE's pressure-triggered compression. Priority Decay and Reflection-Summary are particularly relevant. Provenance-tracked memory nodes could enhance the entity extraction in memory_agent.py.",
+    "year": 2025,
+    "topics": ["forgetting_policies", "cognitive_memory", "privacy", "episodic_memory"]
+  },
+  {
+    "arxiv_id": "2304.03442",
+    "title": "Generative Agents: Interactive Simulacra of Human Behavior",
+    "abstract": "Introduces generative agents—computational software agents that simulate believable human behavior. Architecture extends a large language model to store a complete record of the agent's experiences using natural language, synthesize those memories over time into higher-level reflections, and retrieve them dynamically to plan behavior. Demonstrated in a sandbox environment where agents autonomously form relationships and coordinate activities.",
+    "relevance": "Seminal work that established the observation-planning-reflection memory architecture now standard in agent systems. YGN-SAGE's episodic memory and MEM1 internal state draw from these principles. The reflection mechanism parallels pressure-triggered compression.",
+    "year": 2023,
+    "topics": ["generative_agents", "reflection", "memory_architecture", "seminal"]
+  },
+  {
+    "arxiv_id": "2309.02427",
+    "title": "Cognitive Architectures for Language Agents (CoALA)",
+    "abstract": "Draws on cognitive science and symbolic AI to propose CoALA, organizing agents along three dimensions: information storage (working + long-term memories: episodic, semantic, procedural); action space (internal + external); decision-making procedure (interactive planning-execution loop). Connects to ACT-R and SOAR traditions. Provides systematic framework for analyzing and building language agents.",
+    "relevance": "Foundational framework that directly informs YGN-SAGE's architecture. CoALA's working memory + episodic/semantic/procedural LTM maps onto YGN-SAGE's memory hierarchy. The planning-execution loop parallels the perceive->think->act->learn agent loop.",
+    "year": 2023,
+    "topics": ["cognitive_architecture", "CoALA", "ACT-R", "SOAR", "seminal"]
+  },
+  {
+    "arxiv_id": "2401.10910",
+    "title": "Metacognition is all you need? Using Introspection in Generative Agents to Improve Goal-directed Behavior",
+    "abstract": "Introduces a metacognition module for generative agents enabling them to observe their own thought processes and actions. Emulates System 1 and System 2 cognitive processes, allowing agents to significantly enhance performance by modifying strategy through introspective monitoring. Demonstrates that metacognitive awareness leads to better goal-directed behavior in complex environments.",
+    "relevance": "Directly validates YGN-SAGE's S1/S2/S3 tripartite routing design (metacognition.py). The introspective monitoring parallels CGRS self-braking. Provides empirical evidence that metacognitive modules improve agent performance.",
+    "year": 2024,
+    "topics": ["metacognition", "system1_system2", "introspection", "dual_process"]
+  },
+  {
+    "arxiv_id": "2508.17291",
+    "title": "Meta-R1: Empowering Large Reasoning Models with Metacognition",
+    "abstract": "Meta-R1 decomposes reasoning into object-level and meta-level processes through a principled three-stage architecture. Addresses the absence of meta-level cognitive systems in current LRMs—enabling 'thinking about thinking'. Metacognition orchestrates strategic resource allocation, error detection/correction, and flexible adaptation of reasoning. Delivers substantial gains in both reasoning performance and token efficiency.",
+    "relevance": "The object-level vs meta-level decomposition mirrors YGN-SAGE's S1 (object-level fast) vs S2/S3 (meta-level deliberative) cognitive routing. Strategic resource allocation parallels CGRS self-braking. Error detection aligns with the S2 AVR loop's verify step.",
+    "year": 2025,
+    "topics": ["metacognition", "meta_reasoning", "resource_allocation", "error_detection"]
+  },
+  {
+    "arxiv_id": "2502.11882",
+    "title": "Leveraging Dual Process Theory in Language Agent Framework for Real-time Simultaneous Human-AI Collaboration",
+    "abstract": "DPT-Agent integrates System 1 (FSM + code-as-policy for fast, intuitive, controllable decisions) and System 2 (Theory of Mind + asynchronous reflection for intention inference and reasoning-based autonomous decisions). Demonstrates real-time human-AI collaboration where fast reactions and deliberate reasoning must coexist in a unified framework.",
+    "relevance": "Validates YGN-SAGE's dual-process architecture from a practical collaboration perspective. The FSM-based System 1 is analogous to SAGE's S1 fast routing, while asynchronous reflection parallels S2 deliberation. Theory of Mind integration could extend SAGE's metacognitive capabilities.",
+    "year": 2025,
+    "topics": ["dual_process", "system1_system2", "human_AI_collaboration", "theory_of_mind"]
+  },
+  {
+    "arxiv_id": "2411.13537",
+    "title": "MUSE: Competence-Aware AI Agents with Metacognition for Unknown Situations and Environments",
+    "abstract": "Integrates metacognitive processes of self-assessment and self-regulation into autonomous agents. Agents continually learn to assess competence on tasks and use self-assessment to guide iterative strategy selection cycles. Two implementations: world-modeling-based and LLM-based. MUSE agents demonstrate high competence awareness and significant improvements in self-regulation for novel, out-of-distribution tasks.",
+    "relevance": "The competence-awareness mechanism is directly applicable to YGN-SAGE's CGRS self-braking system. Self-assessment of competence could trigger S2->S3 escalation decisions. The iterative strategy selection parallels SAMPO's 5-action strategic selection in the evolution engine.",
+    "year": 2024,
+    "topics": ["metacognition", "self_regulation", "competence_awareness", "self_braking"]
+  },
+  {
+    "arxiv_id": "2502.04576",
+    "title": "Self-Regulation and Requesting Interventions",
+    "abstract": "Addresses how LLM Agents often lack metacognitive self-regulation abilities. Proposes an offline framework training a 'helper' policy to request interventions (more powerful models, test-time compute) by combining LLM-based process reward models (PRMs) with tabular RL. Scores optimal intervention timing with PRMs using state transitions collected offline. Significantly reduces costly intervention calls.",
+    "relevance": "Directly relevant to YGN-SAGE's CGRS self-braking and S2->S3 escalation. The PRM-guided intervention timing could improve when SAGE decides to escalate from S2 to S3 Z3 verification. The 'helper' policy concept aligns with the budget-aware tier routing in llm/router.py.",
+    "year": 2025,
+    "topics": ["self_regulation", "intervention", "process_reward_model", "self_braking"]
+  },
+  {
+    "arxiv_id": "2504.16828",
+    "title": "ThinkPRM: Process Reward Models That Think",
+    "abstract": "Builds data-efficient PRMs as verbalized step-wise reward models that verify every step by generating a verification chain-of-thought. ThinkPRM-14B trained on 8K process labels outperforms discriminative PRMs trained on ~100x more data on ProcessBench. Under the same token budget, ThinkPRM scales verification compute more effectively than LLM-as-a-Judge, outperforming by 7.2% on ProcessBench.",
+    "relevance": "Directly improves upon YGN-SAGE's Z3-based Process Reward Model in kg_rlvr.py. ThinkPRM's verbalized CoT verification could complement Z3 DSL assertions. The data-efficiency is critical—SAGE's PRM could be trained with far fewer labels using this approach.",
+    "year": 2025,
+    "topics": ["process_reward_model", "verification", "chain_of_thought", "data_efficiency"]
+  },
+  {
+    "arxiv_id": "2505.15960",
+    "title": "FoVer: Generalizable Process Reward Models via Formally Verified Training Data",
+    "abstract": "Synthesizes PRM training data with accurate step-level error labels automatically annotated by formal verification tools (Z3 and Isabelle). LLM reasoning is generated in formats compatible with formal verification, then Z3/Isabelle annotates step-level errors without human annotation. FoVer PRMs significantly outperform baselines and exhibit cross-task generalization across 12 reasoning benchmarks including MATH, AIME, ANLI, MMLU, BBH.",
+    "relevance": "The most directly relevant paper for YGN-SAGE's Z3 integration. FoVer uses Z3 exactly as SAGE does—for formal verification of reasoning steps. The auto-annotation pipeline could generate training data for SAGE's kg_rlvr.py PRM. Cross-task generalization validates SAGE's approach of using Z3 beyond math.",
+    "year": 2025,
+    "topics": ["Z3", "formal_verification", "process_reward_model", "auto_annotation"]
+  },
+  {
+    "arxiv_id": "2312.08935",
+    "title": "Math-Shepherd: Verify and Reinforce LLMs Step-by-step without Human Annotations",
+    "abstract": "Proposes an efficient method for acquiring process reward labels by generating parallel completions and using trajectory ratios to evaluate correctness. Trains process reward models (PRMs) that verify each step of LLM reasoning without requiring expensive human annotation. Establishes the foundation for automated step-level supervision in mathematical reasoning tasks.",
+    "relevance": "Foundational PRM work that YGN-SAGE's kg_rlvr.py builds upon. The trajectory-ratio scoring method for automated step labels could augment Z3-based verification. Math-Shepherd's approach to parallel completion evaluation aligns with the S2 AVR loop's verify step.",
+    "year": 2023,
+    "topics": ["process_reward_model", "step_verification", "math_reasoning", "seminal"]
+  },
+  {
+    "arxiv_id": "2412.06512",
+    "title": "The Fusion of Large Language Models and Formal Methods for Trustworthy AI Agents: A Roadmap",
+    "abstract": "Explores the interaction between LLMs and formal methods including Z3 SMT solver. Discusses growing trends to leverage LLMs to enhance formal methods, with LLMs increasingly utilized to automate specification and proof generation. Z3 accepts inputs as simple-sorted formulas in first-order logic. Provides a comprehensive roadmap for integrating LLMs with formal verification for trustworthy agents.",
+    "relevance": "Provides the theoretical roadmap for YGN-SAGE's LLM+Z3 integration approach. Validates the design of using Z3 DSL assertions (bounds/loop/arithmetic/invariant) generated by LLM reasoning. The trustworthy agent perspective aligns with S3's formal verification goal.",
+    "year": 2024,
+    "topics": ["Z3", "SMT", "formal_methods", "trustworthy_agents", "roadmap"]
+  },
+  {
+    "arxiv_id": "2404.09173",
+    "title": "TransformerFAM: Feedback Attention is Working Memory",
+    "abstract": "Hypothesizes that applying attention to its own latent representations through a feedback loop naturally leads to emergence of working memory in Transformers. Performance declined when FAM length exceeded 64, reminiscent of Miller's Law (7 +/- 2 chunks). Creates sustained activations across unlimited contexts, transforming static windows into dynamic working memory systems.",
+    "relevance": "Provides neuroscience-grounded theory for YGN-SAGE's Arrow-backed working memory in sage-core. The feedback attention mechanism could inform how the S-MMU paging system manages working memory. Miller's Law constraint validates bounded working memory design.",
+    "year": 2024,
+    "topics": ["working_memory", "transformers", "feedback_attention", "millers_law"]
+  },
+  {
+    "arxiv_id": "2409.10715",
+    "title": "Self-Attention Limits Working Memory Capacity of Transformer-Based Models",
+    "abstract": "Reveals striking limits in working memory capacity of Transformer-based LLMs. Performance drops significantly on N-back tasks as N increases. Attention scores gradually aggregate to N-back positions over training, suggesting the model learns strategies to pay attention to relationships between current and N-back positions. Formalizes the connection between attention and cognitive working memory.",
+    "relevance": "Explains fundamental capacity limits relevant to YGN-SAGE's working memory design (working.py). Validates the need for external memory augmentation (ExoCortex, episodic store) beyond transformer attention. Informs the MEM1 compression threshold parameter.",
+    "year": 2024,
+    "topics": ["working_memory", "capacity_limits", "attention", "N-back"]
+  },
+  {
+    "arxiv_id": "2403.14403",
+    "title": "Adaptive-RAG: Learning to Adapt Retrieval-Augmented Large Language Models through Question Complexity",
+    "abstract": "Proposes a novel adaptive QA framework dynamically selecting the most suitable retrieval strategy based on query complexity. Uses a classifier (smaller LM) trained to predict complexity levels with automatically collected labels. Addresses the gap where simple queries get unnecessary computational overhead while complex multi-step queries need sophisticated retrieval. Published at NAACL 2024.",
+    "relevance": "Directly applicable to YGN-SAGE's ExoCortex retrieval system. The complexity-based routing mirrors S1/S2 cognitive routing—simple queries skip retrieval (S1), complex queries trigger deep retrieval (S2). Could enhance the search_exocortex tool's adaptive behavior.",
+    "year": 2024,
+    "topics": ["adaptive_RAG", "query_complexity", "retrieval_routing"]
+  },
+  {
+    "arxiv_id": "2508.10824",
+    "title": "Memory-Augmented Transformers: A Systematic Review from Neuroscience Principles to Technical Solutions",
+    "abstract": "Systematic review bridging neuroscience memory principles and transformer architectures. Covers TransformerFAM (feedback attention loops), NAMMs (STFT spectrogram analysis with genetic algorithms for attention), and other memory augmentation approaches. Catalogs how sustained activations across unlimited contexts transform static windows into dynamic working memory systems.",
+    "relevance": "Comprehensive survey connecting neuroscience to the transformer memory augmentation approaches relevant to YGN-SAGE. The genetic algorithm connection (NAMMs) aligns with SAGE's evolutionary topology search (MAP-Elites). Provides theoretical grounding for the memory/attention design decisions.",
+    "year": 2025,
+    "topics": ["survey", "memory_augmented_transformers", "neuroscience", "working_memory"]
+  },
+  {
+    "arxiv_id": "2509.19783",
+    "title": "Agentic Metacognition: Designing a Self-Aware Low-Code Agent for Failure Prediction and Human Handoff",
+    "abstract": "Designs a self-aware agent capable of predicting its own failures and deciding when to hand off to human operators. Implements metacognitive monitoring to assess task difficulty and agent competence in real-time. Demonstrates that metacognitive self-awareness reduces catastrophic failures while maintaining autonomy for tasks within the agent's competence boundary.",
+    "relevance": "Directly implements the self-braking concept central to YGN-SAGE's CGRS. Failure prediction parallels S2 AVR loop's verify step. Human handoff protocol could extend SAGE's S3 escalation mechanism. The competence boundary concept maps to CGRS's self-regulation threshold.",
+    "year": 2025,
+    "topics": ["metacognition", "self_awareness", "failure_prediction", "self_braking", "human_handoff"]
+  },
+  {
+    "arxiv_id": "2508.17959",
+    "title": "Language Models Coupled with Metacognition Can Outperform Reasoning Models",
+    "abstract": "Demonstrates that standard language models augmented with explicit metacognitive capabilities can outperform dedicated reasoning models. The metacognitive layer monitors reasoning quality, detects errors, and triggers corrective strategies. Shows that metacognition is a more efficient path to improved reasoning than simply scaling model size or training compute.",
+    "relevance": "Validates YGN-SAGE's core thesis that metacognitive routing (S1/S2/S3) is more effective than brute-force scaling. Supports the CGRS design where self-monitoring and strategy correction (rather than always using the most powerful model) yields better results. Relevant to the tier routing in llm/router.py.",
+    "year": 2025,
+    "topics": ["metacognition", "reasoning", "efficiency", "error_detection"]
+  },
+  {
+    "arxiv_id": "2601.20055",
+    "title": "VERGE: Formal Refinement and Guidance Engine for Verifiable LLM Reasoning",
+    "abstract": "Uses Z3 (version 4.12.2) as the SMT solver for formal verification of LLM reasoning steps. Implements a refinement loop where Z3 verification results guide the LLM to correct its reasoning. Demonstrates that tight integration between LLM generation and formal verification improves both accuracy and verifiability of multi-step reasoning.",
+    "relevance": "Directly relevant to YGN-SAGE's Z3 integration in kg_rlvr.py and the S3 system. The refinement loop (Z3 feedback -> LLM correction) mirrors the S2 AVR (Act-Verify-Refine) cycle with Z3 as the verifier. VERGE's approach could improve S3's retry prompt mechanism.",
+    "year": 2025,
+    "topics": ["Z3", "formal_verification", "refinement_loop", "verifiable_reasoning"]
+  },
+  {
+    "arxiv_id": "2508.00419",
+    "title": "Loop Invariant Generation: A Hybrid Framework of Reasoning-Optimised LLMs and SMT Solvers",
+    "abstract": "Presents a tightly coupled generate-and-check loop between an LLM and Z3 as an SMT-LIB compliant solver. The LLM generates candidate loop invariants, Z3 verifies them, and verification failures guide the next generation attempt. Solved 107 out of 133 benchmarks in the Code2Inv dataset. Demonstrates practical LLM+Z3 integration for program verification.",
+    "relevance": "Directly applicable to YGN-SAGE's Z3 DSL assertions, especially `assert loop(var)` and `assert invariant(\"pre\", \"post\")`. The generate-and-check loop between LLM and Z3 is exactly the pattern SAGE uses in S3. Performance on Code2Inv validates the approach.",
+    "year": 2025,
+    "topics": ["Z3", "SMT", "loop_invariants", "program_verification", "LLM_integration"]
+  }
+]

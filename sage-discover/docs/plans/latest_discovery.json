@@ -1,0 +1,37 @@
+{
+  "iteration": 1,
+  "phase": "idle",
+  "strategy": {
+    "strategy_names": [
+      "explore",
+      "exploit",
+      "evolve"
+    ],
+    "weights": [
+      0.3333333333333333,
+      0.3333333333333333,
+      0.3333333333333333
+    ],
+    "rounds": 1,
+    "dominant": "explore"
+  },
+  "evolution": {
+    "generation": 0,
+    "total_mutations": 0,
+    "z3_rejections": 0,
+    "population_size": 0,
+    "coverage": 0.0,
+    "best_score": 0.0,
+    "best_id": null,
+    "is_warm_up": true,
+    "dgm_entropy": 1.6094379119341005
+  },
+  "domain": "test",
+  "goal": "test",
+  "total_hypotheses": 1,
+  "confirmed": 0,
+  "rejected": 1,
+  "pending": 0,
+  "discoveries": 0,
+  "best_score": 0.0
+}
