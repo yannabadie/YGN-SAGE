@@ -23,8 +23,9 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "sandbox")]
     {
         m.add_class::<sandbox::wasm::WasmSandbox>()?;
-        m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
-        m.add_class::<sandbox::ebpf::SnapBPF>()?;
+        // ebpf disabled until solana_rbpf is re-added (Phase 2)
+        // m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
+        // m.add_class::<sandbox::ebpf::SnapBPF>()?;
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
 

@@ -23,11 +23,13 @@ arrow = { version = "55.0", features = ["ffi"] }
 arrow-array = "55.0"
 pyo3-arrow = "0.10.0"
 wasmtime = { version = "29.0", optional = true }
-solana_rbpf = { version = "0.8.5", optional = true }
+# solana_rbpf removed: its build script cross-compiles for BPF target,
+# causing CI failure on Ubuntu even when optional. Re-add in Phase 2.
+# solana_rbpf = { version = "0.8.5", optional = true }
 numpy = "0.25"
 petgraph = "0.6.4"
 [features]
 default = []
-sandbox = ["wasmtime", "solana_rbpf"]
+sandbox = ["wasmtime"]
 
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
