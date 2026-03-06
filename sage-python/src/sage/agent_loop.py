@@ -289,7 +289,7 @@ class AgentLoop:
                     sandbox = await self.sandbox_manager.create()
                     try:
                         result = await sandbox.execute(
-                            f"python3 -c {_shell_quote(code_blocks[0])}"
+                            f"python3 -c {_shell_quote(code_blocks[-1])}"
                         )
                         if result.exit_code != 0:
                             self._s2_avr_retries += 1

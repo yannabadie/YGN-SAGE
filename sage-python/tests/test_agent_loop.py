@@ -241,6 +241,17 @@ async def test_loop_uses_async_metacognition():
     assert "routing_source" in perceive_events[0].data
 
 
+def test_extract_code_blocks_returns_multiple():
+    """_extract_code_blocks must return ALL blocks from multi-block content."""
+    from sage.agent_loop import _extract_code_blocks
+
+    content = 'First:\n```python\nx = 1\n```\nFixed:\n```python\nx = 2\n```\n'
+    blocks = _extract_code_blocks(content)
+    assert len(blocks) == 2
+    assert "x = 1" in blocks[0]
+    assert "x = 2" in blocks[1]
+
+
 @pytest.mark.asyncio
 async def test_compressor_generates_internal_state():
     """MEM1: compressor generates rolling <IS_t> every step."""
