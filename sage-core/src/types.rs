@@ -5,9 +5,10 @@ use ulid::Ulid;
 
 /// Memory scope determines how an agent accesses shared memory.
 #[pyclass]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MemoryScope {
     /// Agent has its own isolated memory
+    #[default]
     Isolated,
     /// Agent shares memory with parent
     Shared,
@@ -15,17 +16,12 @@ pub enum MemoryScope {
     Inherited,
 }
 
-impl Default for MemoryScope {
-    fn default() -> Self {
-        Self::Isolated
-    }
-}
-
 /// Agent topology type
 #[pyclass]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TopologyRole {
     /// Root agent (no parent)
+    #[default]
     Root,
     /// Vertical sub-agent (sequential task decomposition)
     Vertical,
@@ -33,12 +29,6 @@ pub enum TopologyRole {
     Horizontal,
     /// Mesh participant (interconnected)
     Mesh,
-}
-
-impl Default for TopologyRole {
-    fn default() -> Self {
-        Self::Root
-    }
 }
 
 /// Status of an agent in its lifecycle
