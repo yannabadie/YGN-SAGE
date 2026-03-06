@@ -1,8 +1,13 @@
-"""Routing accuracy benchmark: 30 labeled tasks evaluated against heuristic router.
+"""Routing SELF-CONSISTENCY benchmark (NOT accuracy).
 
-Task labels are calibrated against the heuristic in
-``MetacognitiveController._assess_heuristic`` so that the benchmark can run
-without an API key.
+Measures whether MetacognitiveController's heuristic agrees with
+hand-labeled tasks. Labels were calibrated against the heuristic,
+so 100% agreement is expected and proves nothing about downstream
+task quality.
+
+To measure real routing accuracy, compare task outcomes (pass/fail)
+across different routing decisions. See docs/plans/ for the
+evidence-first routing benchmark design.
 
 Heuristic routing summary (default thresholds):
   S1: complexity <= 0.35 AND uncertainty <= 0.3 AND tool_required is False
