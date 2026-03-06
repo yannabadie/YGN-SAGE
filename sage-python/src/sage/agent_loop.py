@@ -83,6 +83,23 @@ class LoopEvent:
     step: int = 0
 
 
+@dataclass
+class AgentEvent:
+    """Versioned structured event for observability (v1)."""
+    type: str                           # PERCEIVE, THINK, ACT, LEARN
+    step: int
+    timestamp: float
+    schema_version: int = 1
+    latency_ms: float | None = None
+    cost_usd: float | None = None
+    tokens_est: int | None = None
+    model: str | None = None
+    system: int | None = None           # 1, 2, or 3
+    routing_source: str | None = None   # "llm" or "heuristic"
+    validation: str | None = None       # s2_avr_pass, s2_avr_fail, s3_prm_pass, etc.
+    meta: dict[str, Any] = field(default_factory=dict)
+
+
 class AgentLoop:
     """Structured agent loop with event emission for dashboard."""
 
@@ -92,7 +109,7 @@ class AgentLoop:
         llm_provider: LLMProvider,
         tool_registry: ToolRegistry | None = None,
         memory_compressor: MemoryCompressor | None = None,
-        on_event: Callable[[LoopEvent], None] | None = None,
+        on_event: Callable[[AgentEvent], None] | None = None,
     ):
         self.config = config
         self._llm = llm_provider
@@ -120,21 +137,29 @@ class AgentLoop:
         self._max_s2_avr_retries = 3
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
-        evt = LoopEvent(phase=phase, data=data, step=self.step_count)
+        evt = AgentEvent(
+            type=phase.value.upper(),
+            step=self.step_count,
+            timestamp=time.time(),
+            latency_ms=data.pop("latency_ms", None),
+            cost_usd=data.pop("cost_usd", None),
+            tokens_est=data.pop("tokens_est", None),
+            model=data.pop("model", None),
+            system=data.pop("system", None),
+            routing_source=data.pop("routing_source", None),
+            validation=data.pop("validation", None),
+            meta=data,
+        )
         self._on_event(evt)
 
-    def _default_event_handler(self, event: LoopEvent) -> None:
-        log.info(f"[{event.phase.value}] step={event.step} {event.data}")
-        # Append to stream file for dashboard
+    def _default_event_handler(self, event: AgentEvent) -> None:
+        log.info(f"[{event.type}] step={event.step} model={event.model}")
         try:
             STREAM_FILE.parent.mkdir(parents=True, exist_ok=True)
+            import dataclasses
             with open(STREAM_FILE, "a", encoding="utf-8") as f:
-                f.write(json.dumps({
-                    "type": event.phase.value.upper(),
-                    "step": event.step,
-                    "timestamp": event.timestamp,
-                    "meta": event.data,
-                }) + "\n")
+                d = dataclasses.asdict(event)
+                f.write(json.dumps(d, default=str) + "\n")
         except Exception:
             pass
 

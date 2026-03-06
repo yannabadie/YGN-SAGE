@@ -82,7 +82,7 @@ if not hasattr(_mock_core, "WorkingMemory"):
     _mock_core.WorkingMemory = _MockWorkingMemory
 
 import pytest
-from sage.agent_loop import AgentLoop, LoopEvent, LoopPhase
+from sage.agent_loop import AgentLoop, LoopEvent, LoopPhase, AgentEvent
 
 def test_loop_phases_exist():
     assert LoopPhase.PERCEIVE.value == "perceive"
@@ -94,6 +94,11 @@ def test_loop_event_structure():
     evt = LoopEvent(phase=LoopPhase.THINK, data={"content": "reasoning"})
     assert evt.phase == LoopPhase.THINK
     assert "content" in evt.data
+
+def test_agent_event_structure():
+    evt = AgentEvent(type="THINK", step=0, timestamp=0.0, meta={"content": "reasoning"})
+    assert evt.type == "THINK"
+    assert "content" in evt.meta
 
 @pytest.fixture
 def mock_llm():
@@ -111,9 +116,9 @@ async def test_agent_loop_emits_events(mock_llm):
     )
     loop = AgentLoop(config=config, llm_provider=mock_llm, on_event=events.append)
     result = await loop.run("test task")
-    phases = [e.phase for e in events]
-    assert LoopPhase.PERCEIVE in phases
-    assert LoopPhase.THINK in phases
+    types = [e.type for e in events]
+    assert "PERCEIVE" in types
+    assert "THINK" in types
 
 @pytest.mark.asyncio
 async def test_agent_loop_compresses_memory_on_pressure():
@@ -236,9 +241,9 @@ async def test_loop_uses_async_metacognition():
     await loop.run("test task")
 
     ctrl.assess_complexity_async.assert_called_once()
-    perceive_events = [e for e in events if e.phase == LoopPhase.PERCEIVE]
+    perceive_events = [e for e in events if e.type == "PERCEIVE"]
     assert len(perceive_events) >= 1
-    assert "routing_source" in perceive_events[0].data
+    assert perceive_events[0].routing_source is not None or "routing_source" in perceive_events[0].meta
 
 
 def test_extract_code_blocks_returns_multiple():
@@ -271,3 +276,52 @@ async def test_compressor_generates_internal_state():
     is_2 = await compressor.generate_internal_state("Assistant explained quicksort and mergesort")
     assert is_2 != ""
     assert compressor.internal_state == is_2
+
+
+def test_agent_event_schema():
+    """AgentEvent must have structured fields with schema_version."""
+    evt = AgentEvent(
+        type="THINK", step=1, timestamp=1234567890.0,
+        latency_ms=42.5, cost_usd=0.001,
+        model="gemini-3.1-flash-lite-preview", system=1,
+        routing_source="heuristic",
+    )
+    assert evt.schema_version == 1
+    assert evt.type == "THINK"
+    assert evt.latency_ms == 42.5
+    assert evt.meta == {}
+
+
+def test_agent_event_to_dict():
+    """AgentEvent must serialize to dict for JSONL output."""
+    import dataclasses
+
+    evt = AgentEvent(type="PERCEIVE", step=0, timestamp=0.0, system=2)
+    d = dataclasses.asdict(evt)
+    assert d["schema_version"] == 1
+    assert d["type"] == "PERCEIVE"
+    assert d["system"] == 2
+    assert d["latency_ms"] is None
+
+
+@pytest.mark.asyncio
+async def test_events_contain_schema_version():
+    """All emitted events must include schema_version=1."""
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+    from sage.llm.mock import MockProvider
+
+    provider = MockProvider(responses=["Done."])
+    config = AgentConfig(
+        name="test", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=3, validation_level=1,
+    )
+    agent_events = []
+    loop = AgentLoop(config=config, llm_provider=provider,
+                     on_event=agent_events.append)
+    await loop.run("test task")
+
+    assert len(agent_events) >= 2
+    for evt in agent_events:
+        assert isinstance(evt, AgentEvent), f"Expected AgentEvent, got {type(evt)}"
+        assert evt.schema_version == 1
