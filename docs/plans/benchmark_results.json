@@ -1,9 +1,0 @@
-{
-  "timestamp": 1772651931.1439004,
-  "total_time_s": 0.7382492999968235,
-  "total_mutations": 2240,
-  "mutations_per_sec": 3034.205382937225,
-  "avg_eval_time_ms": 0.32957558035572476,
-  "dgm_final_epsilon": 0.05,
-  "dgm_final_entropy": 1.6036663137108382
-}

@@ -1,9 +1,0 @@
-{
-  "CyberGym": {
-    "protocol": "CyberGym",
-    "resolved": true,
-    "latency_ms": 513.4067999970284,
-    "sub_agents_created": 1,
-    "tools_synthesized": 1
-  }
-}
