@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Adapting the \"Hierarchical/Graph Memory\" and \"Hard Warm-Start\" concepts, we can implement a cache-aware, hybrid bitonic sorting network that processes data in fixed-size blocks (acting as the \"working memory\") before committing to a larger persistent map.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

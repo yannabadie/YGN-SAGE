@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hypothesis 2 (Hybrid SIMD-like Block Moves via Unrolled Memory Operations):** Modifying the eBPF bytecode to implement a \"Cache-Aware Snapshot\" mechanism using strictly unrolled memory operations will outperform standard loop-based byte-swapping for large, low-entropy data blocks.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

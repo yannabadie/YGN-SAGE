@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Expected Outcome:** By replacing individual element swaps with unrolled, cache-aligned block moves via the pre-allocated scratchpad map, the algorithm will increase memory throughput by maximizing cache-hit ratios and eliminating dynamic state allocation latency during the sorting phase.",
-  "code_hex": "b70000007b0000009500000000000000",
-  "perf_score": 123.0,
-  "structural_score": 1.0,
-  "combined_score": 74.2
-}

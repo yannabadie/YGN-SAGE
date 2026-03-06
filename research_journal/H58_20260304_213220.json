@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concrete eBPF Bytecode Modification:** Modify the eBPF program attached to the data-ingestion tracepoint by replacing static block-size immediate values with dynamic loads from a BPF per-CPU array map. Specifically, insert `BPF_ALU64_REG` and `BPF_MUL` instructions to calculate the EWMA of pre-sorted run lengths ($v_t$). Use this calculated $v_t$ to dynamically set the register controlling the loop unrolling depth for SIMD block moves (`b_size`), restricting the memory access window to strictly fit within the L1 cache boundary.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

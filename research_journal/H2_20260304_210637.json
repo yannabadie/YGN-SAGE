@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Applying *Finding 1 (Branchless Interpolation)* and *Finding 2 (Volatility/Adaptive Thresholds)*, we can eliminate pipeline-stalling conditional branches during the partition phase. By calculating the Exponentially Weighted Moving Average (EWMA) of data stream volatility, the algorithm can mathematically interpolate between sorting strategies (e.g., Insertion Sort vs. Quicksort) using purely arithmetic operations rather than `if/else` control flow.",
-  "code_hex": "b7000000420000009500000000000000",
-  "perf_score": 66.0,
-  "structural_score": 1.0,
-  "combined_score": 40.0
-}

@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hypothesis 2: SHOR-PSRO Hybrid Blending via eBPF JIT Bytecode Patching**",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

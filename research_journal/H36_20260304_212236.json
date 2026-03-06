@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hybrid Selection Strategy:** Dynamically hot-swapping between vectorized SIMD block operations (for contiguous, low-entropy data) and branchless scalar insertions (for high-entropy local clusters).",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

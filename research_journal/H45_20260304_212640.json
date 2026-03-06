@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Mapping Graph Memory/Hierarchy to Data Layout:** We can apply cache-aware data structures using blocking and tiling. This analogous approach to \"hierarchical memory\" ensures that the data fits neatly into L1/L2 CPU caches during partitioning passes.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hypothesis 1: Branchless Partitioning via Predicated eBPF ALU64 Operations**",
-  "code_hex": "b7000000da0000009500000000000000",
-  "perf_score": 218.0,
-  "structural_score": 1.0,
-  "combined_score": 131.2
-}

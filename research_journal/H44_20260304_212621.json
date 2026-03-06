@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Mapping VAD-CFR (Volatility-Adaptation) to Sorting:** We can implement \"volatility-aware\" pivot selection. By measuring data variance on the fly, the algorithm can dynamically switch to a more robust partitioning strategy (such as dual-pivot or median-of-medians) when high variance is detected.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

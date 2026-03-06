@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Mapping Docker Snapshots/Warm-Boot to Warm-Starting:** We can \"warm-start\" the sorting process by pre-calculating or caching optimal pivot and partitioning parameters derived from previously observed data distributions. This drastically reduces the initial branch misprediction overhead typically incurred during the first few passes of a sort.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

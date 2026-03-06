@@ -32,3 +32,9 @@ docker-compose.override.yml
 *.db
 neo4j-data/
 qdrant-data/
+
+# Auto-generated evolution logs (keep .md files)
+research_journal/H*.json
+
+# Agent stream (regenerated on each run)
+docs/plans/agent_stream.jsonl

@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Utilizing the VAD-CFR (Volatility-Adaptive Control) and \"Hard Warm-Start\" principles, the sorting algorithm dynamically switches from standard recursive partitioning to a fully unrolled, branchless SIMD insertion sort when the data entropy (volatility) drops below a specific threshold.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

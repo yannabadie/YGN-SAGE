@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Treat the L1/L2 cache hierarchy as a low-latency memory graph to ensure data is staged for SIMD-like block moves, minimizing CPU stalls during sorting.",
-  "code_hex": "b7000000bb0000009500000000000000",
-  "perf_score": 187.0,
-  "structural_score": 1.0,
-  "combined_score": 112.60000000000001
-}

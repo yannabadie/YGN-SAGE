@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concrete eBPF Bytecode Modification:** Replace standard `BPF_JMP_REG` (conditional jumps) used in partition thresholding with branchless bitwise arithmetic. Specifically, inject `BPF_ALU64_IMM(BPF_MUL)` and `BPF_ALU64_IMM(BPF_RSH)` instructions to calculate the EWMA volatility score. Then, use `BPF_ALU64_REG(BPF_AND)` with a generated bitmask to nullify or activate the swap logic, effectively executing a branchless `SHOR-PSRO` style hybrid blend.",
-  "code_hex": "b70000004f0000009500000000000000",
-  "perf_score": 79.0,
-  "structural_score": 1.0,
-  "combined_score": 47.8
-}

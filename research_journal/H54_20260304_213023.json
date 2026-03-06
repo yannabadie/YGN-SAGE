@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Mirroring the YGN-SAGE \"Hierarchical Delegation\" and \"Asynchronous/Snapshot Execution\" principles, the algorithm partitions data into cache-aligned blocks and asynchronously prefetches the next memory segment while the CPU processes the current SIMD-aligned block.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

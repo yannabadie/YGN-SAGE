@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Testable Metric:** Reduction in L1 cache load misses (measured via `perf` hardware counters) and overall sorting throughput (MB/s) on the eBPF data path.",
-  "code_hex": "b7000000cf0000009500000000000000",
-  "perf_score": 207.0,
-  "structural_score": 1.0,
-  "combined_score": 124.6
-}

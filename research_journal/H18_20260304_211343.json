@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Translating the MARL \"branchless parameter normalization\" into a sorting context, we can eliminate pipeline stalls caused by traditional pivot comparisons (which degrade CPU throughput due to branch mispredictions on high-entropy data).",
-  "code_hex": "b7000000e20000009500000000000000",
-  "perf_score": 226.0,
-  "structural_score": 1.0,
-  "combined_score": 136.0
-}

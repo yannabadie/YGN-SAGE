@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hypothesis:** Replacing hard conditional branches (which cause pipeline stalls during strategy switching) with a mathematical blending factor ($\\lambda$) computed at runtime will eliminate branch misprediction penalties when transitioning from large-block partitioning to small-block branchless insertion sort.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}

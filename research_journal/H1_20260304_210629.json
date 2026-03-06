@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Hypothesis 1: Branchless EWMA-Adaptive Pivot Selection via Bitwise ALU Emulation**",
-  "code_hex": "b7000000370000009500000000000000",
-  "perf_score": 55.0,
-  "structural_score": 1.0,
-  "combined_score": 33.4
-}

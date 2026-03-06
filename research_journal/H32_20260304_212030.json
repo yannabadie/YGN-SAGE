@@ -1,7 +1,0 @@
-{
-  "hypothesis": "Concept:** Apply the hybrid blending ($\\sigma_{hybrid}$) principle to seamlessly transition between a branchless Quicksort (for high-entropy data) and an Insertion Sort (for nearly-sorted or small data blocks) without incurring branch misprediction penalties.",
-  "code_hex": "b7000000ff0000009500000000000000",
-  "perf_score": 255.0,
-  "structural_score": 1.0,
-  "combined_score": 153.4
-}
