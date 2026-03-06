@@ -355,7 +355,7 @@ class AgentLoop:
                         if result.exit_code != 0:
                             self._s2_avr_retries += 1
                             budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
-                            self._emit(LoopPhase.THINK,
+                            self._emit(LoopPhase.ACT,
                                        validation="s2_avr_fail",
                                        avr_iteration=self._s2_avr_retries,
                                        avr_budget_left=budget_left,
@@ -375,7 +375,7 @@ class AgentLoop:
                                 ))
                                 continue
                         else:
-                            self._emit(LoopPhase.THINK,
+                            self._emit(LoopPhase.ACT,
                                        validation="s2_avr_pass",
                                        stdout=result.stdout[:200])
                             self._s2_avr_retries = 0

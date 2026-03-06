@@ -53,6 +53,12 @@ class EpisodicMemory:
     # CRUD
     # ------------------------------------------------------------------
 
+    async def _ensure_initialized(self) -> None:
+        """Lazy-initialize SQLite on first use (safe to call repeatedly)."""
+        if self._db_path is not None and not hasattr(self, "_initialized"):
+            await self.initialize()
+            self._initialized = True
+
     async def store(
         self,
         key: str,
@@ -60,6 +66,7 @@ class EpisodicMemory:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Store (or overwrite) an episodic memory entry."""
+        await self._ensure_initialized()
         meta = metadata or {}
 
         if self._db_path is not None:
@@ -90,6 +97,7 @@ class EpisodicMemory:
         Returns up to *top_k* results, each a dict with ``key``, ``content``,
         ``metadata`` fields.
         """
+        await self._ensure_initialized()
         if self._db_path is not None:
             return await self._sqlite_search(query, top_k)
 
@@ -117,6 +125,7 @@ class EpisodicMemory:
         metadata: dict[str, Any] | None = None,
     ) -> bool:
         """Update an existing entry.  Returns *False* if the key is not found."""
+        await self._ensure_initialized()
         if self._db_path is not None:
             return await self._sqlite_update(key, content, metadata)
 
@@ -131,6 +140,7 @@ class EpisodicMemory:
 
     async def delete(self, key: str) -> bool:
         """Delete an entry by key.  Returns *False* if not found."""
+        await self._ensure_initialized()
         if self._db_path is not None:
             return await self._sqlite_delete(key)
 
@@ -146,6 +156,7 @@ class EpisodicMemory:
 
     async def count(self) -> int:
         """Return the total number of stored entries."""
+        await self._ensure_initialized()
         if self._db_path is not None:
             import aiosqlite
 
@@ -158,6 +169,7 @@ class EpisodicMemory:
 
     async def list_all(self, limit: int = 100) -> list[dict[str, Any]]:
         """Return entries, most-recent first.  Capped at *limit*."""
+        await self._ensure_initialized()
         if self._db_path is not None:
             import aiosqlite
 

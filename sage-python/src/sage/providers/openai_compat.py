@@ -41,6 +41,8 @@ class OpenAICompatProvider:
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate content via OpenAI-compatible chat completions API."""
+        if kwargs.get("file_search_store_names"):
+            log.debug("file_search_store_names not supported by OpenAI-compat provider, ignored")
         from openai import AsyncOpenAI
 
         model = self.model_id

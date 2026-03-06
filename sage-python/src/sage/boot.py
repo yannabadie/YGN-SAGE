@@ -47,8 +47,30 @@ class AgentSystem:
     memory_agent: MemoryAgent
     tool_registry: ToolRegistry
     event_bus: EventBus
+    # CognitiveOrchestrator (capability-based multi-provider routing)
+    orchestrator: Any = None
+    # ModelRegistry (live model discovery + TOML knowledge base)
+    # Note: ModelRegistry is the capability-based selection system used by
+    # CognitiveOrchestrator. ModelRouter (sage.llm.router) is the legacy
+    # tier->config mapping used directly by AgentLoop. Both coexist:
+    # the orchestrator tries ModelRegistry first, falling back to the
+    # legacy ModelRouter path if no models are discovered.
+    registry: Any = None
 
     async def run(self, task: str) -> str:
+        # Initialize registry on first use (lazy async)
+        if self.registry and not self.registry._profiles:
+            try:
+                await self.registry.refresh()
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning("Registry refresh failed: %s", e)
+
+        # Use CognitiveOrchestrator if available and has models
+        if self.orchestrator and self.registry and self.registry.list_available():
+            return await self.orchestrator.run(task)
+
+        # Fallback: legacy direct routing via ModelRouter
         # 1. Assess task complexity
         profile = await self.metacognition.assess_complexity_async(task)
         decision = self.metacognition.route(profile)
@@ -169,6 +191,18 @@ def boot_agent_system(
     # Event bus (central nervous system)
     event_bus = event_bus or EventBus()
 
+    # CognitiveOrchestrator (capability-based multi-provider routing)
+    # Only wired for real LLM providers — mock mode uses legacy direct routing
+    registry = None
+    orchestrator = None
+    if not use_mock_llm:
+        from sage.providers.registry import ModelRegistry
+        from sage.orchestrator import CognitiveOrchestrator
+        registry = ModelRegistry()
+        orchestrator = CognitiveOrchestrator(
+            registry=registry, metacognition=metacognition, event_bus=event_bus,
+        )
+
     # Agent loop
     loop = AgentLoop(
         config=config,
@@ -214,4 +248,6 @@ def boot_agent_system(
         memory_agent=memory_agent,
         tool_registry=tool_registry,
         event_bus=event_bus,
+        orchestrator=orchestrator,
+        registry=registry,
     )
