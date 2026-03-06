@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from sage.bench.runner import BenchReport, TaskResult
+from sage.bench.truth_pack import BenchmarkManifest, TaskTrace
 
 log = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ class HumanEvalBench:
     def __init__(self, system: Any = None, event_bus: Any = None):
         self.system = system
         self.event_bus = event_bus
+        self.manifest: BenchmarkManifest | None = None
 
     async def run(self, limit: int | None = None) -> BenchReport:
         """Run HumanEval pass@1 benchmark.
@@ -120,6 +122,11 @@ class HumanEvalBench:
         """
         problems = load_problems(limit)
         results: list[TaskResult] = []
+
+        model_id = ""
+        if self.system and hasattr(self.system, "agent_loop"):
+            model_id = getattr(self.system.agent_loop, "_last_model", "") or "unknown"
+        self.manifest = BenchmarkManifest(benchmark="humaneval", model=model_id)
 
         for i, problem in enumerate(problems):
             task_id = problem["task_id"]
@@ -175,6 +182,16 @@ class HumanEvalBench:
                     error=error,
                 )
             )
+
+            self.manifest.add(TaskTrace(
+                task_id=task_id,
+                passed=passed,
+                latency_ms=round(latency, 1),
+                cost_usd=round(cost, 6),
+                model=model_id,
+                routing=f"S{system_used}",
+                error=error[:200] if error else "",
+            ))
 
             status = "PASS" if passed else "FAIL"
             log.info(
