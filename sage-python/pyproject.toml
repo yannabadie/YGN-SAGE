@@ -8,6 +8,7 @@ dependencies = [
     "pydantic>=2.10",
     "rich>=13",
     "anyio>=4",
+    "aiosqlite>=0.20",
 ]
 
 [project.optional-dependencies]
