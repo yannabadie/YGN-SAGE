@@ -3,11 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YGN-SAGE | Control Dashboard</title>
+    <title>YGN-SAGE v2 | Control Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -18,12 +19,18 @@
                     },
                     colors: {
                         sage: {
+                            950: '#020617',
                             900: '#0f172a',
                             800: '#1e293b',
+                            750: '#263348',
                             700: '#334155',
                             600: '#475569',
                             500: '#64748b',
+                            400: '#94a3b8',
                         },
+                        s1: '#22c55e',
+                        s2: '#f59e0b',
+                        s3: '#ef4444',
                         phase: {
                             perceive: '#818cf8',
                             think: '#38bdf8',
@@ -36,1582 +43,890 @@
         }
     </script>
     <style>
-        /* ------------------------------------------------------------------ */
-        /* CSS Custom Properties                                              */
-        /* ------------------------------------------------------------------ */
-        :root {
-            --bg-deep:        #0f172a;
-            --bg-card:        #1e293b;
-            --bg-inset:       #0f172a;
-            --border:         #334155;
-            --text-primary:   #f8fafc;
-            --text-secondary: #94a3b8;
-            --text-muted:     #64748b;
-            --accent:         #38bdf8;
-            --success:        #10b981;
-            --warning:        #f59e0b;
-            --error:          #ef4444;
-            --phase-perceive: #818cf8;
-            --phase-think:    #38bdf8;
-            --phase-act:      #f59e0b;
-            --phase-learn:    #10b981;
-        }
-
         * { box-sizing: border-box; }
 
         body {
             font-family: 'Inter', system-ui, sans-serif;
-            background: var(--bg-deep);
-            color: var(--text-primary);
+            background: #0f172a;
+            color: #f8fafc;
             margin: 0;
             padding: 0;
-            overflow: hidden;
-            height: 100vh;
+            min-height: 100vh;
         }
 
-        /* ------------------------------------------------------------------ */
-        /* Main layout grid                                                   */
-        /* ------------------------------------------------------------------ */
-        .app-grid {
-            display: grid;
-            grid-template-columns: 280px 1fr 240px;
-            grid-template-rows: 56px 1fr;
-            height: 100vh;
-            gap: 0;
-        }
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-        /* Header */
-        .app-header {
-            grid-column: 1 / -1;
-            grid-row: 1;
-            border-bottom: 1px solid var(--border);
+        /* Animations */
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.3); }
+            50% { box-shadow: 0 0 12px 4px rgba(56, 189, 248, 0.15); }
         }
+        .running-glow { animation: pulse-glow 2s infinite; }
 
-        /* Left sidebar */
-        .sidebar-left {
-            grid-column: 1;
-            grid-row: 2;
-            border-right: 1px solid var(--border);
-            overflow-y: auto;
+        @keyframes fade-in {
+            from { opacity: 0; transform: translateY(-4px); }
+            to { opacity: 1; transform: translateY(0); }
         }
+        .event-row-new { animation: fade-in 0.3s ease-out; }
 
-        /* Main content */
-        .main-content {
-            grid-column: 2;
-            grid-row: 2;
-            overflow-y: auto;
+        /* Bar fill animation */
+        .bar-fill { transition: width 0.5s ease-out; }
+
+        /* Phase indicator dot */
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
         }
+        .phase-active { animation: blink 1s infinite; }
 
-        /* Right sidebar */
-        .sidebar-right {
-            grid-column: 3;
-            grid-row: 2;
-            border-left: 1px solid var(--border);
-            overflow-y: auto;
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Cards                                                              */
-        /* ------------------------------------------------------------------ */
-        .card {
-            background: var(--bg-card);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-        }
-
-        .card-inset {
-            background: var(--bg-inset);
-            border: 1px solid var(--border);
+        /* Code block inside response */
+        .response-code {
+            background: #0f172a;
+            border: 1px solid #334155;
             border-radius: 6px;
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Phase indicator                                                    */
-        /* ------------------------------------------------------------------ */
-        .phase-step {
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 2px solid var(--border);
-            position: relative;
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            flex-shrink: 0;
-        }
-
-        .phase-step.active {
-            transform: scale(1.15);
-        }
-
-        .phase-step.active::after {
-            content: '';
-            position: absolute;
-            inset: -4px;
-            border-radius: 50%;
-            border: 2px solid currentColor;
-            opacity: 0.4;
-            animation: phase-glow 2s ease-in-out infinite;
-        }
-
-        .phase-connector {
-            flex: 1;
-            height: 2px;
-            background: var(--border);
-            min-width: 16px;
-            max-width: 60px;
-            transition: background 0.4s ease;
-        }
-
-        .phase-connector.active {
-            background: var(--accent);
-        }
-
-        @keyframes phase-glow {
-            0%, 100% { opacity: 0.2; transform: scale(1); }
-            50%      { opacity: 0.6; transform: scale(1.1); }
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Pulse dot                                                          */
-        /* ------------------------------------------------------------------ */
-        .pulse-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            animation: pulse-ring 1.5s infinite;
-        }
-
-        @keyframes pulse-ring {
-            0%   { box-shadow: 0 0 0 0 currentColor; opacity: 0.7; }
-            70%  { box-shadow: 0 0 0 6px transparent; opacity: 0; }
-            100% { box-shadow: 0 0 0 0 transparent; opacity: 0; }
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Event log                                                          */
-        /* ------------------------------------------------------------------ */
-        .log-entry {
-            padding: 6px 10px;
-            border-radius: 4px;
-            background: rgba(255,255,255,0.02);
-            border-left: 3px solid transparent;
+            padding: 12px;
             font-family: 'JetBrains Mono', monospace;
-            font-size: 0.78rem;
-            line-height: 1.45;
-            transition: opacity 0.3s ease;
-            word-break: break-word;
-        }
-        .log-entry.new-entry {
-            animation: flash-in 0.5s ease;
-        }
-        @keyframes flash-in {
-            0%   { background: rgba(56,189,248,0.12); }
-            100% { background: rgba(255,255,255,0.02); }
-        }
-
-        .log-PERCEIVE { border-left-color: var(--phase-perceive); }
-        .log-THINK    { border-left-color: var(--phase-think); }
-        .log-ACT      { border-left-color: var(--phase-act); }
-        .log-LEARN    { border-left-color: var(--phase-learn); }
-        .log-SYSTEM   { border-left-color: #a855f7; }
-        .log-METRIC   { border-left-color: var(--success); }
-        .log-ACTION   { border-left-color: var(--accent); }
-        .log-ERROR    { border-left-color: var(--error); background: rgba(239,68,68,0.06); }
-
-        /* ------------------------------------------------------------------ */
-        /* AIO gauge                                                          */
-        /* ------------------------------------------------------------------ */
-        .gauge-ring {
-            transform: rotate(-90deg);
-        }
-        .gauge-track {
-            fill: none;
-            stroke: var(--border);
-            stroke-width: 6;
-        }
-        .gauge-fill {
-            fill: none;
-            stroke: var(--accent);
-            stroke-width: 6;
-            stroke-linecap: round;
-            transition: stroke-dashoffset 0.8s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Response pane markdown                                             */
-        /* ------------------------------------------------------------------ */
-        .response-markdown {
-            font-size: 0.85rem;
-            line-height: 1.7;
-            color: var(--text-secondary);
-        }
-        .response-markdown h1 { font-size: 1.25rem; font-weight: 700; color: var(--text-primary); margin: 1rem 0 0.5rem; }
-        .response-markdown h2 { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); margin: 0.8rem 0 0.4rem; }
-        .response-markdown h3 { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); margin: 0.6rem 0 0.3rem; }
-        .response-markdown p { margin: 0.4rem 0; }
-        .response-markdown ul, .response-markdown ol { margin: 0.4rem 0; padding-left: 1.5rem; }
-        .response-markdown li { margin: 0.15rem 0; }
-        .response-markdown code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 0.8rem;
-            background: rgba(56,189,248,0.08);
-            color: var(--accent);
-            padding: 1px 5px;
-            border-radius: 3px;
-        }
-        .response-markdown pre {
-            background: var(--bg-inset);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 0.75rem 1rem;
+            font-size: 12px;
             overflow-x: auto;
-            margin: 0.5rem 0;
-        }
-        .response-markdown pre code {
-            background: none;
-            padding: 0;
-            color: var(--text-secondary);
-        }
-        .response-markdown blockquote {
-            border-left: 3px solid var(--accent);
-            padding-left: 0.75rem;
-            margin: 0.5rem 0;
-            color: var(--text-muted);
-            font-style: italic;
-        }
-        .response-markdown a { color: var(--accent); text-decoration: underline; }
-        .response-markdown strong { color: var(--text-primary); font-weight: 600; }
-        .response-markdown hr { border: none; border-top: 1px solid var(--border); margin: 0.75rem 0; }
-
-        /* ------------------------------------------------------------------ */
-        /* Scrollbar                                                          */
-        /* ------------------------------------------------------------------ */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
-
-        /* ------------------------------------------------------------------ */
-        /* Sub-agent list                                                     */
-        /* ------------------------------------------------------------------ */
-        .agent-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Quick action button                                                */
-        /* ------------------------------------------------------------------ */
-        .action-btn {
-            background: var(--bg-inset);
-            border: 1px solid var(--border);
-            color: var(--text-secondary);
-            border-radius: 6px;
-            padding: 6px 12px;
-            font-size: 0.75rem;
-            font-family: 'Inter', sans-serif;
-            cursor: pointer;
-            transition: all 0.15s ease;
-        }
-        .action-btn:hover {
-            border-color: var(--accent);
-            color: var(--text-primary);
-        }
-        .action-btn.danger:hover {
-            border-color: var(--error);
-            color: var(--error);
-        }
-
-        /* ------------------------------------------------------------------ */
-        /* Responsive: 1440px and below -- collapse right sidebar             */
-        /* ------------------------------------------------------------------ */
-        @media (max-width: 1500px) {
-            .app-grid {
-                grid-template-columns: 260px 1fr 220px;
-            }
+            white-space: pre-wrap;
+            word-break: break-word;
         }
     </style>
 </head>
-<body>
-    <div class="app-grid">
+<body class="bg-sage-900 text-white">
 
-        <!-- ============================================================== -->
-        <!-- HEADER BAR                                                      -->
-        <!-- ============================================================== -->
-        <header class="app-header flex items-center justify-between px-5" style="background: var(--bg-card);">
-            <!-- Logo + title -->
-            <div class="flex items-center gap-3">
-                <!-- Neural circuit logo SVG -->
-                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <circle cx="16" cy="16" r="14" stroke="#38bdf8" stroke-width="1.5" opacity="0.3"/>
-                    <circle cx="16" cy="8" r="2.5" fill="#818cf8"/>
-                    <circle cx="8" cy="20" r="2.5" fill="#38bdf8"/>
-                    <circle cx="24" cy="20" r="2.5" fill="#f59e0b"/>
-                    <circle cx="16" cy="24" r="2.5" fill="#10b981"/>
-                    <circle cx="16" cy="16" r="3" fill="#38bdf8" opacity="0.8"/>
-                    <line x1="16" y1="10.5" x2="16" y2="13" stroke="#818cf8" stroke-width="1.2" opacity="0.6"/>
-                    <line x1="10" y1="19" x2="13.5" y2="17" stroke="#38bdf8" stroke-width="1.2" opacity="0.6"/>
-                    <line x1="22" y1="19" x2="18.5" y2="17" stroke="#f59e0b" stroke-width="1.2" opacity="0.6"/>
-                    <line x1="16" y1="19" x2="16" y2="22" stroke="#10b981" stroke-width="1.2" opacity="0.6"/>
-                    <line x1="10.5" y1="19" x2="13.5" y2="22.5" stroke="#334155" stroke-width="0.8"/>
-                    <line x1="21.5" y1="19" x2="18.5" y2="22.5" stroke="#334155" stroke-width="0.8"/>
-                    <line x1="16" y1="8" x2="8" y2="20" stroke="#334155" stroke-width="0.6" stroke-dasharray="2 2"/>
-                    <line x1="16" y1="8" x2="24" y2="20" stroke="#334155" stroke-width="0.6" stroke-dasharray="2 2"/>
-                </svg>
-                <div>
-                    <span class="font-bold text-base tracking-tight" style="color: var(--accent);">YGN-SAGE</span>
-                    <span class="text-xs ml-2" style="color: var(--text-muted);">Control Dashboard</span>
-                </div>
+<!-- ============================================================ -->
+<!-- HEADER                                                        -->
+<!-- ============================================================ -->
+<header class="bg-sage-800 border-b border-sage-700 px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-4">
+        <h1 class="text-lg font-bold tracking-tight">
+            <span class="text-sage-400">YGN</span><span class="text-white">-SAGE</span>
+            <span class="text-sage-500 text-sm font-normal ml-2">v2 Control Dashboard</span>
+        </h1>
+        <div id="ws-status" class="flex items-center gap-1.5 text-xs">
+            <span id="ws-dot" class="w-2 h-2 rounded-full bg-red-500"></span>
+            <span id="ws-label" class="text-sage-500">Disconnected</span>
+        </div>
+    </div>
+
+    <!-- Cognitive System Indicators -->
+    <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2 text-xs">
+            <span class="text-sage-500 mr-1">Routing:</span>
+            <div id="s1-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
+                <span class="w-2 h-2 rounded-full bg-s1"></span>
+                <span class="font-medium">S1</span>
             </div>
-
-            <!-- Center: phase badge -->
-            <div class="flex items-center gap-3">
-                <span class="text-xs font-mono" style="color: var(--text-muted);">PHASE</span>
-                <span id="header-phase-badge" class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold font-mono"
-                      style="background: rgba(100,116,139,0.15); color: var(--text-secondary);">
-                    IDLE
-                </span>
+            <div id="s2-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
+                <span class="w-2 h-2 rounded-full bg-s2"></span>
+                <span class="font-medium">S2</span>
             </div>
-
-            <!-- Right: status + connection -->
-            <div class="flex items-center gap-4">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs" style="color: var(--text-muted);">Agent</span>
-                    <span id="agent-status-badge" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                          style="background: rgba(100,116,139,0.15); color: var(--text-secondary);">
-                        <span class="agent-dot" style="background: var(--text-muted);"></span>
-                        IDLE
-                    </span>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs" style="color: var(--text-muted);">WS</span>
-                    <span id="conn-status" class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold"
-                          style="background: rgba(239,68,68,0.1); color: var(--error);">
-                        <span class="pulse-dot" style="background: var(--error); color: rgba(239,68,68,0.4);"></span>
-                        OFFLINE
-                    </span>
-                </div>
+            <div id="s3-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
+                <span class="w-2 h-2 rounded-full bg-s3"></span>
+                <span class="font-medium">S3</span>
             </div>
-        </header>
+        </div>
+        <div class="h-6 w-px bg-sage-700"></div>
+        <div class="text-xs text-sage-400">
+            Step <span id="hdr-step" class="text-white font-mono">0</span>
+            &middot;
+            $<span id="hdr-cost" class="text-white font-mono">0.0000</span>
+            &middot;
+            <span id="hdr-model" class="text-sage-400 font-mono">--</span>
+        </div>
+    </div>
+</header>
 
-        <!-- ============================================================== -->
-        <!-- LEFT SIDEBAR                                                    -->
-        <!-- ============================================================== -->
-        <aside class="sidebar-left p-3 flex flex-col gap-3" style="background: var(--bg-deep);">
+<!-- ============================================================ -->
+<!-- MAIN GRID                                                     -->
+<!-- ============================================================ -->
+<main class="grid grid-cols-[1fr_300px] grid-rows-[auto_1fr_auto] gap-3 p-4 h-[calc(100vh-52px)]" style="max-height: calc(100vh - 52px);">
 
-            <!-- Task input -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Submit Task</h3>
-                <textarea id="task-input" rows="3" placeholder="Describe the agent task..."
-                    class="w-full rounded-md p-2 text-xs font-mono resize-none focus:outline-none focus:ring-1"
-                    style="background: var(--bg-inset); border: 1px solid var(--border); color: var(--text-primary); focus-ring-color: var(--accent);"></textarea>
-                <button id="btn-submit-task" class="w-full mt-2 py-1.5 rounded-md text-xs font-semibold transition-colors"
-                    style="background: var(--accent); color: var(--bg-deep);"
-                    onmouseover="this.style.opacity='0.85'" onmouseout="this.style.opacity='1'">
-                    Run Agent
+    <!-- ---------------------------------------------------------- -->
+    <!-- LEFT COLUMN: Task Input + Response                        -->
+    <!-- ---------------------------------------------------------- -->
+    <div class="flex flex-col gap-3 min-h-0">
+
+        <!-- Task Input -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-2 block">Task Input</label>
+            <textarea
+                id="task-input"
+                class="w-full bg-sage-900 border border-sage-700 rounded-md px-3 py-2 text-sm font-mono text-white placeholder-sage-600 resize-none focus:outline-none focus:border-sky-500 transition-colors"
+                rows="3"
+                placeholder="Enter a task for YGN-SAGE..."
+            ></textarea>
+            <div class="flex items-center gap-2 mt-2">
+                <button id="btn-run" onclick="submitTask()"
+                    class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                    Run
                 </button>
-            </div>
-
-            <!-- Sub-agent pool -->
-            <div class="card p-3 flex-1 min-h-0 flex flex-col">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Sub-Agent Pool</h3>
-                <div id="agent-pool-list" class="flex flex-col gap-1.5 overflow-y-auto flex-1" style="min-height: 0;">
-                    <div class="text-xs italic" style="color: var(--text-muted);">No sub-agents registered</div>
+                <button id="btn-stop" onclick="stopTask()"
+                    class="px-4 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-sm font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    disabled>
+                    Stop
+                </button>
+                <button id="btn-reset" onclick="resetAll()"
+                    class="px-4 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-sm font-medium rounded-md transition-colors">
+                    Reset
+                </button>
+                <div id="status-badge" class="ml-auto text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400">
+                    idle
                 </div>
             </div>
+        </div>
 
-            <!-- LLM providers (real tiers from ModelRouter) -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">LLM Providers</h3>
-                <div class="flex flex-col gap-1.5" id="llm-providers">
-                    <div class="card-inset p-2 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="agent-dot" style="background: var(--success);"></span>
-                            <span class="text-xs font-medium">GPT-5.3 Codex</span>
-                        </div>
-                        <span class="text-xs font-mono" style="color: var(--text-muted);">codex</span>
+        <!-- Response Pane -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between mb-2 flex-shrink-0">
+                <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Response</label>
+                <span id="response-system" class="text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400">--</span>
+            </div>
+            <div id="response-pane" class="flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-sage-400">
+                Waiting for task...
+            </div>
+        </div>
+    </div>
+
+    <!-- ---------------------------------------------------------- -->
+    <!-- RIGHT COLUMN: Memory + Guardrails                         -->
+    <!-- ---------------------------------------------------------- -->
+    <div class="flex flex-col gap-3 min-h-0">
+
+        <!-- Memory Tiers -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Memory Tiers</label>
+            <div class="space-y-2.5">
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-sage-400">STM (Working)</span>
+                        <span id="mem-stm-val" class="font-mono text-white">0</span>
                     </div>
-                    <div class="card-inset p-2 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="agent-dot" style="background: var(--success);"></span>
-                            <span class="text-xs font-medium">GPT-5.2</span>
-                        </div>
-                        <span class="text-xs font-mono" style="color: var(--text-muted);">codex_max</span>
-                    </div>
-                    <div class="card-inset p-2 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="agent-dot" id="dot-gemini" style="background: var(--text-muted);"></span>
-                            <span class="text-xs font-medium">Gemini 3.1 Pro</span>
-                        </div>
-                        <span class="text-xs font-mono" style="color: var(--text-muted);">reasoner</span>
-                    </div>
-                    <div class="card-inset p-2 flex items-center justify-between">
-                        <div class="flex items-center gap-2">
-                            <span class="agent-dot" id="dot-flash" style="background: var(--text-muted);"></span>
-                            <span class="text-xs font-medium">Gemini 3.1 Flash Lite</span>
-                        </div>
-                        <span class="text-xs font-mono" style="color: var(--text-muted);">fast</span>
+                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
+                        <div id="mem-stm-bar" class="bar-fill h-full bg-sky-500 rounded-full" style="width: 0%"></div>
                     </div>
                 </div>
-            </div>
-
-            <!-- Quick actions -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--text-muted);">Actions</h3>
-                <div class="flex flex-wrap gap-2">
-                    <button class="action-btn danger" id="btn-stop">Stop Agent</button>
-                    <button class="action-btn" id="btn-clear-log">Clear Log</button>
-                    <button class="action-btn" id="btn-reset">Reset</button>
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-sage-400">Episodic</span>
+                        <span id="mem-ep-val" class="font-mono text-white">0</span>
+                    </div>
+                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
+                        <div id="mem-ep-bar" class="bar-fill h-full bg-purple-500 rounded-full" style="width: 0%"></div>
+                    </div>
                 </div>
-            </div>
-        </aside>
-
-        <!-- ============================================================== -->
-        <!-- MAIN CONTENT                                                    -->
-        <!-- ============================================================== -->
-        <main class="main-content p-4 flex flex-col gap-4">
-
-            <!-- Agent Loop Phase Indicator -->
-            <div class="card p-4">
-                <div class="flex items-center justify-center gap-0">
-                    <!-- PERCEIVE -->
-                    <div class="flex flex-col items-center gap-1.5">
-                        <div id="phase-perceive" class="phase-step" style="border-color: var(--border); color: var(--phase-perceive);">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="4" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="10" r="7" stroke="currentColor" stroke-width="1" opacity="0.4"/><line x1="10" y1="2" x2="10" y2="5" stroke="currentColor" stroke-width="1.2"/><line x1="10" y1="15" x2="10" y2="18" stroke="currentColor" stroke-width="1.2"/><line x1="2" y1="10" x2="5" y2="10" stroke="currentColor" stroke-width="1.2"/><line x1="15" y1="10" x2="18" y2="10" stroke="currentColor" stroke-width="1.2"/></svg>
-                        </div>
-                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Perceive</span>
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-sage-400">Semantic</span>
+                        <span id="mem-sem-val" class="font-mono text-white">0</span>
                     </div>
-                    <div class="phase-connector" id="conn-p-t"></div>
-
-                    <!-- THINK -->
-                    <div class="flex flex-col items-center gap-1.5">
-                        <div id="phase-think" class="phase-step" style="border-color: var(--border); color: var(--phase-think);">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 3C6.5 3 4 5.5 4 8.5C4 11 5.5 12.5 7 13.5V15.5C7 16 7.5 16.5 8 16.5H12C12.5 16.5 13 16 13 15.5V13.5C14.5 12.5 16 11 16 8.5C16 5.5 13.5 3 10 3Z" stroke="currentColor" stroke-width="1.5"/><line x1="8" y1="18" x2="12" y2="18" stroke="currentColor" stroke-width="1.2"/></svg>
-                        </div>
-                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Think</span>
+                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
+                        <div id="mem-sem-bar" class="bar-fill h-full bg-amber-500 rounded-full" style="width: 0%"></div>
                     </div>
-                    <div class="phase-connector" id="conn-t-a"></div>
-
-                    <!-- ACT -->
-                    <div class="flex flex-col items-center gap-1.5">
-                        <div id="phase-act" class="phase-step" style="border-color: var(--border); color: var(--phase-act);">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><polygon points="10,2 18,18 2,18" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="10" y1="8" x2="10" y2="13" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="15" r="0.8" fill="currentColor"/></svg>
-                        </div>
-                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Act</span>
+                </div>
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-sage-400">ExoCortex</span>
+                        <span id="mem-exo-val" class="font-mono text-white">0</span>
                     </div>
-                    <div class="phase-connector" id="conn-a-l"></div>
-
-                    <!-- LEARN -->
-                    <div class="flex flex-col items-center gap-1.5">
-                        <div id="phase-learn" class="phase-step" style="border-color: var(--border); color: var(--phase-learn);">
-                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 14L10 4L17 14" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="6" y1="11" x2="14" y2="11" stroke="currentColor" stroke-width="1.2"/><circle cx="10" cy="15" r="1.5" stroke="currentColor" stroke-width="1.2"/></svg>
-                        </div>
-                        <span class="text-xs font-semibold uppercase tracking-wide" style="color: var(--text-muted);">Learn</span>
+                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
+                        <div id="mem-exo-bar" class="bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Telemetry cards row -->
-            <div class="grid grid-cols-5 gap-3">
-                <!-- AIO Ratio gauge -->
-                <div class="card p-3 flex flex-col items-center justify-center">
-                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">AIO Ratio</span>
-                    <div class="relative" style="width:72px;height:72px;">
-                        <svg width="72" height="72" viewBox="0 0 72 72" class="gauge-ring">
-                            <circle cx="36" cy="36" r="30" class="gauge-track"/>
-                            <circle cx="36" cy="36" r="30" class="gauge-fill" id="aio-gauge"
-                                stroke-dasharray="188.5" stroke-dashoffset="188.5"/>
-                        </svg>
-                        <div class="absolute inset-0 flex items-center justify-center">
-                            <span id="val-aio" class="font-mono font-bold text-sm" style="color: var(--accent);">0%</span>
-                        </div>
-                    </div>
+        <!-- Guardrails -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Guardrails</label>
+            <div class="space-y-1.5 text-xs">
+                <div id="guard-cot" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>Chain-of-Thought</span>
                 </div>
-
-                <!-- Step count -->
-                <div class="card p-3 flex flex-col items-center justify-center">
-                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">Steps</span>
-                    <span id="val-steps" class="font-mono font-bold text-2xl" style="color: var(--text-primary);">0</span>
+                <div id="guard-sandbox" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>Sandbox Execution</span>
                 </div>
-
-                <!-- LLM cost -->
-                <div class="card p-3 flex flex-col items-center justify-center">
-                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">LLM Cost</span>
-                    <span id="val-cost" class="font-mono font-bold text-2xl" style="color: var(--warning);">$0.00</span>
+                <div id="guard-z3" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>Z3 Formal Proof</span>
                 </div>
-
-                <!-- Memory events -->
-                <div class="card p-3 flex flex-col items-center justify-center">
-                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">Memory</span>
-                    <span id="val-memory" class="font-mono font-bold text-2xl" style="color: var(--phase-perceive);">0</span>
+                <div id="guard-avr" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>AVR Loop</span>
                 </div>
-
-                <!-- Metacognitive system -->
-                <div class="card p-3 flex flex-col items-center justify-center">
-                    <span class="text-xs uppercase tracking-wider font-semibold mb-1" style="color: var(--text-muted);">System</span>
-                    <span id="val-system" class="font-mono font-bold text-2xl" style="color: var(--success);">S1</span>
+                <div id="guard-cgrs" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>CGRS Self-Brake</span>
+                </div>
+                <div id="guard-episodic" class="flex items-center gap-2 text-sage-500">
+                    <span class="w-4 text-center">--</span>
+                    <span>Episodic Memory</span>
                 </div>
             </div>
+        </div>
 
-            <!-- Bottom: Response Pane + Event stream + Evolution grid -->
-            <div class="flex-1 grid grid-rows-[minmax(140px,1fr)_minmax(120px,1fr)] gap-3 min-h-0">
+        <!-- Stats -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Statistics</label>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
+                <div class="text-sage-500">Steps</div>
+                <div id="stat-steps" class="text-right font-mono">0</div>
+                <div class="text-sage-500">LLM Calls</div>
+                <div id="stat-llm" class="text-right font-mono">0</div>
+                <div class="text-sage-500">Cost (USD)</div>
+                <div id="stat-cost" class="text-right font-mono">$0.0000</div>
+                <div class="text-sage-500">Latency</div>
+                <div id="stat-latency" class="text-right font-mono">--</div>
+                <div class="text-sage-500">Z3 Pass/Fail</div>
+                <div id="stat-z3" class="text-right font-mono">0 / 0</div>
+                <div class="text-sage-500">Total Events</div>
+                <div id="stat-events" class="text-right font-mono">0</div>
+            </div>
+        </div>
 
-                <!-- ROW 1: Agent Response Pane -->
-                <div id="response-pane" class="card flex flex-col min-h-0 relative overflow-hidden">
-                    <!-- Colored left accent bar (changes with cognitive system) -->
-                    <div id="response-accent" class="absolute left-0 top-0 bottom-0 w-1 transition-colors duration-500" style="background: var(--border);"></div>
-                    <!-- Header -->
-                    <div class="flex items-center justify-between px-4 py-2 border-b" style="border-color: var(--border);">
-                        <div class="flex items-center gap-3">
-                            <h3 class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">Agent Response</h3>
-                            <span id="response-system-badge" class="text-xs font-mono font-bold px-2 py-0.5 rounded hidden"
-                                  style="background: rgba(56,189,248,0.15); color: #38bdf8;">S1</span>
-                        </div>
-                        <div id="response-metrics" class="flex items-center gap-4 hidden">
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">
-                                <span id="resp-steps" style="color: var(--text-secondary);">0</span> steps
-                            </span>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">
-                                <span id="resp-cost" style="color: var(--warning);">$0.00</span>
-                            </span>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">
-                                <span id="resp-wall" style="color: var(--text-secondary);">0s</span>
-                            </span>
-                        </div>
-                    </div>
-                    <!-- Query display -->
-                    <div id="response-query-bar" class="px-4 py-1.5 border-b hidden" style="border-color: var(--border); background: rgba(255,255,255,0.015);">
-                        <span class="text-xs" style="color: var(--text-muted);">Query:</span>
-                        <span id="response-query" class="text-xs font-mono ml-2" style="color: var(--text-secondary);"></span>
-                    </div>
-                    <!-- Response body (markdown rendered) -->
-                    <div id="response-body" class="flex-1 overflow-y-auto px-5 py-3" style="min-height: 0;">
-                        <div id="response-empty" class="flex items-center justify-center h-full">
-                            <div class="text-center">
-                                <div class="text-2xl mb-2" style="color: var(--border);">&#x2B22;</div>
-                                <div class="text-xs" style="color: var(--text-muted);">Submit a task to see the agent's response</div>
-                            </div>
-                        </div>
-                        <div id="response-content" class="hidden response-markdown"></div>
-                    </div>
-                </div>
+        <!-- Latency Chart -->
+        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-1 min-h-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-2 block">Latency (ms)</label>
+            <div class="h-[120px]">
+                <canvas id="latency-chart"></canvas>
+            </div>
+        </div>
+    </div>
 
-                <!-- ROW 2: Event stream + Evolution grid side-by-side -->
-                <div class="grid grid-cols-3 gap-3 min-h-0">
-                    <!-- Live Event Stream (2/3 width) -->
-                    <div class="col-span-2 card flex flex-col min-h-0">
-                        <div class="flex items-center justify-between px-4 py-2 border-b" style="border-color: var(--border);">
-                            <div class="flex items-center gap-2">
-                                <h3 class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">Live Event Stream</h3>
-                                <span id="event-count" class="text-xs font-mono px-1.5 py-0.5 rounded" style="background: var(--bg-inset); color: var(--text-muted);">0</span>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="flex items-center gap-1 text-xs cursor-pointer" style="color: var(--text-muted);">
-                                    <input type="checkbox" id="auto-scroll" checked class="rounded" style="accent-color: var(--accent);">
-                                    Auto-scroll
-                                </label>
-                            </div>
-                        </div>
-                        <div id="log-container" class="flex-1 overflow-y-auto p-2 flex flex-col gap-1" style="min-height: 0;">
-                            <!-- Log entries injected here -->
-                        </div>
-                    </div>
+    <!-- ---------------------------------------------------------- -->
+    <!-- BOTTOM: Event Stream                                       -->
+    <!-- ---------------------------------------------------------- -->
+    <div class="col-span-2 bg-sage-800 border border-sage-700 rounded-lg flex flex-col min-h-0" style="max-height: 260px;">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-sage-700 flex-shrink-0">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Event Stream</label>
+            <div class="flex items-center gap-2">
+                <select id="event-filter" onchange="applyFilter()"
+                    class="bg-sage-900 border border-sage-700 rounded text-xs text-sage-400 px-2 py-1 focus:outline-none">
+                    <option value="ALL">All Events</option>
+                    <option value="PERCEIVE">Perceive</option>
+                    <option value="THINK">Think</option>
+                    <option value="ACT">Act</option>
+                    <option value="LEARN">Learn</option>
+                    <option value="ERROR">Error</option>
+                </select>
+                <span id="event-count" class="text-xs text-sage-500 font-mono">0 events</span>
+            </div>
+        </div>
+        <div class="overflow-y-auto flex-1 px-2" id="event-scroll">
+            <table class="w-full text-xs">
+                <thead class="sticky top-0 bg-sage-800">
+                    <tr class="text-sage-500 border-b border-sage-700">
+                        <th class="text-left py-1 px-2 font-medium w-[90px]">Time</th>
+                        <th class="text-left py-1 px-2 font-medium w-[70px]">Step</th>
+                        <th class="text-left py-1 px-2 font-medium w-[90px]">Type</th>
+                        <th class="text-left py-1 px-2 font-medium w-[80px]">Model</th>
+                        <th class="text-left py-1 px-2 font-medium w-[80px]">Latency</th>
+                        <th class="text-left py-1 px-2 font-medium">Details</th>
+                    </tr>
+                </thead>
+                <tbody id="event-tbody">
+                </tbody>
+            </table>
+        </div>
+    </div>
 
-                    <!-- Evolution Grid (1/3 width) -->
-                    <div class="card flex flex-col min-h-0">
-                        <div class="flex items-center justify-between px-4 py-2 border-b" style="border-color: var(--border);">
-                            <h3 class="text-xs font-semibold uppercase tracking-wider" style="color: var(--text-muted);">Evolution Grid</h3>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">MAP-Elites</span>
-                        </div>
-                        <div class="flex-1 flex flex-col items-center justify-center p-3 gap-2">
-                            <canvas id="evo-canvas" width="200" height="200" style="border-radius: 4px;"></canvas>
-                            <div class="flex items-center gap-4">
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs" style="color: var(--text-muted);">Cells:</span>
-                                    <span id="evo-cells" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
-                                </div>
-                                <div class="flex items-center gap-1.5">
-                                    <span class="text-xs" style="color: var(--text-muted);">Best:</span>
-                                    <span id="evo-best" class="text-xs font-mono font-semibold" style="color: var(--success);">0.00</span>
-                                </div>
-                            </div>
-                            <div class="flex items-center gap-1 mt-1">
-                                <span class="text-xs" style="color: var(--text-muted);">0</span>
-                                <div style="width:80px;height:8px;border-radius:2px;background:linear-gradient(to right, #1e293b, #38bdf8, #10b981, #f59e0b);"></div>
-                                <span class="text-xs" style="color: var(--text-muted);">1</span>
-                            </div>
-                        </div>
-                    </div>
+    <!-- ---------------------------------------------------------- -->
+    <!-- BOTTOM ROW 2: Benchmarks                                   -->
+    <!-- ---------------------------------------------------------- -->
+    <div class="col-span-2 bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
+        <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Benchmarks</label>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="runBenchmark('humaneval')"
+                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors">
+                Run HumanEval
+            </button>
+            <button onclick="runBenchmark('swe-bench')"
+                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors">
+                Run SWE-bench
+            </button>
+            <div class="flex-1 mx-3">
+                <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
+                    <div id="bench-bar" class="bar-fill h-full bg-sky-500 rounded-full" style="width: 0%"></div>
                 </div>
             </div>
-        </main>
+            <span id="bench-result" class="text-xs font-mono text-sage-500">--</span>
+        </div>
+    </div>
+</main>
 
-        <!-- ============================================================== -->
-        <!-- RIGHT SIDEBAR                                                   -->
-        <!-- ============================================================== -->
-        <aside class="sidebar-right p-3 flex flex-col gap-3" style="background: var(--bg-deep);">
+<!-- ============================================================ -->
+<!-- JAVASCRIPT                                                    -->
+<!-- ============================================================ -->
+<script>
+(function() {
+    'use strict';
 
-            <!-- Metacognitive routing -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Cognitive Routing</h3>
-                <div class="flex flex-col gap-2">
-                    <!-- System 1 bar -->
-                    <div class="card-inset p-2.5">
-                        <div class="flex items-center justify-between mb-1.5">
-                            <span class="text-xs font-semibold" style="color: var(--accent);">System 1</span>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">Fast / Heuristic</span>
-                        </div>
-                        <div class="w-full rounded-full h-1.5" style="background: var(--border);">
-                            <div id="bar-s1" class="h-1.5 rounded-full transition-all duration-500" style="width: 100%; background: var(--accent);"></div>
-                        </div>
-                    </div>
-                    <!-- System 2 bar -->
-                    <div class="card-inset p-2.5">
-                        <div class="flex items-center justify-between mb-1.5">
-                            <span class="text-xs font-semibold" style="color: #f59e0b;">System 2</span>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">Algorithmic / Empirical</span>
-                        </div>
-                        <div class="w-full rounded-full h-1.5" style="background: var(--border);">
-                            <div id="bar-s2" class="h-1.5 rounded-full transition-all duration-500" style="width: 0%; background: #f59e0b;"></div>
-                        </div>
-                    </div>
-                    <!-- System 3 bar -->
-                    <div class="card-inset p-2.5">
-                        <div class="flex items-center justify-between mb-1.5">
-                            <span class="text-xs font-semibold" style="color: var(--phase-perceive);">System 3</span>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">Formal / Z3</span>
-                        </div>
-                        <div class="w-full rounded-full h-1.5" style="background: var(--border);">
-                            <div id="bar-s3" class="h-1.5 rounded-full transition-all duration-500" style="width: 0%; background: var(--phase-perceive);"></div>
-                        </div>
-                    </div>
-                    <!-- Active indicator -->
-                    <div class="flex items-center justify-center mt-1">
-                        <span class="text-xs" style="color: var(--text-muted);">Active:</span>
-                        <span id="active-system" class="ml-2 text-sm font-mono font-bold" style="color: var(--accent);">System 1</span>
-                    </div>
-                </div>
-            </div>
+    // ---------------------------------------------------------------
+    // State
+    // ---------------------------------------------------------------
+    let ws = null;
+    let reconnectTimer = null;
+    const RECONNECT_DELAY = 2000;
+    const MAX_VISIBLE_EVENTS = 200;
 
-            <!-- Z3 Verification -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Z3 Verification</h3>
-                <div class="grid grid-cols-2 gap-2">
-                    <div class="card-inset p-2.5 text-center">
-                        <div class="text-xs" style="color: var(--text-muted);">Pass</div>
-                        <div id="val-z3-pass" class="font-mono font-bold text-lg" style="color: var(--success);">0</div>
-                    </div>
-                    <div class="card-inset p-2.5 text-center">
-                        <div class="text-xs" style="color: var(--text-muted);">Fail</div>
-                        <div id="val-z3-fail" class="font-mono font-bold text-lg" style="color: var(--error);">0</div>
-                    </div>
-                </div>
-                <!-- pass rate bar -->
-                <div class="mt-2">
-                    <div class="w-full rounded-full h-1.5 flex overflow-hidden" style="background: var(--border);">
-                        <div id="z3-pass-bar" class="h-1.5 transition-all duration-500" style="width: 0%; background: var(--success);"></div>
-                        <div id="z3-fail-bar" class="h-1.5 transition-all duration-500" style="width: 0%; background: var(--error);"></div>
-                    </div>
-                </div>
-            </div>
+    let allEvents = [];   // All received events (up to MAX_VISIBLE_EVENTS)
+    let currentFilter = 'ALL';
+    let isRunning = false;
 
-            <!-- Performance metrics -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Performance</h3>
-                <div class="flex flex-col gap-2">
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">Inference</span>
-                        <span id="val-inference" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0 ms</span>
-                    </div>
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">Wall Time</span>
-                        <span id="val-wall" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0.0s</span>
-                    </div>
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">LLM Calls</span>
-                        <span id="val-llm-calls" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
-                    </div>
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">Events</span>
-                        <span id="val-total-events" class="text-xs font-mono font-semibold" style="color: var(--text-primary);">0</span>
-                    </div>
-                </div>
-            </div>
+    // Stats tracked from events
+    let stats = {
+        stepCount: 0,
+        llmCalls: 0,
+        totalCost: 0.0,
+        lastSystem: 0,
+        lastModel: null,
+        lastResponse: '',
+        lastPhase: null,
+        memoryEvents: 0,
+        z3Pass: 0,
+        z3Fail: 0,
+        lastLatency: 0,
+        totalEvents: 0,
+        // Memory tiers
+        memSTM: 0,
+        memEpisodic: 0,
+        memSemantic: 0,
+        memExoCortex: 0,
+        // Guardrails
+        cotActive: false,
+        sandboxActive: false,
+        z3Active: false,
+        avrActive: false,
+        cgrsActive: false,
+        episodicActive: false,
+    };
 
-            <!-- Self-braking indicator -->
-            <div class="card p-3">
-                <h3 class="text-xs font-semibold uppercase tracking-wider mb-3" style="color: var(--text-muted);">Self-Braking (CGRS)</h3>
-                <div class="flex flex-col gap-2">
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">Entropy</span>
-                        <span id="val-entropy" class="text-xs font-mono font-semibold" style="color: var(--accent);">--</span>
-                    </div>
-                    <div class="card-inset p-2.5 flex items-center justify-between">
-                        <span class="text-xs" style="color: var(--text-muted);">Brake</span>
-                        <span id="val-brake" class="text-xs font-mono font-semibold" style="color: var(--success);">OFF</span>
-                    </div>
-                </div>
-            </div>
-        </aside>
+    // Latency history for chart
+    let latencyHistory = [];
+    let latencyChart = null;
 
-    </div><!-- /app-grid -->
+    // ---------------------------------------------------------------
+    // DOM refs
+    // ---------------------------------------------------------------
+    const $id = (id) => document.getElementById(id);
 
-    <!-- ================================================================== -->
-    <!-- JAVASCRIPT                                                          -->
-    <!-- ================================================================== -->
-    <script>
-    (function () {
-        'use strict';
-
-        // -----------------------------------------------------------------
-        // DOM references
-        // -----------------------------------------------------------------
-        const $ = (id) => document.getElementById(id);
-
-        const dom = {
-            // Header
-            headerPhase:     $('header-phase-badge'),
-            agentStatus:     $('agent-status-badge'),
-            connStatus:      $('conn-status'),
-            // Phases
-            phasePerceive:   $('phase-perceive'),
-            phaseThink:      $('phase-think'),
-            phaseAct:        $('phase-act'),
-            phaseLearn:      $('phase-learn'),
-            connPT:          $('conn-p-t'),
-            connTA:          $('conn-t-a'),
-            connAL:          $('conn-a-l'),
-            // Telemetry
-            aioGauge:        $('aio-gauge'),
-            valAio:          $('val-aio'),
-            valSteps:        $('val-steps'),
-            valCost:         $('val-cost'),
-            valMemory:       $('val-memory'),
-            valSystem:       $('val-system'),
-            // Event stream
-            logContainer:    $('log-container'),
-            eventCount:      $('event-count'),
-            autoScroll:      $('auto-scroll'),
-            // Evolution
-            evoCanvas:       $('evo-canvas'),
-            evoCells:        $('evo-cells'),
-            evoBest:         $('evo-best'),
-            // Right sidebar
-            barS1:           $('bar-s1'),
-            barS2:           $('bar-s2'),
-            barS3:           $('bar-s3'),
-            activeSystem:    $('active-system'),
-            valZ3Pass:       $('val-z3-pass'),
-            valZ3Fail:       $('val-z3-fail'),
-            z3PassBar:       $('z3-pass-bar'),
-            z3FailBar:       $('z3-fail-bar'),
-            valInference:    $('val-inference'),
-            valWall:         $('val-wall'),
-            valLlmCalls:     $('val-llm-calls'),
-            valTotalEvents:  $('val-total-events'),
-            valEntropy:      $('val-entropy'),
-            valBrake:        $('val-brake'),
-            // Controls
-            taskInput:       $('task-input'),
-            btnSubmit:       $('btn-submit-task'),
-            btnStop:         $('btn-stop'),
-            btnClear:        $('btn-clear-log'),
-            btnReset:        $('btn-reset'),
-            agentPoolList:   $('agent-pool-list'),
-            // Response pane
-            responsePane:    $('response-pane'),
-            responseAccent:  $('response-accent'),
-            responseBadge:   $('response-system-badge'),
-            responseQueryBar:$('response-query-bar'),
-            responseQuery:   $('response-query'),
-            responseBody:    $('response-body'),
-            responseEmpty:   $('response-empty'),
-            responseContent: $('response-content'),
-            responseMetrics: $('response-metrics'),
-            respSteps:       $('resp-steps'),
-            respCost:        $('resp-cost'),
-            respWall:        $('resp-wall'),
-        };
-
-        // -----------------------------------------------------------------
-        // State
-        // -----------------------------------------------------------------
-        let logCount = 0;
-        let wsConnected = false;
-        let ws = null;
-        let startTs = Date.now();
-        const MAX_LOG_ENTRIES = 200;
-
-        // Evolution grid data (10x10)
-        const evoGrid = new Float32Array(100);
-
-        // Phase colors map
-        const PHASE_COLORS = {
-            perceive: '#818cf8',
-            think:    '#38bdf8',
-            act:      '#f59e0b',
-            learn:    '#10b981',
-        };
-
-        const PHASE_BG = {
-            perceive: 'rgba(129,140,248,0.15)',
-            think:    'rgba(56,189,248,0.15)',
-            act:      'rgba(245,158,11,0.15)',
-            learn:    'rgba(16,185,129,0.15)',
-        };
-
-        const TYPE_COLORS = {
-            PERCEIVE: '#818cf8',
-            THINK:    '#38bdf8',
-            ACT:      '#f59e0b',
-            LEARN:    '#10b981',
-            SYSTEM:   '#a855f7',
-            METRIC:   '#10b981',
-            ACTION:   '#38bdf8',
-            ERROR:    '#ef4444',
-        };
-
-        // -----------------------------------------------------------------
-        // Phase indicator
-        // -----------------------------------------------------------------
-        const phaseOrder = ['perceive', 'think', 'act', 'learn'];
-        const phaseElements = {
-            perceive: dom.phasePerceive,
-            think:    dom.phaseThink,
-            act:      dom.phaseAct,
-            learn:    dom.phaseLearn,
-        };
-        const connectors = [dom.connPT, dom.connTA, dom.connAL];
-
-        function setActivePhase(phase) {
-            if (!phase) {
-                // Clear all
-                phaseOrder.forEach((p) => {
-                    phaseElements[p].classList.remove('active');
-                    phaseElements[p].style.borderColor = 'var(--border)';
-                    phaseElements[p].style.background = 'transparent';
-                });
-                connectors.forEach((c) => c.classList.remove('active'));
-                dom.headerPhase.textContent = 'IDLE';
-                dom.headerPhase.style.background = 'rgba(100,116,139,0.15)';
-                dom.headerPhase.style.color = 'var(--text-secondary)';
-                return;
-            }
-
-            const phaseLower = phase.toLowerCase();
-            const idx = phaseOrder.indexOf(phaseLower);
-            if (idx < 0) return;
-
-            phaseOrder.forEach((p, i) => {
-                const el = phaseElements[p];
-                if (p === phaseLower) {
-                    el.classList.add('active');
-                    el.style.borderColor = PHASE_COLORS[p];
-                    el.style.background = PHASE_BG[p];
-                } else {
-                    el.classList.remove('active');
-                    if (i < idx) {
-                        el.style.borderColor = PHASE_COLORS[p];
-                        el.style.background = 'transparent';
-                    } else {
-                        el.style.borderColor = 'var(--border)';
-                        el.style.background = 'transparent';
+    // ---------------------------------------------------------------
+    // Chart.js setup
+    // ---------------------------------------------------------------
+    function initChart() {
+        const ctx = $id('latency-chart').getContext('2d');
+        latencyChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    borderColor: '#38bdf8',
+                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                    borderWidth: 1.5,
+                    pointRadius: 2,
+                    pointBackgroundColor: '#38bdf8',
+                    fill: true,
+                    tension: 0.3,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        display: false,
+                    },
+                    y: {
+                        beginAtZero: true,
+                        ticks: { color: '#64748b', font: { size: 10 } },
+                        grid: { color: '#1e293b' },
                     }
-                }
-            });
+                },
+                animation: { duration: 300 },
+            },
+        });
+    }
 
-            connectors.forEach((c, i) => {
-                if (i < idx) {
-                    c.classList.add('active');
-                    c.style.background = PHASE_COLORS[phaseOrder[i]];
-                } else {
-                    c.classList.remove('active');
-                    c.style.background = 'var(--border)';
-                }
-            });
+    function pushLatency(ms) {
+        if (ms <= 0) return;
+        latencyHistory.push(ms);
+        if (latencyHistory.length > 30) latencyHistory.shift();
 
-            dom.headerPhase.textContent = phaseLower.toUpperCase();
-            dom.headerPhase.style.background = PHASE_BG[phaseLower] || 'rgba(100,116,139,0.15)';
-            dom.headerPhase.style.color = PHASE_COLORS[phaseLower] || 'var(--text-secondary)';
+        latencyChart.data.labels = latencyHistory.map((_, i) => i + 1);
+        latencyChart.data.datasets[0].data = latencyHistory;
+        latencyChart.update('none');
+    }
+
+    // ---------------------------------------------------------------
+    // WebSocket
+    // ---------------------------------------------------------------
+    function connectWebSocket() {
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
+            return;
         }
 
-        // -----------------------------------------------------------------
-        // Agent status badge
-        // -----------------------------------------------------------------
-        function setAgentStatus(status) {
-            const badge = dom.agentStatus;
-            const dotEl = badge.querySelector('.agent-dot');
-            const colors = {
-                idle:    { bg: 'rgba(100,116,139,0.15)', fg: '#94a3b8', dot: '#64748b' },
-                running: { bg: 'rgba(56,189,248,0.15)',  fg: '#38bdf8', dot: '#38bdf8' },
-                error:   { bg: 'rgba(239,68,68,0.1)',    fg: '#ef4444', dot: '#ef4444' },
-                stopped: { bg: 'rgba(245,158,11,0.1)',   fg: '#f59e0b', dot: '#f59e0b' },
-            };
-            const c = colors[status] || colors.idle;
-            badge.style.background = c.bg;
-            badge.style.color = c.fg;
-            dotEl.style.background = c.dot;
-            badge.lastChild.textContent = ' ' + status.toUpperCase();
+        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${proto}//${location.host}/ws`;
+
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+            $id('ws-dot').className = 'w-2 h-2 rounded-full bg-green-500';
+            $id('ws-label').textContent = 'Connected';
+            if (reconnectTimer) {
+                clearTimeout(reconnectTimer);
+                reconnectTimer = null;
+            }
+        };
+
+        ws.onmessage = (msg) => {
+            try {
+                const evt = JSON.parse(msg.data);
+                handleEvent(evt);
+            } catch (e) {
+                console.warn('Failed to parse event:', e);
+            }
+        };
+
+        ws.onclose = () => {
+            $id('ws-dot').className = 'w-2 h-2 rounded-full bg-red-500';
+            $id('ws-label').textContent = 'Disconnected';
+            scheduleReconnect();
+        };
+
+        ws.onerror = () => {
+            ws.close();
+        };
+    }
+
+    function scheduleReconnect() {
+        if (reconnectTimer) return;
+        reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            connectWebSocket();
+        }, RECONNECT_DELAY);
+    }
+
+    // ---------------------------------------------------------------
+    // Event handling
+    // ---------------------------------------------------------------
+    function handleEvent(evt) {
+        allEvents.unshift(evt);
+        if (allEvents.length > MAX_VISIBLE_EVENTS) {
+            allEvents.pop();
         }
 
-        // -----------------------------------------------------------------
-        // Connection status
-        // -----------------------------------------------------------------
-        function setConnStatus(connected) {
-            wsConnected = connected;
-            const el = dom.connStatus;
-            const dotEl = el.querySelector('.pulse-dot');
-            if (connected) {
-                el.style.background = 'rgba(16,185,129,0.1)';
-                el.style.color = '#10b981';
-                dotEl.style.background = '#10b981';
-                dotEl.style.color = 'rgba(16,185,129,0.4)';
-                el.lastChild.textContent = ' LIVE';
-            } else {
-                el.style.background = 'rgba(239,68,68,0.1)';
-                el.style.color = '#ef4444';
-                dotEl.style.background = '#ef4444';
-                dotEl.style.color = 'rgba(239,68,68,0.4)';
-                el.lastChild.textContent = ' OFFLINE';
-            }
+        updateStats(evt);
+        renderEventRow(evt);
+        updateDashboard();
+    }
+
+    function updateStats(evt) {
+        const type = (evt.type || '').toUpperCase();
+        const meta = evt.meta || {};
+
+        stats.totalEvents++;
+        stats.stepCount = Math.max(stats.stepCount, evt.step || 0);
+
+        if (evt.cost_usd != null) {
+            stats.totalCost = Math.max(stats.totalCost, evt.cost_usd);
+        }
+        if (evt.system != null && evt.system > 0) {
+            stats.lastSystem = evt.system;
+        }
+        if (evt.model) {
+            stats.lastModel = evt.model;
+        }
+        if (evt.latency_ms != null && evt.latency_ms > 0) {
+            stats.lastLatency = evt.latency_ms;
+            pushLatency(evt.latency_ms);
         }
 
-        // -----------------------------------------------------------------
-        // AIO Gauge
-        // -----------------------------------------------------------------
-        function setAioGauge(ratio) {
-            const circumference = 2 * Math.PI * 30; // r=30
-            const offset = circumference * (1 - Math.min(1, ratio));
-            dom.aioGauge.style.strokeDashoffset = offset;
-            dom.valAio.textContent = Math.round(ratio * 100) + '%';
+        // Phase tracking
+        if (['PERCEIVE', 'THINK', 'ACT', 'LEARN'].includes(type)) {
+            stats.lastPhase = type.toLowerCase();
         }
 
-        // -----------------------------------------------------------------
-        // Evolution heatmap (canvas)
-        // -----------------------------------------------------------------
-        function drawEvoGrid() {
-            const canvas = dom.evoCanvas;
-            const ctx = canvas.getContext('2d');
-            const w = canvas.width;
-            const h = canvas.height;
-            const cellW = w / 10;
-            const cellH = h / 10;
-
-            ctx.clearRect(0, 0, w, h);
-
-            for (let y = 0; y < 10; y++) {
-                for (let x = 0; x < 10; x++) {
-                    const val = evoGrid[y * 10 + x];
-                    ctx.fillStyle = fitnessColor(val);
-                    ctx.fillRect(x * cellW, y * cellH, cellW - 1, cellH - 1);
-                }
+        // THINK: content for response pane
+        if (type === 'THINK') {
+            if (evt.model) stats.llmCalls++;
+            if (meta.content) {
+                stats.lastResponse = meta.content;
+                stats.cotActive = true;
             }
-
-            // Grid lines
-            ctx.strokeStyle = 'rgba(51,65,85,0.4)';
-            ctx.lineWidth = 0.5;
-            for (let i = 0; i <= 10; i++) {
-                ctx.beginPath();
-                ctx.moveTo(i * cellW, 0);
-                ctx.lineTo(i * cellW, h);
-                ctx.stroke();
-                ctx.beginPath();
-                ctx.moveTo(0, i * cellH);
-                ctx.lineTo(w, i * cellH);
-                ctx.stroke();
-            }
-        }
-
-        function fitnessColor(val) {
-            if (val <= 0) return '#1e293b';
-            // Gradient: dark -> sky-400 -> emerald-500 -> amber-400
-            if (val < 0.33) {
-                return lerpColor('#1e293b', '#38bdf8', val / 0.33);
-            } else if (val < 0.66) {
-                return lerpColor('#38bdf8', '#10b981', (val - 0.33) / 0.33);
-            } else {
-                return lerpColor('#10b981', '#f59e0b', (val - 0.66) / 0.34);
-            }
-        }
-
-        function lerpColor(a, b, t) {
-            const ar = parseInt(a.slice(1, 3), 16), ag = parseInt(a.slice(3, 5), 16), ab = parseInt(a.slice(5, 7), 16);
-            const br = parseInt(b.slice(1, 3), 16), bg = parseInt(b.slice(3, 5), 16), bb = parseInt(b.slice(5, 7), 16);
-            const r = Math.round(ar + (br - ar) * t);
-            const g = Math.round(ag + (bg - ag) * t);
-            const blue = Math.round(ab + (bb - ab) * t);
-            return '#' + [r, g, blue].map(c => c.toString(16).padStart(2, '0')).join('');
-        }
-
-
-        // -----------------------------------------------------------------
-        // Response pane: markdown rendering + display
-        // -----------------------------------------------------------------
-        const SYSTEM_COLORS = { 1: '#38bdf8', 2: '#f59e0b', 3: '#818cf8' };
-        const SYSTEM_BG     = { 1: 'rgba(56,189,248,0.12)', 2: 'rgba(245,158,11,0.12)', 3: 'rgba(129,140,248,0.12)' };
-        const SYSTEM_LABELS = { 1: 'S1 — Fast', 2: 'S2 — Algorithmic', 3: 'S3 — Formal' };
-
-        function miniMarkdown(text) {
-            if (!text) return '';
-            let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            // Code blocks (```lang\n...\n```)
-            html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function (_, lang, code) {
-                return '<pre><code>' + code.trim() + '</code></pre>';
-            });
-            // Inline code
-            html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-            // Headings
-            html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
-            html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
-            html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-            // Bold / italic
-            html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-            html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-            // Blockquotes
-            html = html.replace(/^> (.+)$/gm, '<blockquote>$1</blockquote>');
-            // Horizontal rules
-            html = html.replace(/^---$/gm, '<hr>');
-            // Unordered lists
-            html = html.replace(/^[*-] (.+)$/gm, '<li>$1</li>');
-            html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>');
-            // Links
-            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-            // Paragraphs (double newlines)
-            html = html.replace(/\n\n+/g, '</p><p>');
-            html = '<p>' + html + '</p>';
-            // Clean up empty paragraphs around block elements
-            html = html.replace(/<p>\s*(<(?:h[1-3]|pre|ul|ol|blockquote|hr))/g, '$1');
-            html = html.replace(/(<\/(?:h[1-3]|pre|ul|ol|blockquote|hr)>)\s*<\/p>/g, '$1');
-            html = html.replace(/<p>\s*<\/p>/g, '');
-            return html;
-        }
-
-        function renderResponse(query, responseText, system, metrics) {
-            const sys = system || 1;
-            const color = SYSTEM_COLORS[sys] || SYSTEM_COLORS[1];
-            const bg = SYSTEM_BG[sys] || SYSTEM_BG[1];
-            const label = SYSTEM_LABELS[sys] || 'S' + sys;
-
-            // Accent bar
-            dom.responseAccent.style.background = color;
-
-            // System badge
-            dom.responseBadge.textContent = label;
-            dom.responseBadge.style.background = bg;
-            dom.responseBadge.style.color = color;
-            dom.responseBadge.classList.remove('hidden');
-
-            // Query
-            if (query) {
-                dom.responseQuery.textContent = query.length > 200 ? query.slice(0, 200) + '...' : query;
-                dom.responseQueryBar.classList.remove('hidden');
-            }
-
-            // Markdown body
-            if (responseText) {
-                dom.responseContent.innerHTML = miniMarkdown(responseText);
-                dom.responseContent.classList.remove('hidden');
-                dom.responseEmpty.classList.add('hidden');
-            }
-
-            // Metrics
-            if (metrics) {
-                if (metrics.steps !== undefined) dom.respSteps.textContent = metrics.steps;
-                if (metrics.cost !== undefined) dom.respCost.textContent = '$' + metrics.cost.toFixed(4);
-                if (metrics.wall !== undefined) dom.respWall.textContent = metrics.wall.toFixed(1) + 's';
-                dom.responseMetrics.classList.remove('hidden');
-            }
-        }
-
-        function clearResponse() {
-            dom.responseAccent.style.background = 'var(--border)';
-            dom.responseBadge.classList.add('hidden');
-            dom.responseQueryBar.classList.add('hidden');
-            dom.responseContent.classList.add('hidden');
-            dom.responseContent.innerHTML = '';
-            dom.responseEmpty.classList.remove('hidden');
-            dom.responseMetrics.classList.add('hidden');
-        }
-
-        // -----------------------------------------------------------------
-        // Log entry rendering
-        // -----------------------------------------------------------------
-        function appendLogEntry(evt) {
-            const container = dom.logContainer;
-
-            const div = document.createElement('div');
-            const evtType = (evt.type || 'SYSTEM').toUpperCase();
-            div.className = 'log-entry log-' + evtType + ' new-entry';
-
-            // Timestamp
-            let timeStr = '';
-            if (evt.timestamp) {
-                const d = typeof evt.timestamp === 'string'
-                    ? new Date(evt.timestamp)
-                    : new Date(evt.timestamp * 1000);
-                if (!isNaN(d.getTime())) {
-                    timeStr = d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                }
-            }
-
-            // Build content text
-            let contentText = evt.content || '';
-            if (!contentText && evt.meta) {
-                const parts = [];
-                for (const [k, v] of Object.entries(evt.meta)) {
-                    if (typeof v === 'object') continue;
-                    parts.push(k + '=' + v);
-                }
-                contentText = parts.join('  ');
-            }
-            if (!contentText) {
-                contentText = JSON.stringify(evt);
-            }
-
-            // Sanitize HTML
-            contentText = contentText.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-
-            // Badge color
-            const badgeColor = TYPE_COLORS[evtType] || '#94a3b8';
-            const badgeBg = badgeColor + '22';
-
-            div.innerHTML =
-                '<span style="color:var(--text-muted);font-size:0.7rem;margin-right:8px;">' + timeStr + '</span>' +
-                '<span style="font-size:0.65rem;padding:1px 5px;border-radius:3px;margin-right:8px;font-weight:600;background:' + badgeBg + ';color:' + badgeColor + ';">' + evtType + '</span>' +
-                '<span style="color:var(--text-secondary);">' + contentText + '</span>';
-
-            container.appendChild(div);
-            logCount++;
-            dom.eventCount.textContent = logCount;
-
-            // Remove 'new-entry' animation class after it plays
-            setTimeout(() => div.classList.remove('new-entry'), 600);
-
-            // Cap entries
-            while (container.children.length > MAX_LOG_ENTRIES) {
-                container.removeChild(container.firstChild);
-            }
-
-            // Auto-scroll
-            if (dom.autoScroll.checked) {
-                requestAnimationFrame(() => {
-                    container.scrollTop = container.scrollHeight;
-                });
-            }
-        }
-
-        // -----------------------------------------------------------------
-        // Process incoming JSONL event
-        // -----------------------------------------------------------------
-        function processEvent(evt) {
-            const evtType = (evt.type || '').toUpperCase();
-            const meta = evt.meta || {};
-
-            // Update phase indicator
-            if (['PERCEIVE', 'THINK', 'ACT', 'LEARN'].includes(evtType)) {
-                setActivePhase(evtType.toLowerCase());
-                setAgentStatus('running');
-            }
-
-            // Update step count
-            if (evt.step !== undefined && evt.step > 0) {
-                dom.valSteps.textContent = evt.step;
-            }
-            if (meta.cycle !== undefined) {
-                dom.valSteps.textContent = meta.cycle;
-            }
-
-            // AIO ratio
-            if (meta.aio_ratio !== undefined) {
-                setAioGauge(meta.aio_ratio);
-            }
-
-            // Memory events
-            if (meta.events !== undefined) {
-                dom.valMemory.textContent = meta.events;
-            }
-
-            // System routing (S1/S2/S3)
-            if (meta.system !== undefined) {
-                const sys = meta.system;
-                const colors = { 1: '#38bdf8', 2: '#f59e0b', 3: '#818cf8' };
-                const color = colors[sys] || '#38bdf8';
-                dom.valSystem.textContent = 'S' + sys;
-                dom.valSystem.style.color = color;
-                dom.activeSystem.textContent = 'System ' + sys;
-                dom.activeSystem.style.color = color;
-                dom.barS1.style.width = sys === 1 ? '100%' : '15%';
-                dom.barS2.style.width = sys === 2 ? '100%' : '15%';
-                dom.barS3.style.width = sys === 3 ? '100%' : '15%';
-            }
-
-            // Z3 verification
-            if (meta.r_path !== undefined) {
-                if (meta.r_path >= 0) {
-                    const v = parseInt(dom.valZ3Pass.textContent) + 1;
-                    dom.valZ3Pass.textContent = v;
-                } else {
-                    const v = parseInt(dom.valZ3Fail.textContent) + 1;
-                    dom.valZ3Fail.textContent = v;
-                }
-                updateZ3Bar();
-            }
-
-            // Inference latency
-            if (meta.latency_ms !== undefined) {
-                dom.valInference.textContent = meta.latency_ms.toFixed(1) + ' ms';
-            }
-
-            // Entropy / braking
             if (meta.entropy !== undefined) {
-                dom.valEntropy.textContent = meta.entropy.toFixed(3);
+                stats.cgrsActive = meta.brake === true;
             }
-            if (meta.brake !== undefined) {
-                dom.valBrake.textContent = meta.brake ? 'ON' : 'OFF';
-                dom.valBrake.style.color = meta.brake ? '#ef4444' : '#10b981';
+            // AVR
+            if (evt.validation === 's2_avr_pass' || evt.validation === 's2_avr_fail') {
+                stats.avrActive = true;
+                stats.sandboxActive = true;
             }
-
-            // Evolution data (array of {x, y, fitness} from LEARN events)
-            if (meta.evo_cells !== undefined && Array.isArray(meta.evo_cells)) {
-                for (const c of meta.evo_cells) {
-                    evoGrid[(c.y || 0) * 10 + (c.x || 0)] = Math.min(1, c.fitness || 0);
-                }
-                dom.evoCells.textContent = meta.evo_grid_size || meta.evo_cells.length;
-                dom.evoBest.textContent = (meta.evo_best || 0).toFixed(2);
-                drawEvoGrid();
+            // Z3
+            if (meta.r_path !== undefined) {
+                stats.z3Active = true;
+                if (meta.r_path >= 0) stats.z3Pass++;
+                else stats.z3Fail++;
             }
-
-            // LLM cost tracking
-            if (meta.cost_usd !== undefined) {
-                dom.valCost.textContent = '$' + meta.cost_usd.toFixed(4);
-                dom.valCost.style.color = meta.cost_usd > 0.1 ? '#f59e0b' : '#10b981';
-            }
-
-            // Completion — render agent response
-            if (meta.result === 'complete') {
-                setAgentStatus('idle');
-                setActivePhase(null);
-                if (meta.response_text) {
-                    renderResponse(
-                        meta.task || '',
-                        meta.response_text,
-                        meta.system,
-                        { steps: meta.steps || evt.step || 0,
-                          cost: meta.cost_usd || 0,
-                          wall: meta.wall_time_s || 0 }
-                    );
-                }
-            }
-
-            appendLogEntry(evt);
         }
 
-        function updateZ3Bar() {
-            const pass = parseInt(dom.valZ3Pass.textContent) || 0;
-            const fail = parseInt(dom.valZ3Fail.textContent) || 0;
-            const total = pass + fail;
-            if (total === 0) {
-                dom.z3PassBar.style.width = '0%';
-                dom.z3FailBar.style.width = '0%';
+        // PERCEIVE: routing info
+        if (type === 'PERCEIVE') {
+            if (meta.system) stats.lastSystem = meta.system;
+            if (meta.validation_level >= 2) stats.sandboxActive = true;
+            if (meta.validation_level >= 3) stats.z3Active = true;
+        }
+
+        // LEARN: memory stats
+        if (type === 'LEARN') {
+            if (meta.events !== undefined) stats.memSTM = meta.events;
+            if (meta.memory_tiers) {
+                const t = meta.memory_tiers;
+                stats.memSTM = t.stm || stats.memSTM;
+                stats.memEpisodic = t.episodic || 0;
+                stats.memSemantic = t.semantic || 0;
+                stats.memExoCortex = t.exocortex || 0;
+            }
+            if (meta.events) stats.memoryEvents = meta.events;
+            stats.episodicActive = stats.memEpisodic > 0;
+        }
+
+        // ACT: tool execution
+        if (type === 'ACT' && meta.tool) {
+            if (meta.tool.includes('exocortex') || meta.tool.includes('search_exocortex')) {
+                stats.memExoCortex++;
+            }
+            if (meta.tool.includes('episodic') || meta.tool.includes('recall') || meta.tool.includes('store_episode')) {
+                stats.memEpisodic++;
+                stats.episodicActive = true;
+            }
+        }
+
+        // Completion
+        if (meta.result === 'complete') {
+            isRunning = false;
+            stats.lastPhase = null;
+            if (meta.response_text) stats.lastResponse = meta.response_text;
+        }
+
+        // Cost from meta
+        if (meta.cost_usd !== undefined) {
+            stats.totalCost = Math.max(stats.totalCost, meta.cost_usd);
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Rendering
+    // ---------------------------------------------------------------
+
+    const PHASE_COLORS = {
+        PERCEIVE: 'text-purple-400',
+        THINK: 'text-sky-400',
+        ACT: 'text-amber-400',
+        LEARN: 'text-emerald-400',
+        ERROR: 'text-red-400',
+    };
+
+    const PHASE_BG = {
+        PERCEIVE: 'bg-purple-500/10',
+        THINK: 'bg-sky-500/10',
+        ACT: 'bg-amber-500/10',
+        LEARN: 'bg-emerald-500/10',
+        ERROR: 'bg-red-500/10',
+    };
+
+    function formatTime(ts) {
+        if (!ts) return '--:--:--';
+        const d = new Date(ts * 1000);
+        return d.toLocaleTimeString('en-US', { hour12: false });
+    }
+
+    function truncate(s, n) {
+        if (!s) return '';
+        s = String(s);
+        return s.length > n ? s.slice(0, n) + '...' : s;
+    }
+
+    function eventDetails(evt) {
+        const meta = evt.meta || {};
+        const parts = [];
+
+        if (evt.validation) parts.push(evt.validation);
+        if (meta.task) parts.push('task: ' + truncate(meta.task, 60));
+        if (meta.tool) parts.push('tool: ' + meta.tool);
+        if (meta.content) parts.push(truncate(meta.content, 80));
+        if (meta.result) parts.push('result: ' + meta.result);
+        if (meta.error) parts.push('error: ' + meta.error);
+        if (meta.escalation) parts.push('escalation: ' + meta.escalation);
+        if (meta.complexity !== undefined) parts.push('complexity: ' + meta.complexity);
+        if (meta.aio_ratio !== undefined) parts.push('AIO: ' + meta.aio_ratio.toFixed(2));
+        if (meta.entropy !== undefined) parts.push('entropy: ' + meta.entropy);
+        if (meta.r_path !== undefined) parts.push('r_path: ' + meta.r_path.toFixed(2));
+
+        return parts.join(' | ') || '--';
+    }
+
+    function renderEventRow(evt) {
+        const type = (evt.type || '').toUpperCase();
+
+        // Check filter
+        if (currentFilter !== 'ALL' && type !== currentFilter) return;
+
+        const tbody = $id('event-tbody');
+        const tr = document.createElement('tr');
+        tr.className = `border-b border-sage-700/50 event-row-new ${PHASE_BG[type] || ''}`;
+        tr.innerHTML = `
+            <td class="py-1 px-2 font-mono text-sage-500">${formatTime(evt.timestamp)}</td>
+            <td class="py-1 px-2 font-mono text-sage-400">${evt.step || 0}</td>
+            <td class="py-1 px-2 font-medium ${PHASE_COLORS[type] || 'text-sage-400'}">${type}</td>
+            <td class="py-1 px-2 font-mono text-sage-500">${truncate(evt.model || '--', 20)}</td>
+            <td class="py-1 px-2 font-mono text-sage-500">${evt.latency_ms ? evt.latency_ms.toFixed(0) + 'ms' : '--'}</td>
+            <td class="py-1 px-2 text-sage-400 truncate max-w-[400px]">${eventDetails(evt)}</td>
+        `;
+
+        // Prepend (newest first)
+        if (tbody.firstChild) {
+            tbody.insertBefore(tr, tbody.firstChild);
+        } else {
+            tbody.appendChild(tr);
+        }
+
+        // Limit visible rows
+        while (tbody.children.length > MAX_VISIBLE_EVENTS) {
+            tbody.removeChild(tbody.lastChild);
+        }
+
+        $id('event-count').textContent = `${stats.totalEvents} events`;
+    }
+
+    function applyFilter() {
+        currentFilter = $id('event-filter').value;
+        const tbody = $id('event-tbody');
+        tbody.innerHTML = '';
+
+        // Re-render visible events with filter
+        const filtered = currentFilter === 'ALL'
+            ? allEvents
+            : allEvents.filter(e => (e.type || '').toUpperCase() === currentFilter);
+
+        filtered.slice(0, MAX_VISIBLE_EVENTS).forEach(evt => {
+            const type = (evt.type || '').toUpperCase();
+            const tr = document.createElement('tr');
+            tr.className = `border-b border-sage-700/50 ${PHASE_BG[type] || ''}`;
+            tr.innerHTML = `
+                <td class="py-1 px-2 font-mono text-sage-500">${formatTime(evt.timestamp)}</td>
+                <td class="py-1 px-2 font-mono text-sage-400">${evt.step || 0}</td>
+                <td class="py-1 px-2 font-medium ${PHASE_COLORS[type] || 'text-sage-400'}">${type}</td>
+                <td class="py-1 px-2 font-mono text-sage-500">${truncate(evt.model || '--', 20)}</td>
+                <td class="py-1 px-2 font-mono text-sage-500">${evt.latency_ms ? evt.latency_ms.toFixed(0) + 'ms' : '--'}</td>
+                <td class="py-1 px-2 text-sage-400 truncate max-w-[400px]">${eventDetails(evt)}</td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+
+    function updateDashboard() {
+        // Header stats
+        $id('hdr-step').textContent = stats.stepCount;
+        $id('hdr-cost').textContent = stats.totalCost.toFixed(4);
+        $id('hdr-model').textContent = stats.lastModel || '--';
+
+        // S1/S2/S3 indicators
+        ['s1-bar', 's2-bar', 's3-bar'].forEach((id, idx) => {
+            const el = $id(id);
+            if (stats.lastSystem === idx + 1) {
+                el.classList.remove('opacity-40');
+                el.classList.add('opacity-100', 'running-glow');
+                el.style.borderColor = ['#22c55e', '#f59e0b', '#ef4444'][idx];
             } else {
-                dom.z3PassBar.style.width = (pass / total * 100) + '%';
-                dom.z3FailBar.style.width = (fail / total * 100) + '%';
+                el.classList.remove('opacity-100', 'running-glow');
+                el.classList.add('opacity-40');
+                el.style.borderColor = '';
             }
+        });
+
+        // Status badge
+        const badge = $id('status-badge');
+        if (isRunning) {
+            badge.textContent = stats.lastPhase || 'running';
+            badge.className = 'ml-auto text-xs px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 phase-active';
+        } else {
+            badge.textContent = 'idle';
+            badge.className = 'ml-auto text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400';
         }
 
-        // -----------------------------------------------------------------
-        // WebSocket connection (with exponential backoff)
-        // -----------------------------------------------------------------
-        let wsBackoff = 2000;
-        const WS_BACKOFF_MAX = 30000;
+        // Buttons
+        $id('btn-run').disabled = isRunning;
+        $id('btn-stop').disabled = !isRunning;
 
-        function connectWebSocket() {
-            const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-            ws = new WebSocket(protocol + '//' + location.host + '/ws');
-
-            ws.onopen = function () {
-                setConnStatus(true);
-                startTs = Date.now();
-                wsBackoff = 2000; // reset on successful connect
-            };
-
-            ws.onmessage = function (event) {
-                try {
-                    const evt = JSON.parse(event.data);
-                    processEvent(evt);
-                } catch (e) {
-                    // Non-JSON line, show as raw
-                    appendLogEntry({ type: 'SYSTEM', content: event.data, timestamp: Date.now() / 1000 });
-                }
-            };
-
-            ws.onclose = function () {
-                setConnStatus(false);
-                setTimeout(connectWebSocket, wsBackoff);
-                wsBackoff = Math.min(wsBackoff * 1.5, WS_BACKOFF_MAX);
-            };
-
-            ws.onerror = function () {
-                setConnStatus(false);
-            };
+        // Response pane
+        if (stats.lastResponse) {
+            const pane = $id('response-pane');
+            pane.textContent = stats.lastResponse;
+            pane.className = 'flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-white';
         }
 
-        // -----------------------------------------------------------------
-        // State polling (every 2s)
-        // -----------------------------------------------------------------
-        function pollState() {
-            fetch('/api/state')
-                .then(r => r.json())
-                .then(state => {
-                    // Update values from server state
-                    if (state.agent_status) setAgentStatus(state.agent_status);
-                    if (state.current_phase) setActivePhase(state.current_phase);
-                    else if (state.agent_status === 'idle') setActivePhase(null);
-
-                    if (state.step_count !== undefined) dom.valSteps.textContent = state.step_count;
-                    if (state.memory_events !== undefined) dom.valMemory.textContent = state.memory_events;
-                    if (state.llm_calls !== undefined) dom.valLlmCalls.textContent = state.llm_calls;
-                    if (state.total_events !== undefined) dom.valTotalEvents.textContent = state.total_events;
-                    if (state.aio_ratio !== undefined) setAioGauge(state.aio_ratio);
-                    if (state.inference_time_ms !== undefined) dom.valInference.textContent = state.inference_time_ms.toFixed(1) + ' ms';
-                    if (state.total_cost_usd !== undefined) {
-                        dom.valCost.textContent = '$' + state.total_cost_usd.toFixed(4);
-                    }
-
-                    // Wall time
-                    if (state.wall_time_s !== undefined && state.wall_time_s > 0) {
-                        dom.valWall.textContent = state.wall_time_s.toFixed(1) + 's';
-                    } else {
-                        const elapsed = (Date.now() - startTs) / 1000;
-                        dom.valWall.textContent = elapsed.toFixed(1) + 's';
-                    }
-
-                    // Metacognitive system
-                    if (state.metacognitive_system !== undefined) {
-                        const sys = state.metacognitive_system;
-                        const colors = { 1: '#38bdf8', 2: '#f59e0b', 3: '#818cf8' };
-                        const color = colors[sys] || '#38bdf8';
-                        dom.valSystem.textContent = 'S' + sys;
-                        dom.valSystem.style.color = color;
-                        dom.activeSystem.textContent = 'System ' + sys;
-                        dom.activeSystem.style.color = color;
-                        dom.barS1.style.width = sys === 1 ? '100%' : '15%';
-                        dom.barS2.style.width = sys === 2 ? '100%' : '15%';
-                        dom.barS3.style.width = sys === 3 ? '100%' : '15%';
-                    }
-
-                    // Z3
-                    if (state.z3_pass !== undefined) dom.valZ3Pass.textContent = state.z3_pass;
-                    if (state.z3_fail !== undefined) dom.valZ3Fail.textContent = state.z3_fail;
-                    updateZ3Bar();
-
-                    // Evolution stats
-                    if (state.evolution_stats) {
-                        dom.evoCells.textContent = state.evolution_stats.grid_size || 0;
-                        dom.evoBest.textContent = (state.evolution_stats.best_fitness || 0).toFixed(2);
-                        if (state.evolution_stats.cells && state.evolution_stats.cells.length > 0) {
-                            for (const c of state.evolution_stats.cells) {
-                                evoGrid[c.y * 10 + c.x] = Math.min(1, c.fitness);
-                            }
-                            drawEvoGrid();
-                        }
-                    }
-
-                    // Response pane (from backend state)
-                    if (state.last_response && state.last_response.length > 0) {
-                        renderResponse(
-                            state.last_query || '',
-                            state.last_response,
-                            state.last_response_system || state.metacognitive_system || 1,
-                            { steps: state.step_count || 0,
-                              cost: state.total_cost_usd || 0,
-                              wall: state.wall_time_s || 0 }
-                        );
-                    }
-
-                    // Sub-agents
-                    if (state.sub_agents && state.sub_agents.length > 0) {
-                        renderSubAgents(state.sub_agents);
-                    }
-                })
-                .catch(() => { /* silently ignore poll errors */ });
+        // Response system label
+        const sysLabel = $id('response-system');
+        if (stats.lastSystem === 1) {
+            sysLabel.textContent = 'S1 Fast';
+            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s1/20 text-s1';
+        } else if (stats.lastSystem === 2) {
+            sysLabel.textContent = 'S2 Empirical';
+            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s2/20 text-s2';
+        } else if (stats.lastSystem === 3) {
+            sysLabel.textContent = 'S3 Formal';
+            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s3/20 text-s3';
+        } else {
+            sysLabel.textContent = '--';
+            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400';
         }
 
-        // -----------------------------------------------------------------
-        // Sub-agent pool rendering
-        // -----------------------------------------------------------------
-        function renderSubAgents(agents) {
-            const list = dom.agentPoolList;
-            list.innerHTML = '';
-            if (!agents || agents.length === 0) {
-                list.innerHTML = '<div class="text-xs italic" style="color: var(--text-muted);">No sub-agents registered</div>';
-                return;
-            }
-            agents.forEach(a => {
-                const statusColor = a.running ? '#38bdf8' : (a.has_result ? '#10b981' : '#64748b');
-                const statusLabel = a.running ? 'running' : (a.has_result ? 'done' : 'idle');
-                const div = document.createElement('div');
-                div.className = 'card-inset p-2 flex items-center justify-between';
-                div.innerHTML =
-                    '<div class="flex items-center gap-2">' +
-                        '<span class="agent-dot" style="background:' + statusColor + ';"></span>' +
-                        '<span class="text-xs font-medium">' + escapeHtml(a.name) + '</span>' +
-                    '</div>' +
-                    '<span class="text-xs font-mono" style="color:var(--text-muted);">' + escapeHtml(a.role || statusLabel) + '</span>';
-                list.appendChild(div);
-            });
-        }
+        // Memory bars (max reference: 100 for STM, 50 for others)
+        setBar('mem-stm', stats.memSTM, 100);
+        setBar('mem-ep', stats.memEpisodic, 50);
+        setBar('mem-sem', stats.memSemantic, 50);
+        setBar('mem-exo', stats.memExoCortex, 50);
 
-        function escapeHtml(str) {
-            const d = document.createElement('div');
-            d.textContent = str;
-            return d.innerHTML;
-        }
+        // Guardrails
+        setGuard('guard-cot', stats.cotActive);
+        setGuard('guard-sandbox', stats.sandboxActive);
+        setGuard('guard-z3', stats.z3Active);
+        setGuard('guard-avr', stats.avrActive);
+        setGuard('guard-cgrs', stats.cgrsActive);
+        setGuard('guard-episodic', stats.episodicActive);
 
-        // -----------------------------------------------------------------
-        // Button handlers
-        // -----------------------------------------------------------------
-        dom.btnSubmit.addEventListener('click', function () {
-            const task = dom.taskInput.value.trim();
-            if (!task) return;
-            fetch('/api/task', {
+        // Stats panel
+        $id('stat-steps').textContent = stats.stepCount;
+        $id('stat-llm').textContent = stats.llmCalls;
+        $id('stat-cost').textContent = '$' + stats.totalCost.toFixed(4);
+        $id('stat-latency').textContent = stats.lastLatency > 0 ? stats.lastLatency.toFixed(0) + 'ms' : '--';
+        $id('stat-z3').textContent = `${stats.z3Pass} / ${stats.z3Fail}`;
+        $id('stat-events').textContent = stats.totalEvents;
+    }
+
+    function setBar(prefix, value, max) {
+        const pct = Math.min(100, (value / Math.max(1, max)) * 100);
+        $id(prefix + '-val').textContent = value;
+        $id(prefix + '-bar').style.width = pct + '%';
+    }
+
+    function setGuard(id, active) {
+        const el = $id(id);
+        const icon = el.querySelector('span:first-child');
+        if (active) {
+            icon.textContent = '\u2713';
+            el.className = 'flex items-center gap-2 text-emerald-400';
+        } else {
+            icon.textContent = '--';
+            el.className = 'flex items-center gap-2 text-sage-500';
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // API calls
+    // ---------------------------------------------------------------
+    window.submitTask = async function() {
+        const input = $id('task-input');
+        const task = input.value.trim();
+        if (!task) return;
+
+        try {
+            const resp = await fetch('/api/task', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task: task }),
-            })
-            .then(r => r.json())
-            .then(resp => {
-                appendLogEntry({
-                    type: 'SYSTEM',
-                    content: 'Task submitted: ' + task,
-                    timestamp: Date.now() / 1000,
-                });
-                dom.taskInput.value = '';
-                setAgentStatus('running');
-                setActivePhase('perceive');
-            })
-            .catch(err => {
-                appendLogEntry({
-                    type: 'ERROR',
-                    content: 'Failed to submit task: ' + err.message,
-                    timestamp: Date.now() / 1000,
-                });
+                body: JSON.stringify({ task }),
             });
-        });
-
-        dom.btnStop.addEventListener('click', function () {
-            fetch('/api/stop', { method: 'POST' })
-                .then(r => r.json())
-                .then(() => {
-                    setAgentStatus('stopped');
-                    setActivePhase(null);
-                    appendLogEntry({
-                        type: 'SYSTEM',
-                        content: 'Agent stopped by user',
-                        timestamp: Date.now() / 1000,
-                    });
-                });
-        });
-
-        dom.btnClear.addEventListener('click', function () {
-            dom.logContainer.innerHTML = '';
-            logCount = 0;
-            dom.eventCount.textContent = '0';
-        });
-
-        dom.btnReset.addEventListener('click', function () {
-            fetch('/api/reset', { method: 'POST' })
-                .then(r => r.json())
-                .then(() => {
-                    dom.logContainer.innerHTML = '';
-                    logCount = 0;
-                    dom.eventCount.textContent = '0';
-                    dom.valSteps.textContent = '0';
-                    dom.valCost.textContent = '$0.00';
-                    dom.valCost.style.color = '#f59e0b';
-                    dom.valMemory.textContent = '0';
-                    dom.valSystem.textContent = 'S1';
-                    dom.valSystem.style.color = '#38bdf8';
-                    dom.barS1.style.width = '100%';
-                    dom.barS2.style.width = '0%';
-                    dom.barS3.style.width = '0%';
-                    dom.valZ3Pass.textContent = '0';
-                    dom.valZ3Fail.textContent = '0';
-                    dom.valInference.textContent = '0 ms';
-                    dom.valWall.textContent = '0.0s';
-                    dom.valLlmCalls.textContent = '0';
-                    dom.valTotalEvents.textContent = '0';
-                    dom.valEntropy.textContent = '--';
-                    dom.valBrake.textContent = 'OFF';
-                    dom.valBrake.style.color = '#10b981';
-                    setAioGauge(0);
-                    setAgentStatus('idle');
-                    setActivePhase(null);
-                    clearResponse();
-                    evoGrid.fill(0);
-                    drawEvoGrid();
-                    startTs = Date.now();
-                    appendLogEntry({
-                        type: 'SYSTEM',
-                        content: 'Dashboard reset',
-                        timestamp: Date.now() / 1000,
-                    });
-                });
-        });
-
-        // Allow Ctrl+Enter in textarea to submit
-        dom.taskInput.addEventListener('keydown', function (e) {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                dom.btnSubmit.click();
+            const data = await resp.json();
+            if (resp.ok) {
+                isRunning = true;
+                updateDashboard();
+            } else {
+                alert(data.error || 'Failed to submit task');
             }
-        });
-
-        // -----------------------------------------------------------------
-        // Wall-time clock (updates every second)
-        // -----------------------------------------------------------------
-        setInterval(function () {
-            const elapsed = (Date.now() - startTs) / 1000;
-            dom.valWall.textContent = elapsed.toFixed(1) + 's';
-        }, 1000);
-
-        // -----------------------------------------------------------------
-        // Provider status (fetch once on boot)
-        // -----------------------------------------------------------------
-        async function fetchProviders() {
-            try {
-                const resp = await fetch('/api/providers');
-                const providers = await resp.json();
-                const container = document.getElementById('llm-providers');
-                if (!container) return;
-                container.innerHTML = '';
-                for (const p of providers) {
-                    const dot = p.available ? 'var(--success)' : 'var(--text-muted)';
-                    container.innerHTML += `
-                        <div class="card-inset p-2 flex items-center justify-between">
-                            <div class="flex items-center gap-2">
-                                <span class="agent-dot" style="background: ${dot};"></span>
-                                <span class="text-xs font-medium">${p.name}</span>
-                            </div>
-                            <span class="text-xs font-mono" style="color: var(--text-muted);">${p.tier}</span>
-                        </div>`;
-                }
-            } catch (e) { /* ignore */ }
+        } catch (e) {
+            alert('Network error: ' + e.message);
         }
+    };
 
-        // -----------------------------------------------------------------
-        // Boot
-        // -----------------------------------------------------------------
-        drawEvoGrid();  // Draw empty grid on boot
-        connectWebSocket();
-        setInterval(pollState, 2000);
-        fetchProviders();
+    window.stopTask = async function() {
+        try {
+            await fetch('/api/stop', { method: 'POST' });
+            isRunning = false;
+            updateDashboard();
+        } catch (e) {
+            console.error('Stop failed:', e);
+        }
+    };
 
-    })();
-    </script>
+    window.resetAll = async function() {
+        try {
+            await fetch('/api/reset', { method: 'POST' });
+            // Reset local state
+            allEvents = [];
+            latencyHistory = [];
+            isRunning = false;
+            Object.assign(stats, {
+                stepCount: 0, llmCalls: 0, totalCost: 0, lastSystem: 0,
+                lastModel: null, lastResponse: '', lastPhase: null,
+                memoryEvents: 0, z3Pass: 0, z3Fail: 0, lastLatency: 0,
+                totalEvents: 0, memSTM: 0, memEpisodic: 0, memSemantic: 0,
+                memExoCortex: 0, cotActive: false, sandboxActive: false,
+                z3Active: false, avrActive: false, cgrsActive: false,
+                episodicActive: false,
+            });
+            $id('event-tbody').innerHTML = '';
+            $id('response-pane').textContent = 'Waiting for task...';
+            $id('response-pane').className = 'flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-sage-400';
+
+            // Reset chart
+            latencyChart.data.labels = [];
+            latencyChart.data.datasets[0].data = [];
+            latencyChart.update('none');
+
+            updateDashboard();
+        } catch (e) {
+            console.error('Reset failed:', e);
+        }
+    };
+
+    window.runBenchmark = function(name) {
+        // Placeholder: submit a benchmark task
+        $id('task-input').value = `[BENCHMARK] Run ${name} evaluation suite`;
+        $id('bench-result').textContent = 'Starting...';
+        $id('bench-bar').style.width = '10%';
+        submitTask();
+    };
+
+    window.applyFilter = applyFilter;
+
+    // Keyboard shortcut: Ctrl+Enter to submit
+    $id('task-input').addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            submitTask();
+        }
+    });
+
+    // ---------------------------------------------------------------
+    // Init
+    // ---------------------------------------------------------------
+    initChart();
+    connectWebSocket();
+    updateDashboard();
+
+})();
+</script>
 </body>
 </html>

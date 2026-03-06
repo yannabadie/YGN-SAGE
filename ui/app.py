@@ -1,7 +1,7 @@
-"""YGN-SAGE Control Dashboard -- FastAPI backend with WebSocket event streaming.
+"""YGN-SAGE v2 Control Dashboard -- FastAPI backend with EventBus WebSocket push.
 
-Wires the real AgentSystem (boot.py) so that POST /api/task runs the full
-perceive->think->act->learn loop via Codex CLI (or Gemini fallback).
+Replaces JSONL file polling with real-time EventBus streaming.
+Backend boots AgentSystem lazily on first task submission.
 """
 from __future__ import annotations
 
@@ -9,28 +9,27 @@ import asyncio
 import json
 import logging
 import os
+import shutil
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
-# Load .env from project root (for GOOGLE_API_KEY, etc.)
+# ---------------------------------------------------------------------------
+# sys.path: ensure sage-python is importable
+# ---------------------------------------------------------------------------
+_sage_src = Path(__file__).resolve().parent.parent / "sage-python" / "src"
+if str(_sage_src) not in sys.path:
+    sys.path.insert(0, str(_sage_src))
+
+# Load .env from project root
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 except ImportError:
     pass
 
-from fastapi import FastAPI, WebSocket, Request
-from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
-import uvicorn
-
-# Ensure sage-python is importable when running from repo root
-_sage_src = Path(__file__).resolve().parent.parent / "sage-python" / "src"
-if str(_sage_src) not in sys.path:
-    sys.path.insert(0, str(_sage_src))
-
-# Mock sage_core (Rust extension) if not compiled — allows pure-Python operation
+# Mock sage_core (Rust extension) if not compiled -- pure-Python fallback
 import types as _types
 if "sage_core" not in sys.modules:
     _mock = _types.ModuleType("sage_core")
@@ -78,136 +77,62 @@ if "sage_core" not in sys.modules:
     _mock.WorkingMemory = _WM
     sys.modules["sage_core"] = _mock
 
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+import uvicorn
+
+from sage.events.bus import EventBus
+from sage.agent_loop import AgentEvent
+
 logger = logging.getLogger("ygn-sage.dashboard")
 
-app = FastAPI(title="YGN-SAGE Control Dashboard")
-app.mount("/static", StaticFiles(directory="ui/static"), name="static")
-
-LOG_FILE = Path("docs/plans/agent_stream.jsonl")
-
-# Background agent task handle (so we can cancel on /api/stop)
+# ---------------------------------------------------------------------------
+# Global state
+# ---------------------------------------------------------------------------
+event_bus = EventBus()
+system = None  # lazily booted AgentSystem
 _agent_task: asyncio.Task | None = None
 
+app = FastAPI(title="YGN-SAGE v2 Control Dashboard")
+
+# Mount static files (resolve path relative to this file, not cwd)
+_static_dir = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+
 # ---------------------------------------------------------------------------
-# In-memory state for dashboard polling.
-# NOTE: Safe under single-worker uvicorn (asyncio is single-threaded).
-# If running with multiple workers, guard with asyncio.Lock.
+# Helpers
 # ---------------------------------------------------------------------------
-dashboard_state: dict = {
-    "agent_status": "idle",        # idle | running | error | stopped
-    "current_phase": None,         # perceive | think | act | learn
-    "step_count": 0,
-    "llm_calls": 0,
-    "total_cost_usd": 0.0,
-    "sub_agents": [],
-    "evolution_stats": {
-        "grid_size": 0,
-        "best_fitness": 0.0,
-        "generation": 0,
-        "cells": [],               # list of {x, y, fitness} for heatmap
-    },
-    "memory_events": 0,
-    "aio_ratio": 0.0,
-    "metacognitive_system": 1,     # 1, 2, or 3
-    "validation_level": 1,         # 1=none, 2=empirical, 3=formal
-    "z3_pass": 0,
-    "z3_fail": 0,
-    "inference_time_ms": 0.0,
-    "wall_time_s": 0.0,
-    "total_events": 0,
-    "last_query": "",
-    "last_response": "",
-    "last_response_system": 1,
-}
+
+def _event_to_json(event: AgentEvent) -> str:
+    """Serialize an AgentEvent to a JSON string."""
+    d = asdict(event)
+    return json.dumps(d, default=str)
 
 
-def _update_state_from_event(evt: dict) -> None:
-    """Side-effect: mutate *dashboard_state* from a parsed JSONL event."""
-    etype = evt.get("type", "").upper()
-    meta = evt.get("meta", {})
+def _boot_system() -> None:
+    """Boot the AgentSystem (once), wiring the global event_bus."""
+    global system
+    if system is not None:
+        return
 
-    dashboard_state["total_events"] += 1
+    from sage.boot import boot_agent_system
 
-    # Phase tracking
-    if etype in ("PERCEIVE", "THINK", "ACT", "LEARN"):
-        dashboard_state["current_phase"] = etype.lower()
-        dashboard_state["agent_status"] = "running"
+    has_google = bool(os.environ.get("GOOGLE_API_KEY"))
+    has_codex = shutil.which("codex") is not None
 
-    # Step count
-    if "step" in evt:
-        dashboard_state["step_count"] = max(
-            dashboard_state["step_count"], evt["step"]
+    if has_codex or has_google:
+        system = boot_agent_system(
+            use_mock_llm=False,
+            llm_tier="auto",
+            event_bus=event_bus,
         )
-
-    # AIO ratio
-    if "aio_ratio" in meta:
-        dashboard_state["aio_ratio"] = meta["aio_ratio"]
-
-    # Memory events
-    if "events" in meta:
-        dashboard_state["memory_events"] = meta["events"]
-
-    # LLM calls (each THINK event is an LLM call)
-    if etype == "THINK":
-        if "model" in meta:
-            dashboard_state["llm_calls"] += 1
-        if "content" in meta:
-            # Real-time update for dashboard response pane
-            dashboard_state["last_response"] = meta["content"]
-
-    # System routing (from PERCEIVE or THINK)
-    if "system" in meta:
-        dashboard_state["metacognitive_system"] = meta["system"]
-        dashboard_state["last_response_system"] = meta["system"]
-
-    # Sub-agents from pool
-    if "sub_agents" in meta:
-        dashboard_state["sub_agents"] = meta["sub_agents"]
-
-    # Validation level
-    if "validation_level" in meta:
-        dashboard_state["validation_level"] = meta["validation_level"]
-
-    # Z3 verification
-    if "r_path" in meta:
-        if meta["r_path"] >= 0:
-            dashboard_state["z3_pass"] += 1
-        else:
-            dashboard_state["z3_fail"] += 1
-
-    # Cost tracking
-    if "cost_usd" in meta:
-        dashboard_state["total_cost_usd"] = meta["cost_usd"]
-
-    # Latency
-    if "latency_ms" in meta:
-        dashboard_state["inference_time_ms"] = meta["latency_ms"]
-
-    # Wall time
-    if "wall_time_s" in meta:
-        dashboard_state["wall_time_s"] = meta["wall_time_s"]
-
-    # Evolution grid
-    if "evo_cells" in meta:
-        dashboard_state["evolution_stats"]["cells"] = meta["evo_cells"]
-        dashboard_state["evolution_stats"]["grid_size"] = meta.get("evo_grid_size", 0)
-        dashboard_state["evolution_stats"]["best_fitness"] = meta.get("evo_best", 0.0)
-
-    # Agent response (from completion event)
-    if "response_text" in meta:
-        dashboard_state["last_response"] = meta["response_text"]
-    if "task" in meta and meta.get("result") == "complete":
-        dashboard_state["last_query"] = meta["task"]
-
-    # Completion
-    if meta.get("result") == "complete":
-        dashboard_state["agent_status"] = "idle"
-        dashboard_state["current_phase"] = None
-
-    # Cycle (legacy HFT compat)
-    if "cycle" in meta:
-        dashboard_state["step_count"] = max(
-            dashboard_state["step_count"], meta["cycle"]
+    else:
+        logger.warning("No LLM provider available -- booting with mock LLM")
+        system = boot_agent_system(
+            use_mock_llm=True,
+            event_bus=event_bus,
         )
 
 
@@ -218,19 +143,80 @@ def _update_state_from_event(evt: dict) -> None:
 @app.get("/")
 async def root():
     """Serve the single-file dashboard."""
-    with open("ui/static/index.html", "r", encoding="utf-8") as f:
+    html_path = _static_dir / "index.html"
+    with open(html_path, "r", encoding="utf-8") as f:
         return HTMLResponse(f.read())
 
 
 @app.get("/api/state")
 async def get_state():
-    """Return the current dashboard state as JSON (polled by the frontend)."""
-    return JSONResponse(dashboard_state)
+    """Return current dashboard stats derived from event_bus."""
+    events = event_bus.query(last_n=5000)
+
+    step_count = 0
+    total_cost = 0.0
+    last_system = 1
+    last_model = None
+    last_response = ""
+    last_phase = None
+    memory_events = 0
+    llm_calls = 0
+    z3_pass = 0
+    z3_fail = 0
+    last_latency = 0.0
+
+    for evt in events:
+        step_count = max(step_count, evt.step)
+        if evt.cost_usd is not None:
+            total_cost = max(total_cost, evt.cost_usd)
+        if evt.system is not None:
+            last_system = evt.system
+        if evt.model is not None:
+            last_model = evt.model
+        if evt.latency_ms is not None:
+            last_latency = evt.latency_ms
+
+        etype = evt.type.upper()
+        last_phase = etype.lower()
+
+        if etype == "THINK" and evt.model:
+            llm_calls += 1
+        if etype == "THINK" and evt.meta.get("content"):
+            last_response = evt.meta["content"]
+
+        meta = evt.meta
+        if "events" in meta:
+            memory_events = meta["events"]
+        if "r_path" in meta:
+            if meta["r_path"] >= 0:
+                z3_pass += 1
+            else:
+                z3_fail += 1
+        if meta.get("response_text"):
+            last_response = meta["response_text"]
+        if meta.get("result") == "complete":
+            last_phase = None
+
+    return JSONResponse({
+        "step_count": step_count,
+        "total_cost_usd": round(total_cost, 4),
+        "metacognitive_system": last_system,
+        "model": last_model,
+        "last_response": last_response[:2000] if last_response else "",
+        "current_phase": last_phase,
+        "memory_events": memory_events,
+        "llm_calls": llm_calls,
+        "z3_pass": z3_pass,
+        "z3_fail": z3_fail,
+        "latency_ms": round(last_latency, 1),
+        "total_events": len(events),
+        "agent_status": "running" if (_agent_task and not _agent_task.done()) else "idle",
+    })
 
 
 @app.post("/api/task")
 async def submit_task(request: Request):
-    """Accept a new task and run it through the real AgentSystem."""
+    """Accept a new task and run it through the AgentSystem in background."""
     global _agent_task
 
     body = await request.json()
@@ -247,131 +233,94 @@ async def submit_task(request: Request):
             status_code=409,
         )
 
-    dashboard_state["agent_status"] = "running"
-    dashboard_state["current_phase"] = "perceive"
-
     async def _run_agent(task_text: str) -> None:
         try:
-            from sage.boot import boot_agent_system
-            system = boot_agent_system(use_mock_llm=False, llm_tier="auto")
+            _boot_system()
             result = await system.run(task_text)
-            dashboard_state["agent_status"] = "idle"
-            dashboard_state["current_phase"] = None
             logger.info("Agent finished: %s", result[:200] if result else "(empty)")
-        except Exception as exc:
+        except asyncio.CancelledError:
+            logger.info("Agent task cancelled")
+        except Exception:
             logger.exception("Agent run failed")
-            dashboard_state["agent_status"] = "error"
-            dashboard_state["current_phase"] = None
+            # Emit error event so the dashboard knows
+            event_bus.emit(AgentEvent(
+                type="ERROR",
+                step=0,
+                timestamp=time.time(),
+                meta={"error": "Agent run failed"},
+            ))
 
     _agent_task = asyncio.create_task(_run_agent(task))
-    return JSONResponse({"status": "accepted", "task": task[:200]})
+    return JSONResponse({"status": "started"})
 
 
 @app.post("/api/stop")
 async def stop_agent():
-    """Stop the currently running agent (cancel background task)."""
+    """Cancel the currently running agent task."""
     global _agent_task
     if _agent_task and not _agent_task.done():
         _agent_task.cancel()
     _agent_task = None
-    dashboard_state["agent_status"] = "stopped"
-    dashboard_state["current_phase"] = None
     return JSONResponse({"status": "stopped"})
 
 
 @app.post("/api/reset")
 async def reset_state():
-    """Reset all dashboard counters."""
-    for key in (
-        "step_count", "llm_calls", "memory_events",
-        "z3_pass", "z3_fail", "total_events",
-    ):
-        dashboard_state[key] = 0
-    dashboard_state["total_cost_usd"] = 0.0
-    dashboard_state["aio_ratio"] = 0.0
-    dashboard_state["inference_time_ms"] = 0.0
-    dashboard_state["wall_time_s"] = 0.0
-    dashboard_state["agent_status"] = "idle"
-    dashboard_state["current_phase"] = None
-    dashboard_state["metacognitive_system"] = 1
-    dashboard_state["validation_level"] = 1
-    dashboard_state["last_query"] = ""
-    dashboard_state["last_response"] = ""
-    dashboard_state["last_response_system"] = 1
-    dashboard_state["sub_agents"] = []
-    dashboard_state["evolution_stats"] = {
-        "grid_size": 0, "best_fitness": 0.0,
-        "generation": 0, "cells": [],
-    }
+    """Clear event bus buffer and reset system reference."""
+    global system, _agent_task
+
+    if _agent_task and not _agent_task.done():
+        _agent_task.cancel()
+    _agent_task = None
+
+    # Clear the ring buffer (EventBus has no clear() -- replace it)
+    event_bus._buffer.clear()
+    event_bus._async_queues.clear()
+
+    system = None
     return JSONResponse({"status": "reset"})
 
 
 @app.get("/api/providers")
 async def list_providers():
     """Return available LLM providers and their status."""
-    import shutil
-    providers = []
-    # Codex CLI
     codex_ok = shutil.which("codex") is not None
-    providers.append({"name": "GPT-5.3 Codex", "tier": "codex", "available": codex_ok})
-    providers.append({"name": "GPT-5.2", "tier": "codex_max", "available": codex_ok})
-    # Google Gemini (needs API key)
     gemini_ok = bool(os.environ.get("GOOGLE_API_KEY"))
-    providers.append({"name": "Gemini 3.1 Pro", "tier": "reasoner", "available": gemini_ok})
-    providers.append({"name": "Gemini 3.1 Flash Lite", "tier": "fast", "available": gemini_ok})
-    providers.append({"name": "Gemini 3 Flash", "tier": "mutator", "available": gemini_ok})
-    providers.append({"name": "Gemini 2.5 Flash Lite", "tier": "budget", "available": gemini_ok})
+
+    providers = [
+        {"name": "GPT-5.3 Codex", "tier": "codex", "available": codex_ok},
+        {"name": "GPT-5.2", "tier": "codex_max", "available": codex_ok},
+        {"name": "Gemini 3.1 Pro", "tier": "reasoner", "available": gemini_ok},
+        {"name": "Gemini 3.1 Flash Lite", "tier": "fast", "available": gemini_ok},
+        {"name": "Gemini 3 Flash", "tier": "mutator", "available": gemini_ok},
+        {"name": "Gemini 2.5 Flash Lite", "tier": "budget", "available": gemini_ok},
+        {"name": "Gemini 2.5 Flash", "tier": "fallback", "available": gemini_ok},
+    ]
     return JSONResponse(providers)
 
 
 # ---------------------------------------------------------------------------
-# WebSocket -- stream JSONL events in real-time
+# WebSocket -- push events from EventBus in real-time
 # ---------------------------------------------------------------------------
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
 
-    # 1. Replay existing events (send last 200 lines to avoid overwhelming)
-    if LOG_FILE.exists():
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        # Send only the tail for initial catch-up
-        tail = lines[-200:] if len(lines) > 200 else lines
-        for line in tail:
-            stripped = line.strip()
-            if stripped:
-                await websocket.send_text(stripped)
-                try:
-                    _update_state_from_event(json.loads(stripped))
-                except (json.JSONDecodeError, Exception):
-                    pass
-
-    # Use binary mode for tailing so byte offsets from stat() are consistent.
-    last_pos = LOG_FILE.stat().st_size if LOG_FILE.exists() else 0
-
     try:
-        while True:
-            if LOG_FILE.exists():
-                current_size = LOG_FILE.stat().st_size
-                # Handle file truncation / recreation
-                if current_size < last_pos:
-                    last_pos = 0
-                if current_size > last_pos:
-                    with open(LOG_FILE, "rb") as f:
-                        f.seek(last_pos)
-                        for raw_line in f:
-                            stripped = raw_line.decode("utf-8", errors="replace").strip()
-                            if stripped:
-                                await websocket.send_text(stripped)
-                                try:
-                                    _update_state_from_event(json.loads(stripped))
-                                except (json.JSONDecodeError, Exception):
-                                    pass
-                        last_pos = f.tell()
-            await asyncio.sleep(0.1)
+        # 1. Send buffered events (initial state catch-up)
+        buffered = event_bus.query(last_n=100)
+        for evt in buffered:
+            await websocket.send_text(_event_to_json(evt))
+
+        # 2. Stream new events as they arrive
+        async for evt in event_bus.stream():
+            await websocket.send_text(_event_to_json(evt))
+
+    except WebSocketDisconnect:
+        logger.debug("WebSocket client disconnected")
     except Exception:
-        pass  # Client disconnected
+        logger.debug("WebSocket connection closed")
 
 
 # ---------------------------------------------------------------------------
@@ -379,5 +328,5 @@ async def websocket_endpoint(websocket: WebSocket):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Starting YGN-SAGE Dashboard on http://localhost:8000")
+    print("Starting YGN-SAGE v2 Dashboard on http://localhost:8000")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
