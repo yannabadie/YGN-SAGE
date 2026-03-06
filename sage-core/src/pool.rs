@@ -91,6 +91,17 @@ impl AgentPool {
     pub fn len(&self) -> usize {
         self.agents.len()
     }
+
+    /// Check if pool is empty
+    pub fn is_empty(&self) -> bool {
+        self.agents.is_empty()
+    }
+}
+
+impl Default for AgentPool {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AgentPool {

@@ -155,7 +155,7 @@ impl WorkingMemory {
     /// Legacy support: returns the active buffer for simple tools.
     pub fn recent_events(&self, n: usize) -> Vec<MemoryEvent> {
         let start = self.active_buffer.len().saturating_sub(n);
-        self.active_buffer[start..].iter().cloned().collect()
+        self.active_buffer[start..].to_vec()
     }
 
     /// Export the latest compacted Arrow chunk to Python (Zero-Copy)

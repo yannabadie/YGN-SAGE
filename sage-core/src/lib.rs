@@ -4,6 +4,7 @@ pub mod agent;
 pub mod hardware;
 pub mod memory;
 pub mod pool;
+#[cfg(feature = "sandbox")]
 pub mod sandbox;
 pub mod simd_sort;
 pub mod types;
@@ -19,9 +20,12 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<memory::MemoryEvent>()?;
     m.add_class::<memory::WorkingMemory>()?;
     m.add_class::<hardware::HardwareProfile>()?;
-    m.add_class::<sandbox::wasm::WasmSandbox>()?;
-    m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
-    m.add_class::<sandbox::ebpf::SnapBPF>()?;
+    #[cfg(feature = "sandbox")]
+    {
+        m.add_class::<sandbox::wasm::WasmSandbox>()?;
+        m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
+        m.add_class::<sandbox::ebpf::SnapBPF>()?;
+    }
     m.add_class::<memory::rag_cache::RagCache>()?;
 
     // Add SIMD functions

@@ -60,10 +60,10 @@ impl HardwareProfile {
             if let Some(_feature_info) = cpuid.get_feature_info() {
                 has_avx2 = cpuid
                     .get_extended_feature_info()
-                    .map_or(false, |ext| ext.has_avx2());
+                    .is_some_and(|ext| ext.has_avx2());
                 has_avx512 = cpuid
                     .get_extended_feature_info()
-                    .map_or(false, |ext| ext.has_avx512f());
+                    .is_some_and(|ext| ext.has_avx512f());
             }
             has_neon = false;
         }

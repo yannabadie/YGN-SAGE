@@ -34,6 +34,7 @@ fn event_schema() -> Arc<Schema> {
 /// in the S-MMU, and return the assigned chunk ID.
 ///
 /// The caller must clear the active buffer after a successful call.
+#[allow(clippy::too_many_arguments)]
 pub fn compact_buffer_to_arrow(
     agent_id: &str,
     parent_id: &Option<String>,

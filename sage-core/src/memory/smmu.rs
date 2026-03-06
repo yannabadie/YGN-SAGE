@@ -53,13 +53,19 @@ pub struct MultiViewMMU {
     next_chunk_id: usize,
 }
 
-impl MultiViewMMU {
-    pub fn new() -> Self {
+impl Default for MultiViewMMU {
+    fn default() -> Self {
         Self {
             graph: DiGraph::new(),
             chunk_map: HashMap::new(),
             next_chunk_id: 0,
         }
+    }
+}
+
+impl MultiViewMMU {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Number of chunks registered in the S-MMU.

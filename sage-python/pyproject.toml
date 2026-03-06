@@ -14,10 +14,11 @@ dependencies = [
 
 [project.optional-dependencies]
 google = ["google-genai>=1"]
+openai = ["openai>=1.50"]
 arrow = ["pyarrow>=18"]
 z3 = ["z3-solver>=4.13"]
 ui = ["fastapi>=0.115", "uvicorn>=0.34"]
-all = ["ygn-sage[google,arrow,z3,ui]"]
+all = ["ygn-sage[google,openai,arrow,z3,ui]"]
 dev = [
     "pytest>=8",
     "pytest-asyncio>=0.25",
