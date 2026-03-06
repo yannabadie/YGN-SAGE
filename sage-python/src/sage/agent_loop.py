@@ -230,7 +230,7 @@ class AgentLoop:
 
             # === THINK: Call LLM ===
             model_name = self.config.llm.model
-            self._emit(LoopPhase.THINK, model=model_name, step=self.step_count)
+            self._emit(LoopPhase.THINK, model=model_name)
 
             t0 = time.perf_counter()
             # ExoCortex passive grounding

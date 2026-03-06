@@ -4,7 +4,6 @@ Model IDs loaded from: env vars > config/models.toml > hardcoded defaults.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Literal
 
@@ -45,7 +44,7 @@ class ModelRouter:
         toml_tiers: dict[str, str] = {}
         for search_dir in [
             Path.cwd() / "config",
-            Path(__file__).parent.parent.parent / "config",
+            Path(__file__).parent.parent.parent.parent / "config",
             Path.home() / ".sage",
         ]:
             toml_path = search_dir / "models.toml"
