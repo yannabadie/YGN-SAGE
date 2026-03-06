@@ -4,7 +4,7 @@
 
 It combines a Rust execution core (`sage-core`) with a Python orchestration layer (`sage-python`), a tripartite cognitive routing system (S1/S2/S3), and a real-time control dashboard.
 
-> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 217 Python tests + 38 Rust tests passing. Not yet battle-tested in production environments.
+> **Status**: Research prototype under active development. Core agent loop and all 5 pillars are functional with 245 Python tests + 38 Rust tests passing (283 total). CI via GitHub Actions. Not yet battle-tested in production environments.
 
 ## Core Architecture
 
@@ -134,6 +134,8 @@ YGN-SAGE uses a tiered model router with automatic fallback:
 | `budget` | `gemini-2.5-flash-lite` | Bulk cheap transforms |
 | `fallback` | `gemini-2.5-flash` | If 3.x unavailable |
 
+Model IDs are configurable via `config/models.toml` or environment variables (`SAGE_MODEL_FAST`, `SAGE_MODEL_REASONER`, etc.). See [Configuration](#configuration).
+
 All providers support **structured JSON output** (via `--output-schema` for Codex, `response_schema` for Gemini).
 
 `GoogleProvider.generate()` also accepts `file_search_store_names` for ExoCortex grounding.
@@ -184,7 +186,7 @@ cd sage-discover && pip install -e . && cd ..
 
 # 7. Verify installation
 cd sage-python && python -m pytest tests/ -v
-# Expected: 182 passed, 1 skipped
+# Expected: 200 passed, 1 skipped
 ```
 
 ### Running the Dashboard
@@ -265,12 +267,12 @@ python -m discover.pipeline --mode migrate
 # Python tests (sage-python)
 cd sage-python
 python -m pytest tests/ -v
-# Expected: 182 passed, 1 skipped
+# Expected: 200 passed, 1 skipped
 
 # Discovery pipeline tests (sage-discover)
 cd sage-discover
 python -m pytest tests/ -v
-# Expected: 35 passed
+# Expected: 45 passed
 
 # Rust tests (requires Rust 1.90+)
 cd sage-core
@@ -317,10 +319,7 @@ YGN-SAGE/
 |   |-- app.py              # FastAPI backend (REST + WebSocket)
 |   +-- static/index.html   # Single-file dashboard (Tailwind + vanilla JS)
 |-- docs/                   # Architecture Decision Records + plans
-|-- conductor/              # Strategic track planning
-|-- memory-bank/            # AI agent context persistence
 |-- Researches/             # Research papers + experimental code
-|-- research_journal/       # Hypothesis logs (79 experiments)
 +-- debug/                  # Diagnostic scripts
 ```
 
@@ -332,10 +331,21 @@ YGN-SAGE/
 |----------|----------|-------------|
 | `GOOGLE_API_KEY` | Yes | Google AI API key for Gemini models |
 | `SAGE_EXOCORTEX_STORE` | No | Google GenAI File Search store resource name (e.g. `file_search_stores/...`). Enables passive + active ExoCortex grounding. |
+| `SAGE_MODEL_<TIER>` | No | Override model ID per tier (e.g. `SAGE_MODEL_FAST=gemini-2.5-flash`) |
 
 Codex CLI authenticates via `codex login` (ChatGPT Pro account).
 
-### Model Selection
+### Model Configuration
+
+Model IDs are resolved in order: **env var > `config/models.toml` > hardcoded defaults**.
+
+```bash
+# Override a single tier via env var
+export SAGE_MODEL_FAST="gemini-2.5-flash"
+
+# Or edit the TOML config (searched in: ./config/, ~/.sage/)
+cat sage-python/config/models.toml
+```
 
 Override the default LLM tier when booting:
 
@@ -349,8 +359,6 @@ system = boot_agent_system(llm_tier="reasoner")
 # Use Codex for coding tasks
 system = boot_agent_system(llm_tier="codex")
 ```
-
-Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 ## Tech Stack
 
@@ -368,12 +376,13 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 ## Status (March 2026)
 
-- **217 Python tests passing** (182 sage-python + 35 sage-discover) + 38 Rust tests
+- **283 tests passing** (200 sage-python + 45 sage-discover + 38 sage-core Rust)
+- **CI/CD**: GitHub Actions with 3 jobs (Rust fmt+clippy+test, Python sage, Python discover)
 - **Dashboard**: Functional with real-time telemetry, response pane, and event streaming
 - **Cognitive Routing**: Tripartite S1/S2/S3 with AVR sandbox loop (S2) and Z3 formal proofs (S3)
-- **Z3 Prompt Alignment**: S3/retry/escalation prompts teach Z3 DSL syntax to LLM
+- **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking, async metacognition, independent S2/S3 retry budgets, structured `AgentEvent` observability
 - **LLM Integration**: Google Gemini fully wired (incl. File Search grounding), Codex CLI optional
-- **Agent Loop**: Full perceive->think->act->learn cycle with CGRS self-braking + ExoCortex passive grounding
+- **Model Config**: Externalized to `config/models.toml` with env var overrides (`SAGE_MODEL_<TIER>`)
 - **Memory**: MEM1 per-step internal state + 9 agent tools (7 AgeMem + 2 ExoCortex) + Arrow compaction
 - **Evolution**: MAP-Elites topology search + LLM-driven mutation with DGM context + eBPF evaluation + SnapBPF
 - **Strategy**: PSRO meta-solver with VAD-CFR and SHOR-PSRO variants
@@ -384,8 +393,6 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 
 - **Sandbox default is local subprocess** -- enable Docker or Wasm for isolation
 - **Episodic memory is in-memory only** -- no cross-session persistence yet
-- **No CI pipeline** -- tests are run locally
-- **Model IDs are hardcoded** in `router.py` -- externalize to config if needed
 
 ## Documentation
 
@@ -398,11 +405,11 @@ Or edit `sage-python/src/sage/llm/router.py` to change model mappings.
 | [Phase 3 Implementation](docs/plans/2026-03-05-phase3-implementation.md) | TDD implementation plan (5 tasks) |
 | [Knowledge Pipeline Design](docs/plans/2026-03-05-knowledge-pipeline-design.md) | ExoCortex auto-refreshing pipeline design |
 | [Knowledge Pipeline Plan](docs/plans/2026-03-05-knowledge-pipeline.md) | Implementation plan (6 tasks, TDD) |
+| [Hardening Design](docs/plans/2026-03-06-hardening-maturation-design.md) | Expert review-driven hardening design |
+| [Hardening Plan](docs/plans/2026-03-06-hardening-maturation.md) | 12-task TDD implementation plan |
 | [Codebase Audit](docs/plans/2026-03-05-codebase-audit.md) | Full connectivity audit (March 2026) |
 | [OpenSAGE-surpass Plan](docs/plans/2026-03-05-opensage-surpass-implementation.md) | 5-pillar implementation plan |
 | [Architecture Design](docs/plans/2026-03-02-ygn-sage-architecture-design.md) | Original architecture spec |
-| [memory-bank/](memory-bank/) | AI agent context persistence files |
-| [conductor/](conductor/) | Strategic track planning and roadmaps |
 | [Researches/](Researches/) | Curated research papers (AlphaEvolve, PSRO, etc.) |
 
 ## License

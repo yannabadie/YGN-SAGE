@@ -11,12 +11,14 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 - `ui/` - Control Dashboard (FastAPI + Tailwind + WebSocket)
 - `docs/plans/` - Architecture and implementation plans
 - `Researches/` - Research papers (OpenSage, AlphaEvolve, PSRO, etc.)
+- `.github/workflows/ci.yml` - CI pipeline (Rust + Python sage + Python discover)
 
 ### Key Python Modules (sage-python/src/sage/)
 - `boot.py` - Boot sequence, wires all pillars + ExoCortex into `AgentSystem`
-- `agent_loop.py` - Structured perceive->think->act->learn runtime with S2 AVR loop and Z3-aligned S3 prompts
+- `agent_loop.py` - Structured perceive->think->act->learn runtime with S2 AVR loop, Z3-aligned S3 prompts, AgentEvent schema, independent S2/S3 retry budgets
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
-- `llm/router.py` - Model Router with 7 tiers (fast/mutator/reasoner/codex/codex_max/budget/fallback)
+- `llm/router.py` - Model Router with 7 tiers, data-driven lookup from TOML + env vars
+- `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (`file_search_store_names`)
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
 - `strategy/metacognition.py` - Stanovich S1/S2/S3 tripartite routing + CGRS self-braking
@@ -57,7 +59,7 @@ Agent Development Kit built on 5 cognitive pillars: Topology, Tools, Memory, Evo
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (182 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (200 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -81,7 +83,7 @@ maturin develop                # Build + install Python bindings
 ```bash
 cd sage-discover
 pip install -e .               # Install sage-discover
-python -m pytest tests/ -v     # Run tests (35 passed)
+python -m pytest tests/ -v     # Run tests (45 passed)
 python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
 ```
 
@@ -109,8 +111,13 @@ cd sage-discover && pip install -e .
 ```bash
 export GOOGLE_API_KEY="..."                  # Required for Gemini models
 export SAGE_EXOCORTEX_STORE="projects/..."   # Optional: File Search store for ExoCortex
+export SAGE_MODEL_FAST="gemini-2.5-flash"    # Optional: override any tier model ID
 # Codex CLI uses ChatGPT Pro account (codex login)
 ```
+
+### Model Config Resolution
+Model IDs resolved in order: env var `SAGE_MODEL_<TIER>` > `config/models.toml` > hardcoded defaults.
+TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ### Structured Output
 - Codex: `--output-schema file.json` (requires `additionalProperties: false`)
@@ -148,6 +155,12 @@ export SAGE_EXOCORTEX_STORE="projects/..."   # Optional: File Search store for E
 - S2->S3 escalation prompt mentions all 4 assertion types
 - `kg_rlvr.py` parses `<think>` blocks, scores each step via regex + Z3
 
+## Observability
+- **AgentEvent schema** (v1): Versioned dataclass emitted on every loop phase (PERCEIVE, THINK, ACT, LEARN)
+- Fields: `type`, `step`, `timestamp`, `schema_version`, `latency_ms`, `cost_usd`, `tokens_est`, `model`, `system`, `routing_source`, `validation`, `meta`
+- `_emit()` constructs `AgentEvent` and calls `on_event` callback (default: JSONL to `agent_stream.jsonl`)
+- Dashboard detects `schema_version` and adapts display
+
 ## Key Design Principles
 - AI-centered: agents create their own topology, tools, and memory
 - Self-evolving: evolutionary pipeline with DGM strategic context improves all components
@@ -184,14 +197,3 @@ python -m discover.pipeline --mode migrate           # Bootstrap from ~/.sage/mi
 Pipeline: `discover()` -> `curate()` -> `ingest_all()` -> ExoCortex store.
 Manifest dedup: `~/.sage/manifest.json`. PDFs cached in `~/.sage/papers/{domain}/`.
 
-### Legacy NotebookLM Reference
-
-Package `notebooklm-py` (v0.3.2) is still installed but deprecated. Use ExoCortex + Knowledge Pipeline instead.
-
-| ID prefix | Title | Use for |
-|-----------|-------|---------|
-| `34d65dbb` | YGN-SAGE: Core Research & MARL | Game theory, PSRO, VAD-CFR |
-| `ba22b122` | YGN-SAGE: Technical Implementation | Architecture, metacognition |
-| `dcf45958` | Discover AI: Frontiers of Agentic Reasoning | SOTA research |
-| `097c4c5c` | MetaScaffold_Core | Meta-reasoning, cognitive architectures |
-| `7ab1d708` | YGN-ExoCortex | Memory architecture, S-MMU, Arrow |
