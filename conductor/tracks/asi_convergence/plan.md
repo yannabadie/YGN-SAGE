@@ -1,34 +1,25 @@
-# ASI Convergence Plan (2026+)
+# Advanced Architecture Plan (2026+)
 
-Based on deep audits of NotebookLM research synthesis, this track represents the leap from SOTA to an ASI baseline by refactoring the core pillars of YGN-SAGE.
+This track consolidates research-driven improvements across YGN-SAGE's five cognitive pillars, based on findings from curated research synthesis.
 
-## Phase 1: Cognitive Memory Refactoring (S-MMU)
+## Phase 1: Memory Architecture (S-MMU)
 - [x] **Task 1: TierMem Architecture**
-  - Implement a two-tier memory hierarchy in `sage-core`.
-  - Retain `WorkingMemory` (Arrow) for high-density execution tensors.
-  - Integrate a Rust-based DAG (e.g., `petgraph`) for contextual memory.
-- [x] **Task 2: Context-Aware MCP (CA-MCP)**
-  - Implement the A-MEM / MEM1 standard.
-  - Agents must update a unified semantic node instead of linearly appending context (Active Forgetting).
+  - Two-tier memory hierarchy in `sage-core`: Arrow-backed `WorkingMemory` for execution data + `petgraph` DAG for contextual routing.
+- [x] **Task 2: Context-Aware Memory (CA-MCP)**
+  - MEM1 per-step internal state generation. Agents update a rolling semantic summary instead of linearly appending context.
 
-## Phase 2: Neuro-Symbolic Wasm/eBPF Execution
-- [x] **Task 3: Deprecate Docker**
-  - Replace legacy Docker fallback with Firecracker micro-VMs or extended `wasmtime`.
-  - Implement SnapBPF memory restoration hooking into OS page cache.
-- [x] **Task 4: SMT Firewall (Z3 Validator)**
-  - Integrate Z3 (Rust bindings) in `EbpfSandbox`.
-  - Mechanize the validation of code AST before JIT compilation to eliminate "Implementation Drift".
-  - Implemented `z3_validator.rs` in `sage-core`.
+## Phase 2: Sandbox Execution (Wasm/eBPF)
+- [x] **Task 3: Multi-Tier Sandboxing**
+  - Wasm (wasmtime) + eBPF (solana_rbpf) sandboxes with SnapBPF CoW memory snapshots.
+- [x] **Task 4: Z3 Formal Verification**
+  - Z3 DSL integration for S3 Process Reward Model. Validates code assertions (bounds, loops, arithmetic, invariants) before execution.
 
-## Phase 3: Dynamic Topology via MCTS
-- [x] **Task 5: AFlow Implementation**
-  - Replace static agent workflows with a `TopologyPlanner`.
-  - Use Stochastic Differentiable Tree Search (S-DTS) to explore agent DAG configurations.
-  - Use the newly built H96 Zero-Copy router to rapidly evaluate node probabilities.
+## Phase 3: Dynamic Topology
+- [x] **Task 5: MAP-Elites Topology Search**
+  - Evolutionary topology planner using MAP-Elites to explore agent DAG configurations with fitness-based selection.
 
-## Phase 4: Open-Ended Evolution (DGM & SAMPO)
-- [x] **Task 6: Whole-System Evolution**
-  - Upgrade the MAP-Elites `EvolutionEngine` to mutate hyperparameters, memory structures, and tools, not just prompts/code.
-  - Implement SAMPO (Stable Agentic Multi-turn Policy Optimization) using sequence-level clipping instead of token-level clipping.
-- [x] **Task 7: System 3 AI & KG-RLVR**
-  - Introduce Process Reward Models based on Knowledge Graphs ($R_{path}$) to force rigorous compositional logic in agent reasoning paths (`<think>`).
+## Phase 4: Evolution & Verification (DGM & SAMPO)
+- [x] **Task 6: DGM-Guided Evolution**
+  - MAP-Elites `EvolutionEngine` with SAMPO strategic action selection (5 actions: optimize, fix, explore, constrain, simplify). LLM-driven mutation with DGM context injection.
+- [x] **Task 7: S3 Process Reward Model (KG-RLVR)**
+  - Knowledge-graph-informed process reward scoring of agent reasoning paths via `<think>` block analysis and Z3 verification.
