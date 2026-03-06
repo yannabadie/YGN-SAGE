@@ -13,7 +13,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="YGN-SAGE Knowledge Pipeline")
     parser.add_argument(
         "--mode",
-        choices=["nightly", "on-demand", "migrate"],
+        choices=["nightly", "on-demand", "migrate", "watch"],
         default="nightly",
     )
     parser.add_argument(
@@ -39,6 +39,16 @@ def main() -> None:
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+
+    # --- Watch mode: detect new unprofiled models ---
+    if args.mode == "watch":
+        from discover.model_watcher import ModelWatcher
+
+        watcher = ModelWatcher()
+        report_text = asyncio.run(watcher.report())
+        print(report_text)
+        return
+
     since = date.fromisoformat(args.since) if args.since else None
     report = asyncio.run(
         run_pipeline(
