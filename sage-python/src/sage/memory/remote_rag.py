@@ -11,17 +11,21 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
+# Known stable store name -- avoids silent disable when .env is not loaded.
+# Resolution order: explicit param > SAGE_EXOCORTEX_STORE env var > DEFAULT_STORE.
+DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
+
 
 class ExoCortex:
     """Persistent RAG store backed by Google GenAI File Search API."""
 
     def __init__(self, store_name: str | None = None):
-        self.store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE")
+        self.store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
         self._api_key = os.environ.get("GOOGLE_API_KEY", "")
 
     @property
     def is_available(self) -> bool:
-        return bool(self._api_key)
+        return bool(self._api_key and self.store_name)
 
     def get_file_search_tool(self) -> Any | None:
         """Return a types.Tool for injection into Gemini generate() calls.
