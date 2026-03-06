@@ -4,12 +4,10 @@ from __future__ import annotations
 import math
 import re
 import time
-import json
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import Any, Callable
-from pathlib import Path
 
 from sage.agent import AgentConfig, Agent
 from sage.llm.base import LLMProvider, LLMResponse, Message, Role, ToolDef
@@ -21,7 +19,6 @@ from sage.topology.kg_rlvr import ProcessRewardModel
 
 log = logging.getLogger(__name__)
 
-STREAM_FILE = Path("docs/plans/agent_stream.jsonl")
 
 # Approximate cost per 1K tokens (USD) for dashboard estimation
 _COST_PER_1K = {
@@ -154,14 +151,6 @@ class AgentLoop:
 
     def _default_event_handler(self, event: AgentEvent) -> None:
         log.info(f"[{event.type}] step={event.step} model={event.model}")
-        try:
-            STREAM_FILE.parent.mkdir(parents=True, exist_ok=True)
-            import dataclasses
-            with open(STREAM_FILE, "a", encoding="utf-8") as f:
-                d = dataclasses.asdict(event)
-                f.write(json.dumps(d, default=str) + "\n")
-        except Exception:
-            pass
 
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle."""

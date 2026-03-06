@@ -1,0 +1,131 @@
+"""EventBus — central in-process event dispatch system for YGN-SAGE.
+
+Thread-safe event bus with:
+- Synchronous subscriber callbacks
+- Async stream() for WebSocket consumers
+- Bounded ring buffer with configurable max size
+- Phase-filtered queries
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+import uuid
+from collections import deque
+from typing import Any, AsyncIterator, Callable
+
+from sage.agent_loop import AgentEvent
+
+log = logging.getLogger(__name__)
+
+DEFAULT_MAX_BUFFER = 5000
+
+
+class EventBus:
+    """Central event bus for the YGN-SAGE agent framework.
+
+    Args:
+        max_buffer: Maximum number of events to retain in the ring buffer.
+                    Oldest events are evicted when the limit is exceeded.
+    """
+
+    def __init__(self, max_buffer: int = DEFAULT_MAX_BUFFER) -> None:
+        self.max_buffer = max_buffer
+        self._buffer: deque[AgentEvent] = deque(maxlen=max_buffer)
+        self._lock = threading.Lock()
+        self._subscribers: dict[str, Callable[[AgentEvent], Any]] = {}
+        self._async_queues: list[asyncio.Queue[AgentEvent]] = []
+
+    # ------------------------------------------------------------------
+    # Emit
+    # ------------------------------------------------------------------
+    def emit(self, event: AgentEvent) -> None:
+        """Dispatch an event to all subscribers and append to buffer.
+
+        Thread-safe. Subscriber exceptions are logged and swallowed.
+        """
+        with self._lock:
+            self._buffer.append(event)
+            subscribers = list(self._subscribers.values())
+            queues = list(self._async_queues)
+
+        # Dispatch outside the lock to avoid holding it during callbacks
+        for cb in subscribers:
+            try:
+                cb(event)
+            except Exception:
+                log.exception("EventBus subscriber error")
+
+        # Fan-out to async stream consumers
+        for q in queues:
+            try:
+                q.put_nowait(event)
+            except asyncio.QueueFull:
+                log.warning("EventBus: async queue full, dropping event")
+
+    # ------------------------------------------------------------------
+    # Subscribe / Unsubscribe
+    # ------------------------------------------------------------------
+    def subscribe(self, callback: Callable[[AgentEvent], Any]) -> str:
+        """Register a synchronous callback. Returns a subscription ID."""
+        sub_id = str(uuid.uuid4())
+        with self._lock:
+            self._subscribers[sub_id] = callback
+        return sub_id
+
+    def unsubscribe(self, sub_id: str) -> None:
+        """Remove a subscription by ID. No-op if ID is unknown."""
+        with self._lock:
+            self._subscribers.pop(sub_id, None)
+
+    # ------------------------------------------------------------------
+    # Async Stream
+    # ------------------------------------------------------------------
+    async def stream(self) -> AsyncIterator[AgentEvent]:
+        """Yield events as they arrive. For WebSocket consumers.
+
+        Each call to stream() creates an independent consumer queue.
+        The caller is responsible for breaking out of the loop when done.
+        """
+        q: asyncio.Queue[AgentEvent] = asyncio.Queue()
+        with self._lock:
+            self._async_queues.append(q)
+        try:
+            while True:
+                event = await q.get()
+                yield event
+        finally:
+            with self._lock:
+                try:
+                    self._async_queues.remove(q)
+                except ValueError:
+                    pass
+
+    # ------------------------------------------------------------------
+    # Query
+    # ------------------------------------------------------------------
+    def query(
+        self,
+        phase: str | None = None,
+        last_n: int = 50,
+    ) -> list[AgentEvent]:
+        """Query buffered events.
+
+        Args:
+            phase: If set, filter to events where event.type == phase.
+            last_n: Maximum number of events to return (most recent).
+
+        Returns:
+            List of matching events, oldest first.
+        """
+        with self._lock:
+            events = list(self._buffer)
+
+        if phase is not None:
+            events = [e for e in events if e.type == phase]
+
+        if last_n is not None and last_n < len(events):
+            events = events[-last_n:]
+
+        return events

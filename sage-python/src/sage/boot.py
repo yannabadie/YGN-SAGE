@@ -33,6 +33,7 @@ from sage.sandbox.manager import SandboxManager
 from sage.memory.episodic import EpisodicMemory
 from sage.memory.remote_rag import ExoCortex
 from sage.tools.memory_tools import create_memory_tools
+from sage.events.bus import EventBus
 
 
 @dataclass
@@ -45,6 +46,7 @@ class AgentSystem:
     topology_population: TopologyPopulation
     memory_agent: MemoryAgent
     tool_registry: ToolRegistry
+    event_bus: EventBus
 
     async def run(self, task: str) -> str:
         # 1. Assess task complexity
@@ -88,6 +90,7 @@ def boot_agent_system(
     use_mock_llm: bool = False,
     llm_tier: str = "auto",
     agent_name: str = "sage-main",
+    event_bus: EventBus | None = None,
 ) -> AgentSystem:
     """Initialize the complete agent stack.
 
@@ -163,12 +166,16 @@ def boot_agent_system(
         validation_level=1 if llm_config.provider == "codex" else 2,
     )
 
+    # Event bus (central nervous system)
+    event_bus = event_bus or EventBus()
+
     # Agent loop
     loop = AgentLoop(
         config=config,
         llm_provider=provider,
         tool_registry=tool_registry,
         memory_compressor=memory_compressor,
+        on_event=event_bus.emit,
     )
     loop.agent_pool = agent_pool
     loop.metacognition = metacognition
@@ -194,4 +201,5 @@ def boot_agent_system(
         topology_population=topology_population,
         memory_agent=memory_agent,
         tool_registry=tool_registry,
+        event_bus=event_bus,
     )
