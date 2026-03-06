@@ -1,4 +1,4 @@
-"""RL-guided topology evolution -- learns best topologies per task type."""
+"""Experience-based Quality-Diversity topology archive -- learns best topologies per task type."""
 from __future__ import annotations
 
 import logging
@@ -18,7 +18,7 @@ class TopologyRecord:
     uses: int = 0
 
 
-class TopologyEvolutionEngine:
+class TopologyArchive:
     """Learns and evolves optimal topologies per task type."""
 
     def __init__(self, max_records_per_type: int = 50):

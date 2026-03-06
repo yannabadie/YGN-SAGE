@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Surpass AdaptOrch and OpenSage on every dimension — Z3-verified topologies, self-programming agents, RL-guided evolution, drift monitoring, continuous self-improvement loop.
+**Goal:** Surpass AdaptOrch and OpenSage on every dimension — Z3-verified topologies, self-programming agents, experience-based evolution, drift monitoring, continuous self-improvement loop.
 
-**Architecture:** 8 tasks in dependency order. Tasks 17-19 are parallelizable (Z3 topology, dynamic agent factory, drift monitor). Task 20 (topology evolution) depends on 17+18. Task 21 (benchmarks) depends on all. Task 22 (sage-discover v2) is independent. Task 23 (scaling law) depends on 21. Task 24 (self-evolution loop) ties everything together.
+**Architecture:** 8 tasks in dependency order. Tasks 17-19 are parallelizable (Z3 topology, dynamic agent factory, drift monitor). Task 20 (topology evolution) depends on 17+18. Task 21 (benchmarks) depends on all. Task 22 (sage-discover v2) is independent. Task 23 (coordination model) depends on 21. Task 24 (self-evolution loop) ties everything together.
 
 **Tech Stack:** Python 3.12+, Z3 (existing), MAP-Elites (existing), EventBus (existing), ModelRegistry (existing), aiosqlite (existing). No new dependencies.
 
@@ -533,21 +533,21 @@ git commit -m "feat(monitoring): add DriftMonitor for agent behavioral degradati
 
 ---
 
-## Task 20: RL-Guided Topology Evolution — MAP-Elites + reward learning
+## Task 20: Experience-Based Topology Archive — MAP-Elites + reward learning
 
-**Why:** Combines our MAP-Elites (diversity) with RL (optimization). Surpasses OpenSage S-DTS + AgentConductor.
+**Why:** Combines our MAP-Elites (diversity) with experience-based optimization. Surpasses OpenSage S-DTS + AgentConductor.
 
 **Files:**
-- Create: `sage-python/src/sage/topology/rl_evolution.py`
-- Test: `sage-python/tests/test_rl_evolution.py`
+- Create: `sage-python/src/sage/topology/topology_archive.py`
+- Test: `sage-python/tests/test_topology_archive.py`
 - Modify: `sage-python/src/sage/orchestrator.py` (use evolved topologies)
 
 **Step 1: Write failing tests**
 
 ```python
-# sage-python/tests/test_rl_evolution.py
+# sage-python/tests/test_topology_archive.py
 import pytest
-from sage.topology.rl_evolution import TopologyEvolutionEngine, TopologyRecord
+from sage.topology.topology_archive import TopologyArchive, TopologyRecord
 from sage.topology.z3_topology import TopologySpec
 
 
@@ -560,13 +560,13 @@ def test_record_creation():
     assert rec.score == 0.85
 
 def test_engine_stores_record():
-    engine = TopologyEvolutionEngine()
+    engine = TopologyArchive()
     spec = TopologySpec(agents=["a"], edges=[], topology_type="parallel")
     engine.record(spec, score=0.9, task_type="code")
     assert engine.count() == 1
 
 def test_engine_recommends_best():
-    engine = TopologyEvolutionEngine()
+    engine = TopologyArchive()
     spec1 = TopologySpec(agents=["a"], edges=[], topology_type="parallel")
     spec2 = TopologySpec(agents=["a", "b"], edges=[("a", "b")], topology_type="sequential")
     engine.record(spec1, score=0.6, task_type="code")
@@ -576,23 +576,23 @@ def test_engine_recommends_best():
     assert best.topology_type == "sequential"
 
 def test_engine_returns_none_for_unknown_type():
-    engine = TopologyEvolutionEngine()
+    engine = TopologyArchive()
     best = engine.recommend(task_type="unknown")
     assert best is None
 
 def test_engine_tracks_task_types():
-    engine = TopologyEvolutionEngine()
+    engine = TopologyArchive()
     engine.record(TopologySpec(agents=["a"], edges=[], topology_type="parallel"), score=0.5, task_type="code")
     engine.record(TopologySpec(agents=["a"], edges=[], topology_type="parallel"), score=0.7, task_type="reasoning")
     assert "code" in engine.task_types()
     assert "reasoning" in engine.task_types()
 ```
 
-**Step 2: Implement TopologyEvolutionEngine**
+**Step 2: Implement TopologyArchive**
 
 ```python
-# sage-python/src/sage/topology/rl_evolution.py
-"""RL-guided topology evolution — learns best topologies per task type."""
+# sage-python/src/sage/topology/topology_archive.py
+"""Experience-based Quality-Diversity topology archive — learns best topologies per task type."""
 from __future__ import annotations
 
 import logging
@@ -612,7 +612,7 @@ class TopologyRecord:
     uses: int = 0
 
 
-class TopologyEvolutionEngine:
+class TopologyArchive:
     """Learns and evolves optimal topologies per task type."""
 
     def __init__(self, max_records_per_type: int = 50):
@@ -654,8 +654,8 @@ class TopologyEvolutionEngine:
 **Step 3: Run tests, commit**
 
 ```bash
-cd sage-python && python -m pytest tests/test_rl_evolution.py -v
-git commit -m "feat(topology): add RL-guided topology evolution engine"
+cd sage-python && python -m pytest tests/test_topology_archive.py -v
+git commit -m "feat(topology): add experience-based topology archive"
 ```
 
 ---
@@ -762,7 +762,7 @@ git commit -m "feat(discover): add ModelWatcher for new model detection + compet
 
 ---
 
-## Task 23: Empirical Scaling Law — Data-driven topology vs model selection
+## Task 23: Coordination Performance Model — Data-driven topology vs model selection
 
 **Why:** AdaptOrch has a theoretical scaling law. Ours is empirical and actionable.
 
@@ -770,11 +770,11 @@ git commit -m "feat(discover): add ModelWatcher for new model detection + compet
 - Create: `sage-python/src/sage/analytics/scaling.py`
 - Test: `sage-python/tests/test_scaling.py`
 
-**Step 1: Implement ScalingAnalyzer**
+**Step 1: Implement CoordinationAnalyzer**
 
 ```python
 # sage-python/src/sage/analytics/scaling.py
-"""Empirical scaling law — when does topology beat model selection?"""
+"""Coordination Performance Model — when does topology beat model selection?"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -791,8 +791,8 @@ class RunRecord:
     latency_ms: float
 
 
-class ScalingAnalyzer:
-    """Collects run data and derives empirical scaling insights."""
+class CoordinationAnalyzer:
+    """Collects run data and derives coordination performance insights."""
 
     def __init__(self):
         self._records: list[RunRecord] = []
@@ -842,7 +842,7 @@ class ScalingAnalyzer:
 
 ```bash
 cd sage-python && python -m pytest tests/test_scaling.py -v
-git commit -m "feat(analytics): add empirical scaling law analyzer (topology vs model impact)"
+git commit -m "feat(analytics): add coordination performance model (topology vs model impact)"
 ```
 
 ---
@@ -944,19 +944,19 @@ git commit -m "feat(evolution): add SelfImprovementLoop (benchmark → diagnose 
 | 17 | Z3 Topology Verification | AdaptOrch | Prove DAGs correct before execution |
 | 18 | Dynamic Agent Factory | OpenSage | Self-programming + Z3 verified |
 | 19 | Drift Monitor | Both | Real-time degradation detection |
-| 20 | RL Topology Evolution | Both | MAP-Elites + RL + Z3 combined |
+| 20 | Experience-Based Topology Archive | Both | MAP-Elites + experience-based + Z3 combined |
 | 21 | Full Benchmarks | Both | Published, honest, reproducible |
 | 22 | sage-discover v2 | Both | Model monitoring + competitive intel |
-| 23 | Empirical Scaling Law | AdaptOrch | Data-driven, not just theoretical |
+| 23 | Coordination Performance Model | AdaptOrch | Data-driven, not just theoretical |
 | 24 | Self-Evolution Loop | Everyone | Continuous self-improvement |
 
 Dependency graph:
 ```
 17 (Z3 topology) ─┐
-18 (Agent factory) ├──► 20 (RL evolution) ──► 24 (Self-evolution loop)
+18 (Agent factory) ├──► 20 (Topology archive) ──► 24 (Self-evolution loop)
 19 (Drift monitor) ─┘         │
 22 (sage-discover v2) ────────┘
-21 (Benchmarks) ──► 23 (Scaling law) ──► 24
+21 (Benchmarks) ──► 23 (Coordination model) ──► 24
 ```
 
 Tasks 17, 18, 19, 22 are parallelizable.

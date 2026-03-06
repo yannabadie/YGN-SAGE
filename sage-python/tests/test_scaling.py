@@ -1,8 +1,8 @@
-"""Tests for the empirical scaling law analyzer (sage.analytics.scaling)."""
+"""Tests for the coordination performance model (sage.analytics.scaling)."""
 
 import pytest
 
-from sage.analytics.scaling import RunRecord, ScalingAnalyzer
+from sage.analytics.scaling import RunRecord, CoordinationAnalyzer
 
 
 # ---------------------------------------------------------------------------
@@ -33,34 +33,34 @@ def test_run_record_equality():
 
 
 # ---------------------------------------------------------------------------
-# ScalingAnalyzer — add + basic state
+# CoordinationAnalyzer — add + basic state
 # ---------------------------------------------------------------------------
 
 def test_analyzer_starts_empty():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     assert len(sa._records) == 0
 
 
 def test_analyzer_add_records():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     sa.add(RunRecord("coding", "m1", "seq", 0.8, 0.01, 100.0))
     sa.add(RunRecord("coding", "m2", "par", 0.9, 0.02, 200.0))
     assert len(sa._records) == 2
 
 
 # ---------------------------------------------------------------------------
-# ScalingAnalyzer — insufficient data
+# CoordinationAnalyzer — insufficient data
 # ---------------------------------------------------------------------------
 
 def test_analyze_insufficient_data_zero():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     result = sa.analyze()
     assert result["status"] == "insufficient_data"
     assert result["records"] == 0
 
 
 def test_analyze_insufficient_data_nine():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     for i in range(9):
         sa.add(RunRecord("coding", f"m{i}", "seq", 0.5, 0.01, 100.0))
     result = sa.analyze()
@@ -69,7 +69,7 @@ def test_analyze_insufficient_data_nine():
 
 
 def test_analyze_sufficient_at_ten():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     for i in range(10):
         sa.add(RunRecord("coding", f"m{i % 2}", f"topo{i % 3}", float(i) / 10, 0.01, 100.0))
     result = sa.analyze()
@@ -78,11 +78,11 @@ def test_analyze_sufficient_at_ten():
 
 
 # ---------------------------------------------------------------------------
-# ScalingAnalyzer — variance computation
+# CoordinationAnalyzer — variance computation
 # ---------------------------------------------------------------------------
 
 def test_variance_across_groups_basic():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     groups = {"a": [1.0, 1.0], "b": [3.0, 3.0]}
     # means: a=1.0, b=3.0, overall_mean=2.0
     # variance = ((1-2)^2 + (3-2)^2) / 2 = 1.0
@@ -90,24 +90,24 @@ def test_variance_across_groups_basic():
 
 
 def test_variance_single_group():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     groups = {"a": [1.0, 2.0]}
     assert sa._variance_across_groups(groups) == 0.0
 
 
 def test_variance_identical_groups():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     groups = {"a": [5.0, 5.0], "b": [5.0, 5.0]}
     assert sa._variance_across_groups(groups) == 0.0
 
 
 # ---------------------------------------------------------------------------
-# ScalingAnalyzer — topology dominates
+# CoordinationAnalyzer — topology dominates
 # ---------------------------------------------------------------------------
 
 def test_topology_dominates_true():
     """When topology variation causes more quality spread than model variation."""
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     # Model m1 and m2 have similar scores across topologies
     # But topology "seq" and "par" have very different scores
     for _ in range(5):
@@ -124,7 +124,7 @@ def test_topology_dominates_true():
 
 def test_model_dominates():
     """When model variation causes more quality spread than topology variation."""
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     # Model "strong" always scores high, "weak" always scores low
     # regardless of topology
     for _ in range(5):
@@ -140,11 +140,11 @@ def test_model_dominates():
 
 
 # ---------------------------------------------------------------------------
-# ScalingAnalyzer — edge cases
+# CoordinationAnalyzer — edge cases
 # ---------------------------------------------------------------------------
 
 def test_analyze_all_same_scores():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     for i in range(10):
         sa.add(RunRecord("coding", f"m{i % 2}", f"t{i % 2}", 0.5, 0.01, 100.0))
     result = sa.analyze()
@@ -155,7 +155,7 @@ def test_analyze_all_same_scores():
 
 
 def test_analyze_result_keys():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     for i in range(12):
         sa.add(RunRecord("coding", f"m{i % 3}", f"t{i % 2}", float(i) / 12, 0.01, 100.0))
     result = sa.analyze()
@@ -165,7 +165,7 @@ def test_analyze_result_keys():
 
 
 def test_analyze_variances_are_rounded():
-    sa = ScalingAnalyzer()
+    sa = CoordinationAnalyzer()
     for i in range(10):
         sa.add(RunRecord("coding", f"m{i % 2}", f"t{i % 3}", float(i) / 10, 0.01, 100.0))
     result = sa.analyze()

@@ -1,4 +1,4 @@
-"""Empirical scaling law -- when does topology beat model selection?"""
+"""Coordination Performance Model -- when does topology beat model selection?"""
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -17,8 +17,8 @@ class RunRecord:
     latency_ms: float
 
 
-class ScalingAnalyzer:
-    """Collects run data and derives empirical scaling insights.
+class CoordinationAnalyzer:
+    """Collects run data and derives coordination performance insights.
 
     The core question: does changing **topology** or changing **model**
     produce more variance in quality?  If topology variance dominates,
