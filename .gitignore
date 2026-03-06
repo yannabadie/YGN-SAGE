@@ -1,6 +1,7 @@
 # Rust
 target/
 *.rs.bk
+.cargo/config.toml
 
 # Python
 __pycache__/
