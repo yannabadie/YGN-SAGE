@@ -164,9 +164,13 @@ class CognitiveOrchestrator:
             decision.system, profile.complexity, profile.uncertainty,
         )
 
-        # 2. S1: fast/cheap model for simple tasks
+        # 2. S1: fast model for simple tasks (cost-sensitive)
         if decision.system == 1:
-            model = self.registry.select({"code": 0.3, "reasoning": 0.3, "max_cost_per_1m": 2.0})
+            model = self.registry.select({
+                "code": 0.3, "reasoning": 0.3,
+                "cost_sensitivity": 0.8,  # S1: optimize for speed/cost
+                "max_cost_per_1m": 5.0,
+            })
             if not model:
                 model = self._any_available_model()
             if not model:
@@ -176,14 +180,18 @@ class CognitiveOrchestrator:
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
 
-        # 3. S2: best code/reasoning model for moderate tasks
+        # 3. S2: best model for moderate tasks (quality-first)
         if decision.system == 2:
             code_keywords = ("code", "function", "debug", "fix", "write", "implement", "refactor")
             if profile.tool_required or any(w in task.lower() for w in code_keywords):
-                model = self.registry.select({"code": 1.0, "max_cost_per_1m": 15.0})
+                model = self.registry.select({
+                    "code": 1.0,
+                    "cost_sensitivity": 0.2,  # S2: quality dominates
+                })
             else:
                 model = self.registry.select({
-                    "reasoning": 0.7, "code": 0.3, "max_cost_per_1m": 15.0,
+                    "reasoning": 0.7, "code": 0.3,
+                    "cost_sensitivity": 0.2,  # S2: quality dominates
                 })
             if not model:
                 model = self._any_available_model()
@@ -198,8 +206,11 @@ class CognitiveOrchestrator:
         plan = await self._decompose(task)
 
         if not plan.is_decomposed or len(plan.subtasks) <= 1:
-            # Single complex task — use the best reasoner
-            model = self.registry.select({"reasoning": 1.0})
+            # Single complex task — use the absolute best reasoner (no cost limit)
+            model = self.registry.select({
+                "reasoning": 1.0,
+                "cost_sensitivity": 0.0,  # S3: pure quality, cost irrelevant
+            })
             if not model:
                 model = self._any_available_model()
             if not model:
@@ -209,15 +220,15 @@ class CognitiveOrchestrator:
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
 
-        # 5. Multi-subtask: assign models and build topology
+        # 5. Multi-subtask: assign best model per subtask (quality-first)
         agents: list[ModelAgent] = []
         for subtask in plan.subtasks:
-            needs: dict[str, float] = {}
+            needs: dict[str, float] = {"cost_sensitivity": 0.1}  # S3 subtasks: quality-first
             if subtask.needs_code:
                 needs["code"] = 1.0
             if subtask.needs_reasoning:
                 needs["reasoning"] = 1.0
-            if not needs:
+            if "code" not in needs and "reasoning" not in needs:
                 needs["reasoning"] = 0.5
                 needs["code"] = 0.5
 

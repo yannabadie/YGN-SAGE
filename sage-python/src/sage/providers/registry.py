@@ -140,6 +140,7 @@ class ModelRegistry:
                 - ``code``: weight for code_score (0.0-1.0)
                 - ``reasoning``: weight for reasoning_score (0.0-1.0)
                 - ``tool_use``: weight for tool_use_score (0.0-1.0)
+                - ``cost_sensitivity``: 0.0 = pure quality, 1.0 = cheapest viable (default 0.3)
                 - ``max_cost_per_1m``: maximum acceptable input cost $/1M tokens
                 - ``min_context``: minimum context window size
                 - ``require_tools``: if True, filter to models with tool support
@@ -148,11 +149,9 @@ class ModelRegistry:
         Returns:
             Best matching ModelProfile, or None if no models match.
 
-        The scoring formula is::
-
-            quality = sum(need_weight * model_score for each dimension)
-            cost_factor = max(cost_input, 0.01)  # avoid div-by-zero
-            score = quality / cost_factor
+        Scoring: ``quality^(2 - cost_sensitivity) / cost^cost_sensitivity``
+        At cost_sensitivity=0: pure quality ranking (best model wins).
+        At cost_sensitivity=1: quality/cost ratio (cheapest decent model wins).
         """
         candidates: list[ModelProfile] = []
 
@@ -160,6 +159,7 @@ class ModelRegistry:
         min_context = needs.get("min_context")
         require_tools = needs.get("require_tools", False)
         require_structured = needs.get("require_structured_output", False)
+        cost_sensitivity = needs.get("cost_sensitivity", 0.3)
 
         for profile in self._profiles.values():
             if not profile.available:
@@ -187,9 +187,14 @@ class ModelRegistry:
             quality += needs.get("code", 0.0) * p.code_score
             quality += needs.get("reasoning", 0.0) * p.reasoning_score
             quality += needs.get("tool_use", 0.0) * p.tool_use_score
-            # Use blended cost (input + output) to avoid favoring cheap-input/expensive-output models
-            cost_factor = max(p.cost_input + p.cost_output * 0.3, 0.01)
-            return quality / cost_factor
+            if quality <= 0:
+                quality = 0.01
+            blended_cost = max(p.cost_input + p.cost_output * 0.3, 0.01)
+            # Higher cost_sensitivity → cost matters more
+            # Lower cost_sensitivity → quality dominates
+            quality_exp = 2.0 - cost_sensitivity
+            cost_exp = cost_sensitivity
+            return (quality ** quality_exp) / (blended_cost ** cost_exp)
 
         return max(candidates, key=_score)
 
