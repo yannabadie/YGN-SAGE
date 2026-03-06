@@ -5,11 +5,12 @@
 <h1 align="center">YGN-SAGE</h1>
 
 <p align="center">
-  <strong>Agent Development Kit with Cognitive Routing, Formal Guardrails, and Real-Time Dashboard</strong>
+  <strong>Agent Development Kit with Cognitive Routing, Guardrails, and Real-Time Dashboard</strong>
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/tests-307%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
+  <img src="https://img.shields.io/badge/tests-413%20collected-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-proprietary-red?style=flat-square" alt="License">
@@ -17,22 +18,19 @@
 
 ---
 
-YGN-SAGE is an Agent Development Kit that combines **cognitive routing (S1/S2/S3)**, **multi-provider model selection** (7 providers, 70+ models), **Z3 formal guardrails**, and a **real-time dashboard** into a single system. It uses a Rust execution core with a Python SDK.
+YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive routing (S1/S2/S3)**, **multi-provider model selection** (7 providers), **composable guardrails**, and a **real-time dashboard**. It uses a Rust data plane with a Python SDK.
 
-## What Makes It Different
+## Features
 
-Other frameworks (Google ADK, LangGraph, OpenAI Agents SDK) handle orchestration well. Research like [AdaptOrch](https://arxiv.org/abs/2602.16873) shows topology-adaptive routing outperforms static baselines by 12-23%. YGN-SAGE builds on these ideas while combining capabilities no single framework offers together:
+- **S1/S2/S3 cognitive routing** — heuristic complexity assessment routes tasks to appropriate model tiers
+- **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
+- **Composable guardrails** — cost limits, schema validation, Z3 bounds checking at input/runtime/output
+- **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
+- **Sandbox** — Wasm (wasmtime) + eBPF (solana_rbpf) execution sandboxes (experimental)
+- **Dashboard** — built-in FastAPI + WebSocket real-time event viewer
+- **Benchmarks** — HumanEval (164 problems) + routing self-consistency test built-in
 
-| Capability | Competitors | YGN-SAGE |
-|------------|-------------|----------|
-| **Cognitive routing** | Static per-agent or LLM-decided | S1/S2/S3 + LLM complexity assessment |
-| **Multi-provider** | Usually single-provider | 7 providers auto-discovered at boot |
-| **Model selection** | Manual or tier-based | Score-based (quality/cost/latency) per subtask |
-| **Formal guardrails** | Heuristic or human-in-loop | Z3 proofs, composable pipeline |
-| **Memory** | 1 tier (sessions) | 4 tiers (STM + SQLite + Semantic + ExoCortex RAG) |
-| **Sandbox** | Rarely built-in | Wasm + eBPF + Docker |
-| **Dashboard** | External (cloud, paid) | Built-in, real-time, free |
-| **Benchmarks** | External tools | HumanEval + Routing Accuracy built-in |
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component status and known limitations.
 
 ## Quick Start
 
@@ -56,11 +54,11 @@ cd .. && python ui/app.py
 User Task
     |
     v
-MetacognitiveController --- assesses complexity + uncertainty via LLM
+MetacognitiveController --- heuristic complexity + uncertainty assessment
     |
-    +---> S1 (Simple)   --- Gemini Flash Lite, no validation, <1s
-    +---> S2 (Code)     --- Gemini Flash/Pro, sandbox AVR loop, <5s
-    +---> S3 (Formal)   --- Codex/Reasoner, Z3 formal proofs, <30s
+    +---> S1 (Simple)   --- fast model, no validation
+    +---> S2 (Code)     --- mid-tier model, sandbox AVR loop
+    +---> S3 (Formal)   --- reasoner model, Z3 bounds checking
     |
     v
 AgentLoop: perceive -> think -> act -> learn
@@ -87,7 +85,7 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 307 passed
+cd sage-python && python -m pytest tests/ -v    # 413 collected
 cd sage-core && cargo test --workspace          # 38 passed
 cd sage-discover && python -m pytest tests/ -v  # 45 passed
 ```
@@ -169,15 +167,17 @@ pipeline = GuardrailPipeline([
 
 ## Status (March 2026)
 
-- **307 tests passing** (Python) + 38 Rust = 345 total
+> **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
+
+- **413 tests collected** (Python) + 38 Rust
 - **CI/CD**: GitHub Actions (3 jobs)
-- **Dashboard**: Fully wired, real-time via WebSocket
-- **Cognitive Routing**: S1/S2/S3 with AVR sandbox loop and Z3 proofs
-- **Memory**: 4 tiers, SQLite persistence, semantic entity graph, ExoCortex (500+ sources)
-- **Guardrails**: Wired at 3 points (input/runtime/output)
-- **Benchmarks**: HumanEval (164 problems) + Routing Accuracy (30/30)
+- **Dashboard**: functional, real-time via WebSocket (no auth — dev mode only)
+- **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)
+- **Memory**: 4 tiers implemented, Tier 0 (Rust Arrow) solid, Tiers 1-2 have in-memory fallback
+- **Guardrails**: wired at 3 points (input/runtime/output), cost + schema + Z3 bounds
+- **Benchmarks**: HumanEval 164 built-in, routing self-consistency test
 - **Composition**: Sequential, Parallel, Loop, Handoff patterns
-- **Evolution**: DGM + SAMPO + MAP-Elites + SnapBPF
+- **Evolution**: scaffolding present, not validated against baselines
 
 ## License
 
