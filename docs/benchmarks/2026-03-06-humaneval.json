@@ -1,0 +1,84 @@
+{
+  "benchmark": "humaneval",
+  "total": 5,
+  "passed": 2,
+  "failed": 3,
+  "errors": 3,
+  "pass_rate": 0.4,
+  "avg_latency_ms": 23874.1,
+  "avg_cost_usd": 7.7e-05,
+  "routing_breakdown": {
+    "S1": 0,
+    "S2": 4,
+    "S3": 0
+  },
+  "results": [
+    {
+      "task_id": "HumanEval/0",
+      "passed": false,
+      "system_used": 2,
+      "latency_ms": 40953.1,
+      "cost_usd": 0.00012,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpjaqo2sg0.py\", line 15\n    return True\n    ^^^^^^^^^^^\nSyntaxError: 'return' outside function\n"
+    },
+    {
+      "task_id": "HumanEval/1",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 28257.4,
+      "cost_usd": 0.000165,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "500 INTERNAL. {'error': {'code': 500, 'message': 'Internal error encountered.', 'status': 'INTERNAL'}}"
+    },
+    {
+      "task_id": "HumanEval/2",
+      "passed": true,
+      "system_used": 2,
+      "latency_ms": 9798.0,
+      "cost_usd": 5e-06,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    },
+    {
+      "task_id": "HumanEval/3",
+      "passed": true,
+      "system_used": 2,
+      "latency_ms": 14174.4,
+      "cost_usd": 1.8e-05,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    },
+    {
+      "task_id": "HumanEval/4",
+      "passed": false,
+      "system_used": 2,
+      "latency_ms": 26187.6,
+      "cost_usd": 7.7e-05,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp89dbh6y1.py\", line 14\n    return sum(abs(x - mean) for x in numbers) / len(numbers)\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nSyntaxError: 'return' outside function\n"
+    }
+  ],
+  "model_config": {},
+  "timestamp": "2026-03-06T16:01:03.382207+00:00"
+}
