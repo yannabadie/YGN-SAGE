@@ -184,6 +184,11 @@ def boot_agent_system(
     loop.sandbox_manager = sandbox_manager
     loop.exocortex = exocortex
 
+    # Semantic memory + MemoryAgent wiring
+    from sage.memory.semantic import SemanticMemory
+    loop.memory_agent = memory_agent  # Already created above but never injected!
+    loop.semantic_memory = SemanticMemory()
+
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
         tool_registry.register(tool)
@@ -192,6 +197,13 @@ def boot_agent_system(
     from sage.tools.exocortex_tools import create_exocortex_tools
     for tool in create_exocortex_tools(exocortex):
         tool_registry.register(tool)
+
+    # Guardrails
+    from sage.guardrails.base import GuardrailPipeline
+    from sage.guardrails.builtin import CostGuardrail
+    loop.guardrail_pipeline = GuardrailPipeline([
+        CostGuardrail(max_usd=10.0),  # Default budget limit
+    ])
 
     return AgentSystem(
         agent_loop=loop,

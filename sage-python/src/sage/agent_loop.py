@@ -122,6 +122,9 @@ class AgentLoop:
         self.episodic_memory: Any = None  # EpisodicMemory for cross-session storage
         self.sandbox_manager: Any = None  # SandboxManager for S2 validation
         self.exocortex: Any = None  # ExoCortex for File Search grounding
+        self.guardrail_pipeline: Any = None  # GuardrailPipeline for input/output/runtime checks
+        self.memory_agent: Any = None       # MemoryAgent for entity extraction
+        self.semantic_memory: Any = None    # SemanticMemory entity graph
 
         # Stats
         self.step_count = 0
@@ -179,6 +182,23 @@ class AgentLoop:
 
         self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 
+        # Input guardrail check
+        if self.guardrail_pipeline:
+            try:
+                input_results = await self.guardrail_pipeline.check_all(
+                    input=task, context={"step": 0, "agent": self.config.name}
+                )
+                for r in input_results:
+                    self._emit(LoopPhase.PERCEIVE,
+                               guardrail=r.__class__.__name__ if hasattr(r, '__class__') else "input",
+                               guardrail_passed=r.passed,
+                               guardrail_reason=r.reason)
+                if self.guardrail_pipeline.any_blocked(input_results):
+                    blocked = [r for r in input_results if not r.passed]
+                    return f"Blocked by guardrail: {blocked[0].reason}"
+            except Exception as e:
+                log.warning("Input guardrail error: %s", e)
+
         system_prompt = self.config.system_prompt
         if self.config.validation_level >= 3:
             system_prompt += (
@@ -207,6 +227,18 @@ class AgentLoop:
         )
 
         result_text = ""
+
+        # Semantic memory context injection (one-time, before loop)
+        if self.semantic_memory:
+            try:
+                sem_context = self.semantic_memory.get_context_for(task)
+                if sem_context:
+                    messages.insert(1, Message(
+                        role=Role.SYSTEM,
+                        content=f"Relevant knowledge from previous interactions:\n{sem_context}",
+                    ))
+            except Exception:
+                pass  # Best-effort semantic enrichment
 
         while self.step_count < self.config.max_steps:
             self.step_count += 1
@@ -299,6 +331,21 @@ class AgentLoop:
                 code_blocks = _extract_code_blocks(content)
 
                 if code_blocks and self.sandbox_manager:
+                    # Runtime guardrail: check code before execution
+                    if self.guardrail_pipeline:
+                        try:
+                            runtime_results = await self.guardrail_pipeline.check_all(
+                                input=code_blocks[-1],
+                                context={"step": self.step_count, "phase": "runtime"}
+                            )
+                            for r in runtime_results:
+                                self._emit(LoopPhase.ACT,
+                                           guardrail="runtime",
+                                           guardrail_passed=r.passed,
+                                           guardrail_reason=r.reason)
+                        except Exception:
+                            pass  # Runtime guardrails are best-effort
+
                     # AVR loop: execute, verify, refine
                     sandbox = await self.sandbox_manager.create()
                     try:
@@ -386,6 +433,15 @@ class AgentLoop:
                 except Exception:
                     pass  # Episodic storage is best-effort
 
+            # Semantic memory: extract entities from response
+            if self.memory_agent and self.semantic_memory and content and len(content) > 50:
+                try:
+                    extraction = await self.memory_agent.extract(content[:1000])
+                    if extraction.entities:
+                        self.semantic_memory.add_extraction(extraction)
+                except Exception:
+                    pass  # Best-effort entity extraction
+
             # No tool calls -> final answer
             if not response.tool_calls:
                 result_text = content
@@ -426,6 +482,10 @@ class AgentLoop:
             if self.agent_pool and hasattr(self.agent_pool, "list_agents"):
                 learn_meta["sub_agents"] = self.agent_pool.list_agents()
 
+            # Semantic memory stats (if wired)
+            if self.semantic_memory:
+                learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
+
             # Evolution grid snapshot (if wired)
             if self.topology_population and self.topology_population.size() > 0:
                 try:
@@ -442,12 +502,32 @@ class AgentLoop:
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 
+        # Output guardrail check
+        if self.guardrail_pipeline and result_text:
+            try:
+                output_results = await self.guardrail_pipeline.check_all(
+                    output=result_text,
+                    context={"cost_usd": self.total_cost_usd, "steps": self.step_count}
+                )
+                for r in output_results:
+                    self._emit(LoopPhase.LEARN,
+                               guardrail="output",
+                               guardrail_passed=r.passed,
+                               guardrail_reason=r.reason)
+            except Exception as e:
+                log.warning("Output guardrail error: %s", e)
+
         # Final completion event (includes response text for dashboard)
-        self._emit(LoopPhase.LEARN,
-                   result="complete", steps=self.step_count,
-                   cost_usd=round(self.total_cost_usd, 4),
-                   response_text=result_text or "",
-                   task=task)
+        final_meta: dict[str, Any] = {
+            "result": "complete",
+            "steps": self.step_count,
+            "cost_usd": round(self.total_cost_usd, 4),
+            "response_text": result_text or "",
+            "task": task,
+        }
+        if self.semantic_memory:
+            final_meta["semantic_entities"] = self.semantic_memory.entity_count()
+        self._emit(LoopPhase.LEARN, **final_meta)
         return result_text or f"Agent finished at step {self.step_count}"
 
     def _compute_aio(self) -> float:
