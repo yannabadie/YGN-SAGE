@@ -215,8 +215,9 @@ async def test_mock_provider_accepts_file_search_store_names():
 # ---------------------------------------------------------------------------
 # Test 7: ExoCortex.query() returns empty string when not configured
 # ---------------------------------------------------------------------------
-def test_exocortex_query_returns_empty_when_not_configured():
+def test_exocortex_query_returns_empty_when_not_configured(monkeypatch):
     """query() returns empty string when store_name is None."""
+    monkeypatch.delenv("SAGE_EXOCORTEX_STORE", raising=False)
     from sage.memory.remote_rag import ExoCortex
     exo = ExoCortex(store_name=None)
     result = exo.query("test question")

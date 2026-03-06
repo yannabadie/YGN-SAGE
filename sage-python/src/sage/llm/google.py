@@ -53,12 +53,8 @@ class GoogleProvider:
                 role = "model" if msg.role.value == "assistant" else "user"
                 contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg.content)]))
 
-        # Configure SOTA Grounding (Google Search Retrieval)
+        # Configure grounding tools (google_search and file_search are mutually exclusive)
         gemini_tools = []
-        if use_google_search:
-            gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
-
-        # File Search grounding (ExoCortex)
         if file_search_store_names:
             try:
                 gemini_tools.append(types.Tool(
@@ -68,6 +64,8 @@ class GoogleProvider:
                 ))
             except (AttributeError, TypeError) as e:
                 logger.warning(f"FileSearch tool injection failed: {e}")
+        elif use_google_search:
+            gemini_tools.append(types.Tool(google_search=types.GoogleSearch()))
 
         # Structured JSON output support
         response_mime_type = None
