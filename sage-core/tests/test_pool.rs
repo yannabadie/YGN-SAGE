@@ -1,5 +1,5 @@
-use sage_core::types::*;
 use sage_core::pool::AgentPool;
+use sage_core::types::*;
 
 #[test]
 fn test_create_and_get_agent() {
@@ -22,7 +22,11 @@ fn test_search_agents_by_name() {
     let pool = AgentPool::new();
     pool.register(AgentConfig::new("coder".into(), "m".into(), "p".into()));
     pool.register(AgentConfig::new("debugger".into(), "m".into(), "p".into()));
-    pool.register(AgentConfig::new("code-reviewer".into(), "m".into(), "p".into()));
+    pool.register(AgentConfig::new(
+        "code-reviewer".into(),
+        "m".into(),
+        "p".into(),
+    ));
 
     let results = pool.search("code");
     assert_eq!(results.len(), 2); // "coder" and "code-reviewer"

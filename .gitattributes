@@ -1,0 +1,4 @@
+# Force LF line endings for files that CI checks
+*.rs text eol=lf
+*.toml text eol=lf
+Cargo.lock text eol=lf

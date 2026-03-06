@@ -70,11 +70,7 @@ fn test_causal_linking() {
         mem.add_event("parent_step", &format!("Parent step {i}"));
     }
     let parent_cid = mem
-        .compact_to_arrow_with_meta(
-            vec!["planning".to_string()],
-            None,
-            None,
-        )
+        .compact_to_arrow_with_meta(vec!["planning".to_string()], None, None)
         .expect("compact parent chunk");
     assert_eq!(parent_cid, 0);
 

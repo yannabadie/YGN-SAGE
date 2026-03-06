@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from sage.llm.base import LLMConfig, LLMResponse, Message, Role
+from sage.llm.base import LLMConfig, LLMResponse, Message
 
 log = logging.getLogger(__name__)
 

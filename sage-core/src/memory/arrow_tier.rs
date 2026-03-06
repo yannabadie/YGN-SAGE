@@ -21,7 +21,11 @@ fn event_schema() -> Arc<Schema> {
         Field::new("id", DataType::Utf8, false),
         Field::new("event_type", DataType::Utf8, false),
         Field::new("content", DataType::Utf8, false),
-        Field::new("timestamp", DataType::Timestamp(TimeUnit::Nanosecond, None), false),
+        Field::new(
+            "timestamp",
+            DataType::Timestamp(TimeUnit::Nanosecond, None),
+            false,
+        ),
         Field::new("is_summary", DataType::Boolean, false),
     ]))
 }

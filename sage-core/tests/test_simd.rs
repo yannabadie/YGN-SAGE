@@ -21,9 +21,8 @@ fn test_h96_quicksort_large() {
 
 #[test]
 fn test_partition() {
-    let (left, right) = sage_core::simd_sort::vectorized_partition_h96(
-        vec![5.0, 1.0, 3.0, 2.0, 4.0], 3.0
-    ).unwrap();
+    let (left, right) =
+        sage_core::simd_sort::vectorized_partition_h96(vec![5.0, 1.0, 3.0, 2.0, 4.0], 3.0).unwrap();
     assert!(left.iter().all(|&x| x < 3.0));
     assert!(right.iter().all(|&x| x >= 3.0));
     assert_eq!(left.len() + right.len(), 5);

@@ -1,12 +1,12 @@
 use pyo3::prelude::*;
 
-pub mod types;
 pub mod agent;
-pub mod pool;
-pub mod memory;
 pub mod hardware;
+pub mod memory;
+pub mod pool;
 pub mod sandbox;
 pub mod simd_sort;
+pub mod types;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {

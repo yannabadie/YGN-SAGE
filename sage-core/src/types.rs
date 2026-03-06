@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
-use chrono::{DateTime, Utc};
 
 /// Memory scope determines how an agent accesses shared memory.
 #[pyclass]
@@ -157,7 +157,13 @@ impl ToolSpec {
         category: String,
         requires_sandbox: bool,
     ) -> Self {
-        Self { name, description, parameters_schema, category, requires_sandbox }
+        Self {
+            name,
+            description,
+            parameters_schema,
+            category,
+            requires_sandbox,
+        }
     }
 }
 

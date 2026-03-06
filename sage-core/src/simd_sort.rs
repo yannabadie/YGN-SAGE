@@ -1,5 +1,5 @@
-use pyo3::prelude::*;
 use numpy::{PyArray1, PyArrayMethods};
+use pyo3::prelude::*;
 
 /// H96 Quicksort — uses Rust's pdqsort (pattern-defeating quicksort).
 /// When vqsort-rs supports Windows, swap the sort() call for vqsort_rs::sort().
@@ -13,9 +13,9 @@ pub fn h96_quicksort(mut arr: Vec<f32>) -> PyResult<Vec<f32>> {
 #[pyfunction]
 pub fn h96_quicksort_zerocopy(arr: &Bound<'_, PyArray1<f32>>) -> PyResult<()> {
     let mut view = arr.readwrite();
-    let slice = view.as_slice_mut().map_err(|_| {
-        PyErr::new::<pyo3::exceptions::PyValueError, _>("Array is not contiguous")
-    })?;
+    let slice = view
+        .as_slice_mut()
+        .map_err(|_| PyErr::new::<pyo3::exceptions::PyValueError, _>("Array is not contiguous"))?;
 
     slice.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     Ok(())
@@ -35,6 +35,10 @@ pub fn vectorized_partition_h96(mut arr: Vec<f32>, pivot: f32) -> PyResult<(Vec<
 #[pyfunction]
 pub fn h96_argsort(arr: Vec<f32>) -> PyResult<Vec<usize>> {
     let mut indices: Vec<usize> = (0..arr.len()).collect();
-    indices.sort_unstable_by(|&a, &b| arr[a].partial_cmp(&arr[b]).unwrap_or(std::cmp::Ordering::Equal));
+    indices.sort_unstable_by(|&a, &b| {
+        arr[a]
+            .partial_cmp(&arr[b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(indices)
 }

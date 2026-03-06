@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import os
 import logging
-from typing import Any
-from sage.llm.base import LLMConfig, LLMResponse, Message, ToolCall, ToolDef
+from sage.llm.base import LLMConfig, LLMResponse, Message, ToolDef
 
 logger = logging.getLogger(__name__)
 

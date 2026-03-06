@@ -5,10 +5,13 @@ and advanced SOTA variants like VAD-CFR and SHOR-PSRO.
 """
 from __future__ import annotations
 
-import math
 from enum import Enum
-import numpy as np
-from typing import Any, List
+from typing import Any, Dict, List
+
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore[assignment]
 
 
 class SolverMode(Enum):
@@ -254,8 +257,6 @@ class SAMPOSolver:
             
             # Old policy probabilities (we assume current policy for simplification, 
             # in a full PPO we'd store log_probs, but DGM acts as an online learner here)
-            old_policy = self._policy.copy()
-            
             for action, adv in zip(traj['actions'], advantages):
                 # Calculate ratio (r_t) - Simplified for the DGM Action Loop
                 # We use a base learning rate, but clip the maximum shift

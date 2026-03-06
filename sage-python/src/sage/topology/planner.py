@@ -8,10 +8,9 @@ from __future__ import annotations
 import json
 import math
 import logging
-from typing import Any, List, Dict
-import numpy as np
+from typing import Dict
 
-from sage.topology.engine import TopologyEngine, TopologyType, Topology
+from sage.topology.engine import TopologyEngine, TopologyType
 from sage.llm.base import LLMProvider, Message, Role
 
 class StochasticDTS:

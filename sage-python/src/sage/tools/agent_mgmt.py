@@ -2,7 +2,12 @@
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
+
 from sage.tools.base import Tool
+
+if TYPE_CHECKING:
+    from sage.agent import Agent
 
 # SOTA OpenSage: Dynamic Sub-Agent creation and delegation
 @Tool.define(

@@ -23,17 +23,17 @@ impl AgentPool {
     pub fn register(&self, config: AgentConfig) -> String {
         let id = config.id.clone();
         let parent_id = config.parent_id.clone();
-        
+
         let agent = Agent::new(config);
         self.agents.insert(id.clone(), agent);
-        
+
         // Update parent's children list if this agent has a parent
         if let Some(pid) = parent_id {
             if let Some(mut parent) = self.agents.get_mut(&pid) {
                 parent.children_ids.push(id.clone());
             }
         }
-        
+
         id
     }
 
@@ -45,7 +45,11 @@ impl AgentPool {
             .filter(|entry| {
                 let agent = entry.value();
                 agent.config.name.to_lowercase().contains(&query_lower)
-                    || agent.config.system_prompt.to_lowercase().contains(&query_lower)
+                    || agent
+                        .config
+                        .system_prompt
+                        .to_lowercase()
+                        .contains(&query_lower)
             })
             .map(|entry| entry.value().config.clone())
             .collect()
@@ -62,7 +66,9 @@ impl AgentPool {
     /// Get children config of a specific agent
     pub fn get_children(&self, parent_id: &str) -> Vec<AgentConfig> {
         if let Some(parent) = self.agents.get(parent_id) {
-            parent.children_ids.iter()
+            parent
+                .children_ids
+                .iter()
                 .filter_map(|cid| self.agents.get(cid))
                 .map(|child| child.value().config.clone())
                 .collect()

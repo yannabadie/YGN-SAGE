@@ -1,7 +1,7 @@
+use chrono::{DateTime, Utc};
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
-use chrono::{DateTime, Utc};
 
 /// A single event in working memory
 #[pyclass]

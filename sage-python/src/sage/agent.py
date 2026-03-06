@@ -2,11 +2,9 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
-from sage.llm.base import LLMConfig, LLMProvider, LLMResponse, Message, Role, ToolDef
-from sage.tools.base import Tool
+from sage.llm.base import LLMConfig, LLMProvider, Message, Role, ToolDef
 from sage.tools.registry import ToolRegistry
 from sage.memory.working import WorkingMemory
 from sage.memory.compressor import MemoryCompressor

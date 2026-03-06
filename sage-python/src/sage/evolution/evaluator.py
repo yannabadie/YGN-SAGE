@@ -61,7 +61,6 @@ class Evaluator:
         """
         total_score = 0.0
         total_weight = 0.0
-        last_result = EvalResult(score=0.0, passed=False, stage="none")
 
         for stage in self._stages:
             try:
@@ -77,7 +76,6 @@ class Evaluator:
 
             total_score += result.score * stage.weight
             total_weight += stage.weight
-            last_result = result
 
             if result.score < stage.threshold:
                 # Didn't pass this stage

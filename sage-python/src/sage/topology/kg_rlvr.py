@@ -29,7 +29,8 @@ class FormalKnowledgeGraph:
             logging.warning("z3-solver is not installed. Formal verification will fallback to heuristics.")
 
     def prove_memory_safety(self, addr_expr: int, limit: int) -> bool:
-        if not self.has_z3: return True
+        if not self.has_z3:
+            return True
         solver = z3.Solver()
         addr = z3.IntVal(addr_expr)
         max_mem = z3.IntVal(limit)
@@ -40,7 +41,8 @@ class FormalKnowledgeGraph:
         return solver.check() == z3.unsat
 
     def check_loop_bound(self, iterations_symbolic: str, hard_cap: int) -> bool:
-        if not self.has_z3: return True
+        if not self.has_z3:
+            return True
         solver = z3.Solver()
         iters = z3.Int(iterations_symbolic)
         cap = z3.IntVal(hard_cap)

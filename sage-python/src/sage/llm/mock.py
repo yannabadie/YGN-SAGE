@@ -1,7 +1,6 @@
 
 from sage.llm.base import LLMConfig, LLMResponse, Message, ToolDef
 import asyncio
-import time
 
 class MockLLMProvider:
     """Mock LLM provider for benchmarking infrastructure overhead without network latency."""

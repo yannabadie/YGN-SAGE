@@ -8,11 +8,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
 import logging
-import numpy as np
+
+try:
+    import numpy as np
+except ImportError:
+    np = None  # type: ignore[assignment]
 
 from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator
-from sage.evolution.evaluator import Evaluator, EvalResult
+from sage.evolution.evaluator import Evaluator
 
 try:
     from sage.sandbox.z3_validator import Z3Validator

@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Protocol, List
+from typing import Any, Protocol
 from datetime import datetime, timezone
 
 from sage.llm.base import LLMProvider, Message, Role

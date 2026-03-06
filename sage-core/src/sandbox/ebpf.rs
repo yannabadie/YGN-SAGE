@@ -2,9 +2,9 @@ use dashmap::DashMap;
 use pyo3::prelude::*;
 use solana_rbpf::{
     elf::Executable,
+    memory_region::MemoryMapping,
     program::{BuiltinProgram, FunctionRegistry, SBPFVersion},
     vm::{Config, EbpfVm, TestContextObject},
-    memory_region::MemoryMapping,
 };
 use std::sync::Arc;
 
@@ -19,7 +19,10 @@ impl EbpfSandbox {
     #[new]
     pub fn new() -> Self {
         let config = Config::default();
-        let loader = Arc::new(BuiltinProgram::new_loader(config, FunctionRegistry::default()));
+        let loader = Arc::new(BuiltinProgram::new_loader(
+            config,
+            FunctionRegistry::default(),
+        ));
         Self {
             executable: None,
             loader,
@@ -28,11 +31,11 @@ impl EbpfSandbox {
 
     /// Complete the real ELF loading logic using the solana_rbpf 0.8.5 API
     pub fn load_elf(&mut self, elf_bytes: &[u8]) -> PyResult<()> {
-        let executable = Executable::<TestContextObject>::from_elf(
-            elf_bytes,
-            self.loader.clone(),
-        ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("ELF load error: {}", e)))?;
-        
+        let executable = Executable::<TestContextObject>::from_elf(elf_bytes, self.loader.clone())
+            .map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!("ELF load error: {}", e))
+            })?;
+
         self.executable = Some(Arc::new(executable));
         Ok(())
     }
@@ -46,23 +49,27 @@ impl EbpfSandbox {
             self.loader.clone(),
             sbpf_version,
             function_registry,
-        ).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Raw load error: {}", e)))?;
-        
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Raw load error: {}", e)))?;
+
         self.executable = Some(Arc::new(executable));
         Ok(())
     }
 
     pub fn execute(&mut self, _mem: Vec<u8>) -> PyResult<(u64, u64)> {
-        let executable = self.executable.as_ref()
+        let executable = self
+            .executable
+            .as_ref()
             .ok_or_else(|| pyo3::exceptions::PyRuntimeError::new_err("No ELF/Raw loaded"))?;
-        
+
         let mut context_object = TestContextObject::new(100_000);
         let config = Config::default();
         let sbpf_version = SBPFVersion::V2;
         // For actual use, memory regions need proper addresses and permissions.
-        let mem_mapping = MemoryMapping::new(vec![], &config, &sbpf_version)
-            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Memory mapping error: {:?}", e)))?;
-        
+        let mem_mapping = MemoryMapping::new(vec![], &config, &sbpf_version).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Memory mapping error: {:?}", e))
+        })?;
+
         let mut vm = EbpfVm::<TestContextObject>::new(
             self.loader.clone(),
             &sbpf_version,
@@ -70,11 +77,13 @@ impl EbpfSandbox {
             mem_mapping,
             4096,
         );
-        
+
         let (instruction_count, res) = vm.execute_program(executable, true);
         let res_std: Result<u64, _> = res.into();
-        let res_val = res_std.map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(format!("Execution error: {:?}", e)))?;
-            
+        let res_val = res_std.map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Execution error: {:?}", e))
+        })?;
+
         Ok((instruction_count, res_val))
     }
 }
@@ -96,7 +105,8 @@ impl SnapBPF {
 
     /// Snapshot the current VM memory state.
     pub fn snapshot(&self, snapshot_id: &str, memory: Vec<u8>) {
-        self.snapshots.insert(snapshot_id.to_string(), Arc::new(memory));
+        self.snapshots
+            .insert(snapshot_id.to_string(), Arc::new(memory));
     }
 
     /// Restore a snapshot. Returns a cloned Vec (CoW isolation).

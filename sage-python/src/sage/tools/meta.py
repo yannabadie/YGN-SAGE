@@ -8,11 +8,9 @@ from __future__ import annotations
 
 import os
 import ast
-import json
 import logging
 import importlib.util
 import sys
-from typing import Any, Dict
 
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry

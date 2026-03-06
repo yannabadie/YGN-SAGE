@@ -55,8 +55,7 @@ impl RagCache {
     pub fn get(&self, query_hash: u64) -> Option<Vec<u8>> {
         if let Some(entry) = self.cache.get(&query_hash) {
             if entry.inserted_at.elapsed() < self.ttl {
-                self.hits
-                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.hits.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Some(entry.data.clone());
             }
             // Expired — remove it

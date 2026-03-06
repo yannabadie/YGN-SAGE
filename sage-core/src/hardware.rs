@@ -1,7 +1,7 @@
 use pyo3::prelude::*;
-use serde::{Deserialize, Serialize};
-use sysinfo::{System, CpuRefreshKind, RefreshKind, MemoryRefreshKind};
 use raw_cpuid::CpuId;
+use serde::{Deserialize, Serialize};
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 
 /// Represents the hardware profile of the host machine
 #[pyclass]
@@ -42,8 +42,12 @@ impl HardwareProfile {
         let free_memory_mb = sys.available_memory() / 1024 / 1024;
         let physical_cores = sys.physical_core_count().unwrap_or(1);
         let logical_cores = sys.cpus().len();
-        
-        let cpu_brand = sys.cpus().first().map(|c| c.brand().to_string()).unwrap_or_else(|| "Unknown".to_string());
+
+        let cpu_brand = sys
+            .cpus()
+            .first()
+            .map(|c| c.brand().to_string())
+            .unwrap_or_else(|| "Unknown".to_string());
 
         let mut has_avx2 = false;
         let mut has_avx512 = false;
@@ -54,8 +58,12 @@ impl HardwareProfile {
         {
             let cpuid = CpuId::new();
             if let Some(_feature_info) = cpuid.get_feature_info() {
-                has_avx2 = cpuid.get_extended_feature_info().map_or(false, |ext| ext.has_avx2());
-                has_avx512 = cpuid.get_extended_feature_info().map_or(false, |ext| ext.has_avx512f());
+                has_avx2 = cpuid
+                    .get_extended_feature_info()
+                    .map_or(false, |ext| ext.has_avx2());
+                has_avx512 = cpuid
+                    .get_extended_feature_info()
+                    .map_or(false, |ext| ext.has_avx512f());
             }
             has_neon = false;
         }

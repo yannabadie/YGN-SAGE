@@ -26,11 +26,7 @@ pub fn page_out_candidates(
     }
 
     // Get relevance scores (descending by score).
-    let relevant = smmu.retrieve_relevant(
-        active_chunk_id,
-        max_hops,
-        [1.0, 1.0, 1.0, 1.0],
-    );
+    let relevant = smmu.retrieve_relevant(active_chunk_id, max_hops, [1.0, 1.0, 1.0, 1.0]);
 
     // All chunk IDs in the S-MMU except the active one.
     let all_ids: Vec<usize> = smmu

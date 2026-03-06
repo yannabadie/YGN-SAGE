@@ -5,19 +5,19 @@
 //! - `smmu.rs`        — Multi-View S-MMU with 4 orthogonal graphs
 //! - `paging.rs`      — Semantic paging / eviction policy
 
-pub mod event;
 pub mod arrow_tier;
-pub mod smmu;
+pub mod event;
 pub mod paging;
 pub mod rag_cache;
+pub mod smmu;
 
 // Re-export public types so that `memory::MemoryEvent` and `memory::WorkingMemory`
 // continue to work without changing import paths.
 pub use event::MemoryEvent;
 
+use arrow::record_batch::RecordBatch;
 use pyo3::prelude::*;
 use std::sync::Arc;
-use arrow::record_batch::RecordBatch;
 
 use smmu::MultiViewMMU;
 

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Optional
 
 from sage.evolution.evaluator import EvalResult, Evaluator
 try:

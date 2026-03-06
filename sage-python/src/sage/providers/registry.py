@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from sage.providers.connector import ProviderConnector, DiscoveredModel, PROVIDER_CONFIGS
+from sage.providers.connector import ProviderConnector, DiscoveredModel
 
 logger = logging.getLogger(__name__)
 

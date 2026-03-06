@@ -104,7 +104,10 @@ impl MultiViewMMU {
                 self.graph.add_edge(
                     prev_idx,
                     node_idx,
-                    MultiEdge { kind: EdgeKind::Temporal, weight: weight as f32 },
+                    MultiEdge {
+                        kind: EdgeKind::Temporal,
+                        weight: weight as f32,
+                    },
                 );
             }
         }
@@ -122,12 +125,18 @@ impl MultiViewMMU {
                         self.graph.add_edge(
                             node_idx,
                             nidx,
-                            MultiEdge { kind: EdgeKind::Semantic, weight: sim },
+                            MultiEdge {
+                                kind: EdgeKind::Semantic,
+                                weight: sim,
+                            },
                         );
                         self.graph.add_edge(
                             nidx,
                             node_idx,
-                            MultiEdge { kind: EdgeKind::Semantic, weight: sim },
+                            MultiEdge {
+                                kind: EdgeKind::Semantic,
+                                weight: sim,
+                            },
                         );
                     }
                 }
@@ -141,7 +150,10 @@ impl MultiViewMMU {
                 self.graph.add_edge(
                     parent_idx,
                     node_idx,
-                    MultiEdge { kind: EdgeKind::Causal, weight: 1.0 },
+                    MultiEdge {
+                        kind: EdgeKind::Causal,
+                        weight: 1.0,
+                    },
                 );
             }
         }
@@ -164,12 +176,18 @@ impl MultiViewMMU {
                     self.graph.add_edge(
                         node_idx,
                         nidx,
-                        MultiEdge { kind: EdgeKind::Entity, weight: jaccard },
+                        MultiEdge {
+                            kind: EdgeKind::Entity,
+                            weight: jaccard,
+                        },
                     );
                     self.graph.add_edge(
                         nidx,
                         node_idx,
-                        MultiEdge { kind: EdgeKind::Entity, weight: jaccard },
+                        MultiEdge {
+                            kind: EdgeKind::Entity,
+                            weight: jaccard,
+                        },
                     );
                 }
             }
@@ -212,8 +230,8 @@ impl MultiViewMMU {
                 let view_weight = match me.kind {
                     EdgeKind::Temporal => weights[0],
                     EdgeKind::Semantic => weights[1],
-                    EdgeKind::Causal  => weights[2],
-                    EdgeKind::Entity  => weights[3],
+                    EdgeKind::Causal => weights[2],
+                    EdgeKind::Entity => weights[3],
                 };
                 let propagated = incoming_score * me.weight * view_weight;
                 let target_cid = self.graph[target].chunk_id;

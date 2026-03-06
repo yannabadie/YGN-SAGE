@@ -6,7 +6,6 @@ composes lightweight agent runners into a topology (Sequential or Parallel).
 """
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 import time
@@ -15,10 +14,10 @@ from typing import Any
 
 from sage.providers.registry import ModelRegistry, ModelProfile
 from sage.providers.connector import PROVIDER_CONFIGS
-from sage.strategy.metacognition import MetacognitiveController, CognitiveProfile
+from sage.strategy.metacognition import MetacognitiveController
 from sage.agents.sequential import SequentialAgent
 from sage.agents.parallel import ParallelAgent
-from sage.llm.base import LLMConfig, LLMResponse, Message, Role
+from sage.llm.base import LLMConfig, Message, Role
 
 log = logging.getLogger(__name__)
 

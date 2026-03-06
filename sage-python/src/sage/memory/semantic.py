@@ -7,7 +7,6 @@ multi-hop neighbourhood queries and task-context generation.
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
 
 from sage.memory.memory_agent import ExtractionResult
 

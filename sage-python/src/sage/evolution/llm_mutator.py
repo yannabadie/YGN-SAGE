@@ -1,14 +1,12 @@
 """LLM-based code mutator using Gemini/Codex with structured JSON output."""
 from __future__ import annotations
 
-import json
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
-from sage.llm.base import LLMConfig, Message, Role
+from sage.llm.base import Message, Role
 from sage.llm.router import ModelRouter
 
 log = logging.getLogger(__name__)
