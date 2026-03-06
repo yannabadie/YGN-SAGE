@@ -114,8 +114,10 @@ class AgentLoop:
         self.total_inference_time = 0.0
         self.total_cost_usd = 0.0
         self.start_time = 0.0
-        self._prm_retries = 0
-        self._max_prm_retries = 2
+        self._s3_retries = 0
+        self._max_s3_retries = 2
+        self._s2_avr_retries = 0
+        self._max_s2_avr_retries = 3
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = LoopEvent(phase=phase, data=data, step=self.step_count)
@@ -140,7 +142,8 @@ class AgentLoop:
         """Execute the full perceive -> think -> act -> learn cycle."""
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
-        self._prm_retries = 0
+        self._s3_retries = 0
+        self._s2_avr_retries = 0
         self.step_count = 0
 
         # === PERCEIVE: Gather context ===
@@ -256,8 +259,8 @@ class AgentLoop:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
                 if r_path < 0.0 and "error" in details:
-                    self._prm_retries += 1
-                    if self._prm_retries <= self._max_prm_retries:
+                    self._s3_retries += 1
+                    if self._s3_retries <= self._max_s3_retries:
                         messages.append(Message(
                             role=Role.USER,
                             content=(
@@ -272,9 +275,9 @@ class AgentLoop:
                         ))
                         continue
                     # Max retries reached -- accept response as-is
-                    log.warning("PRM retry limit reached, accepting response without <think> tags.")
+                    log.warning("S3 retry limit reached, accepting response without <think> tags.")
                 else:
-                    self._prm_retries = 0  # Reset on success
+                    self._s3_retries = 0  # Reset on success
 
             # System 2 validation (Empirical — AVR: Act-Verify-Refine)
             elif self.config.validation_level == 2 and content:
@@ -288,20 +291,20 @@ class AgentLoop:
                             f"python3 -c {_shell_quote(code_blocks[0])}"
                         )
                         if result.exit_code != 0:
-                            self._prm_retries += 1
-                            budget_left = self._max_prm_retries - self._prm_retries + 1
+                            self._s2_avr_retries += 1
+                            budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
                             self._emit(LoopPhase.THINK,
                                        validation="s2_avr_fail",
-                                       avr_iteration=self._prm_retries,
+                                       avr_iteration=self._s2_avr_retries,
                                        avr_budget_left=budget_left,
                                        stderr=result.stderr[:200])
-                            if self._prm_retries <= self._max_prm_retries:
+                            if self._s2_avr_retries <= self._max_s2_avr_retries:
                                 log.info("S2 AVR fail (iteration %d/%d), refining.",
-                                         self._prm_retries, self._max_prm_retries)
+                                         self._s2_avr_retries, self._max_s2_avr_retries)
                                 messages.append(Message(
                                     role=Role.USER,
                                     content=(
-                                        f"SYSTEM [AVR iteration {self._prm_retries}/{self._max_prm_retries}]: "
+                                        f"SYSTEM [AVR iteration {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
                                         f"Code execution failed (exit code {result.exit_code}).\n"
                                         f"stderr:\n{result.stderr[:500]}\n\n"
                                         f"Refine your code to fix this error. "
@@ -313,7 +316,7 @@ class AgentLoop:
                             self._emit(LoopPhase.THINK,
                                        validation="s2_avr_pass",
                                        stdout=result.stdout[:200])
-                            self._prm_retries = 0
+                            self._s2_avr_retries = 0
                     finally:
                         await self.sandbox_manager.destroy(sandbox.id)
 
@@ -321,8 +324,8 @@ class AgentLoop:
                     # Fallback: CoT enforcement if no code to validate
                     has_reasoning = "<think>" in content or "\n1." in content or "\n- " in content
                     if not has_reasoning:
-                        self._prm_retries += 1
-                        if self._prm_retries <= self._max_prm_retries:
+                        self._s2_avr_retries += 1
+                        if self._s2_avr_retries <= self._max_s2_avr_retries:
                             log.info("S2 validation: missing reasoning, requesting CoT.")
                             messages.append(Message(
                                 role=Role.USER,
@@ -331,10 +334,10 @@ class AgentLoop:
                             continue
 
                 # S2 -> S3 escalation if max retries exhausted
-                if self._prm_retries > self._max_prm_retries and self.config.validation_level == 2:
+                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2:
                     log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
                     self.config.validation_level = 3
-                    self._prm_retries = 0
+                    self._s3_retries = 0
                     self._emit(LoopPhase.THINK, escalation="s2_to_s3",
                                reason="AVR budget exhausted")
                     messages.append(Message(

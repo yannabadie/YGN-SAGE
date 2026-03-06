@@ -188,6 +188,28 @@ async def test_self_brake_stores_in_working_memory():
     assert "Braked response" in assistant_events[-1]["content"]
 
 
+def test_separate_retry_counters_exist():
+    """S2 and S3 must have independent retry counters."""
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+    from sage.llm.mock import MockProvider
+
+    config = AgentConfig(
+        name="test", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=3, validation_level=1,
+    )
+    loop = AgentLoop(config=config, llm_provider=MockProvider())
+
+    assert hasattr(loop, '_s3_retries'), "Must have _s3_retries counter"
+    assert hasattr(loop, '_s2_avr_retries'), "Must have _s2_avr_retries counter"
+    assert hasattr(loop, '_max_s3_retries'), "Must have _max_s3_retries"
+    assert hasattr(loop, '_max_s2_avr_retries'), "Must have _max_s2_avr_retries"
+    assert loop._s3_retries == 0
+    assert loop._s2_avr_retries == 0
+    assert not hasattr(loop, '_prm_retries'), "_prm_retries must be removed"
+    assert not hasattr(loop, '_max_prm_retries'), "_max_prm_retries must be removed"
+
+
 @pytest.mark.asyncio
 async def test_compressor_generates_internal_state():
     """MEM1: compressor generates rolling <IS_t> every step."""
