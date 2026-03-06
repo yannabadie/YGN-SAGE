@@ -139,8 +139,22 @@ async def ingest(
             file_path = dest
 
     if file_path is None:
-        logger.warning("No PDF available for paper %s, skipping upload", pid)
-        return False
+        # Fallback: create a markdown file from title + abstract
+        abstract = getattr(paper.candidate, "abstract", None) or ""
+        if not abstract:
+            logger.warning("No PDF or abstract for paper %s, skipping", pid)
+            return False
+        safe_name = pid.replace("/", "_").replace(":", "_") + ".md"
+        dest = DEFAULT_PAPERS_DIR / safe_name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        content = f"# {paper.candidate.title}\n\n"
+        content += f"**Paper ID:** {pid}\n"
+        content += f"**Domain:** {paper.candidate.domain}\n"
+        content += f"**Source:** {paper.candidate.source}\n\n"
+        content += f"## Abstract\n\n{abstract}\n"
+        dest.write_text(content, encoding="utf-8")
+        file_path = dest
+        logger.info("Created markdown fallback for paper %s", pid)
 
     # Upload to ExoCortex
     try:
