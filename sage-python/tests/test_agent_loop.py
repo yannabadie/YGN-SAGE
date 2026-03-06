@@ -162,6 +162,33 @@ async def test_agent_loop_learn_updates_memory(mock_llm):
 
 
 @pytest.mark.asyncio
+async def test_self_brake_stores_in_working_memory():
+    """CGRS self-brake must store response in working_memory before breaking."""
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+    from sage.llm.mock import MockProvider
+    from sage.strategy.metacognition import MetacognitiveController
+
+    ctrl = MetacognitiveController(brake_window=1, brake_entropy_threshold=1.0)
+    ctrl.record_output_entropy(0.01)
+
+    provider = MockProvider(responses=["Braked response content here."])
+    config = AgentConfig(
+        name="test-brake", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=5, validation_level=1,
+    )
+    loop = AgentLoop(config=config, llm_provider=provider)
+    loop.metacognition = ctrl
+
+    result = await loop.run("test task")
+
+    events = loop.working_memory._events
+    assistant_events = [e for e in events if e["type"] == "ASSISTANT"]
+    assert len(assistant_events) >= 1, "Braked response must be stored in working_memory"
+    assert "Braked response" in assistant_events[-1]["content"]
+
+
+@pytest.mark.asyncio
 async def test_compressor_generates_internal_state():
     """MEM1: compressor generates rolling <IS_t> every step."""
     from sage.memory.compressor import MemoryCompressor

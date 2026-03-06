@@ -351,6 +351,7 @@ class AgentLoop:
             if brake:
                 log.info("CGRS self-brake triggered — stopping reasoning loop.")
                 result_text = content
+                self.working_memory.add_event("ASSISTANT", content)
                 messages.append(Message(role=Role.ASSISTANT, content=content))
                 break
 
