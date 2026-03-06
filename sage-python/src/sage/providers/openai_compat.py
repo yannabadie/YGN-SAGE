@@ -33,6 +33,17 @@ class OpenAICompatProvider:
         self.base_url = base_url
         self.model_id = model_id
 
+    def capabilities(self) -> dict[str, bool]:
+        """Declare what this provider actually supports."""
+        return {
+            "structured_output": False,
+            "tool_role": False,      # Rewritten to user role
+            "file_search": False,    # Silently dropped
+            "grounding": False,
+            "system_prompt": True,
+            "streaming": False,
+        }
+
     async def generate(
         self,
         messages: list[Message],
@@ -42,7 +53,7 @@ class OpenAICompatProvider:
     ) -> LLMResponse:
         """Generate content via OpenAI-compatible chat completions API."""
         if kwargs.get("file_search_store_names"):
-            log.debug("file_search_store_names not supported by OpenAI-compat provider, ignored")
+            log.warning("file_search_store_names not supported by OpenAI-compat provider, ignored")
         from openai import AsyncOpenAI
 
         model = self.model_id

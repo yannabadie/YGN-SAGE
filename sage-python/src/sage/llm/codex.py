@@ -81,6 +81,17 @@ class CodexProvider:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
+    def capabilities(self) -> dict[str, bool]:
+        """Declare what this provider actually supports."""
+        return {
+            "structured_output": False,
+            "tool_role": False,      # Converted to plain text
+            "file_search": False,
+            "grounding": False,
+            "system_prompt": False,  # Codex skips system messages
+            "streaming": False,
+        }
+
     async def generate(
         self,
         messages: List[Message],

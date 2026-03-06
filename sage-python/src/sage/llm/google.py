@@ -15,6 +15,17 @@ class GoogleProvider:
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key or os.environ.get("GOOGLE_API_KEY", "")
 
+    def capabilities(self) -> dict[str, bool]:
+        """Declare what this provider actually supports."""
+        return {
+            "structured_output": True,
+            "tool_role": True,
+            "file_search": True,
+            "grounding": True,
+            "system_prompt": True,
+            "streaming": True,
+        }
+
     async def generate(
         self,
         messages: list[Message],
