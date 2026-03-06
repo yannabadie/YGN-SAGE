@@ -211,6 +211,37 @@ def test_separate_retry_counters_exist():
 
 
 @pytest.mark.asyncio
+async def test_loop_uses_async_metacognition():
+    """Agent loop must call assess_complexity_async, not sync assess_complexity."""
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+    from sage.llm.mock import MockProvider
+    from sage.strategy.metacognition import MetacognitiveController
+    from unittest.mock import AsyncMock
+
+    ctrl = MetacognitiveController()
+    provider = MockProvider(responses=["Done."])
+    config = AgentConfig(
+        name="test", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=3, validation_level=1,
+    )
+    loop = AgentLoop(config=config, llm_provider=provider)
+    loop.metacognition = ctrl
+
+    events = []
+    loop._on_event = events.append
+
+    ctrl.assess_complexity_async = AsyncMock(return_value=ctrl._assess_heuristic("test"))
+
+    await loop.run("test task")
+
+    ctrl.assess_complexity_async.assert_called_once()
+    perceive_events = [e for e in events if e.phase == LoopPhase.PERCEIVE]
+    assert len(perceive_events) >= 1
+    assert "routing_source" in perceive_events[0].data
+
+
+@pytest.mark.asyncio
 async def test_compressor_generates_internal_state():
     """MEM1: compressor generates rolling <IS_t> every step."""
     from sage.memory.compressor import MemoryCompressor

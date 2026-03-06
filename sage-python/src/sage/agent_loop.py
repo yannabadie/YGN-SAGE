@@ -151,7 +151,7 @@ class AgentLoop:
 
         # Metacognitive routing (if wired)
         if self.metacognition:
-            profile = self.metacognition.assess_complexity(task)
+            profile = await self.metacognition.assess_complexity_async(task)
             decision = self.metacognition.route(profile)
             perceive_meta["system"] = decision.system
             perceive_meta["routed_tier"] = decision.llm_tier
@@ -161,6 +161,7 @@ class AgentLoop:
             perceive_meta["uncertainty"] = round(profile.uncertainty, 2)
             if profile.reasoning:
                 perceive_meta["routing_reason"] = profile.reasoning
+            perceive_meta["routing_source"] = "llm" if profile.reasoning != "heuristic" else "heuristic"
 
         self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 
