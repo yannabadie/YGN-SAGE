@@ -95,19 +95,58 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - Runtime guardrails are best-effort (don't block execution)
 - No formal proof that guardrails prevent all policy violations
 
-### 6. Dashboard
+### 6. Contract IR + Verification (Phase 2+3)
+
+**What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
+
+**Evidence:** tested-unit + tested-integration (557 tests total, 6 E2E integration tests)
+
+**Components:**
+| Component | Module | Tests |
+|-----------|--------|-------|
+| TaskNode IR | `contracts/task_node.py` | 9 unit tests |
+| Verification Functions | `contracts/verification.py` | 11 unit tests |
+| TaskDAG + Scheduler | `contracts/dag.py` | 14 unit tests |
+| Z3 Contract Verification | `contracts/z3_verify.py` | 11 unit tests |
+| PolicyVerifier | `contracts/policy.py` | 12 unit tests |
+| DAGExecutor | `contracts/executor.py` | 7 unit tests |
+| TaskPlanner (Plan-and-Act) | `contracts/planner.py` | 10 unit tests |
+| RepairLoop (CEGAR) | `contracts/repair.py` | 8 unit tests |
+| DynamicRouter (DyTopo) | `routing/dynamic.py` | 9 unit tests |
+| CausalMemory | `memory/causal.py` | 10 unit tests |
+| WriteGate | `memory/write_gate.py` | 9 unit tests |
+| Synthetic Failure Lab | `tests/test_failure_modes.py` | 10 tests (MAST taxonomy) |
+| Phase 3 Integration | `tests/test_integration_phase3.py` | 6 E2E tests |
+
+**Key capabilities:**
+- **Z3 SMT proofs:** Capability coverage, budget feasibility, type compatibility — checked at plan time
+- **Info-flow enforcement:** No HIGH→LOW data flow (lattice-based security labels)
+- **CEGAR repair:** Counterexample-guided retry → escalate → abort with hard fences
+- **DyTopo routing:** Capability-constrained model selection with adaptive feedback
+- **Causal memory:** Directed causal edges with BFS chain traversal + ancestor queries
+- **Write gating:** Confidence-based abstention ("better to forget than to store noise")
+
+**Known limitations:**
+- Z3 verifies structural properties, not semantic correctness of LLM outputs
+- DynamicRouter uses static quality scores, not live profiling
+- CausalMemory is in-memory only (no persistence)
+- Planner only supports static plan specs (no LLM-driven planning yet)
+
+### 7. Dashboard
 
 **What it does:** Real-time event viewer via FastAPI + WebSocket.
 
-**Evidence:** implemented (functional but insecure)
+**Evidence:** tested-unit (auth + CORS added in Phase 0)
+
+**Security (Phase 0 fix):**
+- HTTPBearer auth with `SAGE_DASHBOARD_TOKEN` env var (no token = open dev mode)
+- CORS middleware configured for localhost:8000 and :3000
+- `EventBus.clear()` public API replaces private field access
 
 **Known limitations:**
-- **Zero authentication** — anyone on the network can access all data
-- **No CORS configuration** — vulnerable to cross-origin attacks
 - **Global mutable state** — single-task only, race conditions under concurrent use
-- **Accesses private fields** (`event_bus._buffer`) instead of public API
 
-### 7. Evolution Engine
+### 8. Evolution Engine
 
 **What it does:** LLM-driven code mutation with DGM (Dynamic Goal Management) context injection and SAMPO strategic solver.
 
@@ -124,7 +163,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - **No ablation study**: unclear which components (DGM, SAMPO, MAP-Elites) contribute value
 - Depends on eBPF/Wasm for sandboxed evaluation (optional features)
 
-### 8. Rust Core (sage-core)
+### 9. Rust Core (sage-core)
 
 **What it does:** High-performance data plane: Arrow working memory, eBPF/Wasm sandboxes, RAG cache.
 
@@ -144,7 +183,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - eBPF compiles for BPF target requiring `core` stdlib — not available on all platforms
 - Python falls back silently to mock when Rust extension unavailable
 
-### 9. Agent Composition
+### 10. Agent Composition
 
 **What it does:** Patterns for composing agents: Sequential, Parallel, Loop, Handoff.
 
@@ -155,7 +194,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - Only used standalone — not wired into CognitiveOrchestrator's decomposition path
 - Loop and Handoff patterns available but not exercised in any benchmark
 
-### 10. Benchmarks
+### 11. Benchmarks
 
 **What it does:** Built-in HumanEval (164 problems) and routing self-consistency test.
 
@@ -185,6 +224,7 @@ These components degrade silently instead of failing hard:
 | Evolution | No sandbox feature | Skips sandboxed evaluation |
 
 **V2 design goal:** Replace all silent degradation with hard failures or explicit warnings.
+Phase 0 fixed: dashboard auth, provider warnings. Phase 2+3 added: CapabilityMatrix.require() hard-fails.
 
 ---
 
@@ -197,5 +237,7 @@ This project draws on ideas from:
 - [VeriMAP](https://arxiv.org/abs/2510.17109) — verified multi-agent planning
 - [AMA-Bench](https://arxiv.org/abs/2602.22769) — causal memory evaluation
 - [PCAS](https://arxiv.org/abs/2602.16708) — policy compiler for agent systems
+- [MAST](https://arxiv.org/abs/2503.13657) — multi-agent failure taxonomy
+- [Plan-and-Act](https://arxiv.org/abs/2503.09572) — planner/executor separation
 
 See `docs/plans/2026-03-06-v2-evidence-first-design.md` for the V2 rebuild plan.

@@ -41,8 +41,19 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - In-memory entity-relation graph built by MemoryAgent
 - `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), auto-configured with DEFAULT_STORE
+- `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering
+- `memory/write_gate.py` - WriteGate: confidence-based write gating with abstention tracking
 - `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
 - `tools/exocortex_tools.py` - `search_exocortex` + `refresh_knowledge` agent tools
+- `contracts/task_node.py` - TaskNode IR: typed I/O schemas, capabilities, security labels, budgets
+- `contracts/verification.py` - VFResult, pre_check, post_check, run_verification
+- `contracts/dag.py` - TaskDAG: Kahn's topo sort, cycle detection, IO validation, ready_nodes
+- `contracts/z3_verify.py` - Z3 SMT: capability coverage, budget feasibility, type compatibility
+- `contracts/policy.py` - PolicyVerifier: info-flow labels, budget, fan-in/fan-out limits
+- `contracts/executor.py` - DAGExecutor: topo execution with VF pre/post checks + policy gate
+- `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
+- `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
+- `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging
@@ -63,7 +74,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (431 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (557 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
