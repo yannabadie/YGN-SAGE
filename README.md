@@ -17,19 +17,22 @@
 
 ---
 
-YGN-SAGE is an Agent Development Kit that routes tasks through three cognitive systems (S1/S2/S3), validates outputs with Z3 formal proofs, and shows everything in a real-time dashboard. It combines a Rust execution core with a Python SDK.
+YGN-SAGE is an Agent Development Kit that combines **cognitive routing (S1/S2/S3)**, **multi-provider model selection** (7 providers, 70+ models), **Z3 formal guardrails**, and a **real-time dashboard** into a single system. It uses a Rust execution core with a Python SDK.
 
 ## What Makes It Different
 
-| Feature | Google ADK | OpenAI Agents | LangGraph | **YGN-SAGE** |
-|---------|-----------|---------------|-----------|--------------|
-| Routing | Static | LLM picks | Graph edges | **S1/S2/S3 cognitive + LLM assessment** |
-| Guardrails | Instructions | Heuristic | Human-in-loop | **Z3 formal proofs, composable** |
-| Memory | 1 tier | 1 tier | 1 tier | **4 tiers (STM + Episodic + Semantic + ExoCortex)** |
-| Sandbox | None | None | None | **Wasm + eBPF + Docker** |
-| Dashboard | Cloud console | Cloud traces | Cloud (paid) | **Built-in, real-time, free** |
-| Benchmarks | External | None | External | **HumanEval + Routing built-in** |
-| Composition | Seq/Par/Loop | Handoffs | StateGraph | **Seq/Par/Loop + Handoffs + Cognitive routing** |
+Other frameworks (Google ADK, LangGraph, OpenAI Agents SDK) handle orchestration well. Research like [AdaptOrch](https://arxiv.org/abs/2602.16873) shows topology-adaptive routing outperforms static baselines by 12-23%. YGN-SAGE builds on these ideas while combining capabilities no single framework offers together:
+
+| Capability | Competitors | YGN-SAGE |
+|------------|-------------|----------|
+| **Cognitive routing** | Static per-agent or LLM-decided | S1/S2/S3 + LLM complexity assessment |
+| **Multi-provider** | Usually single-provider | 7 providers auto-discovered at boot |
+| **Model selection** | Manual or tier-based | Score-based (quality/cost/latency) per subtask |
+| **Formal guardrails** | Heuristic or human-in-loop | Z3 proofs, composable pipeline |
+| **Memory** | 1 tier (sessions) | 4 tiers (STM + SQLite + Semantic + ExoCortex RAG) |
+| **Sandbox** | Rarely built-in | Wasm + eBPF + Docker |
+| **Dashboard** | External (cloud, paid) | Built-in, real-time, free |
+| **Benchmarks** | External tools | HumanEval + Routing Accuracy built-in |
 
 ## Quick Start
 

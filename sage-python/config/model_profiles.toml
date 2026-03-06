@@ -1,8 +1,9 @@
 # YGN-SAGE Model Profiles Knowledge Base
 # Human-maintained benchmark scores and pricing data.
-# Scores are 0.0-1.0 based on public benchmarks.
+# Scores are 0.0-1.0 based on public benchmarks (SWE-bench, GPQA, HumanEval, etc.)
 # Prices are $/1M tokens.
-# Last updated: 2026-03-06
+# Auto-discovery at boot supplements this with live availability data.
+# Last updated: 2026-03-06 (GPT-5.4 released 2026-03-05)
 
 [models."gemini-3.1-pro-preview"]
 provider = "google"
@@ -67,16 +68,35 @@ supports_file_search = true
 [models."gpt-5.4"]
 provider = "openai"
 family = "gpt-5.4"
-code_score = 0.85
+# Released 2026-03-05. 1.1M context. Computer use. OSWorld 75% (superhuman).
+# SWE-bench Pro 57.7%. BrowseComp 89.3%. Fewer tokens than GPT-5.2.
+code_score = 0.86
 reasoning_score = 0.95
-tool_use_score = 0.90
-cost_input = 2.00
-cost_output = 16.00
-latency_ttft_ms = 3000
-tokens_per_second = 100
+tool_use_score = 0.92
+cost_input = 2.50
+cost_output = 15.00
+latency_ttft_ms = 2500
+tokens_per_second = 120
 supports_structured_output = true
 supports_tools = true
 structured_output_tools_compatible = true
+supports_computer_use = true
+
+[models."gpt-5.4-pro"]
+provider = "openai"
+family = "gpt-5.4"
+# Maximum compute variant. GDPval 82% (vs 70% for GPT-5.2).
+code_score = 0.90
+reasoning_score = 0.97
+tool_use_score = 0.93
+cost_input = 15.00
+cost_output = 120.00
+latency_ttft_ms = 8000
+tokens_per_second = 50
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+supports_computer_use = true
 
 [models."gpt-5.2"]
 provider = "openai"
@@ -148,6 +168,21 @@ supports_structured_output = true
 supports_tools = true
 structured_output_tools_compatible = true
 
+[models."grok-code-fast-1"]
+provider = "xai"
+family = "grok-code"
+# Specialized code model from xAI. Discovered in live API scan.
+code_score = 0.78
+reasoning_score = 0.70
+tool_use_score = 0.75
+cost_input = 0.20
+cost_output = 0.50
+latency_ttft_ms = 1500
+tokens_per_second = 150
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
 [models."grok-3"]
 provider = "xai"
 family = "grok-3"
@@ -200,6 +235,21 @@ cost_input = 0.30
 cost_output = 1.20
 latency_ttft_ms = 2000
 tokens_per_second = 50
+supports_structured_output = true
+supports_tools = true
+structured_output_tools_compatible = true
+
+[models."MiniMax-M2.5-highspeed"]
+provider = "minimax"
+family = "minimax-m2.5"
+# Lightning variant: 2x throughput, 200K context (vs 1M for standard).
+code_score = 0.80
+reasoning_score = 0.85
+tool_use_score = 0.80
+cost_input = 0.30
+cost_output = 2.40
+latency_ttft_ms = 1000
+tokens_per_second = 100
 supports_structured_output = true
 supports_tools = true
 structured_output_tools_compatible = true

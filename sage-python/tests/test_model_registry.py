@@ -396,7 +396,7 @@ class TestModelRegistry:
         gpt54 = registry.get("gpt-5.4")
         assert gpt54 is not None
         assert gpt54.available is False
-        assert gpt54.code_score == 0.85  # from TOML
+        assert gpt54.code_score == 0.86  # from TOML
 
     @pytest.mark.asyncio
     async def test_refresh_empty_discovery(self, monkeypatch):
