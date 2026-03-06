@@ -72,8 +72,14 @@ def run_test(
 
     Returns (passed: bool, error_message: str).
     """
-    # Build the full program: prompt (signature) + completion + test
-    full_code = prompt + completion + "\n" + test_code + f"\ncheck({entry_point})\n"
+    # Build the full program: if completion contains the full function def,
+    # use it standalone; otherwise prepend the prompt (signature).
+    if f"def {entry_point}" in completion:
+        # Completion has the full function — don't duplicate the prompt
+        full_code = completion + "\n" + test_code + f"\ncheck({entry_point})\n"
+    else:
+        # Completion is just the body — needs the prompt's signature
+        full_code = prompt + completion + "\n" + test_code + f"\ncheck({entry_point})\n"
 
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".py", delete=False, encoding="utf-8"
