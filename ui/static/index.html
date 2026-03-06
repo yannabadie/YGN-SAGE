@@ -272,6 +272,32 @@
             </div>
         </div>
 
+        <!-- Agent Topology -->
+        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
+            <h3 class="text-sm font-semibold text-sage-400 mb-3">AGENT TOPOLOGY</h3>
+            <div id="topology-list" class="space-y-1 text-xs text-sage-500">
+                <div class="text-sage-600 italic">No agents active</div>
+            </div>
+        </div>
+
+        <!-- Evolution -->
+        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
+            <h3 class="text-sm font-semibold text-sage-400 mb-3">EVOLUTION</h3>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <div>Gen: <span id="evo-gen" class="text-sage-200">0</span></div>
+                <div>Pop: <span id="evo-pop" class="text-sage-200">0</span></div>
+                <div>Best: <span id="evo-best" class="text-sage-200">0.0</span></div>
+                <div>Cells: <span id="evo-cells" class="text-sage-200">0</span></div>
+            </div>
+        </div>
+
+        <!-- Active Model -->
+        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
+            <h3 class="text-sm font-semibold text-sage-400 mb-3">ACTIVE MODEL</h3>
+            <div id="active-model" class="text-sm text-sage-200 font-mono">&mdash;</div>
+            <div id="active-provider" class="text-xs text-sage-500 mt-1">&mdash;</div>
+        </div>
+
         <!-- Stats -->
         <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
             <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Statistics</label>
@@ -345,13 +371,13 @@
             <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Benchmarks</label>
         </div>
         <div class="flex items-center gap-3">
-            <button onclick="runBenchmark('humaneval')"
-                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors">
-                Run HumanEval
+            <button id="btn-routing" onclick="runBenchmark('routing')"
+                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                Run Routing
             </button>
-            <button onclick="runBenchmark('swe-bench')"
-                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors">
-                Run SWE-bench
+            <button id="btn-humaneval" onclick="runBenchmark('humaneval')"
+                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                Run HumanEval
             </button>
             <div class="flex-1 mx-3">
                 <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
@@ -611,6 +637,31 @@
                 stats.memEpisodic++;
                 stats.episodicActive = true;
             }
+        }
+
+        // ORCHESTRATOR: update active model display
+        if (type === 'ORCHESTRATOR') {
+            const modelEl = document.getElementById('active-model');
+            if (modelEl) modelEl.textContent = evt.model || '\u2014';
+            const sysEl = document.getElementById('active-provider');
+            if (sysEl) sysEl.textContent = `S${evt.system || '?'} | ${evt.latency_ms || 0}ms`;
+        }
+
+        // BENCH_SUMMARY: update benchmark results
+        if (type === 'BENCH_SUMMARY') {
+            const m = evt.meta || {};
+            const benchResult = document.getElementById('bench-result');
+            if (benchResult) {
+                benchResult.textContent =
+                    `${m.benchmark || '?'}: ${((m.pass_rate || 0)*100).toFixed(1)}% (${m.passed || 0}/${m.total || 0}) | ${(m.avg_latency_ms || 0).toFixed(0)}ms avg`;
+            }
+            const benchBar = document.getElementById('bench-bar');
+            if (benchBar) benchBar.style.width = `${(m.pass_rate || 0)*100}%`;
+            // Re-enable benchmark buttons
+            const btnR = document.getElementById('btn-routing');
+            const btnH = document.getElementById('btn-humaneval');
+            if (btnR) btnR.disabled = false;
+            if (btnH) btnH.disabled = false;
         }
 
         // Completion
@@ -901,12 +952,21 @@
         }
     };
 
-    window.runBenchmark = function(name) {
-        // Placeholder: submit a benchmark task
-        $id('task-input').value = `[BENCHMARK] Run ${name} evaluation suite`;
-        $id('bench-result').textContent = 'Starting...';
-        $id('bench-bar').style.width = '10%';
-        submitTask();
+    window.runBenchmark = async function(type) {
+        const btn = document.getElementById('btn-' + type);
+        if (btn) btn.disabled = true;
+        try {
+            const limit = type === 'humaneval' ? 20 : null;
+            const resp = await fetch('/api/benchmark', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({type, limit}),
+            });
+            const data = await resp.json();
+            document.getElementById('bench-result').textContent = `${type} started...`;
+        } catch(e) {
+            document.getElementById('bench-result').textContent = 'Error: ' + e.message;
+        }
     };
 
     window.applyFilter = applyFilter;
@@ -918,6 +978,57 @@
             submitTask();
         }
     });
+
+    // ---------------------------------------------------------------
+    // Periodic polling for memory/topology/evolution stats
+    // ---------------------------------------------------------------
+    setInterval(async () => {
+        try {
+            const [mem, topo, evo] = await Promise.all([
+                fetch('/api/memory/stats').then(r => r.json()),
+                fetch('/api/topology').then(r => r.json()),
+                fetch('/api/evolution').then(r => r.json()),
+            ]);
+
+            // Update memory stats from REST (supplement WebSocket events)
+            if (mem) {
+                stats.memSTM = mem.stm || stats.memSTM;
+                stats.memEpisodic = mem.episodic || stats.memEpisodic;
+                stats.memSemantic = mem.semantic || stats.memSemantic;
+                if (mem.exocortex) stats.memExoCortex = Math.max(stats.memExoCortex, 1);
+            }
+
+            // Update topology list
+            const topoList = document.getElementById('topology-list');
+            if (topoList && topo && topo.agents) {
+                if (topo.agents.length === 0) {
+                    topoList.innerHTML = '<div class="text-sage-600 italic">No agents active</div>';
+                } else {
+                    topoList.innerHTML = topo.agents.map(a => {
+                        const name = typeof a === 'string' ? a : (a.name || a.id || JSON.stringify(a));
+                        return `<div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span class="text-sage-300">${name}</span></div>`;
+                    }).join('');
+                }
+            }
+
+            // Update evolution stats
+            if (evo) {
+                const genEl = document.getElementById('evo-gen');
+                const popEl = document.getElementById('evo-pop');
+                const bestEl = document.getElementById('evo-best');
+                const cellsEl = document.getElementById('evo-cells');
+                if (genEl) genEl.textContent = evo.generation || 0;
+                if (popEl) popEl.textContent = evo.population_size || 0;
+                if (bestEl) bestEl.textContent = (evo.best_score || 0).toFixed(1);
+                if (cellsEl) cellsEl.textContent = (evo.cells || []).length;
+            }
+
+            // Refresh dashboard display
+            updateDashboard();
+        } catch(e) {
+            // Silent fail -- polling is supplementary
+        }
+    }, 3000);
 
     // ---------------------------------------------------------------
     // Init

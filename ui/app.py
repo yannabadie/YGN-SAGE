@@ -283,20 +283,126 @@ async def reset_state():
 
 @app.get("/api/providers")
 async def list_providers():
-    """Return available LLM providers and their status."""
+    """Return available LLM providers from ModelRegistry or fallback."""
+    try:
+        if system and hasattr(system, 'registry') and system.registry:
+            available = system.registry.list_available()
+            providers = [
+                {"name": p.id, "provider": p.provider, "code": p.code_score,
+                 "reasoning": p.reasoning_score, "cost": f"${p.cost_input:.3f}/${p.cost_output:.3f}",
+                 "available": p.available}
+                for p in available[:20]
+            ]
+            return JSONResponse(providers)
+    except Exception:
+        pass
+    # Fallback to simple detection
     codex_ok = shutil.which("codex") is not None
     gemini_ok = bool(os.environ.get("GOOGLE_API_KEY"))
+    return JSONResponse([
+        {"name": "Gemini 3.1 Pro", "provider": "google", "available": gemini_ok},
+        {"name": "GPT-5.3 Codex", "provider": "openai", "available": codex_ok},
+    ])
 
-    providers = [
-        {"name": "GPT-5.3 Codex", "tier": "codex", "available": codex_ok},
-        {"name": "GPT-5.2", "tier": "codex_max", "available": codex_ok},
-        {"name": "Gemini 3.1 Pro", "tier": "reasoner", "available": gemini_ok},
-        {"name": "Gemini 3.1 Flash Lite", "tier": "fast", "available": gemini_ok},
-        {"name": "Gemini 3 Flash", "tier": "mutator", "available": gemini_ok},
-        {"name": "Gemini 2.5 Flash Lite", "tier": "budget", "available": gemini_ok},
-        {"name": "Gemini 2.5 Flash", "tier": "fallback", "available": gemini_ok},
-    ]
-    return JSONResponse(providers)
+
+@app.post("/api/benchmark")
+async def run_benchmark(request: Request):
+    """Launch a benchmark run in background."""
+    body = await request.json()
+    bench_type = body.get("type", "routing")
+    limit = body.get("limit")
+
+    async def _run_bench():
+        try:
+            if bench_type == "routing":
+                from sage.strategy.metacognition import MetacognitiveController
+                from sage.bench.routing import RoutingAccuracyBench
+                mc = MetacognitiveController()
+                bench = RoutingAccuracyBench(metacognition=mc)
+                report = await bench.run()
+            elif bench_type == "humaneval":
+                from sage.bench.humaneval import HumanEvalBench
+                _boot_system()
+                bench = HumanEvalBench(system=system, event_bus=event_bus)
+                report = await bench.run(limit=limit)
+            else:
+                return
+            # Emit summary event
+            event_bus.emit(AgentEvent(
+                type="BENCH_SUMMARY",
+                step=0,
+                timestamp=time.time(),
+                meta={
+                    "benchmark": report.benchmark,
+                    "pass_rate": report.pass_rate,
+                    "total": report.total,
+                    "passed": report.passed,
+                    "avg_latency_ms": report.avg_latency_ms,
+                    "routing_breakdown": report.routing_breakdown,
+                },
+            ))
+        except Exception as e:
+            logger.exception("Benchmark failed")
+            event_bus.emit(AgentEvent(type="ERROR", step=0, timestamp=time.time(), meta={"error": str(e)}))
+
+    asyncio.create_task(_run_bench())
+    return JSONResponse({"status": "started", "type": bench_type})
+
+
+@app.get("/api/memory/stats")
+async def memory_stats():
+    """Return 4-tier memory statistics."""
+    stats = {"stm": 0, "episodic": 0, "semantic": 0, "exocortex": False}
+    try:
+        if system:
+            loop = system.agent_loop
+            stats["stm"] = loop.working_memory.event_count()
+            if loop.episodic_memory:
+                try:
+                    stats["episodic"] = await loop.episodic_memory.count()
+                except Exception:
+                    pass
+            if hasattr(loop, 'semantic_memory') and loop.semantic_memory:
+                stats["semantic"] = loop.semantic_memory.entity_count()
+            if loop.exocortex and loop.exocortex.is_available:
+                stats["exocortex"] = True
+    except Exception:
+        pass
+    return JSONResponse(stats)
+
+
+@app.get("/api/topology")
+async def get_topology():
+    """Return active agent pool topology."""
+    agents = []
+    try:
+        if system and hasattr(system.agent_loop, 'agent_pool'):
+            pool = system.agent_loop.agent_pool
+            if hasattr(pool, 'list_agents'):
+                agents = pool.list_agents()
+    except Exception:
+        pass
+    return JSONResponse({"agents": agents})
+
+
+@app.get("/api/evolution")
+async def get_evolution():
+    """Return evolution engine state."""
+    evo = {"generation": 0, "population_size": 0, "best_score": 0.0, "cells": []}
+    try:
+        if system and hasattr(system.agent_loop, 'topology_population'):
+            pop = system.agent_loop.topology_population
+            if pop and pop.size() > 0:
+                evo["population_size"] = pop.size()
+                try:
+                    for (x, y), (genome, score) in pop._grid.items():
+                        evo["cells"].append({"x": x, "y": y, "score": round(score, 2)})
+                        evo["best_score"] = max(evo["best_score"], score)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return JSONResponse(evo)
 
 
 # ---------------------------------------------------------------------------
