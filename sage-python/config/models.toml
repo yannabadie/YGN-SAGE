@@ -1,0 +1,14 @@
+# YGN-SAGE Model Configuration
+# Override per-tier model IDs here or via env vars (SAGE_MODEL_FAST, etc.)
+
+[tiers]
+fast = "gemini-3.1-flash-lite-preview"
+mutator = "gemini-3-flash-preview"
+reasoner = "gemini-3.1-pro-preview"
+codex = "gpt-5.3-codex"
+codex_max = "gpt-5.2"
+budget = "gemini-2.5-flash-lite"
+fallback = "gemini-2.5-flash"
+
+[defaults]
+temperature = 0.7
