@@ -8,10 +8,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List
 
-try:
-    import numpy as np
-except ImportError:
-    np = None  # type: ignore[assignment]
+import numpy as np
 
 
 class SolverMode(Enum):

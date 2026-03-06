@@ -9,6 +9,7 @@ dependencies = [
     "rich>=13",
     "anyio>=4",
     "aiosqlite>=0.20",
+    "numpy>=1.26",
 ]
 
 [project.optional-dependencies]

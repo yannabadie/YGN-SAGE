@@ -9,10 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Awaitable
 import logging
 
-try:
-    import numpy as np
-except ImportError:
-    np = None  # type: ignore[assignment]
+import numpy as np
 
 from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator

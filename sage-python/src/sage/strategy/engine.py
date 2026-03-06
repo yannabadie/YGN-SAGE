@@ -7,10 +7,7 @@ from __future__ import annotations
 
 from typing import Any, List
 
-try:
-    import numpy as np
-except ImportError:
-    np = None  # type: ignore[assignment]
+import numpy as np
 
 from sage.strategy.solvers import RegretMatcher, SAMPOSolver, VolatilityAdaptiveSolver, SHORPSROSolver
 from sage.strategy.allocator import ResourceAllocator, Allocation

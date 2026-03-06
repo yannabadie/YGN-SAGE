@@ -22,8 +22,12 @@ raw-cpuid = "11.2"
 arrow = { version = "55.0", features = ["ffi"] }
 arrow-array = "55.0"
 pyo3-arrow = "0.10.0"
-wasmtime = "29.0"
-solana_rbpf = "0.8.5"
+wasmtime = { version = "29.0", optional = true }
+solana_rbpf = { version = "0.8.5", optional = true }
 numpy = "0.25"
 petgraph = "0.6.4"
+[features]
+default = []
+sandbox = ["wasmtime", "solana_rbpf"]
+
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
