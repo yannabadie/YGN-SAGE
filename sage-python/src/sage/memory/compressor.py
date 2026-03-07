@@ -18,7 +18,7 @@ class VectorDatabase(Protocol):
     def upsert(self, collection: str, text: str, metadata: dict[str, Any]) -> str: ...
 
 class MemoryCompressor:
-    """Agent that monitors working memory and performs SOTA compression & persistence."""
+    """Agent that monitors working memory and performs compression & persistence."""
 
     def __init__(
         self,

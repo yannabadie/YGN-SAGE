@@ -14,7 +14,7 @@ def create_exocortex_tools(exocortex: Any) -> list[Tool]:
     @Tool.define(
         name="search_exocortex",
         description=(
-            "Search the ExoCortex knowledge store for research papers and SOTA insights. "
+            "Search the ExoCortex knowledge store for research papers and insights. "
             "Use when you need specific research knowledge about MARL, cognitive architectures, "
             "formal verification, evolutionary computation, or memory systems."
         ),

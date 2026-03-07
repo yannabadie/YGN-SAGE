@@ -1,6 +1,7 @@
 """Working memory - short-term, in-memory, per-agent execution.
 
-Backed by the hyper-performant Rust implementation in sage_core.
+Delegates to the Rust implementation in sage_core when available,
+falls back to a pure-Python mock otherwise.
 """
 from __future__ import annotations
 
@@ -118,7 +119,7 @@ class WorkingMemory:
         self._inner.compress_old_events(keep_recent, summary)
 
     def compact_to_arrow(self) -> int:
-        """ASI Feature: Compact active buffer into an immutable Arrow RecordBatch and register it in the S-MMU graph."""
+        """Compact active buffer into an immutable Arrow RecordBatch and register it in the S-MMU graph."""
         return self._inner.compact_to_arrow()
 
     def compact_to_arrow_with_meta(

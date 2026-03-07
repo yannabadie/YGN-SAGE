@@ -77,7 +77,7 @@ class FormalKnowledgeGraph:
         """Score a reasoning step based on its formal verifiability."""
         step_lower = step.lower()
         
-        # SOTA PRM: Parse constraints and prove them using Z3.
+        # Parse formal constraints and attempt Z3 proofs.
         
         # Look for "assert bounds(X, limit)"
         bounds_match = re.search(r"assert\s+bounds\(\s*(-?\d+)\s*,\s*(\d+)\s*\)", step_lower)

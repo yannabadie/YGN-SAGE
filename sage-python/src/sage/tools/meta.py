@@ -1,4 +1,4 @@
-"""Meta-tools for dynamic tool synthesis (OpenSage SOTA).
+"""Meta-tools for dynamic tool synthesis.
 
 Enables agents to write, register, and manage their own tools dynamically.
 Uses persistent file-based compilation and isolated execution to avoid 

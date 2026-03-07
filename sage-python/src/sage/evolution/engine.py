@@ -42,9 +42,9 @@ class EvolutionConfig:
     max_generations: int = 50
     mutations_per_generation: int = 10
     elite_count: int = 3
-    # SOTA Mandate: Hard warm-start threshold for filtering initial noise.
+    # Warm-start threshold: skip policy accumulation for first N mutations (arbitrary, needs tuning)
     hard_warm_start_threshold: int = 500
-    # DGM Mandate: Enable self-modification
+    # Enable SAMPO-based hyperparameter self-adjustment
     enable_dgm: bool = True
     # Z3 Safety Gate: validate evolved code before evaluation
     z3_safety_gate: bool = True
@@ -53,9 +53,12 @@ class EvolutionConfig:
 
 class EvolutionEngine:
     """Orchestrates evolutionary optimization of code solutions.
-    
-    ASI Upgrade: Darwin Godel Machine (DGM) capable of self-modifying 
-    the mutator logic and hyperparameters using SAMPO.
+
+    Uses SAMPO action selection to adjust 3 hyperparameters
+    (mutations_per_generation, clip_epsilon, filter_threshold) during
+    evolution. Despite the "DGM" variable names (kept for backward
+    compatibility), this is NOT a Godel Machine -- it does not produce
+    self-proofs. It is a simple online hyperparameter adjustment loop.
     """
 
     def __init__(
@@ -92,7 +95,7 @@ class EvolutionEngine:
         elif self.config.z3_safety_gate and not _Z3_AVAILABLE:
             log.warning("Z3 safety gate requested but sage_core not available — skipping")
 
-        # SOTA: DGM Solver for self-optimization
+        # SAMPO solver for action selection (hyperparameter adjustment)
         self._dgm_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
         self._trajectories = []
 
@@ -118,7 +121,7 @@ class EvolutionEngine:
     ) -> list[Individual]:
         """Run one generation of evolution.
 
-        ASI/DGM: Samples mutator actions from SAMPOSolver to evolve the system itself.
+        Samples mutator actions from SAMPOSolver to guide mutation strategy.
         """
         self.generation += 1
         accepted = []
@@ -133,10 +136,10 @@ class EvolutionEngine:
         for parent in parents:
             self.total_mutations += 1
             
-            # DGM Action Selection (e.g., 0: Mutate, 1: Hybrid, 2: Self-Fix)
+            # Strategy action selection (see DGM_ACTION_DESCRIPTIONS)
             dgm_action = np.random.choice(5, p=self._dgm_solver.get_strategy())
             
-            # --- DGM Self-Modification Logic (ASI Phase 2) ---
+            # --- Hyperparameter self-adjustment ---
             if dgm_action == 2:
                 # Action 2: Expand search space (Engine Hyperparameter)
                 self.config.mutations_per_generation = min(50, self.config.mutations_per_generation + 2)
@@ -149,7 +152,7 @@ class EvolutionEngine:
             
             # Generate mutation
             try:
-                # SOTA: Mutate function now incorporates DGM context
+                # Mutation function receives strategy context for guided mutation
                 dgm_context = {
                     "action": int(dgm_action),
                     "description": DGM_ACTION_DESCRIPTIONS.get(int(dgm_action), ""),
@@ -171,7 +174,7 @@ class EvolutionEngine:
             # Evaluate
             eval_result = await self._evaluator.evaluate(new_code)
 
-            # SOTA Mandate: Apply Hard Warm-Start logic.
+            # Apply warm-start logic: flag early mutations as exploratory
             is_warm_up = self.total_mutations < self.config.hard_warm_start_threshold
 
             child = Individual(

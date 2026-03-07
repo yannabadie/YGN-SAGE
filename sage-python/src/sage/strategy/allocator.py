@@ -72,12 +72,12 @@ class ResourceAllocator:
 
 
 class VolatilityGatedScheduler:
-    """SOTA 2026: Resource scheduler gated by process volatility.
-    
-    Implements VAD-CFR inspired adaptive budgeting:
+    """Resource scheduler gated by process volatility.
+
+    Implements VAD-CFR inspired adaptive budgeting (heuristic, not validated):
     - High Volatility: Dampen resource allocation to prevent over-optimization on noisy signals.
-    - Low Volatility: Aggressively increase allocation to push past local optima.
-    - Hard Warm-Start: Constant allocation for initial T=500 steps.
+    - Low Volatility: Increase allocation to push past local optima.
+    - Hard Warm-Start: Constant allocation for initial T=500 steps (arbitrary threshold).
     """
 
     def __init__(
@@ -97,7 +97,7 @@ class VolatilityGatedScheduler:
         """Update internal volatility tracking and return the resource multiplier."""
         self.steps += 1
         
-        # Update EWMA Volatility (SOTA 2026 approach)
+        # Update EWMA Volatility (decay=0.9, heuristic)
         self._ewma_volatility = 0.1 * current_volatility + 0.9 * self._ewma_volatility
         
         if self.steps < self.warm_start_steps:

@@ -81,7 +81,7 @@ class Sandbox:
         return await self._execute_docker(command)
 
     async def _execute_wasm(self, command: str, module_bytes: bytes) -> SandboxResult:
-        """SOTA 2026: Fast-path execution via Wasm Component Model."""
+        """Fast-path execution via Wasm Component Model."""
         try:
             # Command is expected to be tool name in this case
             # Args are typically passed via env or command string (JSON)
@@ -201,8 +201,8 @@ class SandboxManager:
         return sandbox
 
     async def checkpoint(self, sandbox_id: str, snapshot_name: str) -> str:
-        """SOTA 2026: Take a snapshot of a running sandbox using docker commit.
-        
+        """Take a snapshot of a running sandbox using docker commit.
+
         Returns the new image ID.
         """
         if not self._use_docker:

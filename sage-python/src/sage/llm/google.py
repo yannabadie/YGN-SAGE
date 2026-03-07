@@ -8,7 +8,7 @@ from sage.llm.base import LLMConfig, LLMResponse, Message, ToolDef
 logger = logging.getLogger(__name__)
 
 class GoogleProvider:
-    """LLM provider for Google Gemini models with native SOTA grounding."""
+    """LLM provider for Google Gemini models with native grounding."""
 
     name = "google"
 
@@ -46,7 +46,7 @@ class GoogleProvider:
             )
         client = genai.Client(api_key=self.api_key)
 
-        # SOTA March 2026 Default
+        # Default model
         model = "gemini-3.1-pro-preview"
         if config and config.model:
             model = config.model

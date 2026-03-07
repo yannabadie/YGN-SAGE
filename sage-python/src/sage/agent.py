@@ -43,7 +43,7 @@ class Agent:
         self.step_count: int = 0
         self.result: str | None = None
         
-        # SOTA/ASI Integration
+        # Memory, sandbox, and reasoning subsystems
         self.working_memory = WorkingMemory(agent_id=config.name)
         self.memory_compressor = memory_compressor
         self.sandbox_manager = sandbox_manager or SandboxManager(use_docker=config.use_docker_sandbox)
@@ -113,7 +113,7 @@ class Agent:
                 
                 content = response.content or "Tool Calls Generated"
                 
-                # SOTA 2026: KG-RLVR System 3 Reasoning Check
+                # KG-RLVR System 3 reasoning check (Z3-backed process reward)
                 if self.config.validation_level >= 3 and response.content:
                     r_path, details = self.prm.calculate_r_path(response.content)
                     if r_path < 0.0:

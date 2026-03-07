@@ -1,7 +1,8 @@
 """Meta-strategy solvers inspired by PSRO/DCH game theory.
 
-Implements Regret Matching, Projected Replicator Dynamics (PRD),
-and advanced SOTA variants like VAD-CFR and SHOR-PSRO.
+Implements Regret Matching, and two experimental variants:
+VAD-CFR (Volatility-Adaptive Discounted CFR) and SHOR-PSRO
+(Smoothed Hybrid Optimistic Regret PSRO).
 """
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ import numpy as np
 
 
 class SolverMode(Enum):
-    """Execution mode for decoupled SOTA solvers."""
+    """Execution mode for solvers (training vs evaluation)."""
     TRAINING = "training"
     EVALUATION = "evaluation"
 
@@ -59,9 +60,10 @@ class RegretMatcher:
 class VolatilityAdaptiveSolver:
     """Volatility-Adaptive Discounted CFR (VAD-CFR) Solver.
 
-    SOTA 2026: Adjusts regrets and policy accumulation based on EWMA volatility.
+    Adjusts regrets and policy accumulation based on EWMA volatility.
     Includes a hard warm-start mechanism to filter initial exploration noise.
-    As derived from YGN-SAGE Core Research.
+    All hyperparameters below are chosen heuristically and have not been
+    validated against a theoretical baseline.
     """
 
     def __init__(self, n_actions: int, warm_start_threshold: int = 500):
@@ -86,18 +88,18 @@ class VolatilityAdaptiveSolver:
         self._iterations += 1
         
         # 1. Update Volatility (EWMA)
-        # SOTA Mandate: Taux de décroissance de 0.1 pour magnitude et 0.9 pour précédent.
+        # Decay: 0.1 weight on new magnitude, 0.9 on history (chosen heuristically)
         inst_regrets = action_utilities - action_utilities[chosen_action]
         inst_mag = np.max(np.abs(inst_regrets))
-        
-        # SOTA Core Research Mandate: Decay factor (gamma) is exactly 0.9
+
+        # EWMA decay factor 0.9 (not validated, needs tuning)
         self._ewma_volatility = 0.1 * inst_mag + 0.9 * self._ewma_volatility
-        
-        # SOTA Mandate: Sensibilité à la volatilité fixée à 0.5.
+
+        # Volatility sensitivity capped at 0.5 (arbitrary, needs tuning)
         v_t = min(1.0, 0.5 * self._ewma_volatility)
 
         # 2. Adaptive Discounting (alpha for positive, beta for negative)
-        # SOTA Mandate: Base alpha=1.5, Base beta=-0.1.
+        # Base alpha=1.5, beta=-0.1 (heuristic, not from any paper)
         alpha = max(0.1, 1.5 - 0.5 * v_t)
         beta = min(alpha, -0.1 - 0.5 * v_t)
         
@@ -106,26 +108,26 @@ class VolatilityAdaptiveSolver:
         d_neg = (t**beta) / (t**beta + 1.0)
 
         # 3. Update Regrets with Boosting
-        # SOTA Core Research Mandate: Boost factor of exactly 1.1 for positive regrets.
+        # Boost factor 1.1 for positive regrets (heuristic, not validated)
         for i in range(self.n_actions):
             r_boosted = inst_regrets[i] * 1.1 if inst_regrets[i] > 0 else inst_regrets[i]
             discount = d_pos if self._cumulative_regret[i] >= 0 else d_neg
             self._cumulative_regret[i] = (self._cumulative_regret[i] * discount) + r_boosted
             
-            # SOTA Mandate: Cap for negative regret at -20.0.
+            # Cap negative regret at -20.0 to prevent runaway accumulation
             self._cumulative_regret[i] = max(-20.0, self._cumulative_regret[i])
 
         # 4. Policy Accumulation with Hard Warm-Start
-        # SOTA Core Research Mandate: Seuil de démarrage à chaud de 500 itérations.
+        # Skip accumulation for the first N iterations (warm-start threshold, arbitrary)
         if self._iterations >= self.warm_start_threshold:
-            # SOTA Mandate: Gamma base 2.0 max 4.0.
+            # Gamma base 2.0, max 4.0 (heuristic time-weighting exponent)
             gamma = min(4.0, 2.0 + 1.5 * v_t)
             w_time = t**gamma
             w_mag = (1.0 + (inst_mag / 2.0))**0.5
             w_stable = 1.0 / (1.0 + inst_mag**1.5)
             final_weight = w_time * w_mag * w_stable
             
-            # Non-linear scaling mandate: proj_R ** 1.5
+            # Non-linear scaling: proj_R ** 1.5 (heuristic sharpening)
             current_strategy = self.get_strategy()
             scaled_strategy = np.power(np.maximum(0.0, current_strategy), 1.5)
             if np.sum(scaled_strategy) > 1e-12:
@@ -146,8 +148,9 @@ class VolatilityAdaptiveSolver:
 class SHORPSROSolver:
     """Smoothed Hybrid Optimistic Regret PSRO (SHOR-PSRO) Solver.
 
-    SOTA 2026: Blends Optimistic Regret Matching with Smoothed Softmax
+    Blends Optimistic Regret Matching with Smoothed Softmax
     using decoupled training/evaluation modes and annealing.
+    Annealing schedule and blend parameters are heuristic.
     """
 
     def __init__(self, n_actions: int, total_iters: int = 75, mode: SolverMode = SolverMode.TRAINING):
@@ -158,21 +161,17 @@ class SHORPSROSolver:
         self._iterations = 0
 
     def _get_params(self) -> tuple[float, float, float, float]:
-        """Dynamic Annealing Schedule based on Mandate."""
+        """Dynamic annealing schedule (heuristic, not from any paper)."""
         if self.mode == SolverMode.EVALUATION:
-            # SOTA Mandate: Fixed strict params for evaluation
+            # Fixed strict params for evaluation mode
             return 0.01, 0.001, 0.0, 0.2  # lambda, temp, diversity, momentum
-            
-        # TRAINING Mode
+
+        # TRAINING Mode: linear annealing over total_iters
         p = min(1.0, self._iterations / self.total_iters)
-        # SOTA Mandate: lambda 0.3 -> 0.05
-        blend = 0.30 - (0.25 * p)
-        # SOTA Mandate: temp 0.5 -> 0.01
-        temp = 0.50 - (0.49 * p)
-        # SOTA Mandate: diversity 0.05 -> 0.001
-        div = 0.05 - (0.049 * p)
-        # SOTA Mandate: momentum 0.5
-        momentum = 0.5
+        blend = 0.30 - (0.25 * p)       # lambda: 0.3 -> 0.05
+        temp = 0.50 - (0.49 * p)         # temperature: 0.5 -> 0.01
+        div = 0.05 - (0.049 * p)         # diversity bonus: 0.05 -> 0.001
+        momentum = 0.5                    # fixed (arbitrary)
         return blend, temp, div, momentum
 
     def get_strategy(self, payoffs: np.ndarray | List[float]) -> np.ndarray:
@@ -183,7 +182,7 @@ class SHORPSROSolver:
         # 1. Optimistic Regret Matching Strategy
         sigma_orm = self._regret_matcher.get_strategy()
         
-        # Apply diversity bonus as mandated
+        # Apply diversity bonus to under-explored actions
         boosted_payoffs = payoffs + div * (1.0 - sigma_orm)
 
         # 2. Smoothed Softmax (Best Pure Strategy)
@@ -191,7 +190,7 @@ class SHORPSROSolver:
         exp_vals = np.exp(stable_payoffs / temp)
         sigma_pure = exp_vals / np.sum(exp_vals)
 
-        # 3. Blending (Mandate: σ_hybrid = (1-λ)σ_ORM + λσ_Softmax)
+        # 3. Blending: σ_hybrid = (1-λ)σ_ORM + λσ_Softmax
         return (1.0 - blend) * sigma_orm + blend * sigma_pure
 
     def update(self, action_utilities: np.ndarray | List[float], chosen_action: int) -> None:
@@ -202,9 +201,14 @@ class SHORPSROSolver:
 
 class SAMPOSolver:
     """Stable Agentic Multi-turn Policy Optimization (SAMPO).
-    
-    SOTA 2026: Provides stability for long-horizon agentic trajectories 
-    using sequence-level importance sampling and turn-level advantages.
+
+    A clipped incremental policy update solver for multi-action selection.
+    Uses per-action advantage estimation with clipped shifts to prevent
+    large policy changes. NOT equivalent to PPO/TRPO (no importance
+    sampling ratio, no KL constraint, no GAE).
+
+    Suitable for online learning with small batches where full PPO
+    infrastructure would be overkill.
     """
 
     def __init__(
@@ -233,7 +237,7 @@ class SAMPOSolver:
         if not trajectories:
             return
 
-        # 1. Dynamic Filtering (SOTA Mandate: Filter uninformative batches)
+        # 1. Dynamic Filtering: skip uninformative batches
         valid_trajectories = []
         for traj in trajectories:
             rewards = np.array(traj['rewards'])
@@ -244,19 +248,16 @@ class SAMPOSolver:
         if not valid_trajectories:
             return
 
-        # 2. Sequence-Level Importance Sampling & Policy Update
-        # SOTA Mandate: Sequence-level clipping to prevent forgetting
+        # 2. Per-action clipped policy update (simplified, not importance-sampled)
         for traj in valid_trajectories:
             # Compute turn-level advantage
             rewards = np.array(traj['rewards'])
             baseline = np.mean(rewards)
             advantages = rewards - baseline
             
-            # Old policy probabilities (we assume current policy for simplification, 
-            # in a full PPO we'd store log_probs, but DGM acts as an online learner here)
+            # Simple advantage-based update (no importance sampling ratio)
             for action, adv in zip(traj['actions'], advantages):
-                # Calculate ratio (r_t) - Simplified for the DGM Action Loop
-                # We use a base learning rate, but clip the maximum shift
+                # Apply a fixed learning rate with clipped shift
                 lr = 0.05
                 proposed_shift = lr * adv
                 

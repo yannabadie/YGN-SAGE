@@ -1,4 +1,4 @@
-"""Topology Planner: Self-Generating Agent Topology Engine (OpenSage SOTA).
+"""Topology Planner: Self-Generating Agent Topology Engine.
 
 Implements Stochastic Differentiable Tree Search (S-DTS) to dynamically 
 explore, construct, and evaluate agent DAG configurations.

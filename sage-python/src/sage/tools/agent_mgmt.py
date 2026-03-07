@@ -9,7 +9,7 @@ from sage.tools.base import Tool
 if TYPE_CHECKING:
     from sage.agent import Agent
 
-# SOTA OpenSage: Dynamic Sub-Agent creation and delegation
+# Dynamic sub-agent creation and delegation
 @Tool.define(
     name="create_agent",
     description="Creates a new sub-agent dynamically. The sub-agent is stored in the unified sub-agent pool and can be invoked later using call_agent.",

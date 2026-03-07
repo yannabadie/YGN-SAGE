@@ -1,7 +1,7 @@
 """eBPF-based evaluation stage for the Evolution Pillar.
 
 Executes candidate code (compiled to eBPF/ELF) inside a Rust-backed
-solana_rbpf VM in <1ms. Essential for the ASI <1ms execution mandate.
+solana_rbpf VM. Target execution time is sub-millisecond.
 """
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ class EbpfEvaluator(Evaluator):
         try:
             start_time = time.perf_counter()
             
-            # SOTA 2026: Direct raw bytecode execution without C-compiler overhead
+            # Try raw bytecode first (avoids C-compiler overhead)
             if isinstance(code, bytes):
                 # We attempt to load it as RAW text bytes for benchmark proofs
                 try:

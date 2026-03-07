@@ -226,11 +226,11 @@ class CodexExecProvider:
         self.logger = logging.getLogger(__name__)
 
     async def review_code(self, code: str, objective: str) -> Dict[str, Any]:
-        """Review code structure and SOTA alignment."""
+        """Review code structure and performance characteristics."""
         task = (
             f"Review this code for the following objective: {objective}\n"
             "Check for:\n"
-            "1. SOTA alignment (SIMD, Cache locality, Branchless).\n"
+            "1. Performance patterns (SIMD, cache locality, branchless).\n"
             "2. Functional correctness and edge cases.\n"
             "3. Logical performance gains over a standard NumPy baseline.\n\n"
             "Provide a structured review in JSON format with a structural_score "
@@ -275,7 +275,7 @@ class CodexExecProvider:
             )
             response = await provider.generate(
                 [
-                    Message(role=Role.SYSTEM, content="You are a SOTA code reviewer. Respond in valid JSON."),
+                    Message(role=Role.SYSTEM, content="You are a code reviewer. Respond in valid JSON."),
                     Message(role=Role.USER, content=full_prompt),
                 ],
                 config=cfg,

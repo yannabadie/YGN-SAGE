@@ -1,4 +1,4 @@
-"""SOTA March 2026 Model Router for YGN-SAGE.
+"""Model Router for YGN-SAGE.
 
 Model IDs loaded from: env vars > config/models.toml > hardcoded defaults.
 """
