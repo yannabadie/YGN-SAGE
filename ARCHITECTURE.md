@@ -99,7 +99,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (578 tests total, 6 E2E + 14 stress tests)
+**Evidence:** tested-unit + tested-integration (588 tests total, 6 E2E + 14 stress + 10 ablation)
 
 **Components:**
 | Component | Module | Tests |
@@ -118,6 +118,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | Synthetic Failure Lab | `tests/test_failure_modes.py` | 10 tests (MAST taxonomy) |
 | CostTracker | `contracts/cost_tracker.py` | 7 unit tests |
 | Contract Stress Tests | `tests/test_stress_contracts.py` | 14 stress tests |
+| Ablation Study | `tests/test_ablation.py` | 10 ablation tests |
 | Phase 3 Integration | `tests/test_integration_phase3.py` | 6 E2E tests |
 
 **Key capabilities:**
