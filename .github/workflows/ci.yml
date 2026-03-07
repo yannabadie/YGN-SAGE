@@ -25,6 +25,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --no-default-features -- -D warnings
       - run: cargo test --no-default-features
+      - name: Check ONNX feature compiles
+        run: cargo check --features onnx
 
   python-sage:
     name: Python SDK (sage-python)

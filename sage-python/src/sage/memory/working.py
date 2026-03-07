@@ -6,7 +6,23 @@ falls back to a pure-Python mock otherwise.
 from __future__ import annotations
 
 import logging
+import os
+import sys
 from typing import Any
+
+# Windows: ensure ONNX Runtime DLL is found before System32 fallback.
+# An old onnxruntime.dll in C:\Windows\System32 can shadow the correct one.
+if sys.platform == "win32":
+    _ort_dll_dirs = [
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "sage-core", "target", "release"),
+        os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "sage-core", "target", "debug"),
+    ]
+    for _d in _ort_dll_dirs:
+        if os.path.isdir(_d):
+            try:
+                os.add_dll_directory(_d)
+            except OSError:
+                pass
 
 try:
     import sage_core
