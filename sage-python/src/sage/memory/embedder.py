@@ -1,9 +1,11 @@
 """Embedding adapter for S-MMU semantic edges.
 
-Provides a unified ``Embedder`` class that auto-selects between a real
-embedding backend (sentence-transformers) and a deterministic hash-based
-fallback.  The hash fallback allows development and testing without
-installing heavy ML dependencies.
+Provides a unified ``Embedder`` class that auto-selects between three
+backends in priority order:
+
+1. **RustEmbedder** (ONNX via sage-core) -- fastest, native SIMD
+2. **sentence-transformers** -- Python ML backend
+3. **Hash fallback** -- deterministic SHA-256 projection (no ML)
 
 Usage::
 
@@ -27,6 +29,39 @@ logger = logging.getLogger(__name__)
 
 EMBEDDING_DIM: int = 384
 """Dimensionality of all embeddings (matches all-MiniLM-L6-v2)."""
+
+
+# ---------------------------------------------------------------------------
+# Rust ONNX embedder auto-detection
+# ---------------------------------------------------------------------------
+
+def _try_rust_embedder():
+    """Try to create a RustEmbedder from sage_core (ONNX feature).
+
+    Searches for ONNX model files in known locations:
+    - ``~/.sage/models/``
+    - ``sage-core/models/`` relative to the package tree
+
+    Returns the RustEmbedder instance if sage_core is built with the
+    ``onnx`` feature and model files are found, otherwise ``None``.
+    """
+    try:
+        import sage_core
+        if not hasattr(sage_core, "RustEmbedder"):
+            return None
+        from pathlib import Path
+        model_dirs = [
+            Path.home() / ".sage" / "models",
+            Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "models",
+        ]
+        for d in model_dirs:
+            model_path = d / "model.onnx"
+            tokenizer_path = d / "tokenizer.json"
+            if model_path.exists() and tokenizer_path.exists():
+                return sage_core.RustEmbedder(str(model_path), str(tokenizer_path))
+        return None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -166,19 +201,29 @@ class Embedder:
 
     @staticmethod
     def _auto_select() -> EmbeddingProvider:
-        """Try sentence-transformers first, fall back to hash."""
+        """Try RustEmbedder (ONNX), then sentence-transformers, then hash."""
+        # Tier 1: Rust ONNX embedder (fastest, native SIMD)
+        rust = _try_rust_embedder()
+        if rust is not None:
+            logger.info("Embedder: using RustEmbedder (ONNX, native)")
+            return rust  # type: ignore[return-value]
+
+        # Tier 2: sentence-transformers (Python ML)
         try:
             import sentence_transformers  # noqa: F401
             provider = _SentenceTransformerEmbedder()
             logger.info("Embedder: using sentence-transformers backend")
             return provider
         except ImportError:
-            logger.warning(
-                "sentence-transformers not installed; falling back to "
-                "deterministic hash embedder. Semantic similarity will be "
-                "degraded. Install with: pip install sentence-transformers"
-            )
-            return _HashEmbedder()
+            pass
+
+        # Tier 3: deterministic hash fallback
+        logger.warning(
+            "No semantic embedding backend available (tried RustEmbedder, "
+            "sentence-transformers); falling back to deterministic hash "
+            "embedder. Semantic similarity will be degraded."
+        )
+        return _HashEmbedder()
 
     @property
     def is_semantic(self) -> bool:
