@@ -75,7 +75,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (599 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (602 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```

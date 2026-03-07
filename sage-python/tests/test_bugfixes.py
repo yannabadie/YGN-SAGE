@@ -206,3 +206,62 @@ def test_bf6_context_truncation():
     ctx = mem.get_context_for("process x0 data")
     lines = ctx.strip().split("\n")
     assert len(lines) <= 3
+
+
+# ===========================================================================
+# BF-7: SemanticMemory relation dedup + bounded growth + context truncation
+# ===========================================================================
+
+def test_bf7_semantic_relation_dedup():
+    """SemanticMemory deduplicates identical triples on write."""
+    from sage.memory.semantic import SemanticMemory
+    from sage.memory.memory_agent import ExtractionResult
+
+    sem = SemanticMemory()
+    result = ExtractionResult(
+        entities=["A", "B"],
+        relationships=[("A", "links", "B")],
+    )
+    # Add same extraction 5 times
+    for _ in range(5):
+        sem.add_extraction(result)
+
+    # Should have exactly 1 relation, not 5
+    rels = sem.query_entities("A", hops=1)
+    assert len(rels) == 1
+
+
+def test_bf7_semantic_max_relations():
+    """SemanticMemory evicts oldest relations when max_relations exceeded."""
+    from sage.memory.semantic import SemanticMemory
+    from sage.memory.memory_agent import ExtractionResult
+
+    sem = SemanticMemory(max_relations=5)
+    for i in range(10):
+        sem.add_extraction(ExtractionResult(
+            entities=[f"e{i}", f"e{i + 100}"],
+            relationships=[(f"e{i}", "rel", f"e{i + 100}")],
+        ))
+
+    # Both list and set should be capped at 5
+    assert len(sem._relations) == 5
+    assert len(sem._relations_set) == 5
+
+
+def test_bf7_semantic_context_truncation():
+    """SemanticMemory get_context_for() truncates to max_context_lines."""
+    from sage.memory.semantic import SemanticMemory
+    from sage.memory.memory_agent import ExtractionResult
+
+    sem = SemanticMemory(max_context_lines=3)
+    # Add many relations mentioning "Alpha"
+    rels = [("Alpha", f"action_{i}", f"Target_{i}") for i in range(20)]
+    sem.add_extraction(ExtractionResult(
+        entities=["Alpha"] + [f"Target_{i}" for i in range(20)],
+        relationships=rels,
+    ))
+
+    ctx = sem.get_context_for("process Alpha data")
+    assert ctx != ""
+    lines = ctx.strip().split("\n")
+    assert len(lines) <= 3

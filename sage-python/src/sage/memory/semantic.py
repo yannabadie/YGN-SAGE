@@ -19,9 +19,12 @@ class SemanticMemory:
     An adjacency index accelerates neighbourhood queries.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, max_relations: int = 10_000, max_context_lines: int = 50) -> None:
+        self.max_relations = max_relations
+        self.max_context_lines = max_context_lines
         self._entities: set[str] = set()
         self._relations: list[tuple[str, str, str]] = []
+        self._relations_set: set[tuple[str, str, str]] = set()
         # Adjacency index: entity -> list of relation indices
         self._adj: dict[str, list[int]] = defaultdict(list)
 
@@ -38,10 +41,23 @@ class SemanticMemory:
             if len(rel) != 3:
                 continue
             subj, pred, obj = rel[0], rel[1], rel[2]
+            triple = (subj, pred, obj)
+            if triple in self._relations_set:
+                continue  # Dedup
+            self._relations_set.add(triple)
             idx = len(self._relations)
-            self._relations.append((subj, pred, obj))
+            self._relations.append(triple)
             self._adj[subj].append(idx)
             self._adj[obj].append(idx)
+            # Evict oldest if over capacity
+            if self.max_relations > 0 and len(self._relations) > self.max_relations:
+                oldest = self._relations.pop(0)
+                self._relations_set.discard(oldest)
+                # Shift adjacency indices down by 1 (oldest was at index 0)
+                new_adj: dict[str, list[int]] = defaultdict(list)
+                for key, indices in self._adj.items():
+                    new_adj[key] = [i - 1 for i in indices if i > 0]
+                self._adj = new_adj
 
     # ------------------------------------------------------------------
     # Queries
@@ -108,4 +124,6 @@ class SemanticMemory:
             return ""
 
         lines = [f"{s} --[{p}]--> {o}" for s, p, o in all_rels]
+        if self.max_context_lines > 0:
+            lines = lines[:self.max_context_lines]
         return "\n".join(lines)

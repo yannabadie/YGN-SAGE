@@ -99,7 +99,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (599 tests total, 6 E2E + 14 stress + 10 ablation + 11 bugfix)
+**Evidence:** tested-unit + tested-integration (602 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix)
 
 **Components:**
 | Component | Module | Tests |

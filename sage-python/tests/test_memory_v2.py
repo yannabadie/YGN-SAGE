@@ -1,7 +1,6 @@
 """Tests for Memory v2: SQLite episodic persistence + SemanticMemory entity graph."""
 from __future__ import annotations
 
-import os
 import pytest
 
 from sage.memory.episodic import EpisodicMemory
@@ -329,4 +328,4 @@ def test_semantic_duplicate_entities():
     sem.add_extraction(result)
 
     assert sem.entity_count() == 2
-    # Relations may accumulate (append-only), but entities are a set
+    # Relations are deduplicated (same triple won't be stored twice)
