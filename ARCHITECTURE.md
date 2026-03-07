@@ -1,6 +1,6 @@
 # YGN-SAGE Architecture
 
-> **Status: Research Prototype** — Last verified: 2026-03-06
+> **Status: Research Prototype** — Last verified: 2026-03-07
 
 This document describes what YGN-SAGE **actually implements**, with honest evidence levels and known limitations.
 
@@ -76,8 +76,8 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | 3 — ExoCortex | Google File Search API | tested-integration | Vendor-managed |
 
 **Known limitations:**
-- **Tier 0 silently falls back to Python mock** when Rust `sage_core` extension is not available. No warning to caller. Mock methods return dummy values.
-- **Tier 1 defaults to volatile in-memory** — SQLite persistence is opt-in, not default
+- **Tier 0 falls back to Python mock** when Rust `sage_core` extension is not available. ~~No warning~~ Now emits `warnings.warn()` (audit fix A3).
+- ~~Tier 1 defaults to volatile in-memory~~ **Tier 1 now defaults to SQLite** at `~/.sage/episodic.db` (audit fix A4)
 - **Tier 2 is in-memory only** — no persistence, no export, lost on restart
 - **Tier 3 is vendor-locked** to Google GenAI File Search API
 - **No evidence** that 4-tier memory improves outcomes vs. long-context baseline
@@ -99,7 +99,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (602 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix)
+**Evidence:** tested-unit + tested-integration (620 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response)
 
 **Components:**
 | Component | Module | Tests |
@@ -148,7 +148,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 - `EventBus.clear()` public API replaces private field access
 
 **Known limitations:**
-- **Global mutable state** — single-task only, race conditions under concurrent use
+- ~~Global mutable state~~ Encapsulated in `DashboardState` class (audit fix C13), but still single-process
 
 ### 8. Evolution Engine
 
@@ -219,16 +219,57 @@ These components degrade silently instead of failing hard:
 
 | Component | Trigger | Degradation |
 |-----------|---------|-------------|
-| Working Memory | `sage_core` not installed | Falls back to Python mock (dummy values) |
-| Episodic Memory | Default config | In-memory only (no persistence) |
+| Working Memory | `sage_core` not installed | Falls back to Python mock (**now warns**, audit fix A3) |
+| Episodic Memory | Default config | ~~In-memory only~~ **Now defaults to SQLite** (audit fix A4) |
 | Provider Discovery | Missing SDK (openai, etc.) | Returns empty list, skips provider |
-| OpenAI Compat | file_search parameter | Silently dropped (debug log only) |
-| OpenAI Compat | tool role messages | Rewritten to user role |
+| OpenAI Compat | file_search parameter | Dropped (**now warns at WARNING level**, audit fix B9) |
+| OpenAI Compat | tool role messages | Rewritten to user role (**now warns**, audit fix B9) |
 | LLM Assessment | No GOOGLE_API_KEY | Falls back to heuristic (sync path) |
 | Evolution | No sandbox feature | Skips sandboxed evaluation |
 
 **V2 design goal:** Replace all silent degradation with hard failures or explicit warnings.
 Phase 0 fixed: dashboard auth, provider warnings. Phase 2+3 added: CapabilityMatrix.require() hard-fails.
+Audit response (March 2026) fixed: sandbox blocks host by default, working memory fallback warns, episodic defaults to SQLite.
+
+---
+
+## Audit Response (March 2026)
+
+Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
+16 tasks organized in 4 phases (A-D) were executed. Current test count: **620 passed, 1 skipped**.
+
+### Phase A — Kill Unsafe Defaults (Tasks 1-5)
+| Task | Finding | Fix |
+|------|---------|-----|
+| A1 | Sandbox allowed host code execution | `allow_local=False` by default; callers must opt in with `allow_local=True` |
+| A2 | Dashboard WebSocket unauthenticated | HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`; binds localhost only |
+| A3 | Working memory fallback silent | `warnings.warn()` emitted when falling back to Python mock |
+| A4 | Episodic memory volatile by default | Now defaults to SQLite at `~/.sage/episodic.db` |
+| A5 | CI skipped Rust tests; invalid edition | CI runs `cargo test --no-default-features`; edition fixed to 2021 |
+
+### Phase B — Honesty Reset (Tasks 6-9)
+| Task | Finding | Fix |
+|------|---------|-----|
+| B6 | 24+ AI confabulation markers in docs/code | Stripped all "novel", "groundbreaking", etc. from docstrings and comments |
+| B7 | SAMPO/DGM terminology misleading | Honestly documented as heuristic solvers, not RL or formal optimizers |
+| B8 | Dual control planes (boot.py confusion) | Consolidated to single `AgentSystem` entry point |
+| B9 | OpenAI-compat silently drops semantics | Now warns at `WARNING` level on file_search drop and tool-role rewrite |
+
+### Phase C — Evidence & Baselines (Tasks 10-13)
+| Task | Finding | Fix |
+|------|---------|-----|
+| C10 | No baseline benchmark mode | Added `--baseline` flag: direct LLM call, no routing/memory overhead |
+| C11 | Routing value unproven | Added ablation tests: routing ON vs OFF, measuring actual delta |
+| C12 | Only 2 guardrails (cost + Z3) | Added `SchemaGuardrail` for required-field validation |
+| C13 | Dashboard global mutable state | Encapsulated into `DashboardState` class; thread-safe access |
+
+### Phase D — Documentation Sync (Tasks 14-16)
+Updated ARCHITECTURE.md, CLAUDE.md, and MEMORY.md to reflect all changes above.
+
+### Deferred to Phase E
+- **ExoCortex vendor lock** (Google File Search API): requires multi-backend abstraction
+- **Evolution engine validation**: needs controlled experiment with ablation
+- **wasmtime upgrade** (v29 to LTS v36): breaking API changes, deferred to next sprint
 
 ---
 

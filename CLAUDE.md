@@ -64,9 +64,9 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
-- `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API
+- `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
 - `ui/static/index.html` - Single-file dark-theme dashboard (Tailwind + Chart.js)
-- WebSocket `/ws` pushes all AgentEvents in real-time (replaces JSONL polling)
+- WebSocket `/ws` pushes all AgentEvents in real-time (replaces JSONL polling). Authenticated when token set.
 - Sections: Routing S1/S2/S3, Response, Memory 4-tier, Guardrails, Events, Benchmarks
 
 ## Development Commands
@@ -75,7 +75,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (602 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (620 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -106,7 +106,7 @@ maturin develop                # Build + install Python bindings
 ```bash
 cd sage-discover
 pip install -e .               # Install sage-discover
-python -m pytest tests/ -v     # Run tests (45 passed)
+python -m pytest tests/ -v     # Run tests (52 passed)
 python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
 ```
 
@@ -127,8 +127,15 @@ python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
 ```bash
 export GOOGLE_API_KEY="..."                  # Required for Gemini models
 export SAGE_MODEL_FAST="gemini-2.5-flash"    # Optional: override any tier model ID
+export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no token = open dev mode)
 # Codex CLI uses ChatGPT Pro account (codex login)
 # ExoCortex auto-configured (DEFAULT_STORE hardcoded, no env var needed)
+```
+
+### Sandbox Safety
+The sandbox blocks host code execution by default. To allow local execution (e.g., for development):
+```python
+sandbox = Sandbox(allow_local=True)  # Required — default is False
 ```
 
 ### Model Config Resolution
@@ -136,8 +143,8 @@ Model IDs resolved in order: env var `SAGE_MODEL_<TIER>` > `config/models.toml` 
 TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## Memory System (4 Tiers)
-- **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression.
-- **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search.
+- **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
+- **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
 - **9 Agent Tools**: 7 AgeMem (3 STM + 4 LTM) + `search_exocortex` + `refresh_knowledge`
