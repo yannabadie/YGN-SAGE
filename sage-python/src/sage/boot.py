@@ -61,19 +61,15 @@ class AgentSystem:
     registry: Any = None
 
     async def run(self, task: str) -> str:
-        # Initialize registry on first use (lazy async)
-        if self.registry and not self.registry._profiles:
-            try:
-                await self.registry.refresh()
-            except Exception as e:
-                import logging
-                logging.getLogger(__name__).warning("Registry refresh failed: %s", e)
+        """Run a task through the agent system.
 
-        # Use CognitiveOrchestrator if available and has models
-        if self.orchestrator and self.registry and self.registry.list_available():
-            return await self.orchestrator.run(task)
+        Uses MetacognitiveController for S1/S2/S3 routing, then AgentLoop
+        for execution. This is the single control plane — no environment-
+        dependent branching.
 
-        # Fallback: legacy direct routing via ModelRouter
+        Note: self.orchestrator and self.registry are retained for explicit
+        use by callers (e.g., dashboard, tests) but are NOT used here.
+        """
         # 1. Assess task complexity
         profile = await self.metacognition.assess_complexity_async(task)
         decision = self.metacognition.route(profile)
@@ -82,8 +78,7 @@ class AgentSystem:
         current_provider = self.agent_loop.config.llm.provider
 
         # Set validation level based on routing decision
-        actual_provider = self.agent_loop.config.llm.provider
-        if actual_provider == "codex":
+        if current_provider == "codex":
             # Codex CLI reasons internally — no external validation needed
             self.agent_loop.config.validation_level = 1
         else:

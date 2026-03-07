@@ -101,16 +101,31 @@ class CodexProvider:
     ) -> LLMResponse:
         # Codex CLI works best with direct task instructions.
         # System messages are skipped (Codex has its own agent persona).
+        if file_search_store_names:
+            logger.warning(
+                "CodexProvider: dropping file_search_store_names=%s "
+                "(Codex CLI does not support File Search grounding — "
+                "these stores will NOT be queried)",
+                file_search_store_names,
+            )
         parts: list[str] = []
+        has_tool_msgs = False
         for msg in messages:
             if msg.role == Role.USER:
                 parts.append(msg.content)
             elif msg.role == Role.ASSISTANT:
                 parts.append(f"[Previous response]: {msg.content}")
             elif msg.role == Role.TOOL:
+                has_tool_msgs = True
                 name = getattr(msg, "name", "tool")
                 parts.append(f"[Tool result ({name})]: {msg.content}")
             # System messages intentionally skipped for Codex CLI
+        if has_tool_msgs:
+            logger.warning(
+                "CodexProvider: rewriting 'tool' role messages to plain text "
+                "(semantic loss — tool results will appear as user text, "
+                "not as structured tool responses)",
+            )
 
         full_prompt = "\n\n".join(parts)
 

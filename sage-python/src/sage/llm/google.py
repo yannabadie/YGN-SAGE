@@ -56,12 +56,20 @@ class GoogleProvider:
         # Convert messages to Gemini format
         contents = []
         system_instruction = None
+        has_tool_role_rewrite = False
         for msg in messages:
             if msg.role.value == "system":
                 system_instruction = msg.content
             else:
+                if msg.role.value == "tool":
+                    has_tool_role_rewrite = True
                 role = "model" if msg.role.value == "assistant" else "user"
                 contents.append(types.Content(role=role, parts=[types.Part.from_text(text=msg.content)]))
+        if has_tool_role_rewrite:
+            logger.warning(
+                "GoogleProvider: rewriting 'tool' role to 'user' for Gemini API "
+                "(semantic loss — tool results will appear as user messages)",
+            )
 
         # Configure grounding tools (google_search and file_search are mutually exclusive)
         gemini_tools = []
