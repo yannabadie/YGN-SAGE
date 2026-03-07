@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Protocol
 from datetime import datetime, timezone
 
 from sage.llm.base import LLMProvider, Message, Role
+from sage.memory.embedder import Embedder
 from sage.memory.working import WorkingMemory
 
 class GraphDatabase(Protocol):
@@ -35,6 +37,9 @@ class MemoryCompressor:
         self.keep_recent = keep_recent
         self.logger = logging.getLogger(__name__)
         self.internal_state: str = ""
+        # Embedder for S-MMU semantic edges — default to hash fallback.
+        # The boot sequence (boot.py) will inject a real one later.
+        self.embedder: Embedder = Embedder(force_hash=True)
 
     async def generate_internal_state(self, new_observation: str) -> str:
         """MEM1: generate rolling internal state by merging previous IS with new observation."""
@@ -130,4 +135,37 @@ DISCOVERIES:
 
         # 4. Update Working Memory — compress_old_events keeps N recent + prepends summary
         working_memory.compress(self.keep_recent, summary or "No summary generated.")
+
+        # 5. Compact to Arrow + S-MMU (best-effort — failure must not break compression)
+        try:
+            # Extract keywords: words > 3 chars from summary, max 10
+            keywords = self._extract_keywords(summary) if summary else []
+            # Compute embedding from summary text
+            embedding = self.embedder.embed(summary) if summary else None
+            working_memory.compact_to_arrow_with_meta(
+                keywords=keywords,
+                embedding=embedding,
+                summary=summary or None,
+            )
+        except Exception:
+            self.logger.warning(
+                "S-MMU compaction failed (best-effort); compression still succeeded",
+                exc_info=True,
+            )
+
         return True
+
+    @staticmethod
+    def _extract_keywords(text: str) -> list[str]:
+        """Extract keywords from text: unique words > 3 chars, max 10."""
+        words = re.findall(r"[A-Za-z]+", text)
+        seen: set[str] = set()
+        keywords: list[str] = []
+        for w in words:
+            lower = w.lower()
+            if len(w) > 3 and lower not in seen:
+                seen.add(lower)
+                keywords.append(w)
+                if len(keywords) >= 10:
+                    break
+        return keywords

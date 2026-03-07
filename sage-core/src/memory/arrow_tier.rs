@@ -44,6 +44,7 @@ pub fn compact_buffer_to_arrow(
     keywords: Vec<String>,
     embedding: Option<Vec<f32>>,
     parent_chunk_id: Option<usize>,
+    summary: Option<String>,
 ) -> PyResult<usize> {
     if active_buffer.is_empty() {
         return Ok(0);
@@ -101,11 +102,25 @@ pub fn compact_buffer_to_arrow(
 
     arrow_chunks.push(Arc::new(batch));
 
-    // Register in S-MMU
+    // Register in S-MMU — use explicit summary if provided, else derive from
+    // first event content (truncated to 200 chars), else generic fallback.
+    let chunk_summary = summary.unwrap_or_else(|| {
+        active_buffer
+            .first()
+            .map(|e| {
+                let s = &e.content;
+                if s.len() > 200 {
+                    format!("{}...", &s[..200])
+                } else {
+                    s.clone()
+                }
+            })
+            .unwrap_or_else(|| "Compacted context block".to_string())
+    });
     let chunk_id = smmu.register_chunk(
         start_time,
         end_time,
-        "Compacted context block",
+        &chunk_summary,
         keywords,
         embedding,
         parent_chunk_id,

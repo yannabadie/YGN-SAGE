@@ -91,16 +91,17 @@ impl WorkingMemory {
     /// ASI Feature: Compact active buffer into an immutable Arrow RecordBatch
     /// and register it in the S-MMU graph (backward-compatible, no metadata).
     pub fn compact_to_arrow(&mut self) -> PyResult<usize> {
-        self.compact_to_arrow_with_meta(vec![], None, None)
+        self.compact_to_arrow_with_meta(vec![], None, None, None)
     }
 
-    /// Compact with full metadata: keywords, embedding, and optional parent chunk.
-    #[pyo3(signature = (keywords, embedding=None, parent_chunk_id=None))]
+    /// Compact with full metadata: keywords, embedding, optional parent chunk, and summary.
+    #[pyo3(signature = (keywords, embedding=None, parent_chunk_id=None, summary=None))]
     pub fn compact_to_arrow_with_meta(
         &mut self,
         keywords: Vec<String>,
         embedding: Option<Vec<f32>>,
         parent_chunk_id: Option<usize>,
+        summary: Option<String>,
     ) -> PyResult<usize> {
         if self.active_buffer.is_empty() {
             return Ok(0);
@@ -114,6 +115,7 @@ impl WorkingMemory {
             keywords,
             embedding,
             parent_chunk_id,
+            summary,
         )?;
         self.active_buffer.clear();
         Ok(chunk_id)

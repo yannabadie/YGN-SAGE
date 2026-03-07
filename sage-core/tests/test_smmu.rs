@@ -14,6 +14,7 @@ fn test_compact_with_meta_registers_in_smmu() {
             vec!["rust".to_string(), "memory".to_string()],
             Some(vec![1.0, 0.0, 0.5]),
             None,
+            None,
         )
         .expect("compact should succeed");
 
@@ -35,7 +36,7 @@ fn test_multi_chunk_temporal_linking() {
             mem.add_event("step", &format!("Batch {batch} Step {i}"));
         }
         let cid = mem
-            .compact_to_arrow_with_meta(vec![], None, None)
+            .compact_to_arrow_with_meta(vec![], None, None, None)
             .expect("compact should succeed");
         assert_eq!(cid, batch);
     }
@@ -70,7 +71,7 @@ fn test_causal_linking() {
         mem.add_event("parent_step", &format!("Parent step {i}"));
     }
     let parent_cid = mem
-        .compact_to_arrow_with_meta(vec!["planning".to_string()], None, None)
+        .compact_to_arrow_with_meta(vec!["planning".to_string()], None, None, None)
         .expect("compact parent chunk");
     assert_eq!(parent_cid, 0);
 
@@ -83,6 +84,7 @@ fn test_causal_linking() {
             vec!["execution".to_string()],
             None,
             Some(parent_cid), // causal link to parent
+            None,
         )
         .expect("compact child chunk");
     assert_eq!(child_cid, 1);
@@ -106,7 +108,7 @@ fn test_page_out_candidates() {
         for i in 0..2 {
             mem.add_event("step", &format!("Batch {batch} Step {i}"));
         }
-        mem.compact_to_arrow_with_meta(vec![], None, None)
+        mem.compact_to_arrow_with_meta(vec![], None, None, None)
             .expect("compact should succeed");
     }
 

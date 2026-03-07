@@ -52,7 +52,7 @@ if not _has_rust:
         def child_agents(self): return []
         def compress_old_events(self, k, s): self._events = self._events[-k:]
         def compact_to_arrow(self): return 0
-        def compact_to_arrow_with_meta(self, kw, emb=None, parent=None): return 0
+        def compact_to_arrow_with_meta(self, kw, emb=None, parent=None, summary=None): return 0
         def retrieve_relevant_chunks(self, cid, hops, w=None): return []
         def get_page_out_candidates(self, cid, hops, budget): return []
         def smmu_chunk_count(self): return 0
@@ -127,19 +127,21 @@ class WorkingMemory:
         keywords: list[str],
         embedding: list[float] | None = None,
         parent_chunk_id: int | None = None,
+        summary: str | None = None,
     ) -> int:
-        """Compact active buffer with full metadata (keywords, embedding, parent chunk).
+        """Compact active buffer with full metadata (keywords, embedding, parent chunk, summary).
 
         Args:
             keywords: Entity/keyword tags for entity-graph linking.
             embedding: Optional embedding vector for semantic similarity linking.
             parent_chunk_id: Optional parent chunk ID for causal linking.
+            summary: Optional human-readable summary for S-MMU chunk registration.
 
         Returns:
             The assigned chunk ID in the S-MMU.
         """
         return self._inner.compact_to_arrow_with_meta(
-            keywords, embedding, parent_chunk_id
+            keywords, embedding, parent_chunk_id, summary
         )
 
     def retrieve_relevant_chunks(
