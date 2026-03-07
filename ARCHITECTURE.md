@@ -85,6 +85,20 @@ The S-MMU (Structured Memory Management Unit) in `sage-core` is now wired end-to
 - **Read path:** During THINK phase, `agent_loop.py` calls `retrieve_smmu_context()` (from `memory/smmu_context.py`) which queries the S-MMU graph (BFS multi-path traversal with configurable weights) and injects the top-k results as a SYSTEM message before the LLM call.
 - **Embedder:** `memory/embedder.py` auto-selects between sentence-transformers (semantic, 384-dim) and a deterministic hash fallback. Wired into `MemoryCompressor` at boot time.
 
+**ONNX Embedder (3-tier fallback):**
+
+The Python `Embedder` adapter (`memory/embedder.py`) now supports a 3-tier fallback chain, auto-detected at init:
+
+1. **RustEmbedder (preferred):** Native ONNX Runtime embedder in `sage-core/src/memory/embedder.rs`, behind the `onnx` Cargo feature flag. Loads the `all-MiniLM-L6-v2` ONNX model (384-dim, L2-normalized output). Exposed to Python via PyO3 class with `embed(text) -> list[float]` and `embed_batch(texts) -> list[list[float]]`. Fastest option with native SIMD acceleration.
+2. **sentence-transformers (fallback):** Python `sentence-transformers` library with `all-MiniLM-L6-v2`. Same model, same 384-dim output, but slower than native Rust.
+3. **SHA-256 hash (last resort):** Deterministic hash-based fallback producing 384-dim vectors. No semantic meaning, but ensures the pipeline never crashes due to missing dependencies.
+
+Key details:
+- **Feature flag:** `onnx` in `sage-core/Cargo.toml` gates `ort` (ONNX Runtime) and `tokenizers` (HuggingFace) dependencies
+- **Model download:** `python sage-core/models/download_model.py` fetches the ONNX model and tokenizer files to `sage-core/models/all-MiniLM-L6-v2/`
+- **Build command:** `maturin develop --features onnx` to build with ONNX support
+- **Tests:** `cargo test --features onnx` runs 5 Rust unit tests (requires model download first)
+
 In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count stays at 0, so the read path returns empty string. No errors in either direction.
 
 **Known limitations:**

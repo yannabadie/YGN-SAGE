@@ -63,6 +63,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime)
+- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate. Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`.
 - `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
@@ -102,6 +103,8 @@ cargo build                    # Build Rust core
 cargo test --workspace         # Run Rust tests (38 passing)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
+maturin develop --features onnx  # Build with ONNX embedder support
+cargo test --features onnx       # Run ONNX embedder tests (requires model download)
 ```
 
 ### Discovery Pipeline
@@ -147,6 +150,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
 - **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k results as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
+- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort, native SIMD) > sentence-transformers (Python) > SHA-256 hash. Auto-detected at init. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py`
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
@@ -212,3 +216,5 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Apache Arrow / PyArrow (zero-copy memory compaction)
 - Wasm (wasmtime) + eBPF (solana_rbpf) + Docker (multi-tier sandboxing)
 - DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
+- ort 2.0 (ONNX Runtime for Rust, optional `onnx` feature) — native embeddings
+- tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)
