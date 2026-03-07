@@ -1,6 +1,6 @@
 """Cognitive Orchestrator: dynamic multi-provider task decomposition and routing.
 
-Takes a task, uses :class:`MetacognitiveController` to assess complexity,
+Takes a task, uses :class:`ComplexityRouter` to assess complexity,
 selects the best model per subtask from the :class:`ModelRegistry`, and
 composes lightweight agent runners into a topology (Sequential or Parallel).
 """
@@ -14,7 +14,7 @@ from typing import Any
 
 from sage.providers.registry import ModelRegistry, ModelProfile
 from sage.providers.connector import PROVIDER_CONFIGS
-from sage.strategy.metacognition import MetacognitiveController
+from sage.strategy.metacognition import ComplexityRouter
 from sage.agents.sequential import SequentialAgent
 from sage.agents.parallel import ParallelAgent
 from sage.llm.base import LLMConfig, Message, Role
@@ -124,7 +124,7 @@ class CognitiveOrchestrator:
     """Creates and executes dynamic agent topologies based on task analysis.
 
     Workflow:
-        1. Assess task complexity via :class:`MetacognitiveController`.
+        1. Assess task complexity via :class:`ComplexityRouter`.
         2. Route to S1 (fast), S2 (algorithmic), or S3 (complex/decomposed).
         3. Select optimal model(s) from :class:`ModelRegistry`.
         4. Build topology (single agent, Sequential, or Parallel).
@@ -135,7 +135,7 @@ class CognitiveOrchestrator:
     registry:
         Model registry with available model profiles.
     metacognition:
-        Metacognitive controller for complexity assessment and routing.
+        Complexity router for task assessment and S1/S2/S3 routing.
     event_bus:
         Optional :class:`EventBus` for emitting orchestrator events.
     """
@@ -143,11 +143,11 @@ class CognitiveOrchestrator:
     def __init__(
         self,
         registry: ModelRegistry,
-        metacognition: MetacognitiveController | None = None,
+        metacognition: ComplexityRouter | None = None,
         event_bus: Any = None,
     ):
         self.registry = registry
-        self.metacognition = metacognition or MetacognitiveController()
+        self.metacognition = metacognition or ComplexityRouter()
         self.event_bus = event_bus
 
     async def run(self, task: str) -> str:

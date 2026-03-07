@@ -1,8 +1,9 @@
-"""Metacognitive Controller: Stanovich tripartite S1/S2/S3 routing + self-braking.
+"""Complexity-based S1/S2/S3 router with self-braking.
 
-System 1 (autonomous mind): Gemini Flash Lite, no validation (~$0.0005/call, <1s).
-System 2 (algorithmic mind): Gemini Flash/Pro, empirical validation (~$0.0015/1K).
-System 3 (reflective mind): Codex/Reasoner, Z3 PRM formal verification (~$0.03/1K).
+Routes tasks to three tiers based on heuristic or LLM-based complexity assessment:
+  S1 (fast): Gemini Flash Lite, no validation (~$0.0005/call, <1s).
+  S2 (algorithmic): Gemini Flash/Pro, empirical validation (~$0.0015/1K).
+  S3 (formal): Codex/Reasoner, Z3 PRM formal verification (~$0.03/1K).
 
 Uses Gemini 2.5 Flash Lite for LLM-based task assessment.
 Falls back to heuristic if GOOGLE_API_KEY is not set.
@@ -69,12 +70,13 @@ _ROUTING_PROMPT = """You are a metacognitive router. Assess the following task a
 Task: {task}"""
 
 
-class MetacognitiveController:
-    """Routes tasks between System 1, 2, and 3 (Stanovich tripartite model).
+class ComplexityRouter:
+    """Complexity-based S1/S2/S3 router.
 
-    System 1: Fast/intuitive (Gemini Flash Lite, no validation)
-    System 2: Algorithmic/deliberate (Gemini Flash/Pro, empirical validation)
-    System 3: Formal/verified (Codex/Reasoner, Z3 PRM validation)
+    Routes tasks to one of three tiers based on assessed complexity/uncertainty:
+      S1: Fast/intuitive (Gemini Flash Lite, no validation)
+      S2: Algorithmic/deliberate (Gemini Flash/Pro, empirical validation)
+      S3: Formal/verified (Codex/Reasoner, Z3 PRM validation)
 
     Self-braking (CGRS): monitors output entropy to detect convergence.
     """
@@ -220,3 +222,7 @@ class MetacognitiveController:
             tool_required=tool_required,
             reasoning="heuristic",
         )
+
+
+# Backward compatibility alias
+MetacognitiveController = ComplexityRouter

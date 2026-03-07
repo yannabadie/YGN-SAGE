@@ -27,7 +27,7 @@ from sage.agent_pool import AgentPool
 from sage.llm.base import LLMConfig
 from sage.llm.mock import MockProvider
 from sage.llm.router import ModelRouter
-from sage.strategy.metacognition import MetacognitiveController
+from sage.strategy.metacognition import ComplexityRouter
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
 from sage.memory.memory_agent import MemoryAgent
 from sage.tools.registry import ToolRegistry
@@ -44,7 +44,7 @@ class AgentSystem:
     """The complete YGN-SAGE agent system."""
     agent_loop: AgentLoop
     agent_pool: AgentPool
-    metacognition: MetacognitiveController
+    metacognition: ComplexityRouter
     topology_evolver: TopologyEvolver
     topology_population: TopologyPopulation
     memory_agent: MemoryAgent
@@ -63,7 +63,7 @@ class AgentSystem:
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
 
-        Uses MetacognitiveController for S1/S2/S3 routing, then AgentLoop
+        Uses ComplexityRouter for S1/S2/S3 routing, then AgentLoop
         for execution. This is the single control plane — no environment-
         dependent branching.
 
@@ -148,7 +148,7 @@ def boot_agent_system(
     # Components
     tool_registry = ToolRegistry()
     agent_pool = AgentPool()
-    metacognition = MetacognitiveController()
+    metacognition = ComplexityRouter()
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm)
