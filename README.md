@@ -85,7 +85,7 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 413 collected
+cd sage-python && python -m pytest tests/ -v    # 678 passed
 cd sage-core && cargo test --workspace          # 38 passed
 cd sage-discover && python -m pytest tests/ -v  # 45 passed
 ```
@@ -169,7 +169,7 @@ pipeline = GuardrailPipeline([
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **413 tests collected** (Python) + 38 Rust
+- **678 tests passed** (Python) + 38 Rust
 - **CI/CD**: GitHub Actions (3 jobs)
 - **Dashboard**: functional, real-time via WebSocket (no auth — dev mode only)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)

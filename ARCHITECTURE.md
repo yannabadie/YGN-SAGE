@@ -126,7 +126,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (620 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response)
+**Evidence:** tested-unit + tested-integration (678 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response)
 
 **Components:**
 | Component | Module | Tests |
@@ -263,7 +263,7 @@ Audit response (March 2026) fixed: sandbox blocks host by default, working memor
 ## Audit Response (March 2026)
 
 Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
-16 tasks organized in 4 phases (A-D) were executed. Current test count: **620 passed, 1 skipped**.
+16 tasks organized in 4 phases (A-D) were executed. Current test count: **678 passed, 1 skipped**.
 
 ### Phase A — Kill Unsafe Defaults (Tasks 1-5)
 | Task | Finding | Fix |
