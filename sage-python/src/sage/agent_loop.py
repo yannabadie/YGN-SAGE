@@ -239,6 +239,18 @@ class AgentLoop:
             except Exception:
                 pass  # Best-effort semantic enrichment
 
+        # S-MMU context injection (graph-based retrieval from compacted chunks)
+        try:
+            from sage.memory.smmu_context import retrieve_smmu_context
+            smmu_context = retrieve_smmu_context(self.working_memory)
+            if smmu_context:
+                messages.insert(
+                    min(2, len(messages)),  # After system + semantic, before user
+                    Message(role=Role.SYSTEM, content=smmu_context),
+                )
+        except Exception:
+            pass  # Best-effort S-MMU enrichment
+
         while self.step_count < self.config.max_steps:
             self.step_count += 1
 

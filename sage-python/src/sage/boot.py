@@ -160,6 +160,10 @@ def boot_agent_system(
         keep_recent=5,
     )
 
+    # Embedder for S-MMU semantic edges
+    from sage.memory.embedder import Embedder
+    memory_compressor.embedder = Embedder()
+
     # Runtime tool synthesis (Agent0/AutoTool pattern)
     from sage.tools.meta import create_python_tool, create_bash_tool
     tool_registry.register(create_python_tool)
