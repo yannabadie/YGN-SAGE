@@ -19,14 +19,8 @@ def test_boot_warns_when_rust_unavailable(caplog):
     assert len(rust_warnings) >= 1, "No warning emitted about missing Rust extension"
 
 
-def test_boot_warns_episodic_volatile(caplog):
-    """Boot should warn that episodic memory is volatile (no persistence)."""
-    with caplog.at_level(logging.WARNING):
-        system = boot_agent_system(use_mock_llm=True)
-    ep_warnings = [
-        r
-        for r in caplog.records
-        if "episodic" in r.message.lower()
-        and ("volatile" in r.message.lower() or "in-memory" in r.message.lower())
-    ]
-    assert len(ep_warnings) >= 1, "No warning about volatile episodic memory"
+def test_boot_episodic_has_persistence():
+    """Boot should create episodic memory with SQLite persistence by default."""
+    system = boot_agent_system(use_mock_llm=True)
+    # Should have a db_path set (defaults to ~/.sage/episodic.db)
+    assert system.agent_loop.episodic_memory._db_path is not None

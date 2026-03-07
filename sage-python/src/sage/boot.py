@@ -183,9 +183,12 @@ def boot_agent_system(
             "operations. Build with: cd sage-core && maturin develop"
         )
 
-    # Episodic memory
-    episodic_memory = EpisodicMemory()
+    # Episodic memory — defaults to persistent SQLite
+    _ep_db = Path.home() / ".sage" / "episodic.db"
+    _ep_db.parent.mkdir(parents=True, exist_ok=True)
+    episodic_memory = EpisodicMemory(db_path=str(_ep_db))
 
+    # Safety net: warn if someone overrides with db_path=None upstream
     if not episodic_memory._db_path:
         _log.warning(
             "Episodic memory is volatile (in-memory only, data lost on "
