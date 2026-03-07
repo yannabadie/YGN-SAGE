@@ -503,7 +503,9 @@
         }
 
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${proto}//${location.host}/ws`;
+        // Pass dashboard token via query param for WebSocket auth
+        const token = localStorage.getItem('sage_token') || '';
+        const url = `${proto}//${location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
 
         ws = new WebSocket(url);
 

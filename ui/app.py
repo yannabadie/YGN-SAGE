@@ -437,6 +437,12 @@ async def get_evolution():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    # Authenticate WebSocket via query param: /ws?token=xxx
+    if DASHBOARD_TOKEN:
+        token = websocket.query_params.get("token", "")
+        if token != DASHBOARD_TOKEN:
+            await websocket.close(code=4001, reason="Unauthorized")
+            return
     await websocket.accept()
 
     try:
@@ -460,5 +466,7 @@ async def websocket_endpoint(websocket: WebSocket):
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print("Starting YGN-SAGE v2 Dashboard on http://localhost:8000")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")
+    host = os.environ.get("SAGE_DASHBOARD_HOST", "127.0.0.1")
+    port = int(os.environ.get("SAGE_DASHBOARD_PORT", "8000"))
+    print(f"Starting YGN-SAGE v2 Dashboard on http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
