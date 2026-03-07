@@ -39,3 +39,7 @@ research_journal/H*.json
 
 # Agent stream (regenerated on each run)
 docs/plans/agent_stream.jsonl
+
+# ONNX model binaries (downloaded via sage-core/models/download_model.py)
+sage-core/models/*.onnx
+sage-core/models/tokenizer.json
