@@ -162,3 +162,107 @@ def test_type_compatibility_no_edges():
     dag.add_node(TaskNode(node_id="b", description="B"))
     verdict = verify_type_compatibility(dag)
     assert verdict.satisfied is True
+
+
+# ---------------------------------------------------------------------------
+# Provider assignment (genuine SAT)
+# ---------------------------------------------------------------------------
+
+from sage.contracts.z3_verify import ProviderSpec, verify_provider_assignment
+
+
+def test_provider_assignment_satisfied():
+    """All nodes can be assigned to a provider."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="a", description="A",
+        capabilities_required=["tool_role", "streaming"],
+    ))
+    dag.add_node(TaskNode(
+        node_id="b", description="B",
+        capabilities_required=["file_search"],
+    ))
+    providers = [
+        ProviderSpec(name="google", capabilities={"tool_role", "streaming", "file_search", "grounding"}),
+        ProviderSpec(name="openai", capabilities={"tool_role", "streaming", "structured_output"}),
+    ]
+    verdict = verify_provider_assignment(dag, providers)
+    assert verdict.satisfied is True
+
+
+def test_provider_assignment_unsatisfied():
+    """A node requires a capability no provider offers."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="a", description="A",
+        capabilities_required=["quantum_reasoning"],  # No provider has this
+    ))
+    providers = [
+        ProviderSpec(name="google", capabilities={"file_search", "grounding"}),
+        ProviderSpec(name="openai", capabilities={"tool_role", "streaming"}),
+    ]
+    verdict = verify_provider_assignment(dag, providers)
+    assert verdict.satisfied is False
+    assert "quantum_reasoning" in verdict.counterexample
+
+
+def test_provider_assignment_exclusion_conflict():
+    """Node requires mutually exclusive capabilities on the only capable provider."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="a", description="A",
+        capabilities_required=["file_search", "google_search"],
+    ))
+    providers = [
+        ProviderSpec(
+            name="google",
+            capabilities={"file_search", "google_search", "grounding"},
+            exclusions=[("file_search", "google_search")],  # Can't use both
+        ),
+        ProviderSpec(name="openai", capabilities={"tool_role"}),  # Doesn't have either
+    ]
+    verdict = verify_provider_assignment(dag, providers)
+    assert verdict.satisfied is False
+    assert "exclusion" in verdict.counterexample.lower() or "conflict" in verdict.counterexample.lower()
+
+
+def test_provider_assignment_exclusion_resolved_by_another_provider():
+    """Exclusion on one provider, but another provider can serve the node."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="a", description="A",
+        capabilities_required=["file_search", "streaming"],
+    ))
+    providers = [
+        ProviderSpec(
+            name="google",
+            capabilities={"file_search", "google_search", "streaming"},
+            exclusions=[("file_search", "google_search")],
+        ),
+        ProviderSpec(
+            name="alt_provider",
+            capabilities={"file_search", "streaming"},  # No exclusion
+        ),
+    ]
+    verdict = verify_provider_assignment(dag, providers)
+    assert verdict.satisfied is True  # alt_provider can serve it
+
+
+def test_provider_assignment_no_requirements():
+    """Nodes without capability requirements are trivially assignable."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(node_id="a", description="A"))
+    dag.add_node(TaskNode(node_id="b", description="B"))
+    verdict = verify_provider_assignment(dag, [])
+    assert verdict.satisfied is True
+
+
+def test_provider_assignment_no_providers():
+    """No providers available but node requires capabilities."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="a", description="A",
+        capabilities_required=["grounding"],
+    ))
+    verdict = verify_provider_assignment(dag, [])
+    assert verdict.satisfied is False
