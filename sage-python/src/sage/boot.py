@@ -1,10 +1,13 @@
 """Boot sequence: initialize the full YGN-SAGE agent stack."""
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger("sage.boot")
 
 # Load .env if present (for GOOGLE_API_KEY etc.)
 try:
@@ -171,8 +174,23 @@ def boot_agent_system(
     # SECURITY: local host execution disabled by default (requires allow_local=True)
     sandbox_manager = SandboxManager()
 
+    # --- Degradation warnings (loud, not silent) ---
+    from sage.memory.working import _has_rust as _rust_available
+    if not _rust_available:
+        _log.warning(
+            "sage_core Rust extension not compiled — working memory uses a "
+            "pure-Python mock that returns dummy values for Arrow/S-MMU "
+            "operations. Build with: cd sage-core && maturin develop"
+        )
+
     # Episodic memory
     episodic_memory = EpisodicMemory()
+
+    if not episodic_memory._db_path:
+        _log.warning(
+            "Episodic memory is volatile (in-memory only, data lost on "
+            "restart). Pass db_path to EpisodicMemory for persistence."
+        )
 
     # ExoCortex (persistent RAG via Google GenAI File Search)
     exocortex = ExoCortex()
