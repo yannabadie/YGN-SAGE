@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-413%20collected-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-678%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-proprietary-red?style=flat-square" alt="License">
@@ -26,7 +26,7 @@ YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive
 - **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
 - **Composable guardrails** — cost limits, schema validation, Z3 bounds checking at input/runtime/output
 - **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
-- **Sandbox** — Wasm (wasmtime) + eBPF (solana_rbpf) execution sandboxes (experimental)
+- **Sandbox** — Wasm (wasmtime) execution sandbox (experimental)
 - **Dashboard** — built-in FastAPI + WebSocket real-time event viewer
 - **Benchmarks** — HumanEval (164 problems) + routing self-consistency test built-in
 
@@ -94,7 +94,7 @@ cd sage-discover && python -m pytest tests/ -v  # 45 passed
 
 ```
 YGN-SAGE/
-|-- sage-core/           # Rust core (eBPF, Z3, Arrow memory, RagCache)
+|-- sage-core/           # Rust core (Z3, Arrow memory, RagCache)
 |-- sage-python/         # Python SDK
 |   +-- src/sage/
 |       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
