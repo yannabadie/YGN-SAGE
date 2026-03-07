@@ -15,13 +15,16 @@ jobs:
         working-directory: sage-core
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install maturin
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy --no-default-features -- -D warnings
-      # cargo test skipped: PyO3 extension-module requires Python dev libs
-      # linked at test time. Rust logic is tested via Python integration tests.
+      - run: cargo test --no-default-features
 
   python-sage:
     name: Python SDK (sage-python)
