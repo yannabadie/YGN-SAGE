@@ -44,6 +44,20 @@ class OpenAICompatProvider:
             "streaming": False,
         }
 
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
+        """Convert Message objects to OpenAI dict format."""
+        oai_messages: list[dict[str, str]] = []
+        for msg in messages:
+            role = msg.role.value
+            if role == "tool":
+                log.warning(
+                    "Rewriting tool role to user for OpenAI-compat API — "
+                    "semantic context (tool provenance) is lost"
+                )
+                role = "user"
+            oai_messages.append({"role": role, "content": msg.content})
+        return oai_messages
+
     async def generate(
         self,
         messages: list[Message],
@@ -66,13 +80,7 @@ class OpenAICompatProvider:
 
         client = AsyncOpenAI(**client_kwargs)
 
-        # Convert messages to OpenAI format
-        oai_messages: list[dict[str, str]] = []
-        for msg in messages:
-            role = msg.role.value
-            if role == "tool":
-                role = "user"  # Simplify for compat APIs that lack tool role
-            oai_messages.append({"role": role, "content": msg.content})
+        oai_messages = self._convert_messages(messages)
 
         try:
             response = await client.chat.completions.create(
