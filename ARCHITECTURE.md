@@ -205,13 +205,14 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | Arrow working memory | Solid, SIMD/AVX-512 |
 | S-MMU paging | Wired (write via compressor, read via THINK phase) |
 | RagCache (FIFO+TTL) | Implemented (DashMap) |
-| eBPF sandbox | Implemented (solana_rbpf), but optional feature |
+| eBPF sandbox | Implemented (solana_rbpf), but optional feature. `snap_bpf.c` is a stub (printk only) |
 | Wasm sandbox | Implemented (wasmtime + WASI), but optional feature |
 | Z3 bindings | Implemented |
 
 **Known limitations:**
 - eBPF and Wasm are behind `sandbox` feature flag (not built by default, not tested in CI)
 - eBPF compiles for BPF target requiring `core` stdlib — not available on all platforms
+- `snap_bpf.c` is a stub (printk only) — real SnapBPF is Rust userspace CoW in `ebpf.rs`
 - Python falls back silently to mock when Rust extension unavailable
 
 ### 10. Agent Composition

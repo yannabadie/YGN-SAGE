@@ -1,20 +1,19 @@
+/*
+ * STUB — NOT FUNCTIONAL
+ *
+ * This file is a placeholder for a future kernel-level SnapBPF agent.
+ * It compiles but does NOT implement any CoW memory logic.
+ * The actual SnapBPF implementation is in Rust: sage-core/src/sandbox/ebpf.rs
+ * (userspace CoW via Arc<Vec<u8>> snapshots in DashMap).
+ */
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
-/*
- * SOTA 2026: SnapBPF Kernel Agent
- * Hooks into 'add_to_page_cache_lru' to perform ultra-fast 
- * micro-VM memory restoration via Copy-on-Write.
- */
-
 SEC("kprobe/add_to_page_cache_lru")
 int snap_mem_hook(struct pt_regs *ctx) {
-    // Logic to identify if the page belongs to a registered micro-VM
-    // and inject the pre-heated snapshot page instead of disk I/O.
-    
-    char msg[] = "SnapBPF: Intercepted page cache LRU for micro-VM isolation.\n";
+    char msg[] = "SnapBPF: stub — no functional logic.\n";
     bpf_trace_printk(msg, sizeof(msg));
-    
+
     return 0;
 }
 
