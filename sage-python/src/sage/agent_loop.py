@@ -15,6 +15,7 @@ from sage.tools.registry import ToolRegistry
 from sage.memory.working import WorkingMemory
 from sage.memory.compressor import MemoryCompressor
 from sage.topology.kg_rlvr import ProcessRewardModel
+from sage.resilience import CircuitBreaker
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +136,14 @@ class AgentLoop:
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = 3
 
+        # Circuit breakers for best-effort subsystems
+        self._cb_semantic = CircuitBreaker("semantic_memory")
+        self._cb_smmu = CircuitBreaker("smmu_context")
+        self._cb_runtime_guard = CircuitBreaker("runtime_guardrails")
+        self._cb_episodic = CircuitBreaker("episodic_store")
+        self._cb_entity = CircuitBreaker("entity_extraction")
+        self._cb_evo = CircuitBreaker("evolution_stats")
+
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = AgentEvent(
             type=phase.value.upper(),
@@ -228,7 +237,7 @@ class AgentLoop:
         result_text = ""
 
         # Semantic memory context injection (one-time, before loop)
-        if self.semantic_memory:
+        if self.semantic_memory and not self._cb_semantic.should_skip():
             try:
                 sem_context = self.semantic_memory.get_context_for(task)
                 if sem_context:
@@ -236,20 +245,23 @@ class AgentLoop:
                         role=Role.SYSTEM,
                         content=f"Relevant knowledge from previous interactions:\n{sem_context}",
                     ))
-            except Exception:
-                pass  # Best-effort semantic enrichment
+                self._cb_semantic.record_success()
+            except Exception as e:
+                self._cb_semantic.record_failure(e)
 
         # S-MMU context injection (graph-based retrieval from compacted chunks)
-        try:
-            from sage.memory.smmu_context import retrieve_smmu_context
-            smmu_context = retrieve_smmu_context(self.working_memory)
-            if smmu_context:
-                messages.insert(
-                    min(2, len(messages)),  # After system + semantic, before user
-                    Message(role=Role.SYSTEM, content=smmu_context),
-                )
-        except Exception:
-            pass  # Best-effort S-MMU enrichment
+        if not self._cb_smmu.should_skip():
+            try:
+                from sage.memory.smmu_context import retrieve_smmu_context
+                smmu_context = retrieve_smmu_context(self.working_memory)
+                if smmu_context:
+                    messages.insert(
+                        min(2, len(messages)),  # After system + semantic, before user
+                        Message(role=Role.SYSTEM, content=smmu_context),
+                    )
+                self._cb_smmu.record_success()
+            except Exception as e:
+                self._cb_smmu.record_failure(e)
 
         while self.step_count < self.config.max_steps:
             self.step_count += 1
@@ -343,7 +355,7 @@ class AgentLoop:
 
                 if code_blocks and self.sandbox_manager:
                     # Runtime guardrail: check code before execution
-                    if self.guardrail_pipeline:
+                    if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip():
                         try:
                             runtime_results = await self.guardrail_pipeline.check_all(
                                 input=code_blocks[-1],
@@ -354,8 +366,9 @@ class AgentLoop:
                                            guardrail="runtime",
                                            guardrail_passed=r.passed,
                                            guardrail_reason=r.reason)
-                        except Exception:
-                            pass  # Runtime guardrails are best-effort
+                            self._cb_runtime_guard.record_success()
+                        except Exception as e:
+                            self._cb_runtime_guard.record_failure(e)
 
                     # AVR loop: execute, verify, refine
                     sandbox = await self.sandbox_manager.create()
@@ -434,24 +447,26 @@ class AgentLoop:
             self.working_memory.add_event("ASSISTANT", content)
 
             # Store significant responses in episodic memory (if wired)
-            if self.episodic_memory and len(content) > 100:
+            if self.episodic_memory and len(content) > 100 and not self._cb_episodic.should_skip():
                 try:
                     await self.episodic_memory.store(
                         key=f"step-{self.step_count}",
                         content=content[:500],
                         metadata={"task": task, "step": self.step_count},
                     )
-                except Exception:
-                    pass  # Episodic storage is best-effort
+                    self._cb_episodic.record_success()
+                except Exception as e:
+                    self._cb_episodic.record_failure(e)
 
             # Semantic memory: extract entities from response
-            if self.memory_agent and self.semantic_memory and content and len(content) > 50:
+            if self.memory_agent and self.semantic_memory and content and len(content) > 50 and not self._cb_entity.should_skip():
                 try:
                     extraction = await self.memory_agent.extract(content[:1000])
                     if extraction.entities:
                         self.semantic_memory.add_extraction(extraction)
-                except Exception:
-                    pass  # Best-effort entity extraction
+                    self._cb_entity.record_success()
+                except Exception as e:
+                    self._cb_entity.record_failure(e)
 
             # No tool calls -> final answer
             if not response.tool_calls:
@@ -498,7 +513,7 @@ class AgentLoop:
                 learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
 
             # Evolution grid snapshot (if wired)
-            if self.topology_population and self.topology_population.size() > 0:
+            if self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
                 try:
                     cells = []
                     best_fitness = 0.0
@@ -508,8 +523,9 @@ class AgentLoop:
                     learn_meta["evo_cells"] = cells
                     learn_meta["evo_best"] = round(best_fitness, 2)
                     learn_meta["evo_grid_size"] = len(cells)
-                except Exception:
-                    pass
+                    self._cb_evo.record_success()
+                except Exception as e:
+                    self._cb_evo.record_failure(e)
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 
