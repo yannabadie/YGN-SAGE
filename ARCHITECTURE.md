@@ -24,14 +24,16 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 **Evidence:** tested-unit (self-consistency only)
 
 **How it works:**
-- `MetacognitiveController._assess_heuristic()` uses keyword matching (regex on task text) to compute complexity/uncertainty scores
+- `ComplexityRouter._assess_heuristic()` (renamed from MetacognitiveController) uses keyword matching (regex on task text) to compute complexity/uncertainty scores
 - Thresholds: S1 (simple) ≤0.35, S3 (formal) >0.7, S2 (code) = everything else
+- **Speculative zone** (0.35-0.55 complexity): detected and logged; designed for future parallel S1+S2 execution but currently routes normally
 - LLM-based assessment available async only (requires `GOOGLE_API_KEY`); sync callers always get heuristic
 
 **Known limitations:**
 - The 30/30 routing benchmark is a **self-consistency test** — labels were calibrated against the heuristic, so 100% agreement proves nothing about downstream task quality
 - No evidence that S1/S2/S3 routing improves outcomes vs. always using the best model
 - Heuristic is keyword-based, not semantic
+- Speculative parallel execution not yet implemented (zone detection only)
 
 ### 2. CognitiveOrchestrator
 
@@ -75,12 +77,23 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | 2 — Semantic | In-memory graph | tested-unit | None |
 | 3 — ExoCortex | Google File Search API | tested-integration | Vendor-managed |
 
+**S-MMU Integration (wired March 2026):**
+
+The S-MMU (Structured Memory Management Unit) in `sage-core` is now wired end-to-end:
+
+- **Write path:** `MemoryCompressor.step()` compresses events, then calls `compact_to_arrow_with_meta()` with extracted keywords, embedding vector (via `Embedder`), and dynamic summary. This populates the S-MMU graph with temporal, semantic, and entity edges.
+- **Read path:** During THINK phase, `agent_loop.py` calls `retrieve_smmu_context()` (from `memory/smmu_context.py`) which queries the S-MMU graph (BFS multi-path traversal with configurable weights) and injects the top-k results as a SYSTEM message before the LLM call.
+- **Embedder:** `memory/embedder.py` auto-selects between sentence-transformers (semantic, 384-dim) and a deterministic hash fallback. Wired into `MemoryCompressor` at boot time.
+
+In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count stays at 0, so the read path returns empty string. No errors in either direction.
+
 **Known limitations:**
 - **Tier 0 falls back to Python mock** when Rust `sage_core` extension is not available. ~~No warning~~ Now emits `warnings.warn()` (audit fix A3).
 - ~~Tier 1 defaults to volatile in-memory~~ **Tier 1 now defaults to SQLite** at `~/.sage/episodic.db` (audit fix A4)
 - **Tier 2 is in-memory only** — no persistence, no export, lost on restart
 - **Tier 3 is vendor-locked** to Google GenAI File Search API
 - **No evidence** that 4-tier memory improves outcomes vs. long-context baseline
+- **S-MMU read path** returns chunk IDs and scores only (not chunk content) — content retrieval requires Rust extension
 
 ### 5. Guardrails
 
@@ -176,7 +189,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | Component | Status |
 |-----------|--------|
 | Arrow working memory | Solid, SIMD/AVX-512 |
-| S-MMU paging | Implemented |
+| S-MMU paging | Wired (write via compressor, read via THINK phase) |
 | RagCache (FIFO+TTL) | Implemented (DashMap) |
 | eBPF sandbox | Implemented (solana_rbpf), but optional feature |
 | Wasm sandbox | Implemented (wasmtime + WASI), but optional feature |

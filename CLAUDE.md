@@ -31,13 +31,15 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
-- `strategy/metacognition.py` - Stanovich S1/S2/S3 tripartite routing + CGRS self-braking
+- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing + CGRS self-braking + speculative zone detection (0.35-0.55)
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase
-- `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression
+- `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
+- `memory/embedder.py` - Embedder adapter: auto-selects sentence-transformers (384-dim) or deterministic hash fallback for S-MMU semantic edges
+- `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - In-memory entity-relation graph built by MemoryAgent
 - `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), auto-configured with DEFAULT_STORE
@@ -57,7 +59,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
 
 ### Key Rust Modules (sage-core/src/)
-- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging
+- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime)
@@ -144,6 +146,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
+- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k results as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
@@ -169,7 +172,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## Benchmarks
 - **HumanEval**: 164 problems bundled as JSON. pass@1 with subprocess sandbox. CLI: `python -m sage.bench --type humaneval`
-- **Routing Accuracy**: 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures MetacognitiveController precision.
+- **Routing Accuracy**: 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures ComplexityRouter precision.
 - **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
 
 ## Evolution System

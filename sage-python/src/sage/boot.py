@@ -74,6 +74,15 @@ class AgentSystem:
         profile = await self.metacognition.assess_complexity_async(task)
         decision = self.metacognition.route(profile)
 
+        # 1b. Speculative execution: detect indecisive zone
+        if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+            _log.info(
+                "Speculative zone: complexity=%.2f (indecisive). "
+                "Would fire S1+S2 in parallel when architecture supports it. "
+                "Using S%d for now.",
+                profile.complexity, decision.system,
+            )
+
         # 2. Apply routing decision
         current_provider = self.agent_loop.config.llm.provider
 
@@ -84,8 +93,11 @@ class AgentSystem:
         else:
             self.agent_loop.config.validation_level = decision.validation_level
 
-        # Only switch LLM if the target provider is available AND different
+        # Only switch LLM if the target provider is available AND different.
+        # In mock mode (tests), keep provider pinned to avoid external calls.
         new_config = ModelRouter.get_config(decision.llm_tier)
+        if current_provider == "mock":
+            return await self.agent_loop.run(task)
 
         # Don't downgrade from Codex to Gemini Flash for simple tasks —
         # Codex handles everything and always produces <think> tags
