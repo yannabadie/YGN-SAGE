@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-google = ["google-genai>=1"]
+google = ["google-genai>=1.20"]
 openai = ["openai>=1.50"]
 arrow = ["pyarrow>=18"]
 z3 = ["z3-solver>=4.13"]

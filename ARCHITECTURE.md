@@ -99,7 +99,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (596 tests total, 6 E2E + 14 stress + 10 ablation + 8 bugfix)
+**Evidence:** tested-unit + tested-integration (599 tests total, 6 E2E + 14 stress + 10 ablation + 11 bugfix)
 
 **Components:**
 | Component | Module | Tests |
@@ -133,7 +133,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 **Known limitations:**
 - Z3 verifies structural properties, not semantic correctness of LLM outputs
 - DynamicRouter uses static quality scores, not live profiling
-- CausalMemory is in-memory only (no persistence)
+- CausalMemory is in-memory only (no persistence). Bounded via `max_entities` + `max_context_lines`
 - Planner only supports static plan specs (no LLM-driven planning yet)
 
 ### 7. Dashboard

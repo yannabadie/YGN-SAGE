@@ -6,6 +6,7 @@ BF-2: DAGExecutor non-dict output handling
 BF-3: RepairLoop non-dict output handling
 BF-4: WriteGate bounded dedup (no unbounded growth)
 BF-5: CostTracker floating-point epsilon tolerance
+BF-6: CausalMemory bounded growth + context truncation
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from sage.contracts.executor import DAGExecutor
 from sage.contracts.repair import RepairLoop
 from sage.contracts.cost_tracker import CostTracker
 from sage.memory.write_gate import WriteGate
+from sage.memory.causal import CausalMemory
 from sage.routing.dynamic import DynamicRouter
 from sage.providers.capabilities import CapabilityMatrix, ProviderCapabilities
 
@@ -162,3 +164,45 @@ def test_bf5_cost_tracker_real_overshoot_is_over():
     tracker.record("b", 0.2)
     # 0.4 > 0.3 + epsilon — genuine overshoot
     assert tracker.is_over_budget is True
+
+
+# ===========================================================================
+# BF-6: CausalMemory bounded growth + context truncation
+# ===========================================================================
+
+def test_bf6_causal_memory_evicts_oldest():
+    """CausalMemory with max_entities evicts oldest entries."""
+    mem = CausalMemory(max_entities=5)
+    for i in range(10):
+        mem.add_entity(f"ent_{i}", metadata={"i": i})
+
+    assert mem.entity_count() == 5
+    # Oldest entities (0-4) should be evicted
+    assert not mem.has_entity("ent_0")
+    assert not mem.has_entity("ent_4")
+    # Recent entities (5-9) should remain
+    assert mem.has_entity("ent_5")
+    assert mem.has_entity("ent_9")
+
+
+def test_bf6_causal_memory_unlimited_by_default():
+    """CausalMemory with max_entities=0 grows without limit."""
+    mem = CausalMemory(max_entities=0)
+    for i in range(100):
+        mem.add_entity(f"e{i}")
+    assert mem.entity_count() == 100
+
+
+def test_bf6_context_truncation():
+    """get_context_for() truncates to max_context_lines."""
+    mem = CausalMemory(max_context_lines=3)
+    for i in range(20):
+        mem.add_entity(f"x{i}")
+    # Create relations so context has many lines
+    for i in range(19):
+        mem.add_relation(f"x{i}", "next", f"x{i + 1}")
+
+    # Query with a task that mentions x0 (which has relations)
+    ctx = mem.get_context_for("process x0 data")
+    lines = ctx.strip().split("\n")
+    assert len(lines) <= 3

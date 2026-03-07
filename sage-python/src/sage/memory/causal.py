@@ -26,9 +26,23 @@ class CausalEdge:
 
 
 class CausalMemory:
-    """Entity-relation graph with causal edges and temporal ordering."""
+    """Entity-relation graph with causal edges and temporal ordering.
 
-    def __init__(self) -> None:
+    Parameters
+    ----------
+    max_entities:
+        Maximum number of entities before oldest are evicted. 0 = unlimited.
+    max_context_lines:
+        Maximum lines returned by get_context_for(). 0 = unlimited.
+    """
+
+    def __init__(
+        self,
+        max_entities: int = 0,
+        max_context_lines: int = 50,
+    ) -> None:
+        self.max_entities = max_entities
+        self.max_context_lines = max_context_lines
         self._entities: dict[str, dict[str, Any]] = {}  # name -> metadata
         self._entity_order: list[str] = []  # insertion order
         self._relations: list[tuple[str, str, str]] = []
@@ -45,6 +59,10 @@ class CausalMemory:
         if name not in self._entities:
             self._entities[name] = metadata or {}
             self._entity_order.append(name)
+            # Evict oldest entity if over capacity
+            if self.max_entities > 0 and len(self._entities) > self.max_entities:
+                oldest = self._entity_order.pop(0)
+                self._entities.pop(oldest, None)
 
     def has_entity(self, name: str) -> bool:
         return name in self._entities
@@ -164,5 +182,8 @@ class CausalMemory:
             if line not in seen_lines:
                 seen_lines.add(line)
                 unique.append(line)
+
+        if self.max_context_lines > 0:
+            unique = unique[:self.max_context_lines]
 
         return "\n".join(unique)
