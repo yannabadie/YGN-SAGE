@@ -30,8 +30,12 @@ wasmtime = { version = "29.0", optional = true }
 # solana_rbpf = { version = "0.8.5", optional = true }
 numpy = "0.25"
 petgraph = "0.6.4"
+ort = { version = "2.0.0-rc.12", optional = true, features = ["copy-dylibs"] }
+tokenizers = { version = "0.21", optional = true, default-features = false, features = ["progressbar", "fancy-regex"] }
+ndarray = { version = "0.16", optional = true }
 [features]
 default = []
 sandbox = ["wasmtime"]
+onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
