@@ -167,8 +167,9 @@ def boot_agent_system(
     tool_registry.register(create_python_tool)
     tool_registry.register(create_bash_tool)
 
-    # Sandbox manager for S2 empirical validation (local fallback, no Docker required)
-    sandbox_manager = SandboxManager(use_docker=False)
+    # Sandbox manager for S2 empirical validation
+    # SECURITY: local host execution disabled by default (requires allow_local=True)
+    sandbox_manager = SandboxManager()
 
     # Episodic memory
     episodic_memory = EpisodicMemory()

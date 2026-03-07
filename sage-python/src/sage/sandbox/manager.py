@@ -39,16 +39,18 @@ class Sandbox:
     """A single sandboxed execution environment."""
 
     def __init__(
-        self, 
-        sandbox_id: str, 
-        config: SandboxConfig, 
+        self,
+        sandbox_id: str,
+        config: SandboxConfig,
         container_id: str | None = None,
-        wasm_engine: sage_core.WasmSandbox | None = None
+        wasm_engine: sage_core.WasmSandbox | None = None,
+        allow_local: bool = False,
     ):
         self.id = sandbox_id
         self.config = config
         self.container_id = container_id
         self.wasm_engine = wasm_engine
+        self._allow_local = allow_local
         self._alive = True
 
     @property
@@ -68,7 +70,12 @@ class Sandbox:
             return await self._execute_wasm(command, wasm_module)
 
         if self.container_id is None:
-            # Fallback: run locally via subprocess (no Docker)
+            if not self._allow_local:
+                return SandboxResult(
+                    stdout="",
+                    stderr="Local execution is disabled. Use allow_local=True to enable host execution.",
+                    exit_code=1,
+                )
             return await self._execute_local(command)
 
         return await self._execute_docker(command)
@@ -158,10 +165,11 @@ class Sandbox:
 class SandboxManager:
     """Manages sandbox lifecycle: create, execute, snapshot, destroy."""
 
-    def __init__(self, use_docker: bool = False):
+    def __init__(self, use_docker: bool = False, allow_local: bool = False):
         self._sandboxes: dict[str, Sandbox] = {}
         self._snapshots: dict[str, str] = {}  # snapshot_name -> image_id
         self._use_docker = use_docker
+        self._allow_local = allow_local
         try:
             self._wasm_engine = sage_core.WasmSandbox()
         except (AttributeError, Exception):
@@ -183,10 +191,11 @@ class SandboxManager:
             container_id = await self._create_container(sandbox_id, config)
 
         sandbox = Sandbox(
-            sandbox_id=sandbox_id, 
-            config=config, 
+            sandbox_id=sandbox_id,
+            config=config,
             container_id=container_id,
-            wasm_engine=self._wasm_engine
+            wasm_engine=self._wasm_engine,
+            allow_local=self._allow_local,
         )
         self._sandboxes[sandbox_id] = sandbox
         return sandbox

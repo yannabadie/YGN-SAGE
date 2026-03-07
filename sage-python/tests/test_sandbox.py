@@ -5,7 +5,7 @@ from sage.sandbox.manager import SandboxManager, SandboxConfig, SandboxResult
 
 @pytest.mark.asyncio
 async def test_create_sandbox():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     sandbox = await manager.create()
     assert sandbox.alive
     assert sandbox.id in manager.list_sandboxes()
@@ -13,7 +13,7 @@ async def test_create_sandbox():
 
 @pytest.mark.asyncio
 async def test_execute_in_sandbox():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     sandbox = await manager.create()
     result = await sandbox.execute("echo hello")
     assert isinstance(result, SandboxResult)
@@ -23,7 +23,7 @@ async def test_execute_in_sandbox():
 
 @pytest.mark.asyncio
 async def test_destroy_sandbox():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     sandbox = await manager.create()
     sid = sandbox.id
     assert await manager.destroy(sid)
@@ -33,13 +33,13 @@ async def test_destroy_sandbox():
 
 @pytest.mark.asyncio
 async def test_destroy_nonexistent():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     assert not await manager.destroy("nonexistent")
 
 
 @pytest.mark.asyncio
 async def test_destroy_all():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     await manager.create()
     await manager.create()
     count = await manager.destroy_all()
@@ -57,7 +57,7 @@ async def test_sandbox_config_defaults():
 
 @pytest.mark.asyncio
 async def test_execute_after_destroy():
-    manager = SandboxManager(use_docker=False)
+    manager = SandboxManager(use_docker=False, allow_local=True)
     sandbox = await manager.create()
     await sandbox.destroy()
     result = await sandbox.execute("echo test")
