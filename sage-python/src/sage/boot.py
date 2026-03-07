@@ -115,7 +115,16 @@ class AgentSystem:
                 self.agent_loop._llm = GoogleProvider()
 
         # 3. Run the agent loop
-        return await self.agent_loop.run(task)
+        result = await self.agent_loop.run(task)
+
+        # 4. Persist semantic memory after each run
+        if hasattr(self.agent_loop, "semantic_memory") and self.agent_loop.semantic_memory:
+            try:
+                self.agent_loop.semantic_memory.save()
+            except Exception:
+                _log.warning("Failed to persist semantic memory", exc_info=True)
+
+        return result
 
 
 def boot_agent_system(
@@ -251,10 +260,17 @@ def boot_agent_system(
     loop.sandbox_manager = sandbox_manager
     loop.exocortex = exocortex
 
-    # Semantic memory + MemoryAgent wiring
+    # Semantic memory + MemoryAgent wiring (persistent SQLite in real mode)
     from sage.memory.semantic import SemanticMemory
+    if not use_mock_llm:
+        _sem_db = Path.home() / ".sage" / "semantic.db"
+        _sem_db.parent.mkdir(parents=True, exist_ok=True)
+        semantic_memory = SemanticMemory(db_path=str(_sem_db))
+        semantic_memory.load()
+    else:
+        semantic_memory = SemanticMemory()
     loop.memory_agent = memory_agent  # Already created above but never injected!
-    loop.semantic_memory = SemanticMemory()
+    loop.semantic_memory = semantic_memory
 
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):

@@ -6,6 +6,7 @@ multi-hop neighbourhood queries and task-context generation.
 """
 from __future__ import annotations
 
+import sqlite3
 from collections import defaultdict
 
 from sage.memory.memory_agent import ExtractionResult
@@ -19,9 +20,15 @@ class SemanticMemory:
     An adjacency index accelerates neighbourhood queries.
     """
 
-    def __init__(self, max_relations: int = 10_000, max_context_lines: int = 50) -> None:
+    def __init__(
+        self,
+        max_relations: int = 10_000,
+        max_context_lines: int = 50,
+        db_path: str | None = None,
+    ) -> None:
         self.max_relations = max_relations
         self.max_context_lines = max_context_lines
+        self.db_path = db_path
         self._entities: set[str] = set()
         self._relations: list[tuple[str, str, str]] = []
         self._relations_set: set[tuple[str, str, str]] = set()
@@ -127,3 +134,68 @@ class SemanticMemory:
         if self.max_context_lines > 0:
             lines = lines[:self.max_context_lines]
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Persistence (SQLite)
+    # ------------------------------------------------------------------
+
+    def save(self) -> None:
+        """Persist entities and relations to SQLite."""
+        if not self.db_path:
+            return
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS entities (name TEXT PRIMARY KEY)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS relations "
+                "(subj TEXT, pred TEXT, obj TEXT, PRIMARY KEY (subj, pred, obj))"
+            )
+            conn.execute("DELETE FROM entities")
+            conn.execute("DELETE FROM relations")
+            conn.executemany(
+                "INSERT OR IGNORE INTO entities VALUES (?)",
+                [(e,) for e in self._entities],
+            )
+            conn.executemany(
+                "INSERT OR IGNORE INTO relations VALUES (?, ?, ?)",
+                self._relations,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def load(self) -> None:
+        """Load entities and relations from SQLite."""
+        if not self.db_path:
+            return
+        import os
+
+        if not os.path.exists(self.db_path):
+            return
+        conn = sqlite3.connect(self.db_path)
+        try:
+            # Check if tables exist
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "entities" not in tables:
+                return
+            for (name,) in conn.execute("SELECT name FROM entities"):
+                self._entities.add(name)
+            for subj, pred, obj in conn.execute(
+                "SELECT subj, pred, obj FROM relations"
+            ):
+                triple = (subj, pred, obj)
+                if triple not in self._relations_set:
+                    self._relations_set.add(triple)
+                    idx = len(self._relations)
+                    self._relations.append(triple)
+                    self._adj[subj].append(idx)
+                    self._adj[obj].append(idx)
+        finally:
+            conn.close()
