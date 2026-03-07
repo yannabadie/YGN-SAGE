@@ -251,9 +251,10 @@ def boot_agent_system(
 
     # Guardrails
     from sage.guardrails.base import GuardrailPipeline
-    from sage.guardrails.builtin import CostGuardrail
+    from sage.guardrails.builtin import CostGuardrail, SchemaGuardrail
     loop.guardrail_pipeline = GuardrailPipeline([
         CostGuardrail(max_usd=10.0),  # Default budget limit
+        SchemaGuardrail(required_fields=["response"]),  # Schema validation
     ])
 
     return AgentSystem(

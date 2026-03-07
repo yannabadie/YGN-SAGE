@@ -107,11 +107,25 @@ def run_test(
 
 
 class HumanEvalBench:
-    """Run HumanEval benchmark against an AgentSystem."""
+    """Run HumanEval benchmark against an AgentSystem.
 
-    def __init__(self, system: Any = None, event_bus: Any = None):
+    Args:
+        system: AgentSystem to benchmark. If None, runs in extraction-only mode.
+        event_bus: EventBus for emitting BENCH_RESULT events.
+        baseline_mode: When True, tasks are sent directly to the LLM without
+            routing, memory, guardrails, or framework overhead.  This enables
+            measuring raw model performance vs framework-augmented performance.
+    """
+
+    def __init__(
+        self,
+        system: Any = None,
+        event_bus: Any = None,
+        baseline_mode: bool = False,
+    ):
         self.system = system
         self.event_bus = event_bus
+        self.baseline_mode = baseline_mode
         self.manifest: BenchmarkManifest | None = None
 
     async def run(self, limit: int | None = None) -> BenchReport:
@@ -119,6 +133,8 @@ class HumanEvalBench:
 
         If system is None, runs in "direct code extraction" mode (no agent).
         If system is provided, submits each task to AgentSystem.run().
+        If baseline_mode is True, the LLM is called directly — bypassing
+        routing, memory, guardrails, and all other framework components.
         """
         problems = load_problems(limit)
         results: list[TaskResult] = []
@@ -126,6 +142,8 @@ class HumanEvalBench:
         model_id = ""
         if self.system and hasattr(self.system, "agent_loop"):
             model_id = getattr(self.system.agent_loop, "_last_model", "") or "unknown"
+        if self.baseline_mode:
+            model_id = f"baseline:{model_id}" if model_id else "baseline"
         self.manifest = BenchmarkManifest(benchmark="humaneval", model=model_id)
 
         for i, problem in enumerate(problems):
@@ -139,7 +157,16 @@ class HumanEvalBench:
             system_used = 0
 
             try:
-                if self.system:
+                if self.baseline_mode and self.system:
+                    # Baseline mode: call the LLM directly, no routing/memory/guardrails
+                    task = (
+                        "Complete this Python function. "
+                        "Return ONLY the function body, no explanation.\n\n"
+                        f"```python\n{prompt}\n```"
+                    )
+                    response = await self.system.agent_loop._llm.generate(task)
+                    system_used = 0  # No routing
+                elif self.system:
                     # Full agent mode
                     task = (
                         "Complete this Python function. "

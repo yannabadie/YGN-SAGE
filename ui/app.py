@@ -90,11 +90,15 @@ from sage.agent_loop import AgentEvent
 logger = logging.getLogger("ygn-sage.dashboard")
 
 # ---------------------------------------------------------------------------
-# Global state
+# Global state — wrapped in a class to avoid bare module-level mutables
 # ---------------------------------------------------------------------------
-event_bus = EventBus()
-system = None  # lazily booted AgentSystem
-_agent_task: asyncio.Task | None = None
+class DashboardState:
+    def __init__(self):
+        self.event_bus = EventBus()
+        self.system = None  # lazily booted AgentSystem
+        self.agent_task: asyncio.Task | None = None
+
+_state = DashboardState()
 
 app = FastAPI(title="YGN-SAGE v2 Control Dashboard")
 
@@ -140,9 +144,8 @@ def _event_to_json(event: AgentEvent) -> str:
 
 
 def _boot_system() -> None:
-    """Boot the AgentSystem (once), wiring the global event_bus."""
-    global system
-    if system is not None:
+    """Boot the AgentSystem (once), wiring the shared event_bus."""
+    if _state.system is not None:
         return
 
     from sage.boot import boot_agent_system
@@ -151,16 +154,16 @@ def _boot_system() -> None:
     has_codex = shutil.which("codex") is not None
 
     if has_codex or has_google:
-        system = boot_agent_system(
+        _state.system = boot_agent_system(
             use_mock_llm=False,
             llm_tier="auto",
-            event_bus=event_bus,
+            event_bus=_state.event_bus,
         )
     else:
         logger.warning("No LLM provider available -- booting with mock LLM")
-        system = boot_agent_system(
+        _state.system = boot_agent_system(
             use_mock_llm=True,
-            event_bus=event_bus,
+            event_bus=_state.event_bus,
         )
 
 
@@ -179,7 +182,7 @@ async def root():
 @app.get("/api/state", dependencies=[Depends(verify_token)])
 async def get_state():
     """Return current dashboard stats derived from event_bus."""
-    events = event_bus.query(last_n=5000)
+    events = _state.event_bus.query(last_n=5000)
 
     step_count = 0
     total_cost = 0.0
@@ -238,15 +241,13 @@ async def get_state():
         "z3_fail": z3_fail,
         "latency_ms": round(last_latency, 1),
         "total_events": len(events),
-        "agent_status": "running" if (_agent_task and not _agent_task.done()) else "idle",
+        "agent_status": "running" if (_state.agent_task and not _state.agent_task.done()) else "idle",
     })
 
 
 @app.post("/api/task", dependencies=[Depends(verify_token)])
 async def submit_task(request: Request):
     """Accept a new task and run it through the AgentSystem in background."""
-    global _agent_task
-
     body = await request.json()
     task = body.get("task", "")
     if not isinstance(task, str) or len(task) > 10_000:
@@ -255,7 +256,7 @@ async def submit_task(request: Request):
             status_code=400,
         )
 
-    if _agent_task and not _agent_task.done():
+    if _state.agent_task and not _state.agent_task.done():
         return JSONResponse(
             {"error": "An agent is already running. Stop it first."},
             status_code=409,
@@ -264,46 +265,43 @@ async def submit_task(request: Request):
     async def _run_agent(task_text: str) -> None:
         try:
             _boot_system()
-            result = await system.run(task_text)
+            result = await _state.system.run(task_text)
             logger.info("Agent finished: %s", result[:200] if result else "(empty)")
         except asyncio.CancelledError:
             logger.info("Agent task cancelled")
         except Exception:
             logger.exception("Agent run failed")
             # Emit error event so the dashboard knows
-            event_bus.emit(AgentEvent(
+            _state.event_bus.emit(AgentEvent(
                 type="ERROR",
                 step=0,
                 timestamp=time.time(),
                 meta={"error": "Agent run failed"},
             ))
 
-    _agent_task = asyncio.create_task(_run_agent(task))
+    _state.agent_task = asyncio.create_task(_run_agent(task))
     return JSONResponse({"status": "started"})
 
 
 @app.post("/api/stop", dependencies=[Depends(verify_token)])
 async def stop_agent():
     """Cancel the currently running agent task."""
-    global _agent_task
-    if _agent_task and not _agent_task.done():
-        _agent_task.cancel()
-    _agent_task = None
+    if _state.agent_task and not _state.agent_task.done():
+        _state.agent_task.cancel()
+    _state.agent_task = None
     return JSONResponse({"status": "stopped"})
 
 
 @app.post("/api/reset", dependencies=[Depends(verify_token)])
 async def reset_state():
     """Clear event bus buffer and reset system reference."""
-    global system, _agent_task
+    if _state.agent_task and not _state.agent_task.done():
+        _state.agent_task.cancel()
+    _state.agent_task = None
 
-    if _agent_task and not _agent_task.done():
-        _agent_task.cancel()
-    _agent_task = None
+    _state.event_bus.clear()
 
-    event_bus.clear()
-
-    system = None
+    _state.system = None
     return JSONResponse({"status": "reset"})
 
 
@@ -311,8 +309,8 @@ async def reset_state():
 async def list_providers():
     """Return available LLM providers from ModelRegistry or fallback."""
     try:
-        if system and hasattr(system, 'registry') and system.registry:
-            available = system.registry.list_available()
+        if _state.system and hasattr(_state.system, 'registry') and _state.system.registry:
+            available = _state.system.registry.list_available()
             providers = [
                 {"name": p.id, "provider": p.provider, "code": p.code_score,
                  "reasoning": p.reasoning_score, "cost": f"${p.cost_input:.3f}/${p.cost_output:.3f}",
@@ -349,12 +347,12 @@ async def run_benchmark(request: Request):
             elif bench_type == "humaneval":
                 from sage.bench.humaneval import HumanEvalBench
                 _boot_system()
-                bench = HumanEvalBench(system=system, event_bus=event_bus)
+                bench = HumanEvalBench(system=_state.system, event_bus=_state.event_bus)
                 report = await bench.run(limit=limit)
             else:
                 return
             # Emit summary event
-            event_bus.emit(AgentEvent(
+            _state.event_bus.emit(AgentEvent(
                 type="BENCH_SUMMARY",
                 step=0,
                 timestamp=time.time(),
@@ -369,7 +367,7 @@ async def run_benchmark(request: Request):
             ))
         except Exception as e:
             logger.exception("Benchmark failed")
-            event_bus.emit(AgentEvent(type="ERROR", step=0, timestamp=time.time(), meta={"error": str(e)}))
+            _state.event_bus.emit(AgentEvent(type="ERROR", step=0, timestamp=time.time(), meta={"error": str(e)}))
 
     asyncio.create_task(_run_bench())
     return JSONResponse({"status": "started", "type": bench_type})
@@ -380,8 +378,8 @@ async def memory_stats():
     """Return 4-tier memory statistics."""
     stats = {"stm": 0, "episodic": 0, "semantic": 0, "exocortex": False}
     try:
-        if system:
-            loop = system.agent_loop
+        if _state.system:
+            loop = _state.system.agent_loop
             stats["stm"] = loop.working_memory.event_count()
             if loop.episodic_memory:
                 try:
@@ -402,8 +400,8 @@ async def get_topology():
     """Return active agent pool topology."""
     agents = []
     try:
-        if system and hasattr(system.agent_loop, 'agent_pool'):
-            pool = system.agent_loop.agent_pool
+        if _state.system and hasattr(_state.system.agent_loop, 'agent_pool'):
+            pool = _state.system.agent_loop.agent_pool
             if hasattr(pool, 'list_agents'):
                 agents = pool.list_agents()
     except Exception:
@@ -416,8 +414,8 @@ async def get_evolution():
     """Return evolution engine state."""
     evo = {"generation": 0, "population_size": 0, "best_score": 0.0, "cells": []}
     try:
-        if system and hasattr(system.agent_loop, 'topology_population'):
-            pop = system.agent_loop.topology_population
+        if _state.system and hasattr(_state.system.agent_loop, 'topology_population'):
+            pop = _state.system.agent_loop.topology_population
             if pop and pop.size() > 0:
                 evo["population_size"] = pop.size()
                 try:
@@ -447,12 +445,12 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # 1. Send buffered events (initial state catch-up)
-        buffered = event_bus.query(last_n=100)
+        buffered = _state.event_bus.query(last_n=100)
         for evt in buffered:
             await websocket.send_text(_event_to_json(evt))
 
         # 2. Stream new events as they arrive
-        async for evt in event_bus.stream():
+        async for evt in _state.event_bus.stream():
             await websocket.send_text(_event_to_json(evt))
 
     except WebSocketDisconnect:

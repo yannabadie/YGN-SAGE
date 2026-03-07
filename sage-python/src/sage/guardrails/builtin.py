@@ -62,6 +62,10 @@ class SchemaGuardrail(Guardrail):
         output: str = "",
         context: dict | None = None,
     ) -> GuardrailResult:
+        # Skip when there is no output to validate (e.g., during input phase)
+        if not output:
+            return GuardrailResult(passed=True)
+
         # Parse JSON
         try:
             data = json.loads(output)
