@@ -28,6 +28,8 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // m.add_class::<sandbox::ebpf::SnapBPF>()?;
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
+    #[cfg(feature = "onnx")]
+    m.add_class::<memory::embedder::RustEmbedder>()?;
 
     // Add SIMD functions
     m.add_function(wrap_pyfunction!(simd_sort::vectorized_partition_h96, m)?)?;

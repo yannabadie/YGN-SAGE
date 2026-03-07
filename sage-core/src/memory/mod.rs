@@ -6,6 +6,8 @@
 //! - `paging.rs`      — Semantic paging / eviction policy
 
 pub mod arrow_tier;
+#[cfg(feature = "onnx")]
+pub mod embedder;
 pub mod event;
 pub mod paging;
 pub mod rag_cache;
