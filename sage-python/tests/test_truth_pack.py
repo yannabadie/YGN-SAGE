@@ -41,3 +41,40 @@ def test_manifest_summary():
     assert s["total"] == 2
     assert s["passed"] == 1
     assert s["pass_rate"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_routing_bench_produces_manifest():
+    """Routing benchmark should populate a manifest with 30 traces."""
+    from sage.strategy.metacognition import ComplexityRouter
+    from sage.bench.routing import RoutingAccuracyBench, LABELED_TASKS
+
+    mc = ComplexityRouter()
+    bench = RoutingAccuracyBench(metacognition=mc)
+    report = await bench.run()
+
+    # Manifest should exist and have one trace per labeled task
+    assert bench.manifest is not None
+    assert len(bench.manifest.traces) == len(LABELED_TASKS)
+    assert bench.manifest.benchmark == "routing_accuracy"
+    assert bench.manifest.model == "heuristic"
+
+    # Every trace should have a valid routing tier
+    for trace in bench.manifest.traces:
+        assert trace.routing in ("S1", "S2", "S3")
+        assert trace.task_id.startswith("routing_")
+        assert trace.latency_ms >= 0
+
+    # JSONL export should produce one line per trace
+    jsonl = bench.manifest.to_jsonl()
+    lines = jsonl.strip().split("\n")
+    assert len(lines) == len(LABELED_TASKS)
+    for line in lines:
+        parsed = json.loads(line)
+        assert "task_id" in parsed
+        assert "passed" in parsed
+
+    # Summary should match report totals
+    summary = bench.manifest.summary()
+    assert summary["total"] == report.total
+    assert summary["passed"] == report.passed

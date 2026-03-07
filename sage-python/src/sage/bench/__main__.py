@@ -149,6 +149,18 @@ async def _run_routing(output: str | None) -> None:
     out_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
     print(f"  Report saved to: {out_path}")
 
+    # Save truth pack (JSONL per-task traces + summary)
+    if hasattr(bench, 'manifest') and bench.manifest and bench.manifest.traces:
+        jsonl_path = out_path.with_suffix(".jsonl")
+        jsonl_path.write_text(bench.manifest.to_jsonl(), encoding="utf-8")
+        print(f"  Truth pack (JSONL): {jsonl_path}")
+
+        summary_path = out_path.with_name(out_path.stem + "-summary.json")
+        summary_path.write_text(
+            json.dumps(bench.manifest.summary(), indent=2), encoding="utf-8"
+        )
+        print(f"  Truth pack (summary): {summary_path}")
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(

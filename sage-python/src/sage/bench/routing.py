@@ -32,6 +32,7 @@ import time
 from typing import TYPE_CHECKING
 
 from sage.bench.runner import BenchReport, TaskResult
+from sage.bench.truth_pack import BenchmarkManifest, TaskTrace
 
 if TYPE_CHECKING:
     from sage.strategy.metacognition import MetacognitiveController
@@ -114,10 +115,14 @@ class RoutingAccuracyBench:
 
     def __init__(self, metacognition: MetacognitiveController) -> None:
         self.metacognition = metacognition
+        self.manifest: BenchmarkManifest | None = None
 
     async def run(self) -> BenchReport:
         """Evaluate all labeled tasks and return a :class:`BenchReport`."""
         results: list[TaskResult] = []
+        self.manifest = BenchmarkManifest(
+            benchmark="routing_accuracy", model="heuristic"
+        )
 
         for idx, item in enumerate(LABELED_TASKS):
             task_text: str = item["task"]
@@ -129,16 +134,26 @@ class RoutingAccuracyBench:
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
             passed = decision.system == expected_system
+            error = "" if passed else (
+                f"expected S{expected_system}, got S{decision.system}"
+            )
             results.append(
                 TaskResult(
                     task_id=f"routing_{idx:03d}",
                     passed=passed,
                     system_used=decision.system,
                     latency_ms=elapsed_ms,
-                    error="" if passed else (
-                        f"expected S{expected_system}, got S{decision.system}"
-                    ),
+                    error=error,
                 )
             )
+            self.manifest.add(TaskTrace(
+                task_id=f"routing_{idx:03d}",
+                passed=passed,
+                latency_ms=round(elapsed_ms, 3),
+                cost_usd=0.0,
+                model="heuristic",
+                routing=f"S{decision.system}",
+                error=error,
+            ))
 
         return BenchReport.from_results("routing_accuracy", results)
