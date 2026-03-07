@@ -6,6 +6,7 @@ deduplication before allowing the write.
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 
 
@@ -27,11 +28,12 @@ class WriteGate:
         Minimum confidence score to allow a write (0.0-1.0).
     """
 
-    def __init__(self, threshold: float = 0.5) -> None:
+    def __init__(self, threshold: float = 0.5, max_dedup_size: int = 10_000) -> None:
         self.threshold = threshold
+        self.max_dedup_size = max_dedup_size
         self._write_count = 0
         self._abstention_count = 0
-        self._seen_content: set[str] = set()
+        self._seen_content: OrderedDict[str, None] = OrderedDict()
 
     def evaluate(self, content: str, confidence: float) -> WriteDecision:
         """Decide whether to allow a memory write.
@@ -50,7 +52,7 @@ class WriteGate:
                 reason="Blocked: empty content",
             )
 
-        # Duplicate
+        # Duplicate (bounded LRU dedup)
         if content in self._seen_content:
             self._abstention_count += 1
             return WriteDecision(
@@ -68,7 +70,9 @@ class WriteGate:
 
         # Allow
         self._write_count += 1
-        self._seen_content.add(content)
+        self._seen_content[content] = None
+        if len(self._seen_content) > self.max_dedup_size:
+            self._seen_content.popitem(last=False)  # Evict oldest
         return WriteDecision(
             allowed=True, confidence=confidence,
             reason="Allowed",

@@ -90,6 +90,12 @@ class DynamicRouter:
             score = self._score_provider(provider, cost_sensitivity)
             scored.append((provider, score))
 
+        if not scored:
+            caps = node.capabilities_required
+            raise ValueError(
+                f"No provider scored for task (capabilities: {caps})"
+            )
+
         # 4. Sort by score (highest first)
         scored.sort(key=lambda x: x[1], reverse=True)
         best_provider, best_score = scored[0]

@@ -147,8 +147,25 @@ class RepairLoop:
                         return result
                     continue
 
+                # Normalize output to dict
+                if not isinstance(output, dict):
+                    action = RepairAction.from_failure(
+                        node_id=node_id,
+                        vf_result=VFResult(
+                            passed=False,
+                            message=f"Runner returned {type(output).__name__}, expected dict",
+                        ),
+                        attempt=attempt,
+                        max_retries=self.max_retries,
+                    )
+                    result.repair_actions.append(action)
+                    if action.action_type == "abort":
+                        result.success = False
+                        return result
+                    continue
+
                 # Post-check
-                actual_cost = output.pop("_cost_usd", 0.0) if isinstance(output, dict) else 0.0
+                actual_cost = output.pop("_cost_usd", 0.0)
                 post_result = post_check(node, output, actual_cost_usd=actual_cost)
 
                 if post_result.passed:

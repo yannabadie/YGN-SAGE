@@ -48,7 +48,8 @@ class CostTracker:
     def is_over_budget(self) -> bool:
         if self.budget_usd <= 0:
             return False
-        return self.total_spent > self.budget_usd
+        # Use small epsilon to avoid floating-point edge cases
+        return self.total_spent > self.budget_usd + 1e-9
 
     def cost_for(self, node_id: str) -> float:
         return self._spent.get(node_id, 0.0)

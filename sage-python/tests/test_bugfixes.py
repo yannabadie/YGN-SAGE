@@ -1,0 +1,164 @@
+"""Tests for bugs discovered during deep code review (March 7, 2026).
+
+Each test verifies a specific bug fix:
+BF-1: DynamicRouter empty scored list guard
+BF-2: DAGExecutor non-dict output handling
+BF-3: RepairLoop non-dict output handling
+BF-4: WriteGate bounded dedup (no unbounded growth)
+BF-5: CostTracker floating-point epsilon tolerance
+"""
+from __future__ import annotations
+
+import pytest
+from sage.contracts.task_node import TaskNode, IOSchema
+from sage.contracts.dag import TaskDAG
+from sage.contracts.executor import DAGExecutor
+from sage.contracts.repair import RepairLoop
+from sage.contracts.cost_tracker import CostTracker
+from sage.memory.write_gate import WriteGate
+from sage.routing.dynamic import DynamicRouter
+from sage.providers.capabilities import CapabilityMatrix, ProviderCapabilities
+
+
+# ===========================================================================
+# BF-1: DynamicRouter empty scored list
+# ===========================================================================
+
+def test_bf1_router_raises_on_no_providers():
+    """Router should raise ValueError, not IndexError, when no provider matches."""
+    matrix = CapabilityMatrix()
+    matrix.register(ProviderCapabilities(
+        provider="limited", structured_output=False, file_search=False,
+    ))
+    router = DynamicRouter(
+        capability_matrix=matrix,
+        provider_costs={"limited": 1.0},
+        provider_quality={"limited": 0.5},
+    )
+    node = TaskNode(
+        node_id="task",
+        description="Needs file search",
+        capabilities_required=["file_search"],
+    )
+    with pytest.raises(ValueError, match="No provider"):
+        router.route(node)
+
+
+# ===========================================================================
+# BF-2: DAGExecutor non-dict output
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_bf2_executor_handles_none_output():
+    """Executor should fail gracefully when runner returns None."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(node_id="bad", description="Returns None"))
+
+    async def bad_runner(nid, desc, data):
+        return None  # type: ignore[return-value]
+
+    executor = DAGExecutor(dag, runner=bad_runner)
+    result = await executor.execute({})
+    assert result.success is False
+    assert "NoneType" in result.node_results["bad"].error
+
+
+@pytest.mark.asyncio
+async def test_bf2_executor_handles_string_output():
+    """Executor should fail gracefully when runner returns a string."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(node_id="bad", description="Returns string"))
+
+    async def string_runner(nid, desc, data):
+        return "just a string"  # type: ignore[return-value]
+
+    executor = DAGExecutor(dag, runner=string_runner)
+    result = await executor.execute({})
+    assert result.success is False
+    assert "str" in result.node_results["bad"].error
+
+
+# ===========================================================================
+# BF-3: RepairLoop non-dict output
+# ===========================================================================
+
+@pytest.mark.asyncio
+async def test_bf3_repair_handles_none_output():
+    """RepairLoop should handle non-dict output without crashing."""
+    dag = TaskDAG()
+    dag.add_node(TaskNode(
+        node_id="bad", description="Returns None then dict",
+        output_schema=IOSchema(fields={"val": "string"}),
+    ))
+
+    attempts = 0
+
+    async def eventually_dict(nid, desc, data):
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            return None  # type: ignore[return-value]
+        return {"val": "ok"}
+
+    loop = RepairLoop(dag, runner=eventually_dict, max_retries=5)
+    result = await loop.execute({})
+    assert result.success is True
+    assert attempts == 3
+
+
+# ===========================================================================
+# BF-4: WriteGate bounded dedup
+# ===========================================================================
+
+def test_bf4_write_gate_bounded_dedup():
+    """WriteGate should evict old entries when max_dedup_size is exceeded."""
+    gate = WriteGate(threshold=0.1, max_dedup_size=5)
+
+    # Write 10 unique entries
+    for i in range(10):
+        gate.evaluate(f"content_{i}", confidence=0.9)
+
+    # Dedup set should be bounded at 5
+    assert len(gate._seen_content) == 5
+
+    # Old entries (0-4) should have been evicted, so they're no longer dupes
+    d = gate.evaluate("content_0", confidence=0.9)
+    assert d.allowed is True  # Not a duplicate anymore
+
+    # Recent entries (5-9) should still be detected as dupes
+    d2 = gate.evaluate("content_9", confidence=0.9)
+    assert d2.allowed is False
+    assert "duplicate" in d2.reason
+
+
+# ===========================================================================
+# BF-5: CostTracker float epsilon
+# ===========================================================================
+
+def test_bf5_cost_tracker_exact_budget_not_over():
+    """Spending exactly the budget should NOT be considered over budget."""
+    tracker = CostTracker(budget_usd=1.0)
+    tracker.record("a", 0.5)
+    tracker.record("b", 0.5)
+    # total_spent == budget_usd exactly — should NOT trigger over_budget
+    assert tracker.is_over_budget is False
+
+
+def test_bf5_cost_tracker_tiny_overshoot_not_over():
+    """Floating-point rounding error should NOT trigger false over-budget."""
+    tracker = CostTracker(budget_usd=0.3)
+    tracker.record("a", 0.1)
+    tracker.record("b", 0.1)
+    tracker.record("c", 0.1)
+    # 0.1 + 0.1 + 0.1 == 0.30000000000000004 in IEEE 754
+    # With epsilon tolerance, this should NOT be over budget
+    assert tracker.is_over_budget is False
+
+
+def test_bf5_cost_tracker_real_overshoot_is_over():
+    """Genuine overshoot (beyond epsilon) should still be detected."""
+    tracker = CostTracker(budget_usd=0.3)
+    tracker.record("a", 0.2)
+    tracker.record("b", 0.2)
+    # 0.4 > 0.3 + epsilon — genuine overshoot
+    assert tracker.is_over_budget is True

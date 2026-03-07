@@ -134,8 +134,18 @@ class DAGExecutor:
                 result.success = False
                 return result
 
+            # Normalize output to dict
+            if not isinstance(output, dict):
+                nr = NodeResult(
+                    node_id=node_id,
+                    error=f"Runner returned {type(output).__name__}, expected dict",
+                )
+                result.node_results[node_id] = nr
+                result.success = False
+                return result
+
             # Post-check
-            actual_cost = output.pop("_cost_usd", 0.0) if isinstance(output, dict) else 0.0
+            actual_cost = output.pop("_cost_usd", 0.0)
             post_result = post_check(node, output, actual_cost_usd=actual_cost)
             if not post_result.passed:
                 nr = NodeResult(
