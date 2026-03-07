@@ -5,6 +5,7 @@ using game-theoretic principles, then allocates resources accordingly.
 """
 from __future__ import annotations
 
+from collections import deque
 from typing import Any, List
 
 import numpy as np
@@ -38,7 +39,7 @@ class StrategyEngine:
             raise ValueError(f"Unknown solver type: {solver_type}")
 
         self._allocator = allocator or ResourceAllocator()
-        self._history: list[dict[str, Any]] = []
+        self._history: deque[dict[str, Any]] = deque(maxlen=1000)
 
     def get_allocations(self, payoffs: List[float] | None = None) -> list[Allocation]:
         """Get current resource allocations based on strategy weights."""

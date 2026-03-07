@@ -197,9 +197,11 @@ class EvolutionEngine:
 
         # Update DGM Policy using SAMPO
         self._trajectories.append(current_gen_traj)
-        if len(self._trajectories) >= 5: # Batch update
-            self._dgm_solver.update(self._trajectories)
-            self._trajectories = []
+        if len(self._trajectories) >= 5:  # Batch update
+            try:
+                self._dgm_solver.update(self._trajectories)
+            finally:
+                self._trajectories = []
 
         return accepted
 

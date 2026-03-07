@@ -34,13 +34,11 @@ class Population:
         self.feature_dims = feature_dims
         self.bins_per_dim = bins_per_dim
         self._archive: dict[tuple[int, ...], Individual] = {}
-        self._history: list[Individual] = []
 
     def add(self, individual: Individual) -> bool:
         """Add an individual to the archive. Returns True if it was inserted."""
         features = self._clamp_features(individual.features)
         individual.features = features
-        self._history.append(individual)
 
         existing = self._archive.get(features)
         if existing is None or individual.score > existing.score:
