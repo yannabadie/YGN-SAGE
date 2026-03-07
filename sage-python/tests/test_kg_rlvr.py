@@ -83,3 +83,30 @@ def test_score_with_z3_detects_violation():
     if "error" not in details:
         assert score == -1.0
         assert not details["safe"]
+
+
+def test_verify_invariant_blocks_code_injection():
+    """Verify that malicious pre/post strings cannot execute arbitrary code."""
+    kg = FormalKnowledgeGraph()
+    malicious_pre = "__import__('os').system('echo pwned')"
+    malicious_post = "x > 0"
+    result = kg.verify_invariant(malicious_pre, malicious_post)
+    assert result is False, "Malicious input must fail-closed (return False), not pass"
+
+
+def test_verify_invariant_accepts_valid_z3_expressions():
+    """Verify that legitimate Z3 constraint strings still work."""
+    kg = FormalKnowledgeGraph()
+    if not kg.has_z3:
+        return  # Skip if z3 not installed
+    result = kg.verify_invariant("x > 0", "x > -1")
+    assert result is True
+    result = kg.verify_invariant("x > 10", "x > 20")
+    assert result is False
+
+
+def test_verify_invariant_fails_closed_on_unparseable():
+    """Verify that unparseable expressions fail-closed (return False)."""
+    kg = FormalKnowledgeGraph()
+    result = kg.verify_invariant("not a valid expression ???", "also garbage")
+    assert result is False, "Unparseable input must fail-closed"

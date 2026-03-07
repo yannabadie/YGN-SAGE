@@ -6,6 +6,7 @@ using formal SMT verification via Z3 to eliminate hallucinations.
 """
 from __future__ import annotations
 
+import ast
 import re
 import logging
 from typing import List, Dict, Any, Tuple
@@ -20,6 +21,43 @@ try:
     _has_z3_validator = True
 except ImportError:
     _has_z3_validator = False
+
+# Allowed AST node types for safe Z3 expression evaluation
+_SAFE_NODES = (
+    ast.Expression, ast.BinOp, ast.UnaryOp, ast.Compare, ast.BoolOp,
+    ast.Constant, ast.Name, ast.Attribute, ast.Call, ast.Load,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Mod,
+    ast.Gt, ast.Lt, ast.GtE, ast.LtE, ast.Eq, ast.NotEq,
+    ast.And, ast.Or, ast.Not, ast.USub,
+)
+
+
+def _safe_z3_eval(expr: str, namespace: dict) -> Any:
+    """Evaluate a Z3 constraint string using restricted AST parsing.
+
+    Only allows: comparisons, arithmetic, boolean ops, variable names,
+    constants, and z3.* attribute access / function calls.
+    Raises ValueError on any disallowed construct.
+    """
+    tree = ast.parse(expr, mode="eval")
+    for node in ast.walk(tree):
+        if not isinstance(node, _SAFE_NODES):
+            raise ValueError(f"Disallowed AST node: {type(node).__name__}")
+        if isinstance(node, ast.Attribute):
+            if not (isinstance(node.value, ast.Name) and node.value.id == "z3"):
+                raise ValueError(f"Attribute access only allowed on 'z3'")
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if not (isinstance(node.func.value, ast.Name) and node.func.value.id == "z3"):
+                    raise ValueError(f"Function calls only allowed on z3.*")
+            elif isinstance(node.func, ast.Name):
+                if node.func.id not in namespace:
+                    raise ValueError(f"Unknown function: {node.func.id}")
+        if isinstance(node, ast.Name) and node.id not in namespace:
+            raise ValueError(f"Unknown name: {node.id}")
+    code = compile(tree, "<z3_constraint>", "eval")
+    return eval(code, {"__builtins__": {}}, namespace)
+
 
 class FormalKnowledgeGraph:
     """A formal Knowledge Graph backed by Z3 for verifiable reasoning."""
@@ -60,18 +98,22 @@ class FormalKnowledgeGraph:
         return solver.check() == z3.unsat
 
     def verify_invariant(self, pre: str, post: str) -> bool:
-        """Verify a pre/post-condition pair using Z3."""
+        """Verify a pre/post-condition pair using Z3.
+
+        Uses a restricted AST evaluator instead of eval() to prevent
+        arbitrary code execution. Fails closed (returns False) on any error.
+        """
         if not self.has_z3:
             return True
         solver = z3.Solver()
         x = z3.Int("x")
         try:
-            pre_constraint = eval(pre, {"x": x, "z3": z3})
-            post_constraint = eval(post, {"x": x, "z3": z3})
+            pre_constraint = _safe_z3_eval(pre, {"x": x, "z3": z3})
+            post_constraint = _safe_z3_eval(post, {"x": x, "z3": z3})
             solver.add(z3.And(pre_constraint, z3.Not(post_constraint)))
             return solver.check() == z3.unsat
         except Exception:
-            return True  # Can't parse — assume safe
+            return False  # Fail CLOSED — can't parse means reject
 
     def verify_step(self, step: str) -> float:
         """Score a reasoning step based on its formal verifiability."""
