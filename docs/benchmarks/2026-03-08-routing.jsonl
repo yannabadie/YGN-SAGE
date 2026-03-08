@@ -1,0 +1,30 @@
+{"task_id": "routing_000", "passed": true, "latency_ms": 1.104, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_001", "passed": true, "latency_ms": 0.035, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_002", "passed": true, "latency_ms": 0.023, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_003", "passed": true, "latency_ms": 0.02, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_004", "passed": true, "latency_ms": 0.022, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_005", "passed": true, "latency_ms": 0.019, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_006", "passed": true, "latency_ms": 0.023, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_007", "passed": true, "latency_ms": 0.022, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_008", "passed": true, "latency_ms": 0.023, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_009", "passed": true, "latency_ms": 0.02, "model": "heuristic", "routing": "S1"}
+{"task_id": "routing_010", "passed": true, "latency_ms": 0.023, "model": "heuristic", "routing": "S2"}
+{"task_id": "routing_011", "passed": false, "latency_ms": 0.025, "model": "heuristic", "routing": "S1", "error": "expected S2, got S1"}
+{"task_id": "routing_012", "passed": false, "latency_ms": 0.022, "model": "heuristic", "routing": "S1", "error": "expected S2, got S1"}
+{"task_id": "routing_013", "passed": true, "latency_ms": 0.025, "model": "heuristic", "routing": "S2"}
+{"task_id": "routing_014", "passed": false, "latency_ms": 0.025, "model": "heuristic", "routing": "S1", "error": "expected S2, got S1"}
+{"task_id": "routing_015", "passed": false, "latency_ms": 0.021, "model": "heuristic", "routing": "S1", "error": "expected S2, got S1"}
+{"task_id": "routing_016", "passed": true, "latency_ms": 0.02, "model": "heuristic", "routing": "S2"}
+{"task_id": "routing_017", "passed": false, "latency_ms": 0.023, "model": "heuristic", "routing": "S1", "error": "expected S2, got S1"}
+{"task_id": "routing_018", "passed": true, "latency_ms": 0.018, "model": "heuristic", "routing": "S2"}
+{"task_id": "routing_019", "passed": true, "latency_ms": 0.019, "model": "heuristic", "routing": "S2"}
+{"task_id": "routing_020", "passed": true, "latency_ms": 0.043, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_021", "passed": true, "latency_ms": 0.026, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_022", "passed": true, "latency_ms": 0.026, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_023", "passed": true, "latency_ms": 0.027, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_024", "passed": true, "latency_ms": 0.027, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_025", "passed": true, "latency_ms": 0.025, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_026", "passed": true, "latency_ms": 0.026, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_027", "passed": true, "latency_ms": 0.024, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_028", "passed": true, "latency_ms": 0.026, "model": "heuristic", "routing": "S3"}
+{"task_id": "routing_029", "passed": true, "latency_ms": 0.026, "model": "heuristic", "routing": "S3"}
