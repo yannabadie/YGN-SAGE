@@ -34,8 +34,8 @@ maturin develop
 maturin develop --features onnx
 
 # Run tests
-cargo test --workspace                  # 36 tests (default features)
-cargo test --features onnx              # +5 ONNX embedder tests (requires model download)
+cargo test --workspace                  # 7 tests (default features)
+cargo test --features onnx              # +5 ONNX embedder tests (requires model download + onnxruntime DLL)
 cargo clippy                            # Lint
 ```
 
@@ -59,7 +59,7 @@ cargo clippy                            # Lint
 - **petgraph 0.6** -- S-MMU multi-view directed graph
 - **dashmap 6** -- Lock-free concurrent maps (AgentPool, RagCache, SnapBPF)
 - **wasmtime 36.0** -- Wasm Component Model sandbox (optional)
-- **ort 2.0.0-rc.12** -- ONNX Runtime inference (optional)
+- **ort 2.0.0-rc.12** -- ONNX Runtime inference, `load-dynamic` (optional, needs `pip install onnxruntime`)
 - **tokenizers 0.21** -- HuggingFace tokenizer (optional)
 - **sysinfo + raw-cpuid** -- Hardware detection
 - **ulid + chrono** -- Event IDs and timestamps

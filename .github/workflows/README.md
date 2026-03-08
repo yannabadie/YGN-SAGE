@@ -9,18 +9,20 @@ GitHub Actions continuous integration pipeline for YGN-SAGE.
 Runs on every push and pull request. Executes three parallel test suites:
 
 **1. Rust Core (`sage-core/`)**
-- `cargo test --workspace` -- 36 tests (no-default-features)
-- `cargo clippy` -- Lint check
-- ONNX embedder tests are feature-gated and run separately (`cargo test --features onnx`)
+- `cargo fmt --check` -- Format check
+- `cargo clippy --no-default-features` -- Lint check
+- `cargo test --no-default-features` -- 7 tests
+- `cargo check --features onnx` -- Verify ONNX feature compiles
+- ONNX embedder tests are feature-gated (require model download + `ORT_DYLIB_PATH`)
 
 **2. Python SDK (`sage-python/`)**
 - Installs with `pip install -e ".[all,dev]"`
-- `python -m pytest tests/ -v` -- 695 tests
+- `python -m pytest tests/ -v` -- 691 tests
 - `ruff check src/` -- Lint
 - Tests run without API keys (all LLM calls are mocked)
 
 **3. Python Discovery (`sage-discover/`)**
-- Installs with `pip install -e .`
+- Installs both `sage-python` and `sage-discover`
 - `python -m pytest tests/ -v` -- 52 tests
 
 ## Notes

@@ -39,7 +39,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
-- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 384-dim) for S-MMU semantic edges
+- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 384-dim) for S-MMU semantic edges. `_ensure_ort_dylib_path()` auto-discovers onnxruntime DLL from pip package.
 - `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
@@ -63,8 +63,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
-- `sandbox/wasm.rs` - Wasm sandbox (wasmtime)
-- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate. Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`.
+- `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `execute_precompiled()` for Windows (no cranelift), `execute()` with JIT on Linux CI
+- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var.
 - `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
@@ -79,7 +79,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (695 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (691 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -101,7 +101,7 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --workspace         # Run Rust tests (36 passing, +5 ONNX feature-gated)
+cargo test --workspace         # Run Rust tests (7 passing, +5 ONNX feature-gated)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support
@@ -151,7 +151,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
 - **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k results as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
-- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort, native SIMD) > sentence-transformers (Python) > SHA-256 hash. Auto-detected at init. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py`
+- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
@@ -222,7 +222,7 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Z3 Solver 4.16 (formal verification, S3)
 - aiosqlite (episodic + semantic memory persistence)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
-- Wasm (wasmtime v29, sandbox feature) + Docker (multi-tier sandboxing)
+- Wasm (wasmtime v36 LTS, sandbox feature, Component Model) + Docker (multi-tier sandboxing)
 - DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
-- ort 2.0 (ONNX Runtime for Rust, optional `onnx` feature) — native embeddings
+- ort 2.0 (ONNX Runtime for Rust, `load-dynamic`, optional `onnx` feature) — native embeddings, works on Windows MSVC
 - tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)

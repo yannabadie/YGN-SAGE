@@ -30,13 +30,13 @@ Monitors working memory size and triggers LLM-driven compression when event coun
 ### `embedder.py` -- Embedder
 
 Unified embedding adapter with 3-tier auto-detection fallback:
-1. **RustEmbedder** (ONNX via `sage_core`, native SIMD) -- fastest
-2. **sentence-transformers** (Python, `all-MiniLM-L6-v2`) -- accurate
-3. **Hash fallback** (SHA-256 projection) -- deterministic, no ML
+1. **RustEmbedder** (ONNX via `sage_core`, native SIMD, `load-dynamic`) -- fastest. Requires `pip install onnxruntime` for the runtime DLL. Auto-discovered via `_ensure_ort_dylib_path()`.
+2. **sentence-transformers** (Python, `all-MiniLM-L6-v2`) -- accurate. Requires `pip install sentence-transformers`.
+3. **Hash fallback** (SHA-256 projection) -- deterministic, no ML, no dependencies.
 
-All backends produce 384-dimensional vectors (matching `all-MiniLM-L6-v2`).
+All 3 tiers work on Windows MSVC. All backends produce 384-dimensional vectors (matching `all-MiniLM-L6-v2`).
 
-- **Key exports**: `Embedder`, `EMBEDDING_DIM` (384)
+- **Key exports**: `Embedder`, `EMBEDDING_DIM` (384), `_ensure_ort_dylib_path()`
 
 ### `smmu_context.py` -- S-MMU Context Retrieval
 

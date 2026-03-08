@@ -1,6 +1,6 @@
 # tests/
 
-Integration tests for the `sage_core` crate. Run with `cargo test --workspace` (36 tests with default features, +5 with `onnx`).
+Integration tests for the `sage_core` crate. Run with `cargo test --workspace` (7 tests with default features, +5 with `onnx` feature-gated).
 
 ## Test Files
 
@@ -57,10 +57,11 @@ Validates `RustEmbedder` ONNX inference. All tests skip gracefully if the model 
 ## Running Tests
 
 ```bash
-# Default features (36 tests)
+# Default features (7 tests)
 cargo test --workspace
 
-# With ONNX embedder tests (requires model download first)
+# With ONNX embedder tests (requires model download + onnxruntime DLL)
 python sage-core/models/download_model.py
-cargo test --features onnx
+pip install onnxruntime
+ORT_DYLIB_PATH=$(python -c "import onnxruntime,os;print(os.path.join(os.path.dirname(onnxruntime.__file__),'capi','libonnxruntime.so'))") cargo test --features onnx
 ```

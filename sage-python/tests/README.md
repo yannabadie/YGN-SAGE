@@ -1,6 +1,6 @@
 # Tests
 
-Test suite for sage-python. 695 tests (694 passed, 1 skipped as of March 2026).
+Test suite for sage-python. 692 tests (691 passed, 1 skipped as of March 2026).
 
 ## Running Tests
 

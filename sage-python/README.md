@@ -25,7 +25,7 @@ result = await system.run("Solve X")   # S1/S2/S3 routing + full agent loop
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # Unit tests (695 passed, 1 skipped)
+python -m pytest tests/ -v             # Unit tests (691 passed, 1 skipped)
 ruff check src/                        # Lint
 mypy src/                              # Type check
 python -m sage.bench --type routing    # Routing benchmark (no API key needed)
@@ -63,4 +63,4 @@ export SAGE_DASHBOARD_TOKEN="..."        # Dashboard auth (optional)
 ## Dependencies
 
 Core: `httpx`, `pydantic`, `rich`, `anyio`, `aiosqlite`, `numpy`.
-Optional: `google-genai` (Gemini), `openai` (Codex), `pyarrow` (Arrow memory), `z3-solver` (formal verification), `fastapi`/`uvicorn` (dashboard).
+Optional: `google-genai` (Gemini), `openai` (Codex), `pyarrow` (Arrow memory), `z3-solver` (formal verification), `fastapi`/`uvicorn` (dashboard), `sentence-transformers` (Tier 2 embeddings), `onnxruntime` (Tier 1 RustEmbedder DLL).

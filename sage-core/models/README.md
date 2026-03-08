@@ -28,7 +28,11 @@ The ONNX model file (~90 MB). Not checked into version control. Download via `do
 
 ### `onnxruntime.dll` (gitignored)
 
-ONNX Runtime shared library for Windows. Automatically copied by the `ort` crate's `copy-dylibs` feature during build. Not checked into version control.
+ONNX Runtime shared library for Windows. With the `load-dynamic` ort feature, this DLL is loaded at runtime (not statically linked). The preferred source is the pip `onnxruntime` package (`pip install onnxruntime`), which provides the correct ABI version. The DLL is auto-discovered via:
+
+1. `ORT_DYLIB_PATH` environment variable (explicit path)
+2. Python `_ensure_ort_dylib_path()` — auto-discovers from pip `onnxruntime` package
+3. Rust `ensure_ort_initialized()` — checks sibling of model file, then `VIRTUAL_ENV` path
 
 ## gitignore Rules
 
@@ -45,5 +49,6 @@ sage-core/models/*.dll
 - **Model**: `sentence-transformers/all-MiniLM-L6-v2`
 - **Output dimensionality**: 384
 - **Normalization**: L2-normalized embeddings
-- **Inference**: Mean pooling over token outputs with attention mask, followed by L2 normalization
+- **Inference**: Mean pooling over token outputs with attention mask + token_type_ids, followed by L2 normalization
 - **Usage**: S-MMU semantic edges (cosine similarity > 0.5 threshold)
+- **Runtime dependency**: `pip install onnxruntime` (provides the DLL for `load-dynamic`)

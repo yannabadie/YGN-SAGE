@@ -83,7 +83,7 @@ The S-MMU (Structured Memory Management Unit) in `sage-core` is now wired end-to
 
 - **Write path:** `MemoryCompressor.step()` compresses events, then calls `compact_to_arrow_with_meta()` with extracted keywords, embedding vector (via `Embedder`), and dynamic summary. This populates the S-MMU graph with temporal, semantic, and entity edges.
 - **Read path:** During THINK phase, `agent_loop.py` calls `retrieve_smmu_context()` (from `memory/smmu_context.py`) which queries the S-MMU graph (BFS multi-path traversal with configurable weights) and injects the top-k results as a SYSTEM message before the LLM call.
-- **Embedder:** `memory/embedder.py` auto-selects between sentence-transformers (semantic, 384-dim) and a deterministic hash fallback. Wired into `MemoryCompressor` at boot time.
+- **Embedder:** `memory/embedder.py` auto-selects from 3-tier fallback: RustEmbedder (ONNX, native) > sentence-transformers (Python) > hash. All 3 tiers working on Windows. Wired into `MemoryCompressor` at boot time.
 
 **ONNX Embedder (3-tier fallback):**
 
@@ -94,10 +94,11 @@ The Python `Embedder` adapter (`memory/embedder.py`) now supports a 3-tier fallb
 3. **SHA-256 hash (last resort):** Deterministic hash-based fallback producing 384-dim vectors. No semantic meaning, but ensures the pipeline never crashes due to missing dependencies.
 
 Key details:
-- **Feature flag:** `onnx` in `sage-core/Cargo.toml` gates `ort` (ONNX Runtime) and `tokenizers` (HuggingFace) dependencies
-- **Model download:** `python sage-core/models/download_model.py` fetches the ONNX model and tokenizer files to `sage-core/models/all-MiniLM-L6-v2/`
-- **Build command:** `maturin develop --features onnx` to build with ONNX support
-- **Tests:** `cargo test --features onnx` runs 5 Rust unit tests (requires model download first)
+- **Feature flag:** `onnx` in `sage-core/Cargo.toml` gates `ort` (ONNX Runtime, `load-dynamic`) and `tokenizers` (HuggingFace) dependencies
+- **Dynamic linking:** Uses ort's `load-dynamic` feature — loads `onnxruntime.dll` at runtime via `ORT_DYLIB_PATH` env var or auto-discovery from pip `onnxruntime` package. Avoids static linking errors (LNK1120) on Windows MSVC.
+- **Model download:** `python sage-core/models/download_model.py` fetches the ONNX model and tokenizer files
+- **Build command:** `maturin develop --features onnx` + `pip install onnxruntime` for the runtime DLL
+- **Tests:** `cargo test --features onnx` runs 5 Rust unit tests (requires model download + `ORT_DYLIB_PATH`)
 
 In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count stays at 0, so the read path returns empty string. No errors in either direction.
 
@@ -198,7 +199,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** High-performance data plane: Arrow working memory, eBPF/Wasm sandboxes, RAG cache.
 
-**Evidence:** tested-unit (36 Rust tests passing, +5 ONNX feature-gated)
+**Evidence:** tested-unit (7 Rust tests passing, +5 ONNX feature-gated)
 
 | Component | Status |
 |-----------|--------|
@@ -206,7 +207,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | S-MMU paging | Wired (write via compressor, read via THINK phase) |
 | RagCache (FIFO+TTL) | Implemented (DashMap) |
 | eBPF sandbox | Implemented (solana_rbpf), but optional feature. `snap_bpf.c` is a stub (printk only) |
-| Wasm sandbox | Implemented (wasmtime v29 + WASI), optional. v36 LTS deferred (Windows MSVC build failure) |
+| Wasm sandbox | Implemented (wasmtime v36 LTS, Component Model). `cranelift` excluded on Windows MSVC (stack overflow). `execute_precompiled()` for Windows, `execute()` with JIT on Linux CI |
 | Z3 bindings | Implemented |
 
 **Known limitations:**
@@ -323,12 +324,11 @@ Cross-verification report: `docs/audits/2026-03-07-audit-verification.md` (78 as
 | T10 | No cost-performance frontier | Pending (requires API keys) |
 | T11 | Full HumanEval 164 | Smoke test 80% pass@1 (20 problems); full 164 requires dedicated run |
 | T12 | Evolution engine unvalidated | Pending (ablation study) |
-| T13 | wasmtime v29 EOL | **Deferred**: v36 LTS builds fail on Windows MSVC (cranelift proc-macro stack overflow). Must upgrade on Linux CI |
+| T13 | wasmtime v29 EOL | **DONE**: Upgraded to v36 LTS. cranelift excluded on Windows MSVC (stack overflow); `execute_precompiled()` for Windows, `execute()` with JIT on Linux CI |
 
 ### Deferred to Phase E
 - **ExoCortex vendor lock** (Google File Search API): requires multi-backend abstraction
 - **Evolution engine validation**: needs controlled experiment with ablation
-- **wasmtime upgrade** (v29 to LTS v36): Windows MSVC `STATUS_STACK_BUFFER_OVERRUN` in cranelift v0.123 proc-macros. Upgrade must be done on Linux CI
 - **Cost-performance frontier benchmark**: requires API keys for multi-tier comparison
 
 ---

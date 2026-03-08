@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-695%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-691%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -54,7 +54,7 @@ cd .. && python ui/app.py
 User Task
     |
     v
-MetacognitiveController --- heuristic complexity + uncertainty assessment
+ComplexityRouter --- heuristic complexity + uncertainty assessment
     |
     +---> S1 (Simple)   --- fast model, no validation
     +---> S2 (Code)     --- mid-tier model, sandbox AVR loop
@@ -85,9 +85,9 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 678 passed
-cd sage-core && cargo test --workspace          # 38 passed
-cd sage-discover && python -m pytest tests/ -v  # 45 passed
+cd sage-python && python -m pytest tests/ -v    # 691 passed, 1 skipped
+cd sage-core && cargo test --workspace          # 7 passed (+5 ONNX feature-gated)
+cd sage-discover && python -m pytest tests/ -v  # 52 passed
 ```
 
 ## Project Structure
@@ -169,16 +169,18 @@ pipeline = GuardrailPipeline([
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **678 tests passed** (Python) + 38 Rust
-- **CI/CD**: GitHub Actions (3 jobs)
-- **Dashboard**: functional, real-time via WebSocket (no auth — dev mode only)
+- **691 tests passed** (Python) + 7 Rust + 52 Discover
+- **CI/CD**: GitHub Actions (3 parallel jobs)
+- **Dashboard**: functional, real-time via WebSocket (auth via `SAGE_DASHBOARD_TOKEN`)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)
-- **Memory**: 4 tiers implemented, Tier 0 (Rust Arrow) solid, Tiers 1-2 have in-memory fallback
+- **Memory**: 4 tiers, all persistent (Tier 0 Rust Arrow, Tier 1-2 SQLite, Tier 3 ExoCortex)
+- **Embeddings**: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash), all working on Windows
 - **Guardrails**: wired at 3 points (input/runtime/output), cost + schema + Z3 bounds
+- **Sandbox**: Wasm (wasmtime v36 LTS), host execution blocked by default
 - **Benchmarks**: HumanEval 164 built-in, routing self-consistency test
 - **Composition**: Sequential, Parallel, Loop, Handoff patterns
 - **Evolution**: scaffolding present, not validated against baselines
 
 ## License
 
-Proprietary. All rights reserved. (c) 2026 Yann Abadie.
+MIT License. (c) 2026 Yann Abadie. See [LICENSE](LICENSE).
