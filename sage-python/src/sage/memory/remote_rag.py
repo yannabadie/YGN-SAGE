@@ -2,6 +2,9 @@
 
 Replaces the fragile NotebookLM CLI bridge with native API integration.
 Stores persist indefinitely. Free storage. Automatic chunking/embedding.
+
+Implements the KnowledgeStore protocol (see rag_backend.py) for vendor-
+independent RAG access.
 """
 from __future__ import annotations
 
@@ -17,11 +20,26 @@ DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 
 
 class ExoCortex:
-    """Persistent RAG store backed by Google GenAI File Search API."""
+    """Persistent RAG store backed by Google GenAI File Search API.
+
+    Conforms to the ``KnowledgeStore`` protocol (``rag_backend.py``),
+    enabling drop-in replacement with Qdrant, FAISS, or other backends.
+    """
 
     def __init__(self, store_name: str | None = None):
-        self.store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
+        self._store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
         self._api_key = os.environ.get("GOOGLE_API_KEY", "")
+
+    # -- KnowledgeStore protocol: store_name property --------------------------
+
+    @property
+    def store_name(self) -> str:
+        """Human-readable name of the store backend."""
+        return self._store_name
+
+    @store_name.setter
+    def store_name(self, value: str | None) -> None:
+        self._store_name = value
 
     @property
     def is_available(self) -> bool:
@@ -127,6 +145,65 @@ class ExoCortex:
         except Exception as e:
             log.warning("ExoCortex query failed: %s", e)
             return ""
+
+    # -- KnowledgeStore protocol methods ---------------------------------------
+
+    async def search(self, query: str, top_k: int = 5) -> list[dict]:
+        """Search the knowledge store (KnowledgeStore protocol).
+
+        Delegates to the synchronous ``query()`` method via asyncio.to_thread.
+        Returns a list of result dicts with ``content`` and ``score`` keys.
+
+        Note: Google File Search API returns a single grounded answer rather
+        than ranked chunks, so results contain at most one entry with
+        score=1.0. Future backends (Qdrant, FAISS) will return proper
+        ranked results.
+        """
+        import asyncio
+
+        result = await asyncio.to_thread(self.query, query)
+        if not result:
+            return []
+        return [{"content": result, "score": 1.0}]
+
+    async def ingest(self, content: str, metadata: dict | None = None) -> str:
+        """Ingest content into the store (KnowledgeStore protocol).
+
+        Writes *content* to a temporary file and uploads it via the
+        Google File Search API.  Returns the temp file path used as the
+        document identifier.
+
+        For bulk file ingestion, prefer the existing ``upload()`` method
+        which accepts a file path directly.
+        """
+        import asyncio
+        import tempfile
+
+        if not self.store_name:
+            raise RuntimeError("No store configured. Call create_store() first.")
+
+        display_name = (metadata or {}).get("display_name", "ingested-content")
+        suffix = (metadata or {}).get("suffix", ".txt")
+
+        # Write content to a temp file, then delegate to upload()
+        def _write_temp() -> str:
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=suffix, delete=False, prefix="sage_ingest_"
+            ) as f:
+                f.write(content)
+                return f.name
+
+        tmp_path = await asyncio.to_thread(_write_temp)
+        try:
+            await self.upload(tmp_path, display_name=display_name)
+        finally:
+            # Best-effort cleanup
+            try:
+                import os as _os
+                _os.unlink(tmp_path)
+            except OSError:
+                pass
+        return tmp_path
 
 
 class RagCacheFallback:
