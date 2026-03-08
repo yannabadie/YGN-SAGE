@@ -27,7 +27,12 @@ class CostTracker:
     # ------------------------------------------------------------------
 
     def record(self, node_id: str, cost_usd: float) -> None:
-        """Record cost for a node (additive if called multiple times)."""
+        """Record cost for a node (additive if called multiple times).
+
+        Negative costs are clamped to zero to prevent corrupted Pareto
+        frontier analysis from provider billing glitches.
+        """
+        cost_usd = max(0.0, cost_usd)
         self._spent[node_id] = self._spent.get(node_id, 0.0) + cost_usd
 
     # ------------------------------------------------------------------
