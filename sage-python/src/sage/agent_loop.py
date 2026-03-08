@@ -17,6 +17,7 @@ from sage.memory.working import WorkingMemory
 from sage.memory.compressor import MemoryCompressor
 from sage.topology.kg_rlvr import ProcessRewardModel
 from sage.resilience import CircuitBreaker
+from sage.memory.relevance_gate import RelevanceGate
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +175,11 @@ class AgentLoop:
         self.memory_agent: Any = None       # MemoryAgent for entity extraction
         self.semantic_memory: Any = None    # SemanticMemory entity graph
 
+        # Evolution gating — disabled by default per Sprint 3 evidence:
+        # full evolution engine scored 0.50 vs 0.33 for random mutation (67% efficiency).
+        # SAMPO/DGM add minimal value. Set to True for explicit use.
+        self._auto_evolve: bool = False
+
         # Stats
         self.step_count = 0
         self.total_inference_time = 0.0
@@ -184,6 +190,9 @@ class AgentLoop:
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = 3
         self._avr_error_history: list[str] = []
+
+        # CRAG-style relevance gate for memory injection
+        self._relevance_gate = RelevanceGate(threshold=0.3)
 
         # Circuit breakers for best-effort subsystems
         self._cb_semantic = CircuitBreaker("semantic_memory")
@@ -290,7 +299,7 @@ class AgentLoop:
         if self.semantic_memory and not self._cb_semantic.should_skip():
             try:
                 sem_context = self.semantic_memory.get_context_for(task)
-                if sem_context:
+                if sem_context and self._relevance_gate.is_relevant(task, sem_context):
                     messages.insert(1, Message(
                         role=Role.SYSTEM,
                         content=f"Relevant knowledge from previous interactions:\n{sem_context}",
@@ -304,7 +313,7 @@ class AgentLoop:
             try:
                 from sage.memory.smmu_context import retrieve_smmu_context
                 smmu_context = retrieve_smmu_context(self.working_memory)
-                if smmu_context:
+                if smmu_context and self._relevance_gate.is_relevant(task, smmu_context):
                     messages.insert(
                         min(2, len(messages)),  # After system + semantic, before user
                         Message(role=Role.SYSTEM, content=smmu_context),
@@ -612,8 +621,8 @@ class AgentLoop:
             if self.semantic_memory:
                 learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
 
-            # Evolution grid snapshot (if wired)
-            if self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
+            # Evolution grid snapshot (only when auto-evolve is enabled)
+            if self._auto_evolve and self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
                 try:
                     cells = []
                     best_fitness = 0.0
