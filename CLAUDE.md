@@ -33,15 +33,16 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
 - `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing + CGRS self-braking + speculative zone detection (0.35-0.55)
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
-- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL)
+- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
+- `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
-- `memory/embedder.py` - Embedder adapter: auto-selects sentence-transformers (384-dim) or deterministic hash fallback for S-MMU semantic edges
+- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 384-dim) for S-MMU semantic edges
 - `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
-- `memory/semantic.py` - In-memory entity-relation graph built by MemoryAgent
+- `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
 - `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), auto-configured with DEFAULT_STORE
 - `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering
 - `memory/write_gate.py` - WriteGate: confidence-based write gating with abstention tracking
@@ -50,7 +51,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `contracts/task_node.py` - TaskNode IR: typed I/O schemas, capabilities, security labels, budgets
 - `contracts/verification.py` - VFResult, pre_check, post_check, run_verification
 - `contracts/dag.py` - TaskDAG: Kahn's topo sort, cycle detection, IO validation, ready_nodes
-- `contracts/z3_verify.py` - Z3 SMT: capability coverage, budget feasibility, type compatibility
+- `contracts/z3_verify.py` - Z3 SMT: capability coverage, budget feasibility, type compatibility, provider assignment (genuine SAT)
 - `contracts/policy.py` - PolicyVerifier: info-flow labels, budget, fan-in/fan-out limits
 - `contracts/executor.py` - DAGExecutor: topo execution with VF pre/post checks + policy gate
 - `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
@@ -78,7 +79,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (620 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (695 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -100,7 +101,7 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --workspace         # Run Rust tests (38 passing)
+cargo test --workspace         # Run Rust tests (36 passing, +5 ONNX feature-gated)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support
@@ -187,7 +188,14 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Z3 Formal Verification (S3)
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
 - S2->S3 escalation when AVR budget exhausted
-- `kg_rlvr.py` parses `<think>` blocks, scores each step via regex + Z3
+- `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + Z3
+- `z3_verify.py` includes genuine Z3 SAT: `verify_provider_assignment()` solves capability+exclusion constraints
+
+## Resilience
+- **CircuitBreaker** (`resilience.py`): per-subsystem failure tracking (max_failures=3)
+- 6 breakers in agent_loop: semantic_memory, smmu_context, runtime_guardrails, episodic_store, entity_extraction, evolution_stats
+- After 3 consecutive failures, circuit opens and skips calls with WARNING log
+- `record_success()` resets the counter
 
 ## ExoCortex
 Auto-configured with `DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"`.
@@ -212,9 +220,9 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
 - FastAPI + WebSocket + EventBus (dashboard)
 - Z3 Solver 4.16 (formal verification, S3)
-- aiosqlite (episodic memory persistence)
+- aiosqlite (episodic + semantic memory persistence)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
-- Wasm (wasmtime) + eBPF (solana_rbpf) + Docker (multi-tier sandboxing)
+- Wasm (wasmtime v29, sandbox feature) + Docker (multi-tier sandboxing)
 - DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
 - ort 2.0 (ONNX Runtime for Rust, optional `onnx` feature) — native embeddings
 - tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)

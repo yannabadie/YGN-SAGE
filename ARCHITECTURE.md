@@ -1,6 +1,6 @@
 # YGN-SAGE Architecture
 
-> **Status: Research Prototype** — Last verified: 2026-03-07
+> **Status: Research Prototype** — Last verified: 2026-03-08
 
 This document describes what YGN-SAGE **actually implements**, with honest evidence levels and known limitations.
 
@@ -73,8 +73,8 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | Tier | Backend | Evidence | Persistence |
 |------|---------|----------|-------------|
 | 0 — Working (STM) | Rust Arrow / Python mock | tested-unit | None (session) |
-| 1 — Episodic | SQLite / in-memory | tested-unit | Optional (SQLite) |
-| 2 — Semantic | In-memory graph | tested-unit | None |
+| 1 — Episodic | SQLite | tested-unit | SQLite (`~/.sage/episodic.db`) |
+| 2 — Semantic | In-memory graph + SQLite | tested-unit | SQLite (`~/.sage/semantic.db`) |
 | 3 — ExoCortex | Google File Search API | tested-integration | Vendor-managed |
 
 **S-MMU Integration (wired March 2026):**
@@ -104,7 +104,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 **Known limitations:**
 - **Tier 0 falls back to Python mock** when Rust `sage_core` extension is not available. ~~No warning~~ Now emits `warnings.warn()` (audit fix A3).
 - ~~Tier 1 defaults to volatile in-memory~~ **Tier 1 now defaults to SQLite** at `~/.sage/episodic.db` (audit fix A4)
-- **Tier 2 is in-memory only** — no persistence, no export, lost on restart
+- ~~**Tier 2 is in-memory only**~~ **Tier 2 now persists to SQLite** at `~/.sage/semantic.db` (audit fix T8). Auto-loads at boot, auto-saves after each run
 - **Tier 3 is vendor-locked** to Google GenAI File Search API
 - **No evidence** that 4-tier memory improves outcomes vs. long-context baseline
 - **S-MMU read path** returns chunk IDs and scores only (not chunk content) — content retrieval requires Rust extension
@@ -126,7 +126,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (678 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response)
+**Evidence:** tested-unit + tested-integration (695 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response + 17 audit-fixes)
 
 **Components:**
 | Component | Module | Tests |
@@ -134,7 +134,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | TaskNode IR | `contracts/task_node.py` | 9 unit tests |
 | Verification Functions | `contracts/verification.py` | 11 unit tests |
 | TaskDAG + Scheduler | `contracts/dag.py` | 14 unit tests |
-| Z3 Contract Verification | `contracts/z3_verify.py` | 11 unit tests |
+| Z3 Contract Verification | `contracts/z3_verify.py` | 17 unit tests |
 | PolicyVerifier | `contracts/policy.py` | 12 unit tests |
 | DAGExecutor | `contracts/executor.py` | 7 unit tests |
 | TaskPlanner (Plan-and-Act) | `contracts/planner.py` | 10 unit tests |
@@ -149,7 +149,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | Phase 3 Integration | `tests/test_integration_phase3.py` | 6 E2E tests |
 
 **Key capabilities:**
-- **Z3 SMT proofs:** Capability coverage, budget feasibility, type compatibility — checked at plan time
+- **Z3 SMT proofs:** Capability coverage, budget feasibility, type compatibility, provider assignment (genuine SAT) — checked at plan time
 - **Info-flow enforcement:** No HIGH→LOW data flow (lattice-based security labels)
 - **CEGAR repair:** Counterexample-guided retry → escalate → abort with hard fences
 - **DyTopo routing:** Capability-constrained model selection with adaptive feedback
@@ -198,7 +198,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** High-performance data plane: Arrow working memory, eBPF/Wasm sandboxes, RAG cache.
 
-**Evidence:** tested-unit (38 Rust tests passing)
+**Evidence:** tested-unit (36 Rust tests passing, +5 ONNX feature-gated)
 
 | Component | Status |
 |-----------|--------|
@@ -206,7 +206,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | S-MMU paging | Wired (write via compressor, read via THINK phase) |
 | RagCache (FIFO+TTL) | Implemented (DashMap) |
 | eBPF sandbox | Implemented (solana_rbpf), but optional feature. `snap_bpf.c` is a stub (printk only) |
-| Wasm sandbox | Implemented (wasmtime + WASI), but optional feature |
+| Wasm sandbox | Implemented (wasmtime v29 + WASI), optional. v36 LTS deferred (Windows MSVC build failure) |
 | Z3 bindings | Implemented |
 
 **Known limitations:**
@@ -249,11 +249,13 @@ These components degrade silently instead of failing hard:
 |-----------|---------|-------------|
 | Working Memory | `sage_core` not installed | Falls back to Python mock (**now warns**, audit fix A3) |
 | Episodic Memory | Default config | ~~In-memory only~~ **Now defaults to SQLite** (audit fix A4) |
+| Semantic Memory | Default config | ~~In-memory only~~ **Now persists to SQLite** (audit fix T8) |
 | Provider Discovery | Missing SDK (openai, etc.) | Returns empty list, skips provider |
 | OpenAI Compat | file_search parameter | Dropped (**now warns at WARNING level**, audit fix B9) |
-| OpenAI Compat | tool role messages | Rewritten to user role (**now warns**, audit fix B9) |
+| OpenAI Compat | tool role messages | Rewritten to user role (**now warns**, audit fix T4) |
 | LLM Assessment | No GOOGLE_API_KEY | Falls back to heuristic (sync path) |
 | Evolution | No sandbox feature | Skips sandboxed evaluation |
+| Best-effort subsystems | 3+ consecutive failures | **Circuit breaker opens** with WARNING log (audit fix T6) |
 
 **V2 design goal:** Replace all silent degradation with hard failures or explicit warnings.
 Phase 0 fixed: dashboard auth, provider warnings. Phase 2+3 added: CapabilityMatrix.require() hard-fails.
@@ -264,7 +266,7 @@ Audit response (March 2026) fixed: sandbox blocks host by default, working memor
 ## Audit Response (March 2026)
 
 Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
-16 tasks organized in 4 phases (A-D) were executed. Current test count: **678 passed, 1 skipped**.
+16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Current test count: **695 passed, 1 skipped**.
 
 ### Phase A — Kill Unsafe Defaults (Tasks 1-5)
 | Task | Finding | Fix |
@@ -294,10 +296,40 @@ Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 co
 ### Phase D — Documentation Sync (Tasks 14-16)
 Updated ARCHITECTURE.md, CLAUDE.md, and MEMORY.md to reflect all changes above.
 
+### Audit Verification Fixes (March 2026, Sprints 1-2)
+
+Cross-verification report: `docs/audits/2026-03-07-audit-verification.md` (78 assertions, 52 confirmed, 14 partial, 8 infirmed).
+
+**Sprint 1 — Stop the Bleeding:**
+| Task | Finding | Fix |
+|------|---------|-----|
+| T1 | `eval()` RCE in kg_rlvr.py | Safe AST evaluator + fail-closed (not fail-open) |
+| T2 | eBPF claimed in README but not built | Removed stale eBPF/solana_rbpf claims |
+| T3 | Test badge count stale (413) | Updated to actual count (695) |
+| T4 | tool→user role rewrite silent | Extracted `_convert_messages()` + WARNING log |
+| T5 | snap_bpf.c claimed as SOTA | Marked as STUB — NOT FUNCTIONAL |
+
+**Sprint 2 — Observability + Z3:**
+| Task | Finding | Fix |
+|------|---------|-----|
+| T6 | 6 silent `except: pass` in agent_loop | CircuitBreaker per subsystem (max_failures=3, opens with WARNING) |
+| T7 | Z3 used for trivial set checks | Added genuine Z3 SAT: `verify_provider_assignment()` (capability + exclusion constraints) |
+| T8 | SemanticMemory lost on restart | SQLite persistence (`~/.sage/semantic.db`), auto-load at boot, auto-save after run |
+| T9 | Benchmarks not reproducible | Truth-pack: BenchmarkManifest + per-task JSONL traces |
+
+**Sprint 3 — Prove or Remove (partial):**
+| Task | Finding | Status |
+|------|---------|--------|
+| T10 | No cost-performance frontier | Pending (requires API keys) |
+| T11 | Full HumanEval 164 | Smoke test 80% pass@1 (20 problems); full 164 requires dedicated run |
+| T12 | Evolution engine unvalidated | Pending (ablation study) |
+| T13 | wasmtime v29 EOL | **Deferred**: v36 LTS builds fail on Windows MSVC (cranelift proc-macro stack overflow). Must upgrade on Linux CI |
+
 ### Deferred to Phase E
 - **ExoCortex vendor lock** (Google File Search API): requires multi-backend abstraction
 - **Evolution engine validation**: needs controlled experiment with ablation
-- **wasmtime upgrade** (v29 to LTS v36): breaking API changes, deferred to next sprint
+- **wasmtime upgrade** (v29 to LTS v36): Windows MSVC `STATUS_STACK_BUFFER_OVERRUN` in cranelift v0.123 proc-macros. Upgrade must be done on Linux CI
+- **Cost-performance frontier benchmark**: requires API keys for multi-tier comparison
 
 ---
 
