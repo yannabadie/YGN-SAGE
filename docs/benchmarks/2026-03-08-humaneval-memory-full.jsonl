@@ -1,0 +1,20 @@
+{"task_id": "HumanEval/0", "passed": false, "latency_ms": 172334.8, "cost_usd": 0.108182, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpi0n_1r25.py\", line 12\n    <think>\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/1", "passed": false, "latency_ms": 99757.2, "cost_usd": 0.033557, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp5hp8jioj.py\", line 12\n    group`\n          ^\nIndentationError: unindent does not "}
+{"task_id": "HumanEval/2", "passed": true, "latency_ms": 9315.2, "cost_usd": 0.000321, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/3", "passed": true, "latency_ms": 12733.7, "cost_usd": 0.000347, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/4", "passed": false, "latency_ms": 66292.9, "cost_usd": 0.012201, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpsh9606xv.py\", line 13\n    <think>\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/5", "passed": true, "latency_ms": 16699.3, "cost_usd": 0.000347, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/6", "passed": true, "latency_ms": 137199.5, "cost_usd": 0.039136, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/7", "passed": true, "latency_ms": 13854.1, "cost_usd": 0.00032, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/8", "passed": true, "latency_ms": 13838.1, "cost_usd": 0.000351, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/9", "passed": true, "latency_ms": 11452.2, "cost_usd": 0.000358, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/10", "passed": true, "latency_ms": 118746.5, "cost_usd": 0.067921, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/11", "passed": true, "latency_ms": 14109.6, "cost_usd": 0.000325, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/12", "passed": true, "latency_ms": 14075.2, "cost_usd": 0.000327, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/13", "passed": false, "latency_ms": 11427.6, "cost_usd": 0.000312, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpusql7qs2.py\", line 12\n    return a\n            ^\nIndentationError: unindent does "}
+{"task_id": "HumanEval/14", "passed": false, "latency_ms": 11847.1, "cost_usd": 0.000296, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpfluacq5h.py\", line 9\n    return [string[:i+1] for i in range(len(string))]\n    ^^"}
+{"task_id": "HumanEval/15", "passed": false, "latency_ms": 11286.0, "cost_usd": 0.000318, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpvvq1xxs9.py\", line 10\n    return ' '.join(str(i) for i in range(n + 1))\n    ^^^^^"}
+{"task_id": "HumanEval/16", "passed": true, "latency_ms": 11318.0, "cost_usd": 0.000304, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/17", "passed": false, "latency_ms": 71122.2, "cost_usd": 0.021222, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp6wvyzj_0.py\", line 18\n    return [note_map[note] for note in music_string.split()"}
+{"task_id": "HumanEval/18", "passed": true, "latency_ms": 25672.7, "cost_usd": 0.000274, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/19", "passed": true, "latency_ms": 12595.8, "cost_usd": 0.000379, "model": "unknown", "routing": "S2"}

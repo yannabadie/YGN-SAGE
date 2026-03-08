@@ -1,0 +1,57 @@
+[
+  {
+    "config": "memory-full",
+    "baseline_mode": false,
+    "disable_memory": false,
+    "disable_guardrails": false,
+    "llm_tier": "fast",
+    "total": 20,
+    "passed": 13,
+    "failed": 7,
+    "pass_rate": 0.65,
+    "avg_latency_ms": 42783.884999999995,
+    "avg_cost_usd": 0.0143399,
+    "routing_breakdown": {
+      "S1": 0,
+      "S2": 20,
+      "S3": 0
+    },
+    "total_time_s": 855.8,
+    "timestamp": "2026-03-08T17:25:21.445290+00:00"
+  },
+  {
+    "config": "memory-none",
+    "baseline_mode": false,
+    "disable_memory": true,
+    "disable_guardrails": false,
+    "llm_tier": "fast",
+    "total": 20,
+    "passed": 10,
+    "failed": 10,
+    "pass_rate": 0.5,
+    "avg_latency_ms": 32529.48,
+    "avg_cost_usd": 0.00663475,
+    "routing_breakdown": {
+      "S1": 0,
+      "S2": 20,
+      "S3": 0
+    },
+    "total_time_s": 650.7,
+    "timestamp": "2026-03-08T17:36:12.166209+00:00"
+  },
+  {
+    "config": "memory-episodic-semantic",
+    "total": 20,
+    "passed": 6,
+    "pass_rate": 0.3,
+    "avg_latency_ms": 20464.825,
+    "avg_cost_usd": 0.009779649999999999,
+    "routing_breakdown": {
+      "S1": 0,
+      "S2": 19,
+      "S3": 0
+    },
+    "total_time_s": 409.4,
+    "timestamp": "2026-03-08T17:43:01.587723+00:00"
+  }
+]

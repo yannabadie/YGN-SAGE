@@ -1,0 +1,20 @@
+{"task_id": "HumanEval/0", "passed": true, "latency_ms": 144070.3, "cost_usd": 0.000793, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/1", "passed": false, "latency_ms": 137134.1, "cost_usd": 0.001596, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpugx_89q8.py\", line 12\n    <think>\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/2", "passed": true, "latency_ms": 14500.7, "cost_usd": 5e-06, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/3", "passed": true, "latency_ms": 15052.5, "cost_usd": 1.8e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/4", "passed": false, "latency_ms": 41919.9, "cost_usd": 0.000119, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpdfpr_0ax.py\", line 14\n    return sum(abs(x - mean) for x in numbers) / len(number"}
+{"task_id": "HumanEval/5", "passed": true, "latency_ms": 13350.5, "cost_usd": 2.8e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/6", "passed": true, "latency_ms": 105726.1, "cost_usd": 0.001273, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/7", "passed": true, "latency_ms": 13882.7, "cost_usd": 8e-06, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/8", "passed": true, "latency_ms": 15017.2, "cost_usd": 1.2e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/9", "passed": true, "latency_ms": 16757.2, "cost_usd": 2.2e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/10", "passed": true, "latency_ms": 151291.8, "cost_usd": 0.002184, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/11", "passed": true, "latency_ms": 16448.8, "cost_usd": 1e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/12", "passed": true, "latency_ms": 13896.6, "cost_usd": 1.1e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/13", "passed": true, "latency_ms": 13330.1, "cost_usd": 8e-06, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/14", "passed": true, "latency_ms": 12883.2, "cost_usd": 8e-06, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/15", "passed": true, "latency_ms": 12274.7, "cost_usd": 8e-06, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/16", "passed": false, "latency_ms": 12268.6, "cost_usd": 3e-06, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpdbubhfiz.py\", line 10\n    return len(set(string.lower()))\n    ^^^^^^^^^^^^^^^^^^^"}
+{"task_id": "HumanEval/17", "passed": false, "latency_ms": 120115.2, "cost_usd": 0.000528, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpip3_qc9k.py\", line 17\n    <think>\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/18", "passed": true, "latency_ms": 25963.4, "cost_usd": 2.1e-05, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/19", "passed": true, "latency_ms": 14093.5, "cost_usd": 3.1e-05, "model": "unknown", "routing": "S2"}

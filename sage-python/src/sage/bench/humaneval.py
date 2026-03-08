@@ -159,12 +159,16 @@ class HumanEvalBench:
             try:
                 if self.baseline_mode and self.system:
                     # Baseline mode: call the LLM directly, no routing/memory/guardrails
+                    from sage.llm.base import Message, Role
                     task = (
                         "Complete this Python function. "
                         "Return ONLY the function body, no explanation.\n\n"
                         f"```python\n{prompt}\n```"
                     )
-                    response = await self.system.agent_loop._llm.generate(task)
+                    llm_response = await self.system.agent_loop._llm.generate(
+                        [Message(role=Role.USER, content=task)]
+                    )
+                    response = llm_response.content if hasattr(llm_response, 'content') else str(llm_response)
                     system_used = 0  # No routing
                 elif self.system:
                     # Full agent mode

@@ -1,0 +1,20 @@
+{"task_id": "HumanEval/0", "passed": true, "latency_ms": 10786.3, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/1", "passed": false, "latency_ms": 17690.1, "model": "baseline:unknown", "routing": "S0", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpf9lvchzf.py\", line 12\n    groups =\n            ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/2", "passed": true, "latency_ms": 10849.0, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/3", "passed": true, "latency_ms": 14807.5, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/4", "passed": true, "latency_ms": 6901.3, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/5", "passed": true, "latency_ms": 21993.3, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/6", "passed": false, "latency_ms": 16370.1, "model": "baseline:unknown", "routing": "S0", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpyc9p7pet.py\", line 12\n    ```python\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/7", "passed": true, "latency_ms": 7644.0, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/8", "passed": true, "latency_ms": 12246.2, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/9", "passed": false, "latency_ms": 11031.9, "model": "baseline:unknown", "routing": "S0", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpscph9yuz.py\", line 10\n    ```python\n    ^\nSyntaxError: invalid syntax\n"}
+{"task_id": "HumanEval/10", "passed": true, "latency_ms": 28884.4, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/11", "passed": true, "latency_ms": 13008.7, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/12", "passed": true, "latency_ms": 9498.2, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/13", "passed": true, "latency_ms": 20545.8, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/14", "passed": true, "latency_ms": 11301.5, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/15", "passed": true, "latency_ms": 6658.6, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/16", "passed": true, "latency_ms": 8328.4, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/17", "passed": true, "latency_ms": 15106.3, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/18", "passed": true, "latency_ms": 31305.5, "model": "baseline:unknown", "routing": "S0"}
+{"task_id": "HumanEval/19", "passed": true, "latency_ms": 22880.7, "model": "baseline:unknown", "routing": "S0"}

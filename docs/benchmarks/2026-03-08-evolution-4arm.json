@@ -1,0 +1,29 @@
+{
+  "methodology": "4-arm evolution validation: full vs random vs llm-no-sampo vs seed-only",
+  "n_seeds": 5,
+  "n_generations": 5,
+  "mutations_per_gen": 3,
+  "results": {
+    "full_engine": {
+      "best_score": 0.5,
+      "population_size": 9,
+      "coverage": 0.09
+    },
+    "random_mutation": {
+      "best_score": 0.3333333333333333,
+      "population_size": 5,
+      "coverage": 0.05
+    },
+    "llm_no_sampo": {
+      "best_score": 0.25,
+      "population_size": 5,
+      "coverage": 0.05
+    },
+    "seed_only": {
+      "best_score": 0.2,
+      "population_size": 5,
+      "coverage": 0.05
+    }
+  },
+  "date": "2026-03-08"
+}

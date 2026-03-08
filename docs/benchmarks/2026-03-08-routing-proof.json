@@ -1,0 +1,778 @@
+{
+  "methodology": "RouteLLM-inspired: 30 unseen tasks, router vs all-S1 baseline",
+  "date": "2026-03-08",
+  "router": {
+    "pass_count": 29,
+    "pass_rate": 0.967,
+    "total_cost_usd": 0.039179,
+    "avg_latency_ms": 99721.0
+  },
+  "all_s1": {
+    "pass_count": 30,
+    "pass_rate": 1.0,
+    "total_cost_usd": 0.00093,
+    "avg_latency_ms": 34720.0
+  },
+  "routing_distribution": {
+    "S1": 19,
+    "S2": 2,
+    "S3": 9
+  },
+  "routing_decisions": [
+    {
+      "task": "What is the square root of 144",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "List the months of the year",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Define photosynthesis in one sentence",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "What is the boiling point of water in Celsius",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Name the author of Romeo and Juliet",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Reverse the string 'hello world'",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "What does HTTP stand for",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Convert 50 miles to kilometers",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "What is the chemical formula for water",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Count the vowels in 'supercalifragilisticexpialidocious'",
+      "category": "simple",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Write a Python function to check if a string is a palindrome",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Implement binary search in Python",
+      "category": "medium",
+      "routed_to": "S2",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": true
+    },
+    {
+      "task": "Write a function that finds the nth Fibonacci number using memoization",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Create a Python class for a linked list with insert and delete",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Write a regex to validate email addresses",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Implement a stack using two queues",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Write a function to merge two sorted arrays",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Create a decorator that caches function results",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Write a function to detect cycles in a linked list",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Implement a simple LRU cache in Python",
+      "category": "medium",
+      "routed_to": "S1",
+      "complexity": 0.3,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Debug this race condition in a producer-consumer queue and design a lock-free alternative using compare-and-swap",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Fix the memory corruption in this unsafe Rust code and architect a safe abstraction layer with lifetime guarantees",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Analyze why this distributed consensus algorithm fails under network partitions and evolve it to handle Byzantine faults",
+      "category": "complex",
+      "routed_to": "S2",
+      "complexity": 0.5,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Debug the numerical instability in this gradient descent optimizer and design an adaptive learning rate schedule",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Fix the deadlock in this transaction manager and architect a multi-version concurrency control system",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Diagnose the error in this B-tree implementation and optimize it for SSD access patterns with write amplification reduction",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Debug the crash in this JIT compiler's register allocator and design a graph-coloring approach with spill cost optimization",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Fix the serialization bug in this RPC framework and architect a schema evolution strategy with backward compatibility",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Analyze this error in the garbage collector's mark phase and evolve it to support concurrent marking without stop-the-world pauses",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    },
+    {
+      "task": "Debug the crash in this neural network trainer and optimize the backpropagation for mixed-precision with gradient scaling",
+      "category": "complex",
+      "routed_to": "S3",
+      "complexity": 0.8,
+      "uncertainty": 0.2,
+      "tool_required": false
+    }
+  ],
+  "router_results": [
+    {
+      "task": "What is the square root of 144",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 12666.0,
+      "cost_usd": 0.001857,
+      "error": ""
+    },
+    {
+      "task": "List the months of the year",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 11700.0,
+      "cost_usd": -0.001493,
+      "error": ""
+    },
+    {
+      "task": "Define photosynthesis in one sentence",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 12018.0,
+      "cost_usd": -3e-05,
+      "error": ""
+    },
+    {
+      "task": "What is the boiling point of water in Celsius",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 12766.0,
+      "cost_usd": 0.000703,
+      "error": ""
+    },
+    {
+      "task": "Name the author of Romeo and Juliet",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 14275.0,
+      "cost_usd": -0.000159,
+      "error": ""
+    },
+    {
+      "task": "Reverse the string 'hello world'",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 12372.0,
+      "cost_usd": -0.000558,
+      "error": ""
+    },
+    {
+      "task": "What does HTTP stand for",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 8361.0,
+      "cost_usd": -5.9e-05,
+      "error": ""
+    },
+    {
+      "task": "Convert 50 miles to kilometers",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 14797.0,
+      "cost_usd": 0.000813,
+      "error": ""
+    },
+    {
+      "task": "What is the chemical formula for water",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 15616.0,
+      "cost_usd": 0.001713,
+      "error": ""
+    },
+    {
+      "task": "Count the vowels in 'supercalifragilisticexpialidocious'",
+      "category": "simple",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 16163.0,
+      "cost_usd": -0.001292,
+      "error": ""
+    },
+    {
+      "task": "Write a Python function to check if a string is a palindrome",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 28383.0,
+      "cost_usd": -0.00121,
+      "error": ""
+    },
+    {
+      "task": "Implement binary search in Python",
+      "category": "medium",
+      "routing": "S2",
+      "passed": false,
+      "latency_ms": 89276.0,
+      "cost_usd": 0.026378,
+      "error": "503 UNAVAILABLE. {'error': {'code': 503, 'message': 'The service is currently unavailable.', 'status': 'UNAVAILABLE'}}"
+    },
+    {
+      "task": "Write a function that finds the nth Fibonacci number using m",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 100175.0,
+      "cost_usd": 0.008526,
+      "error": ""
+    },
+    {
+      "task": "Create a Python class for a linked list with insert and dele",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 114608.0,
+      "cost_usd": -0.00201,
+      "error": ""
+    },
+    {
+      "task": "Write a regex to validate email addresses",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 156000.0,
+      "cost_usd": 0.087353,
+      "error": ""
+    },
+    {
+      "task": "Implement a stack using two queues",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 181579.0,
+      "cost_usd": 0.045227,
+      "error": ""
+    },
+    {
+      "task": "Write a function to merge two sorted arrays",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 14788.0,
+      "cost_usd": -0.165165,
+      "error": ""
+    },
+    {
+      "task": "Create a decorator that caches function results",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 139051.0,
+      "cost_usd": 0.092183,
+      "error": ""
+    },
+    {
+      "task": "Write a function to detect cycles in a linked list",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 125983.0,
+      "cost_usd": 0.047684,
+      "error": ""
+    },
+    {
+      "task": "Implement a simple LRU cache in Python",
+      "category": "medium",
+      "routing": "S1",
+      "passed": true,
+      "latency_ms": 172534.0,
+      "cost_usd": -0.009387,
+      "error": ""
+    },
+    {
+      "task": "Debug this race condition in a producer-consumer queue and d",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 377705.0,
+      "cost_usd": -0.070385,
+      "error": ""
+    },
+    {
+      "task": "Fix the memory corruption in this unsafe Rust code and archi",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 60499.0,
+      "cost_usd": -0.05604,
+      "error": ""
+    },
+    {
+      "task": "Analyze why this distributed consensus algorithm fails under",
+      "category": "complex",
+      "routing": "S2",
+      "passed": true,
+      "latency_ms": 56189.0,
+      "cost_usd": 0.01065,
+      "error": ""
+    },
+    {
+      "task": "Debug the numerical instability in this gradient descent opt",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 165115.0,
+      "cost_usd": 0.03426,
+      "error": ""
+    },
+    {
+      "task": "Fix the deadlock in this transaction manager and architect a",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 140065.0,
+      "cost_usd": -0.00033,
+      "error": ""
+    },
+    {
+      "task": "Diagnose the error in this B-tree implementation and optimiz",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 51839.0,
+      "cost_usd": -0.04158,
+      "error": ""
+    },
+    {
+      "task": "Debug the crash in this JIT compiler's register allocator an",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 364897.0,
+      "cost_usd": 0.06213,
+      "error": ""
+    },
+    {
+      "task": "Fix the serialization bug in this RPC framework and architec",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 188637.0,
+      "cost_usd": -0.02343,
+      "error": ""
+    },
+    {
+      "task": "Analyze this error in the garbage collector's mark phase and",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 47117.0,
+      "cost_usd": -0.03072,
+      "error": ""
+    },
+    {
+      "task": "Debug the crash in this neural network trainer and optimize ",
+      "category": "complex",
+      "routing": "S3",
+      "passed": true,
+      "latency_ms": 286447.0,
+      "cost_usd": 0.02355,
+      "error": ""
+    }
+  ],
+  "s1_results": [
+    {
+      "task": "What is the square root of 144",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 20121.0,
+      "cost_usd": 0.000653,
+      "error": ""
+    },
+    {
+      "task": "List the months of the year",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 22086.0,
+      "cost_usd": -0.000225,
+      "error": ""
+    },
+    {
+      "task": "Define photosynthesis in one sentence",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 21439.0,
+      "cost_usd": -2.9e-05,
+      "error": ""
+    },
+    {
+      "task": "What is the boiling point of water in Celsius",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 19744.0,
+      "cost_usd": 0.000206,
+      "error": ""
+    },
+    {
+      "task": "Name the author of Romeo and Juliet",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 22311.0,
+      "cost_usd": 0.000208,
+      "error": ""
+    },
+    {
+      "task": "Reverse the string 'hello world'",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 24706.0,
+      "cost_usd": -0.000164,
+      "error": ""
+    },
+    {
+      "task": "What does HTTP stand for",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 20958.0,
+      "cost_usd": -0.000148,
+      "error": ""
+    },
+    {
+      "task": "Convert 50 miles to kilometers",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 21724.0,
+      "cost_usd": -4.6e-05,
+      "error": ""
+    },
+    {
+      "task": "What is the chemical formula for water",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 27742.0,
+      "cost_usd": 0.000358,
+      "error": ""
+    },
+    {
+      "task": "Count the vowels in 'supercalifragilisticexpialidocious'",
+      "category": "simple",
+      "passed": true,
+      "latency_ms": 24675.0,
+      "cost_usd": -8e-05,
+      "error": ""
+    },
+    {
+      "task": "Write a Python function to check if a string is a palindrome",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 52776.0,
+      "cost_usd": 0.001121,
+      "error": ""
+    },
+    {
+      "task": "Implement binary search in Python",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 23682.0,
+      "cost_usd": -0.00098,
+      "error": ""
+    },
+    {
+      "task": "Write a function that finds the nth Fibonacci number using m",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 85152.0,
+      "cost_usd": 0.003302,
+      "error": ""
+    },
+    {
+      "task": "Create a Python class for a linked list with insert and dele",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 36567.0,
+      "cost_usd": -0.002391,
+      "error": ""
+    },
+    {
+      "task": "Write a regex to validate email addresses",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 34910.0,
+      "cost_usd": -0.00084,
+      "error": ""
+    },
+    {
+      "task": "Implement a stack using two queues",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 28857.0,
+      "cost_usd": 0.000412,
+      "error": ""
+    },
+    {
+      "task": "Write a function to merge two sorted arrays",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 41123.0,
+      "cost_usd": 0.002271,
+      "error": ""
+    },
+    {
+      "task": "Create a decorator that caches function results",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 48626.0,
+      "cost_usd": -0.00188,
+      "error": ""
+    },
+    {
+      "task": "Write a function to detect cycles in a linked list",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 46692.0,
+      "cost_usd": 0.002681,
+      "error": ""
+    },
+    {
+      "task": "Implement a simple LRU cache in Python",
+      "category": "medium",
+      "passed": true,
+      "latency_ms": 40432.0,
+      "cost_usd": -0.002408,
+      "error": ""
+    },
+    {
+      "task": "Debug this race condition in a producer-consumer queue and d",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 47702.0,
+      "cost_usd": 8.2e-05,
+      "error": ""
+    },
+    {
+      "task": "Fix the memory corruption in this unsafe Rust code and archi",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 40958.0,
+      "cost_usd": -0.000514,
+      "error": ""
+    },
+    {
+      "task": "Analyze why this distributed consensus algorithm fails under",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 29043.0,
+      "cost_usd": -0.000745,
+      "error": ""
+    },
+    {
+      "task": "Debug the numerical instability in this gradient descent opt",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 37415.0,
+      "cost_usd": 0.001361,
+      "error": ""
+    },
+    {
+      "task": "Fix the deadlock in this transaction manager and architect a",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 50880.0,
+      "cost_usd": 0.000199,
+      "error": ""
+    },
+    {
+      "task": "Diagnose the error in this B-tree implementation and optimiz",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 30625.0,
+      "cost_usd": -0.001387,
+      "error": ""
+    },
+    {
+      "task": "Debug the crash in this JIT compiler's register allocator an",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 36130.0,
+      "cost_usd": -5.6e-05,
+      "error": ""
+    },
+    {
+      "task": "Fix the serialization bug in this RPC framework and architec",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 32694.0,
+      "cost_usd": 0.000137,
+      "error": ""
+    },
+    {
+      "task": "Analyze this error in the garbage collector's mark phase and",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 34447.0,
+      "cost_usd": 0.00024,
+      "error": ""
+    },
+    {
+      "task": "Debug the crash in this neural network trainer and optimize ",
+      "category": "complex",
+      "passed": true,
+      "latency_ms": 37372.0,
+      "cost_usd": -0.000408,
+      "error": ""
+    }
+  ],
+  "verdict": "Router: 29/30 (97%) at $0.0392. All-S1: 30/30 (100%) at $0.0009. Cost ratio: 42.1x"
+}
