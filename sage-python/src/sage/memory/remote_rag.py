@@ -18,6 +18,10 @@ log = logging.getLogger(__name__)
 # Resolution order: explicit param > SAGE_EXOCORTEX_STORE env var > DEFAULT_STORE.
 DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 
+# Default model for ExoCortex queries.
+# Resolution order: explicit param > SAGE_EXOCORTEX_MODEL env var > _DEFAULT_MODEL.
+_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+
 
 class ExoCortex:
     """Persistent RAG store backed by Google GenAI File Search API.
@@ -26,8 +30,9 @@ class ExoCortex:
     enabling drop-in replacement with Qdrant, FAISS, or other backends.
     """
 
-    def __init__(self, store_name: str | None = None):
+    def __init__(self, store_name: str | None = None, model_id: str | None = None):
         self._store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
+        self._model_id = model_id or os.environ.get("SAGE_EXOCORTEX_MODEL") or _DEFAULT_MODEL
         self._api_key = os.environ.get("GOOGLE_API_KEY", "")
 
     # -- KnowledgeStore protocol: store_name property --------------------------
@@ -137,7 +142,7 @@ class ExoCortex:
                 system_instruction="Answer based on the indexed documents. Be precise and cite sources.",
             )
             response = client.models.generate_content(
-                model="gemini-3.1-flash-lite-preview",
+                model=self._model_id,
                 contents=question,
                 config=config,
             )
