@@ -15,7 +15,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 
 ### Key Python Modules (sage-python/src/sage/)
 - `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline into `AgentSystem`
-- `agent_loop.py` - Structured perceive->think->act->learn runtime with S2 AVR loop, Z3 S3 prompts, guardrails (input/runtime/output), semantic context injection, AgentEvent schema
+- `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `agents/sequential.py` - SequentialAgent: chain agents in series
 - `agents/parallel.py` - ParallelAgent: run agents concurrently with aggregator
@@ -44,6 +44,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
 - `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), implements `KnowledgeStore` protocol, auto-configured with DEFAULT_STORE
+- `memory/relevance_gate.py` - CRAG-style keyword overlap gate: scores context vs task, threshold=0.3, blocks irrelevant memory injection
 - `memory/rag_backend.py` - `KnowledgeStore` protocol: pluggable RAG backend interface (search/ingest/store_name)
 - `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering + SQLite persistence (optional `db_path`)
 - `memory/write_gate.py` - WriteGate: confidence-based write gating with abstention tracking
@@ -81,7 +82,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (730 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (781 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -156,7 +157,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
-- **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
+- **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Active `search_exocortex` tool only (passive grounding removed — Sprint 3 evidence showed it adds latency without benefit for code tasks).
 - **9 Agent Tools**: 7 AgeMem (3 STM + 4 LTM) + `search_exocortex` + `refresh_knowledge`
 
 ## Guardrails (3-layer)
