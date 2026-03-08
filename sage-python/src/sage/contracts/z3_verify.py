@@ -124,8 +124,8 @@ def verify_provider_assignment(
     - If a node requires capabilities that are mutually exclusive on a provider,
       that provider cannot serve the node
 
-    Z3 models this as: for each node, OR over providers that can serve it.
-    A provider can serve a node iff:
+    Z3 models this as: for each node, exactly one provider must be assigned
+    (PbEq pseudo-boolean constraint). A provider can serve a node iff:
       (a) provider.capabilities ⊇ node.capabilities_required
       (b) no exclusion pair is fully required by the node
 
@@ -179,8 +179,8 @@ def verify_provider_assignment(
 
         if node_vars:
             assignment_vars[nid] = node_vars
-            # At least one provider must be assigned to this node
-            solver.add(z3.Or(*node_vars.values()))
+            # Exactly one provider must be assigned to this node
+            solver.add(z3.PbEq([(v, 1) for v in node_vars.values()], 1))
 
     if solver.check() == z3.sat:
         return ContractVerdict(satisfied=True, property_name="provider_assignment")
