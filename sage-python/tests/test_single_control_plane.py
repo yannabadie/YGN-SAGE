@@ -1,4 +1,4 @@
-"""Test that routing always goes through the same path (B8)."""
+"""Test that routing has orchestrator-primary with legacy fallback."""
 import inspect
 
 import pytest
@@ -6,19 +6,21 @@ import pytest
 from sage.boot import boot_agent_system
 
 
-def test_no_dual_routing_paths():
-    """AgentSystem.run should not have environment-dependent routing branches."""
+def test_orchestrator_primary_with_fallback():
+    """AgentSystem.run should use orchestrator as primary, ModelRouter as fallback."""
     system = boot_agent_system(use_mock_llm=True)
     source = inspect.getsource(type(system).run)
-    # Should not contain orchestrator branching in run()
-    assert "orchestrator.run" not in source, (
-        "run() should not branch to orchestrator — single control plane only"
+    # Orchestrator is the primary path (wired in Task 2)
+    assert "orchestrator.run" in source, (
+        "run() should call orchestrator.run as primary routing path"
     )
+    # Legacy ModelRouter fallback is retained
+    assert "ModelRouter.get_config" in source, (
+        "run() should retain ModelRouter.get_config as legacy fallback"
+    )
+    # Must not call registry.refresh in run() — that belongs in boot
     assert "registry.refresh" not in source, (
-        "run() should not call registry.refresh — that creates an env-dependent branch"
-    )
-    assert "registry.list_available" not in source, (
-        "run() should not check registry.list_available — single path only"
+        "run() should not call registry.refresh — that belongs at boot time"
     )
 
 

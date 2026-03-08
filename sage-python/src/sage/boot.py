@@ -63,12 +63,9 @@ class AgentSystem:
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
 
-        Uses ComplexityRouter for S1/S2/S3 routing, then AgentLoop
-        for execution. This is the single control plane — no environment-
-        dependent branching.
-
-        Note: self.orchestrator and self.registry are retained for explicit
-        use by callers (e.g., dashboard, tests) but are NOT used here.
+        Primary path: CognitiveOrchestrator (multi-provider, score-based).
+        Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
+        Mock mode: direct AgentLoop (no orchestrator).
         """
         # 1. Assess task complexity
         profile = await self.metacognition.assess_complexity_async(task)
@@ -83,13 +80,7 @@ class AgentSystem:
                 profile.complexity, decision.system,
             )
 
-        # 2. Apply routing decision
-        current_provider = self.agent_loop.config.llm.provider
-
-        # Set validation level based on routing decision.
-        # Default is S1 (no AVR). Sprint 3 evidence shows AVR degrades
-        # quality by 30pp when applied unconditionally. Only promote when
-        # routing explicitly demands it AND sandbox is available.
+        # 2. Set validation level from routing decision
         if decision.system >= 3:
             self.agent_loop.config.validation_level = 3
         elif decision.system == 2 and self.agent_loop.sandbox_manager:
@@ -97,16 +88,27 @@ class AgentSystem:
         else:
             self.agent_loop.config.validation_level = 1
 
-        # Only switch LLM if the target provider is available AND different.
-        # In mock mode (tests), keep provider pinned to avoid external calls.
-        new_config = ModelRouter.get_config(decision.llm_tier)
+        current_provider = self.agent_loop.config.llm.provider
+
+        # Mock mode: skip orchestrator, use AgentLoop directly
         if current_provider == "mock":
             return await self.agent_loop.run(task)
 
-        # Don't downgrade from Codex to Gemini Flash for simple tasks —
-        # Codex handles everything and always produces <think> tags
+        # 3. Try CognitiveOrchestrator as primary path (multi-provider)
+        if self.orchestrator and self.registry and self.registry.list_available():
+            try:
+                result = await self.orchestrator.run(task)
+                await self._persist_memory()
+                return result
+            except Exception as e:
+                _log.warning(
+                    "Orchestrator failed (%s), falling back to legacy routing", e
+                )
+
+        # 4. Fallback: legacy ModelRouter path (Codex + Google only)
+        new_config = ModelRouter.get_config(decision.llm_tier)
         if current_provider == "codex" and new_config.provider == "google":
-            pass  # Keep Codex
+            pass  # Don't downgrade from Codex to Gemini
         elif new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
             pass  # Google unavailable, keep current
         else:
@@ -118,24 +120,22 @@ class AgentSystem:
                 from sage.llm.google import GoogleProvider
                 self.agent_loop._llm = GoogleProvider()
 
-        # 3. Run the agent loop
         result = await self.agent_loop.run(task)
+        await self._persist_memory()
+        return result
 
-        # 4. Persist semantic memory after each run
+    async def _persist_memory(self) -> None:
+        """Persist semantic and causal memory after a run."""
         if hasattr(self.agent_loop, "semantic_memory") and self.agent_loop.semantic_memory:
             try:
                 self.agent_loop.semantic_memory.save()
             except Exception:
                 _log.warning("Failed to persist semantic memory", exc_info=True)
-
-        # 5. Persist causal memory after each run
         if hasattr(self.agent_loop, "causal_memory") and self.agent_loop.causal_memory:
             try:
                 self.agent_loop.causal_memory.save()
             except Exception:
                 _log.warning("Failed to persist causal memory", exc_info=True)
-
-        return result
 
 
 def boot_agent_system(
