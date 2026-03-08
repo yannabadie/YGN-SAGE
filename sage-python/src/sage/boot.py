@@ -86,12 +86,16 @@ class AgentSystem:
         # 2. Apply routing decision
         current_provider = self.agent_loop.config.llm.provider
 
-        # Set validation level based on routing decision
-        if current_provider == "codex":
-            # Codex CLI reasons internally — no external validation needed
-            self.agent_loop.config.validation_level = 1
+        # Set validation level based on routing decision.
+        # Default is S1 (no AVR). Sprint 3 evidence shows AVR degrades
+        # quality by 30pp when applied unconditionally. Only promote when
+        # routing explicitly demands it AND sandbox is available.
+        if decision.system >= 3:
+            self.agent_loop.config.validation_level = 3
+        elif decision.system == 2 and self.agent_loop.sandbox_manager:
+            self.agent_loop.config.validation_level = 2
         else:
-            self.agent_loop.config.validation_level = decision.validation_level
+            self.agent_loop.config.validation_level = 1
 
         # Only switch LLM if the target provider is available AND different.
         # In mock mode (tests), keep provider pinned to avoid external calls.
@@ -234,7 +238,7 @@ def boot_agent_system(
             "Think step-by-step. Be concise. Answer the user task directly."
         ),
         max_steps=20,
-        validation_level=1 if llm_config.provider == "codex" else 2,
+        validation_level=1,  # Default S1 — routing promotes to S2 only for code tasks
     )
 
     # Event bus (central nervous system)
@@ -266,6 +270,10 @@ def boot_agent_system(
     loop.episodic_memory = episodic_memory
     loop.sandbox_manager = sandbox_manager
     loop.exocortex = exocortex
+
+    # Evolution disabled by default — Sprint 3 evidence shows marginal value
+    # (0.50 best score vs 0.33 random mutation). Still available for explicit use.
+    loop._auto_evolve = False
 
     # Semantic memory + MemoryAgent wiring (persistent SQLite in real mode)
     from sage.memory.semantic import SemanticMemory
