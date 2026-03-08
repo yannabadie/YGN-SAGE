@@ -2,12 +2,67 @@
 //!
 //! Behind the `onnx` feature flag. Loads all-MiniLM-L6-v2 ONNX model
 //! and produces 384-dim L2-normalized embeddings.
+//!
+//! Uses `load-dynamic` strategy: onnxruntime DLL is loaded at runtime
+//! via `ORT_DYLIB_PATH` env var or auto-discovered next to the model.
+//! This avoids static linking issues on Windows MSVC (LNK1120).
 
 use ort::{inputs, session::Session, value::TensorRef};
 use pyo3::prelude::*;
+use std::sync::Once;
 use tokenizers::Tokenizer;
 
 const EMBEDDING_DIM: usize = 384;
+
+static ORT_INIT: Once = Once::new();
+
+/// Initialize ORT runtime from a dylib path. Must be called before any Session usage.
+/// Searches: ORT_DYLIB_PATH env var > sibling of model_path > common venv paths.
+///
+/// NOTE: Do NOT call Python subprocess from here — this runs inside a PyO3 call,
+/// and spawning a new Python process would deadlock on the GIL.
+fn ensure_ort_initialized(model_path: &str) {
+    ORT_INIT.call_once(|| {
+        // If ORT_DYLIB_PATH is set, ort will use it automatically.
+        if std::env::var("ORT_DYLIB_PATH").is_ok() {
+            return;
+        }
+
+        #[cfg(target_os = "windows")]
+        let dll_name = "onnxruntime.dll";
+        #[cfg(target_os = "linux")]
+        let dll_name = "libonnxruntime.so";
+        #[cfg(target_os = "macos")]
+        let dll_name = "libonnxruntime.dylib";
+
+        // Check sibling of model file first.
+        if let Some(parent) = std::path::Path::new(model_path).parent() {
+            let candidate = parent.join(dll_name);
+            if candidate.exists() {
+                std::env::set_var("ORT_DYLIB_PATH", &candidate);
+                return;
+            }
+        }
+
+        // On Windows, try the pip-installed onnxruntime capi directory.
+        // Walk up from model_path to find a .venv or venv with onnxruntime installed.
+        #[cfg(target_os = "windows")]
+        {
+            // Try sys.prefix-based discovery via VIRTUAL_ENV env var
+            if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+                let candidate = std::path::Path::new(&venv)
+                    .join("Lib")
+                    .join("site-packages")
+                    .join("onnxruntime")
+                    .join("capi")
+                    .join(dll_name);
+                if candidate.exists() {
+                    std::env::set_var("ORT_DYLIB_PATH", &candidate);
+                }
+            }
+        }
+    });
+}
 
 #[pyclass]
 pub struct RustEmbedder {
@@ -20,6 +75,9 @@ impl RustEmbedder {
     #[new]
     #[pyo3(signature = (model_path, tokenizer_path))]
     pub fn new(model_path: String, tokenizer_path: String) -> PyResult<Self> {
+        // Initialize ORT dynamic library before creating session
+        ensure_ort_initialized(&model_path);
+
         let session = Session::builder()
             .map_err(|e| {
                 pyo3::exceptions::PyRuntimeError::new_err(format!(
@@ -79,6 +137,9 @@ impl RustEmbedder {
             }
         }
 
+        // token_type_ids: all zeros (single-sentence, required by BERT-like models)
+        let token_type_ids = vec![0i64; batch_size * max_len];
+
         // Build tensors using (shape, &[T]) tuple form accepted by ort 2.x
         let shape = vec![batch_size, max_len];
 
@@ -88,13 +149,19 @@ impl RustEmbedder {
             })?;
 
         let mask_tensor =
-            TensorRef::from_array_view((shape, &*attention_mask)).map_err(|e| {
+            TensorRef::from_array_view((shape.clone(), &*attention_mask)).map_err(|e| {
                 pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (mask): {e}"))
+            })?;
+
+        let type_tensor =
+            TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
             })?;
 
         let session_inputs = inputs![
             "input_ids" => id_tensor,
-            "attention_mask" => mask_tensor
+            "attention_mask" => mask_tensor,
+            "token_type_ids" => type_tensor
         ];
 
         let outputs = self.session.run(session_inputs).map_err(|e| {

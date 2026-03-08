@@ -35,6 +35,29 @@ EMBEDDING_DIM: int = 384
 # Rust ONNX embedder auto-detection
 # ---------------------------------------------------------------------------
 
+def _ensure_ort_dylib_path():
+    """Set ORT_DYLIB_PATH if not already set, using pip-installed onnxruntime.
+
+    With ort's ``load-dynamic`` feature, the ONNX Runtime DLL must be
+    discoverable at runtime.  The pip ``onnxruntime`` package ships the
+    correct version in its ``capi/`` directory.  This must be called
+    *before* creating any ``RustEmbedder`` instance.
+    """
+    import os
+    if os.environ.get("ORT_DYLIB_PATH"):
+        return
+    try:
+        import onnxruntime
+        import sys
+        capi_dir = os.path.join(os.path.dirname(onnxruntime.__file__), "capi")
+        dll_name = "onnxruntime.dll" if sys.platform == "win32" else "libonnxruntime.so"
+        candidate = os.path.join(capi_dir, dll_name)
+        if os.path.exists(candidate):
+            os.environ["ORT_DYLIB_PATH"] = candidate
+    except ImportError:
+        pass
+
+
 def _try_rust_embedder():
     """Try to create a RustEmbedder from sage_core (ONNX feature).
 
@@ -50,6 +73,10 @@ def _try_rust_embedder():
         if not hasattr(sage_core, "RustEmbedder"):
             return None
         from pathlib import Path
+
+        # Ensure onnxruntime DLL is discoverable (load-dynamic strategy)
+        _ensure_ort_dylib_path()
+
         model_dirs = [
             Path.home() / ".sage" / "models",
             Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "models",
