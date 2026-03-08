@@ -268,10 +268,16 @@ def boot_agent_system(
                     pool.submit(lambda: asyncio.run(registry.refresh())).result(timeout=15)
             else:
                 asyncio.run(registry.refresh())
+            # Log per-provider summary
+            from collections import Counter
+            available = registry.list_available()
+            provider_counts = Counter(p.provider for p in available)
+            total = len(registry.profiles)
+            avail = len(available)
+            summary_parts = [f"{name}: {count}" for name, count in sorted(provider_counts.items())]
             _log.info(
-                "Boot: discovered %d models (%d available)",
-                len(registry.profiles),
-                len(registry.list_available()),
+                "Boot: discovered %d models (%d available) — %s",
+                total, avail, ", ".join(summary_parts) if summary_parts else "none",
             )
         except Exception as e:
             _log.warning("Boot: model discovery failed (%s), continuing with legacy routing", e)

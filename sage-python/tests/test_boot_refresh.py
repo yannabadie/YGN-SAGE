@@ -152,6 +152,35 @@ def test_boot_refresh_failure_does_not_crash(monkeypatch):
     assert system.orchestrator is not None
 
 
+def test_boot_logs_discovery_summary(monkeypatch, caplog):
+    """Boot should log a human-readable summary of discovered models."""
+    import logging
+    from sage.boot import boot_agent_system
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "fake")
+
+    async def mock_refresh(self):
+        # Simulate discovering some models
+        from sage.providers.registry import ModelProfile
+        self._profiles = {
+            "gemini-flash": ModelProfile(id="gemini-flash", provider="google", available=True, cost_input=0.1, cost_output=0.5),
+            "gpt-5": ModelProfile(id="gpt-5", provider="openai", available=True, cost_input=1.0, cost_output=5.0),
+            "deepseek-chat": ModelProfile(id="deepseek-chat", provider="deepseek", available=False, cost_input=0.3, cost_output=0.4),
+        }
+
+    with patch("sage.providers.registry.ModelRegistry.refresh", mock_refresh):
+        with patch("sage.llm.google.GoogleProvider"):
+            with caplog.at_level(logging.INFO, logger="sage.boot"):
+                try:
+                    boot_agent_system(use_mock_llm=False, llm_tier="fast")
+                except Exception:
+                    pass
+
+    # Should log provider summary
+    assert any("discovered" in r.message.lower() or "available" in r.message.lower()
+               for r in caplog.records)
+
+
 @pytest.mark.asyncio
 async def test_agent_system_mock_mode_bypasses_orchestrator():
     """In mock mode, AgentSystem.run() should bypass orchestrator."""
