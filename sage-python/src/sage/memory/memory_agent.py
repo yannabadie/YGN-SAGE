@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import logging
 from dataclasses import dataclass, field
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -28,10 +29,12 @@ class MemoryAgent:
         use_llm: bool = True,
         llm_tier: str = "budget",
         compress_threshold: int = 50,
+        llm_provider: Any = None,
     ):
         self.use_llm = use_llm
         self.llm_tier = llm_tier
         self.compress_threshold = compress_threshold
+        self._llm_provider = llm_provider
 
     def should_compress(self, event_count: int) -> bool:
         return event_count > self.compress_threshold
@@ -76,7 +79,10 @@ class MemoryAgent:
         config = ModelRouter.get_config(
             self.llm_tier, temperature=0.1, json_schema=KGExtraction,
         )
-        provider = GoogleProvider()
+        if self._llm_provider is not None:
+            provider = self._llm_provider
+        else:
+            provider = GoogleProvider()
         response = await provider.generate(
             messages=[
                 Message(role=Role.SYSTEM, content=(

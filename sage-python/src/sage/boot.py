@@ -183,7 +183,7 @@ def boot_agent_system(
     metacognition = ComplexityRouter()
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
-    memory_agent = MemoryAgent(use_llm=not use_mock_llm)
+    memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider)
 
     # Memory compressor (fires on pressure — MEM1 pattern)
     memory_compressor = MemoryCompressor(
