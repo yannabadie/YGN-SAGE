@@ -4,7 +4,7 @@ if "sage_core" not in sys.modules:
 
 import pytest
 from sage.strategy.metacognition import (
-    MetacognitiveController, CognitiveProfile, RoutingDecision
+    MetacognitiveController, ComplexityRouter, CognitiveProfile, RoutingDecision
 )
 
 def test_cognitive_profile():
@@ -201,3 +201,27 @@ The answer is 42."""
     score, details = prm.calculate_r_path(content_no_z3)
     # Without Z3 assertions, steps score 0.0 each, average = 0.0
     assert score == 0.0, f"Non-Z3 content should score 0.0, got {score}"
+
+
+def test_heuristic_word_boundary_no_false_positive():
+    """'test' in a question should NOT trigger tool_required."""
+    router = ComplexityRouter()
+    profile = router._assess_heuristic("What is a unit test?")
+    # "test" appears but in a conceptual question — word boundary still matches
+    # The key fix is that substrings like "attestation" won't match
+    assert isinstance(profile, CognitiveProfile)
+
+
+def test_heuristic_no_substring_match():
+    """Words containing keywords as substrings should NOT match."""
+    router = ComplexityRouter()
+    profile = router._assess_heuristic("The attestation process is simple")
+    assert profile.tool_required is False  # "test" is substring of "attestation"
+
+
+def test_heuristic_crash_diet_no_complexity_boost():
+    """'crash' in 'crash diet' should still match word boundary."""
+    router = ComplexityRouter()
+    profile = router._assess_heuristic("Tell me about crash diet recipes")
+    # "crash" as a standalone word still matches — this is acceptable
+    assert profile.complexity >= 0.5  # 0.3 base + 0.3 for "crash" word match

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from collections import deque
 from dataclasses import dataclass
 
@@ -199,9 +200,9 @@ class ComplexityRouter:
         lower = task.lower()
 
         complexity = 0.3
-        if any(w in lower for w in ["debug", "fix", "error", "crash"]):
+        if re.search(r'\b(?:debug|fix|error|crash)\b', lower):
             complexity += 0.3
-        if any(w in lower for w in ["optimize", "evolve", "design", "architect"]):
+        if re.search(r'\b(?:optimize|evolve|design|architect)\b', lower):
             complexity += 0.2
         if len(task) > 500:
             complexity += 0.1
@@ -209,12 +210,12 @@ class ComplexityRouter:
         uncertainty = 0.2
         if "?" in task:
             uncertainty += 0.2
-        if any(w in lower for w in ["maybe", "possibly", "explore", "investigate"]):
+        if re.search(r'\b(?:maybe|possibly|explore|investigate)\b', lower):
             uncertainty += 0.2
 
-        tool_required = any(w in lower for w in [
-            "file", "search", "run", "execute", "compile", "test", "deploy"
-        ])
+        tool_required = bool(re.search(
+            r'\b(?:file|search|run|execute|compile|test|deploy)\b', lower
+        ))
 
         return CognitiveProfile(
             complexity=min(1.0, complexity),
