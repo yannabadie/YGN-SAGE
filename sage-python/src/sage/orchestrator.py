@@ -68,40 +68,80 @@ class ExecutionPlan:
 class ModelAgent:
     """Lightweight agent that calls a specific LLM model via the appropriate provider.
 
-    Resolves provider connection details (API key env var, base URL, SDK)
-    from :data:`PROVIDER_CONFIGS` based on ``model.provider``.
+    Supports cascade fallback: if the primary model fails, tries next-best
+    models from the registry (FrugalGPT pattern, max 3 attempts).
     """
 
-    def __init__(self, name: str, model: ModelProfile, system_prompt: str = ""):
+    MAX_CASCADE_ATTEMPTS = 3
+
+    def __init__(self, name: str, model: ModelProfile, system_prompt: str = "",
+                 registry: ModelRegistry | None = None):
         self.name = name
         self.model = model
         self._system_prompt = system_prompt or "You are a helpful AI assistant. Be precise and concise."
+        self._registry = registry
 
     async def run(self, task: str) -> str:
-        """Call the LLM model and return the response text."""
-        provider = self._create_provider()
+        """Call the LLM model with cascade fallback on failure."""
         messages: list[Message] = []
         if self._system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=self._system_prompt))
         messages.append(Message(role=Role.USER, content=task))
 
+        tried_ids: set[str] = set()
+        current_model = self.model
+        last_error: Exception | None = None
+
+        for attempt in range(self.MAX_CASCADE_ATTEMPTS):
+            tried_ids.add(current_model.id)
+            try:
+                return await self._call_provider(current_model, messages)
+            except Exception as e:
+                last_error = e
+                log.warning(
+                    "ModelAgent %s: attempt %d/%d failed on %s (%s): %s",
+                    self.name, attempt + 1, self.MAX_CASCADE_ATTEMPTS,
+                    current_model.id, current_model.provider, e,
+                )
+                if self._registry:
+                    fallback = self._pick_fallback(tried_ids)
+                    if fallback:
+                        log.info("Cascading to fallback model: %s", fallback.id)
+                        current_model = fallback
+                        continue
+                break
+
+        error_msg = str(last_error) if last_error else "Unknown error"
+        return f"[Agent {self.name} error: all {len(tried_ids)} models failed. Last: {error_msg}]"
+
+    async def _call_provider(self, model: ModelProfile, messages: list[Message]) -> str:
+        """Make a single LLM call to the given model."""
+        provider = self._create_provider_for(model)
         config = LLMConfig(
-            provider=self.model.provider,
-            model=self.model.id,
+            provider=model.provider,
+            model=model.id,
             temperature=0.3,
         )
-
         response = await provider.generate(messages, config=config)
         return response.content or ""
 
-    def _create_provider(self):
-        """Create the appropriate LLM provider for this model.
+    def _pick_fallback(self, exclude_ids: set[str]) -> ModelProfile | None:
+        """Pick the next-best available model not yet tried."""
+        if not self._registry:
+            return None
+        for candidate in self._registry.list_available():
+            if candidate.id not in exclude_ids and candidate.cost_input > 0:
+                return candidate
+        return None
+
+    def _create_provider_for(self, model: ModelProfile):
+        """Create the appropriate LLM provider for a model.
 
         Uses the ``sdk`` field from PROVIDER_CONFIGS:
         - ``"google-genai"`` -> :class:`GoogleProvider`
         - anything else     -> :class:`OpenAICompatProvider`
         """
-        cfg = _provider_cfg_for(self.model.provider)
+        cfg = _provider_cfg_for(model.provider)
         sdk = cfg.get("sdk", "openai")
         api_key_env = cfg.get("api_key_env", "")
         api_key = os.environ.get(api_key_env, "") if api_key_env else ""
@@ -114,8 +154,12 @@ class ModelAgent:
             return OpenAICompatProvider(
                 api_key=api_key,
                 base_url=cfg.get("base_url"),
-                model_id=self.model.id,
+                model_id=model.id,
             )
+
+    def _create_provider(self):
+        """Backward-compatible: create provider for self.model."""
+        return self._create_provider_for(self.model)
 
 
 # ── CognitiveOrchestrator ───────────────────────────────────────────────────
@@ -174,7 +218,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s1-fast", model=model)
+            agent = ModelAgent(name="s1-fast", model=model, registry=self.registry)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -196,7 +240,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s2-worker", model=model)
+            agent = ModelAgent(name="s2-worker", model=model, registry=self.registry)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -214,7 +258,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s3-reasoner", model=model)
+            agent = ModelAgent(name="s3-reasoner", model=model, registry=self.registry)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -241,6 +285,7 @@ class CognitiveOrchestrator:
                 name=f"subtask-{len(agents)}",
                 model=model,
                 system_prompt=f"Focus on this specific subtask: {subtask.description}",
+                registry=self.registry,
             )
             agents.append(agent)
             log.info(
@@ -289,7 +334,7 @@ class CognitiveOrchestrator:
         )
 
         try:
-            agent = ModelAgent(name="decomposer", model=model)
+            agent = ModelAgent(name="decomposer", model=model, registry=self.registry)
             response = await agent.run(decompose_prompt)
             subtasks = self._parse_subtasks(response)
             if subtasks:

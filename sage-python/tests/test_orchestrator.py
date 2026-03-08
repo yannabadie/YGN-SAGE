@@ -299,6 +299,75 @@ class TestDecomposition:
         assert plan.subtasks[1].needs_reasoning
 
 
+# ── ModelAgent Cascade Fallback ───────────────────────────────────────────────
+
+class TestModelAgentCascade:
+    @pytest.mark.asyncio
+    async def test_cascade_retries_on_failure(self):
+        """ModelAgent should retry with fallback models on provider failure."""
+        primary = _make_profile("primary", code=0.9, cost_in=2.0)
+        fallback1 = _make_profile("fallback1", code=0.7, cost_in=0.5)
+        reg = _mock_registry(primary, fallback1)
+
+        agent = ModelAgent(name="test", model=primary, registry=reg)
+
+        call_models = []
+
+        async def mock_call(model, messages):
+            call_models.append(model.id)
+            if model.id == "primary":
+                raise RuntimeError("Provider timeout")
+            return "Fallback success"
+
+        agent._call_provider = mock_call
+        result = await agent.run("Test task")
+        assert result == "Fallback success"
+        assert call_models == ["primary", "fallback1"]
+
+    @pytest.mark.asyncio
+    async def test_cascade_exhausted_returns_error(self):
+        """If all models fail, return error message string."""
+        primary = _make_profile("only-model", cost_in=1.0)
+        reg = _mock_registry(primary)
+
+        agent = ModelAgent(name="test", model=primary, registry=reg)
+
+        async def always_fail(model, messages):
+            raise RuntimeError("All down")
+
+        agent._call_provider = always_fail
+        result = await agent.run("Test task")
+        assert "error" in result.lower()
+        assert "All down" in result
+
+    @pytest.mark.asyncio
+    async def test_cascade_no_registry_fails_after_first(self):
+        """Without registry, cascade is impossible -- fail after first attempt."""
+        primary = _make_profile("solo")
+        agent = ModelAgent(name="test", model=primary)  # No registry
+
+        async def fail(model, messages):
+            raise RuntimeError("Down")
+
+        agent._call_provider = fail
+        result = await agent.run("Test")
+        assert "error" in result.lower()
+
+    @pytest.mark.asyncio
+    async def test_cascade_success_on_first_try(self):
+        """When primary succeeds, no cascade needed."""
+        primary = _make_profile("good-model", cost_in=1.0)
+        reg = _mock_registry(primary)
+        agent = ModelAgent(name="test", model=primary, registry=reg)
+
+        async def succeed(model, messages):
+            return "Success"
+
+        agent._call_provider = succeed
+        result = await agent.run("Test")
+        assert result == "Success"
+
+
 # ── OpenAICompatProvider ─────────────────────────────────────────────────────
 
 class TestOpenAICompatProvider:
