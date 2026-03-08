@@ -4,6 +4,7 @@ import numpy as np
 from sage.strategy.solvers import RegretMatcher, SAMPOSolver
 from sage.strategy.allocator import ResourceAllocator
 from sage.strategy.engine import StrategyEngine
+from sage.strategy.metacognition import ComplexityRouter
 
 
 # --- RegretMatcher Tests ---
@@ -165,3 +166,83 @@ def test_engine_stats_dominant():
 def test_engine_invalid_solver():
     with pytest.raises(ValueError):
         StrategyEngine(["a"], solver_type="invalid")
+
+
+# --- ComplexityRouter heuristic routing tests ---
+
+def test_routing_simple_factual_to_s1():
+    """Simple factual question should route to S1 (fast/cheap)."""
+    router = ComplexityRouter()
+    profile = router.assess_complexity("What is the capital of France?")
+    decision = router.route(profile)
+    assert decision.system == 1, (
+        f"Expected S1 for simple factual, got S{decision.system} "
+        f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
+    )
+
+
+def test_routing_code_generation_to_s2():
+    """Moderate code generation task should route to S2."""
+    router = ComplexityRouter()
+    profile = router.assess_complexity("Implement binary search in Python")
+    decision = router.route(profile)
+    assert decision.system == 2, (
+        f"Expected S2 for code generation, got S{decision.system} "
+        f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
+    )
+
+
+def test_routing_simple_code_to_s1():
+    """Simple, short code task should route to S1."""
+    router = ComplexityRouter()
+    profile = router.assess_complexity("Write a hello world function")
+    decision = router.route(profile)
+    assert decision.system == 1, (
+        f"Expected S1 for simple code task, got S{decision.system} "
+        f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
+    )
+
+
+def test_routing_complex_debug_to_s3():
+    """Complex debug task with race condition and long description should route to S3."""
+    router = ComplexityRouter()
+    task = (
+        "Debug the race condition in the distributed worker pool that causes "
+        "intermittent deadlocks under high load. The system uses a shared mutex "
+        "across multiple threads and the lock ordering appears inconsistent. "
+        "Workers sometimes hang indefinitely when processing concurrent batch "
+        "jobs, and the error manifests only under production-level traffic with "
+        "at least fifty parallel connections hitting the queue simultaneously."
+    )
+    profile = router.assess_complexity(task)
+    decision = router.route(profile)
+    assert decision.system == 3, (
+        f"Expected S3 for complex debug, got S{decision.system} "
+        f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
+    )
+
+
+def test_routing_fibonacci_to_s1_or_s2():
+    """Simple algorithm request should route to S1 or S2, never S3."""
+    router = ComplexityRouter()
+    profile = router.assess_complexity(
+        "Write a function that returns the nth Fibonacci number"
+    )
+    decision = router.route(profile)
+    assert decision.system in (1, 2), (
+        f"Expected S1 or S2 for simple algorithm, got S{decision.system} "
+        f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
+    )
+
+
+def test_routing_long_task_complexity_boost():
+    """Longer task descriptions should have higher complexity than short ones."""
+    router = ComplexityRouter()
+    short_task = "Add two numbers"
+    long_task = " ".join(["Add two numbers and verify the result is correct."] * 12)
+    short_profile = router.assess_complexity(short_task)
+    long_profile = router.assess_complexity(long_task)
+    assert long_profile.complexity > short_profile.complexity, (
+        f"Long task complexity ({long_profile.complexity:.2f}) should exceed "
+        f"short task ({short_profile.complexity:.2f})"
+    )

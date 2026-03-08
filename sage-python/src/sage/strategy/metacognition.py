@@ -84,9 +84,9 @@ class ComplexityRouter:
 
     def __init__(
         self,
-        s1_complexity_ceil: float = 0.35,
+        s1_complexity_ceil: float = 0.50,
         s1_uncertainty_ceil: float = 0.3,
-        s3_complexity_floor: float = 0.7,
+        s3_complexity_floor: float = 0.65,
         s3_uncertainty_floor: float = 0.6,
         brake_window: int = 3,
         brake_entropy_threshold: float = 0.15,
@@ -196,30 +196,79 @@ class ComplexityRouter:
         return profile
 
     def _assess_heuristic(self, task: str) -> CognitiveProfile:
-        """Fast keyword-based fallback (no LLM call)."""
-        lower = task.lower()
+        """Fast keyword-based fallback (no LLM call).
 
-        complexity = 0.3
-        if re.search(r'\b(?:debug|fix|error|crash)\b', lower):
+        Calibrated so that simple factual and simple code tasks route to S1,
+        moderate code generation routes to S2, and complex debug/design tasks
+        route to S3.
+        """
+        lower = task.lower()
+        words = lower.split()
+        word_count = len(words)
+
+        # --- Complexity ---
+        complexity = 0.2  # base: simple factual tasks
+
+        # Algorithmic / implementation keywords (+0.35)
+        if re.search(r'\b(?:implement|build|algorithm)\b', lower):
+            complexity += 0.35
+        # Simple code generation keywords (+0.15) — only if no algorithmic match
+        elif re.search(r'\b(?:write|create|code|function|class|method)\b', lower):
+            complexity += 0.15
+
+        # Debug / error keywords (+0.3)
+        if re.search(
+            r'\b(?:debug|fix|error|crash|bug|race condition|deadlock)\b',
+            lower,
+        ):
             complexity += 0.3
-        if re.search(r'\b(?:optimize|evolve|design|architect)\b', lower):
+
+        # Design / architecture keywords (+0.2)
+        if re.search(
+            r'\b(?:optimize|evolve|design|architect|refactor|distributed)\b',
+            lower,
+        ):
             complexity += 0.2
-        if len(task) > 500:
+
+        # Multi-step indicators (+0.1)
+        if re.search(r'\b(?:then|after|first|next|finally|step)\b', lower):
             complexity += 0.1
 
+        # Task-length scaling (word count)
+        if word_count > 100:
+            complexity += 0.15
+        elif word_count > 50:
+            complexity += 0.1
+        elif word_count > 20:
+            complexity += 0.05
+
+        # --- Uncertainty ---
         uncertainty = 0.2
+
         if "?" in task:
-            uncertainty += 0.2
+            uncertainty += 0.1
+
         if re.search(r'\b(?:maybe|possibly|explore|investigate)\b', lower):
             uncertainty += 0.2
 
+        # Flakiness / nondeterminism keywords (+0.15)
+        if re.search(r'\b(?:intermittent|sometimes|random|flaky)\b', lower):
+            uncertainty += 0.15
+
+        # --- Tool requirement ---
+        # Note: "read/write" only match with file/disk/data context to avoid
+        # false positives on code-gen tasks like "write a function".
         tool_required = bool(re.search(
-            r'\b(?:file|search|run|execute|compile|test|deploy)\b', lower
+            r'\b(?:file|search|run|execute|compile|test|deploy|download|upload)\b',
+            lower,
+        )) or bool(re.search(
+            r'\b(?:read|write)\s+(?:file|disk|data|csv|json|log|output)\b',
+            lower,
         ))
 
         return CognitiveProfile(
-            complexity=min(1.0, complexity),
-            uncertainty=min(1.0, uncertainty),
+            complexity=min(1.0, round(complexity, 4)),
+            uncertainty=min(1.0, round(uncertainty, 4)),
             tool_required=tool_required,
             reasoning="heuristic",
         )
