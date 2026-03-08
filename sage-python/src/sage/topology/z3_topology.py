@@ -137,4 +137,5 @@ class TopologyVerifier:
             result = validator.validate_mutation(constraints)
             return "z3_verified" if result.safe else "z3_unsafe"
         except Exception:
+            log.warning("Z3 topology verification failed (optional, continuing)", exc_info=True)
             return ""
