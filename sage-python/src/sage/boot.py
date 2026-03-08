@@ -244,14 +244,35 @@ def boot_agent_system(
     # Event bus (central nervous system)
     event_bus = event_bus or EventBus()
 
-    # CognitiveOrchestrator (capability-based multi-provider routing)
-    # Only wired for real LLM providers — mock mode uses legacy direct routing
-    registry = None
+    # ModelRegistry: always created (even in mock mode) so callers can inspect it
+    from sage.providers.registry import ModelRegistry
+    registry = ModelRegistry()
     orchestrator = None
+
     if not use_mock_llm:
-        from sage.providers.registry import ModelRegistry
         from sage.orchestrator import CognitiveOrchestrator
-        registry = ModelRegistry()
+
+        # Auto-discover available models at boot
+        import asyncio
+        try:
+            try:
+                _running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                _running_loop = None
+            if _running_loop and _running_loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    pool.submit(lambda: asyncio.run(registry.refresh())).result(timeout=15)
+            else:
+                asyncio.run(registry.refresh())
+            _log.info(
+                "Boot: discovered %d models (%d available)",
+                len(registry.profiles),
+                len(registry.list_available()),
+            )
+        except Exception as e:
+            _log.warning("Boot: model discovery failed (%s), continuing with legacy routing", e)
+
         orchestrator = CognitiveOrchestrator(
             registry=registry, metacognition=metacognition, event_bus=event_bus,
         )
