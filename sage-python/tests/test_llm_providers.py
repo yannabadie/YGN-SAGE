@@ -74,3 +74,54 @@ def test_codex_schema_additional_properties():
     schema = {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
     fixed = _ensure_additional_properties_false(schema)
     assert fixed["additionalProperties"] is False
+
+
+def test_codex_schema_additional_properties_nested():
+    """Nested object schemas should also be patched recursively."""
+    from sage.llm.codex import _ensure_additional_properties_false
+
+    schema = {
+        "type": "object",
+        "properties": {
+            "user": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "prefs": {
+                        "type": "object",
+                        "properties": {"theme": {"type": "string"}},
+                    },
+                },
+            },
+            "items": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                },
+            },
+        },
+    }
+
+    fixed = _ensure_additional_properties_false(schema)
+    assert fixed["additionalProperties"] is False
+    assert fixed["properties"]["user"]["additionalProperties"] is False
+    assert fixed["properties"]["user"]["properties"]["prefs"]["additionalProperties"] is False
+    assert fixed["properties"]["items"]["items"]["additionalProperties"] is False
+
+
+def test_codex_extract_text_from_jsonl_v1_and_v2():
+    """Parser should read both legacy and evolved Codex JSONL message formats."""
+    from sage.llm.codex import _extract_text_from_jsonl
+
+    v1 = '\n'.join([
+        '{"type":"turn.completed","usage":{}}',
+        '{"type":"item.completed","item":{"type":"agent_message","text":"legacy text"}}',
+    ])
+    assert _extract_text_from_jsonl(v1) == "legacy text"
+
+    v2 = '\n'.join([
+        '{"type":"turn.completed","usage":{}}',
+        '{"type":"item.completed","item":{"type":"agent_message","content":[{"type":"output_text","text":"new "},{"type":"output_text","text":"format"}]}}',
+    ])
+    assert _extract_text_from_jsonl(v2) == "new format"

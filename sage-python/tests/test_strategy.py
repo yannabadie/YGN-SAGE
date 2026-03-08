@@ -1,5 +1,6 @@
 """Tests for the strategy engine."""
 import pytest
+import numpy as np
 from sage.strategy.solvers import RegretMatcher, SAMPOSolver
 from sage.strategy.allocator import ResourceAllocator
 from sage.strategy.engine import StrategyEngine
@@ -49,6 +50,61 @@ def test_sampo_update_favors_better():
         sampo.update([{"actions": [0, 1], "rewards": [1.0, 0.0]}])
     strategy = sampo.get_strategy()
     assert strategy[0] > strategy[1]
+
+
+def test_sampo_numerical_stability_large_rewards():
+    sampo = SAMPOSolver(2, clip_epsilon=0.1)
+    for _ in range(50):
+        sampo.update([{"actions": [0, 1], "rewards": [1e9, -1e9]}])
+    strategy = sampo.get_strategy()
+    assert np.isfinite(strategy).all()
+    assert abs(float(np.sum(strategy)) - 1.0) < 1e-9
+    assert np.all(strategy >= 0.0)
+
+
+def test_sampo_adaptive_lr_reduces_after_high_variance():
+    sampo = SAMPOSolver(2, base_lr=0.05, min_lr=0.001, max_lr=0.2, lr_decay=0.999)
+    low_var_traj = [{"actions": [0, 1], "rewards": [0.51, 0.49]}]
+    high_var_traj = [{"actions": [0, 1], "rewards": [1000.0, -1000.0]}]
+
+    sampo.update(low_var_traj)
+    lr_low = sampo.stats()["learning_rate"]
+
+    sampo.update(high_var_traj)
+    lr_high = sampo.stats()["learning_rate"]
+
+    assert lr_high < lr_low
+
+
+def test_sampo_ignores_malformed_trajectories_without_crash():
+    sampo = SAMPOSolver(3)
+    before = sampo.get_strategy().copy()
+    sampo.update(
+        [
+            {"actions": [0, 1], "rewards": [1.0]},  # length mismatch
+            {"actions": [99], "rewards": [0.5]},  # invalid action index
+            {"actions": [0], "rewards": [float("nan")]},  # non-finite reward
+        ]
+    )
+    after = sampo.get_strategy()
+    assert np.allclose(before, after)
+
+
+def test_sampo_mixed_precision_gradient_scaling_stays_finite():
+    sampo = SAMPOSolver(
+        2,
+        clip_epsilon=0.1,
+        mixed_precision=True,
+        grad_scale_init=1024.0,
+        grad_scale_growth_interval=1,
+    )
+    for _ in range(20):
+        sampo.update([{"actions": [0, 1], "rewards": [1e4, -1e4]}])
+    strategy = sampo.get_strategy()
+    stats = sampo.stats()
+    assert np.isfinite(strategy).all()
+    assert abs(float(np.sum(strategy)) - 1.0) < 1e-9
+    assert stats["grad_scale"] >= 1.0
 
 
 # --- ResourceAllocator Tests ---
@@ -109,4 +165,3 @@ def test_engine_stats_dominant():
 def test_engine_invalid_solver():
     with pytest.raises(ValueError):
         StrategyEngine(["a"], solver_type="invalid")
-

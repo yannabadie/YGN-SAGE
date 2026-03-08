@@ -216,14 +216,55 @@ class SAMPOSolver:
         n_actions: int, 
         clip_epsilon: float = 0.2, 
         filter_threshold: int = 10,
-        gamma: float = 0.99
+        gamma: float = 0.99,
+        base_lr: float = 0.05,
+        min_lr: float = 0.005,
+        max_lr: float = 0.2,
+        lr_decay: float = 0.995,
+        rms_beta: float = 0.95,
+        epsilon: float = 1e-8,
+        mixed_precision: bool = False,
+        grad_scale_init: float = 128.0,
+        grad_scale_growth: float = 2.0,
+        grad_scale_backoff: float = 0.5,
+        grad_scale_growth_interval: int = 200,
     ):
         self.n_actions = n_actions
         self.clip_epsilon = clip_epsilon
         self.filter_threshold = filter_threshold
         self.gamma = gamma
+        self.base_lr = base_lr
+        self.min_lr = min_lr
+        self.max_lr = max_lr
+        self.lr_decay = lr_decay
+        self.rms_beta = rms_beta
+        self.epsilon = epsilon
+        self.mixed_precision = mixed_precision
+        self.grad_scale_growth = grad_scale_growth
+        self.grad_scale_backoff = grad_scale_backoff
+        self.grad_scale_growth_interval = max(1, grad_scale_growth_interval)
         self._policy = np.ones(n_actions) / n_actions
         self._iterations = 0
+        self._adv_sq_ema = 0.0
+        self._last_lr = base_lr
+        self._grad_scale = max(1.0, float(grad_scale_init))
+        self._stable_steps = 0
+
+    def _adaptive_lr(self, advantage: float) -> float:
+        """Compute a numerically stable adaptive learning rate.
+
+        We combine:
+        - Exponential decay over iterations (reduces late-stage oscillations).
+        - RMS normalization over advantage magnitude (suppresses spikes).
+        """
+        adv_sq = float(advantage * advantage)
+        self._adv_sq_ema = (self.rms_beta * self._adv_sq_ema) + ((1.0 - self.rms_beta) * adv_sq)
+
+        decayed = self.base_lr * (self.lr_decay ** self._iterations)
+        normalized = decayed / np.sqrt(self._adv_sq_ema + self.epsilon)
+        lr = float(np.clip(normalized, self.min_lr, self.max_lr))
+        self._last_lr = lr
+        return lr
 
     def get_strategy(self) -> np.ndarray:
         return self._policy
@@ -240,39 +281,90 @@ class SAMPOSolver:
         # 1. Dynamic Filtering: skip uninformative batches
         valid_trajectories = []
         for traj in trajectories:
-            rewards = np.array(traj['rewards'])
+            actions_raw = traj.get("actions", [])
+            rewards_raw = traj.get("rewards", [])
+            actions = np.asarray(actions_raw, dtype=np.int64)
+            rewards = np.asarray(rewards_raw, dtype=np.float32)
+
+            # Defensive checks: malformed trajectories are ignored instead of crashing.
+            if actions.size == 0 or rewards.size == 0:
+                continue
+            if not np.isfinite(rewards).all():
+                continue
+            if np.any(actions < 0) or np.any(actions >= self.n_actions):
+                continue
+
             # Ignore if all success or all failure within threshold
             if 0 < np.sum(rewards > 0.5) < self.filter_threshold:
-                valid_trajectories.append(traj)
+                valid_trajectories.append((actions, rewards))
 
         if not valid_trajectories:
             return
 
-        # 2. Per-action clipped policy update (simplified, not importance-sampled)
-        for traj in valid_trajectories:
-            # Compute turn-level advantage
-            rewards = np.array(traj['rewards'])
-            baseline = np.mean(rewards)
-            advantages = rewards - baseline
-            
-            # Simple advantage-based update (no importance sampling ratio)
-            for action, adv in zip(traj['actions'], advantages):
-                # Apply a fixed learning rate with clipped shift
-                lr = 0.05
-                proposed_shift = lr * adv
-                
-                # SAMPO Clipping: Prevent the policy from shifting more than clip_epsilon per update
-                clipped_shift = np.clip(proposed_shift, -self.clip_epsilon, self.clip_epsilon)
-                
-                self._policy[action] += clipped_shift
-        
+        # 2. Vectorized per-action update with optional mixed-precision gradient scaling.
+        grad_accum = np.zeros(self.n_actions, dtype=np.float64)
+        max_adv = 0.0
+        overflow = False
+        for actions, rewards in valid_trajectories:
+            if actions.size == rewards.size:
+                baseline = float(np.mean(rewards))
+                advantages = rewards - baseline
+                actions_for_update = actions
+            elif actions.size == 1:
+                # Backward-compatible path used by StrategyEngine.report_outcome():
+                # one chosen action and a full per-action payoff vector.
+                baseline = float(np.mean(rewards))
+                advantages = np.asarray([rewards[int(actions[0])] - baseline], dtype=np.float32)
+                actions_for_update = actions
+            else:
+                continue
+
+            adv_abs_max = float(np.max(np.abs(advantages.astype(np.float64))))
+            max_adv = max(max_adv, adv_abs_max)
+
+            if self.mixed_precision:
+                f16_max = float(np.finfo(np.float16).max)
+                if adv_abs_max * self._grad_scale > f16_max:
+                    overflow = True
+                    continue
+                scaled = np.float16(advantages) * np.float16(self._grad_scale)
+                if not np.isfinite(scaled).all():
+                    overflow = True
+                    continue
+                advantages_for_update = (scaled.astype(np.float32) / self._grad_scale)
+            else:
+                advantages_for_update = advantages
+
+            grad_accum += np.bincount(
+                actions_for_update,
+                weights=advantages_for_update.astype(np.float64),
+                minlength=self.n_actions,
+            )
+
+        if overflow and self.mixed_precision:
+            self._grad_scale = max(1.0, self._grad_scale * self.grad_scale_backoff)
+
+        if not np.any(grad_accum):
+            return
+
+        lr = self._adaptive_lr(max_adv)
+        delta = np.clip(lr * grad_accum, -self.clip_epsilon, self.clip_epsilon)
+        self._policy += delta
+
         # Normalize and ensure strict bounds
         self._policy = np.maximum(1e-8, self._policy)
         self._policy /= np.sum(self._policy)
         self._iterations += 1
+        if self.mixed_precision and not overflow:
+            self._stable_steps += 1
+            if self._stable_steps % self.grad_scale_growth_interval == 0:
+                self._grad_scale *= self.grad_scale_growth
 
     def stats(self) -> Dict[str, Any]:
         return {
             "iterations": self._iterations,
-            "entropy": -np.sum(self._policy * np.log(self._policy + 1e-10))
+            "entropy": -np.sum(self._policy * np.log(self._policy + 1e-10)),
+            "learning_rate": self._last_lr,
+            "adv_sq_ema": self._adv_sq_ema,
+            "grad_scale": self._grad_scale,
         }

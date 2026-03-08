@@ -124,6 +124,13 @@ class AgentSystem:
             except Exception:
                 _log.warning("Failed to persist semantic memory", exc_info=True)
 
+        # 5. Persist causal memory after each run
+        if hasattr(self.agent_loop, "causal_memory") and self.agent_loop.causal_memory:
+            try:
+                self.agent_loop.causal_memory.save()
+            except Exception:
+                _log.warning("Failed to persist causal memory", exc_info=True)
+
         return result
 
 
@@ -271,6 +278,17 @@ def boot_agent_system(
         semantic_memory = SemanticMemory()
     loop.memory_agent = memory_agent  # Already created above but never injected!
     loop.semantic_memory = semantic_memory
+
+    # Causal memory (persistent SQLite in real mode)
+    from sage.memory.causal import CausalMemory
+    if not use_mock_llm:
+        _causal_db = Path.home() / ".sage" / "causal.db"
+        _causal_db.parent.mkdir(parents=True, exist_ok=True)
+        causal_memory = CausalMemory(db_path=str(_causal_db))
+        causal_memory.load()
+    else:
+        causal_memory = CausalMemory()
+    loop.causal_memory = causal_memory
 
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):

@@ -34,15 +34,37 @@ def _ensure_additional_properties_false(schema: dict) -> dict:
     schema = copy.deepcopy(schema)
     if schema.get("type") == "object":
         schema.setdefault("additionalProperties", False)
-        for prop in schema.get("properties", {}).values():
-            if isinstance(prop, dict):
-                _ensure_additional_properties_false(prop)
-        # Handle nested definitions ($defs / definitions)
-        for defn in schema.get("$defs", {}).values():
+        properties = schema.get("properties", {})
+        if isinstance(properties, dict):
+            for key, prop in properties.items():
+                if isinstance(prop, dict):
+                    properties[key] = _ensure_additional_properties_false(prop)
+
+    # Handle nested definitions ($defs / definitions)
+    defs = schema.get("$defs", {})
+    if isinstance(defs, dict):
+        for key, defn in defs.items():
             if isinstance(defn, dict):
-                _ensure_additional_properties_false(defn)
+                defs[key] = _ensure_additional_properties_false(defn)
+
+    legacy_defs = schema.get("definitions", {})
+    if isinstance(legacy_defs, dict):
+        for key, defn in legacy_defs.items():
+            if isinstance(defn, dict):
+                legacy_defs[key] = _ensure_additional_properties_false(defn)
+
     if "items" in schema and isinstance(schema["items"], dict):
-        _ensure_additional_properties_false(schema["items"])
+        schema["items"] = _ensure_additional_properties_false(schema["items"])
+
+    for combiner in ("allOf", "anyOf", "oneOf"):
+        if combiner in schema and isinstance(schema[combiner], list):
+            schema[combiner] = [
+                _ensure_additional_properties_false(item) if isinstance(item, dict) else item
+                for item in schema[combiner]
+            ]
+
+    if "not" in schema and isinstance(schema["not"], dict):
+        schema["not"] = _ensure_additional_properties_false(schema["not"])
     return schema
 
 
@@ -59,11 +81,23 @@ def _extract_text_from_jsonl(stdout: str) -> str:
             continue
         try:
             data = json.loads(line)
-            # Primary format: item.completed with text field
+            # v1 format: item.completed with direct text field
             if data.get("type") == "item.completed":
                 item = data.get("item", {})
                 if "text" in item:
                     return item["text"]
+                # v2+ format: content parts list
+                content = item.get("content")
+                if isinstance(content, list):
+                    text_parts: list[str] = []
+                    for part in content:
+                        if not isinstance(part, dict):
+                            continue
+                        part_text = part.get("text")
+                        if isinstance(part_text, str):
+                            text_parts.append(part_text)
+                    if text_parts:
+                        return "".join(text_parts)
         except (json.JSONDecodeError, KeyError):
             continue
     return ""

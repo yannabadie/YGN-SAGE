@@ -5,11 +5,13 @@ Extends the basic entity graph with:
 - Temporal ordering (insertion order preserved)
 - Ancestor/descendant queries for provenance tracking
 - Task-context generation from entity mentions
+- SQLite persistence (save/load) for cross-session survival
 
 Inspired by AMA-Bench (2602.22769) causal memory baselines.
 """
 from __future__ import annotations
 
+import sqlite3
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
@@ -40,9 +42,11 @@ class CausalMemory:
         self,
         max_entities: int = 0,
         max_context_lines: int = 50,
+        db_path: str | None = None,
     ) -> None:
         self.max_entities = max_entities
         self.max_context_lines = max_context_lines
+        self.db_path = db_path
         self._entities: dict[str, dict[str, Any]] = {}  # name -> metadata
         self._entity_order: list[str] = []  # insertion order
         self._relations: list[tuple[str, str, str]] = []
@@ -187,3 +191,100 @@ class CausalMemory:
             unique = unique[:self.max_context_lines]
 
         return "\n".join(unique)
+
+    # -- Persistence (SQLite) -----------------------------------------------
+
+    def save(self) -> None:
+        """Persist causal memory to SQLite.
+
+        Stores entities (with insertion order), semantic relations, and
+        causal edges.  The database is overwritten on each save (snapshot
+        semantics, same pattern as :class:`SemanticMemory`).
+        """
+        if not self.db_path:
+            return
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS causal_entities "
+                "(name TEXT PRIMARY KEY, sort_order INTEGER)"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS causal_relations "
+                "(subj TEXT, pred TEXT, obj TEXT, "
+                "PRIMARY KEY (subj, pred, obj))"
+            )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS causal_edges "
+                "(source TEXT, target TEXT, cause_type TEXT, "
+                "PRIMARY KEY (source, target, cause_type))"
+            )
+            # Snapshot: clear and rewrite
+            conn.execute("DELETE FROM causal_entities")
+            conn.execute("DELETE FROM causal_relations")
+            conn.execute("DELETE FROM causal_edges")
+            # Entities — preserve insertion order
+            conn.executemany(
+                "INSERT OR IGNORE INTO causal_entities VALUES (?, ?)",
+                [(name, idx) for idx, name in enumerate(self._entity_order)],
+            )
+            # Semantic relations
+            conn.executemany(
+                "INSERT OR IGNORE INTO causal_relations VALUES (?, ?, ?)",
+                self._relations,
+            )
+            # Causal edges
+            conn.executemany(
+                "INSERT OR IGNORE INTO causal_edges VALUES (?, ?, ?)",
+                [
+                    (e.source, e.target, e.cause_type)
+                    for e in self._causal_edges
+                ],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def load(self) -> None:
+        """Load causal memory from SQLite.
+
+        Rebuilds in-memory data structures (entities, relations, causal
+        edges) from a previously saved database.  No-op if *db_path* is
+        ``None`` or the file does not exist yet.
+        """
+        if not self.db_path:
+            return
+        import os
+
+        if not os.path.exists(self.db_path):
+            return
+        conn = sqlite3.connect(self.db_path)
+        try:
+            # Check which tables exist
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "causal_entities" not in tables:
+                return
+            # Entities (ordered by sort_order)
+            for (name,) in conn.execute(
+                "SELECT name FROM causal_entities ORDER BY sort_order"
+            ):
+                self.add_entity(name)
+            # Semantic relations
+            if "causal_relations" in tables:
+                for subj, pred, obj in conn.execute(
+                    "SELECT subj, pred, obj FROM causal_relations"
+                ):
+                    self.add_relation(subj, pred, obj)
+            # Causal edges
+            if "causal_edges" in tables:
+                for source, target, cause_type in conn.execute(
+                    "SELECT source, target, cause_type FROM causal_edges"
+                ):
+                    self.add_causal_edge(source, target, cause_type=cause_type)
+        finally:
+            conn.close()

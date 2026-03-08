@@ -85,6 +85,7 @@ if not hasattr(_mock_core, "WorkingMemory"):
 
 
 import asyncio
+import threading
 import time
 
 import pytest
@@ -277,6 +278,48 @@ async def test_multiple_streams():
 
     assert len(collected_a) == 2
     assert len(collected_b) == 2
+
+
+@pytest.mark.asyncio
+async def test_stream_threaded_emit_safe_in_debug_loop():
+    """Threaded emit() must remain safe when stream() queue has waiting getters."""
+    bus = EventBus()
+    collected = []
+    done = asyncio.Event()
+
+    async def consumer():
+        async for event in bus.stream():
+            collected.append(event)
+            done.set()
+            break
+
+    task = asyncio.create_task(consumer())
+    await asyncio.sleep(0.05)
+
+    loop = asyncio.get_running_loop()
+    prev_debug = loop.get_debug()
+    loop.set_debug(True)
+    try:
+        errors = []
+
+        def emitter():
+            try:
+                bus.emit(_make_event("THINK", step=99))
+            except Exception as e:
+                errors.append(e)
+
+        t = threading.Thread(target=emitter)
+        t.start()
+        t.join()
+
+        await asyncio.wait_for(done.wait(), timeout=2.0)
+        await asyncio.wait_for(task, timeout=2.0)
+    finally:
+        loop.set_debug(prev_debug)
+
+    assert errors == []
+    assert len(collected) == 1
+    assert collected[0].step == 99
 
 
 # ---------------------------------------------------------------------------

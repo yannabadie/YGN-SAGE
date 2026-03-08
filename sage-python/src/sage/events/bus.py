@@ -13,6 +13,7 @@ import logging
 import threading
 import uuid
 from collections import deque
+from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable
 
 from sage.agent_loop import AgentEvent
@@ -20,6 +21,14 @@ from sage.agent_loop import AgentEvent
 log = logging.getLogger(__name__)
 
 DEFAULT_MAX_BUFFER = 5000
+
+
+@dataclass(frozen=True)
+class _AsyncConsumer:
+    """Async stream consumer state bound to an owning event loop."""
+
+    queue: asyncio.Queue[AgentEvent]
+    loop: asyncio.AbstractEventLoop
 
 
 class EventBus:
@@ -35,7 +44,15 @@ class EventBus:
         self._buffer: deque[AgentEvent] = deque(maxlen=max_buffer)
         self._lock = threading.Lock()
         self._subscribers: dict[str, Callable[[AgentEvent], Any]] = {}
-        self._async_queues: list[asyncio.Queue[AgentEvent]] = []
+        self._async_consumers: list[_AsyncConsumer] = []
+
+    @staticmethod
+    def _enqueue_async_event(q: asyncio.Queue[AgentEvent], event: AgentEvent) -> None:
+        """Enqueue one event into an async consumer queue."""
+        try:
+            q.put_nowait(event)
+        except asyncio.QueueFull:
+            log.warning("EventBus: async queue full, dropping event")
 
     # ------------------------------------------------------------------
     # Emit
@@ -48,7 +65,7 @@ class EventBus:
         with self._lock:
             self._buffer.append(event)
             subscribers = list(self._subscribers.values())
-            queues = list(self._async_queues)
+            consumers = list(self._async_consumers)
 
         # Dispatch outside the lock to avoid holding it during callbacks
         for cb in subscribers:
@@ -58,11 +75,28 @@ class EventBus:
                 log.exception("EventBus subscriber error")
 
         # Fan-out to async stream consumers
-        for q in queues:
+        stale_consumers: list[_AsyncConsumer] = []
+        for consumer in consumers:
             try:
-                q.put_nowait(event)
-            except asyncio.QueueFull:
-                log.warning("EventBus: async queue full, dropping event")
+                # Queue/Future internals are loop-thread-affine.
+                # Schedule queue.put_nowait() through the owning loop so
+                # emit() remains safe when called from arbitrary producer threads.
+                consumer.loop.call_soon_threadsafe(
+                    self._enqueue_async_event,
+                    consumer.queue,
+                    event,
+                )
+            except RuntimeError:
+                # Event loop may already be closed; prune stale consumer.
+                stale_consumers.append(consumer)
+
+        if stale_consumers:
+            with self._lock:
+                for consumer in stale_consumers:
+                    try:
+                        self._async_consumers.remove(consumer)
+                    except ValueError:
+                        pass
 
     # ------------------------------------------------------------------
     # Subscribe / Unsubscribe
@@ -89,8 +123,9 @@ class EventBus:
         The caller is responsible for breaking out of the loop when done.
         """
         q: asyncio.Queue[AgentEvent] = asyncio.Queue()
+        consumer = _AsyncConsumer(q, asyncio.get_running_loop())
         with self._lock:
-            self._async_queues.append(q)
+            self._async_consumers.append(consumer)
         try:
             while True:
                 event = await q.get()
@@ -98,7 +133,7 @@ class EventBus:
         finally:
             with self._lock:
                 try:
-                    self._async_queues.remove(q)
+                    self._async_consumers.remove(consumer)
                 except ValueError:
                     pass
 
@@ -109,7 +144,7 @@ class EventBus:
         """Clear all buffered events and async queues."""
         with self._lock:
             self._buffer.clear()
-            self._async_queues.clear()
+            self._async_consumers.clear()
 
     # ------------------------------------------------------------------
     # Query

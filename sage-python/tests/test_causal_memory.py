@@ -1,6 +1,9 @@
 """Tests for Causal Memory — entity-relation graph with causal edges."""
 from __future__ import annotations
 
+import os
+import tempfile
+
 import pytest
 from sage.memory.causal import CausalMemory, CausalEdge
 
@@ -122,3 +125,112 @@ def test_get_causal_ancestors():
     assert "B" in ancestors
     assert "A" in ancestors
     assert "C" not in ancestors
+
+
+# ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+
+def test_causal_memory_save_load_entities_and_edges():
+    """Round-trip: entities, relations, and causal edges survive save/load."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cm = CausalMemory(db_path=db_path)
+        cm.add_entity("A")
+        cm.add_entity("B")
+        cm.add_entity("C")
+        cm.add_relation("A", "related_to", "B")
+        cm.add_causal_edge("A", "B", cause_type="caused")
+        cm.add_causal_edge("B", "C", cause_type="enabled")
+        cm.save()
+
+        cm2 = CausalMemory(db_path=db_path)
+        cm2.load()
+        assert cm2.has_entity("A")
+        assert cm2.has_entity("B")
+        assert cm2.has_entity("C")
+        assert cm2.entity_count() == 3
+        # Semantic relations restored
+        rels = cm2.get_relations("A")
+        assert ("A", "related_to", "B") in rels
+        # Causal chain restored
+        chain = cm2.get_causal_chain("A")
+        assert chain == ["A", "B", "C"]
+    finally:
+        os.unlink(db_path)
+
+
+def test_causal_memory_save_load_preserves_temporal_order():
+    """Insertion order must survive a save/load round-trip."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cm = CausalMemory(db_path=db_path)
+        cm.add_entity("First")
+        cm.add_entity("Second")
+        cm.add_entity("Third")
+        cm.save()
+
+        cm2 = CausalMemory(db_path=db_path)
+        cm2.load()
+        assert cm2.temporal_order() == ["First", "Second", "Third"]
+    finally:
+        os.unlink(db_path)
+
+
+def test_causal_memory_no_db_path_noop():
+    """save/load should be no-ops when db_path is None."""
+    cm = CausalMemory()
+    cm.add_entity("X")
+    cm.save()  # Should not raise
+    cm.load()  # Should not raise
+    assert cm.has_entity("X")
+
+
+def test_causal_memory_load_nonexistent_file():
+    """load() with a path to a non-existent file should be a no-op."""
+    cm = CausalMemory(db_path="/tmp/does_not_exist_causal_test.db")
+    cm.load()  # Should not raise
+    assert cm.entity_count() == 0
+
+
+def test_causal_memory_load_empty_db():
+    """load() on an empty SQLite file (no tables) should be a no-op."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        # Create an empty SQLite database (no tables)
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.close()
+
+        cm = CausalMemory(db_path=db_path)
+        cm.load()  # Should not raise
+        assert cm.entity_count() == 0
+    finally:
+        os.unlink(db_path)
+
+
+def test_causal_memory_save_overwrites_previous():
+    """A second save should overwrite, not accumulate."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cm = CausalMemory(db_path=db_path)
+        cm.add_entity("A")
+        cm.add_entity("B")
+        cm.save()
+
+        # Mutate and save again (A removed, D added)
+        cm2 = CausalMemory(db_path=db_path)
+        cm2.add_entity("D")
+        cm2.save()
+
+        cm3 = CausalMemory(db_path=db_path)
+        cm3.load()
+        assert cm3.has_entity("D")
+        assert not cm3.has_entity("A")  # Overwritten, not accumulated
+        assert cm3.entity_count() == 1
+    finally:
+        os.unlink(db_path)
