@@ -5,8 +5,8 @@ Routes tasks to three tiers based on heuristic or LLM-based complexity assessmen
   S2 (algorithmic): Gemini Flash/Pro, empirical validation (~$0.0015/1K).
   S3 (formal): Codex/Reasoner, Z3 PRM formal verification (~$0.03/1K).
 
-Uses Gemini 2.5 Flash Lite for LLM-based task assessment.
-Falls back to heuristic if GOOGLE_API_KEY is not set.
+Supports injected LLM provider for vendor-agnostic assessment.
+Falls back to Google Gemini if GOOGLE_API_KEY is set, then to heuristic.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import os
 import re
 from collections import deque
 from dataclasses import dataclass
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +91,7 @@ class ComplexityRouter:
         s3_uncertainty_floor: float = 0.6,
         brake_window: int = 3,
         brake_entropy_threshold: float = 0.15,
+        llm_provider: Any = None,
     ):
         self.s1_complexity_ceil = s1_complexity_ceil
         self.s1_uncertainty_ceil = s1_uncertainty_ceil
@@ -99,6 +101,7 @@ class ComplexityRouter:
         self.brake_entropy_threshold = brake_entropy_threshold
         self._entropy_history: deque[float] = deque(maxlen=10)
         self._llm_available: bool | None = None
+        self._llm_provider = llm_provider
 
     def route(self, profile: CognitiveProfile) -> RoutingDecision:
         """Decide which cognitive system to engage (S1/S2/S3)."""
@@ -140,11 +143,14 @@ class ComplexityRouter:
         return all(e < self.brake_entropy_threshold for e in recent)
 
     async def assess_complexity_async(self, task: str) -> CognitiveProfile:
-        """LLM-based task assessment via Gemini Flash Lite.
+        """LLM-based task assessment. Uses injected provider if available,
+        else tries Google Gemini, else falls back to heuristic."""
+        if self._llm_provider is not None:
+            try:
+                return await self._assess_via_provider(task)
+            except Exception as e:
+                log.warning("LLM routing via provider failed (%s), falling back", e)
 
-        Cost: ~$0.0005 per call. Latency: <1s.
-        Falls back to heuristic if Google API key is missing.
-        """
         if self._llm_available is None:
             self._llm_available = bool(os.environ.get("GOOGLE_API_KEY"))
 
@@ -152,7 +158,7 @@ class ComplexityRouter:
             try:
                 return await self._assess_via_llm(task)
             except Exception as e:
-                log.warning(f"LLM routing failed ({e}), falling back to heuristic")
+                log.warning("LLM routing failed (%s), falling back to heuristic", e)
 
         return self._assess_heuristic(task)
 
@@ -161,8 +167,30 @@ class ComplexityRouter:
         # Sync callers get heuristic; async callers get LLM
         return self._assess_heuristic(task)
 
+    async def _assess_via_provider(self, task: str) -> CognitiveProfile:
+        """Assess complexity using the injected LLM provider."""
+        from sage.llm.base import Message, Role, LLMConfig
+        import json
+
+        prompt = _ROUTING_PROMPT.format(task=task[:2000])
+        response = await self._llm_provider.generate(
+            messages=[Message(role=Role.USER, content=prompt)],
+            config=LLMConfig(provider="auto", model="auto", temperature=0.0, max_tokens=256),
+        )
+        data = json.loads(response.content)
+        profile = CognitiveProfile(
+            complexity=max(0.0, min(1.0, float(data.get("complexity", 0.5)))),
+            uncertainty=max(0.0, min(1.0, float(data.get("uncertainty", 0.3)))),
+            tool_required=bool(data.get("tool_required", False)),
+            reasoning=str(data.get("reasoning", "")),
+        )
+        log.info("Provider routing: c=%.2f u=%.2f tool=%s — %s",
+                 profile.complexity, profile.uncertainty,
+                 profile.tool_required, profile.reasoning)
+        return profile
+
     async def _assess_via_llm(self, task: str) -> CognitiveProfile:
-        """Call Gemini Flash Lite with structured JSON output."""
+        """Call Gemini Flash Lite with structured JSON output (legacy fallback)."""
         from google import genai
         from google.genai import types
 

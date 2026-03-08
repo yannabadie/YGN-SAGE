@@ -180,7 +180,7 @@ def boot_agent_system(
     # Components
     tool_registry = ToolRegistry()
     agent_pool = AgentPool()
-    metacognition = ComplexityRouter()
+    metacognition = ComplexityRouter(llm_provider=provider if not use_mock_llm else None)
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider)
