@@ -14,7 +14,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `.github/workflows/ci.yml` - CI pipeline (Rust + Python sage + Python discover)
 
 ### Key Python Modules (sage-python/src/sage/)
-- `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline into `AgentSystem`
+- `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline into `AgentSystem`. Auto-discovers models via registry.refresh(), populates CapabilityMatrix, logs per-provider summary
 - `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `agents/sequential.py` - SequentialAgent: chain agents in series
@@ -31,19 +31,22 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
-- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55)
+- `orchestrator.py` - CognitiveOrchestrator: primary routing engine with cascade fallback (FrugalGPT: 3 attempts across providers), ModelAgent class
+- `providers/openai_compat.py` - OpenAI-compatible provider with per-provider quirk dispatch (DeepSeek, Kimi, Grok, MiniMax, OpenAI)
+- `providers/capabilities.py` - Provider capability registry: auto-populated at boot from discovered providers, 7 known provider capability sets
+- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
-- `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase
+- `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase. Supports provider injection (no vendor lock-in), falls back to GoogleProvider if none injected
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
 - `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 384-dim) for S-MMU semantic edges. `_ensure_ort_dylib_path()` auto-discovers onnxruntime DLL from pip package.
 - `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
-- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), implements `KnowledgeStore` protocol, auto-configured with DEFAULT_STORE
+- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), implements `KnowledgeStore` protocol, auto-configured with DEFAULT_STORE. Configurable model via SAGE_EXOCORTEX_MODEL env var
 - `memory/relevance_gate.py` - CRAG-style keyword overlap gate: scores context vs task, threshold=0.3, blocks irrelevant memory injection
 - `memory/rag_backend.py` - `KnowledgeStore` protocol: pluggable RAG backend interface (search/ingest/store_name)
 - `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering + SQLite persistence (optional `db_path`)
@@ -82,7 +85,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (781 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (846 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -222,6 +225,7 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Python 3.12+ (SDK, agents)
 - OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
 - Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
+- 7 LLM providers: Google, OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi, Codex CLI — auto-discovered at boot, cascade fallback (FrugalGPT)
 - FastAPI + WebSocket + EventBus (dashboard)
 - Z3 Solver 4.16 (formal verification, S3)
 - aiosqlite (episodic + semantic memory persistence)
