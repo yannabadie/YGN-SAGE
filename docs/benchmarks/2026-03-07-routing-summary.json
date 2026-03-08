@@ -1,0 +1,9 @@
+{
+  "benchmark": "routing_accuracy",
+  "model": "heuristic",
+  "git_sha": "bcb777167544",
+  "total": 30,
+  "passed": 30,
+  "pass_rate": 1.0,
+  "avg_latency_ms": 0.0
+}
