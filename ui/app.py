@@ -12,6 +12,7 @@ import os
 import shutil
 import sys
 import time
+import uuid
 from dataclasses import asdict
 from pathlib import Path
 
@@ -92,11 +93,18 @@ logger = logging.getLogger("ygn-sage.dashboard")
 # ---------------------------------------------------------------------------
 # Global state — wrapped in a class to avoid bare module-level mutables
 # ---------------------------------------------------------------------------
+_TASK_QUEUE_MAX = 10
+
+
 class DashboardState:
     def __init__(self):
         self.event_bus = EventBus()
         self.system = None  # lazily booted AgentSystem
         self.agent_task: asyncio.Task | None = None
+        # Task queue: replaces single-slot 409 rejection
+        self.task_queue: asyncio.Queue = asyncio.Queue(maxsize=_TASK_QUEUE_MAX)
+        self.task_history: dict[str, dict] = {}  # task_id -> {status, task, result, ...}
+        self._queue_worker: asyncio.Task | None = None
 
 _state = DashboardState()
 
@@ -242,12 +250,13 @@ async def get_state():
         "latency_ms": round(last_latency, 1),
         "total_events": len(events),
         "agent_status": "running" if (_state.agent_task and not _state.agent_task.done()) else "idle",
+        "queue_depth": _state.task_queue.qsize(),
     })
 
 
 @app.post("/api/task", dependencies=[Depends(verify_token)])
 async def submit_task(request: Request):
-    """Accept a new task and run it through the AgentSystem in background."""
+    """Accept a new task, queue it, and return a task_id for tracking."""
     body = await request.json()
     task = body.get("task", "")
     if not isinstance(task, str) or len(task) > 10_000:
@@ -256,49 +265,154 @@ async def submit_task(request: Request):
             status_code=400,
         )
 
-    if _state.agent_task and not _state.agent_task.done():
+    if _state.task_queue.full():
         return JSONResponse(
-            {"error": "An agent is already running. Stop it first."},
-            status_code=409,
+            {"error": f"Task queue full (max {_TASK_QUEUE_MAX}). Try again later."},
+            status_code=429,
         )
 
-    async def _run_agent(task_text: str) -> None:
+    task_id = str(uuid.uuid4())[:8]
+    task_info = {
+        "task_id": task_id,
+        "task": task[:200],  # store truncated preview
+        "status": "queued",
+        "result": None,
+        "queued_at": time.time(),
+        "started_at": None,
+        "finished_at": None,
+    }
+    _state.task_history[task_id] = task_info
+    await _state.task_queue.put({"task_id": task_id, "task_text": task})
+
+    # Ensure the queue worker is running
+    _ensure_queue_worker()
+
+    queue_depth = _state.task_queue.qsize()
+    return JSONResponse({
+        "status": "queued",
+        "task_id": task_id,
+        "queue_depth": queue_depth,
+    })
+
+
+def _ensure_queue_worker() -> None:
+    """Start the background queue worker if not already running."""
+    if _state._queue_worker is None or _state._queue_worker.done():
+        _state._queue_worker = asyncio.create_task(_process_task_queue())
+
+
+async def _process_task_queue() -> None:
+    """Background worker: pull tasks from queue and run them sequentially."""
+    while True:
+        item = await _state.task_queue.get()
+        task_id = item["task_id"]
+        task_text = item["task_text"]
+
+        # Update status to running
+        if task_id in _state.task_history:
+            _state.task_history[task_id]["status"] = "running"
+            _state.task_history[task_id]["started_at"] = time.time()
+
         try:
             _boot_system()
+            _state.agent_task = asyncio.current_task()
             result = await _state.system.run(task_text)
-            logger.info("Agent finished: %s", result[:200] if result else "(empty)")
+            logger.info("Agent finished [%s]: %s", task_id, result[:200] if result else "(empty)")
+            if task_id in _state.task_history:
+                _state.task_history[task_id]["status"] = "done"
+                _state.task_history[task_id]["result"] = result[:2000] if result else ""
+                _state.task_history[task_id]["finished_at"] = time.time()
         except asyncio.CancelledError:
-            logger.info("Agent task cancelled")
+            logger.info("Agent task cancelled [%s]", task_id)
+            if task_id in _state.task_history:
+                _state.task_history[task_id]["status"] = "cancelled"
+                _state.task_history[task_id]["finished_at"] = time.time()
+            # Drain remaining queued tasks as cancelled
+            while not _state.task_queue.empty():
+                try:
+                    dropped = _state.task_queue.get_nowait()
+                    dropped_id = dropped["task_id"]
+                    if dropped_id in _state.task_history:
+                        _state.task_history[dropped_id]["status"] = "cancelled"
+                        _state.task_history[dropped_id]["finished_at"] = time.time()
+                    _state.task_queue.task_done()
+                except asyncio.QueueEmpty:
+                    break
+            _state.task_queue.task_done()
+            _state.agent_task = None
+            return  # Exit the worker on cancel
         except Exception:
-            logger.exception("Agent run failed")
-            # Emit error event so the dashboard knows
+            logger.exception("Agent run failed [%s]", task_id)
             _state.event_bus.emit(AgentEvent(
                 type="ERROR",
                 step=0,
                 timestamp=time.time(),
-                meta={"error": "Agent run failed"},
+                meta={"error": f"Agent run failed [{task_id}]"},
             ))
+            if task_id in _state.task_history:
+                _state.task_history[task_id]["status"] = "error"
+                _state.task_history[task_id]["finished_at"] = time.time()
 
-    _state.agent_task = asyncio.create_task(_run_agent(task))
-    return JSONResponse({"status": "started"})
+        _state.agent_task = None
+        _state.task_queue.task_done()
+
+
+@app.get("/api/tasks", dependencies=[Depends(verify_token)])
+async def list_tasks():
+    """Return task queue status and history."""
+    # Trim history to last 50 entries to avoid unbounded growth
+    if len(_state.task_history) > 50:
+        sorted_ids = sorted(
+            _state.task_history,
+            key=lambda tid: _state.task_history[tid].get("queued_at", 0),
+        )
+        for old_id in sorted_ids[:-50]:
+            del _state.task_history[old_id]
+
+    return JSONResponse({
+        "queue_depth": _state.task_queue.qsize(),
+        "queue_max": _TASK_QUEUE_MAX,
+        "tasks": list(_state.task_history.values()),
+    })
 
 
 @app.post("/api/stop", dependencies=[Depends(verify_token)])
 async def stop_agent():
-    """Cancel the currently running agent task."""
-    if _state.agent_task and not _state.agent_task.done():
-        _state.agent_task.cancel()
+    """Cancel the queue worker (stops current task and drains queue)."""
+    if _state._queue_worker and not _state._queue_worker.done():
+        _state._queue_worker.cancel()
+        # Give worker a moment to clean up
+        try:
+            await asyncio.wait_for(asyncio.shield(_state._queue_worker), timeout=1.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+    _state._queue_worker = None
     _state.agent_task = None
     return JSONResponse({"status": "stopped"})
 
 
 @app.post("/api/reset", dependencies=[Depends(verify_token)])
 async def reset_state():
-    """Clear event bus buffer and reset system reference."""
-    if _state.agent_task and not _state.agent_task.done():
-        _state.agent_task.cancel()
+    """Clear event bus buffer, drain task queue, and reset system reference."""
+    # Cancel queue worker (drains queue internally)
+    if _state._queue_worker and not _state._queue_worker.done():
+        _state._queue_worker.cancel()
+        try:
+            await asyncio.wait_for(asyncio.shield(_state._queue_worker), timeout=1.0)
+        except (asyncio.CancelledError, asyncio.TimeoutError, Exception):
+            pass
+    _state._queue_worker = None
     _state.agent_task = None
 
+    # Drain any remaining items from queue
+    while not _state.task_queue.empty():
+        try:
+            _state.task_queue.get_nowait()
+            _state.task_queue.task_done()
+        except asyncio.QueueEmpty:
+            break
+
+    _state.task_history.clear()
     _state.event_bus.clear()
 
     _state.system = None
