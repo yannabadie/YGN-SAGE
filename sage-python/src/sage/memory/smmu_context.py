@@ -31,10 +31,18 @@ logger = logging.getLogger(__name__)
 _DEFAULT_WEIGHTS: tuple[float, float, float, float] = (1.0, 2.0, 1.5, 1.0)
 
 
+def _filter_by_score(
+    hits: list[tuple[int, float]], min_score: float = 0.5
+) -> list[tuple[int, float]]:
+    """Remove chunks below minimum relevance score."""
+    return [(cid, s) for cid, s in hits if s >= min_score]
+
+
 def retrieve_smmu_context(
     working_memory: WorkingMemory,
     max_hops: int = 2,
-    top_k: int = 5,
+    top_k: int = 3,
+    min_score: float = 0.5,
     weights: tuple[float, float, float, float] | None = None,
 ) -> str:
     """Retrieve relevant S-MMU chunks and format as a context string.
@@ -42,7 +50,8 @@ def retrieve_smmu_context(
     Args:
         working_memory: The agent's working memory (wraps Rust S-MMU).
         max_hops: Maximum graph traversal depth for relevance scoring.
-        top_k: Number of top-scoring chunks to include.
+        top_k: Number of top-scoring chunks to include (default 3, was 5).
+        min_score: Minimum relevance score threshold (default 0.5).
         weights: Optional (temporal, semantic, causal, entity) weight tuple.
                  Defaults to (1.0, 2.0, 1.5, 1.0) — boosting semantic + causal.
 
@@ -66,8 +75,11 @@ def retrieve_smmu_context(
         if not hits:
             return ""
 
-        # Take top_k results (already sorted descending by score from Rust)
+        # Filter by minimum score and take top_k
+        hits = _filter_by_score(hits, min_score)
         top_hits = hits[:top_k]
+        if not top_hits:
+            return ""
 
         # Format as injectable context with chunk summaries when available
         lines = ["[S-MMU Graph Memory] Relevant context from compacted memory:"]

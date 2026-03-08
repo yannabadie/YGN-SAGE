@@ -112,11 +112,17 @@ def test_agent_loop_has_exocortex_attribute():
 # ---------------------------------------------------------------------------
 # Test 2: _think() source contains file_search_store_names
 # ---------------------------------------------------------------------------
-def test_think_passes_file_search_store_names():
-    """The _think phase (generate call) must include file_search_store_names kwarg."""
+def test_exocortex_passive_grounding_removed():
+    """ExoCortex passive grounding removed per Sprint 3 evidence.
+
+    Passive injection was removed because it adds latency to every task.
+    ExoCortex is now available as an active tool (search_exocortex) only.
+    The exocortex attribute still exists for tool registration.
+    """
     source = inspect.getsource(AgentLoop)
-    assert "file_search_store_names" in source, (
-        "AgentLoop source must contain 'file_search_store_names' in the generate() call"
+    # Passive injection comment should be present (documenting the decision)
+    assert "passive grounding removed" in source.lower() or "active tool" in source.lower(), (
+        "AgentLoop should document that passive ExoCortex grounding was removed"
     )
 
 
@@ -151,12 +157,15 @@ def test_search_exocortex_tool_exists():
 
 
 # ---------------------------------------------------------------------------
-# Test 5: agent loop passes store names to generate when exocortex is set
+# Test 5: passive grounding removed — generate() must NOT receive store names
 # ---------------------------------------------------------------------------
 @pytest.mark.asyncio
-async def test_agent_loop_passes_store_names_to_generate():
-    """When loop.exocortex is set with a store_name, generate() receives
-    file_search_store_names=[store_name]."""
+async def test_agent_loop_does_not_pass_store_names_to_generate():
+    """Passive ExoCortex grounding removed per Sprint 3 evidence.
+
+    Even when loop.exocortex is set, generate() must NOT receive
+    file_search_store_names (active tool only, no passive injection).
+    """
     config = AgentConfig(
         name="test",
         llm=LLMConfig(provider="mock", model="mock"),
@@ -185,14 +194,11 @@ async def test_agent_loop_passes_store_names_to_generate():
 
     await loop.run("What is MARL?")
 
-    # Verify generate was called with file_search_store_names
+    # Verify generate was called but WITHOUT file_search_store_names
     assert len(generate_calls) > 0, "generate() must have been called at least once"
-    last_call = generate_calls[0]
-    assert "file_search_store_names" in last_call, (
-        "generate() must be called with file_search_store_names kwarg"
-    )
-    assert last_call["file_search_store_names"] == ["stores/test-store-123"], (
-        "file_search_store_names must contain the exocortex store name"
+    first_call = generate_calls[0]
+    assert "file_search_store_names" not in first_call or not first_call.get("file_search_store_names"), (
+        "generate() must NOT receive file_search_store_names (passive grounding removed)"
     )
 
 

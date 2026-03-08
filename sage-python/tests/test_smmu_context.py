@@ -73,14 +73,14 @@ class TestRetrieveWithMockedChunks:
         wm.retrieve_relevant_chunks.return_value = [
             (2, 0.95),
             (1, 0.72),
-            (0, 0.45),
+            (0, 0.55),
         ]
         # No summary available — falls back to bare chunk ID format
         wm.get_chunk_summary.return_value = ""
 
         result = retrieve_smmu_context(wm, top_k=5)
         assert "S-MMU" in result or "graph" in result.lower() or "chunk" in result.lower()
-        # Should mention chunk IDs in fallback format
+        # Should mention chunk IDs in fallback format (all scores >= 0.5 min_score)
         assert "Chunk 2" in result
         assert "Chunk 1" in result
         assert "Chunk 0" in result
@@ -157,7 +157,7 @@ class TestRetrieveWithChunkSummaries:
         wm.retrieve_relevant_chunks.return_value = [
             (2, 0.90),
             (1, 0.60),
-            (0, 0.40),
+            (0, 0.52),
         ]
         wm.get_chunk_summary.side_effect = lambda cid: {
             2: "Discussed memory architecture",
@@ -168,7 +168,7 @@ class TestRetrieveWithChunkSummaries:
         result = retrieve_smmu_context(wm, top_k=5)
         assert "[0.90] Discussed memory architecture" in result
         assert "Chunk 1 (relevance: 0.60)" in result
-        assert "Chunk 0 (relevance: 0.40)" in result
+        assert "Chunk 0 (relevance: 0.52)" in result
 
     def test_fallback_when_get_chunk_summary_missing(self):
         """If working memory has no get_chunk_summary, fall back gracefully."""
@@ -197,3 +197,39 @@ class TestRetrieveWithChunkSummaries:
 
         result = retrieve_smmu_context(wm, top_k=5)
         assert result.startswith("[S-MMU Graph Memory]")
+
+
+class TestMinScoreFiltering:
+    """Task 8: min_score=0.5 filters low-relevance chunks."""
+
+    def test_chunks_below_min_score_filtered(self):
+        """Chunks with score < 0.5 should be excluded."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 4
+        wm.retrieve_relevant_chunks.return_value = [
+            (3, 0.95),
+            (2, 0.60),
+            (1, 0.49),  # below threshold
+            (0, 0.30),  # below threshold
+        ]
+        wm.get_chunk_summary.return_value = ""
+
+        result = retrieve_smmu_context(wm, top_k=5)
+        lines = [l for l in result.strip().split("\n") if l.strip().startswith("-")]
+        assert len(lines) == 2  # Only 0.95 and 0.60
+
+    def test_all_chunks_below_min_score_returns_empty(self):
+        """If all chunks score below min_score, return empty string."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 2
+        wm.retrieve_relevant_chunks.return_value = [
+            (1, 0.40),
+            (0, 0.20),
+        ]
+
+        result = retrieve_smmu_context(wm)
+        assert result == ""

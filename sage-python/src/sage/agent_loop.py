@@ -109,6 +109,20 @@ S2_MAX_RETRIES_BEFORE_ESCALATION = 2
 S2_AVR_MAX_ITERATIONS = 3  # Max Act-Verify-Refine iterations per code block
 
 
+def _is_code_task(task: str) -> bool:
+    """Detect if task is primarily about code generation.
+
+    Used to skip episodic/semantic memory injection for code tasks,
+    which Sprint 3 evidence shows degrades accuracy (30% vs 50% no-memory).
+    """
+    lower = task.lower()
+    return bool(re.search(
+        r'\b(?:implement|code|function|class|method|algorithm|program|'
+        r'write\s+(?:a\s+)?(?:function|method|class|code|script)|'
+        r'python|javascript|rust|java|def\s|return\s)\b', lower
+    ))
+
+
 def _shell_quote(code: str) -> str:
     """Shell-quote a code string for subprocess execution."""
     return "'" + code.replace("'", "'\\''") + "'"
@@ -336,17 +350,13 @@ class AgentLoop:
             self._emit(LoopPhase.THINK, model=model_name)
 
             t0 = time.perf_counter()
-            # ExoCortex passive grounding
-            exo_store_names = None
-            if self.exocortex and hasattr(self.exocortex, "store_name") and self.exocortex.store_name:
-                if hasattr(self.exocortex, "is_available") and self.exocortex.is_available:
-                    exo_store_names = [self.exocortex.store_name]
+            # ExoCortex: passive grounding removed per Sprint 3 evidence.
+            # Use active tool (search_exocortex) instead — agent invokes when needed.
 
             response = await self._llm.generate(
                 messages=messages,
                 tools=tool_defs if tool_defs else None,
                 config=self.config.llm,
-                file_search_store_names=exo_store_names,
             )
             inference_ms = (time.perf_counter() - t0) * 1000
             self.total_inference_time += inference_ms / 1000
