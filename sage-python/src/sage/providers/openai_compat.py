@@ -16,6 +16,12 @@ log = logging.getLogger(__name__)
 class OpenAICompatProvider:
     """Provider for any OpenAI-compatible API (OpenAI, xAI, DeepSeek, MiniMax, Kimi).
 
+    Handles provider-specific quirks:
+    - DeepSeek: strip temperature for reasoner; merge reasoning_content
+    - Grok (xAI): merge reasoning_content into <think> tags
+    - Kimi: clamp temperature to [0, 1]
+    - MiniMax: <think> tags already in content body (preserve as-is)
+
     Parameters
     ----------
     api_key:
@@ -24,14 +30,37 @@ class OpenAICompatProvider:
         API base URL (e.g. ``https://api.x.ai/v1``).  Defaults to OpenAI.
     model_id:
         Default model ID to use if none is specified in the config.
+    provider_name:
+        Explicit provider name for quirk dispatch (e.g. ``"deepseek"``).
+        Auto-inferred from *base_url* when empty.
     """
 
     name = "openai-compat"
 
-    def __init__(self, api_key: str, base_url: str | None = None, model_id: str = ""):
+    def __init__(self, api_key: str, base_url: str | None = None,
+                 model_id: str = "", provider_name: str = ""):
         self.api_key = api_key
         self.base_url = base_url
         self.model_id = model_id
+        self.provider_name = provider_name or self._infer_provider(base_url)
+
+    @staticmethod
+    def _infer_provider(base_url: str | None) -> str:
+        """Infer provider name from base_url for quirk dispatch."""
+        if not base_url:
+            return "openai"
+        url = base_url.lower()
+        if "deepseek" in url:
+            return "deepseek"
+        if "x.ai" in url:
+            return "xai"
+        if "minimaxi" in url:
+            return "minimax"
+        if "moonshot" in url:
+            return "kimi"
+        if "openai.com" in url:
+            return "openai"
+        return ""
 
     def capabilities(self) -> dict[str, bool]:
         """Declare what this provider actually supports."""
@@ -43,6 +72,35 @@ class OpenAICompatProvider:
             "system_prompt": True,
             "streaming": False,
         }
+
+    def _apply_quirks(self, params: dict[str, Any]) -> dict[str, Any]:
+        """Apply provider-specific parameter quirks before API call."""
+        model = params.get("model", self.model_id).lower()
+
+        if self.provider_name == "deepseek":
+            if "reasoner" in model and "temperature" in params:
+                del params["temperature"]
+        elif self.provider_name == "kimi":
+            if "temperature" in params:
+                params["temperature"] = min(params["temperature"], 1.0)
+
+        return params
+
+    def _extract_reasoning(self, message: Any) -> tuple[str, str]:
+        """Extract reasoning content and main content from response.
+
+        Returns (reasoning, content) tuple.
+        """
+        content = message.content or ""
+        raw = getattr(message, "reasoning_content", None)
+        reasoning = raw if isinstance(raw, str) else ""
+        return reasoning, content
+
+    def _format_response(self, reasoning: str, content: str) -> str:
+        """Merge reasoning into content with <think> tags if present."""
+        if reasoning:
+            return f"<think>{reasoning}</think>\n{content}"
+        return content
 
     def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
         """Convert Message objects to OpenAI dict format."""
@@ -82,17 +140,20 @@ class OpenAICompatProvider:
 
         oai_messages = self._convert_messages(messages)
 
+        params: dict[str, Any] = {
+            "model": model,
+            "messages": oai_messages,
+            "max_tokens": config.max_tokens if config and config.max_tokens else 4096,
+            "temperature": config.temperature if config else 0.3,
+        }
+        params = self._apply_quirks(params)
+
         try:
-            response = await client.chat.completions.create(
-                model=model,
-                messages=oai_messages,  # type: ignore[arg-type]
-                max_tokens=config.max_tokens if config and config.max_tokens else 4096,
-                temperature=config.temperature if config else 0.3,
-            )
-
-            content = response.choices[0].message.content or ""
-            return LLMResponse(content=content, model=model)
-
+            response = await client.chat.completions.create(**params)  # type: ignore[arg-type]
+            msg = response.choices[0].message
+            reasoning, content = self._extract_reasoning(msg)
+            final_content = self._format_response(reasoning, content)
+            return LLMResponse(content=final_content, model=model)
         except Exception as e:
-            log.error("OpenAI-compat API error (%s): %s", self.base_url, e)
+            log.error("OpenAI-compat API error (%s/%s): %s", self.provider_name, self.base_url, e)
             raise
