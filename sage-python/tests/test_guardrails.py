@@ -7,7 +7,7 @@ import json
 import pytest
 
 from sage.guardrails.base import GuardrailResult, Guardrail, GuardrailPipeline
-from sage.guardrails.builtin import CostGuardrail, SchemaGuardrail
+from sage.guardrails.builtin import CostGuardrail, OutputGuardrail, SchemaGuardrail
 
 
 # ---------------------------------------------------------------------------
@@ -141,3 +141,89 @@ async def test_pipeline_any_blocked_false_when_all_pass():
     ])
     results = await pipeline.check_all(context={"cost_usd": 0.01})
     assert pipeline.any_blocked(results) is False
+
+
+# ---------------------------------------------------------------------------
+# Test 11: OutputGuardrail passes non-empty text
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_output_guardrail_passes_nonempty_text():
+    """OutputGuardrail passes when output is a non-empty string."""
+    guard = OutputGuardrail(min_length=1)
+    result = await guard.check(output="Hello, this is a valid response.")
+    assert result.passed is True
+
+
+# ---------------------------------------------------------------------------
+# Test 12: OutputGuardrail warns on empty output
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_output_guardrail_blocks_empty():
+    """OutputGuardrail warns when min_length > 0 and output is empty."""
+    guard = OutputGuardrail(min_length=1)
+    result = await guard.check(output="")
+    assert result.passed is False
+    assert "too short" in result.reason.lower()
+    assert result.severity == "warn"
+
+
+# ---------------------------------------------------------------------------
+# Test 13: OutputGuardrail warns on refusal pattern
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_output_guardrail_blocks_refusal():
+    """OutputGuardrail warns when output matches a refusal pattern."""
+    guard = OutputGuardrail(min_length=1)
+    result = await guard.check(output="I'm sorry, I cannot help with that.")
+    assert result.passed is False
+    assert "refusal" in result.reason.lower()
+    assert result.severity == "warn"
+
+
+# ---------------------------------------------------------------------------
+# Test 14: OutputGuardrail passes long text within max_length
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_output_guardrail_passes_long_text():
+    """OutputGuardrail passes text that is long but within max_length."""
+    guard = OutputGuardrail(min_length=1, max_length=100_000)
+    long_text = "A" * 50_000
+    result = await guard.check(output=long_text)
+    assert result.passed is True
+
+
+# ---------------------------------------------------------------------------
+# Test 15: OutputGuardrail warns on text exceeding max_length
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_output_guardrail_blocks_too_long():
+    """OutputGuardrail warns when output exceeds max_length."""
+    guard = OutputGuardrail(min_length=1, max_length=100)
+    result = await guard.check(output="X" * 200)
+    assert result.passed is False
+    assert "too long" in result.reason.lower()
+    assert result.severity == "warn"
+
+
+# ---------------------------------------------------------------------------
+# Test 16: SchemaGuardrail still works correctly for JSON validation
+# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_schema_guardrail_still_works_for_json():
+    """SchemaGuardrail continues to work correctly for JSON output validation."""
+    guard = SchemaGuardrail(required_fields=["result", "status"])
+    # Valid JSON with all required fields
+    valid = json.dumps({"result": "ok", "status": "done"})
+    result = await guard.check(output=valid)
+    assert result.passed is True
+
+    # Missing field
+    partial = json.dumps({"result": "ok"})
+    result = await guard.check(output=partial)
+    assert result.passed is False
+    assert result.severity == "block"
+
+    # Invalid JSON
+    result = await guard.check(output="not json")
+    assert result.passed is False
+    assert result.severity == "block"
