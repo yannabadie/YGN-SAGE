@@ -32,8 +32,10 @@ _COST_PER_1K = {
 }
 
 
-def _estimate_tokens(text: str) -> int:
-    """Rough token estimate (~4 chars per token)."""
+def _estimate_tokens(text: str, actual_count: int | None = None) -> int:
+    """Return actual token count from API if available, else rough estimate."""
+    if actual_count is not None and actual_count > 0:
+        return actual_count
     return max(1, len(text) // 4)
 
 
@@ -294,8 +296,10 @@ class AgentLoop:
 
             content = response.content or ""
 
-            # Cost estimation
-            tokens = _estimate_tokens(content)
+            # Cost estimation — prefer actual token counts from API usage_metadata
+            usage = getattr(response, "usage", None) or {}
+            actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
+            tokens = _estimate_tokens(content, actual_count=actual_total)
             cost_per_k = _COST_PER_1K.get(model_name, 0.001)
             step_cost = (tokens / 1000) * cost_per_k
             self.total_cost_usd += step_cost

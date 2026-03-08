@@ -120,12 +120,29 @@ class GoogleProvider:
         # Extract grounding metadata if available
         grounding_metadata = getattr(response, 'grounding_metadata', None)
         content_text = response.text or ""
-        
+
         if grounding_metadata and getattr(grounding_metadata, 'search_entry_point', None):
             logger.info("Grounding sources detected in response.")
+
+        # Extract usage_metadata for accurate token counting
+        usage_dict = None
+        usage_meta = getattr(response, "usage_metadata", None)
+        if usage_meta:
+            usage_dict = {
+                "prompt_tokens": getattr(usage_meta, "prompt_token_count", 0) or 0,
+                "completion_tokens": getattr(usage_meta, "candidates_token_count", 0) or 0,
+                "total_tokens": getattr(usage_meta, "total_token_count", 0) or 0,
+            }
+            logger.debug(
+                "Token usage: prompt=%d, completion=%d, total=%d",
+                usage_dict["prompt_tokens"],
+                usage_dict["completion_tokens"],
+                usage_dict["total_tokens"],
+            )
 
         return LLMResponse(
             content=content_text,
             tool_calls=[],
+            usage=usage_dict,
             model=model,
         )
