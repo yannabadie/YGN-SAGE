@@ -82,7 +82,10 @@ if not hasattr(_mock_core, "WorkingMemory"):
     _mock_core.WorkingMemory = _MockWorkingMemory
 
 import pytest
-from sage.agent_loop import AgentLoop, LoopEvent, LoopPhase, AgentEvent
+from sage.agent_loop import (
+    AgentLoop, LoopEvent, LoopPhase, AgentEvent,
+    _validate_code_syntax, _is_stagnating, _strip_markdown_fences,
+)
 
 def test_loop_phases_exist():
     assert LoopPhase.PERCEIVE.value == "perceive"
@@ -325,3 +328,153 @@ async def test_events_contain_schema_version():
     for evt in agent_events:
         assert isinstance(evt, AgentEvent), f"Expected AgentEvent, got {type(evt)}"
         assert evt.schema_version == 1
+
+
+# ──────────────────────────────────────────────────────────
+# Tests for S2 AVR: _validate_code_syntax, _is_stagnating,
+# _strip_markdown_fences, _avr_error_history
+# ──────────────────────────────────────────────────────────
+
+class TestStripMarkdownFences:
+    def test_strips_python_fence(self):
+        code = "```python\nprint('hello')\n```"
+        assert _strip_markdown_fences(code) == "print('hello')"
+
+    def test_strips_bare_fence(self):
+        code = "```\nx = 1\n```"
+        assert _strip_markdown_fences(code) == "x = 1"
+
+    def test_no_fences_passthrough(self):
+        code = "x = 1"
+        assert _strip_markdown_fences(code) == "x = 1"
+
+    def test_empty_string(self):
+        assert _strip_markdown_fences("") == ""
+
+    def test_only_fences(self):
+        assert _strip_markdown_fences("```\n```") == ""
+
+
+class TestValidateCodeSyntax:
+    def test_valid_code(self):
+        ok, err = _validate_code_syntax("x = 1 + 2\nprint(x)")
+        assert ok is True
+        assert err == ""
+
+    def test_syntax_error(self):
+        ok, err = _validate_code_syntax("def foo(\n")
+        assert ok is False
+        assert "SyntaxError" in err
+
+    def test_syntax_error_includes_line_number(self):
+        ok, err = _validate_code_syntax("x = 1\ny = \n")
+        assert ok is False
+        assert "(line" in err
+
+    def test_empty_code(self):
+        ok, err = _validate_code_syntax("")
+        assert ok is False
+        assert "empty code block" in err
+
+    def test_strips_fences_before_parsing(self):
+        code = "```python\nprint('hello')\n```"
+        ok, err = _validate_code_syntax(code)
+        assert ok is True
+
+    def test_multiline_valid(self):
+        code = "def add(a, b):\n    return a + b\n\nresult = add(1, 2)"
+        ok, err = _validate_code_syntax(code)
+        assert ok is True
+
+    def test_indentation_error(self):
+        code = "def foo():\nreturn 1"
+        ok, err = _validate_code_syntax(code)
+        assert ok is False
+        assert "SyntaxError" in err
+
+
+class TestIsStagnating:
+    def test_not_stagnating_with_few_errors(self):
+        assert _is_stagnating(["err1", "err1"], window=3) is False
+
+    def test_stagnating_with_identical_errors(self):
+        assert _is_stagnating(["err1", "err1", "err1"], window=3) is True
+
+    def test_not_stagnating_with_different_errors(self):
+        assert _is_stagnating(["err1", "err2", "err3"], window=3) is False
+
+    def test_empty_history(self):
+        assert _is_stagnating([], window=3) is False
+
+    def test_stagnating_looks_at_last_window(self):
+        # Only the last 3 matter
+        assert _is_stagnating(["err1", "err2", "err2", "err2"], window=3) is True
+
+    def test_custom_window(self):
+        assert _is_stagnating(["err1", "err1"], window=2) is True
+        assert _is_stagnating(["err1", "err1"], window=3) is False
+
+
+class TestAvrErrorHistoryAttribute:
+    def test_avr_error_history_exists(self):
+        from sage.agent import AgentConfig
+        from sage.llm.base import LLMConfig
+        from sage.llm.mock import MockProvider
+
+        config = AgentConfig(
+            name="test", llm=LLMConfig(provider="mock", model="mock"),
+            max_steps=3, validation_level=2,
+        )
+        loop = AgentLoop(config=config, llm_provider=MockProvider())
+        assert hasattr(loop, '_avr_error_history')
+        assert loop._avr_error_history == []
+
+    @pytest.mark.asyncio
+    async def test_avr_error_history_reset_on_run(self):
+        from sage.agent import AgentConfig
+        from sage.llm.base import LLMConfig
+        from sage.llm.mock import MockProvider
+
+        config = AgentConfig(
+            name="test", llm=LLMConfig(provider="mock", model="mock"),
+            max_steps=3, validation_level=1,
+        )
+        loop = AgentLoop(
+            config=config,
+            llm_provider=MockProvider(responses=["Done."]),
+        )
+        loop._avr_error_history = ["old_error"]
+        await loop.run("test task")
+        assert loop._avr_error_history == []
+
+
+@pytest.mark.asyncio
+async def test_s2_avr_syntax_check_catches_bad_code():
+    """S2 AVR must catch syntax errors BEFORE sandbox execution."""
+    from sage.agent import AgentConfig
+    from sage.llm.base import LLMConfig
+    from sage.llm.mock import MockProvider
+
+    # First response has syntax error, second has no code (plain text answer)
+    responses = [
+        "Here is the code:\n```python\ndef foo(\n```\n",  # syntax error
+        "The answer is 42.",  # no code blocks, falls through to final answer
+    ]
+    provider = MockProvider(responses=responses)
+    events = []
+    config = AgentConfig(
+        name="test-avr", llm=LLMConfig(provider="mock", model="mock"),
+        max_steps=5, validation_level=2,
+    )
+    loop = AgentLoop(config=config, llm_provider=provider, on_event=events.append)
+    # Set sandbox_manager to a truthy value so AVR enters the code block path
+    # but syntax check should catch the error before sandbox execution
+    loop.sandbox_manager = True  # truthy but won't be called because syntax fails first
+
+    await loop.run("write a function")
+
+    # Should have recorded syntax error in history
+    act_events = [e for e in events if e.type == "ACT" and e.validation == "s2_avr_fail"]
+    assert len(act_events) >= 1
+    assert act_events[0].meta.get("error_type") == "syntax"
+    assert "SyntaxError" in act_events[0].meta.get("error", "")

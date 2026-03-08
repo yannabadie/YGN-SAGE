@@ -1,6 +1,7 @@
 """Structured agent runtime: perceive -> think -> act -> learn."""
 from __future__ import annotations
 
+import ast
 import math
 import re
 import time
@@ -56,6 +57,51 @@ def _extract_code_blocks(text: str) -> list[str]:
     """Extract fenced code blocks from markdown-style LLM output."""
     pattern = r"```(?:\w+)?\n(.*?)```"
     return re.findall(pattern, text, re.DOTALL)
+
+
+def _strip_markdown_fences(code: str) -> str:
+    """Strip leading/trailing markdown fences from a code string."""
+    code = code.strip()
+    # Remove leading ```python or ``` line
+    if code.startswith("```"):
+        first_newline = code.find("\n")
+        if first_newline != -1:
+            code = code[first_newline + 1:]
+        else:
+            code = code[3:]
+    # Remove trailing ```
+    if code.rstrip().endswith("```"):
+        code = code.rstrip()[:-3]
+    return code.strip()
+
+
+def _validate_code_syntax(code: str) -> tuple[bool, str]:
+    """Validate Python code syntax via ast.parse().
+
+    Returns (is_valid, error_message). If valid, error_message is empty.
+    The error_message uses SLF (Single-Line Feedback) format for concise LLM guidance.
+    """
+    cleaned = _strip_markdown_fences(code)
+    if not cleaned:
+        return False, "SyntaxError: empty code block after stripping markdown fences"
+    try:
+        ast.parse(cleaned, mode="exec")
+        return True, ""
+    except SyntaxError as e:
+        line_info = f" (line {e.lineno})" if e.lineno else ""
+        return False, f"SyntaxError{line_info}: {e.msg}"
+
+
+def _is_stagnating(error_history: list[str], window: int = 3) -> bool:
+    """Detect stagnation: True if the last `window` errors are identical.
+
+    This means the LLM is producing the same broken code repeatedly
+    and retrying will not help — escalation is needed.
+    """
+    if len(error_history) < window:
+        return False
+    recent = error_history[-window:]
+    return all(e == recent[0] for e in recent)
 
 
 S2_MAX_RETRIES_BEFORE_ESCALATION = 2
@@ -137,6 +183,7 @@ class AgentLoop:
         self._max_s3_retries = 2
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = 3
+        self._avr_error_history: list[str] = []
 
         # Circuit breakers for best-effort subsystems
         self._cb_semantic = CircuitBreaker("semantic_memory")
@@ -171,6 +218,7 @@ class AgentLoop:
         self.total_cost_usd = 0.0
         self._s3_retries = 0
         self._s2_avr_retries = 0
+        self._avr_error_history = []
         self.step_count = 0
 
         # === PERCEIVE: Gather context ===
@@ -358,57 +406,104 @@ class AgentLoop:
                 code_blocks = _extract_code_blocks(content)
 
                 if code_blocks and self.sandbox_manager:
-                    # Runtime guardrail: check code before execution
-                    if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip():
-                        try:
-                            runtime_results = await self.guardrail_pipeline.check_all(
-                                input=code_blocks[-1],
-                                context={"step": self.step_count, "phase": "runtime"}
-                            )
-                            for r in runtime_results:
-                                self._emit(LoopPhase.ACT,
-                                           guardrail="runtime",
-                                           guardrail_passed=r.passed,
-                                           guardrail_reason=r.reason)
-                            self._cb_runtime_guard.record_success()
-                        except Exception as e:
-                            self._cb_runtime_guard.record_failure(e)
+                    raw_code = code_blocks[-1]
+                    cleaned_code = _strip_markdown_fences(raw_code)
 
-                    # AVR loop: execute, verify, refine
-                    sandbox = await self.sandbox_manager.create()
-                    try:
-                        result = await sandbox.execute(
-                            f"python3 -c {_shell_quote(code_blocks[-1])}"
-                        )
-                        if result.exit_code != 0:
-                            self._s2_avr_retries += 1
+                    # Step 1: Syntax check via ast.parse() BEFORE sandbox execution
+                    syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
+
+                    if not syntax_ok:
+                        # Syntax error — no point running sandbox
+                        self._s2_avr_retries += 1
+                        self._avr_error_history.append(syntax_err)
+
+                        # Stagnation detection: if last 3 errors identical, skip to escalation
+                        if _is_stagnating(self._avr_error_history, window=3):
+                            log.warning("S2 AVR stagnation detected (same error %d times), forcing escalation.",
+                                        len(self._avr_error_history))
+                            self._s2_avr_retries = self._max_s2_avr_retries + 1
+                        else:
                             budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
                             self._emit(LoopPhase.ACT,
                                        validation="s2_avr_fail",
                                        avr_iteration=self._s2_avr_retries,
                                        avr_budget_left=budget_left,
-                                       stderr=result.stderr[:200])
+                                       error_type="syntax",
+                                       error=syntax_err)
                             if self._s2_avr_retries <= self._max_s2_avr_retries:
-                                log.info("S2 AVR fail (iteration %d/%d), refining.",
-                                         self._s2_avr_retries, self._max_s2_avr_retries)
+                                log.info("S2 AVR syntax fail (iteration %d/%d): %s",
+                                         self._s2_avr_retries, self._max_s2_avr_retries, syntax_err)
                                 messages.append(Message(
                                     role=Role.USER,
                                     content=(
-                                        f"SYSTEM [AVR iteration {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
-                                        f"Code execution failed (exit code {result.exit_code}).\n"
-                                        f"stderr:\n{result.stderr[:500]}\n\n"
-                                        f"Refine your code to fix this error. "
-                                        f"You have {budget_left} attempt(s) remaining before escalation to formal verification."
+                                        f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
+                                        f"{syntax_err}. "
+                                        f"Return ONLY corrected Python code in a ```python fenced block."
                                     ),
                                 ))
                                 continue
-                        else:
-                            self._emit(LoopPhase.ACT,
-                                       validation="s2_avr_pass",
-                                       stdout=result.stdout[:200])
-                            self._s2_avr_retries = 0
-                    finally:
-                        await self.sandbox_manager.destroy(sandbox.id)
+                    else:
+                        # Syntax is valid — proceed to runtime guardrail + sandbox
+                        if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip():
+                            try:
+                                runtime_results = await self.guardrail_pipeline.check_all(
+                                    input=cleaned_code,
+                                    context={"step": self.step_count, "phase": "runtime"}
+                                )
+                                for r in runtime_results:
+                                    self._emit(LoopPhase.ACT,
+                                               guardrail="runtime",
+                                               guardrail_passed=r.passed,
+                                               guardrail_reason=r.reason)
+                                self._cb_runtime_guard.record_success()
+                            except Exception as e:
+                                self._cb_runtime_guard.record_failure(e)
+
+                        # AVR loop: execute, verify, refine
+                        sandbox = await self.sandbox_manager.create()
+                        try:
+                            result = await sandbox.execute(
+                                f"python3 -c {_shell_quote(cleaned_code)}"
+                            )
+                            if result.exit_code != 0:
+                                stderr_line = (result.stderr or "").strip().split("\n")[-1][:200]
+                                runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_line}"
+                                self._s2_avr_retries += 1
+                                self._avr_error_history.append(runtime_err)
+
+                                # Stagnation detection
+                                if _is_stagnating(self._avr_error_history, window=3):
+                                    log.warning("S2 AVR stagnation detected (same runtime error %d times), forcing escalation.",
+                                                len(self._avr_error_history))
+                                    self._s2_avr_retries = self._max_s2_avr_retries + 1
+                                else:
+                                    budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
+                                    self._emit(LoopPhase.ACT,
+                                               validation="s2_avr_fail",
+                                               avr_iteration=self._s2_avr_retries,
+                                               avr_budget_left=budget_left,
+                                               error_type="runtime",
+                                               error=runtime_err)
+                                    if self._s2_avr_retries <= self._max_s2_avr_retries:
+                                        log.info("S2 AVR runtime fail (iteration %d/%d): %s",
+                                                 self._s2_avr_retries, self._max_s2_avr_retries, runtime_err)
+                                        messages.append(Message(
+                                            role=Role.USER,
+                                            content=(
+                                                f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
+                                                f"{runtime_err}. "
+                                                f"Return ONLY corrected Python code in a ```python fenced block."
+                                            ),
+                                        ))
+                                        continue
+                            else:
+                                self._emit(LoopPhase.ACT,
+                                           validation="s2_avr_pass",
+                                           stdout=result.stdout[:200])
+                                self._s2_avr_retries = 0
+                                self._avr_error_history.clear()
+                        finally:
+                            await self.sandbox_manager.destroy(sandbox.id)
 
                 elif not code_blocks and self.step_count == 1:
                     # Fallback: CoT enforcement if no code to validate
@@ -428,6 +523,7 @@ class AgentLoop:
                     log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
                     self.config.validation_level = 3
                     self._s3_retries = 0
+                    self._avr_error_history.clear()
                     self._emit(LoopPhase.THINK, escalation="s2_to_s3",
                                reason="AVR budget exhausted")
                     messages.append(Message(
