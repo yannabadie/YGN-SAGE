@@ -24,7 +24,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 **Evidence:** tested-unit (self-consistency only)
 
 **How it works:**
-- `ComplexityRouter._assess_heuristic()` (renamed from MetacognitiveController) uses keyword matching (regex on task text) to compute complexity/uncertainty scores
+- `ComplexityRouter._assess_heuristic()` (renamed from MetacognitiveController) uses word-boundary regex matching (`\b`) on task text to compute complexity/uncertainty scores
 - Thresholds: S1 (simple) ≤0.35, S3 (formal) >0.7, S2 (code) = everything else
 - **Speculative zone** (0.35-0.55 complexity): detected and logged; designed for future parallel S1+S2 execution but currently routes normally
 - LLM-based assessment available async only (requires `GOOGLE_API_KEY`); sync callers always get heuristic
@@ -32,7 +32,7 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 **Known limitations:**
 - The 30/30 routing benchmark is a **self-consistency test** — labels were calibrated against the heuristic, so 100% agreement proves nothing about downstream task quality
 - No evidence that S1/S2/S3 routing improves outcomes vs. always using the best model
-- Heuristic is keyword-based, not semantic
+- Heuristic is word-boundary regex-based, not semantic
 - Speculative parallel execution not yet implemented (zone detection only)
 
 ### 2. CognitiveOrchestrator
@@ -75,14 +75,14 @@ This document describes what YGN-SAGE **actually implements**, with honest evide
 | 0 — Working (STM) | Rust Arrow / Python mock | tested-unit | None (session) |
 | 1 — Episodic | SQLite | tested-unit | SQLite (`~/.sage/episodic.db`) |
 | 2 — Semantic | In-memory graph + SQLite | tested-unit | SQLite (`~/.sage/semantic.db`) |
-| 3 — ExoCortex | Google File Search API | tested-integration | Vendor-managed |
+| 3 — ExoCortex | Google File Search API (via KnowledgeStore protocol) | tested-integration | Vendor-managed |
 
 **S-MMU Integration (wired March 2026):**
 
 The S-MMU (Structured Memory Management Unit) in `sage-core` is now wired end-to-end:
 
 - **Write path:** `MemoryCompressor.step()` compresses events, then calls `compact_to_arrow_with_meta()` with extracted keywords, embedding vector (via `Embedder`), and dynamic summary. This populates the S-MMU graph with temporal, semantic, and entity edges.
-- **Read path:** During THINK phase, `agent_loop.py` calls `retrieve_smmu_context()` (from `memory/smmu_context.py`) which queries the S-MMU graph (BFS multi-path traversal with configurable weights) and injects the top-k results as a SYSTEM message before the LLM call.
+- **Read path:** During THINK phase, `agent_loop.py` calls `retrieve_smmu_context()` (from `memory/smmu_context.py`) which queries the S-MMU graph (BFS multi-path traversal with configurable weights) and injects the top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message before the LLM call.
 - **Embedder:** `memory/embedder.py` auto-selects from 3-tier fallback: RustEmbedder (ONNX, native) > sentence-transformers (Python) > hash. All 3 tiers working on Windows. Wired into `MemoryCompressor` at boot time.
 
 **ONNX Embedder (3-tier fallback):**
@@ -106,9 +106,9 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 - **Tier 0 falls back to Python mock** when Rust `sage_core` extension is not available. ~~No warning~~ Now emits `warnings.warn()` (audit fix A3).
 - ~~Tier 1 defaults to volatile in-memory~~ **Tier 1 now defaults to SQLite** at `~/.sage/episodic.db` (audit fix A4)
 - ~~**Tier 2 is in-memory only**~~ **Tier 2 now persists to SQLite** at `~/.sage/semantic.db` (audit fix T8). Auto-loads at boot, auto-saves after each run
-- **Tier 3 is vendor-locked** to Google GenAI File Search API
+- **Tier 3** uses `KnowledgeStore` protocol (`memory/rag_backend.py`); ExoCortex implements it, but only the Google backend exists today
 - **No evidence** that 4-tier memory improves outcomes vs. long-context baseline
-- **S-MMU read path** returns chunk IDs and scores only (not chunk content) — content retrieval requires Rust extension
+- **S-MMU read path** returns chunk summaries (via `get_chunk_summary()`) and scores — full content retrieval requires Rust extension
 
 ### 5. Guardrails
 
@@ -116,7 +116,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **Evidence:** tested-unit
 
-**Built-in guardrails:** CostGuardrail (USD limits), SchemaGuardrail (required fields), Z3 bounds checking
+**Built-in guardrails:** CostGuardrail (USD limits), OutputGuardrail (empty/too-long/refusal detection, default pipeline), SchemaGuardrail (required fields, for JSON mode), Z3 bounds checking
 
 **Known limitations:**
 - Z3 guardrails check arithmetic bounds on generated code, not semantic correctness
@@ -127,7 +127,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (695 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response + 17 audit-fixes)
+**Evidence:** tested-unit + tested-integration (730 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response + 17 audit-fixes + Sprint 1-2 tests)
 
 **Components:**
 | Component | Module | Tests |
@@ -150,7 +150,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | Phase 3 Integration | `tests/test_integration_phase3.py` | 6 E2E tests |
 
 **Key capabilities:**
-- **Z3 SMT proofs:** Capability coverage, budget feasibility, type compatibility, provider assignment (genuine SAT) — checked at plan time
+- **Z3 SMT proofs:** Provider assignment uses genuine Z3 SAT (`z3.PbEq` for exactly-one constraint). Capability coverage, budget feasibility, and type compatibility use Python-native checks (~2000x faster than Z3 for these trivial set/arithmetic operations) — all checked at plan time
 - **Info-flow enforcement:** No HIGH→LOW data flow (lattice-based security labels)
 - **CEGAR repair:** Counterexample-guided retry → escalate → abort with hard fences
 - **DyTopo routing:** Capability-constrained model selection with adaptive feedback
@@ -161,7 +161,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 **Known limitations:**
 - Z3 verifies structural properties, not semantic correctness of LLM outputs
 - DynamicRouter uses static quality scores, not live profiling
-- CausalMemory is in-memory only (no persistence). Bounded via `max_entities` + `max_context_lines`
+- CausalMemory now has SQLite persistence (`save()`/`load()`, optional `db_path`). Bounded via `max_entities` + `max_context_lines`
 - Planner only supports static plan specs (no LLM-driven planning yet)
 
 ### 7. Dashboard
@@ -170,10 +170,16 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **Evidence:** tested-unit (auth + CORS added in Phase 0)
 
-**Security (Phase 0 fix):**
-- HTTPBearer auth with `SAGE_DASHBOARD_TOKEN` env var (no token = open dev mode)
+**Security (Phase 0 fix + Sprint 1):**
+- WebSocket uses First-Message auth pattern: client sends `{action:"auth", token:"..."}` as first message (was query param)
+- HTTPBearer auth for REST API with `SAGE_DASHBOARD_TOKEN` env var (no token = open dev mode)
 - CORS middleware configured for localhost:8000 and :3000
 - `EventBus.clear()` public API replaces private field access
+
+**Task Queue (Sprint 2):**
+- Replaces single-task slot (was 409 on concurrent requests)
+- `asyncio.Queue(maxsize=10)` with background worker
+- New `/api/tasks` endpoint for queue status and task history
 
 **Known limitations:**
 - ~~Global mutable state~~ Encapsulated in `DashboardState` class (audit fix C13), but still single-process
@@ -267,7 +273,7 @@ Audit response (March 2026) fixed: sandbox blocks host by default, working memor
 ## Audit Response (March 2026)
 
 Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
-16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Current test count: **695 passed, 1 skipped**.
+16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Two additional sprints addressed the cross-verification findings. Current test count: **730 passed, 1 skipped**.
 
 ### Phase A — Kill Unsafe Defaults (Tasks 1-5)
 | Task | Finding | Fix |
@@ -304,19 +310,29 @@ Cross-verification report: `docs/audits/2026-03-07-audit-verification.md` (78 as
 **Sprint 1 — Stop the Bleeding:**
 | Task | Finding | Fix |
 |------|---------|-----|
-| T1 | `eval()` RCE in kg_rlvr.py | Safe AST evaluator + fail-closed (not fail-open) |
+| T1 | `eval()` RCE in kg_rlvr.py | Safe AST evaluator + fail-closed (not fail-open). z3_topology.py silent catch now logs WARNING |
 | T2 | eBPF claimed in README but not built | Removed stale eBPF/solana_rbpf claims |
-| T3 | Test badge count stale (413) | Updated to actual count (695) |
+| T3 | Test badge count stale (413) | Updated to actual count (730) |
 | T4 | tool→user role rewrite silent | Extracted `_convert_messages()` + WARNING log |
 | T5 | snap_bpf.c claimed as SOTA | Marked as STUB — NOT FUNCTIONAL |
+| T6-a | SchemaGuardrail wrong for text output | Added `OutputGuardrail` (empty/too-long/refusal detection) as default. SchemaGuardrail kept for JSON mode |
+| T6-b | Routing used substring matching | Word-boundary regex (`\b`) for heuristic keyword matching |
+| T6-c | Cost estimation inaccurate | Uses API `usage_metadata` (Google `prompt_token_count`/`candidates_token_count`) when available, falls back to `len(text)//4` |
+| T6-d | S-MMU returned bare chunk IDs | Returns chunk summaries via `get_chunk_summary()` |
+| T6-e | WebSocket auth via query param | First-Message pattern: `{action:"auth", token:"..."}` as first WS message |
+| T6-f | CausalMemory lost on restart | SQLite persistence (`save()`/`load()`, optional `db_path`) |
+| T6-g | sentence-transformers not in deps | Added `[embeddings]` extra in pyproject.toml |
 
 **Sprint 2 — Observability + Z3:**
 | Task | Finding | Fix |
 |------|---------|-----|
 | T6 | 6 silent `except: pass` in agent_loop | CircuitBreaker per subsystem (max_failures=3, opens with WARNING) |
-| T7 | Z3 used for trivial set checks | Added genuine Z3 SAT: `verify_provider_assignment()` (capability + exclusion constraints) |
+| T7 | Z3 used for trivial set checks | 3 of 4 checks now Python-native (~2000x faster). Only `verify_provider_assignment()` uses Z3 SAT (`z3.PbEq` exactly-one constraint) |
 | T8 | SemanticMemory lost on restart | SQLite persistence (`~/.sage/semantic.db`), auto-load at boot, auto-save after run |
 | T9 | Benchmarks not reproducible | Truth-pack: BenchmarkManifest + per-task JSONL traces |
+| T10-a | ExoCortex vendor-locked | `KnowledgeStore` protocol in `memory/rag_backend.py`. ExoCortex implements it; future backends can plug in |
+| T10-b | Dashboard single-task slot (409) | Task queue (asyncio.Queue, maxsize=10) + `/api/tasks` status endpoint |
+| T10-c | S-MMU register_chunk O(n²) | Bounded recency scan: only last 128 chunks scanned (`MAX_SEMANTIC_NEIGHBORS = 128`) |
 
 **Sprint 3 — Prove or Remove (partial):**
 | Task | Finding | Status |
@@ -327,7 +343,7 @@ Cross-verification report: `docs/audits/2026-03-07-audit-verification.md` (78 as
 | T13 | wasmtime v29 EOL | **DONE**: Upgraded to v36 LTS. cranelift excluded on Windows MSVC (stack overflow); `execute_precompiled()` for Windows, `execute()` with JIT on Linux CI |
 
 ### Deferred to Phase E
-- **ExoCortex vendor lock** (Google File Search API): requires multi-backend abstraction
+- **ExoCortex vendor lock** (Google File Search API): `KnowledgeStore` protocol added (Sprint 2), but only the Google backend exists today. Needs at least one alternative backend implementation.
 - **Evolution engine validation**: needs controlled experiment with ablation
 - **Cost-performance frontier benchmark**: requires API keys for multi-tier comparison
 

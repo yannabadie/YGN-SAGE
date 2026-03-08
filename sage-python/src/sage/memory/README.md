@@ -40,7 +40,7 @@ All 3 tiers work on Windows MSVC. All backends produce 384-dimensional vectors (
 
 ### `smmu_context.py` -- S-MMU Context Retrieval
 
-Queries the multi-view S-MMU graph (temporal, semantic, causal, entity edges) via BFS with configurable weights. Returns a formatted context string injected as a SYSTEM message during the THINK phase of `AgentLoop`. Best-effort: all failures return empty string.
+Queries the multi-view S-MMU graph (temporal, semantic, causal, entity edges) via BFS with configurable weights. Returns chunk summaries (via `get_chunk_summary()`, not bare IDs) as a formatted context string injected as a SYSTEM message during the THINK phase of `AgentLoop`. Best-effort: all failures return empty string.
 
 - **Key exports**: `retrieve_smmu_context()`
 
@@ -58,13 +58,19 @@ Cross-session persistent store backed by SQLite (`aiosqlite`). Supports CRUD + k
 
 ### `causal.py` -- CausalMemory
 
-Entity-relation graph with directed causal edges (`CausalEdge`: caused, enabled, triggered, inhibited). BFS chain traversal for ancestor/descendant provenance queries. Bounded entity and context growth with eviction. Inspired by AMA-Bench (2602.22769).
+Entity-relation graph with directed causal edges (`CausalEdge`: caused, enabled, triggered, inhibited). BFS chain traversal for ancestor/descendant provenance queries. Bounded entity and context growth with eviction. SQLite persistence via `save()`/`load()` (optional `db_path`). Inspired by AMA-Bench (2602.22769).
 
 - **Key exports**: `CausalMemory`, `CausalEdge`
 
+### `rag_backend.py` -- KnowledgeStore Protocol
+
+Pluggable RAG backend interface. Defines the `KnowledgeStore` protocol with `search(query, top_k)`, `ingest(path)`, and `store_name` methods. Any class implementing these methods is a valid backend, regardless of inheritance. ExoCortex is the first (and currently only) implementation.
+
+- **Key exports**: `KnowledgeStore`
+
 ### `remote_rag.py` -- ExoCortex (Tier 3)
 
-Persistent managed RAG via Google GenAI File Search API. Auto-configured with a default store. Provides passive grounding during `_think()` and active `search_exocortex` agent tool. 500+ research sources indexed.
+Persistent managed RAG via Google GenAI File Search API. Implements the `KnowledgeStore` protocol. Auto-configured with a default store. Provides passive grounding during `_think()` and active `search_exocortex` agent tool. 500+ research sources indexed. Future backends can plug in via the `KnowledgeStore` protocol.
 
 - **Key exports**: `ExoCortex`, `DEFAULT_STORE`
 

@@ -23,7 +23,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `agents/handoff.py` - Handoff: transfer control to specialist agent
 - `events/bus.py` - EventBus: in-proc event system (emit/subscribe/stream/query)
 - `guardrails/base.py` - GuardrailResult, Guardrail, GuardrailPipeline
-- `guardrails/builtin.py` - CostGuardrail, SchemaGuardrail
+- `guardrails/builtin.py` - CostGuardrail, OutputGuardrail (default for text), SchemaGuardrail (for JSON mode)
 - `bench/runner.py` - BenchmarkRunner, BenchReport, TaskResult
 - `bench/humaneval.py` - HumanEval benchmark (164 problems, pass@1)
 - `bench/routing.py` - Routing accuracy benchmark (30 labeled tasks)
@@ -31,7 +31,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
 - `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
-- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing + CGRS self-braking + speculative zone detection (0.35-0.55)
+- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55)
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
@@ -43,15 +43,16 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
-- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), auto-configured with DEFAULT_STORE
-- `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering
+- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), implements `KnowledgeStore` protocol, auto-configured with DEFAULT_STORE
+- `memory/rag_backend.py` - `KnowledgeStore` protocol: pluggable RAG backend interface (search/ingest/store_name)
+- `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering + SQLite persistence (optional `db_path`)
 - `memory/write_gate.py` - WriteGate: confidence-based write gating with abstention tracking
 - `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
 - `tools/exocortex_tools.py` - `search_exocortex` + `refresh_knowledge` agent tools
 - `contracts/task_node.py` - TaskNode IR: typed I/O schemas, capabilities, security labels, budgets
 - `contracts/verification.py` - VFResult, pre_check, post_check, run_verification
 - `contracts/dag.py` - TaskDAG: Kahn's topo sort, cycle detection, IO validation, ready_nodes
-- `contracts/z3_verify.py` - Z3 SMT: capability coverage, budget feasibility, type compatibility, provider assignment (genuine SAT)
+- `contracts/z3_verify.py` - Z3 SMT: provider assignment via genuine Z3 SAT (`z3.PbEq` exactly-one). capability_coverage, budget_feasibility, type_compatibility are Python-native (~2000x faster)
 - `contracts/policy.py` - PolicyVerifier: info-flow labels, budget, fan-in/fan-out limits
 - `contracts/executor.py` - DAGExecutor: topo execution with VF pre/post checks + policy gate
 - `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
@@ -70,7 +71,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
 - `ui/static/index.html` - Single-file dark-theme dashboard (Tailwind + Chart.js)
-- WebSocket `/ws` pushes all AgentEvents in real-time (replaces JSONL polling). Authenticated when token set.
+- WebSocket `/ws` pushes all AgentEvents in real-time. Uses First-Message auth pattern: client sends `{action:"auth", token:"..."}` as first message.
+- Task queue: `asyncio.Queue(maxsize=10)` replaces single-task slot. New `/api/tasks` endpoint for queue status.
 - Sections: Routing S1/S2/S3, Response, Memory 4-tier, Guardrails, Events, Benchmarks
 
 ## Development Commands
@@ -79,7 +81,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (691 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (730 passed, 1 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -150,8 +152,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
-- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k results as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
-- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`
+- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. `register_chunk()` uses bounded recency scan (last 128 chunks, `MAX_SEMANTIC_NEIGHBORS = 128`). Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
+- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Passive grounding in `_think()` + active `search_exocortex` tool.
@@ -160,7 +162,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Guardrails (3-layer)
 - **Input** (PERCEIVE): checks task before LLM call. Blocks if severity="block".
 - **Runtime** (ACT): checks code before sandbox execution. Best-effort.
-- **Output** (LEARN): checks result before return. Cost + schema validation.
+- **Output** (LEARN): checks result before return. Cost + output validation (empty/too-long/refusal).
+- Default pipeline uses `OutputGuardrail` for text output. `SchemaGuardrail` available for JSON mode.
 - Wired via `GuardrailPipeline` in boot.py. Events emitted on EventBus.
 
 ## Agent Composition
@@ -189,7 +192,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
 - S2->S3 escalation when AVR budget exhausted
 - `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + Z3
-- `z3_verify.py` includes genuine Z3 SAT: `verify_provider_assignment()` solves capability+exclusion constraints
+- `z3_verify.py`: 3 of 4 checks are Python-native (capability_coverage, budget_feasibility, type_compatibility — ~2000x faster). Only `verify_provider_assignment()` uses Z3 SAT with `z3.PbEq` exactly-one constraint (was at-least-one via `z3.Or`)
 
 ## Resilience
 - **CircuitBreaker** (`resilience.py`): per-subsystem failure tracking (max_failures=3)

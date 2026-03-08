@@ -22,8 +22,9 @@ All guardrail events are emitted on the EventBus for observability.
 
 ### `builtin.py` -- Built-in Guardrails
 
-- `CostGuardrail` -- Enforces per-task and cumulative cost budgets. Blocks execution when cost exceeds threshold.
-- `SchemaGuardrail` -- Validates LLM output against a JSON schema. Added during audit response (Task C10-C13) to catch malformed responses.
+- `CostGuardrail` -- Enforces per-task and cumulative cost budgets. Blocks execution when cost exceeds threshold. Uses API `usage_metadata` (Google Gemini `prompt_token_count`/`candidates_token_count`) when available, falls back to `len(text)//4`.
+- `OutputGuardrail` -- Warns when free-text output is empty, too long, or looks like a refusal. **Default in the pipeline** for the common case where the agent returns plain text. Replaces `SchemaGuardrail` as the default output guardrail.
+- `SchemaGuardrail` -- Validates LLM output against a JSON schema. Use this instead of `OutputGuardrail` when the agent is expected to return structured JSON with required fields.
 
 ## Wiring
 

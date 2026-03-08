@@ -30,10 +30,11 @@ Directed acyclic graph of TaskNodes with topological scheduling.
 
 ### `z3_verify.py` -- Z3 SMT Verification
 
-Formal property checking using Z3 solver (optional dependency).
+Formal property checking. Three of four checks are Python-native for speed (~2000x faster than Z3 for trivial set/arithmetic operations). Only provider assignment uses the Z3 solver (optional dependency).
 
 - **Key exports**: `ContractVerdict`, `verify_capability_coverage()`, `verify_budget_feasibility()`, `verify_type_compatibility()`, `verify_provider_assignment()`
-- Provider assignment is a genuine SAT problem: assigns providers to nodes respecting capability requirements and mutual exclusion constraints
+- `verify_capability_coverage()`, `verify_budget_feasibility()`, `verify_type_compatibility()` — Python-native set/arithmetic checks
+- `verify_provider_assignment()` — genuine Z3 SAT: assigns providers to nodes using `z3.PbEq` exactly-one constraint (was at-least-one via `z3.Or`), respecting capability requirements and mutual exclusion constraints
 
 ### `policy.py` -- PolicyVerifier
 

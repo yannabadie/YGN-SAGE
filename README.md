@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-691%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-730%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -22,12 +22,12 @@ YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive
 
 ## Features
 
-- **S1/S2/S3 cognitive routing** — heuristic complexity assessment routes tasks to appropriate model tiers
+- **S1/S2/S3 cognitive routing** — word-boundary regex heuristic routes tasks to appropriate model tiers
 - **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
-- **Composable guardrails** — cost limits, schema validation, Z3 bounds checking at input/runtime/output
+- **Composable guardrails** — cost limits, output validation, schema validation, Z3 bounds checking at input/runtime/output
 - **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
 - **Sandbox** — Wasm (wasmtime) execution sandbox (experimental)
-- **Dashboard** — built-in FastAPI + WebSocket real-time event viewer
+- **Dashboard** — built-in FastAPI + WebSocket real-time event viewer with task queue
 - **Benchmarks** — HumanEval (164 problems) + routing self-consistency test built-in
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component status and known limitations.
@@ -85,7 +85,7 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 691 passed, 1 skipped
+cd sage-python && python -m pytest tests/ -v    # 730 passed, 1 skipped
 cd sage-core && cargo test --workspace          # 7 passed (+5 ONNX feature-gated)
 cd sage-discover && python -m pytest tests/ -v  # 52 passed
 ```
@@ -100,7 +100,7 @@ YGN-SAGE/
 |       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
 |       |-- bench/       # HumanEval + Routing benchmarks
 |       |-- events/      # EventBus (central nervous system)
-|       |-- guardrails/  # Cost, Schema, Z3 formal guardrails
+|       |-- guardrails/  # Cost, Output, Schema, Z3 formal guardrails
 |       |-- llm/         # Google Gemini + Codex CLI providers
 |       |-- memory/      # 4-tier: STM, Episodic (SQLite), Semantic, ExoCortex
 |       |-- strategy/    # S1/S2/S3 metacognitive routing + CGRS self-braking
@@ -157,25 +157,26 @@ handoff = Handoff(target=debugger, description="For debugging tasks")
 ### Add Guardrails
 
 ```python
-from sage.guardrails import GuardrailPipeline, CostGuardrail, SchemaGuardrail
+from sage.guardrails import GuardrailPipeline, CostGuardrail, OutputGuardrail
 
 pipeline = GuardrailPipeline([
     CostGuardrail(max_usd=0.50),
-    SchemaGuardrail(required_fields=["answer"]),
+    OutputGuardrail(),  # Warns on empty, too-long, or refusal outputs
 ])
+# For JSON mode, use SchemaGuardrail(required_fields=["answer"]) instead
 ```
 
 ## Status (March 2026)
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **691 tests passed** (Python) + 7 Rust + 52 Discover
+- **730 tests passed** (Python) + 7 Rust + 52 Discover
 - **CI/CD**: GitHub Actions (3 parallel jobs)
-- **Dashboard**: functional, real-time via WebSocket (auth via `SAGE_DASHBOARD_TOKEN`)
+- **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)
-- **Memory**: 4 tiers, all persistent (Tier 0 Rust Arrow, Tier 1-2 SQLite, Tier 3 ExoCortex)
+- **Memory**: 4 tiers, all persistent (Tier 0 Rust Arrow, Tier 1-2 SQLite, CausalMemory SQLite, Tier 3 ExoCortex via KnowledgeStore protocol)
 - **Embeddings**: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash), all working on Windows
-- **Guardrails**: wired at 3 points (input/runtime/output), cost + schema + Z3 bounds
+- **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds
 - **Sandbox**: Wasm (wasmtime v36 LTS), host execution blocked by default
 - **Benchmarks**: HumanEval 164 built-in, routing self-consistency test
 - **Composition**: Sequential, Parallel, Loop, Handoff patterns
