@@ -22,11 +22,11 @@ raw-cpuid = "11.2"
 arrow = { version = "55.0", features = ["ffi"] }
 arrow-array = "55.0"
 pyo3-arrow = "0.10.0"
-# TODO: Upgrade to wasmtime 36 LTS (supported until Aug 2027).
-# v29 is out of security support. v36 builds fail on Windows MSVC
-# (STATUS_STACK_BUFFER_OVERRUN in cranelift v0.123 proc-macros).
-# Upgrade must be done on Linux CI. See audit fix T13.
-wasmtime = { version = "29.0", optional = true }
+# wasmtime v36 LTS (supported until Aug 2027).
+# cranelift feature EXCLUDED on Windows: causes STATUS_STACK_BUFFER_OVERRUN
+# during MSVC compilation. Use pre-compiled modules + Module::deserialize().
+# On Linux CI, add "cranelift" feature for JIT compilation.
+wasmtime = { version = "36.0", optional = true, default-features = false, features = ["runtime", "component-model", "std"] }
 # solana_rbpf removed: its build script cross-compiles for BPF target,
 # causing CI failure on Ubuntu even when optional. Re-add in Phase 2.
 # solana_rbpf = { version = "0.8.5", optional = true }
@@ -38,6 +38,9 @@ ndarray = { version = "0.16", optional = true }
 [features]
 default = []
 sandbox = ["wasmtime"]
+# On Linux CI, use sandbox + cranelift for JIT compilation.
+# On Windows, sandbox alone uses pre-compiled modules only.
+cranelift = ["wasmtime/cranelift"]
 onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
