@@ -370,6 +370,19 @@ class TestModelAgentCascade:
 
 # ── OpenAICompatProvider ─────────────────────────────────────────────────────
 
+class TestProviderNamePassthrough:
+    def test_create_provider_passes_provider_name(self):
+        """OpenAICompatProvider must receive provider_name from ModelProfile."""
+        profile = _make_profile("deepseek-reasoner", provider="deepseek")
+        agent = ModelAgent(name="ds", model=profile)
+
+        with patch("sage.providers.openai_compat.OpenAICompatProvider") as mock_cls:
+            mock_cls.return_value = MagicMock()
+            agent._create_provider_for(profile)
+            _, kwargs = mock_cls.call_args
+            assert kwargs.get("provider_name") == "deepseek"
+
+
 class TestOpenAICompatProvider:
     def test_import(self):
         from sage.providers.openai_compat import OpenAICompatProvider

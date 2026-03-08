@@ -155,6 +155,7 @@ class ModelAgent:
                 api_key=api_key,
                 base_url=cfg.get("base_url"),
                 model_id=model.id,
+                provider_name=model.provider,
             )
 
     def _create_provider(self):

@@ -59,6 +59,8 @@ class AgentSystem:
     # the orchestrator tries ModelRegistry first, falling back to the
     # legacy ModelRouter path if no models are discovered.
     registry: Any = None
+    # CapabilityMatrix: semantic capability lookup for discovered providers
+    capability_matrix: Any = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -248,6 +250,7 @@ def boot_agent_system(
     from sage.providers.registry import ModelRegistry
     registry = ModelRegistry()
     orchestrator = None
+    _cap_matrix = None
 
     if not use_mock_llm:
         from sage.orchestrator import CognitiveOrchestrator
@@ -276,6 +279,12 @@ def boot_agent_system(
         orchestrator = CognitiveOrchestrator(
             registry=registry, metacognition=metacognition, event_bus=event_bus,
         )
+
+        # Auto-populate capability matrix from discovered providers
+        from sage.providers.capabilities import CapabilityMatrix as _CapMatrix
+        _cap_matrix = _CapMatrix()
+        _discovered_providers = {p.provider for p in registry.list_available()}
+        _cap_matrix.populate_from_providers(list(_discovered_providers))
 
     # Agent loop
     loop = AgentLoop(
@@ -347,4 +356,5 @@ def boot_agent_system(
         event_bus=event_bus,
         orchestrator=orchestrator,
         registry=registry,
+        capability_matrix=_cap_matrix,
     )
