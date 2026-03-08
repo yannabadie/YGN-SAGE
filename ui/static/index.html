@@ -503,13 +503,16 @@
         }
 
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        // Pass dashboard token via query param for WebSocket auth
-        const token = localStorage.getItem('sage_token') || '';
-        const url = `${proto}//${location.host}/ws${token ? '?token=' + encodeURIComponent(token) : ''}`;
+        const url = `${proto}//${location.host}/ws`;
 
         ws = new WebSocket(url);
 
         ws.onopen = () => {
+            // First-Message auth: send token as first message (not query param)
+            const token = localStorage.getItem('sage_token') || '';
+            if (token) {
+                ws.send(JSON.stringify({action: 'auth', token: token}));
+            }
             $id('ws-dot').className = 'w-2 h-2 rounded-full bg-green-500';
             $id('ws-label').textContent = 'Connected';
             if (reconnectTimer) {

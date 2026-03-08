@@ -435,13 +435,19 @@ async def get_evolution():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
-    # Authenticate WebSocket via query param: /ws?token=xxx
-    if DASHBOARD_TOKEN:
-        token = websocket.query_params.get("token", "")
-        if token != DASHBOARD_TOKEN:
-            await websocket.close(code=4001, reason="Unauthorized")
-            return
     await websocket.accept()
+
+    # First-Message authentication: client must send auth JSON within 3s
+    if DASHBOARD_TOKEN:
+        try:
+            raw = await asyncio.wait_for(websocket.receive_text(), timeout=3.0)
+            msg = json.loads(raw)
+            if msg.get("action") != "auth" or msg.get("token") != DASHBOARD_TOKEN:
+                await websocket.close(code=4001, reason="Invalid credentials")
+                return
+        except (asyncio.TimeoutError, json.JSONDecodeError, KeyError, Exception):
+            await websocket.close(code=4001, reason="Auth timeout or invalid format")
+            return
 
     try:
         # 1. Send buffered events (initial state catch-up)
