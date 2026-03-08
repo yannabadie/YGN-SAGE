@@ -8,7 +8,7 @@
 
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Metadata stored per compacted chunk in the S-MMU.
 #[derive(Debug, Clone)]
@@ -41,6 +41,15 @@ pub struct MultiEdge {
     pub weight: f32,
 }
 
+/// Maximum number of recent chunks to compare against when building
+/// semantic and entity edges. Limits `register_chunk()` from O(n) to O(K).
+///
+/// At K=128 the cost per registration is bounded regardless of total chunk
+/// count, while still capturing the most temporally-relevant neighbors
+/// (recent chunks are most likely to be semantically related in an agent
+/// conversation).
+pub const MAX_SEMANTIC_NEIGHBORS: usize = 128;
+
 /// Multi-View S-MMU: 4 orthogonal views stored in a single DiGraph.
 ///
 /// Each edge carries a `MultiEdge` that identifies its view (temporal, semantic,
@@ -50,6 +59,8 @@ pub struct MultiEdge {
 pub struct MultiViewMMU {
     pub graph: DiGraph<ChunkMetadata, MultiEdge>,
     pub chunk_map: HashMap<usize, NodeIndex>,
+    /// Insertion-ordered ring of chunk IDs for recency-bounded scans.
+    recent_ids: VecDeque<usize>,
     next_chunk_id: usize,
 }
 
@@ -58,6 +69,7 @@ impl Default for MultiViewMMU {
         Self {
             graph: DiGraph::new(),
             chunk_map: HashMap::new(),
+            recent_ids: VecDeque::new(),
             next_chunk_id: 0,
         }
     }
@@ -119,12 +131,22 @@ impl MultiViewMMU {
         }
 
         // --- Semantic edges ---
-        // Connect to any existing chunk whose embedding has cosine similarity > 0.5.
+        // Compare against the most recent MAX_SEMANTIC_NEIGHBORS chunks only.
+        // This bounds the cost from O(n) to O(K) per registration while still
+        // capturing the most temporally-relevant neighbors (recent chunks are
+        // most likely to be semantically related in an agent conversation).
         if let Some(ref emb) = embedding {
-            for (&cid, &nidx) in &self.chunk_map {
+            let scan_count = self.recent_ids.len().min(MAX_SEMANTIC_NEIGHBORS);
+            for i in 0..scan_count {
+                // Walk backwards from the most recent entry.
+                let cid = self.recent_ids[self.recent_ids.len() - 1 - i];
                 if cid == id {
                     continue;
                 }
+                let nidx = match self.chunk_map.get(&cid) {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
                 if let Some(ref other_emb) = self.graph[nidx].embedding {
                     let sim = cosine_similarity(emb, other_emb);
                     if sim > 0.5 {
@@ -165,13 +187,20 @@ impl MultiViewMMU {
         }
 
         // --- Entity edges ---
-        // Link to chunks sharing keywords (Jaccard similarity).
+        // Compare against the most recent MAX_SEMANTIC_NEIGHBORS chunks only
+        // (same recency bound as semantic edges — O(K) instead of O(n)).
         if !keywords.is_empty() {
             let kw_set: HashSet<&str> = keywords.iter().map(|s| s.as_str()).collect();
-            for (&cid, &nidx) in &self.chunk_map {
+            let scan_count = self.recent_ids.len().min(MAX_SEMANTIC_NEIGHBORS);
+            for i in 0..scan_count {
+                let cid = self.recent_ids[self.recent_ids.len() - 1 - i];
                 if cid == id {
                     continue;
                 }
+                let nidx = match self.chunk_map.get(&cid) {
+                    Some(&idx) => idx,
+                    None => continue,
+                };
                 let other_kw = &self.graph[nidx].keywords;
                 if other_kw.is_empty() {
                     continue;
@@ -198,6 +227,9 @@ impl MultiViewMMU {
                 }
             }
         }
+
+        // Track insertion order for recency-bounded scans.
+        self.recent_ids.push_back(id);
 
         id
     }
@@ -315,5 +347,150 @@ mod tests {
         let b: HashSet<&str> = ["y"].iter().copied().collect();
         let sim = jaccard_similarity(&a, &b);
         assert!(sim.abs() < 1e-5);
+    }
+
+    /// Verify that semantic edges are still created correctly under the
+    /// recency-bounded scan (within MAX_SEMANTIC_NEIGHBORS).
+    #[test]
+    fn test_bounded_semantic_edges_within_limit() {
+        let mut smmu = MultiViewMMU::new();
+
+        // Create two chunks with identical embeddings — should get semantic edges.
+        let emb = vec![1.0, 0.0, 0.5];
+        let a = smmu.register_chunk(0, 1, "A", vec![], Some(emb.clone()), None);
+        let b = smmu.register_chunk(2, 3, "B", vec![], Some(emb.clone()), None);
+
+        // From A, B should be reachable via a semantic edge.
+        let results = smmu.retrieve_relevant(a, 1, [0.0, 1.0, 0.0, 0.0]);
+        let b_entry = results.iter().find(|(id, _)| *id == b);
+        assert!(
+            b_entry.is_some(),
+            "B should be reachable from A via semantic edge"
+        );
+        assert!(
+            (b_entry.unwrap().1 - 1.0).abs() < 1e-5,
+            "Identical embeddings should yield weight ~1.0"
+        );
+    }
+
+    /// Verify that entity edges are still created correctly under the
+    /// recency-bounded scan.
+    #[test]
+    fn test_bounded_entity_edges_within_limit() {
+        let mut smmu = MultiViewMMU::new();
+
+        let a = smmu.register_chunk(0, 1, "A", vec!["rust".into(), "memory".into()], None, None);
+        let b = smmu.register_chunk(2, 3, "B", vec!["rust".into(), "graph".into()], None, None);
+
+        // From A, B should be reachable via entity edge (shared keyword "rust").
+        let results = smmu.retrieve_relevant(a, 1, [0.0, 0.0, 0.0, 1.0]);
+        let b_entry = results.iter().find(|(id, _)| *id == b);
+        assert!(
+            b_entry.is_some(),
+            "B should be reachable from A via entity edge"
+        );
+        // Jaccard("rust","memory" vs "rust","graph") = 1/3
+        let expected_jaccard = 1.0 / 3.0;
+        assert!(
+            (b_entry.unwrap().1 - expected_jaccard).abs() < 1e-5,
+            "Entity edge weight should be Jaccard similarity"
+        );
+    }
+
+    /// Beyond MAX_SEMANTIC_NEIGHBORS, old chunks should NOT receive new
+    /// semantic/entity edges from the newly registered chunk.
+    #[test]
+    fn test_bounded_scan_skips_old_chunks() {
+        let mut smmu = MultiViewMMU::new();
+
+        // Register chunk 0 with a known embedding.
+        let emb = vec![1.0, 0.0, 0.5];
+        let first = smmu.register_chunk(0, 1, "first", vec!["shared".into()], Some(emb.clone()), None);
+
+        // Fill up MAX_SEMANTIC_NEIGHBORS + 10 intermediate chunks (no embedding,
+        // no shared keywords) to push chunk 0 outside the recency window.
+        for i in 1..=(MAX_SEMANTIC_NEIGHBORS + 10) {
+            smmu.register_chunk(
+                (i * 2) as i64,
+                (i * 2 + 1) as i64,
+                &format!("filler-{i}"),
+                vec![format!("unique-{i}")],
+                None,
+                None,
+            );
+        }
+
+        // Now register a chunk with the SAME embedding and keyword as chunk 0.
+        let last = smmu.register_chunk(
+            999_000,
+            999_001,
+            "last",
+            vec!["shared".into()],
+            Some(emb.clone()),
+            None,
+        );
+
+        // `last` should NOT have a direct semantic or entity edge to `first`
+        // because `first` is outside the recency window.
+        // We check by retrieving from `last` with 1 hop, semantic-only.
+        let sem_results = smmu.retrieve_relevant(last, 1, [0.0, 1.0, 0.0, 0.0]);
+        let first_sem = sem_results.iter().find(|(id, _)| *id == first);
+        assert!(
+            first_sem.is_none(),
+            "Chunk 0 should be outside the recency window and have no direct semantic edge to last chunk"
+        );
+
+        // Same check for entity edges.
+        let ent_results = smmu.retrieve_relevant(last, 1, [0.0, 0.0, 0.0, 1.0]);
+        let first_ent = ent_results.iter().find(|(id, _)| *id == first);
+        assert!(
+            first_ent.is_none(),
+            "Chunk 0 should be outside the recency window and have no direct entity edge to last chunk"
+        );
+    }
+
+    /// Verify that the constant MAX_SEMANTIC_NEIGHBORS is accessible and
+    /// reasonable.
+    #[test]
+    fn test_max_semantic_neighbors_constant() {
+        assert!(
+            MAX_SEMANTIC_NEIGHBORS >= 16,
+            "MAX_SEMANTIC_NEIGHBORS should be at least 16"
+        );
+        assert!(
+            MAX_SEMANTIC_NEIGHBORS <= 1024,
+            "MAX_SEMANTIC_NEIGHBORS should not be excessively large"
+        );
+    }
+
+    /// Performance regression guard: registering 500 chunks with embeddings
+    /// should complete quickly because we only scan the most recent K, not all n.
+    #[test]
+    fn test_register_500_chunks_bounded_time() {
+        let mut smmu = MultiViewMMU::new();
+        let emb = vec![0.5_f32; 384]; // 384-dim like all-MiniLM-L6-v2
+
+        let start = std::time::Instant::now();
+        for i in 0..500 {
+            smmu.register_chunk(
+                (i * 100) as i64,
+                (i * 100 + 50) as i64,
+                &format!("chunk-{i}"),
+                vec!["common".into(), format!("tag-{}", i % 10)],
+                Some(emb.clone()),
+                None,
+            );
+        }
+        let elapsed = start.elapsed();
+
+        assert_eq!(smmu.chunk_count(), 500);
+        // With O(K) scan (K=128), 500 registrations should be well under 5s
+        // even on slow CI. An O(n^2) scan of 500 * 384-dim vectors would be
+        // noticeably slower.
+        assert!(
+            elapsed.as_secs() < 5,
+            "500 registrations took {:?}, expected < 5s with bounded scan",
+            elapsed
+        );
     }
 }
