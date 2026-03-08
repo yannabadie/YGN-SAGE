@@ -82,6 +82,9 @@ if not hasattr(_mock_core, "WorkingMemory"):
         def smmu_chunk_count(self):
             return 0
 
+        def get_chunk_summary(self, chunk_id):
+            return ""
+
         def get_latest_arrow_chunk(self):
             return None
 

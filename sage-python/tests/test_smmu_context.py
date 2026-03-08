@@ -75,13 +75,15 @@ class TestRetrieveWithMockedChunks:
             (1, 0.72),
             (0, 0.45),
         ]
+        # No summary available — falls back to bare chunk ID format
+        wm.get_chunk_summary.return_value = ""
 
         result = retrieve_smmu_context(wm, top_k=5)
         assert "S-MMU" in result or "graph" in result.lower() or "chunk" in result.lower()
-        # Should mention chunk IDs
-        assert "2" in result
-        assert "1" in result
-        assert "0" in result
+        # Should mention chunk IDs in fallback format
+        assert "Chunk 2" in result
+        assert "Chunk 1" in result
+        assert "Chunk 0" in result
 
     def test_respects_top_k(self):
         """Only top_k results should appear."""
@@ -92,6 +94,7 @@ class TestRetrieveWithMockedChunks:
         wm.retrieve_relevant_chunks.return_value = [
             (i, 1.0 - i * 0.1) for i in range(10)
         ]
+        wm.get_chunk_summary.return_value = ""
 
         result = retrieve_smmu_context(wm, top_k=3)
         # Should only show 3 items
@@ -118,3 +121,79 @@ class TestRetrieveWithMockedChunks:
 
         result = retrieve_smmu_context(wm)
         assert result == ""
+
+
+class TestRetrieveWithChunkSummaries:
+    """Test that chunk summaries are included when available."""
+
+    def test_summary_included_with_score(self):
+        """When get_chunk_summary returns text, it should appear with score prefix."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 3
+        wm.retrieve_relevant_chunks.return_value = [
+            (2, 0.95),
+            (1, 0.72),
+        ]
+        wm.get_chunk_summary.side_effect = lambda cid: {
+            2: "User asked about Python async patterns",
+            1: "Agent resolved import error in main.py",
+        }.get(cid, "")
+
+        result = retrieve_smmu_context(wm, top_k=5)
+        assert "[0.95] User asked about Python async patterns" in result
+        assert "[0.72] Agent resolved import error in main.py" in result
+        # Should NOT contain bare "Chunk N" format for these
+        assert "Chunk 2" not in result
+        assert "Chunk 1" not in result
+
+    def test_mixed_summary_and_fallback(self):
+        """Chunks with summaries show text; chunks without fall back to ID format."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 3
+        wm.retrieve_relevant_chunks.return_value = [
+            (2, 0.90),
+            (1, 0.60),
+            (0, 0.40),
+        ]
+        wm.get_chunk_summary.side_effect = lambda cid: {
+            2: "Discussed memory architecture",
+            1: "",   # no summary
+            0: "",   # no summary
+        }.get(cid, "")
+
+        result = retrieve_smmu_context(wm, top_k=5)
+        assert "[0.90] Discussed memory architecture" in result
+        assert "Chunk 1 (relevance: 0.60)" in result
+        assert "Chunk 0 (relevance: 0.40)" in result
+
+    def test_fallback_when_get_chunk_summary_missing(self):
+        """If working memory has no get_chunk_summary, fall back gracefully."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 2
+        wm.retrieve_relevant_chunks.return_value = [
+            (1, 0.80),
+        ]
+        # Simulate missing method
+        wm.get_chunk_summary.side_effect = AttributeError("no such method")
+
+        result = retrieve_smmu_context(wm, top_k=5)
+        # Should fall back to bare ID format
+        assert "Chunk 1 (relevance: 0.80)" in result
+
+    def test_header_line_present(self):
+        """The header line should always be present when there are results."""
+        from unittest.mock import MagicMock
+
+        wm = MagicMock()
+        wm.smmu_chunk_count.return_value = 1
+        wm.retrieve_relevant_chunks.return_value = [(0, 0.50)]
+        wm.get_chunk_summary.return_value = "Test summary"
+
+        result = retrieve_smmu_context(wm, top_k=5)
+        assert result.startswith("[S-MMU Graph Memory]")

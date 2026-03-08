@@ -69,10 +69,18 @@ def retrieve_smmu_context(
         # Take top_k results (already sorted descending by score from Rust)
         top_hits = hits[:top_k]
 
-        # Format as injectable context
-        lines = ["[S-MMU Graph Memory] Relevant context from compacted memory chunks:"]
+        # Format as injectable context with chunk summaries when available
+        lines = ["[S-MMU Graph Memory] Relevant context from compacted memory:"]
         for chunk_id, score in top_hits:
-            lines.append(f"- Chunk {chunk_id} (relevance: {score:.2f})")
+            summary = ""
+            try:
+                summary = working_memory.get_chunk_summary(chunk_id)
+            except (AttributeError, Exception):
+                pass
+            if summary:
+                lines.append(f"- [{score:.2f}] {summary}")
+            else:
+                lines.append(f"- Chunk {chunk_id} (relevance: {score:.2f})")
 
         return "\n".join(lines)
 

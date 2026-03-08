@@ -72,6 +72,9 @@ if not _has_rust:
         def retrieve_relevant_chunks(self, cid, hops, w=None): return []
         def get_page_out_candidates(self, cid, hops, budget): return []
         def smmu_chunk_count(self): return 0
+        def get_chunk_summary(self, chunk_id: int) -> str:
+            """Return summary text for a compacted chunk. Mock returns empty."""
+            return ""
         def get_latest_arrow_chunk(self): return None
 
     sage_core = _types.ModuleType("sage_core")
@@ -205,6 +208,14 @@ class WorkingMemory:
     def smmu_chunk_count(self) -> int:
         """Number of chunks registered in the S-MMU."""
         return self._inner.smmu_chunk_count()
+
+    def get_chunk_summary(self, chunk_id: int) -> str:
+        """Return summary text for a compacted S-MMU chunk.
+
+        Returns:
+            The summary string, or "" if the chunk has no summary or doesn't exist.
+        """
+        return self._inner.get_chunk_summary(chunk_id)
 
     def get_latest_arrow_chunk(self) -> Any:
         """Export the latest compacted Arrow chunk to Python (Zero-Copy)."""

@@ -156,6 +156,14 @@ impl WorkingMemory {
         self.smmu.chunk_count()
     }
 
+    /// Return the summary text for a given S-MMU chunk, or empty string if not found.
+    pub fn get_chunk_summary(&self, chunk_id: usize) -> String {
+        match self.smmu.chunk_map.get(&chunk_id) {
+            Some(&node_idx) => self.smmu.graph[node_idx].summary.clone(),
+            None => String::new(),
+        }
+    }
+
     /// Legacy support: returns the active buffer for simple tools.
     pub fn recent_events(&self, n: usize) -> Vec<MemoryEvent> {
         let start = self.active_buffer.len().saturating_sub(n);
