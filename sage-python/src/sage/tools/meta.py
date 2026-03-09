@@ -11,6 +11,7 @@ import ast
 import logging
 import importlib.util
 import sys
+import warnings
 
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
@@ -38,9 +39,16 @@ os.makedirs(TOOLS_WORKSPACE, exist_ok=True)
     }
 )
 async def create_python_tool(name: str, code: str, registry: ToolRegistry = None) -> str:
+    warnings.warn(
+        "create_python_tool is disabled due to security vulnerabilities (SEC-01). "
+        "Use statically defined tools or Wasm sandbox instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return "DISABLED: create_python_tool is not available due to security constraints."
+
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
-        
+
     try:
         # 1. Formal Validation (AST level)
         try:
@@ -99,9 +107,16 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
     }
 )
 async def create_bash_tool(name: str, description: str, script: str, registry: ToolRegistry = None) -> str:
+    warnings.warn(
+        "create_bash_tool is disabled due to security vulnerabilities (SEC-02). "
+        "Use statically defined tools or Wasm sandbox instead.",
+        DeprecationWarning, stacklevel=2,
+    )
+    return "DISABLED: create_bash_tool is not available due to security constraints."
+
     if not registry:
          return "Error: Tool registry not available."
-         
+
     # Generate the python wrapper for the bash script
     code = f"""
 from sage.tools.base import Tool

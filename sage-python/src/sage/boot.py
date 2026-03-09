@@ -198,10 +198,13 @@ def boot_agent_system(
     from sage.memory.embedder import Embedder
     memory_compressor.embedder = Embedder()
 
-    # Runtime tool synthesis (Agent0/AutoTool pattern)
-    from sage.tools.meta import create_python_tool, create_bash_tool
-    tool_registry.register(create_python_tool)
-    tool_registry.register(create_bash_tool)
+    # Runtime tool synthesis DISABLED — SEC-01/SEC-02 audit findings.
+    # create_python_tool: 6 AST bypass vectors for arbitrary code execution
+    # create_bash_tool: shell=True enabling shell injection
+    # Re-enable after Wasm sandbox pipeline is wired.
+    # from sage.tools.meta import create_python_tool, create_bash_tool
+    # tool_registry.register(create_python_tool)
+    # tool_registry.register(create_bash_tool)
 
     # Sandbox manager for S2 empirical validation
     # SECURITY: local host execution disabled by default (requires allow_local=True)

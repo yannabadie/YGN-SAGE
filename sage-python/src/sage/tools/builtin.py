@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import subprocess
 from sage.tools.base import Tool
+
+BLOCKED_PATTERNS = re.compile(r'rm\s+-rf|mkfs|dd\s+if=|:\(\)\s*\{|/dev/sd')
 
 
 bash_tool = Tool.define(
@@ -22,10 +25,12 @@ bash_tool = Tool.define(
 
 async def _run_bash(command: str, timeout: int = 120) -> str:
     """Execute a bash command asynchronously."""
-    proc = await asyncio.create_subprocess_shell(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+    if BLOCKED_PATTERNS.search(command):
+        return "BLOCKED: Potentially destructive command detected."
+    proc = await asyncio.create_subprocess_exec(
+        "/bin/bash", "-c", command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
