@@ -191,7 +191,7 @@ class AgentLoop:
 
         # Evolution gating — disabled by default per Sprint 3 evidence:
         # full evolution engine scored 0.50 vs 0.33 for random mutation (67% efficiency).
-        # SAMPO/DGM add minimal value. Set to True for explicit use.
+        # SAMPO adds minimal value. Set to True for explicit use.
         self._auto_evolve: bool = False
 
         # Stats

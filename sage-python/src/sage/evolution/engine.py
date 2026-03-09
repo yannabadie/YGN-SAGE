@@ -19,7 +19,7 @@ from sage.strategy.solvers import SAMPOSolver
 
 log = logging.getLogger(__name__)
 
-DGM_ACTION_DESCRIPTIONS = {
+SAMPO_ACTION_DESCRIPTIONS = {
     0: "Optimize execution performance and reduce latency",
     1: "Improve correctness and fix edge cases",
     2: "Expand search space — explore novel algorithmic approaches",
@@ -39,7 +39,7 @@ class EvolutionConfig:
     # Warm-start threshold: skip policy accumulation for first N mutations (arbitrary, needs tuning)
     hard_warm_start_threshold: int = 500
     # Enable SAMPO-based hyperparameter self-adjustment
-    enable_dgm: bool = True
+    enable_sampo: bool = True
     z3_constraints: list[str] = field(default_factory=list)
 
 
@@ -48,8 +48,7 @@ class EvolutionEngine:
 
     Uses SAMPO action selection to adjust 3 hyperparameters
     (mutations_per_generation, clip_epsilon, filter_threshold) during
-    evolution. Despite the "DGM" variable names (kept for backward
-    compatibility), this is NOT a Godel Machine -- it does not produce
+    evolution. This is NOT a Godel Machine -- it does not produce
     self-proofs. It is a simple online hyperparameter adjustment loop.
     """
 
@@ -78,7 +77,7 @@ class EvolutionEngine:
             log.debug("eBPF evaluator not available — evolution runs without hardware sandbox")
 
         # SAMPO solver for action selection (hyperparameter adjustment)
-        self._dgm_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
+        self._sampo_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
         self._trajectories = []
 
     @property
@@ -118,30 +117,30 @@ class EvolutionEngine:
         for parent in parents:
             self.total_mutations += 1
             
-            # Strategy action selection (see DGM_ACTION_DESCRIPTIONS)
-            dgm_action = np.random.choice(5, p=self._dgm_solver.get_strategy())
+            # Strategy action selection (see SAMPO_ACTION_DESCRIPTIONS)
+            sampo_action = np.random.choice(5, p=self._sampo_solver.get_strategy())
             
             # --- Hyperparameter self-adjustment ---
-            if dgm_action == 2:
+            if sampo_action == 2:
                 # Action 2: Expand search space (Engine Hyperparameter)
                 self.config.mutations_per_generation = min(50, self.config.mutations_per_generation + 2)
-            elif dgm_action == 3:
+            elif sampo_action == 3:
                 # Action 3: Tighten SAMPO clipping (Solver Hyperparameter)
-                self._dgm_solver.clip_epsilon = max(0.05, self._dgm_solver.clip_epsilon * 0.9)
-            elif dgm_action == 4:
+                self._sampo_solver.clip_epsilon = max(0.05, self._sampo_solver.clip_epsilon * 0.9)
+            elif sampo_action == 4:
                 # Action 4: Relax SAMPO filtering (Solver Hyperparameter)
-                self._dgm_solver.filter_threshold = max(2, self._dgm_solver.filter_threshold - 1)
+                self._sampo_solver.filter_threshold = max(2, self._sampo_solver.filter_threshold - 1)
             
             # Generate mutation
             try:
                 # Mutation function receives strategy context for guided mutation
-                dgm_context = {
-                    "action": int(dgm_action),
-                    "description": DGM_ACTION_DESCRIPTIONS.get(int(dgm_action), ""),
+                sampo_context = {
+                    "action": int(sampo_action),
+                    "description": SAMPO_ACTION_DESCRIPTIONS.get(int(sampo_action), ""),
                     "parent_score": parent.score,
                     "generation": self.generation,
                 }
-                new_code, features = await mutate_fn(parent.code, dgm_context=dgm_context)
+                new_code, features = await mutate_fn(parent.code, sampo_context=sampo_context)
             except Exception:
                 continue
 
@@ -163,23 +162,23 @@ class EvolutionEngine:
                 metadata={
                     "eval_details": eval_result.details,
                     "is_warm_up": is_warm_up,
-                    "dgm_action": dgm_action
+                    "sampo_action": sampo_action
                 },
             )
 
-            # DGM Reward Logic: Reward action if it led to a population improvement
+            # SAMPO Reward Logic: Reward action if it led to a population improvement
             reward = 1.0 if eval_result.score > parent.score else 0.0
-            current_gen_traj["actions"].append(dgm_action)
+            current_gen_traj["actions"].append(sampo_action)
             current_gen_traj["rewards"].append(reward)
 
             if self._population.add(child):
                 accepted.append(child)
 
-        # Update DGM Policy using SAMPO
+        # Update SAMPO policy
         self._trajectories.append(current_gen_traj)
         if len(self._trajectories) >= 5:  # Batch update
             try:
-                self._dgm_solver.update(self._trajectories)
+                self._sampo_solver.update(self._trajectories)
             finally:
                 self._trajectories = []
 
@@ -201,5 +200,5 @@ class EvolutionEngine:
             "best_score": best.score if best else 0.0,
             "best_id": best.id if best else None,
             "is_warm_up": self.total_mutations < self.config.hard_warm_start_threshold,
-            "dgm_entropy": self._dgm_solver.stats()["entropy"]
+            "sampo_entropy": self._sampo_solver.stats()["entropy"]
         }

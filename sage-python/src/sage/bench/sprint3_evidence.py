@@ -420,7 +420,7 @@ async def run_evolution_validation(
     """4-arm evolution experiment: full engine vs random vs no-SAMPO vs seed-only.
 
     Uses simple Python code optimization tasks (sort, fibonacci, etc.)
-    to measure whether SAMPO + DGM adds value over random mutation.
+    to measure whether SAMPO adds value over random mutation.
     """
     from sage.evolution.engine import EvolutionEngine, EvolutionConfig
     from sage.evolution.population import Individual
@@ -472,11 +472,11 @@ async def run_evolution_validation(
     evaluator.add_stage("execution", execution_eval, threshold=0.3, weight=0.7)
 
     # Mutation function using LLM
-    async def llm_mutate(code: str, dgm_context: dict | None = None) -> tuple[str, tuple[int, ...]]:
+    async def llm_mutate(code: str, sampo_context: dict | None = None) -> tuple[str, tuple[int, ...]]:
         from sage.llm.google import GoogleProvider
         from sage.llm.base import Message, Role
         provider = GoogleProvider()
-        action_desc = dgm_context.get("description", "improve") if dgm_context else "improve"
+        action_desc = sampo_context.get("description", "improve") if sampo_context else "improve"
         prompt = (
             f"Improve this Python function. Goal: {action_desc}.\n"
             f"Return ONLY the improved code, no explanation.\n\n```python\n{code}\n```"
@@ -496,7 +496,7 @@ async def run_evolution_validation(
 
     # Random mutation function (no LLM, just code perturbation)
     import random
-    async def random_mutate(code: str, dgm_context: dict | None = None) -> tuple[str, tuple[int, ...]]:
+    async def random_mutate(code: str, sampo_context: dict | None = None) -> tuple[str, tuple[int, ...]]:
         lines = code.split("\n")
         if len(lines) > 2:
             # Random: add a comment, swap lines, or duplicate a line
@@ -516,13 +516,13 @@ async def run_evolution_validation(
 
     results = {}
 
-    # Arm 1: Full Engine (DGM + SAMPO + MAP-Elites)
-    log.info("ARM 1: Full Engine (DGM + SAMPO + MAP-Elites)")
+    # Arm 1: Full Engine (SAMPO + MAP-Elites)
+    log.info("ARM 1: Full Engine (SAMPO + MAP-Elites)")
     config1 = EvolutionConfig(
         population_size=50,
         mutations_per_generation=mutations_per_gen,
         max_generations=n_generations,
-        enable_dgm=True,
+        enable_sampo=True,
     )
     engine1 = EvolutionEngine(config=config1, evaluator=evaluator)
     for i, code in enumerate(seed_codes[:n_seeds]):
@@ -544,7 +544,7 @@ async def run_evolution_validation(
         population_size=50,
         mutations_per_generation=mutations_per_gen,
         max_generations=n_generations,
-        enable_dgm=False,
+        enable_sampo=False,
     )
     engine2 = EvolutionEngine(config=config2, evaluator=evaluator)
     for i, code in enumerate(seed_codes[:n_seeds]):
@@ -566,7 +566,7 @@ async def run_evolution_validation(
         population_size=50,
         mutations_per_generation=mutations_per_gen,
         max_generations=n_generations,
-        enable_dgm=False,
+        enable_sampo=False,
     )
     engine3 = EvolutionEngine(config=config3, evaluator=evaluator)
     for i, code in enumerate(seed_codes[:n_seeds]):
