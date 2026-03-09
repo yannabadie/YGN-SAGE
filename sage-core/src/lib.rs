@@ -20,6 +20,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<pool::AgentPool>()?;
     m.add_class::<memory::MemoryEvent>()?;
     m.add_class::<memory::WorkingMemory>()?;
+    m.add_class::<memory::smmu::PyMultiViewMMU>()?;
     m.add_class::<hardware::HardwareProfile>()?;
     #[cfg(feature = "sandbox")]
     {

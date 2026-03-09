@@ -8,6 +8,7 @@
 
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use pyo3::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 
 /// Metadata stored per compacted chunk in the S-MMU.
@@ -313,6 +314,62 @@ fn jaccard_similarity(a: &HashSet<&str>, b: &HashSet<&str>) -> f32 {
         return 0.0;
     }
     intersection as f32 / union as f32
+}
+
+// ---------------------------------------------------------------------------
+// PyO3 wrapper
+// ---------------------------------------------------------------------------
+
+/// Python-facing wrapper for `MultiViewMMU`.
+#[pyclass(name = "MultiViewMMU")]
+pub struct PyMultiViewMMU {
+    inner: MultiViewMMU,
+}
+
+#[pymethods]
+impl PyMultiViewMMU {
+    #[new]
+    fn new() -> Self {
+        Self {
+            inner: MultiViewMMU::new(),
+        }
+    }
+
+    /// Register a new chunk and build all applicable edges.
+    /// Returns the chunk ID.
+    fn register_chunk(
+        &mut self,
+        start_time: i64,
+        end_time: i64,
+        summary: &str,
+        keywords: Vec<String>,
+        embedding: Option<Vec<f32>>,
+        parent_chunk_id: Option<usize>,
+    ) -> usize {
+        self.inner
+            .register_chunk(start_time, end_time, summary, keywords, embedding, parent_chunk_id)
+    }
+
+    /// Number of chunks registered in the S-MMU.
+    fn chunk_count(&self) -> usize {
+        self.inner.chunk_count()
+    }
+
+    /// Get the summary string for a given chunk ID.
+    fn get_chunk_summary(&self, chunk_id: usize) -> Option<String> {
+        self.inner
+            .chunk_map
+            .get(&chunk_id)
+            .map(|&idx| self.inner.graph[idx].summary.clone())
+    }
+
+    /// Retrieve chunks relevant to `chunk_id` via multi-view BFS (up to `max_hops`).
+    /// Uses default view weights `[0.4, 0.3, 0.2, 0.1]`.
+    /// Returns list of `(chunk_id, score)` sorted descending by score.
+    fn retrieve_relevant(&self, chunk_id: usize, max_hops: usize) -> Vec<(usize, f32)> {
+        self.inner
+            .retrieve_relevant(chunk_id, max_hops, [0.4, 0.3, 0.2, 0.1])
+    }
 }
 
 #[cfg(test)]
