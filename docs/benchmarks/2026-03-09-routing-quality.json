@@ -1,0 +1,221 @@
+{
+  "correct": 30,
+  "over_routed": 0,
+  "under_routed": 0,
+  "total": 30,
+  "accuracy": 1.0,
+  "over_routing_rate": 0.0,
+  "under_routing_rate": 0.0,
+  "details": [
+    {
+      "task": "What is 2+2?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "What's the capital of France?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "Translate 'hello' to French",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "What color is the sky?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "List 3 fruits",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "Who wrote Romeo and Juliet?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "What is 15% of 200?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "Define 'photosynthesis' in one sentence",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "Is 17 a prime number?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "What year did WWII end?",
+      "expected": 1,
+      "routed": 1,
+      "complexity": 0.2,
+      "correct": true
+    },
+    {
+      "task": "Write a function to check if a number is prime",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Write a Python bubble sort implementation",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Create a REST API endpoint with FastAPI",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Write unit tests for a calculator class",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Implement a binary search tree insert method",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Write a regex to validate email addresses",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Create a Python decorator for caching",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Write a function to merge two sorted arrays",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Implement a simple linked list in Python",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Write a CSV parser without using the csv module",
+      "expected": 2,
+      "routed": 2,
+      "complexity": 0.55,
+      "correct": true
+    },
+    {
+      "task": "Prove that sqrt(2) is irrational",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    },
+    {
+      "task": "Design a distributed consensus protocol",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.66,
+      "correct": true
+    },
+    {
+      "task": "Write a formal specification for a banking transaction syste",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    },
+    {
+      "task": "Implement a lock-free concurrent queue in Rust",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    },
+    {
+      "task": "Prove the correctness of quicksort using loop invariants",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    },
+    {
+      "task": "Design a capability-based security model for microservices",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.66,
+      "correct": true
+    },
+    {
+      "task": "Analyze the time complexity of the Ackermann function",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 1.0,
+      "correct": true
+    },
+    {
+      "task": "Implement a type checker for a simple lambda calculus",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    },
+    {
+      "task": "Design a CRDT for collaborative text editing",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.66,
+      "correct": true
+    },
+    {
+      "task": "Write a Z3 proof for mutual exclusion in Peterson's algorith",
+      "expected": 3,
+      "routed": 3,
+      "complexity": 0.81,
+      "correct": true
+    }
+  ]
+}
