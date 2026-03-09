@@ -92,13 +92,32 @@ class FormalKnowledgeGraph:
         return solver.check() == z3.unsat
 
     def verify_arithmetic(self, expr: str, expected: int, tolerance: int = 0) -> bool:
-        """Verify an arithmetic expression evaluates within tolerance of expected."""
+        """Evaluate arithmetic expr and verify result is within tolerance.
+
+        Uses ast.literal_eval for simple constants, _safe_z3_eval for
+        Z3 expressions. Returns False on parse failure (fail-closed).
+        """
         if not self.has_z3:
             return False
-        solver = z3.Solver()
-        result = z3.Int("result")
-        solver.add(z3.Or(result > expected + tolerance, result < expected - tolerance))
-        return solver.check() == z3.unsat
+        try:
+            # Try simple constant evaluation first
+            actual = ast.literal_eval(expr)
+            return expected - tolerance <= actual <= expected + tolerance
+        except (ValueError, SyntaxError):
+            pass
+        try:
+            # Try safe Z3 eval for more complex expressions
+            result = _safe_z3_eval(expr, {"z3": z3})
+            if isinstance(result, (int, float)):
+                return expected - tolerance <= result <= expected + tolerance
+            # Z3 expression: use solver to check
+            if hasattr(result, 'sort'):  # Z3 ArithRef
+                solver = z3.Solver()
+                solver.add(z3.Or(result > expected + tolerance, result < expected - tolerance))
+                return solver.check() == z3.unsat
+            return False  # Can't evaluate to number
+        except Exception:
+            return False  # Fail-closed
 
     def verify_invariant(self, pre: str, post: str) -> bool:
         """Verify a pre/post-condition pair using Z3.

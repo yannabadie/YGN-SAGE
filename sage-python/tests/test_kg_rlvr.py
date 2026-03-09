@@ -112,6 +112,25 @@ def test_verify_invariant_fails_closed_on_unparseable():
     assert result is False, "Unparseable input must fail-closed"
 
 
+def test_verify_arithmetic_evaluates_expr():
+    """Z3-03: verify_arithmetic must actually evaluate the expression."""
+    fkg = FormalKnowledgeGraph()
+
+    # Simple constant - should work
+    assert fkg.verify_arithmetic("42", 42) is True
+    assert fkg.verify_arithmetic("42", 43) is False
+    assert fkg.verify_arithmetic("42", 43, tolerance=1) is True
+
+    # Expression that ast.literal_eval can't handle
+    # _safe_z3_eval should try, but simple arithmetic strings
+    # won't parse as Z3 without z3 syntax, so fail-closed
+    assert fkg.verify_arithmetic("invalid", 0) is False
+
+    # Without Z3 - fail-closed
+    fkg.has_z3 = False
+    assert fkg.verify_arithmetic("42", 42) is False
+
+
 def test_fail_closed_without_z3():
     """Z3-07: Without z3-solver, formal verification must fail-closed."""
     fkg = FormalKnowledgeGraph()
