@@ -114,7 +114,7 @@ class EvolutionEngine:
 
         current_gen_traj = {"actions": [], "rewards": []}
 
-        for parent in parents:
+        for mut_i, parent in enumerate(parents):
             self.total_mutations += 1
             
             # Strategy action selection (see SAMPO_ACTION_DESCRIPTIONS)
@@ -141,7 +141,10 @@ class EvolutionEngine:
                     "generation": self.generation,
                 }
                 new_code, features = await mutate_fn(parent.code, sampo_context=sampo_context)
-            except Exception:
+            except (ValueError, TypeError, RuntimeError, KeyError) as e:
+                log.warning("Mutation %d/%d failed: %s: %s",
+                            mut_i + 1, self.config.mutations_per_generation,
+                            type(e).__name__, e)
                 continue
 
             # Z3 safety gate removed — was validating static config constraints,
