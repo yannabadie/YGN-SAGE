@@ -7,7 +7,7 @@ multi-hop neighbourhood queries and task-context generation.
 from __future__ import annotations
 
 import sqlite3
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from sage.memory.memory_agent import ExtractionResult
 
@@ -30,10 +30,12 @@ class SemanticMemory:
         self.max_context_lines = max_context_lines
         self.db_path = db_path
         self._entities: set[str] = set()
-        self._relations: list[tuple[str, str, str]] = []
+        self._relations: deque[tuple[str, str, str]] = deque()
         self._relations_set: set[tuple[str, str, str]] = set()
-        # Adjacency index: entity -> list of relation indices
+        # Adjacency index: entity -> list of relation indices (absolute)
         self._adj: dict[str, list[int]] = defaultdict(list)
+        # Offset tracking: absolute index of the first element in _relations
+        self._evicted_count: int = 0
 
     # ------------------------------------------------------------------
     # Mutation
@@ -52,19 +54,24 @@ class SemanticMemory:
             if triple in self._relations_set:
                 continue  # Dedup
             self._relations_set.add(triple)
-            idx = len(self._relations)
+            idx = self._evicted_count + len(self._relations)
             self._relations.append(triple)
             self._adj[subj].append(idx)
             self._adj[obj].append(idx)
-            # Evict oldest if over capacity
+            # Evict oldest if over capacity — O(k) lazy cleanup
             if self.max_relations > 0 and len(self._relations) > self.max_relations:
-                oldest = self._relations.pop(0)
+                oldest = self._relations.popleft()  # O(1)
                 self._relations_set.discard(oldest)
-                # Shift adjacency indices down by 1 (oldest was at index 0)
-                new_adj: dict[str, list[int]] = defaultdict(list)
-                for key, indices in self._adj.items():
-                    new_adj[key] = [i - 1 for i in indices if i > 0]
-                self._adj = new_adj
+                evicted_idx = self._evicted_count
+                self._evicted_count += 1
+                # Lazy adjacency cleanup: only touch the evicted triple's entities
+                for entity in (oldest[0], oldest[2]):  # subject and object
+                    if entity in self._adj:
+                        self._adj[entity] = [
+                            i for i in self._adj[entity] if i != evicted_idx
+                        ]
+                        if not self._adj[entity]:
+                            del self._adj[entity]
 
     # ------------------------------------------------------------------
     # Queries
@@ -93,9 +100,12 @@ class SemanticMemory:
                     continue
                 visited_entities.add(ent)
                 for idx in self._adj.get(ent, []):
+                    rel_idx = idx - self._evicted_count
+                    if rel_idx < 0 or rel_idx >= len(self._relations):
+                        continue  # stale index
                     if idx not in collected_indices:
                         collected_indices.add(idx)
-                        subj, _, obj = self._relations[idx]
+                        subj, _, obj = self._relations[rel_idx]
                         # Add the *other* end to the next frontier
                         if subj not in visited_entities:
                             next_frontier.add(subj)
@@ -103,7 +113,11 @@ class SemanticMemory:
                             next_frontier.add(obj)
             frontier = next_frontier
 
-        return [self._relations[i] for i in sorted(collected_indices)]
+        return [
+            self._relations[i - self._evicted_count]
+            for i in sorted(collected_indices)
+            if 0 <= i - self._evicted_count < len(self._relations)
+        ]
 
     def get_context_for(self, task: str) -> str:
         """Find entities mentioned in *task* and return their relations as text.
@@ -123,9 +137,12 @@ class SemanticMemory:
         seen: set[int] = set()
         for ent in mentioned:
             for idx in self._adj.get(ent, []):
+                rel_idx = idx - self._evicted_count
+                if rel_idx < 0 or rel_idx >= len(self._relations):
+                    continue  # stale index
                 if idx not in seen:
                     seen.add(idx)
-                    all_rels.append(self._relations[idx])
+                    all_rels.append(self._relations[rel_idx])
 
         if not all_rels:
             return ""
@@ -193,7 +210,7 @@ class SemanticMemory:
                 triple = (subj, pred, obj)
                 if triple not in self._relations_set:
                     self._relations_set.add(triple)
-                    idx = len(self._relations)
+                    idx = self._evicted_count + len(self._relations)
                     self._relations.append(triple)
                     self._adj[subj].append(idx)
                     self._adj[obj].append(idx)
