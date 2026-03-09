@@ -27,6 +27,12 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         // m.add_class::<sandbox::ebpf::EbpfSandbox>()?;
         // m.add_class::<sandbox::ebpf::SnapBPF>()?;
     }
+    #[cfg(feature = "tool-executor")]
+    {
+        m.add_class::<sandbox::validator::ValidationResult>()?;
+        m.add_class::<sandbox::subprocess::ExecResult>()?;
+        m.add_class::<sandbox::tool_executor::ToolExecutor>()?;
+    }
     m.add_class::<memory::rag_cache::RagCache>()?;
     #[cfg(feature = "onnx")]
     m.add_class::<memory::embedder::RustEmbedder>()?;

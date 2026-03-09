@@ -10,3 +10,5 @@ pub mod wasm;
 pub mod validator;
 #[cfg(feature = "tool-executor")]
 pub mod subprocess;
+#[cfg(feature = "tool-executor")]
+pub mod tool_executor;
