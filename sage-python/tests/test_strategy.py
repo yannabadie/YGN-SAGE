@@ -192,13 +192,13 @@ def test_routing_code_generation_to_s2():
     )
 
 
-def test_routing_simple_code_to_s1():
-    """Simple, short code task should route to S1."""
+def test_routing_simple_code_to_s2():
+    """Code generation tasks should route to S2 for empirical validation."""
     router = ComplexityRouter()
     profile = router.assess_complexity("Write a hello world function")
     decision = router.route(profile)
-    assert decision.system == 1, (
-        f"Expected S1 for simple code task, got S{decision.system} "
+    assert decision.system == 2, (
+        f"Expected S2 for code task, got S{decision.system} "
         f"(c={profile.complexity:.2f}, u={profile.uncertainty:.2f})"
     )
 

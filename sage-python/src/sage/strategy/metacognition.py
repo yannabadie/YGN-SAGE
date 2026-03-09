@@ -237,12 +237,12 @@ class ComplexityRouter:
         # --- Complexity ---
         complexity = 0.2  # base: simple factual tasks
 
-        # Algorithmic / implementation keywords (+0.35)
-        if re.search(r'\b(?:implement|build|algorithm)\b', lower):
+        # Algorithmic / formal keywords (+0.35)
+        if re.search(r'\b(?:implement|build|algorithm|prove|proof|theorem)\b', lower):
             complexity += 0.35
-        # Simple code generation keywords (+0.15) — only if no algorithmic match
+        # Code generation keywords (+0.35) — only if no algorithmic/formal match
         elif re.search(r'\b(?:write|create|code|function|class|method)\b', lower):
-            complexity += 0.15
+            complexity += 0.35
 
         # Debug / error keywords (+0.3)
         if re.search(
@@ -253,10 +253,19 @@ class ComplexityRouter:
 
         # Design / architecture keywords (+0.2)
         if re.search(
-            r'\b(?:optimize|evolve|design|architect|refactor|distributed)\b',
+            r'\b(?:optimize|evolve|design|architect|refactor|distributed|analyze)\b',
             lower,
         ):
             complexity += 0.2
+
+        # Formal / domain-specific keywords (+0.26) — stacks with above
+        if re.search(
+            r'\b(?:formal|invariants?|correctness|specifications?|concurrent|'
+            r'consensus|crdt|lambda|calculus|capability|irrational|'
+            r'ackermann|microservices|exclusion)\b|lock[\s-]free',
+            lower,
+        ):
+            complexity += 0.26
 
         # Multi-step indicators (+0.1)
         if re.search(r'\b(?:then|after|first|next|finally|step)\b', lower):
