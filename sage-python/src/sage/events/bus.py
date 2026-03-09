@@ -128,8 +128,11 @@ class EventBus:
             self._async_consumers.append(consumer)
         try:
             while True:
-                event = await q.get()
-                yield event
+                try:
+                    event = await asyncio.wait_for(q.get(), timeout=30.0)
+                    yield event
+                except asyncio.TimeoutError:
+                    continue  # No events for 30s — keep consumer alive
         finally:
             with self._lock:
                 try:
