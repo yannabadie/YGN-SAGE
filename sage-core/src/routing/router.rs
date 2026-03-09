@@ -254,10 +254,11 @@ impl AdaptiveRouter {
             let tp_exists = std::path::Path::new(tp).exists();
 
             if cp_exists && tp_exists {
-                // Ensure ORT_DYLIB_PATH is set before loading classifier.
-                if std::env::var("ORT_DYLIB_PATH").is_err() {
-                    if let Some(path) = crate::memory::embedder::discover_ort_dylib(cp, sys_prefix.as_deref()) {
-                        std::env::set_var("ORT_DYLIB_PATH", &path);
+                // Ensure ORT_DYLIB_PATH is set before loading classifier
+                // (thread-safe via OnceLock — resolved once, reused everywhere).
+                if let Some(path) = crate::memory::embedder::resolve_ort_dylib_once(cp, sys_prefix.as_deref()) {
+                    if std::env::var("ORT_DYLIB_PATH").is_err() {
+                        std::env::set_var("ORT_DYLIB_PATH", path);
                     }
                 }
 

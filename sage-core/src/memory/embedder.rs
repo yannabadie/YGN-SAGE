@@ -9,9 +9,25 @@
 
 use ort::{inputs, session::Session, value::TensorRef};
 use pyo3::prelude::*;
+use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
 const EMBEDDING_DIM: usize = 384;
+
+/// Cached ORT dylib path — resolved once, reused everywhere.
+static ORT_DYLIB_RESOLVED: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+
+/// Resolve and cache the ORT dylib path (thread-safe, one-time).
+/// Returns a reference to the cached path if found.
+pub fn resolve_ort_dylib_once(model_path: &str, sys_prefix: Option<&str>) -> Option<&'static std::path::PathBuf> {
+    let resolved = ORT_DYLIB_RESOLVED.get_or_init(|| {
+        if std::env::var("ORT_DYLIB_PATH").is_ok() {
+            return None; // User already set it
+        }
+        discover_ort_dylib(model_path, sys_prefix)
+    });
+    resolved.as_ref()
+}
 
 /// Auto-discover the ONNX Runtime shared library on the filesystem.
 ///
@@ -75,7 +91,7 @@ pub(crate) fn discover_ort_dylib(model_path: &str, sys_prefix: Option<&str>) -> 
                             .is_some_and(|n| n.starts_with("Python3"))
                     })
                     .collect();
-                dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                dirs.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
                 for entry in dirs {
                     let candidate = entry.path().join(&user_capi_tail);
                     if candidate.exists() {
@@ -95,7 +111,7 @@ pub(crate) fn discover_ort_dylib(model_path: &str, sys_prefix: Option<&str>) -> 
                         .is_some_and(|n| n.starts_with("Python3"))
                 })
                 .collect();
-            pythons.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            pythons.sort_by_key(|b| std::cmp::Reverse(b.file_name()));
             for entry in pythons {
                 let candidate = entry.path().join(&capi_tail);
                 if candidate.exists() {
@@ -119,19 +135,19 @@ impl RustEmbedder {
     #[new]
     #[pyo3(signature = (model_path, tokenizer_path))]
     pub fn new(py: Python<'_>, model_path: String, tokenizer_path: String) -> PyResult<Self> {
-        // Auto-discover onnxruntime DLL if ORT_DYLIB_PATH is not set.
+        // Resolve ORT dylib path once (thread-safe via OnceLock).
         // This MUST happen before Session::builder() because ort caches
         // its DLL handle in a OnceLock — once read, it never re-checks env.
         // Python side (Embedder._ensure_ort_dylib_path) also does this,
         // but this covers direct `sage_core.RustEmbedder(...)` usage.
-        if std::env::var("ORT_DYLIB_PATH").is_err() {
-            let sys_prefix: Option<String> = py
-                .import("sys")
-                .ok()
-                .and_then(|sys| sys.getattr("prefix").ok())
-                .and_then(|p| p.extract().ok());
-            if let Some(path) = discover_ort_dylib(&model_path, sys_prefix.as_deref()) {
-                std::env::set_var("ORT_DYLIB_PATH", &path);
+        let sys_prefix: Option<String> = py
+            .import("sys")
+            .ok()
+            .and_then(|sys| sys.getattr("prefix").ok())
+            .and_then(|p| p.extract().ok());
+        if let Some(path) = resolve_ort_dylib_once(&model_path, sys_prefix.as_deref()) {
+            if std::env::var("ORT_DYLIB_PATH").is_err() {
+                std::env::set_var("ORT_DYLIB_PATH", path);
             }
         }
         // Release the GIL before loading ORT — on Windows, LoadLibraryW runs
@@ -147,7 +163,7 @@ impl RustEmbedder {
                 .map_err(|e| format!("Tokenizer load error: {e}"))?;
 
             Ok((session, tokenizer))
-        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
+        }).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
         Ok(Self { session, tokenizer })
     }
