@@ -46,7 +46,7 @@ maturin develop --features sandbox,tool-executor
 cargo test --workspace                            # 7 tests (default features)
 cargo test --features tool-executor               # 36 tests (validator + subprocess + ToolExecutor)
 cargo test --features sandbox,tool-executor       # 63 tests (full sandbox + ToolExecutor)
-cargo test --features onnx                        # +5 ONNX embedder tests (requires model download + onnxruntime DLL)
+cargo test --features onnx                        # +16 routing tests + 5 ONNX embedder tests (requires model download + onnxruntime DLL)
 cargo clippy                                      # Lint
 ```
 
@@ -55,6 +55,7 @@ cargo clippy                                      # Lint
 | Module | Description |
 |--------|-------------|
 | `memory/` | Arrow-backed working memory, S-MMU multi-view graph, FIFO+TTL RAG cache, ONNX embedder |
+| `routing/` | AdaptiveRouter: 4-stage learned S1/S2/S3 routing (structural features + BERT classifier ONNX), behind `onnx` feature |
 | `sandbox/` | ToolExecutor (tree-sitter validator + subprocess + Wasm WASI sandbox), eBPF executor (disabled) |
 | `types.rs` | Core data types: AgentConfig, ToolSpec, MemoryScope, AgentStatus, TopologyRole |
 | `agent.rs` | AgentBridge -- Rust-side agent runtime representation |
@@ -87,4 +88,5 @@ All PyClasses registered in `lib.rs`:
 - `WasmSandbox` (behind `sandbox` feature)
 - `ToolExecutor`, `ValidationResult`, `ExecResult` (behind `tool-executor` feature)
 - `RustEmbedder` (behind `onnx` feature)
+- `AdaptiveRouter`, `RoutingResult`, `StructuralFeatures` (behind `onnx` feature)
 - `h96_quicksort`, `h96_quicksort_zerocopy`, `h96_argsort`, `vectorized_partition_h96` (functions)
