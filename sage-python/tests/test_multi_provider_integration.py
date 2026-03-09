@@ -4,6 +4,7 @@ Validates the complete flow: boot -> discover -> select -> cascade
 works across providers with mocked API responses. No real API calls.
 """
 import sys
+import threading
 import types as _types
 
 if "sage_core" not in sys.modules:
@@ -85,6 +86,7 @@ def _mock_registry(*profiles: ModelProfile) -> ModelRegistry:
     """Create a ModelRegistry pre-populated with the given profiles."""
     reg = ModelRegistry.__new__(ModelRegistry)
     reg._profiles = {}
+    reg._lock = threading.Lock()
     reg._connector = MagicMock()
     for p in profiles:
         reg._profiles[p.id] = p

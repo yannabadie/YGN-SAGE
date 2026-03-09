@@ -6,6 +6,7 @@ curated benchmark data from ``config/model_profiles.toml``.
 from __future__ import annotations
 
 import logging
+import threading
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -90,6 +91,7 @@ class ModelRegistry:
 
     def __init__(self):
         self._profiles: dict[str, ModelProfile] = {}
+        self._lock = threading.Lock()
         self._connector = ProviderConnector()
 
     # ── Public API ────────────────────────────────────────────────────────
@@ -105,17 +107,20 @@ class ModelRegistry:
         # Track which TOML entries were seen via discovery
         seen_ids: set[str] = set()
 
+        # Build new profiles dict locally (no lock needed during build)
+        new_profiles: dict[str, ModelProfile] = {}
+
         for dm in discovered:
             seen_ids.add(dm.id)
             profile = self._merge(dm, knowledge)
-            self._profiles[dm.id] = profile
+            new_profiles[dm.id] = profile
 
         # Add TOML-only models as unavailable (not discovered but known)
         for model_id, toml_data in knowledge.items():
             if model_id not in seen_ids:
                 profile = self._profile_from_toml(model_id, toml_data)
                 profile.available = False
-                self._profiles[model_id] = profile
+                new_profiles[model_id] = profile
                 logger.debug("TOML model %s not discovered (marked unavailable)", model_id)
 
         # Warn about discovered models missing from TOML
@@ -126,10 +131,14 @@ class ModelRegistry:
                     dm.id, dm.provider,
                 )
 
+        # Atomic swap under lock
+        with self._lock:
+            self._profiles = new_profiles
+
         logger.info(
             "ModelRegistry: %d total profiles, %d available",
-            len(self._profiles),
-            sum(1 for p in self._profiles.values() if p.available),
+            len(new_profiles),
+            sum(1 for p in new_profiles.values() if p.available),
         )
 
     def select(self, needs: dict[str, float]) -> ModelProfile | None:
@@ -161,7 +170,10 @@ class ModelRegistry:
         require_structured = needs.get("require_structured_output", False)
         cost_sensitivity = needs.get("cost_sensitivity", 0.3)
 
-        for profile in self._profiles.values():
+        with self._lock:
+            profiles_snapshot = list(self._profiles.values())
+
+        for profile in profiles_snapshot:
             if not profile.available:
                 continue
             # Skip models without verified benchmark data (cost=0 means no TOML profile)
@@ -217,19 +229,23 @@ class ModelRegistry:
 
     def list_available(self) -> list[ModelProfile]:
         """Return all available models sorted by input cost (ascending)."""
+        with self._lock:
+            profiles_snapshot = list(self._profiles.values())
         return sorted(
-            (p for p in self._profiles.values() if p.available),
+            (p for p in profiles_snapshot if p.available),
             key=lambda p: p.cost_input,
         )
 
     def get(self, model_id: str) -> ModelProfile | None:
         """Get a specific model profile by ID."""
-        return self._profiles.get(model_id)
+        with self._lock:
+            return self._profiles.get(model_id)
 
     @property
     def profiles(self) -> dict[str, ModelProfile]:
         """Direct access to the internal profiles dict (read-only intent)."""
-        return self._profiles
+        with self._lock:
+            return dict(self._profiles)
 
     # ── TOML loading ──────────────────────────────────────────────────────
 
