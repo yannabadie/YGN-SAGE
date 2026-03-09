@@ -191,6 +191,12 @@ class AgentLoop:
         self.semantic_memory: Any = None    # SemanticMemory entity graph
         self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
 
+        # Ablation skip flags (set by AblationConfig.apply)
+        self._skip_memory: bool = False
+        self._skip_avr: bool = False
+        self._skip_routing: bool = False
+        self._skip_guardrails: bool = False
+
         # Evolution gating — disabled by default per Sprint 3 evidence:
         # full evolution engine scored 0.50 vs 0.33 for random mutation (67% efficiency).
         # SAMPO adds minimal value. Set to True for explicit use.
@@ -266,7 +272,10 @@ class AgentLoop:
         perceive_meta: dict[str, Any] = {"task": task, "agent": self.config.name}
 
         # Metacognitive routing (if wired)
-        if self.metacognition:
+        if self._skip_routing:
+            perceive_meta["system"] = 2
+            perceive_meta["routing_source"] = "ablation_forced_s2"
+        elif self.metacognition:
             profile = await self.metacognition.assess_complexity_async(task)
             decision = self.metacognition.route(profile)
             perceive_meta["system"] = decision.system
@@ -282,7 +291,7 @@ class AgentLoop:
         self._emit(LoopPhase.PERCEIVE, **perceive_meta)
 
         # Input guardrail check
-        if self.guardrail_pipeline:
+        if self.guardrail_pipeline and not self._skip_guardrails:
             try:
                 input_results = await self.guardrail_pipeline.check_all(
                     input=task, context={"step": 0, "agent": self.config.name}
@@ -328,7 +337,7 @@ class AgentLoop:
         result_text = ""
 
         # Semantic memory context injection (one-time, before loop)
-        if self.semantic_memory and not self._cb_semantic.should_skip():
+        if self.semantic_memory and not self._cb_semantic.should_skip() and not self._skip_memory:
             try:
                 sem_context = self.semantic_memory.get_context_for(task)
                 if sem_context and self._relevance_gate.is_relevant(task, sem_context):
@@ -341,7 +350,7 @@ class AgentLoop:
                 self._cb_semantic.record_failure(e)
 
         # S-MMU context injection (graph-based retrieval from compacted chunks)
-        if not self._cb_smmu.should_skip():
+        if not self._cb_smmu.should_skip() and not self._skip_memory:
             try:
                 from sage.memory.smmu_context import retrieve_smmu_context
                 smmu_context = retrieve_smmu_context(self.working_memory)
@@ -439,7 +448,7 @@ class AgentLoop:
                     self._s3_retries = 0  # Reset on success
 
             # System 2 validation (Empirical — AVR: Act-Verify-Refine)
-            elif self.config.validation_level == 2 and content:
+            elif self.config.validation_level == 2 and content and not self._skip_avr:
                 code_blocks = _extract_code_blocks(content)
 
                 if code_blocks and self.sandbox_manager:
@@ -500,7 +509,7 @@ class AgentLoop:
                                 continue
                     else:
                         # Syntax is valid — proceed to runtime guardrail + sandbox
-                        if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip():
+                        if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip() and not self._skip_guardrails:
                             try:
                                 runtime_results = await self.guardrail_pipeline.check_all(
                                     input=cleaned_code,
@@ -603,7 +612,7 @@ class AgentLoop:
             self.working_memory.add_event("ASSISTANT", content)
 
             # Store significant responses in episodic memory (if wired)
-            if self.episodic_memory and len(content) > 100 and not self._cb_episodic.should_skip():
+            if self.episodic_memory and len(content) > 100 and not self._cb_episodic.should_skip() and not self._skip_memory:
                 try:
                     await self.episodic_memory.store(
                         key=f"step-{self.step_count}",
@@ -615,7 +624,7 @@ class AgentLoop:
                     self._cb_episodic.record_failure(e)
 
             # Semantic memory: extract entities from response
-            if self.memory_agent and self.semantic_memory and content and len(content) > 50 and not self._cb_entity.should_skip():
+            if self.memory_agent and self.semantic_memory and content and len(content) > 50 and not self._cb_entity.should_skip() and not self._skip_memory:
                 try:
                     extraction = await self.memory_agent.extract(content[:1000])
                     if extraction.entities:
@@ -682,7 +691,7 @@ class AgentLoop:
             self._emit(LoopPhase.LEARN, **learn_meta)
 
         # Output guardrail check
-        if self.guardrail_pipeline and result_text:
+        if self.guardrail_pipeline and result_text and not self._skip_guardrails:
             try:
                 output_results = await self.guardrail_pipeline.check_all(
                     output=result_text,
