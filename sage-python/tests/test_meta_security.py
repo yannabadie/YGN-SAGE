@@ -1,6 +1,7 @@
 """Tests for security audit findings SEC-01, SEC-02, SEC-03."""
 import pytest
 import asyncio
+import json
 from unittest.mock import patch
 
 
@@ -96,6 +97,24 @@ class TestMetaToolsSandboxed:
         tool_names = system.tool_registry.list_tools()
         assert "create_python_tool" in tool_names
         assert "create_bash_tool" in tool_names
+
+    def test_create_python_tool_uses_rust_executor(self):
+        """Tool creation uses Rust ToolExecutor when available."""
+        try:
+            from sage_core import ToolExecutor
+        except ImportError:
+            pytest.skip("sage_core not compiled with tool-executor feature")
+
+        from sage.tools.meta import create_python_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_python_tool._handler(
+            name="rust_adder",
+            code='result = args["a"] + args["b"]\nprint(json.dumps({"output": str(result)}))',
+            registry=registry,
+        ))
+        assert "Success" in result
+        assert registry.get("rust_adder") is not None
 
 
 class TestRunBashSecurity:

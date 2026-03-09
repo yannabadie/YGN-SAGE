@@ -35,16 +35,61 @@ os.makedirs(TOOLS_WORKSPACE, exist_ok=True)
     }
 )
 async def create_python_tool(name: str, code: str, registry: ToolRegistry = None) -> str:
-    # 1. Registry required
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # 2. AST validation — reject dangerous patterns before execution
-    errors = validate_tool_code(code)
-    if errors:
-        return "Blocked: " + "; ".join(errors)
+    # Try Rust path first (tree-sitter validation + subprocess)
+    try:
+        from sage_core import ToolExecutor
+        _executor = ToolExecutor()
 
-    # 3. Save code to disk for auditability
+        # Validate via tree-sitter
+        validation = _executor.validate(code)
+        if not validation.valid:
+            return "Blocked: " + "; ".join(validation.errors)
+
+        # Create sandboxed handler using Rust executor
+        saved_code = code
+        async def _rust_handler(**kwargs):
+            result = _executor.execute_raw(saved_code, json.dumps(kwargs))
+            if result.exit_code != 0:
+                return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
+            stdout = result.stdout.strip()
+            try:
+                parsed = json.loads(stdout)
+                if isinstance(parsed, dict) and "output" in parsed:
+                    return str(parsed["output"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+            return stdout
+
+        handler = _rust_handler
+        logger.info("Using Rust ToolExecutor for tool '%s'", name)
+
+    except (ImportError, AttributeError):
+        # Fallback: Python sandbox_executor
+        errors = validate_tool_code(code)
+        if errors:
+            return "Blocked: " + "; ".join(errors)
+
+        saved_code = code
+        async def _python_handler(**kwargs):
+            result = await execute_python_in_sandbox(saved_code, kwargs)
+            if result.exit_code != 0:
+                return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
+            stdout = result.stdout.strip()
+            try:
+                parsed = json.loads(stdout)
+                if isinstance(parsed, dict) and "output" in parsed:
+                    return str(parsed["output"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+            return stdout
+
+        handler = _python_handler
+        logger.info("Using Python sandbox for tool '%s' (Rust ToolExecutor not available)", name)
+
+    # Save code for auditability
     file_path = os.path.join(TOOLS_WORKSPACE, f"{name}.py")
     try:
         with open(file_path, "w", encoding="utf-8") as f:
@@ -52,25 +97,7 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
     except OSError as e:
         return f"Error: Could not save tool code: {e}"
 
-    # 4. Build sandboxed handler closure
-    saved_code = code  # capture for closure
-
-    async def _sandboxed_handler(**kwargs):
-        result = await execute_python_in_sandbox(saved_code, kwargs)
-        if result.exit_code != 0:
-            return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
-        # Try to parse structured output (JSON with "output" key)
-        stdout = result.stdout.strip()
-        try:
-            parsed = json.loads(stdout)
-            if isinstance(parsed, dict) and "output" in parsed:
-                return str(parsed["output"])
-        except (json.JSONDecodeError, TypeError):
-            pass
-        # Fall back to raw stdout
-        return stdout
-
-    # 5. Register tool
+    # Register tool
     tool_spec = ToolDef(
         name=name,
         description=f"Dynamically created tool '{name}' (sandboxed).",
@@ -79,7 +106,7 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
             "properties": {},
         },
     )
-    new_tool = Tool(spec=tool_spec, handler=_sandboxed_handler)
+    new_tool = Tool(spec=tool_spec, handler=handler)
     registry.register(new_tool)
 
     logger.info("Registered sandboxed tool '%s' (saved to %s)", name, file_path)
