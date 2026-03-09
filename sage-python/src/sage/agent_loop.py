@@ -202,7 +202,7 @@ class AgentLoop:
         self._s3_retries = 0
         self._max_s3_retries = 2
         self._s2_avr_retries = 0
-        self._max_s2_avr_retries = 3
+        self._max_s2_avr_retries = S2_MAX_RETRIES_BEFORE_ESCALATION
         self._avr_error_history: list[str] = []
 
         # CRAG-style relevance gate for memory injection
@@ -234,6 +234,22 @@ class AgentLoop:
 
     def _default_event_handler(self, event: AgentEvent) -> None:
         log.info(f"[{event.type}] step={event.step} model={event.model}")
+
+    async def _execute_tool_call(self, tc) -> str:
+        """Execute a tool call with argument validation."""
+        tool = self._tools.get(tc.name)
+        if tool is None:
+            return f"Error: Unknown tool '{tc.name}'"
+        kwargs = tc.arguments
+        if not isinstance(kwargs, dict):
+            log.warning("Tool '%s' received non-dict arguments: %s", tc.name, type(kwargs))
+            return f"Error: Tool '{tc.name}' received invalid arguments (expected dict, got {type(kwargs).__name__})"
+        try:
+            result = await tool.execute(kwargs.copy())
+            return result.output
+        except Exception as e:
+            log.error("Tool '%s' execution failed: %s", tc.name, e)
+            return f"Error executing tool '{tc.name}': {type(e).__name__}: {e}"
 
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle."""
@@ -598,15 +614,7 @@ class AgentLoop:
 
             for tc in response.tool_calls:
                 self._emit(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
-
-                tool = self._tools.get(tc.name)
-                if tool is None:
-                    output = f"Error: Unknown tool '{tc.name}'"
-                else:
-                    kwargs = tc.arguments.copy()
-                    result = await tool.execute(kwargs)
-                    output = result.output
-
+                output = await self._execute_tool_call(tc)
                 self.working_memory.add_event("TOOL", f"{tc.name} -> {output}")
                 messages.append(Message(
                     role=Role.TOOL, content=output,
