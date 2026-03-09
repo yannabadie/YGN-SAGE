@@ -6,3 +6,9 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = "warn"

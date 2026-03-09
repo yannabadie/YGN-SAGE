@@ -46,3 +46,6 @@ cranelift = ["wasmtime/cranelift"]
 onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
+
+[lints]
+workspace = true
