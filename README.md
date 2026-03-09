@@ -66,7 +66,7 @@ AgentLoop: perceive -> think -> act -> learn
     +---> Guardrails (input/runtime/output) --- Z3 bounds, cost limits
     +---> Memory (4 tiers) --- STM, SQLite episodic, semantic graph, ExoCortex RAG
     +---> Tools (dynamic) --- Python, Bash, search, sub-agents
-    +---> Evolution --- DGM + SAMPO + MAP-Elites topology search
+    +---> Evolution --- SAMPO + MAP-Elites topology search
     |
     v
 EventBus ---> Dashboard (WebSocket, real-time)
@@ -106,7 +106,7 @@ YGN-SAGE/
 |       |-- strategy/    # S1/S2/S3 metacognitive routing + CGRS self-braking
 |       |-- tools/       # Dynamic tool creation + 9 memory tools
 |       |-- topology/    # MAP-Elites + Z3 PRM validator
-|       |-- evolution/   # LLM mutator + DGM/SAMPO solver
+|       |-- evolution/   # LLM mutator + SAMPO solver
 |       |-- agent_loop.py
 |       +-- boot.py
 |-- sage-discover/       # Knowledge pipeline (arXiv/S2/HF -> ExoCortex)

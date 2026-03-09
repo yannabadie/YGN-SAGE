@@ -6,7 +6,7 @@ Evolutionary self-improvement engine using MAP-Elites and LLM-driven code mutati
 
 ### `engine.py` -- EvolutionEngine
 
-Main evolution loop implementing MAP-Elites with SAMPO (Strategic Action for Meta-Parameter Optimization). Chooses 1 of 5 DGM (Dynamic Growth Model) actions per generation: explore, exploit, refine hyperparameters, prune, or diversify. Manages generation lifecycle and trajectory tracking.
+Main evolution loop implementing MAP-Elites with SAMPO (Strategic Action for Meta-Parameter Optimization). Chooses 1 of 5 SAMPO actions per generation: explore, exploit, refine hyperparameters, prune, or diversify. Manages generation lifecycle and trajectory tracking.
 
 ### `mutator.py` -- Code Mutation
 
@@ -14,7 +14,7 @@ Base mutation logic. Generates candidate code modifications (parameter tweaks, s
 
 ### `llm_mutator.py` -- LLM-Driven Mutation
 
-Uses LLM providers to propose intelligent code mutations. Injects DGM context (current SAMPO action, fitness landscape) into the mutation prompt so the LLM understands the strategic direction.
+Uses LLM providers to propose intelligent code mutations. Injects SAMPO context (current action, fitness landscape) into the mutation prompt so the LLM understands the strategic direction.
 
 ### `evaluator.py` -- Fitness Assessment
 
@@ -36,7 +36,7 @@ Experimental evaluator using eBPF sandbox (via `sage-core` SnapBPF). Provides Co
 
 ```
 EvolutionEngine
-  |-- SAMPO action selection (5 DGM actions)
+  |-- SAMPO action selection (5 actions)
   |-- LLMMutator (propose candidates)
   |-- Evaluator (score fitness)
   |-- Population (MAP-Elites grid)

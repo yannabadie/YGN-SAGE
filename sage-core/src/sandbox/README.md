@@ -40,13 +40,9 @@ Contains two PyClasses (not exported):
 
 **STUB -- NOT FUNCTIONAL.** Placeholder for a future kernel-level SnapBPF agent. Compiles but contains no real logic. The actual CoW implementation is the Rust `SnapBPF` struct in `ebpf.rs`.
 
-### `z3_validator.rs` -- Z3 Constraint Validation (disabled)
+### `z3_validator.rs` -- REMOVED
 
-**Not compiled.** Z3 verification moved to Python (`sage.sandbox.z3_validator`) to avoid LLVM/CMake build dependencies on Windows. The Rust source remains for reference.
-
-Contains:
-- `ValidationResult` -- `{safe, violations, proof_time_ms}`.
-- `Z3Validator` -- SMT-based safety checks: `prove_memory_safety(addr, limit)`, `check_loop_bound(var, cap)`, `verify_array_bounds(accesses)`, `validate_mutation(constraints)`.
+Deleted as dead code per Z3-01 audit finding. Z3 verification is in Python: `sage.sandbox.z3_validator` and `sage.topology.kg_rlvr`.
 
 ## Platform Notes
 
