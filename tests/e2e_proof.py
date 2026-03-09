@@ -193,7 +193,7 @@ def test_layer2_python_components():
             decision = router.route(profile)
             routing_results[expected] = f"S{decision.system} (complexity={profile.complexity:.2f})"
 
-        detail = " | ".join(f"{k}→{v}" for k, v in routing_results.items())
+        detail = " | ".join(f"{k}->{v}" for k, v in routing_results.items())
         record("2.1 ComplexityRouter", True, detail)
     except Exception as e:
         record("2.1 ComplexityRouter", False, str(e))
