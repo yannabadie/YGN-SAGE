@@ -44,3 +44,4 @@ docs/plans/agent_stream.jsonl
 sage-core/models/*.onnx
 sage-core/models/tokenizer.json
 sage-core/models/*.dll
+humaneval_full.log
