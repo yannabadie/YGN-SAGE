@@ -1,0 +1,20 @@
+{"task_id": "HumanEval/0", "passed": true, "latency_ms": 3328.7, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/1", "passed": true, "latency_ms": 4757.0, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/2", "passed": true, "latency_ms": 3063.1, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/3", "passed": true, "latency_ms": 3221.8, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/4", "passed": true, "latency_ms": 3233.0, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/5", "passed": true, "latency_ms": 4712.5, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/6", "passed": true, "latency_ms": 4831.1, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/7", "passed": true, "latency_ms": 2567.4, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/8", "passed": true, "latency_ms": 2627.4, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/9", "passed": true, "latency_ms": 4325.5, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/10", "passed": true, "latency_ms": 15908.0, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/11", "passed": true, "latency_ms": 4754.6, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/12", "passed": false, "latency_ms": 14006.1, "model": "unknown", "routing": "S2", "error": "Invalid -W option ignored: invalid module name: 'urllib3.exceptions'\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp8kz3fkww.py\", line 1\n    - It should return `None` for an empty list, with the si"}
+{"task_id": "HumanEval/13", "passed": true, "latency_ms": 2786.9, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/14", "passed": true, "latency_ms": 2430.4, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/15", "passed": true, "latency_ms": 2114.8, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/16", "passed": true, "latency_ms": 2232.6, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/17", "passed": true, "latency_ms": 3945.2, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/18", "passed": true, "latency_ms": 4018.2, "model": "unknown", "routing": "S2"}
+{"task_id": "HumanEval/19", "passed": true, "latency_ms": 6769.4, "model": "unknown", "routing": "S2"}
