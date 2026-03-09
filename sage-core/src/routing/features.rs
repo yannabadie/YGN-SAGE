@@ -59,30 +59,25 @@ const DESIGN_KEYWORDS: &[&str] = &[
 
 const UNCERTAINTY_KEYWORDS: &[&str] = &[
     "maybe",
-    "not sure",
     "possibly",
-    "could be",
-    "might",
-    "uncertain",
-    "clarify",
-    "ambiguous",
+    "explore",
+    "investigate",
+    "intermittent",
+    "sometimes",
+    "random",
+    "flaky",
 ];
 
 const TOOL_KEYWORDS: &[&str] = &[
+    "file",
     "search",
-    "browse",
-    "fetch",
+    "run",
+    "execute",
+    "compile",
+    "test",
+    "deploy",
     "download",
     "upload",
-    "execute",
-    "run",
-    "install",
-    "deploy",
-    "call api",
-    "http",
-    "curl",
-    "grep",
-    "find file",
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -190,11 +185,13 @@ impl StructuralFeatures {
             complexity += 0.1;
         }
 
-        // Word count scaling: longer tasks are more complex.
-        // +0.1 per 50 words above 20, capped contribution at 0.2.
-        if word_count > 20 {
-            let extra_words = (word_count - 20) as f32;
-            complexity += (extra_words / 50.0 * 0.1).min(0.2);
+        // Word count scaling: longer tasks are more complex (discrete thresholds).
+        if word_count > 100 {
+            complexity += 0.15;
+        } else if word_count > 50 {
+            complexity += 0.1;
+        } else if word_count > 20 {
+            complexity += 0.05;
         }
 
         // Clamp to [0, 1].
@@ -284,10 +281,10 @@ mod tests {
         let task = format!("Implement an algorithm that {}", padding);
         let f = StructuralFeatures::extract_from(&task);
         assert!(f.word_count > 120);
-        // ALGO hit (0.35) + word scaling (+0.2 max) → at least 0.7.
+        // ALGO hit (0.35) + word scaling (+0.15 for >100 words) → 0.2 + 0.35 + 0.15 = 0.70.
         assert!(
-            f.keyword_complexity >= 0.70,
-            "expected word-count scaling for long task, got {} (words={})",
+            (f.keyword_complexity - 0.70).abs() < 0.01,
+            "expected 0.70 for algo+long task, got {} (words={})",
             f.keyword_complexity,
             f.word_count
         );
