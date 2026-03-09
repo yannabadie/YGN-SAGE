@@ -6,7 +6,7 @@ Source code for the `sage_core` Rust crate. Each module maps to a PyO3-exported 
 
 ### `lib.rs` -- PyModule Entry Point
 
-Defines the `#[pymodule] fn sage_core(...)` function. Registers all PyClasses and PyFunctions into the Python module. Conditionally includes `sandbox` (behind `sandbox` or `tool-executor` features) and `embedder` (behind `onnx` feature). When `tool-executor` is enabled, registers `ValidationResult`, `ExecResult`, and `ToolExecutor` PyClasses.
+Defines the `#[pymodule] fn sage_core(...)` function. Registers all PyClasses and PyFunctions into the Python module. Conditionally includes `sandbox` (behind `sandbox` or `tool-executor` features), `embedder` (behind `onnx` feature), and `routing` (behind `onnx` feature). When `tool-executor` is enabled, registers `ValidationResult`, `ExecResult`, and `ToolExecutor` PyClasses. When `onnx` is enabled, registers `RustEmbedder`, `AdaptiveRouter`, `RoutingResult`, and `StructuralFeatures` PyClasses.
 
 ### `types.rs` -- Core Data Types
 
@@ -49,4 +49,12 @@ PyFunctions for high-performance sorting (uses Rust pdqsort; placeholder for vqs
 ## Submodule Directories
 
 - **`memory/`** -- Multi-tier memory data plane (Arrow, S-MMU, RAG cache, ONNX embedder)
+- **`routing/`** -- Adaptive Router (see below)
 - **`sandbox/`** -- ToolExecutor security pipeline (tree-sitter validator, subprocess executor, Wasm WASI sandbox). `validator.rs`, `subprocess.rs`, `tool_executor.rs` behind `tool-executor` feature. `wasm.rs` behind `sandbox` feature. `ebpf.rs` disabled.
+
+### `routing/` -- Adaptive Router (feature: `onnx`)
+
+Learned S1/S2/S3 routing pipeline. Stage 0 (structural features, always compiled) + Stage 1 (BERT ONNX classifier, behind `onnx` feature).
+
+- **`features.rs`** -- `StructuralFeatures` (PyClass): word_count, has_code_block, has_question_mark, keyword_complexity, keyword_uncertainty, tool_required. `extract(task) -> Self`. 6 keyword groups. 6 unit tests.
+- **`router.rs`** -- `AdaptiveRouter` (PyClass): `route(task) -> RoutingResult`, `route_stage0(task) -> RoutingResult`, `record_feedback(...)`, `has_classifier() -> bool`. Dynamic ONNX input discovery (supports BERT and RoBERTa models). 512-token truncation. 10 unit tests.

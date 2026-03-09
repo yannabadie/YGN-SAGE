@@ -27,7 +27,8 @@ from sage.agent_pool import AgentPool
 from sage.llm.base import LLMConfig
 from sage.llm.mock import MockProvider
 from sage.llm.router import ModelRouter
-from sage.strategy.metacognition import ComplexityRouter
+from sage.strategy.adaptive_router import AdaptiveRouter
+from sage.strategy.metacognition import ComplexityRouter  # backward compat
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
 from sage.memory.memory_agent import MemoryAgent
 from sage.tools.registry import ToolRegistry
@@ -44,7 +45,7 @@ class AgentSystem:
     """The complete YGN-SAGE agent system."""
     agent_loop: AgentLoop
     agent_pool: AgentPool
-    metacognition: ComplexityRouter
+    metacognition: AdaptiveRouter | ComplexityRouter
     topology_evolver: TopologyEvolver
     topology_population: TopologyPopulation
     memory_agent: MemoryAgent
@@ -182,7 +183,7 @@ def boot_agent_system(
     # Components
     tool_registry = ToolRegistry()
     agent_pool = AgentPool()
-    metacognition = ComplexityRouter(llm_provider=provider if not use_mock_llm else None)
+    metacognition = AdaptiveRouter(llm_provider=provider if not use_mock_llm else None)
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider if not use_mock_llm else None)

@@ -27,6 +27,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `bench/runner.py` - BenchmarkRunner, BenchReport, TaskResult
 - `bench/humaneval.py` - HumanEval benchmark (164 problems, pass@1)
 - `bench/routing.py` - Routing accuracy benchmark (30 labeled tasks)
+- `bench/routing_quality.py` - Routing quality benchmark (45 labeled tasks) for ComplexityRouter and AdaptiveRouter ground truth evaluation
+- `bench/routing_downstream.py` - DownstreamEvaluator: tier precision, escalation rate, routing P50/P99 latency, quality tracking
 - `llm/router.py` - Model Router with 7 tiers, data-driven lookup from TOML + env vars
 - `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
@@ -35,6 +37,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `providers/openai_compat.py` - OpenAI-compatible provider with per-provider quirk dispatch (DeepSeek, Kimi, Grok, MiniMax, OpenAI)
 - `providers/capabilities.py` - Provider capability registry: auto-populated at boot from discovered providers, 7 known provider capability sets
 - `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
+- `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
+- `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
@@ -73,6 +77,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var.
+- `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
+- `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support.
 - `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
@@ -88,7 +94,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (846 passed, 1 skipped)
+python -m pytest tests/ -v     # Run tests (1041 passed, 91 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -110,7 +116,7 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --workspace         # Run Rust tests (base: 7 passing, +5 ONNX feature-gated)
+cargo test --workspace         # Run Rust tests (base: 7 passing, +16 routing feature-gated, +5 ONNX feature-gated)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support
@@ -202,6 +208,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Benchmarks
 - **HumanEval**: 164 problems bundled as JSON. pass@1 with subprocess sandbox. CLI: `python -m sage.bench --type humaneval`
 - **Routing Accuracy**: 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures ComplexityRouter precision.
+- **Routing Quality**: 45 labeled tasks. Measures both ComplexityRouter and AdaptiveRouter against human-labeled ground truth.
+- **Downstream Quality**: DownstreamEvaluator tracks tier precision, escalation rate (<20% target), routing P50/P99 latency (<50ms target).
 - **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
 
 ## Evolution System

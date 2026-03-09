@@ -21,7 +21,7 @@ static ORT_INIT: Once = Once::new();
 ///
 /// NOTE: Do NOT call Python subprocess from here — this runs inside a PyO3 call,
 /// and spawning a new Python process would deadlock on the GIL.
-fn ensure_ort_initialized(model_path: &str) {
+pub(crate) fn ensure_ort_initialized(model_path: &str) {
     ORT_INIT.call_once(|| {
         // If ORT_DYLIB_PATH is set, ort will use it automatically.
         if std::env::var("ORT_DYLIB_PATH").is_ok() {

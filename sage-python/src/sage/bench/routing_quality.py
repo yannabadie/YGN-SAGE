@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
+from sage.strategy.adaptive_router import AdaptiveRouter
 from sage.strategy.metacognition import ComplexityRouter
 
 log = logging.getLogger(__name__)
@@ -121,6 +122,65 @@ def run_routing_quality(router: ComplexityRouter | None = None) -> RoutingQualit
             "actual": actual,
             "correct": is_correct,
             "complexity": round(profile.complexity, 3),
+            "rationale": rationale,
+        })
+
+    total = len(GROUND_TRUTH)
+    return RoutingQualityResult(
+        total=total,
+        correct=correct,
+        under_routed=under_routed,
+        over_routed=over_routed,
+        accuracy=correct / total if total else 0.0,
+        under_routing_rate=under_routed / total if total else 0.0,
+        over_routing_rate=over_routed / total if total else 0.0,
+        details=details,
+    )
+
+
+def run_adaptive_routing_quality(
+    router: AdaptiveRouter | None = None,
+) -> RoutingQualityResult:
+    """Run routing quality benchmark using AdaptiveRouter.
+
+    Args:
+        router: AdaptiveRouter to test. Uses default if None.
+
+    Returns:
+        RoutingQualityResult with accuracy and breakdown.
+    """
+    if router is None:
+        router = AdaptiveRouter()
+
+    correct = 0
+    under_routed = 0
+    over_routed = 0
+    details: list[dict] = []
+
+    for task, min_system, rationale in GROUND_TRUTH:
+        result = router.route_adaptive(task)
+        actual = result.decision.system
+
+        is_correct = actual >= min_system
+        is_under = actual < min_system
+        is_over = actual > min_system
+
+        if is_correct:
+            correct += 1
+        if is_under:
+            under_routed += 1
+        if is_over:
+            over_routed += 1
+
+        details.append({
+            "task": task[:60],
+            "expected_min": min_system,
+            "actual": actual,
+            "correct": is_correct,
+            "complexity": round(result.profile.complexity, 3),
+            "confidence": round(result.confidence, 3),
+            "stage": result.stage,
+            "method": result.method,
             "rationale": rationale,
         })
 

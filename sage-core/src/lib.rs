@@ -4,6 +4,7 @@ pub mod agent;
 pub mod hardware;
 pub mod memory;
 pub mod pool;
+pub mod routing;
 #[cfg(any(feature = "sandbox", feature = "tool-executor"))]
 pub mod sandbox;
 pub mod simd_sort;
@@ -34,8 +35,13 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<sandbox::tool_executor::ToolExecutor>()?;
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
+    m.add_class::<routing::features::StructuralFeatures>()?;
     #[cfg(feature = "onnx")]
-    m.add_class::<memory::embedder::RustEmbedder>()?;
+    {
+        m.add_class::<memory::embedder::RustEmbedder>()?;
+        m.add_class::<routing::AdaptiveRouter>()?;
+        m.add_class::<routing::RoutingResult>()?;
+    }
 
     // Add SIMD functions
     m.add_function(wrap_pyfunction!(simd_sort::vectorized_partition_h96, m)?)?;
