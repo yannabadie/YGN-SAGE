@@ -8,3 +8,5 @@ pub mod wasm;
 // Rust implementation removed — z3 crate was never added to Cargo.toml dependencies.
 #[cfg(feature = "tool-executor")]
 pub mod validator;
+#[cfg(feature = "tool-executor")]
+pub mod subprocess;
