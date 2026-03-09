@@ -12,7 +12,7 @@ crate-type = ["cdylib", "rlib"]
 pyo3 = { version = "0.25", features = ["extension-module"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "macros"] }
+tokio = { version = "1", features = ["rt", "macros", "process", "time"] }
 ulid = { version = "1", features = ["serde"] }
 thiserror = "2"
 dashmap = "6"
@@ -37,6 +37,9 @@ petgraph = "0.6.4"
 ort = { version = "2.0.0-rc.12", optional = true, features = ["load-dynamic"] }
 tokenizers = { version = "0.21", optional = true, default-features = false, features = ["progressbar", "fancy-regex"] }
 ndarray = { version = "0.16", optional = true }
+tree-sitter = { version = "0.26", optional = true }
+tree-sitter-python = { version = "0.25", optional = true }
+process-wrap = { version = "9", optional = true, features = ["tokio1"] }
 [features]
 default = []
 sandbox = ["wasmtime"]
@@ -44,6 +47,7 @@ sandbox = ["wasmtime"]
 # On Windows, sandbox alone uses pre-compiled modules only.
 cranelift = ["wasmtime/cranelift"]
 onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
+tool-executor = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:process-wrap"]
 
 # z3: using Python z3-solver for formal verification (avoids LLVM/CMake build deps on Windows)
 
