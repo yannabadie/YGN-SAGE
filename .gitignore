@@ -54,3 +54,4 @@ humaneval_full.log
 # Certificates (do not commit)
 Cert/
 ca-bundle.pem
+sage-python/src/sage/tools/generated_tools/
