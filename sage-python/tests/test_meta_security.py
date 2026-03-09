@@ -89,13 +89,13 @@ class TestMetaToolsSandboxed:
         assert "Blocked" in result
         assert registry.get("evil_bash") is None
 
-    def test_tools_not_registered_in_boot(self):
-        """Verify create_python_tool and create_bash_tool are NOT in the default tool registry."""
+    def test_tools_registered_in_boot(self):
+        """Verify create_python_tool and create_bash_tool ARE registered (sandboxed — SEC-01/02 fixed)."""
         from sage.boot import boot_agent_system
         system = boot_agent_system(use_mock_llm=True)
         tool_names = system.tool_registry.list_tools()
-        assert "create_python_tool" not in tool_names
-        assert "create_bash_tool" not in tool_names
+        assert "create_python_tool" in tool_names
+        assert "create_bash_tool" in tool_names
 
 
 class TestRunBashSecurity:

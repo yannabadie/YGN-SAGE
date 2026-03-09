@@ -97,12 +97,12 @@ async def test_full_cycle_with_mock():
 
 
 def test_boot_registers_meta_tools():
-    """Boot sequence registers memory tools (meta tools disabled for security — SEC-01/02)."""
+    """Boot sequence registers meta tools (sandboxed — SEC-01/02 fixed)."""
     system = boot_agent_system(use_mock_llm=True)
     tool_names = system.tool_registry.list_tools()
-    # SEC-01/SEC-02: create_python_tool and create_bash_tool are DISABLED
-    assert "create_python_tool" not in tool_names
-    assert "create_bash_tool" not in tool_names
+    # SEC-01/SEC-02 fixed: tools now execute in subprocess sandbox
+    assert "create_python_tool" in tool_names
+    assert "create_bash_tool" in tool_names
     # Memory tools still registered
     assert "search_memory" in tool_names
     assert "store_memory" in tool_names
