@@ -16,52 +16,119 @@ const EMBEDDING_DIM: usize = 384;
 
 static ORT_INIT: Once = Once::new();
 
-/// Initialize ORT runtime from a dylib path. Must be called before any Session usage.
-/// Searches: ORT_DYLIB_PATH env var > sibling of model_path > common venv paths.
+/// Initialize ORT runtime. Must be called before any Session usage.
+///
+/// Uses `ort::init_from(path)?.commit()` (ort 2.x API) when auto-discovering
+/// the dylib, or lets ort use `ORT_DYLIB_PATH` env var if already set.
+///
+/// Search order: ORT_DYLIB_PATH env > sibling of model > VIRTUAL_ENV >
+/// user site-packages (%APPDATA%) > system Python (C:\Python3*).
 ///
 /// NOTE: Do NOT call Python subprocess from here — this runs inside a PyO3 call,
 /// and spawning a new Python process would deadlock on the GIL.
 pub(crate) fn ensure_ort_initialized(model_path: &str) {
     ORT_INIT.call_once(|| {
-        // If ORT_DYLIB_PATH is set, ort will use it automatically.
+        // If ORT_DYLIB_PATH is set, ort will use it automatically — nothing to do.
         if std::env::var("ORT_DYLIB_PATH").is_ok() {
             return;
         }
 
-        #[cfg(target_os = "windows")]
-        let dll_name = "onnxruntime.dll";
-        #[cfg(target_os = "linux")]
-        let dll_name = "libonnxruntime.so";
-        #[cfg(target_os = "macos")]
-        let dll_name = "libonnxruntime.dylib";
-
-        // Check sibling of model file first.
-        if let Some(parent) = std::path::Path::new(model_path).parent() {
-            let candidate = parent.join(dll_name);
-            if candidate.exists() {
-                std::env::set_var("ORT_DYLIB_PATH", &candidate);
-                return;
-            }
-        }
-
-        // On Windows, try the pip-installed onnxruntime capi directory.
-        // Walk up from model_path to find a .venv or venv with onnxruntime installed.
-        #[cfg(target_os = "windows")]
-        {
-            // Try sys.prefix-based discovery via VIRTUAL_ENV env var
-            if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
-                let candidate = std::path::Path::new(&venv)
-                    .join("Lib")
-                    .join("site-packages")
-                    .join("onnxruntime")
-                    .join("capi")
-                    .join(dll_name);
-                if candidate.exists() {
-                    std::env::set_var("ORT_DYLIB_PATH", &candidate);
+        // Try to discover the dylib and init via ort::init_from().
+        if let Some(path) = discover_ort_dylib(model_path) {
+            // ort 2.x programmatic init — preferred over env var manipulation.
+            match ort::init_from(&path) {
+                Ok(builder) => { builder.commit(); }
+                Err(e) => {
+                    eprintln!("WARN: ort::init_from({}) failed: {e}", path.display());
+                    // Fallback: set env var and hope Session::builder() picks it up.
+                    std::env::set_var("ORT_DYLIB_PATH", &path);
                 }
             }
         }
     });
+}
+
+/// Auto-discover the ONNX Runtime shared library on the filesystem.
+fn discover_ort_dylib(model_path: &str) -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    let dll_name = "onnxruntime.dll";
+    #[cfg(target_os = "linux")]
+    let dll_name = "libonnxruntime.so";
+    #[cfg(target_os = "macos")]
+    let dll_name = "libonnxruntime.dylib";
+
+    // 1. Sibling of model file.
+    if let Some(parent) = std::path::Path::new(model_path).parent() {
+        let candidate = parent.join(dll_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    // Platform-specific search paths (Windows pip installs).
+    #[cfg(target_os = "windows")]
+    {
+        let capi_tail = std::path::Path::new("Lib")
+            .join("site-packages")
+            .join("onnxruntime")
+            .join("capi")
+            .join(dll_name);
+
+        // 2. VIRTUAL_ENV (venv)
+        if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
+            let candidate = std::path::Path::new(&venv).join(&capi_tail);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        // 3. User site-packages: %APPDATA%\Python\Python3*\site-packages
+        if let Ok(appdata) = std::env::var("APPDATA") {
+            let user_python = std::path::Path::new(&appdata).join("Python");
+            if let Ok(entries) = std::fs::read_dir(&user_python) {
+                let user_capi_tail = std::path::Path::new("site-packages")
+                    .join("onnxruntime")
+                    .join("capi")
+                    .join(dll_name);
+                let mut dirs: Vec<_> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| {
+                        e.file_name()
+                            .to_str()
+                            .is_some_and(|n| n.starts_with("Python3"))
+                    })
+                    .collect();
+                dirs.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+                for entry in dirs {
+                    let candidate = entry.path().join(&user_capi_tail);
+                    if candidate.exists() {
+                        return Some(candidate);
+                    }
+                }
+            }
+        }
+
+        // 4. System Python: scan C:\Python3* directories
+        if let Ok(entries) = std::fs::read_dir("C:\\") {
+            let mut pythons: Vec<_> = entries
+                .filter_map(|e| e.ok())
+                .filter(|e| {
+                    e.file_name()
+                        .to_str()
+                        .is_some_and(|n| n.starts_with("Python3"))
+                })
+                .collect();
+            pythons.sort_by(|a, b| b.file_name().cmp(&a.file_name()));
+            for entry in pythons {
+                let candidate = entry.path().join(&capi_tail);
+                if candidate.exists() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[pyclass]
