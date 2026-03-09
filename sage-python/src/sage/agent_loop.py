@@ -107,6 +107,7 @@ def _is_stagnating(error_history: list[str], window: int = 3) -> bool:
 
 S2_MAX_RETRIES_BEFORE_ESCALATION = 2
 S2_AVR_MAX_ITERATIONS = 3  # Max Act-Verify-Refine iterations per code block
+MAX_MESSAGES = 40  # Keep system + user + last N exchanges
 
 
 def _is_code_task(task: str) -> bool:
@@ -620,6 +621,10 @@ class AgentLoop:
                     role=Role.TOOL, content=output,
                     tool_call_id=tc.id, name=tc.name,
                 ))
+
+            # Trim messages to prevent unbounded growth
+            if len(messages) > MAX_MESSAGES:
+                messages = messages[:2] + messages[-(MAX_MESSAGES - 2):]
 
             # === LEARN: Update memory and stats ===
             aio = self._compute_aio()
