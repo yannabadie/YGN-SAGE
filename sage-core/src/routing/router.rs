@@ -1,11 +1,12 @@
 //! AdaptiveRouter — 4-stage learned S1/S2/S3 routing.
 //!
 //! Stage 0: Structural features only (keyword complexity + uncertainty).
-//! Stage 1: (future) ONNX logistic classifier on features + embeddings.
+//! Stage 1: ONNX BERT classifier (routellm/bert) on task text.
 //! Stage 2-3: Python-side dynamic routing with feedback.
 //!
 //! Behind the `onnx` feature flag (shares deps with RustEmbedder).
 
+use ort::value::TensorRef;
 use pyo3::prelude::*;
 use std::sync::Mutex;
 
@@ -71,8 +72,7 @@ const FEEDBACK_DRAIN: usize = 5_000;
 pub struct AdaptiveRouter {
     #[allow(dead_code)]
     exemplar_embeddings: Vec<(Vec<f32>, u8)>,
-    classifier: Option<ort::session::Session>,
-    #[allow(dead_code)]
+    classifier: Mutex<Option<ort::session::Session>>,
     classifier_tokenizer: Option<tokenizers::Tokenizer>,
     c0_threshold: f32,
     c1_threshold: f32,
@@ -100,14 +100,123 @@ impl AdaptiveRouter {
         (2, 0.6)
     }
 
-    /// Stage 1 stub — will be implemented in Tasks 7-9 with ONNX classifier.
+    /// Stage 1: ONNX BERT classifier inference.
+    ///
+    /// Tokenizes `task`, runs the classifier ONNX model, applies softmax,
+    /// and maps output logits to a routing tier.
+    ///
+    /// Supports both binary (routellm/bert: class 0 = weak model OK, class 1 =
+    /// strong model needed) and multi-class (class 0=S1, 1=S2, 2=S3) models.
+    /// For binary output, uses `features.keyword_complexity` to split S2/S3.
+    ///
+    /// Dynamically discovers required model inputs from `session.inputs` so that
+    /// models without `token_type_ids` (e.g., RoBERTa/XLM-RoBERTa) work correctly.
     fn route_stage1(
         &self,
-        _task: &str,
-        _features: &StructuralFeatures,
+        task: &str,
+        features: &StructuralFeatures,
     ) -> Option<RoutingResult> {
-        // No classifier loaded yet — return None to fall through.
-        None
+        let mut session_guard = self.classifier.lock().unwrap();
+        let session = session_guard.as_mut()?;
+        let tokenizer = self.classifier_tokenizer.as_ref()?;
+
+        // Tokenize with truncation to model max (512 tokens).
+        let encoding = tokenizer.encode(task, true).ok()?;
+        let raw_ids = encoding.get_ids();
+        let raw_mask = encoding.get_attention_mask();
+
+        let max_len: usize = 512;
+        let seq_len = raw_ids.len().min(max_len);
+
+        let ids: Vec<i64> = raw_ids[..seq_len].iter().map(|&id| id as i64).collect();
+        let mask: Vec<i64> = raw_mask[..seq_len].iter().map(|&m| m as i64).collect();
+
+        let shape = vec![1usize, seq_len];
+
+        let id_tensor = TensorRef::from_array_view((shape.clone(), &*ids)).ok()?;
+        let mask_tensor = TensorRef::from_array_view((shape.clone(), &*mask)).ok()?;
+
+        // Discover required inputs from session metadata.
+        // RoBERTa/XLM-RoBERTa do NOT use token_type_ids; BERT does.
+        let needs_token_type_ids = session
+            .inputs()
+            .iter()
+            .any(|input| input.name() == "token_type_ids");
+
+        let outputs = if needs_token_type_ids {
+            let type_ids = vec![0i64; seq_len];
+            let type_tensor = TensorRef::from_array_view((shape, &*type_ids)).ok()?;
+            session
+                .run(ort::inputs![
+                    "input_ids" => id_tensor,
+                    "attention_mask" => mask_tensor,
+                    "token_type_ids" => type_tensor
+                ])
+                .ok()?
+        } else {
+            session
+                .run(ort::inputs![
+                    "input_ids" => id_tensor,
+                    "attention_mask" => mask_tensor
+                ])
+                .ok()?
+        };
+
+        // Extract logits — shape is [1, num_classes].
+        let (out_shape, logits) = outputs[0].try_extract_tensor::<f32>().ok()?;
+        let dims: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
+        let num_classes = if dims.len() == 2 { dims[1] } else { dims[0] };
+
+        if num_classes == 0 {
+            return None;
+        }
+
+        // Softmax over logits.
+        let max_logit = logits
+            .iter()
+            .take(num_classes)
+            .cloned()
+            .fold(f32::NEG_INFINITY, f32::max);
+        let exp_sum: f32 = logits
+            .iter()
+            .take(num_classes)
+            .map(|&l| (l - max_logit).exp())
+            .sum();
+        let probs: Vec<f32> = logits
+            .iter()
+            .take(num_classes)
+            .map(|&l| (l - max_logit).exp() / exp_sum)
+            .collect();
+
+        // Map probabilities to routing tier.
+        let (tier, confidence) = if num_classes == 2 {
+            // Binary: class 0 = weak model sufficient (S1),
+            //         class 1 = strong model needed (S2 or S3).
+            if probs[0] > probs[1] {
+                (1u8, probs[0])
+            } else if features.keyword_complexity > 0.65 {
+                // High structural complexity => formal verification tier.
+                (3, probs[1])
+            } else {
+                (2, probs[1])
+            }
+        } else if num_classes >= 3 {
+            // Multi-class: class 0=S1, 1=S2, 2=S3 (direct mapping).
+            let (idx, &max_prob) = probs
+                .iter()
+                .enumerate()
+                .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())?;
+            ((idx as u8 + 1).min(3), max_prob)
+        } else {
+            return None;
+        };
+
+        Some(RoutingResult {
+            tier,
+            confidence,
+            stage: 1,
+            features: features.clone(),
+        })
     }
 }
 
@@ -118,8 +227,8 @@ impl AdaptiveRouter {
     /// # Arguments
     /// * `c0_threshold` - Confidence threshold for Stage 0 (default 0.85).
     /// * `c1_threshold` - Confidence threshold for Stage 1 (default 0.70).
-    /// * `classifier_path` - Path to ONNX classifier model (Stage 1, not yet used).
-    /// * `tokenizer_path` - Path to tokenizer for classifier (Stage 1, not yet used).
+    /// * `classifier_path` - Path to ONNX classifier model (e.g., `models/classifier/model.onnx`).
+    /// * `tokenizer_path` - Path to tokenizer JSON (e.g., `models/classifier/tokenizer.json`).
     #[new]
     #[pyo3(signature = (c0_threshold=None, c1_threshold=None, classifier_path=None, tokenizer_path=None))]
     pub fn new(
@@ -128,14 +237,54 @@ impl AdaptiveRouter {
         classifier_path: Option<String>,
         tokenizer_path: Option<String>,
     ) -> Self {
-        // Suppress unused warnings — Stage 1 loading deferred to Tasks 7-9.
-        let _ = classifier_path;
-        let _ = tokenizer_path;
-        // Stage 1 classifier loading deferred to Tasks 7-9.
+        let mut classifier = None;
+        let mut classifier_tokenizer = None;
+
+        if let (Some(ref cp), Some(ref tp)) = (&classifier_path, &tokenizer_path) {
+            // Only attempt loading if both files exist on disk.
+            // ORT initialization with nonexistent paths can hang on Windows.
+            let cp_exists = std::path::Path::new(cp).exists();
+            let tp_exists = std::path::Path::new(tp).exists();
+
+            if cp_exists && tp_exists {
+                // Initialize ORT dynamic library (shared with RustEmbedder).
+                crate::memory::embedder::ensure_ort_initialized(cp);
+
+                match ort::session::Session::builder()
+                    .and_then(|mut b| b.commit_from_file(cp))
+                {
+                    Ok(session) => {
+                        classifier = Some(session);
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[AdaptiveRouter] WARN: failed to load classifier ONNX: {e}"
+                        );
+                    }
+                }
+
+                match tokenizers::Tokenizer::from_file(tp) {
+                    Ok(tok) => {
+                        classifier_tokenizer = Some(tok);
+                    }
+                    Err(e) => {
+                        eprintln!("[AdaptiveRouter] WARN: failed to load tokenizer: {e}");
+                    }
+                }
+            } else {
+                if !cp_exists {
+                    eprintln!("[AdaptiveRouter] WARN: classifier model not found: {cp}");
+                }
+                if !tp_exists {
+                    eprintln!("[AdaptiveRouter] WARN: tokenizer not found: {tp}");
+                }
+            }
+        }
+
         Self {
             exemplar_embeddings: Vec::new(),
-            classifier: None,
-            classifier_tokenizer: None,
+            classifier: Mutex::new(classifier),
+            classifier_tokenizer,
             c0_threshold: c0_threshold.unwrap_or(DEFAULT_C0_THRESHOLD),
             c1_threshold: c1_threshold.unwrap_or(DEFAULT_C1_THRESHOLD),
             feedback: Mutex::new(Vec::new()),
@@ -214,7 +363,7 @@ impl AdaptiveRouter {
 
     /// Whether an ONNX classifier is loaded (Stage 1 available).
     pub fn has_classifier(&self) -> bool {
-        self.classifier.is_some()
+        self.classifier.lock().unwrap().is_some()
     }
 
     /// Current Stage 0 confidence threshold.
@@ -337,7 +486,7 @@ mod tests {
         );
         assert!(
             !router.has_classifier(),
-            "Should have no classifier when paths are ignored (Stage 1 not yet implemented)",
+            "Should have no classifier when model file does not exist",
         );
     }
 

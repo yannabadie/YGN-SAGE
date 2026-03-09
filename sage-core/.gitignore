@@ -1,0 +1,6 @@
+# ONNX classifier model artifacts (exported by models/export_classifier.py)
+models/classifier/*.onnx
+models/classifier/*.bin
+models/classifier/config.json
+models/classifier/special_tokens_map.json
+models/classifier/sentencepiece*
