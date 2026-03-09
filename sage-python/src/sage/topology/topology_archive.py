@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass
 
-from sage.topology.z3_topology import TopologySpec
+from sage.topology.topology_verifier import TopologySpec
 
 log = logging.getLogger(__name__)
 

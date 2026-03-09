@@ -1,6 +1,6 @@
-# sage-python/tests/test_z3_topology.py
+# sage-python/tests/test_topology_verifier.py
 import pytest
-from sage.topology.z3_topology import TopologyVerifier, TopologySpec, VerificationResult
+from sage.topology.topology_verifier import TopologyVerifier, TopologySpec, VerificationResult
 
 
 def test_sequential_topology_terminates():
@@ -48,7 +48,8 @@ def test_verify_returns_proof():
     verifier = TopologyVerifier()
     result = verifier.verify(spec)
     assert result.proof is not None
-    assert "sat" in result.proof.lower() or "proved" in result.proof.lower()
+    assert "verified" in result.proof.lower()
+    assert "kahn" in result.proof.lower()
 
 
 def test_disconnected_agents_warning():

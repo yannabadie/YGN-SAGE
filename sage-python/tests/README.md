@@ -31,7 +31,7 @@ Tests are organized by module, with each `test_*.py` file corresponding to a sou
 ### Contracts and Verification
 - `test_task_node.py`, `test_task_dag.py` -- TaskNode IR, DAG construction
 - `test_verification.py` -- Pre/post verification functions
-- `test_z3_contracts.py`, `test_z3_validator.py`, `test_z3_topology.py` -- Z3 SAT verification
+- `test_z3_contracts.py`, `test_z3_validator.py`, `test_topology_verifier.py` -- Z3 SAT / topology verification
 - `test_policy_verifier.py` -- Info-flow, budget, fan-in/fan-out policies
 - `test_dag_executor.py` -- DAG execution with VF gates
 - `test_planner.py` -- Plan-and-Act decomposition

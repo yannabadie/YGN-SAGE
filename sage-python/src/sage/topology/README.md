@@ -28,9 +28,9 @@ Plans topology transformations based on task requirements and performance feedba
 
 Persistent archive of evaluated topologies with fitness metadata. Enables cross-run topology reuse.
 
-### `z3_topology.py` -- Z3 Topology Verification
+### `topology_verifier.py` -- Topology Verification
 
-Z3-based verification of topology properties (connectivity, capability coverage, resource bounds). Ensures evolved topologies satisfy structural invariants before deployment.
+Graph-analysis verification of topology properties (DAG validation, depth, deadlock detection) using Kahn's algorithm. Ensures evolved topologies satisfy structural invariants before deployment.
 
 ## Design Note
 

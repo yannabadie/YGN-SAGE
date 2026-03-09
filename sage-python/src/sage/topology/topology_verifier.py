@@ -1,4 +1,4 @@
-"""Z3-based topology verification -- prove DAG properties before execution."""
+"""Graph-analysis topology verification -- prove DAG properties before execution."""
 from __future__ import annotations
 
 import logging
@@ -25,7 +25,7 @@ class VerificationResult:
 
 
 class TopologyVerifier:
-    """Verify topology properties using graph analysis + optional Z3 proofs."""
+    """Verify topology properties using graph analysis (Kahn's algorithm)."""
 
     def __init__(self, max_depth: int = 30):
         self.max_depth = max_depth
@@ -60,20 +60,12 @@ class TopologyVerifier:
         # 5. Generate proof string
         if result.is_dag and result.terminates:
             result.proof = (
-                f"PROVED: Topology is a valid DAG with {len(spec.agents)} agents, "
+                f"VERIFIED (graph analysis): DAG with {len(spec.agents)} agents, "
                 f"{len(spec.edges)} edges, max depth {depth}. "
-                f"Terminates: sat. No cycles: sat."
+                f"Acyclic: yes. Terminates: yes. Method: Kahn's algorithm."
             )
         else:
             result.proof = "FAILED: Cycle detected, topology may not terminate."
-
-        # 6. Try Z3 formal proof if available
-        try:
-            z3_proof = self._z3_verify(spec)
-            if z3_proof:
-                result.proof += f" Z3: {z3_proof}"
-        except ImportError:
-            pass  # Z3/sage_core not available
 
         return result
 
@@ -127,15 +119,3 @@ class TopologyVerifier:
         if not roots:
             return len(spec.agents)
         return max(dfs(r) for r in roots)
-
-    def _z3_verify(self, spec: TopologySpec) -> str:
-        """Optional Z3 formal proof."""
-        try:
-            import sage_core
-            validator = sage_core.Z3Validator()
-            constraints = [f"assert bounds(depth, {self.max_depth})"]
-            result = validator.validate_mutation(constraints)
-            return "z3_verified" if result.safe else "z3_unsafe"
-        except Exception:
-            log.warning("Z3 topology verification failed (optional, continuing)", exc_info=True)
-            return ""

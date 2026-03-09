@@ -1,7 +1,7 @@
 """Tests for experience-based topology archive."""
 import pytest
 from sage.topology.topology_archive import TopologyArchive, TopologyRecord
-from sage.topology.z3_topology import TopologySpec
+from sage.topology.topology_verifier import TopologySpec
 
 
 def test_record_creation():
