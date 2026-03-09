@@ -25,7 +25,7 @@ result = await system.run("Solve X")   # S1/S2/S3 routing + full agent loop
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # Unit tests (691 passed, 1 skipped)
+python -m pytest tests/ -v             # Unit tests (846 passed, 1 skipped)
 ruff check src/                        # Lint
 mypy src/                              # Type check
 python -m sage.bench --type routing    # Routing benchmark (no API key needed)
@@ -45,7 +45,7 @@ python -m sage.bench --type humaneval  # HumanEval 164 (needs LLM provider)
 | `sage/strategy/` | ComplexityRouter (S1/S2/S3 routing), CGRS self-braking |
 | `sage/topology/` | MAP-Elites topology search, KG-RLVR process reward model |
 | `sage/evolution/` | Evolutionary engine, LLM-driven mutation |
-| `sage/tools/` | Tool registry, agent management, memory tools, ExoCortex tools |
+| `sage/tools/` | Tool registry, dynamic tool creation (Rust ToolExecutor first, Python fallback), memory tools, ExoCortex tools |
 | `sage/events/` | EventBus: in-proc event system for observability |
 | `sage/guardrails/` | 3-layer guardrails: input, runtime, output |
 | `sage/bench/` | Benchmarks: HumanEval, routing accuracy |
@@ -63,4 +63,4 @@ export SAGE_DASHBOARD_TOKEN="..."        # Dashboard auth (optional)
 ## Dependencies
 
 Core: `httpx`, `pydantic`, `rich`, `anyio`, `aiosqlite`, `numpy`.
-Optional: `google-genai` (Gemini), `openai` (Codex), `pyarrow` (Arrow memory), `z3-solver` (formal verification), `fastapi`/`uvicorn` (dashboard), `sentence-transformers` (Tier 2 embeddings), `onnxruntime` (Tier 1 RustEmbedder DLL).
+Optional: `google-genai` (Gemini), `openai` (Codex), `pyarrow` (Arrow memory), `z3-solver` (formal verification), `fastapi`/`uvicorn` (dashboard), `sentence-transformers` (Tier 2 embeddings), `onnxruntime` (Tier 1 RustEmbedder DLL), `sage_core` with `tool-executor` feature (Rust ToolExecutor: tree-sitter validation + Wasm WASI sandbox + subprocess isolation).

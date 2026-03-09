@@ -1,6 +1,6 @@
 # YGN-SAGE Architecture
 
-> **Status: Research Prototype** — Last verified: 2026-03-08
+> **Status: Research Prototype** — Last verified: 2026-03-09
 
 This document describes what YGN-SAGE **actually implements**, with honest evidence levels and known limitations.
 
@@ -203,17 +203,20 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 ### 9. Rust Core (sage-core)
 
-**What it does:** High-performance data plane: Arrow working memory, eBPF/Wasm sandboxes, RAG cache.
+**What it does:** High-performance data plane: Arrow working memory, ToolExecutor (security + sandboxed execution), Wasm sandbox, RAG cache.
 
-**Evidence:** tested-unit (7 Rust tests passing, +5 ONNX feature-gated)
+**Evidence:** tested-unit (63 Rust tests passing with sandbox+tool-executor features, +5 ONNX feature-gated)
 
 | Component | Status |
 |-----------|--------|
 | Arrow working memory | Solid, SIMD/AVX-512 |
 | S-MMU paging | Wired (write via compressor, read via THINK phase) |
 | RagCache (FIFO+TTL) | Implemented (DashMap) |
+| **ToolExecutor** | **Implemented** (tree-sitter validator + Wasm WASI sandbox + subprocess fallback). PyO3 class with GIL release. Behind `tool-executor` + `sandbox` feature flags |
+| **tree-sitter validator** | **Implemented** (23 blocked modules + 11 blocked calls, error-tolerant). Behind `tool-executor` feature |
+| **Subprocess executor** | **Implemented** (tokio timeout + kill-on-drop). Behind `tool-executor` feature |
+| Wasm sandbox | Implemented (wasmtime v36 LTS, Component Model + WASI p2 deny-by-default). `cranelift` excluded on Windows MSVC. `execute_precompiled()` / `execute_precompiled_wasi()` for Windows |
 | eBPF sandbox | Implemented (solana_rbpf), but optional feature. `snap_bpf.c` is a stub (printk only) |
-| Wasm sandbox | Implemented (wasmtime v36 LTS, Component Model). `cranelift` excluded on Windows MSVC (stack overflow). `execute_precompiled()` for Windows, `execute()` with JIT on Linux CI |
 | Z3 bindings | Implemented |
 
 **Known limitations:**
@@ -221,6 +224,43 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 - eBPF compiles for BPF target requiring `core` stdlib — not available on all platforms
 - `snap_bpf.c` is a stub (printk only) — real SnapBPF is Rust userspace CoW in `ebpf.rs`
 - Python falls back silently to mock when Rust extension unavailable
+
+### 9b. ToolExecutor (Rust Security Pipeline)
+
+**What it does:** End-to-end code security pipeline for dynamic tool creation: AST validation → Wasm WASI sandbox → subprocess fallback.
+
+**Evidence:** tested-unit (63 Rust tests + 184 security tests covering 6 Phoenix attack vectors)
+
+**Execution priority:**
+1. **Wasm WASI sandbox** (if component loaded) — deny-by-default capabilities: NO filesystem, NO env vars, NO network, NO subprocess. Only stdout/stderr inherited.
+2. **Bare Wasm** (for simple components without WASI imports)
+3. **Subprocess fallback** (always available) — timeout + kill-on-drop isolation
+
+**tree-sitter validator (23 modules + 11 calls blocked):**
+- Modules: `os`, `sys`, `subprocess`, `shutil`, `ctypes`, `importlib`, `socket`, `http`, `ftplib`, `smtplib`, `xmlrpc`, `multiprocessing`, `threading`, `signal`, `resource`, `code`, `codeop`, `pathlib`, `glob`, `tempfile`, `pickle`, `shelve`, `builtins`
+- Calls: `exec`, `eval`, `compile`, `__import__`, `breakpoint`, `open`, `getattr`, `setattr`, `delattr`, `globals`, `locals`
+
+**WASI deny-by-default (verified with Context7 + wasmtime v36 docs):**
+- `WasiCtxBuilder::new()` starts with NO capabilities
+- Only `inherit_stdout()` + `inherit_stderr()` added
+- No `inherit_env()`, no `preopened_dir()`, no `inherit_stdin()`
+
+**6 Phoenix Security Vectors — all blocked:**
+| Vector | Blocked by |
+|--------|------------|
+| Filesystem read | tree-sitter (`os`, `pathlib`, `open`) + WASI (no preopened dirs) |
+| Filesystem write | tree-sitter (`os`, `shutil`, `open`) + WASI (no preopened dirs) |
+| Env var access | tree-sitter (`os`) + WASI (no `inherit_env`) |
+| Network access | tree-sitter (`socket`, `http`) + WASI (no network in preview2) |
+| Subprocess spawn | tree-sitter (`subprocess`, `os`) + WASI (no subprocess in preview2) |
+| Dangerous import | tree-sitter (23 modules + `__import__` + `importlib`) |
+
+**Feature flags:**
+- `tool-executor`: tree-sitter validator + subprocess executor + ToolExecutor PyO3 class
+- `sandbox`: wasmtime + wasmtime-wasi (Wasm paths in ToolExecutor)
+- `cranelift`: JIT compilation (Linux only; `load_component()` requires this)
+
+**Python integration:** `sage.tools.meta.create_python_tool` tries Rust `ToolExecutor` first, falls back to Python `sandbox_executor.py`.
 
 ### 10. Agent Composition
 

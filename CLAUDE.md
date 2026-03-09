@@ -68,10 +68,10 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
-- `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `execute_precompiled()` for Windows (no cranelift), `execute()` with JIT on Linux CI
+- `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `WasmSandbox` PyClass + `WasiState` (deny-by-default). `execute_precompiled()` / `execute_precompiled_wasi()` for Windows (no cranelift), `execute()` with JIT on Linux CI. Standalone `execute_wasi_component()` / `execute_bare_component()` for ToolExecutor. Behind `sandbox` feature flag.
 - `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules + 11 blocked calls. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
-- `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + subprocess. `validate()`, `validate_and_execute()`, `execute_raw()`. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag.
+- `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var.
 - `z3/` - Z3 formal verification bindings
 
@@ -110,13 +110,15 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --workspace         # Run Rust tests (7 passing, +5 ONNX feature-gated)
+cargo test --workspace         # Run Rust tests (base: 7 passing, +5 ONNX feature-gated)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support
 cargo test --features onnx       # Run ONNX embedder tests (requires model download)
 maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
+maturin develop --features sandbox,tool-executor  # Build with ToolExecutor + Wasm WASI sandbox
 cargo test --features tool-executor       # Run tool-executor tests (14 passing: 9 validator + 5 subprocess)
+cargo test --features sandbox,tool-executor  # Run full sandbox + tool-executor tests (63 passing)
 ```
 
 ### Discovery Pipeline
@@ -149,11 +151,21 @@ export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no toke
 # ExoCortex auto-configured (DEFAULT_STORE hardcoded, no env var needed)
 ```
 
-### Sandbox Safety
+### Sandbox & Tool Security
 The sandbox blocks host code execution by default. To allow local execution (e.g., for development):
 ```python
 sandbox = Sandbox(allow_local=True)  # Required — default is False
 ```
+
+**ToolExecutor security pipeline** (when `sage_core` compiled with `tool-executor` + `sandbox`):
+1. **tree-sitter AST validation** — blocks 23 dangerous modules (os, sys, subprocess, etc.) + 11 dangerous calls (exec, eval, open, etc.)
+2. **Wasm WASI sandbox** (if component loaded) — deny-by-default: NO filesystem, NO env vars, NO network, NO subprocess. Only stdout/stderr inherited
+3. **Subprocess fallback** — timeout + kill-on-drop isolation
+
+Python `create_python_tool` tries Rust ToolExecutor first, falls back to Python `sandbox_executor.py`.
+
+**6 Phoenix Security Vectors blocked:**
+- Filesystem read/write, env var access, network access, subprocess spawn, dangerous module import
 
 ### Model Config Resolution
 Model IDs resolved in order: env var `SAGE_MODEL_<TIER>` > `config/models.toml` > hardcoded defaults.
@@ -235,7 +247,9 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Z3 Solver 4.16 (formal verification, S3)
 - aiosqlite (episodic + semantic memory persistence)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
-- Wasm (wasmtime v36 LTS, sandbox feature, Component Model) + Docker (multi-tier sandboxing)
+- Wasm (wasmtime v36 LTS, Component Model, WASI p2 deny-by-default) + Docker (multi-tier sandboxing)
+- tree-sitter 0.26 + tree-sitter-python 0.25 (AST-based code validation, `tool-executor` feature)
+- process-wrap 9 (subprocess executor with tokio timeout + kill-on-drop, `tool-executor` feature)
 - DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
 - ort 2.0 (ONNX Runtime for Rust, `load-dynamic`, optional `onnx` feature) — native embeddings, works on Windows MSVC
 - tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)

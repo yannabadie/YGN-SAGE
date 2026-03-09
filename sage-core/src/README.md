@@ -6,7 +6,7 @@ Source code for the `sage_core` Rust crate. Each module maps to a PyO3-exported 
 
 ### `lib.rs` -- PyModule Entry Point
 
-Defines the `#[pymodule] fn sage_core(...)` function. Registers all PyClasses and PyFunctions into the Python module. Conditionally includes `sandbox` (behind `sandbox` feature) and `embedder` (behind `onnx` feature).
+Defines the `#[pymodule] fn sage_core(...)` function. Registers all PyClasses and PyFunctions into the Python module. Conditionally includes `sandbox` (behind `sandbox` or `tool-executor` features) and `embedder` (behind `onnx` feature). When `tool-executor` is enabled, registers `ValidationResult`, `ExecResult`, and `ToolExecutor` PyClasses.
 
 ### `types.rs` -- Core Data Types
 
@@ -49,4 +49,4 @@ PyFunctions for high-performance sorting (uses Rust pdqsort; placeholder for vqs
 ## Submodule Directories
 
 - **`memory/`** -- Multi-tier memory data plane (Arrow, S-MMU, RAG cache, ONNX embedder)
-- **`sandbox/`** -- Wasm Component Model sandbox, eBPF executor (disabled), Z3 validator
+- **`sandbox/`** -- ToolExecutor security pipeline (tree-sitter validator, subprocess executor, Wasm WASI sandbox). `validator.rs`, `subprocess.rs`, `tool_executor.rs` behind `tool-executor` feature. `wasm.rs` behind `sandbox` feature. `ebpf.rs` disabled.
