@@ -127,7 +127,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 
 **What it does:** Typed task DAG with formal verification, policy enforcement, and repair loops.
 
-**Evidence:** tested-unit + tested-integration (730 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response + 17 audit-fixes + Sprint 1-2 tests)
+**Evidence:** tested-unit + tested-integration (846 tests total, 6 E2E + 14 stress + 10 ablation + 14 bugfix + 18 audit-response + 17 audit-fixes + Sprint 1-3 tests)
 
 **Components:**
 | Component | Module | Tests |
@@ -273,7 +273,7 @@ Audit response (March 2026) fixed: sandbox blocks host by default, working memor
 ## Audit Response (March 2026)
 
 Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
-16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Two additional sprints addressed the cross-verification findings. Current test count: **730 passed, 1 skipped**.
+16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Two additional sprints addressed the cross-verification findings. Current test count: **846 passed, 1 skipped**.
 
 ### Phase A — Kill Unsafe Defaults (Tasks 1-5)
 | Task | Finding | Fix |
@@ -312,7 +312,7 @@ Cross-verification report: `docs/audits/2026-03-07-audit-verification.md` (78 as
 |------|---------|-----|
 | T1 | `eval()` RCE in kg_rlvr.py | Safe AST evaluator + fail-closed (not fail-open). z3_topology.py silent catch now logs WARNING |
 | T2 | eBPF claimed in README but not built | Removed stale eBPF/solana_rbpf claims |
-| T3 | Test badge count stale (413) | Updated to actual count (730) |
+| T3 | Test badge count stale (413) | Updated to actual count (846) |
 | T4 | tool→user role rewrite silent | Extracted `_convert_messages()` + WARNING log |
 | T5 | snap_bpf.c claimed as SOTA | Marked as STUB — NOT FUNCTIONAL |
 | T6-a | SchemaGuardrail wrong for text output | Added `OutputGuardrail` (empty/too-long/refusal detection) as default. SchemaGuardrail kept for JSON mode |

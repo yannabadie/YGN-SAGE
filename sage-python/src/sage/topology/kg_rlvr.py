@@ -82,6 +82,20 @@ class FormalKnowledgeGraph:
         return solver.check() == z3.unsat
 
     def check_loop_bound(self, iterations_symbolic: str, hard_cap: int) -> bool:
+        """Check if a loop variable is provably bounded below hard_cap.
+
+        Creates a Z3 symbolic variable and checks if it can exceed hard_cap.
+        For an *unconstrained* symbolic variable, this correctly returns False:
+        we cannot prove boundedness without domain-specific constraints.
+
+        This is NOT a bug -- it's the mathematically correct answer. To get
+        meaningful results, callers must register additional constraints
+        (e.g., loop counter starts at 0 and increments by 1) before calling.
+
+        Returns:
+            True only if Z3 proves iters > hard_cap is unsatisfiable given
+            the registered constraints. False if unproven or Z3 unavailable.
+        """
         if not self.has_z3:
             return False
         solver = z3.Solver()

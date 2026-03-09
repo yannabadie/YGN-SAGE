@@ -53,10 +53,19 @@ class Z3Validator:
         return s.check() == z3.unsat
 
     def check_loop_bound(self, var_name: str, hard_cap: int) -> bool:
-        """Check for potential infinite loops.
+        """Check if a loop variable is provably bounded below hard_cap.
 
-        Returns True if loop is provably bounded (i.e., the symbolic
-        variable cannot exceed hard_cap).
+        Creates a Z3 symbolic variable and checks if it can exceed hard_cap.
+        For an *unconstrained* symbolic variable, this correctly returns False:
+        we cannot prove boundedness without domain-specific constraints.
+
+        This is NOT a bug -- it's the mathematically correct answer. To get
+        meaningful results, callers must register additional constraints
+        (e.g., loop counter starts at 0 and increments by 1) before calling.
+
+        Returns:
+            True only if Z3 proves iters > hard_cap is unsatisfiable given
+            the registered constraints. False if unproven or Z3 unavailable.
         """
         s = z3.Solver()
         iters = z3.Int(var_name)

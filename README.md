@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-730%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-846%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -85,7 +85,7 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 730 passed, 1 skipped
+cd sage-python && python -m pytest tests/ -v    # 846 passed, 1 skipped
 cd sage-core && cargo test --workspace          # 7 passed (+5 ONNX feature-gated)
 cd sage-discover && python -m pytest tests/ -v  # 52 passed
 ```
@@ -170,11 +170,11 @@ pipeline = GuardrailPipeline([
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **730 tests passed** (Python) + 7 Rust + 52 Discover
+- **846 tests passed** (Python) + 7 Rust + 52 Discover
 - **CI/CD**: GitHub Actions (3 parallel jobs)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)
-- **Memory**: 4 tiers, all persistent (Tier 0 Rust Arrow, Tier 1-2 SQLite, CausalMemory SQLite, Tier 3 ExoCortex via KnowledgeStore protocol)
+- **Memory**: 4 tiers — Tier 0 Working Memory: per-session Arrow buffer (persisted via compressor to Tier 1); Tier 1 Episodic: SQLite persistent (`~/.sage/episodic.db`); Tier 2 Semantic: SQLite persistent (`~/.sage/semantic.db`); Tier 3 ExoCortex: cloud-hosted persistent (Google File Search via KnowledgeStore protocol)
 - **Embeddings**: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash), all working on Windows
 - **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds
 - **Sandbox**: Wasm (wasmtime v36 LTS), host execution blocked by default
