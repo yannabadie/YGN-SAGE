@@ -110,3 +110,19 @@ def test_verify_invariant_fails_closed_on_unparseable():
     kg = FormalKnowledgeGraph()
     result = kg.verify_invariant("not a valid expression ???", "also garbage")
     assert result is False, "Unparseable input must fail-closed"
+
+
+def test_fail_closed_without_z3():
+    """Z3-07: Without z3-solver, formal verification must fail-closed."""
+    fkg = FormalKnowledgeGraph()
+    fkg.has_z3 = False
+
+    # prove_memory_safety: should use Python bounds check
+    assert fkg.prove_memory_safety(5, 10) is True   # 0 <= 5 < 10
+    assert fkg.prove_memory_safety(-1, 10) is False  # -1 < 0
+    assert fkg.prove_memory_safety(10, 10) is False  # 10 >= 10
+
+    # All others: fail-closed (False)
+    assert fkg.check_loop_bound("n", 100) is False
+    assert fkg.verify_arithmetic("2+2", 4) is False
+    assert fkg.verify_invariant("x > 0", "x > 0") is False

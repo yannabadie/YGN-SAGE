@@ -64,11 +64,14 @@ class FormalKnowledgeGraph:
     def __init__(self):
         self.has_z3 = z3 is not None
         if not self.has_z3:
-            logging.warning("z3-solver is not installed. Formal verification will fallback to heuristics.")
+            logging.error(
+                "z3-solver not installed. ALL formal verification disabled — "
+                "returning unverified (fail-closed)."
+            )
 
     def prove_memory_safety(self, addr_expr: int, limit: int) -> bool:
         if not self.has_z3:
-            return True
+            return 0 <= addr_expr < limit
         solver = z3.Solver()
         addr = z3.IntVal(addr_expr)
         max_mem = z3.IntVal(limit)
@@ -80,7 +83,7 @@ class FormalKnowledgeGraph:
 
     def check_loop_bound(self, iterations_symbolic: str, hard_cap: int) -> bool:
         if not self.has_z3:
-            return True
+            return False
         solver = z3.Solver()
         iters = z3.Int(iterations_symbolic)
         cap = z3.IntVal(hard_cap)
@@ -91,7 +94,7 @@ class FormalKnowledgeGraph:
     def verify_arithmetic(self, expr: str, expected: int, tolerance: int = 0) -> bool:
         """Verify an arithmetic expression evaluates within tolerance of expected."""
         if not self.has_z3:
-            return True
+            return False
         solver = z3.Solver()
         result = z3.Int("result")
         solver.add(z3.Or(result > expected + tolerance, result < expected - tolerance))
@@ -104,7 +107,7 @@ class FormalKnowledgeGraph:
         arbitrary code execution. Fails closed (returns False) on any error.
         """
         if not self.has_z3:
-            return True
+            return False
         solver = z3.Solver()
         x = z3.Int("x")
         try:
