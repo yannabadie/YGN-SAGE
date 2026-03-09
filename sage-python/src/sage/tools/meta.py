@@ -1,25 +1,20 @@
 """Meta-tools for dynamic tool synthesis.
 
 Enables agents to write, register, and manage their own tools dynamically.
-Uses persistent file-based compilation and isolated execution to avoid 
-the catastrophic context fragmentation of simple `exec()` wrappers.
+Uses subprocess-based sandboxed execution with AST validation to prevent
+arbitrary code execution in the host process.
 """
 from __future__ import annotations
 
+import json
 import os
-import ast
 import logging
-import importlib.util
-import sys
 import warnings
 
-from sage.tools.base import Tool
+from sage.tools.base import Tool, ToolResult
 from sage.tools.registry import ToolRegistry
-try:
-    import sage_core
-except ImportError:
-    import types as _types
-    sage_core = _types.ModuleType("sage_core")
+from sage.tools.sandbox_executor import validate_tool_code, execute_python_in_sandbox
+from sage.llm.base import ToolDef
 
 logger = logging.getLogger(__name__)
 
@@ -39,58 +34,55 @@ os.makedirs(TOOLS_WORKSPACE, exist_ok=True)
     }
 )
 async def create_python_tool(name: str, code: str, registry: ToolRegistry = None) -> str:
-    warnings.warn(
-        "create_python_tool is disabled due to security vulnerabilities (SEC-01). "
-        "Use statically defined tools or Wasm sandbox instead.",
-        DeprecationWarning, stacklevel=2,
-    )
-    return "DISABLED: create_python_tool is not available due to security constraints."
-
+    # 1. Registry required
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    try:
-        # 1. Formal Validation (AST level)
-        try:
-            parsed_ast = ast.parse(code)
-        except SyntaxError as e:
-            return f"Syntax Error in generated code: {e}"
-            
-        # Check for dangerous builtins (Basic SMT proxy for security)
-        for node in ast.walk(parsed_ast):
-            if isinstance(node, ast.Call) and getattr(node.func, 'id', '') in ('exec', 'eval'):
-                return "Security Error: The use of exec() or eval() is strictly forbidden in generated tools."
+    # 2. AST validation — reject dangerous patterns before execution
+    errors = validate_tool_code(code)
+    if errors:
+        return "Blocked: " + "; ".join(errors)
 
-        # 2. Persistence (Save to disk)
-        file_path = os.path.join(TOOLS_WORKSPACE, f"{name}.py")
+    # 3. Save code to disk for auditability
+    file_path = os.path.join(TOOLS_WORKSPACE, f"{name}.py")
+    try:
         with open(file_path, "w", encoding="utf-8") as f:
             f.write(code)
+    except OSError as e:
+        return f"Error: Could not save tool code: {e}"
 
-        # 3. Dynamic Module Loading (Instead of unsafe exec)
-        spec = importlib.util.spec_from_file_location(name, file_path)
-        if not spec or not spec.loader:
-            return f"Error: Could not load module spec for {name}."
-            
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[name] = module
-        spec.loader.exec_module(module)
-        
-        # 4. Registration
-        new_tool = None
-        for obj_name in dir(module):
-            obj = getattr(module, obj_name)
-            if isinstance(obj, Tool) and obj.name == name:
-                new_tool = obj
-                break
-                
-        if new_tool:
-            registry.register(new_tool)
-            return f"Success: Tool '{name}' has been compiled, saved to {file_path}, and registered securely."
-        else:
-            return f"Error: Could not find a Tool named '{name}' in the loaded module. Ensure you used @Tool.define."
-            
-    except Exception as e:
-        return f"Error compiling dynamic tool: {str(e)}"
+    # 4. Build sandboxed handler closure
+    saved_code = code  # capture for closure
+
+    async def _sandboxed_handler(**kwargs):
+        result = await execute_python_in_sandbox(saved_code, kwargs)
+        if result.exit_code != 0:
+            return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
+        # Try to parse structured output (JSON with "output" key)
+        stdout = result.stdout.strip()
+        try:
+            parsed = json.loads(stdout)
+            if isinstance(parsed, dict) and "output" in parsed:
+                return str(parsed["output"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Fall back to raw stdout
+        return stdout
+
+    # 5. Register tool
+    tool_spec = ToolDef(
+        name=name,
+        description=f"Dynamically created tool '{name}' (sandboxed).",
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+    )
+    new_tool = Tool(spec=tool_spec, handler=_sandboxed_handler)
+    registry.register(new_tool)
+
+    logger.info("Registered sandboxed tool '%s' (saved to %s)", name, file_path)
+    return f"Success: Tool '{name}' has been created, validated, saved to {file_path}, and registered (sandboxed)."
 
 
 @Tool.define(
