@@ -43,6 +43,7 @@ class OpenAICompatProvider:
         self.base_url = base_url
         self.model_id = model_id
         self.provider_name = provider_name or self._infer_provider(base_url)
+        self._client: Any = None
 
     @staticmethod
     def _infer_provider(base_url: str | None) -> str:
@@ -132,11 +133,13 @@ class OpenAICompatProvider:
         if config and config.model:
             model = config.model
 
-        client_kwargs: dict[str, Any] = {"api_key": self.api_key}
-        if self.base_url:
-            client_kwargs["base_url"] = self.base_url
+        if self._client is None:
+            client_kwargs: dict[str, Any] = {"api_key": self.api_key}
+            if self.base_url:
+                client_kwargs["base_url"] = self.base_url
+            self._client = AsyncOpenAI(**client_kwargs)
 
-        client = AsyncOpenAI(**client_kwargs)
+        client = self._client
 
         oai_messages = self._convert_messages(messages)
 

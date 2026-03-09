@@ -68,7 +68,6 @@ class MemoryAgent:
         """LLM-powered extraction with structured output."""
         from pydantic import BaseModel
         from sage.llm.router import ModelRouter
-        from sage.llm.google import GoogleProvider
         from sage.llm.base import Message, Role
 
         class KGExtraction(BaseModel):
@@ -82,7 +81,12 @@ class MemoryAgent:
         if self._llm_provider is not None:
             provider = self._llm_provider
         else:
-            provider = GoogleProvider()
+            try:
+                from sage.llm.google import GoogleProvider
+                provider = GoogleProvider()
+            except Exception as e:
+                log.warning("GoogleProvider fallback unavailable (%s), using heuristic", e)
+                return self._heuristic_extract(text)
         response = await provider.generate(
             messages=[
                 Message(role=Role.SYSTEM, content=(

@@ -126,7 +126,12 @@ class ModelAgent:
         return response.content or ""
 
     def _pick_fallback(self, exclude_ids: set[str]) -> ModelProfile | None:
-        """Pick the next-best available model not yet tried."""
+        """Pick the next-best available model not yet tried.
+
+        Uses registry.select() to respect the original scoring formula,
+        then falls back to cheapest-available if select() returns an
+        already-tried model.
+        """
         if not self._registry:
             return None
         for candidate in self._registry.list_available():
