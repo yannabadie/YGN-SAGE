@@ -52,6 +52,7 @@ def _mock_registry(*profiles: ModelProfile) -> ModelRegistry:
     reg = ModelRegistry.__new__(ModelRegistry)
     reg._profiles = {}
     reg._connector = MagicMock()
+    reg._lock = __import__("threading").Lock()
     for p in profiles:
         reg._profiles[p.id] = p
     return reg
