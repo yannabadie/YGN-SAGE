@@ -37,6 +37,7 @@ class MemoryCompressor:
         self.keep_recent = keep_recent
         self.logger = logging.getLogger(__name__)
         self.internal_state: str = ""
+        self._hash_warned: bool = False
         # Embedder for S-MMU semantic edges — default to hash fallback.
         # The boot sequence (boot.py) will inject a real one later.
         self.embedder: Embedder = Embedder(force_hash=True)
@@ -67,6 +68,12 @@ class MemoryCompressor:
 
     async def step(self, working_memory: WorkingMemory) -> bool:
         """Check and perform compression if threshold is met (memory pressure trigger)."""
+        if self.embedder.is_hash_fallback and not self._hash_warned:
+            self.logger.warning(
+                "Compressor using hash-based embeddings (not semantic). "
+                "S-MMU semantic retrieval quality degraded."
+            )
+            self._hash_warned = True
         if working_memory.event_count() < self.compression_threshold:
             return False
 

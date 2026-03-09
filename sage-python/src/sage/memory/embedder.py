@@ -221,26 +221,28 @@ class Embedder:
 
     def __init__(self, force_hash: bool = False) -> None:
         self._provider: EmbeddingProvider
+        self._backend: str
         if force_hash:
             self._provider = _HashEmbedder()
+            self._backend = "hash"
         else:
-            self._provider = self._auto_select()
+            self._provider, self._backend = self._auto_select()
 
     @staticmethod
-    def _auto_select() -> EmbeddingProvider:
+    def _auto_select() -> tuple[EmbeddingProvider, str]:
         """Try RustEmbedder (ONNX), then sentence-transformers, then hash."""
         # Tier 1: Rust ONNX embedder (fastest, native SIMD)
         rust = _try_rust_embedder()
         if rust is not None:
             logger.info("Embedder: using RustEmbedder (ONNX, native)")
-            return rust  # type: ignore[return-value]
+            return rust, "rust_onnx"  # type: ignore[return-value]
 
         # Tier 2: sentence-transformers (Python ML)
         try:
             import sentence_transformers  # noqa: F401
             provider = _SentenceTransformerEmbedder()
             logger.info("Embedder: using sentence-transformers backend")
-            return provider
+            return provider, "sentence_transformers"
         except ImportError:
             pass
 
@@ -250,12 +252,17 @@ class Embedder:
             "sentence-transformers); falling back to deterministic hash "
             "embedder. Semantic similarity will be degraded."
         )
-        return _HashEmbedder()
+        return _HashEmbedder(), "hash"
 
     @property
     def is_semantic(self) -> bool:
         """True if the active backend produces semantically meaningful embeddings."""
         return self._provider.is_semantic
+
+    @property
+    def is_hash_fallback(self) -> bool:
+        """True if using SHA-256 hash (not semantically meaningful)."""
+        return self._backend == "hash"
 
     def embed(self, text: str) -> list[float]:
         """Embed a single text string.
