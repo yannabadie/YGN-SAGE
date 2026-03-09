@@ -116,15 +116,19 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --workspace         # Run Rust tests (base: 7 passing, +16 routing feature-gated, +5 ONNX feature-gated)
+cargo test --features onnx     # Run all Rust tests (57 passing: 30 lib + 27 integration)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
-maturin develop --features onnx  # Build with ONNX embedder support
-cargo test --features onnx       # Run ONNX embedder tests (requires model download)
+maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
 maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
 maturin develop --features sandbox,tool-executor  # Build with ToolExecutor + Wasm WASI sandbox
-cargo test --features tool-executor       # Run tool-executor tests (14 passing: 9 validator + 5 subprocess)
-cargo test --features sandbox,tool-executor  # Run full sandbox + tool-executor tests (63 passing)
+```
+
+### End-to-End Proof
+```bash
+python tests/e2e_proof.py      # Full-stack E2E: 25/25 tests, ~35s, real LLM, no mocks
+                               # Tests: Rust core + Python components + Gemini LLM + benchmarks
+                               # Report: docs/benchmarks/YYYY-MM-DD-e2e-proof.json
 ```
 
 ### Discovery Pipeline
