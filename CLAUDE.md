@@ -69,6 +69,9 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `execute_precompiled()` for Windows (no cranelift), `execute()` with JIT on Linux CI
+- `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules + 11 blocked calls. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
+- `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
+- `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + subprocess. `validate()`, `validate_and_execute()`, `execute_raw()`. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var.
 - `z3/` - Z3 formal verification bindings
 
@@ -112,6 +115,8 @@ cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support
 cargo test --features onnx       # Run ONNX embedder tests (requires model download)
+maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
+cargo test --features tool-executor       # Run tool-executor tests (14 passing: 9 validator + 5 subprocess)
 ```
 
 ### Discovery Pipeline
