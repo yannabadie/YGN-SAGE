@@ -15,12 +15,6 @@ from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator
 from sage.evolution.evaluator import Evaluator
 
-try:
-    from sage.sandbox.z3_validator import Z3Validator
-    _Z3_AVAILABLE = True
-except ImportError:
-    _Z3_AVAILABLE = False
-
 from sage.strategy.solvers import SAMPOSolver
 
 log = logging.getLogger(__name__)
@@ -46,8 +40,6 @@ class EvolutionConfig:
     hard_warm_start_threshold: int = 500
     # Enable SAMPO-based hyperparameter self-adjustment
     enable_dgm: bool = True
-    # Z3 Safety Gate: validate evolved code before evaluation
-    z3_safety_gate: bool = True
     z3_constraints: list[str] = field(default_factory=list)
 
 
@@ -76,8 +68,6 @@ class EvolutionEngine:
         )
         self.generation: int = 0
         self.total_mutations: int = 0
-        self.z3_rejections: int = 0
-
         # eBPF evaluator: wire as default first stage (sub-ms execution)
         try:
             from sage.evolution.ebpf_evaluator import EbpfEvaluator
@@ -86,14 +76,6 @@ class EvolutionEngine:
             log.info("eBPF evaluator wired as default evolution stage")
         except Exception:
             log.debug("eBPF evaluator not available — evolution runs without hardware sandbox")
-
-        # Z3 Safety Gate
-        self._z3: Z3Validator | None = None
-        if self.config.z3_safety_gate and _Z3_AVAILABLE:
-            self._z3 = Z3Validator()
-            log.info("Z3 safety gate enabled")
-        elif self.config.z3_safety_gate and not _Z3_AVAILABLE:
-            log.warning("Z3 safety gate requested but sage_core not available — skipping")
 
         # SAMPO solver for action selection (hyperparameter adjustment)
         self._dgm_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
@@ -163,13 +145,8 @@ class EvolutionEngine:
             except Exception:
                 continue
 
-            # Z3 Safety Gate: validate mutation before expensive evaluation
-            if self._z3 and self.config.z3_constraints:
-                result = self._z3.validate_mutation(self.config.z3_constraints)
-                if not result.safe:
-                    self.z3_rejections += 1
-                    log.debug("Z3 rejected mutation: %s", result.violations)
-                    continue
+            # Z3 safety gate removed — was validating static config constraints,
+            # not the actual mutated code (audit finding Z3-06).
 
             # Evaluate
             eval_result = await self._evaluator.evaluate(new_code)
@@ -219,7 +196,6 @@ class EvolutionEngine:
         return {
             "generation": self.generation,
             "total_mutations": self.total_mutations,
-            "z3_rejections": self.z3_rejections,
             "population_size": self._population.size(),
             "coverage": self._population.coverage(),
             "best_score": best.score if best else 0.0,
