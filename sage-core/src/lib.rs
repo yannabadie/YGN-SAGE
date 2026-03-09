@@ -4,7 +4,7 @@ pub mod agent;
 pub mod hardware;
 pub mod memory;
 pub mod pool;
-#[cfg(feature = "sandbox")]
+#[cfg(any(feature = "sandbox", feature = "tool-executor"))]
 pub mod sandbox;
 pub mod simd_sort;
 pub mod types;
