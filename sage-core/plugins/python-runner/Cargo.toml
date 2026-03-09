@@ -1,0 +1,16 @@
+[package]
+name = "python-runner"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+serde_json = "1"
+wit-bindgen = "0.41"
+
+[lib]
+crate-type = ["cdylib"]
+
+# Standalone workspace — this crate targets wasm32-wasip1,
+# separate from the parent sage-core workspace.
+[workspace]

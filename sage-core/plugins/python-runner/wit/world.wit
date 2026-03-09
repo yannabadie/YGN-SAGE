@@ -1,0 +1,18 @@
+package sage:plugin;
+
+world tool-env {
+    record tool-input {
+        name: string,
+        args: string,
+        env: list<tuple<string, string>>,
+    }
+
+    record tool-output {
+        stdout: string,
+        stderr: string,
+        exit-code: s32,
+        result-json: string,
+    }
+
+    export run: func(input: tool-input) -> tool-output;
+}

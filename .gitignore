@@ -3,6 +3,10 @@ target/
 *.rs.bk
 .cargo/config.toml
 
+# Wasm plugin build artifacts and adapters
+sage-core/plugins/*/target/
+sage-core/plugins/*/*.wasm
+
 # Python
 __pycache__/
 *.pyc
