@@ -74,3 +74,25 @@ jobs:
       - run: pip install -e "../sage-python[all,dev]"
       - run: pip install -e "."
       - run: python -m pytest tests/ -v --tb=short
+
+  windows:
+    name: Windows (Python SDK + Rust check)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Python SDK
+        working-directory: sage-python
+        run: pip install -e ".[all,dev]"
+      - name: Run Python tests
+        working-directory: sage-python
+        run: python -m pytest tests/ -v --tb=short -x
+      - name: Rust check (no-default-features)
+        working-directory: sage-core
+        run: cargo check --no-default-features
+      - name: Rust check (ONNX feature)
+        working-directory: sage-core
+        run: cargo check --features onnx
