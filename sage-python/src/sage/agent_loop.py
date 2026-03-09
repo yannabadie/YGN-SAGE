@@ -189,6 +189,7 @@ class AgentLoop:
         self.guardrail_pipeline: Any = None  # GuardrailPipeline for input/output/runtime checks
         self.memory_agent: Any = None       # MemoryAgent for entity extraction
         self.semantic_memory: Any = None    # SemanticMemory entity graph
+        self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
 
         # Evolution gating — disabled by default per Sprint 3 evidence:
         # full evolution engine scored 0.50 vs 0.33 for random mutation (67% efficiency).
@@ -445,8 +446,27 @@ class AgentLoop:
                     raw_code = code_blocks[-1]
                     cleaned_code = _strip_markdown_fences(raw_code)
 
+                    # Prefer Rust ToolExecutor (tree-sitter AST validator) if available.
+                    # ToolExecutor catches blocked imports/calls that ast.parse() cannot.
+                    # If ToolExecutor rejects, skip Python validation (use its error).
+                    # If ToolExecutor passes or is unavailable, fall through to ast.parse().
+                    _te_rejected = False
+                    if self.tool_executor:
+                        try:
+                            te_result = self.tool_executor.validate(cleaned_code)
+                            if not te_result.valid:
+                                te_err = "; ".join(te_result.errors)
+                                log.warning("ToolExecutor rejected code: %s", te_err)
+                                _te_rejected = True
+                                syntax_ok, syntax_err = False, te_err
+                            else:
+                                log.debug("ToolExecutor validated code successfully")
+                        except Exception as e:
+                            log.warning("ToolExecutor failed, falling back to Python: %s", e)
+
                     # Step 1: Syntax check via ast.parse() BEFORE sandbox execution
-                    syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
+                    if not _te_rejected:
+                        syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
 
                     if not syntax_ok:
                         # Syntax error — no point running sandbox

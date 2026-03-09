@@ -336,6 +336,16 @@ def boot_agent_system(
         causal_memory = CausalMemory()
     loop.causal_memory = causal_memory
 
+    # ToolExecutor for S2 AVR code validation (Rust tree-sitter + subprocess)
+    try:
+        from sage_core import ToolExecutor as RustToolExecutor
+        tool_executor = RustToolExecutor()
+        _log.info("ToolExecutor (Rust): tree-sitter validator + subprocess executor")
+    except ImportError:
+        tool_executor = None
+        _log.info("ToolExecutor (Rust) not available — S2 AVR uses Python sandbox")
+    loop.tool_executor = tool_executor
+
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
         tool_registry.register(tool)
