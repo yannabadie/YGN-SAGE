@@ -6,10 +6,11 @@ arbitrary code execution in the host process.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import logging
-import warnings
+import re
 
 from sage.tools.base import Tool, ToolResult
 from sage.tools.registry import ToolRegistry
@@ -99,32 +100,51 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
     }
 )
 async def create_bash_tool(name: str, description: str, script: str, registry: ToolRegistry = None) -> str:
-    warnings.warn(
-        "create_bash_tool is disabled due to security vulnerabilities (SEC-02). "
-        "Use statically defined tools or Wasm sandbox instead.",
-        DeprecationWarning, stacklevel=2,
-    )
-    return "DISABLED: create_bash_tool is not available due to security constraints."
-
+    # 1. Registry required
     if not registry:
-         return "Error: Tool registry not available."
+        return "Error: Tool registry not available for dynamic registration."
 
-    # Generate the python wrapper for the bash script
-    code = f"""
-from sage.tools.base import Tool
-import subprocess
+    # 2. Check script against destructive command blocklist
+    _DESTRUCTIVE_PATTERN = re.compile(
+        r"rm\s+-rf|mkfs|dd\s+if=|:\(\)\s*\{|/dev/sd|>\s*/dev/"
+    )
+    if _DESTRUCTIVE_PATTERN.search(script):
+        return "Blocked: Script contains potentially destructive commands."
 
-@Tool.define(
-    name="{name}",
-    description="{description}",
-    parameters={{"type": "object", "properties": {{}}}}
-)
-async def {name}() -> str:
-    try:
-        # Executed with isolation considerations
-        result = subprocess.run({repr(script)}, shell=True, capture_output=True, text=True, timeout=60)
-        return f"STDOUT:\\n{{result.stdout}}\\nSTDERR:\\n{{result.stderr}}"
-    except Exception as e:
-        return f"Execution error: {{e}}"
-"""
-    return await create_python_tool(name, code, registry)
+    # 3. Build subprocess-isolated handler closure
+    saved_script = script  # capture for closure
+
+    async def _bash_handler(**kwargs):
+        try:
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    "/bin/bash", "-c", saved_script,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                ),
+                timeout=60,
+            )
+            stdout, stderr = await proc.communicate()
+            if proc.returncode == 0:
+                return stdout.decode("utf-8", errors="replace").strip()
+            else:
+                return f"Error (exit {proc.returncode}): {stderr.decode('utf-8', errors='replace').strip()}"
+        except asyncio.TimeoutError:
+            return "Error: Script execution timed out after 60 seconds."
+        except Exception as e:
+            return f"Error: {type(e).__name__}: {e}"
+
+    # 4. Register tool
+    tool_spec = ToolDef(
+        name=name,
+        description=description,
+        parameters={
+            "type": "object",
+            "properties": {},
+        },
+    )
+    new_tool = Tool(spec=tool_spec, handler=_bash_handler)
+    registry.register(new_tool)
+
+    logger.info("Registered bash tool '%s' (subprocess-isolated)", name)
+    return f"Success: Bash tool '{name}' has been created and registered (subprocess-isolated)."

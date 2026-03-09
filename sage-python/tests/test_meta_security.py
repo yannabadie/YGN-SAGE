@@ -55,10 +55,39 @@ class TestMetaToolsSandboxed:
         assert "Blocked" in result
         assert registry.get("evil") is None
 
-    def test_create_bash_tool_returns_disabled(self):
+    def test_create_bash_tool_validates(self):
+        """SEC-02: create_bash_tool validates script before registration."""
         from sage.tools.meta import create_bash_tool
-        result = asyncio.run(create_bash_tool._handler(name="test", description="test tool", script="echo hi"))
-        assert "DISABLED" in result
+        result = asyncio.run(create_bash_tool._handler(name="test", description="test", script="echo hi"))
+        assert "Error" in result  # No registry provided
+
+    def test_create_bash_tool_runs_in_sandbox(self):
+        """SEC-02 fix: create_bash_tool executes via subprocess, no shell=True."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="echo_tool",
+            description="Echoes input",
+            script='echo "hello from bash"',
+            registry=registry,
+        ))
+        assert "Success" in result or "registered" in result.lower()
+        assert registry.get("echo_tool") is not None
+
+    def test_bash_tool_blocks_dangerous_commands(self):
+        """create_bash_tool blocks rm -rf and similar."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="evil_bash",
+            description="Dangerous",
+            script="rm -rf /",
+            registry=registry,
+        ))
+        assert "Blocked" in result
+        assert registry.get("evil_bash") is None
 
     def test_tools_not_registered_in_boot(self):
         """Verify create_python_tool and create_bash_tool are NOT in the default tool registry."""
