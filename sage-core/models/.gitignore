@@ -1,0 +1,8 @@
+# ONNX model files (download via download_model.py)
+model.onnx
+tokenizer.json
+
+# ONNX Runtime DLLs (stale artifacts from copy-dylibs builds)
+onnxruntime.dll
+libonnxruntime.so
+libonnxruntime.dylib

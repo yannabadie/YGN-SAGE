@@ -4,52 +4,20 @@
 //! and produces 384-dim L2-normalized embeddings.
 //!
 //! Uses `load-dynamic` strategy: onnxruntime DLL is loaded at runtime
-//! via `ORT_DYLIB_PATH` env var or auto-discovered next to the model.
+//! via `ort::init_from()` (ort 2.x API) or `ORT_DYLIB_PATH` env var.
 //! This avoids static linking issues on Windows MSVC (LNK1120).
 
 use ort::{inputs, session::Session, value::TensorRef};
 use pyo3::prelude::*;
-use std::sync::Once;
 use tokenizers::Tokenizer;
 
 const EMBEDDING_DIM: usize = 384;
 
-static ORT_INIT: Once = Once::new();
-
-/// Initialize ORT runtime. Must be called before any Session usage.
-///
-/// Uses `ort::init_from(path)?.commit()` (ort 2.x API) when auto-discovering
-/// the dylib, or lets ort use `ORT_DYLIB_PATH` env var if already set.
-///
-/// Search order: ORT_DYLIB_PATH env > sibling of model > VIRTUAL_ENV >
-/// user site-packages (%APPDATA%) > system Python (C:\Python3*).
-///
-/// NOTE: Do NOT call Python subprocess from here — this runs inside a PyO3 call,
-/// and spawning a new Python process would deadlock on the GIL.
-pub(crate) fn ensure_ort_initialized(model_path: &str) {
-    ORT_INIT.call_once(|| {
-        // If ORT_DYLIB_PATH is set, ort will use it automatically — nothing to do.
-        if std::env::var("ORT_DYLIB_PATH").is_ok() {
-            return;
-        }
-
-        // Try to discover the dylib and init via ort::init_from().
-        if let Some(path) = discover_ort_dylib(model_path) {
-            // ort 2.x programmatic init — preferred over env var manipulation.
-            match ort::init_from(&path) {
-                Ok(builder) => { builder.commit(); }
-                Err(e) => {
-                    eprintln!("WARN: ort::init_from({}) failed: {e}", path.display());
-                    // Fallback: set env var and hope Session::builder() picks it up.
-                    std::env::set_var("ORT_DYLIB_PATH", &path);
-                }
-            }
-        }
-    });
-}
-
 /// Auto-discover the ONNX Runtime shared library on the filesystem.
-fn discover_ort_dylib(model_path: &str) -> Option<std::path::PathBuf> {
+///
+/// Search order: sibling of model > sys.prefix > VIRTUAL_ENV >
+/// user site-packages (%APPDATA%) > system Python (C:\Python3*).
+pub(crate) fn discover_ort_dylib(model_path: &str, sys_prefix: Option<&str>) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let dll_name = "onnxruntime.dll";
     #[cfg(target_os = "linux")]
@@ -74,7 +42,16 @@ fn discover_ort_dylib(model_path: &str) -> Option<std::path::PathBuf> {
             .join("capi")
             .join(dll_name);
 
-        // 2. VIRTUAL_ENV (venv)
+        // 2. Python sys.prefix (works inside venv even without `activate`).
+        // This is the most reliable path when running from a venv.
+        if let Some(prefix) = sys_prefix {
+            let candidate = std::path::Path::new(prefix).join(&capi_tail);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+
+        // 3. VIRTUAL_ENV env var (set by `activate` scripts)
         if let Ok(venv) = std::env::var("VIRTUAL_ENV") {
             let candidate = std::path::Path::new(&venv).join(&capi_tail);
             if candidate.exists() {
@@ -82,7 +59,7 @@ fn discover_ort_dylib(model_path: &str) -> Option<std::path::PathBuf> {
             }
         }
 
-        // 3. User site-packages: %APPDATA%\Python\Python3*\site-packages
+        // 4. User site-packages: %APPDATA%\Python\Python3*\site-packages
         if let Ok(appdata) = std::env::var("APPDATA") {
             let user_python = std::path::Path::new(&appdata).join("Python");
             if let Ok(entries) = std::fs::read_dir(&user_python) {
@@ -108,7 +85,7 @@ fn discover_ort_dylib(model_path: &str) -> Option<std::path::PathBuf> {
             }
         }
 
-        // 4. System Python: scan C:\Python3* directories
+        // 5. System Python: scan C:\Python3* directories
         if let Ok(entries) = std::fs::read_dir("C:\\") {
             let mut pythons: Vec<_> = entries
                 .filter_map(|e| e.ok())
@@ -141,24 +118,36 @@ pub struct RustEmbedder {
 impl RustEmbedder {
     #[new]
     #[pyo3(signature = (model_path, tokenizer_path))]
-    pub fn new(model_path: String, tokenizer_path: String) -> PyResult<Self> {
-        // Initialize ORT dynamic library before creating session
-        ensure_ort_initialized(&model_path);
+    pub fn new(py: Python<'_>, model_path: String, tokenizer_path: String) -> PyResult<Self> {
+        // Auto-discover onnxruntime DLL if ORT_DYLIB_PATH is not set.
+        // This MUST happen before Session::builder() because ort caches
+        // its DLL handle in a OnceLock — once read, it never re-checks env.
+        // Python side (Embedder._ensure_ort_dylib_path) also does this,
+        // but this covers direct `sage_core.RustEmbedder(...)` usage.
+        if std::env::var("ORT_DYLIB_PATH").is_err() {
+            let sys_prefix: Option<String> = py
+                .import("sys")
+                .ok()
+                .and_then(|sys| sys.getattr("prefix").ok())
+                .and_then(|p| p.extract().ok());
+            if let Some(path) = discover_ort_dylib(&model_path, sys_prefix.as_deref()) {
+                std::env::set_var("ORT_DYLIB_PATH", &path);
+            }
+        }
+        // Release the GIL before loading ORT — on Windows, LoadLibraryW runs
+        // onnxruntime.dll's DllMain which may attempt GIL acquisition, causing
+        // deadlock if we're still holding it from this #[pymethods] call.
+        let (session, tokenizer) = py.allow_threads(|| -> Result<(Session, Tokenizer), String> {
+            let session = Session::builder()
+                .map_err(|e| format!("ORT session builder error: {e}"))?
+                .commit_from_file(&model_path)
+                .map_err(|e| format!("ORT model load error: {e}"))?;
 
-        let session = Session::builder()
-            .map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "ORT session builder error: {e}"
-                ))
-            })?
-            .commit_from_file(&model_path)
-            .map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("ORT model load error: {e}"))
-            })?;
+            let tokenizer = Tokenizer::from_file(&tokenizer_path)
+                .map_err(|e| format!("Tokenizer load error: {e}"))?;
 
-        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Tokenizer load error: {e}"))
-        })?;
+            Ok((session, tokenizer))
+        }).map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?;
 
         Ok(Self { session, tokenizer })
     }

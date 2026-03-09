@@ -232,11 +232,18 @@ impl AdaptiveRouter {
     #[new]
     #[pyo3(signature = (c0_threshold=None, c1_threshold=None, classifier_path=None, tokenizer_path=None))]
     pub fn new(
+        py: Python<'_>,
         c0_threshold: Option<f32>,
         c1_threshold: Option<f32>,
         classifier_path: Option<String>,
         tokenizer_path: Option<String>,
     ) -> Self {
+        // Extract sys.prefix while we hold the GIL — before entering Once::call_once
+        let sys_prefix: Option<String> = py
+            .import("sys")
+            .ok()
+            .and_then(|sys| sys.getattr("prefix").ok())
+            .and_then(|p| p.extract().ok());
         let mut classifier = None;
         let mut classifier_tokenizer = None;
 
@@ -247,12 +254,25 @@ impl AdaptiveRouter {
             let tp_exists = std::path::Path::new(tp).exists();
 
             if cp_exists && tp_exists {
-                // Initialize ORT dynamic library (shared with RustEmbedder).
-                crate::memory::embedder::ensure_ort_initialized(cp);
+                // Ensure ORT_DYLIB_PATH is set before loading classifier.
+                if std::env::var("ORT_DYLIB_PATH").is_err() {
+                    if let Some(path) = crate::memory::embedder::discover_ort_dylib(cp, sys_prefix.as_deref()) {
+                        std::env::set_var("ORT_DYLIB_PATH", &path);
+                    }
+                }
 
-                match ort::session::Session::builder()
-                    .and_then(|mut b| b.commit_from_file(cp))
-                {
+                // Release the GIL before loading ORT — on Windows, LoadLibraryW
+                // runs DllMain which may attempt GIL acquisition, causing deadlock.
+                let cp_clone = cp.clone();
+                let tp_clone = tp.clone();
+                let (sess_result, tok_result) = py.allow_threads(|| {
+                    let sess = ort::session::Session::builder()
+                        .and_then(|mut b| b.commit_from_file(&cp_clone));
+                    let tok = tokenizers::Tokenizer::from_file(&tp_clone);
+                    (sess, tok)
+                });
+
+                match sess_result {
                     Ok(session) => {
                         classifier = Some(session);
                     }
@@ -263,7 +283,7 @@ impl AdaptiveRouter {
                     }
                 }
 
-                match tokenizers::Tokenizer::from_file(tp) {
+                match tok_result {
                     Ok(tok) => {
                         classifier_tokenizer = Some(tok);
                     }
@@ -379,6 +399,26 @@ impl AdaptiveRouter {
     }
 }
 
+// ── Test-only constructor ────────────────────────────────────────────────────
+
+#[cfg(test)]
+impl AdaptiveRouter {
+    /// Internal constructor for Rust unit tests (no GIL needed, no classifier).
+    pub(crate) fn new_without_py(
+        c0_threshold: Option<f32>,
+        c1_threshold: Option<f32>,
+    ) -> Self {
+        Self {
+            exemplar_embeddings: Vec::new(),
+            classifier: Mutex::new(None),
+            classifier_tokenizer: None,
+            c0_threshold: c0_threshold.unwrap_or(DEFAULT_C0_THRESHOLD),
+            c1_threshold: c1_threshold.unwrap_or(DEFAULT_C1_THRESHOLD),
+            feedback: Mutex::new(Vec::new()),
+        }
+    }
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -387,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_stage0_simple_task_routes_s1() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         let result = router.route_stage0("What is the capital of France?");
         assert_eq!(result.tier, 1, "Simple factual question should route to S1");
         assert_eq!(result.stage, 0);
@@ -395,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_stage0_code_task_routes_s2() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         // "write" -> CODE_KEYWORDS (complexity 0.35), "run" + "test" -> TOOL_KEYWORDS.
         // tool_required=true prevents S1, complexity <= 0.65 prevents S3 -> S2.
         let result = router.route_stage0(
@@ -407,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_stage0_complex_task_routes_s3() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         // "implement" -> ALGO_KEYWORDS (complexity base 0.2 + 0.35 = 0.55).
         // >100 words adds +0.15, pushing to 0.70 > 0.65 threshold -> S3.
         let padding = "using advanced techniques in the system ".repeat(16);
@@ -427,7 +467,7 @@ mod tests {
 
     #[test]
     fn test_stage0_confidence_in_valid_range() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         let tasks = [
             "Hello world",
             "Write a function to sort a list",
@@ -447,7 +487,7 @@ mod tests {
 
     #[test]
     fn test_default_thresholds() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         assert!(
             (router.c0_threshold - 0.85).abs() < f32::EPSILON,
             "Default c0 should be 0.85, got {}",
@@ -462,7 +502,7 @@ mod tests {
 
     #[test]
     fn test_custom_thresholds() {
-        let router = AdaptiveRouter::new(Some(0.90), Some(0.80), None, None);
+        let router = AdaptiveRouter::new_without_py(Some(0.90), Some(0.80));
         assert!(
             (router.c0_threshold - 0.90).abs() < f32::EPSILON,
             "Custom c0 should be 0.90, got {}",
@@ -477,13 +517,8 @@ mod tests {
 
     #[test]
     fn test_load_classifier_nonexistent_returns_no_classifier() {
-        // Passing a nonexistent path still creates a router — classifier just isn't loaded.
-        let router = AdaptiveRouter::new(
-            None,
-            None,
-            Some("/nonexistent/model.onnx".to_string()),
-            Some("/nonexistent/tokenizer.json".to_string()),
-        );
+        // Passing no classifier path still creates a router — classifier just isn't loaded.
+        let router = AdaptiveRouter::new_without_py(None, None);
         assert!(
             !router.has_classifier(),
             "Should have no classifier when model file does not exist",
@@ -492,7 +527,7 @@ mod tests {
 
     #[test]
     fn test_route_without_classifier_uses_stage0() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         let result = router.route("What is 2+2?");
         // Without a classifier, route() should fall through to stage0 result.
         assert_eq!(result.stage, 0, "Without classifier, route should use stage 0");
@@ -501,7 +536,7 @@ mod tests {
 
     #[test]
     fn test_feedback_recording() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
         assert_eq!(router.feedback_count(), 0);
 
         router.record_feedback("test task".to_string(), 2, 0.85, 150, 0.01);
@@ -520,7 +555,7 @@ mod tests {
 
     #[test]
     fn test_feedback_buffer_bounded() {
-        let router = AdaptiveRouter::new(None, None, None, None);
+        let router = AdaptiveRouter::new_without_py(None, None);
 
         // Fill to capacity.
         for i in 0..FEEDBACK_MAX {
