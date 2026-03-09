@@ -45,3 +45,7 @@ sage-core/models/*.onnx
 sage-core/models/tokenizer.json
 sage-core/models/*.dll
 humaneval_full.log
+
+# Certificates (do not commit)
+Cert/
+ca-bundle.pem

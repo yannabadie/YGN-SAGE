@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-846%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-895%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -85,7 +85,7 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 846 passed, 1 skipped
+cd sage-python && python -m pytest tests/ -v    # 895 passed, 1 skipped
 cd sage-core && cargo test --workspace          # 7 passed (+5 ONNX feature-gated)
 cd sage-discover && python -m pytest tests/ -v  # 52 passed
 ```
@@ -170,7 +170,7 @@ pipeline = GuardrailPipeline([
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **846 tests passed** (Python) + 7 Rust + 52 Discover
+- **895 tests passed** (Python) + 7 Rust + 52 Discover
 - **CI/CD**: GitHub Actions (3 parallel jobs)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing, self-consistency benchmark (30/30)

@@ -453,9 +453,9 @@ async def run_benchmark(request: Request):
     async def _run_bench():
         try:
             if bench_type == "routing":
-                from sage.strategy.metacognition import MetacognitiveController
+                from sage.strategy.metacognition import ComplexityRouter
                 from sage.bench.routing import RoutingAccuracyBench
-                mc = MetacognitiveController()
+                mc = ComplexityRouter()
                 bench = RoutingAccuracyBench(metacognition=mc)
                 report = await bench.run()
             elif bench_type == "humaneval":
