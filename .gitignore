@@ -6,6 +6,7 @@ target/
 # Wasm plugin build artifacts and adapters
 sage-core/plugins/*/target/
 sage-core/plugins/*/*.wasm
+sage-core/plugins/*.wasm
 
 # Python
 __pycache__/

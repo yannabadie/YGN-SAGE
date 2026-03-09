@@ -27,6 +27,7 @@ pyo3-arrow = "0.10.0"
 # during MSVC compilation. Use pre-compiled modules + Module::deserialize().
 # On Linux CI, add "cranelift" feature for JIT compilation.
 wasmtime = { version = "36.0", optional = true, default-features = false, features = ["runtime", "component-model", "std"] }
+wasmtime-wasi = { version = "36.0", optional = true, default-features = false }
 # solana_rbpf removed: its build script cross-compiles for BPF target,
 # causing CI failure on Ubuntu even when optional. Re-add in Phase 2.
 # solana_rbpf = { version = "0.8.5", optional = true }
@@ -42,7 +43,7 @@ tree-sitter-python = { version = "0.25", optional = true }
 process-wrap = { version = "9", optional = true, features = ["tokio1"] }
 [features]
 default = []
-sandbox = ["wasmtime"]
+sandbox = ["wasmtime", "dep:wasmtime-wasi"]
 # On Linux CI, use sandbox + cranelift for JIT compilation.
 # On Windows, sandbox alone uses pre-compiled modules only.
 cranelift = ["wasmtime/cranelift"]

@@ -1,0 +1,7 @@
+# Generated bindings (regenerate with: componentize-py -d ../../interface.wit -w tool-env bindings .)
+componentize_py_async_support/
+componentize_py_runtime.pyi
+componentize_py_types.py
+poll_loop.py
+wit_world/
+__pycache__/
