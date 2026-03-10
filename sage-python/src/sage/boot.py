@@ -161,6 +161,28 @@ class AgentSystem:
             except Exception as e:
                 _log.warning("Topology generation failed (%s), continuing without", e)
 
+        # Phase 6: Bandit model suggestion (Thompson sampling)
+        bandit_decision = None
+        if self.bandit:
+            try:
+                template_type = (
+                    topology_result.topology.template_type
+                    if topology_result else "sequential"
+                )
+                # Seed arms from known models (no-op if already registered)
+                for model_id in ["gemini-2.5-flash", "gemini-3-flash-preview",
+                                 "gemini-3.1-pro-preview", "gemini-2.5-flash-lite"]:
+                    self.bandit.register_arm(model_id, template_type)
+
+                bandit_decision = self.bandit.select(0.3)
+                _log.info(
+                    "Bandit suggestion: model=%s, template=%s, quality=%.3f, explore=%s",
+                    bandit_decision.model_id, bandit_decision.template,
+                    bandit_decision.expected_quality, bandit_decision.exploration,
+                )
+            except Exception as e:
+                _log.warning("Bandit model selection failed (%s), using default", e)
+
         # 3. Set validation level from routing decision
         if system_num >= 3:
             self.agent_loop.config.validation_level = 3
@@ -174,7 +196,7 @@ class AgentSystem:
         # Mock mode: skip orchestrator, use AgentLoop directly
         if current_provider == "mock":
             result = await self.agent_loop.run(task)
-            self._record_topology_outcome(task, result, topology_result)
+            self._record_topology_outcome(task, result, topology_result, bandit_decision)
             return result
 
         # 4. Try CognitiveOrchestrator as primary path (multi-provider)
@@ -182,7 +204,7 @@ class AgentSystem:
             try:
                 result = await self.orchestrator.run(task)
                 await self._persist_memory()
-                self._record_topology_outcome(task, result, topology_result)
+                self._record_topology_outcome(task, result, topology_result, bandit_decision)
                 return result
             except Exception as e:
                 _log.warning(
@@ -207,10 +229,10 @@ class AgentSystem:
 
         result = await self.agent_loop.run(task)
         await self._persist_memory()
-        self._record_topology_outcome(task, result, topology_result)
+        self._record_topology_outcome(task, result, topology_result, bandit_decision)
         return result
 
-    def _record_topology_outcome(self, task: str, result: str, topology_result: Any) -> None:
+    def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None) -> None:
         """Record outcome into topology engine's learning loop (S-MMU + MAP-Elites)."""
         if not self.topology_engine or topology_result is None:
             return
@@ -240,6 +262,15 @@ class AgentSystem:
                 "Topology outcome recorded: id=%s, quality=%.2f, cost=%.4f, latency=%.0fms",
                 topology_id, quality, cost, latency_ms,
             )
+
+            # Update bandit posteriors
+            if self.bandit and bandit_decision is not None:
+                try:
+                    self.bandit.record(
+                        bandit_decision.decision_id, quality, cost, latency_ms,
+                    )
+                except Exception as e2:
+                    _log.warning("Bandit outcome recording failed (%s)", e2)
         except Exception as e:
             _log.warning("Topology outcome recording failed (%s)", e)
 
