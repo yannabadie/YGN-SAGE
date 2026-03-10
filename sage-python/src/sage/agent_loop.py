@@ -324,6 +324,15 @@ class AgentLoop:
                 "\n\nUse step-by-step reasoning to solve this task. "
                 "Show your work clearly."
             )
+            if _is_code_task(task):
+                system_prompt += (
+                    "\n\nIMPORTANT edge cases to handle: "
+                    "empty inputs ([], \"\"), negative numbers, zero values, "
+                    "single-element collections, very large numbers, "
+                    "boolean-is-int in Python (type(True)==int), "
+                    "floating-point precision (use abs(a-b)<epsilon). "
+                    "Return ONLY the complete function in a ```python block."
+                )
 
         messages: list[Message] = [
             Message(role=Role.SYSTEM, content=system_prompt),
@@ -502,8 +511,9 @@ class AgentLoop:
                                     role=Role.USER,
                                     content=(
                                         f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
-                                        f"{syntax_err}. "
-                                        f"Return ONLY corrected Python code in a ```python fenced block."
+                                        f"Syntax error in your code:\n```\n{syntax_err}\n```\n"
+                                        f"Fix the syntax error and return ONLY corrected Python code "
+                                        f"in a ```python fenced block."
                                     ),
                                 ))
                                 continue
@@ -531,8 +541,11 @@ class AgentLoop:
                                 f"python3 -c {_shell_quote(cleaned_code)}"
                             )
                             if result.exit_code != 0:
-                                stderr_line = (result.stderr or "").strip().split("\n")[-1][:200]
-                                runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_line}"
+                                # Rich feedback: full traceback + stdout for LLM self-repair
+                                stderr_full = (result.stderr or "").strip()
+                                stderr_last = stderr_full.split("\n")[-1][:200]
+                                stdout_snippet = (result.stdout or "").strip()[:200]
+                                runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_last}"
                                 self._s2_avr_retries += 1
                                 self._avr_error_history.append(runtime_err)
 
@@ -552,13 +565,22 @@ class AgentLoop:
                                     if self._s2_avr_retries <= self._max_s2_avr_retries:
                                         log.info("S2 AVR runtime fail (iteration %d/%d): %s",
                                                  self._s2_avr_retries, self._max_s2_avr_retries, runtime_err)
+                                        # Build rich feedback (LLMLOOP/Review-then-fix pattern)
+                                        feedback_parts = [
+                                            f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: Code execution failed.",
+                                        ]
+                                        if stderr_full:
+                                            # Give full traceback (capped at 500 chars) for self-repair
+                                            feedback_parts.append(f"Traceback:\n```\n{stderr_full[:500]}\n```")
+                                        if stdout_snippet:
+                                            feedback_parts.append(f"Stdout: {stdout_snippet}")
+                                        feedback_parts.append(
+                                            "Analyze the error, fix the bug, and return ONLY corrected Python code "
+                                            "in a ```python fenced block."
+                                        )
                                         messages.append(Message(
                                             role=Role.USER,
-                                            content=(
-                                                f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
-                                                f"{runtime_err}. "
-                                                f"Return ONLY corrected Python code in a ```python fenced block."
-                                            ),
+                                            content="\n".join(feedback_parts),
                                         ))
                                         continue
                             else:

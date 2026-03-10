@@ -1,0 +1,9 @@
+{
+  "benchmark": "evalplus_humaneval",
+  "model": "unknown",
+  "git_sha": "1e7e609766d9",
+  "total": 164,
+  "passed": 138,
+  "pass_rate": 0.8415,
+  "avg_latency_ms": 11347.7
+}

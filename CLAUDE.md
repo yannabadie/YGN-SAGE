@@ -232,13 +232,20 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ### Benchmark Results (March 10, 2026)
 | Benchmark | Score | Notes |
 |-----------|-------|-------|
-| **EvalPlus HumanEval+ (164)** | **84.1%** pass@1 (138/164) | Official 80x harder tests. Base=90.9%, Plus=84.1%. 8 AVR timeouts |
-| **EvalPlus MBPP+ (20 smoke)** | **80.0%** pass@1 (16/20) | Official 35x harder tests |
+| **EvalPlus HumanEval+ (164)** | **84.1%** pass@1 (138/164) | Official 80x harder tests. Base=90.9%, Plus=84.1% |
+| **EvalPlus MBPP+ (378)** | **75.1%** pass@1 (284/378) | Official 35x harder tests. Base=88.9%, Plus=75.1% |
+| **EvalPlus MBPP+ (20 smoke)** | **80.0%** pass@1 (16/20) | Quick validation subset |
 | Ablation: full vs baseline | **+15pp** (100% vs 85%) | A/B paired, same model (20 tasks) |
 | Ablation: routing contribution | **+5pp** (100% vs 95%) | Isolated delta (20 tasks) |
 | Routing quality (30 GT) | 100% (30/30) | Self-consistency |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
+
+**AVR (Act-Verify-Refine) improvements** (v2, March 10):
+- Edge case prompt injection for S2 code tasks (empty inputs, negatives, boolean-is-int, float precision)
+- Rich traceback feedback (LLMLOOP/Review-then-fix pattern): full stderr + stdout in AVR retry messages
+- Improved syntax error formatting with fenced code blocks
+- 60s per-task timeout prevents AVR hangs
 
 ## Evolution System
 - **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Context injected into LLM mutation prompt.
