@@ -181,6 +181,20 @@ class AgentSystem:
                                       llm_graph.node_count())
                     except Exception as e:
                         _log.debug("Path 3 LLM synthesis skipped: %s", e)
+                # Emit topology event for dashboard
+                from sage.agent_loop import AgentEvent
+                self.event_bus.emit(AgentEvent(
+                    type="TOPOLOGY",
+                    step=0,
+                    timestamp=time.time(),
+                    meta={
+                        "topology_source": topology_result.source,
+                        "topology_confidence": topology_result.confidence,
+                        "topology_template": topology_result.topology.template_type,
+                        "topology_id": topology_result.topology.id,
+                        "topology_nodes": topology_result.topology.node_count(),
+                    },
+                ))
             except Exception as e:
                 _log.warning("Topology generation failed (%s), continuing without", e)
 
