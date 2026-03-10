@@ -67,8 +67,15 @@ fn validate(graph: TopologyGraph) -> MutationResult {
 // ---------------------------------------------------------------------------
 
 /// Insert a new agent node with the given role/model/system.
-/// Connects it with a control edge from a random existing exit node.
-pub fn add_node(mut graph: TopologyGraph, role: &str, model_id: &str, system: u8) -> MutationResult {
+/// Connects it with a control edge from a randomly selected exit node.
+/// Pass `exit_hint` to deterministically select which exit node to connect from,
+/// or `None` to use the first exit node.
+pub fn add_node(graph: TopologyGraph, role: &str, model_id: &str, system: u8) -> MutationResult {
+    add_node_at(graph, role, model_id, system, None)
+}
+
+/// Insert a new agent node, connecting from the specified exit node index.
+pub fn add_node_at(mut graph: TopologyGraph, role: &str, model_id: &str, system: u8, exit_hint: Option<usize>) -> MutationResult {
     let node = TopologyNode::new(
         role.to_string(),
         model_id.to_string(),
@@ -82,10 +89,10 @@ pub fn add_node(mut graph: TopologyGraph, role: &str, model_id: &str, system: u8
     let exit_nodes = graph.exit_nodes();
     let new_idx = graph.add_node(node);
 
-    // Connect from a random exit node (if any exist).
+    // Connect from selected exit node (if any exist).
     if !exit_nodes.is_empty() {
-        // Pick the first exit node deterministically (random selection is in apply_random_mutation).
-        let from = exit_nodes[0];
+        let from_idx = exit_hint.unwrap_or(0).min(exit_nodes.len() - 1);
+        let from = exit_nodes[from_idx];
         if let Err(e) = graph.try_add_edge(from, new_idx, TopologyEdge::control()) {
             return MutationResult::Invalid(format!("Failed to add edge: {}", e));
         }
@@ -236,8 +243,16 @@ pub fn swap_model(mut graph: TopologyGraph, node_index: usize, new_model_id: &st
 // ---------------------------------------------------------------------------
 
 /// Add a new control edge between `from` and `to` nodes.
-/// If edge already exists, returns Invalid.
+/// If edge already exists or from == to (self-loop), returns Invalid.
 pub fn rewire_edge(mut graph: TopologyGraph, from: usize, to: usize) -> MutationResult {
+    // Reject self-loops early.
+    if from == to {
+        return MutationResult::Invalid(format!(
+            "Self-loop not allowed: from == to == {}",
+            from
+        ));
+    }
+
     // Check for duplicate edge.
     let inner = graph.inner_graph();
     let from_idx = NodeIndex::new(from);
@@ -597,7 +612,7 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
         let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
         let role = ROLES[rng.random_range(0..ROLES.len())];
         let system: u8 = rng.random_range(1..=3);
-        return add_node(graph, role, model, system);
+        return add_node_at(graph, role, model, system, None);
     }
 
     // Choose a mutation (0-6).
@@ -605,12 +620,14 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
 
     match mutation_idx {
         0 => {
-            // add_node
+            // add_node — random exit node for mutation diversity
+            let exit_count = graph.exit_nodes().len();
+            let exit_hint = if exit_count > 0 { Some(rng.random_range(0..exit_count)) } else { None };
             let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
             let role = ROLES[rng.random_range(0..ROLES.len())];
             let system: u8 = rng.random_range(1..=3);
             debug!(mutation = "add_node", role = role, model = model, "apply_random_mutation");
-            add_node(graph, role, model, system)
+            add_node_at(graph, role, model, system, exit_hint)
         }
         1 => {
             // remove_node

@@ -93,6 +93,7 @@ fn bucket_max_depth(depth: u32) -> u8 {
 }
 
 /// Bucket cost: 1=cheap (<$0.01), 2=moderate ($0.01-$0.10), 3=expensive (>$0.10).
+/// NaN falls through to bucket 3 (expensive) since NaN < x is always false.
 fn bucket_cost(cost: f32) -> u8 {
     if cost < 0.01 {
         1
@@ -116,9 +117,10 @@ fn bucket_model_diversity(diversity: f32) -> u8 {
 
 // ── Graph feature extraction ────────────────────────────────────────────────
 
-/// Compute the longest path (max depth) in a topology graph via control edges.
+/// Compute the longest path (max depth) in a topology graph.
 ///
-/// Uses BFS/DFS from entry nodes along control edges. For cyclic graphs
+/// Traverses ALL edge types (control, message, state) since pipeline depth
+/// reflects the full data flow, not just control ordering. For cyclic graphs
 /// (e.g., AVR with back-edges), falls back to node count as an upper bound.
 fn compute_max_depth(graph: &TopologyGraph) -> u32 {
     let inner = graph.inner_graph();
@@ -514,6 +516,10 @@ impl MapElitesArchive {
     }
 
     /// Load an archive from a SQLite database.
+    ///
+    /// Note: loaded entries bypass `HybridVerifier` since they were validated
+    /// at insertion time. If verifier rules change between save and load,
+    /// call `verify_all()` after loading to re-validate.
     #[cfg(feature = "cognitive")]
     pub fn load_from_sqlite(path: &str) -> Result<Self, String> {
         use rusqlite::Connection;
