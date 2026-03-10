@@ -138,7 +138,29 @@ class AgentSystem:
                     profile.complexity, decision.system,
                 )
 
-        # 2. Set validation level from routing decision
+        # 2. Topology generation (Rust engine, 5-path strategy)
+        topology_result = None
+        if self.topology_engine:
+            try:
+                exploration_budget = 0.3 if system_num <= 2 else 0.5
+                topology_result = self.topology_engine.generate(
+                    task,
+                    None,  # embedding (populated after first run)
+                    system_num,
+                    exploration_budget,
+                )
+                # Cache topology for later outcome recording
+                self.topology_engine.cache_topology(topology_result.topology)
+                _log.info(
+                    "Topology generated: source=%s, confidence=%.2f, template=%s",
+                    topology_result.source,
+                    topology_result.confidence,
+                    topology_result.topology.template_type,
+                )
+            except Exception as e:
+                _log.warning("Topology generation failed (%s), continuing without", e)
+
+        # 3. Set validation level from routing decision
         if system_num >= 3:
             self.agent_loop.config.validation_level = 3
         elif system_num == 2 and self.agent_loop.sandbox_manager:
@@ -152,7 +174,7 @@ class AgentSystem:
         if current_provider == "mock":
             return await self.agent_loop.run(task)
 
-        # 3. Try CognitiveOrchestrator as primary path (multi-provider)
+        # 4. Try CognitiveOrchestrator as primary path (multi-provider)
         if self.orchestrator and self.registry and self.registry.list_available():
             try:
                 result = await self.orchestrator.run(task)
@@ -163,7 +185,7 @@ class AgentSystem:
                     "Orchestrator failed (%s), falling back to legacy routing", e
                 )
 
-        # 4. Fallback: legacy ModelRouter path (only used with Python router)
+        # 5. Fallback: legacy ModelRouter path (only used with Python router)
         if not self.rust_router:
             new_config = ModelRouter.get_config(decision.llm_tier)
             if current_provider == "codex" and new_config.provider == "google":
