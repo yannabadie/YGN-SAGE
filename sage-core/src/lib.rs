@@ -8,6 +8,7 @@ pub mod routing;
 #[cfg(any(feature = "sandbox", feature = "tool-executor"))]
 pub mod sandbox;
 pub mod simd_sort;
+pub mod topology;
 pub mod types;
 
 #[pymodule]
@@ -43,6 +44,9 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<routing::system_router::SystemRouter>()?;
     m.add_class::<routing::system_router::RoutingDecision>()?;
     m.add_class::<routing::system_router::RoutingConstraints>()?;
+    m.add_class::<topology::TopologyGraph>()?;
+    m.add_class::<topology::TopologyNode>()?;
+    m.add_class::<topology::TopologyEdge>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;
