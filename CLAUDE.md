@@ -14,7 +14,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `.github/workflows/ci.yml` - CI pipeline (Rust + Python sage + Python discover)
 
 ### Key Python Modules (sage-python/src/sage/)
-- `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline into `AgentSystem`. Auto-discovers models via registry.refresh(), populates CapabilityMatrix, logs per-provider summary
+- `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline + TopologyEngine + ContextualBandit into `AgentSystem`. Auto-discovers models via registry.refresh(), populates CapabilityMatrix, logs per-provider summary. Phase 6: topology generation on every task, outcome recording feeds S-MMU + MAP-Elites + bandit learning loop
 - `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `agents/sequential.py` - SequentialAgent: chain agents in series
@@ -43,6 +43,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
+- `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
@@ -69,6 +70,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
 - `contracts/cost_tracker.py` - CostTracker: cumulative per-node cost accounting with budget cap
 - `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
+- `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. Phase 5 gate: <5% divergence on 1000+ traces
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
@@ -111,7 +113,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1036 passed, 91 skipped)
+python -m pytest tests/ -v     # Run tests (1075 passed, 95 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
