@@ -1,8 +1,9 @@
 # YGN-SAGE: Full Rust Cognitive Engine — Design Document
 
 **Date:** 2026-03-10
-**Status:** Approved
+**Status:** Approved (Revised after expert review)
 **Author:** Yann Abadie + Claude Opus 4.6
+**Expert Review:** Applied — latency targets relaxed, OxiZ replaces z3-sys, opaque topology IDs, decay factor, tracing added
 
 ## 1. Objective
 
@@ -116,24 +117,27 @@ The SystemRouter does NOT implement a sequential pipeline. It decides which **co
 - **System 2 (Deliberate/Tools)** — Code execution, AVR loop (Act→Verify→Repair), sandbox. For tool-use and coding.
 - **System 3 (Formal/Reasoning)** — Deep reasoning, Z3 bounds checking, formal proofs. For mathematical/logical tasks.
 
-**Decision process** (all Rust, <2ms total):
+**Decision process** (all Rust, **< 20ms P99 total** — invisible vs 200ms+ LLM TTFT):
 
-1. **Structural analysis** (existing StructuralFeatures, <0.1ms): keyword/complexity/uncertainty extraction. If unambiguous (confidence > 0.85), directly selects the System.
+1. **Structural analysis** (existing StructuralFeatures, < 0.1ms): keyword/complexity/uncertainty extraction + formal keyword detection. If unambiguous (confidence > 0.85), directly selects the System.
 
-2. **ModelCard semantic matching** (new, <1ms):
-   - `RustEmbedder.embed(query)` → 384-dim vector
-   - Cosine similarity vs pre-computed card embeddings
+2. **ModelCard semantic matching** (new, < 15ms P99):
+   - `RustEmbedder.embed(query)` → 384-dim vector (5-15ms ONNX on CPU, FP32)
+   - Cosine similarity vs pre-computed card embeddings (< 0.1ms)
    - System score: `Σ(card.sN_affinity × similarity × capability_match)` for each System
    - Selects the System with highest aggregate score
+   - **Note:** ONNX embedding is the latency bottleneck. INT8 quantization can reduce to 3-10ms.
 
-3. **Bandit Pareto selection** (new, <0.5ms):
+3. **Bandit Pareto selection** (new, < 0.5ms):
    - Given the chosen System, Thompson sampling on Pareto front per (model × topology) combo
    - Returns the non-dominated combo matching caller's runtime preference
+   - **Warm-start:** Bayesian priors from `sN_affinity` in cards.toml (avoids cold-start catastrophe)
+   - **Decay:** `decay_factor = 0.995` per observation (non-stationary environment adaptation)
 
-4. **Z3 runtime verification** (<1ms):
-   - Budget check: remaining budget ≥ estimated cost
-   - Capability check: provider supports required features
-   - Topology check: DAG is valid (no cycles, fan-in/fan-out within limits)
+4. **Graph validation** (< 0.01ms for S1/S2, async for S3):
+   - S1/S2: `petgraph::algo::is_cyclic_directed()` + fan-in/out check — O(V+E), pure Rust, < 10μs
+   - S3: OxiZ SMT verification (async/background thread) for formal proofs
+   - Budget check + capability check: Python-native (fast, no SMT needed)
    - If fails → next Pareto-dominant combo (max 3 fallback attempts)
 
 **Output:**
@@ -142,12 +146,15 @@ The SystemRouter does NOT implement a sequential pipeline. It decides which **co
 pub struct RoutingDecision {
     pub system: CognitiveSystem,    // S1 | S2 | S3
     pub model_id: String,
-    pub topology: TopologyGraph,
+    pub topology_id: Ulid,          // Opaque ID — lazy-load via engine.get_topology(id)
     pub confidence: f32,
     pub pareto_rank: u32,
     pub estimated_cost: f32,
     pub estimated_latency_ms: f32,
 }
+// IMPORTANT: Never return full TopologyGraph across PyO3 FFI boundary.
+// PyO3 serialization of nested petgraph DiGraph = massive overhead.
+// Use opaque Ulid + lazy-loading via Arrow shared memory or Rust-side get().
 ```
 
 ### 4.4 Python files deleted (Phase 1)
@@ -296,6 +303,7 @@ impl<const N: usize> ParetoFront<N> {
 pub struct BanditState {
     fronts: HashMap<ComboKey, ParetoFront<3>>,
     // ComboKey = (CognitiveSystem, ModelId, TopologyId)
+    decay_factor: f32,  // 0.995 — temporal discounting for non-stationary environment
 }
 
 #[pymethods]
@@ -318,18 +326,26 @@ impl BanditState {
 **Boot sequence:** SQLite → Arrow (restore hot state)
 **Runtime:** Arrow for all reads. S-MMU `register_chunk` on each `record_outcome`.
 **Periodic flush:** Arrow → SQLite every 50 requests or on graceful shutdown.
+**SQLite config:** `PRAGMA journal_mode=WAL;` for concurrent reads during writes.
+**Async writes:** MPSC channel (tokio) for non-blocking SQLite flushes — avoids lag spikes on the Nth request.
 
-### 6.4 Z3 Dual Verification
+### 6.4 SMT Dual Verification (OxiZ — pure Rust, no C++ deps)
 
-**In MAP-Elites (evolution-time):**
+**Solver:** OxiZ v0.1.3+ (crates.io/crates/oxiz) — pure Rust CDCL(T) SMT solver.
+Z3-compatible API, 100% parity on 88 Z3 benchmarks. No z3-sys, no C++ toolchain.
+Feature flag: `smt = ["dep:oxiz"]`. System compiles and works WITHOUT SMT — graph validation via petgraph only.
+
+**In MAP-Elites (evolution-time, offline):**
 - Budget feasibility: estimated cost ≤ max budget
 - Capability coverage: all required capabilities satisfied by assigned models
 - Topology validity: DAG (no cycles), fan-in ≤ max, fan-out ≤ max
 - Security labels: info-flow lattice respected (HIGH → LOW blocked)
 
 **In SystemRouter (runtime):**
-- Re-verify with CURRENT context: remaining budget, live provider status, task-specific constraints
-- If verification fails → next Pareto-dominant combo
+- S1/S2: petgraph graph validation only (O(V+E), < 10μs) — NO SMT solver on hot path
+- S3: OxiZ verification async/background thread for formal proofs
+- Budget + capability checks: Python-native (fast, no SMT needed — as documented in CLAUDE.md, ~2000x faster)
+- If validation fails → next Pareto-dominant combo
 - Max 3 fallback attempts before returning default S1 topology
 
 ### 6.5 Python files deleted (Phase 3)
@@ -381,21 +397,27 @@ sandbox = ["wasmtime", "dep:wasmtime-wasi"]
 cranelift = ["wasmtime/cranelift"]
 onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 tool-executor = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:process-wrap"]
-topology = []  # NEW: always-on (no optional deps beyond petgraph which is already included)
+cognitive = ["dep:rusqlite"]      # Phase 1: ModelCard/SystemRouter + optional SQLite
+smt = ["dep:oxiz"]                # Phase 3: OxiZ pure-Rust SMT solver (no C++ deps)
 
 [dependencies]
 # Existing deps used by new modules:
-# petgraph = "0.6.4"      (TopologyGraph DAG)
+# petgraph = "0.6.4"      (TopologyGraph DAG + is_cyclic_directed validation)
 # dashmap = "6"            (concurrent BanditState)
 # chrono = "0.4"           (timestamps)
 # serde/serde_json         (serialization)
 # ulid                     (topology IDs)
 # arrow/pyo3-arrow         (persistence)
 
-# New dependency:
+# New dependencies (Phase 1):
 toml = "0.8"               # cards.toml parsing
 rand = "0.9"               # Thompson sampling
-rusqlite = { version = "0.33", features = ["bundled"] }  # SQLite persistence
+rusqlite = { version = "0.33", features = ["bundled"], optional = true }  # SQLite persistence
+tracing = "0.1"            # Structured observability (routing decisions, Pareto samples)
+tracing-subscriber = { version = "0.3", features = ["env-filter"], optional = true }
+
+# Phase 3:
+oxiz = { version = "0.1", optional = true }  # Pure Rust SMT solver (replaces z3-sys)
 ```
 
 ## 9. New Rust File Structure
@@ -430,11 +452,13 @@ sage-core/src/
 
 | Metric | Target | Measurement |
 |--------|--------|-------------|
-| Routing latency | < 2ms (full decision) | Benchmark with 1000 queries |
+| Routing latency (P99) | **< 20ms** (full decision incl. ONNX embed) | criterion benchmark with 1000 queries |
+| Routing latency (no embed) | < 0.5ms (structural features only) | Phase 1 current path |
 | Routing accuracy | ≥ 100% on 30 GT tasks | Existing routing benchmark |
 | Topology generation | < 5ms per new topology | Benchmark MAP-Elites generate() |
-| Pareto convergence | Front stabilizes within 100 queries | Track front size over time |
-| Z3 validation | < 1ms per check | Benchmark Z3 runtime verify |
+| Pareto convergence | Front stabilizes within 200 queries (warm-start) | Track front size + decay factor |
+| Graph validation (S1/S2) | < 0.01ms (petgraph only) | Benchmark is_cyclic_directed |
+| OxiZ SMT validation (S3) | < 50ms P99 (async, background) | Benchmark offline |
 | Cross-session restore | < 100ms boot from SQLite | Measure boot time delta |
 | Python LOC deleted | ~3000 LOC | Count deleted files |
 | Rust LOC added | ~2600 LOC | Count new files |
@@ -444,11 +468,15 @@ sage-core/src/
 
 | Risk | Mitigation |
 |------|-----------|
-| Z3 Rust bindings don't exist | Use z3-sys crate or keep Z3 checks in Python via PyO3 callback |
-| Thompson sampling convergence slow with Pareto | Start with UCB fallback, switch to Thompson after 50 observations |
+| ~~Z3 Rust bindings don't exist~~ | **Resolved: OxiZ v0.1.3** (pure Rust SMT, no C++ deps). Behind `smt` feature flag. Fallback: petgraph-only graph validation. |
+| Thompson sampling convergence slow with Pareto | Warm-start from sN_affinity priors + UCB fallback first 50 obs + decay_factor=0.995 |
+| ONNX embedding latency (5-15ms) dominates routing | Accept < 20ms P99. Cache embeddings. Phase 1 uses structural-only (< 0.5ms). |
+| PyO3 FFI overhead for TopologyGraph | Return opaque Ulid, lazy-load via Arrow shared memory |
 | LLM mutation callback (Rust→Python→LLM→Python→Rust) latency | Mutation is async/offline, not on hot path |
 | Windows ONNX DLL issues | Already solved via OnceLock + auto-discovery pattern |
 | rusqlite bundled increases binary size | Acceptable trade-off for zero system dependency |
+| Non-stationary LLM environment (quality/latency drift) | Exponential decay factor (0.995) in BanditState + EWMA volatility from VAD-CFR |
+| Routing is a black box | **tracing** crate + structured spans: `routing_decision`, `pareto_sample`, `graph_validate` |
 
 ## 12. A2A Protocol Integration (Future)
 
