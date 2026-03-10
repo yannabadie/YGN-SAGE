@@ -1,5 +1,0 @@
-[Cycle 1] | Grok Sentiment: -0.65 | eBPF Threshold: 30 | eBPF Exec: 83.8747ms | Net Profit: $500.00 | Total AUM: $500.00
-[Cycle 2] | Grok Sentiment: -0.65 | eBPF Threshold: 30 | eBPF Exec: 83.0714ms | Net Profit: $500.00 | Total AUM: $1000.00
-[Cycle 3] | Grok Sentiment: -0.65 | eBPF Threshold: 30 | eBPF Exec: 90.7131ms | Net Profit: $500.00 | Total AUM: $1500.00
-[Cycle 4] | Grok Sentiment: -0.65 | eBPF Threshold: 30 | eBPF Exec: 99.4246ms | Net Profit: $500.00 | Total AUM: $2000.00
-[Cycle 5] | Grok Sentiment: -0.65 | eBPF Threshold: 30 | eBPF Exec: 83.6505ms | Net Profit: $500.00 | Total AUM: $2500.00

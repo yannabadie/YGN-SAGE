@@ -69,11 +69,11 @@ FIFO + TTL cache for File Search (ExoCortex) query results (PyClass):
 
 ONNX Runtime embedder for S-MMU semantic edges (PyClass):
 
-- Model: all-MiniLM-L6-v2 (384-dim, L2-normalized).
+- Model: snowflake-arctic-embed-m (768-dim, L2-normalized).
 - Uses `ort` 2.0 (`load-dynamic` feature) for inference, `tokenizers` 0.21 for HuggingFace tokenization.
-- `embed(text)` -- Single text to 384-dim vector.
-- `embed_batch(texts)` -- Batch embedding with mean pooling + L2 normalization. Provides 3 input tensors: `input_ids`, `attention_mask`, `token_type_ids`.
-- Properties: `dim` (384), `is_semantic` (true).
+- `embed(text)` -- Single text to 768-dim vector.
+- `embed_batch(texts)` -- Batch embedding with mean pooling + L2 normalization. Dynamically detects whether model expects `token_type_ids` input.
+- Properties: `dim` (768), `is_semantic` (true).
 - `ensure_ort_initialized()` -- Auto-discovers `onnxruntime.dll` via `ORT_DYLIB_PATH` env var, sibling of model file, or `VIRTUAL_ENV` pip package. Does NOT call Python subprocess (GIL deadlock).
 - Part of the Python Embedder 3-tier fallback: RustEmbedder > sentence-transformers > SHA-256 hash.
 - Requires: `pip install onnxruntime` for the runtime DLL on Windows.

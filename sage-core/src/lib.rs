@@ -8,6 +8,7 @@ pub mod routing;
 #[cfg(any(feature = "sandbox", feature = "tool-executor"))]
 pub mod sandbox;
 pub mod simd_sort;
+pub mod topology;
 pub mod types;
 
 #[pymodule]
@@ -37,6 +38,23 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
     m.add_class::<routing::features::StructuralFeatures>()?;
+    m.add_class::<routing::model_card::ModelCard>()?;
+    m.add_class::<routing::model_card::CognitiveSystem>()?;
+    m.add_class::<routing::model_registry::ModelRegistry>()?;
+    m.add_class::<routing::system_router::SystemRouter>()?;
+    m.add_class::<routing::system_router::RoutingDecision>()?;
+    m.add_class::<routing::system_router::RoutingConstraints>()?;
+    m.add_class::<routing::bandit::BanditDecision>()?;
+    m.add_class::<routing::bandit::ContextualBandit>()?;
+    m.add_class::<topology::TopologyGraph>()?;
+    m.add_class::<topology::TopologyNode>()?;
+    m.add_class::<topology::TopologyEdge>()?;
+    m.add_class::<topology::templates::PyTemplateStore>()?;
+    m.add_class::<topology::verifier::PyHybridVerifier>()?;
+    m.add_class::<topology::verifier::VerificationResult>()?;
+    m.add_class::<topology::pyo3_wrappers::PyTopologyEngine>()?;
+    m.add_class::<topology::pyo3_wrappers::PyGenerateResult>()?;
+    m.add_class::<topology::pyo3_wrappers::PyTopologyExecutor>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;

@@ -48,7 +48,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase. Supports provider injection (no vendor lock-in), falls back to GoogleProvider if none injected
 - `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
-- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 384-dim) for S-MMU semantic edges. `_ensure_ort_dylib_path()` auto-discovers onnxruntime DLL from pip package.
+- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 768-dim) for S-MMU semantic edges. `_ensure_ort_dylib_path()` auto-discovers onnxruntime DLL from pip package.
 - `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
 - `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
 - `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
@@ -78,9 +78,24 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules + 11 blocked calls. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
-- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (all-MiniLM-L6-v2, 384-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var.
+- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
 - `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
 - `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support.
+- `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + TOML parsing. PyO3 classes.
+- `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection. PyO3 class.
+- `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → affinity). PyO3 class with RoutingDecision + RoutingConstraints.
+- `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature.
+- `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval.
+- `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
+- `topology/templates.rs` - 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). PyTemplateStore PyO3 class.
+- `topology/verifier.rs` - HybridVerifier: 6 structural + 4 semantic checks, all O(V+E). PyO3 class.
+- `topology/smmu_bridge.rs` - TopologySmmuBridge: stores topology outcomes in S-MMU, retrieves similar topologies, injects bandit priors.
+- `topology/map_elites.rs` - MapElitesArchive: quality-diversity archive with 4-dim BehaviorDescriptor (108 cells), Pareto dominance. SQLite persistence behind `cognitive` feature.
+- `topology/mutations.rs` - 7 mutation operators (add_node, remove_node, swap_model, rewire_edge, split_node, merge_nodes, mutate_prompt). Validation via HybridVerifier.
+- `topology/llm_synthesis.rs` - TopologySynthesizer: 3-stage LLM pipeline (Role Assignment → Structure Design → Validation). Rate-limited.
+- `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
+- `topology/engine.rs` - DynamicTopologyEngine: 5-path generate strategy (S-MMU → archive → LLM → mutation → template fallback). Evolution loop via MAP-Elites.
+- `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult.
 - `z3/` - Z3 formal verification bindings
 
 ### Dashboard (ui/)
@@ -126,7 +141,7 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --features onnx     # Run all Rust tests (57 passing: 30 lib + 27 integration)
+cargo test --features onnx     # Run all Rust tests (341 passing: 141 lib + 200 integration)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
@@ -171,6 +186,30 @@ export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no toke
 # ExoCortex auto-configured (DEFAULT_STORE hardcoded, no env var needed)
 ```
 
+### SSL / Corporate Proxy
+This dev machine sits behind a corporate proxy that injects a self-signed certificate.
+All outbound HTTPS calls (Google GenAI, pip, etc.) will fail with `CERTIFICATE_VERIFY_FAILED` unless SSL verification is bypassed.
+
+**Protocol for any Python call to external APIs:**
+```python
+import httpx
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"],
+                      http_options={"api_version": "v1beta"})
+# REQUIRED on this machine — corporate proxy self-signed cert
+client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
+```
+
+**For CLI / env-level bypass:**
+```bash
+set -a && source .env && set +a          # Load API keys
+export PYTHONIOENCODING=utf-8            # Fix Windows console encoding
+export REQUESTS_CA_BUNDLE=""             # Disable cert bundle for requests
+export NODE_TLS_REJECT_UNAUTHORIZED=0    # For Node.js tools
+```
+
 ### Sandbox & Tool Security
 The sandbox blocks host code execution by default. To allow local execution (e.g., for development):
 ```python
@@ -194,7 +233,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
 - **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. `register_chunk()` uses bounded recency scan (last 128 chunks, `MAX_SEMANTIC_NEIGHBORS = 128`). Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
-- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: all-MiniLM-L6-v2 (384-dim). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`
+- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: snowflake-arctic-embed-m (768-dim, 109M params). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`. Robust token_type_ids handling (auto-detects from model inputs).
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
 - **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Active `search_exocortex` tool only (passive grounding removed — Sprint 3 evidence showed it adds latency without benefit for code tasks).
@@ -269,9 +308,32 @@ Auto-configured with `DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkq
 Resolution: explicit param > env var `SAGE_EXOCORTEX_STORE` > DEFAULT_STORE.
 
 ```python
+# Via SAGE SDK
 from sage.memory.remote_rag import ExoCortex
 exo = ExoCortex()  # Works automatically when GOOGLE_API_KEY is set
 ```
+
+**Direct query protocol** (for scripts / Claude Code):
+```python
+import httpx, os
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"],
+                      http_options={"api_version": "v1beta"})
+client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
+
+store_id = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
+tools = [types.Tool(file_search=types.FileSearch(file_search_store_names=[store_id]))]
+
+result = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="<your query>",
+    config=types.GenerateContentConfig(tools=tools, temperature=0.1),
+)
+print(result.text)
+```
+**API note:** Use `types.FileSearch(file_search_store_names=[...])` — NOT `types.FileSearchTool` (does not exist in google-genai SDK).
 
 ### Knowledge Pipeline (sage-discover)
 ```bash

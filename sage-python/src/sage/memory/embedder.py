@@ -14,7 +14,7 @@ Usage::
     emb = Embedder()          # auto-detects best backend
     vec = emb.embed("hello")  # list[float], length == EMBEDDING_DIM
 
-The S-MMU (Rust side) expects ``Vec<f32>`` of length 384 for cosine
+The S-MMU (Rust side) expects ``Vec<f32>`` of length 768 for cosine
 similarity on semantic edges.
 """
 
@@ -27,8 +27,8 @@ from typing import Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_DIM: int = 384
-"""Dimensionality of all embeddings (matches all-MiniLM-L6-v2)."""
+EMBEDDING_DIM: int = 768
+"""Dimensionality of all embeddings (matches snowflake-arctic-embed-m)."""
 
 
 # ---------------------------------------------------------------------------
@@ -161,13 +161,13 @@ class _HashEmbedder:
 # ---------------------------------------------------------------------------
 
 class _SentenceTransformerEmbedder:
-    """Real semantic embeddings via sentence-transformers (all-MiniLM-L6-v2).
+    """Real semantic embeddings via sentence-transformers (snowflake-arctic-embed-m).
 
     Lazy-loads the model on first call to avoid import-time overhead.
     Outputs are L2-normalized (unit vectors) for cosine similarity.
     """
 
-    _MODEL_NAME = "all-MiniLM-L6-v2"
+    _MODEL_NAME = "snowflake-arctic-embed-m"
 
     def __init__(self) -> None:
         self._model = None  # lazy
@@ -216,7 +216,7 @@ class Embedder:
     >>> emb = Embedder(force_hash=True)  # force hash fallback
     >>> vec = emb.embed("hello world")
     >>> len(vec)
-    384
+    768
     """
 
     def __init__(self, force_hash: bool = False) -> None:
@@ -267,7 +267,7 @@ class Embedder:
     def embed(self, text: str) -> list[float]:
         """Embed a single text string.
 
-        Returns a list of EMBEDDING_DIM (384) floats.
+        Returns a list of EMBEDDING_DIM (768) floats.
         """
         return self._provider.embed(text)
 
