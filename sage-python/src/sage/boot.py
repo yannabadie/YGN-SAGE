@@ -158,6 +158,29 @@ class AgentSystem:
                     topology_result.confidence,
                     topology_result.topology.template_type,
                 )
+                # Path 3 hook: if engine returned template_fallback AND
+                # system >= 2 AND not mock, try LLM synthesis
+                if (topology_result.source == "template_fallback"
+                        and system_num >= 2
+                        and self.agent_loop.config.llm.provider != "mock"):
+                    try:
+                        from sage.topology.llm_caller import synthesize_topology
+                        llm_graph = await synthesize_topology(
+                            self.agent_loop._llm,
+                            task,
+                            max_agents=4,
+                            available_models=["gemini-2.5-flash", "gemini-3-flash-preview"],
+                        )
+                        if llm_graph and llm_graph.node_count() > 0:
+                            self.topology_engine.cache_topology(llm_graph)
+                            # Update topology_result with LLM synthesis result
+                            topology_result = self.topology_engine.generate(
+                                task, None, system_num, 0.0,
+                            )
+                            _log.info("Path 3: LLM synthesis produced %d-node topology",
+                                      llm_graph.node_count())
+                    except Exception as e:
+                        _log.debug("Path 3 LLM synthesis skipped: %s", e)
             except Exception as e:
                 _log.warning("Topology generation failed (%s), continuing without", e)
 
