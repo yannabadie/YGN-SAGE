@@ -6,6 +6,7 @@
 use super::topology_graph::*;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{Bfs, EdgeRef};
+use pyo3::prelude::*;
 use std::collections::HashSet;
 
 // ---------------------------------------------------------------------------
@@ -13,13 +14,17 @@ use std::collections::HashSet;
 // ---------------------------------------------------------------------------
 
 /// Result of a hybrid verification pass.
+#[pyclass]
 #[derive(Debug, Clone)]
 pub struct VerificationResult {
     /// Whether the topology is structurally valid (no errors).
+    #[pyo3(get)]
     pub valid: bool,
     /// Hard errors that make the topology invalid.
+    #[pyo3(get)]
     pub errors: Vec<String>,
     /// Soft warnings about potential semantic issues.
+    #[pyo3(get)]
     pub warnings: Vec<String>,
 }
 
@@ -41,6 +46,13 @@ impl VerificationResult {
 
     fn add_warnings(&mut self, warns: Vec<String>) {
         self.warnings.extend(warns);
+    }
+}
+
+#[pymethods]
+impl VerificationResult {
+    fn __repr__(&self) -> String {
+        self.to_string()
     }
 }
 
@@ -544,6 +556,42 @@ impl HybridVerifier {
         }
 
         (errors, warnings)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PyO3 wrapper
+// ---------------------------------------------------------------------------
+
+/// PyO3-exposed hybrid verifier for validating topology graphs from Python.
+#[pyclass]
+pub struct PyHybridVerifier {
+    inner: HybridVerifier,
+}
+
+#[pymethods]
+impl PyHybridVerifier {
+    #[new]
+    #[pyo3(signature = (max_fan_in=10, max_fan_out=10))]
+    pub fn new(max_fan_in: usize, max_fan_out: usize) -> Self {
+        Self {
+            inner: HybridVerifier {
+                max_fan_in,
+                max_fan_out,
+            },
+        }
+    }
+
+    /// Verify a topology graph.
+    pub fn verify(&self, graph: &TopologyGraph) -> VerificationResult {
+        self.inner.verify(graph)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "HybridVerifier(fan_in={}, fan_out={})",
+            self.inner.max_fan_in, self.inner.max_fan_out
+        )
     }
 }
 

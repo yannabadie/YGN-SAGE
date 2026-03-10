@@ -47,6 +47,9 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<topology::TopologyGraph>()?;
     m.add_class::<topology::TopologyNode>()?;
     m.add_class::<topology::TopologyEdge>()?;
+    m.add_class::<topology::templates::PyTemplateStore>()?;
+    m.add_class::<topology::verifier::PyHybridVerifier>()?;
+    m.add_class::<topology::verifier::VerificationResult>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;

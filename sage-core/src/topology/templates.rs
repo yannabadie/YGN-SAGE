@@ -4,6 +4,7 @@
 //! and (where appropriate) state edges, gates, and conditions.
 
 use super::topology_graph::*;
+use pyo3::prelude::*;
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -509,6 +510,40 @@ impl TemplateStore {
             "debate",
             "brainstorming",
         ]
+    }
+}
+
+// ---------------------------------------------------------------------------
+// PyO3 wrapper
+// ---------------------------------------------------------------------------
+
+/// PyO3-exposed template store for creating topologies from template names.
+#[pyclass]
+pub struct PyTemplateStore;
+
+#[pymethods]
+impl PyTemplateStore {
+    #[new]
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Create a topology from a template name and default model ID.
+    pub fn create(&self, template_name: &str, model_id: &str) -> PyResult<TopologyGraph> {
+        TemplateStore::create(template_name, model_id)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+    }
+
+    /// List all available template names.
+    pub fn available(&self) -> Vec<String> {
+        TemplateStore::available()
+            .into_iter()
+            .map(String::from)
+            .collect()
+    }
+
+    fn __repr__(&self) -> String {
+        format!("TemplateStore(templates={})", TemplateStore::available().len())
     }
 }
 

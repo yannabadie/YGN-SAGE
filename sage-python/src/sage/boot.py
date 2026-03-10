@@ -26,6 +26,8 @@ try:
     from sage_core import SystemRouter as RustSystemRouter
     from sage_core import ModelRegistry as RustModelRegistry
     from sage_core import CognitiveSystem  # noqa: F401
+    from sage_core import PyTemplateStore as RustTemplateStore  # Phase 2
+    from sage_core import PyHybridVerifier as RustHybridVerifier  # Phase 2
     _HAS_RUST_ROUTER = True
 except ImportError:
     _HAS_RUST_ROUTER = False
@@ -76,6 +78,9 @@ class AgentSystem:
     rust_router: Any = None
     # ShadowRouter: dual Rust/Python routing comparison (None if shadow mode inactive)
     shadow_router: ShadowRouter | None = None
+    # Phase 2: Topology templates + verifier (None if sage_core not compiled)
+    template_store: Any = None
+    verifier: Any = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -272,6 +277,20 @@ def boot_agent_system(
             "traces -> %s)", shadow_router._trace_path,
         )
 
+    # Phase 2: Topology templates + HybridVerifier (Rust)
+    template_store = None
+    verifier = None
+    if _HAS_RUST_ROUTER and rust_router:
+        try:
+            template_store = RustTemplateStore()
+            verifier = RustHybridVerifier()
+            _log.info(
+                "Boot: Phase 2 active — %d topology templates, HybridVerifier ready",
+                len(template_store.available()),
+            )
+        except Exception as e:
+            _log.warning("Boot: Phase 2 init failed (%s)", e)
+
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider if not use_mock_llm else None)
@@ -465,4 +484,6 @@ def boot_agent_system(
         capability_matrix=_cap_matrix,
         rust_router=rust_router,
         shadow_router=shadow_router,
+        template_store=template_store,
+        verifier=verifier,
     )
