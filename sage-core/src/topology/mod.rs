@@ -8,6 +8,7 @@ pub mod executor;
 pub mod llm_synthesis;
 pub mod map_elites;
 pub mod mutations;
+pub mod pyo3_wrappers;
 pub mod smmu_bridge;
 pub mod templates;
 pub mod topology_graph;
