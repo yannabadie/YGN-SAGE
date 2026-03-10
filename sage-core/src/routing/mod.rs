@@ -8,6 +8,7 @@ pub mod bandit;
 pub mod features;
 pub mod model_card;
 pub mod model_registry;
+pub mod smmu_bridge;
 pub mod system_router;
 
 #[cfg(feature = "cognitive")]

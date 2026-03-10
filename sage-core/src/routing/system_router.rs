@@ -7,6 +7,7 @@
 //! 4. Budget constraint — downgrade to cheapest available if over budget
 
 use pyo3::prelude::*;
+use tracing::{info, info_span};
 
 use super::features::StructuralFeatures;
 use super::model_card::{CognitiveSystem, ModelCard};
@@ -146,6 +147,9 @@ impl SystemRouter {
 
     /// Route a task to the best cognitive system + model (legacy API).
     pub fn route(&self, task: &str, budget: f32) -> RoutingDecision {
+        let _span =
+            info_span!("system_router.route", task_len = task.len(), budget = budget).entered();
+
         // Step 1: Structural analysis
         let features = StructuralFeatures::extract_from(task);
         let (system, confidence) = self.decide_system(task, &features);
@@ -163,13 +167,23 @@ impl SystemRouter {
             system
         };
 
-        RoutingDecision {
+        let decision = RoutingDecision {
             decision_id: ulid::Ulid::new().to_string(),
             system: final_system,
             model_id: model.id.clone(),
             confidence,
             estimated_cost,
-        }
+        };
+
+        info!(
+            system = %decision.system,
+            model = %decision.model_id,
+            confidence = decision.confidence,
+            cost = decision.estimated_cost,
+            "routing_decision"
+        );
+
+        decision
     }
 
     /// Route a task with explicit constraints.
@@ -182,6 +196,16 @@ impl SystemRouter {
         task: &str,
         constraints: &RoutingConstraints,
     ) -> RoutingDecision {
+        let _span = info_span!(
+            "system_router.route_constrained",
+            task_len = task.len(),
+            max_cost = constraints.max_cost_usd,
+            max_latency = constraints.max_latency_ms,
+            min_quality = constraints.min_quality,
+            explore = constraints.exploration_budget,
+        )
+        .entered();
+
         let features = StructuralFeatures::extract_from(task);
         let (system, confidence) = self.decide_system(task, &features);
 
@@ -217,13 +241,23 @@ impl SystemRouter {
             model.best_system()
         };
 
-        RoutingDecision {
+        let decision = RoutingDecision {
             decision_id: ulid::Ulid::new().to_string(),
             system: final_system,
             model_id: model.id.clone(),
             confidence,
             estimated_cost,
-        }
+        };
+
+        info!(
+            system = %decision.system,
+            model = %decision.model_id,
+            confidence = decision.confidence,
+            cost = decision.estimated_cost,
+            "constrained_routing_decision"
+        );
+
+        decision
     }
 
     fn __repr__(&self) -> String {

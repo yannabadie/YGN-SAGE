@@ -9,6 +9,7 @@ use pyo3::prelude::*;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use tracing::{debug, info, info_span};
 
 // ── Error type ─────────────────────────────────────────────────────────────
 
@@ -287,6 +288,13 @@ impl ContextualBandit {
     /// expected quality/cost/latency. The decision_id can later be passed
     /// to `record_outcome()` to update posteriors.
     pub fn choose(&mut self, exploration_budget: f32) -> Result<BanditDecision, BanditError> {
+        let _span = info_span!(
+            "bandit.select",
+            arms = self.arms.len(),
+            exploration = exploration_budget
+        )
+        .entered();
+
         if self.arms.is_empty() {
             return Err(BanditError::NoArms);
         }
@@ -327,7 +335,7 @@ impl ContextualBandit {
         // Store pending decision for deferred record()
         self.pending.insert(decision_id.clone(), chosen_key.clone());
 
-        Ok(BanditDecision {
+        let decision = BanditDecision {
             decision_id,
             model_id: chosen_key.model_id,
             template: chosen_key.template,
@@ -335,7 +343,17 @@ impl ContextualBandit {
             expected_cost,
             expected_latency,
             exploration: exploring,
-        })
+        };
+
+        info!(
+            model = %decision.model_id,
+            template = %decision.template,
+            explore = decision.exploration,
+            expected_quality = decision.expected_quality,
+            "bandit_decision"
+        );
+
+        Ok(decision)
     }
 
     /// Record outcome for a previous decision.
@@ -349,6 +367,15 @@ impl ContextualBandit {
         cost: f32,
         latency_ms: f32,
     ) -> Result<(), BanditError> {
+        let _span = info_span!(
+            "bandit.record",
+            decision_id = decision_id,
+            quality = quality,
+            cost = cost,
+            latency_ms = latency_ms,
+        )
+        .entered();
+
         let arm_key = self
             .pending
             .remove(decision_id)
@@ -361,6 +388,15 @@ impl ContextualBandit {
             .expect("arm_key from pending must exist in arms");
 
         arm.update(quality as f64, cost as f64, latency_ms as f64, decay);
+
+        debug!(
+            model = %arm_key.model_id,
+            template = %arm_key.template,
+            observations = arm.observation_count,
+            quality_mean = arm.quality.mean() as f32,
+            "bandit_outcome_recorded"
+        );
+
         Ok(())
     }
 

@@ -41,6 +41,7 @@ ndarray = { version = "0.16", optional = true }
 tree-sitter = { version = "0.26", optional = true }
 tree-sitter-python = { version = "0.25", optional = true }
 process-wrap = { version = "9", optional = true, features = ["tokio1"] }
+tracing = "0.1"
 toml = "0.8"
 rand = "0.9"
 rusqlite = { version = "0.33", features = ["bundled"], optional = true }

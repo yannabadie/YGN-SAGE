@@ -2,13 +2,20 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Migrate the entire cognitive decision pipeline (S1/S2/S3 routing, topology generation, model selection, online learning) from Python into sage-core (Rust), deleting all rewritten Python.
+**Goal:** Migrate the cognitive decision pipeline into sage-core (Rust). Python modules kept as frozen shadow oracles until Rust parity proven. Evidence-first: no deletion without proof.
 
-**Architecture:** SystemRouter in Rust decides which cognitive System to activate (S1=fast/intuitive, S2=deliberate/tools, S3=formal/reasoning), selects best model+topology via Pareto bandit, validates with Z3. TopologyEngine uses MAP-Elites to evolve arbitrary DAG topologies. Triple-layer persistence (Arrow+SQLite+S-MMU).
+**Architecture:** SystemRouter in Rust: hard constraints → structural scoring → contextual bandit → hybrid verification. Template-first topologies (8 typed templates) unified with existing Contract IR. Three-flow edge model (control/message/state). Contextual bandit (LinUCB) with per-arm posteriors and global Pareto front at decision time. LLM-synthesized topology generation (5th path). Dual-mode executor (static Kahn's + dynamic gate-based).
 
 **Tech Stack:** Rust 1.90+, PyO3 0.25, petgraph 0.6, toml 0.8, rand 0.9, rusqlite 0.33 (bundled), serde, dashmap, arrow 55, ort 2.0 (optional/onnx feature)
 
 **Design doc:** `docs/plans/2026-03-10-rust-cognitive-engine-design.md`
+
+**Revised phasing (5 phases, per expert review #2):**
+1. ModelCard + SystemRouter (DONE — Tasks 1-7)
+2. Phase 1.5: Shadow mode + evidence collection (NEW — Tasks 8-9)
+3. Phase 2: Hybrid verifier + runtime contracts + template topologies (Tasks 10-13)
+4. Phase 3: Contextual bandit + persistence (Tasks 14-16)
+5. Phase 4: MAP-Elites + LLM synthesis + dual-mode executor + Phase 5: Python cleanup (Tasks 17-22)
 
 ---
 
@@ -903,15 +910,14 @@ git commit -m "feat(core): add SystemRouter — cognitive system decision engine
 
 ---
 
-### Task 6: Wire SystemRouter into Python boot.py + delete old Python routers
+### Task 6: Wire SystemRouter into Python boot.py (shadow mode — NO deletion)
 
 **Files:**
 - Modify: `sage-python/src/sage/boot.py`
 - Modify: `sage-python/src/sage/agent_loop.py` (routing call site)
-- Delete: `sage-python/src/sage/strategy/metacognition.py`
-- Delete: `sage-python/src/sage/strategy/adaptive_router.py`
-- Delete: `sage-python/src/sage/strategy/training.py`
-- Modify: `sage-python/src/sage/strategy/__init__.py`
+- Keep: `sage-python/src/sage/strategy/metacognition.py` (shadow oracle)
+- Keep: `sage-python/src/sage/strategy/adaptive_router.py` (shadow oracle)
+- Keep: `sage-python/src/sage/strategy/training.py` (shadow oracle)
 
 **Step 1: Build and install sage_core with new exports**
 
@@ -934,28 +940,20 @@ Key change in `boot()` function:
 
 Replace the Python routing call with `system.router.route(task, budget)`.
 
-**Step 5: Delete old Python routers**
+**Step 5: Keep Python routers as shadow oracles (NOT deleted)**
 
-```bash
-rm sage-python/src/sage/strategy/metacognition.py
-rm sage-python/src/sage/strategy/adaptive_router.py
-rm sage-python/src/sage/strategy/training.py
-```
+Per expert review #2: Python routers are frozen reference oracles. Both Rust and Python run in parallel, divergences logged. Deletion gated on < 5% divergence on 1000+ traces (Phase 5, Task 18).
 
-**Step 6: Update strategy/__init__.py**
-
-Remove imports of deleted modules.
-
-**Step 7: Run Python test suite**
+**Step 6: Run Python test suite**
 
 Run: `cd sage-python && python -m pytest tests/ -x -v --timeout=60`
-Expected: tests pass (some may need updating for new routing interface)
+Expected: tests pass (routing now goes through Rust with Python shadow)
 
-**Step 8: Commit**
+**Step 7: Commit**
 
 ```bash
 git add -u
-git commit -m "feat: wire Rust SystemRouter into boot.py, delete Python ComplexityRouter + AdaptiveRouter"
+git commit -m "feat: wire Rust SystemRouter into boot.py with Python shadow oracle mode"
 ```
 
 ---
@@ -984,128 +982,230 @@ git commit -m "bench: routing benchmark with Rust SystemRouter — Phase 1 compl
 
 ---
 
-## Phase 2: DynamicTopologyEngine + MAP-Elites
+## Phase 1.5: Shadow Mode + Evidence Collection
 
-### Task 8: TopologyGraph — arbitrary DAG representation
+### Task 8: Shadow mode — dual routing in boot.py
+
+**Files:**
+- Modify: `sage-python/src/sage/boot.py`
+- Create: `sage-python/src/sage/routing/shadow.py`
+
+**Implementation:** When both Rust and Python routers available, run both on every task. Log divergences (system mismatch, model mismatch) to structured JSON. Track divergence rate. Gate for Phase 5 deletion: < 5% divergence on 1000+ traces.
+
+Key: this must be **zero-overhead when Rust router unavailable** (pure Python path unchanged).
+
+---
+
+### Task 9: Evidence baselines — downstream quality tracking
+
+**Files:**
+- Modify: `sage-python/src/sage/bench/routing_downstream.py`
+- Create: `sage-python/src/sage/bench/baseline_comparison.py`
+
+**Implementation:** Add baselines to DownstreamEvaluator:
+- "always best model" (most expensive)
+- "cheapest under SLA" (min cost, quality ≥ threshold)
+- "fixed reviewer topology" (always AVR)
+- "routing ON vs OFF" (A/B paired)
+
+Evidence gate: Rust router must match or beat "always best model" on cost-quality Pareto.
+
+---
+
+## Phase 2: Hybrid Verifier + Runtime Contracts + Template Topologies
+
+### Task 10: RoutingConstraints struct + hard constraint filter
+
+**Files:**
+- Modify: `sage-core/src/routing/system_router.rs`
+- Test: `sage-core/tests/test_system_router.rs`
+
+**Implementation:** Add `RoutingConstraints` PyO3 class with `max_cost_usd`, `max_latency_ms`, `min_quality`, `required_capabilities`, `security_label`, `exploration_budget`. Update `route()` to accept constraints and filter models before scoring. Add `decision_id: Ulid` to RoutingDecision.
+
+---
+
+### Task 11: TopologyGraph — unified with Contract IR
 
 **Files:**
 - Create: `sage-core/src/topology/mod.rs`
 - Create: `sage-core/src/topology/topology_graph.rs`
 - Test: `sage-core/tests/test_topology.rs`
 
-**Implementation:** TopologyGraph wrapping `petgraph::DiGraph<TopologyNode, TopologyEdge>` with PyO3 bindings. TopologyNode has `role`, `model_id`, `system`, `prompt_template`. TopologyEdge has `weight` and `transform` (PassThrough/Summarize/Filter enum).
-
-Key methods:
-- `new() -> Self`
-- `add_node(node) -> NodeIndex`
-- `add_edge(from, to, edge)`
-- `is_dag() -> bool` (cycle detection)
-- `topological_sort() -> Vec<NodeIndex>`
-- `node_count() / edge_count()`
-- `to_json() / from_json()`
+**Implementation:** TopologyGraph wrapping `petgraph::DiGraph<TopologyNode, TopologyEdge>` with TopologyNode extending Contract IR concepts (node_id, role, model_id, required_capabilities, security_label, budget). TopologyTemplate enum (8 templates: Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming, Custom). TopologyEdge with three-flow model (EdgeType::Control|Message|State, field_mapping: Option<HashMap<String,String>>, gate: Gate::Open|Closed, condition: Option<String>).
 
 ---
 
-### Task 9: MAP-Elites archive
+### Task 12: Template catalogue + hybrid verifier
 
 **Files:**
-- Create: `sage-core/src/topology/map_elites.rs`
-- Test: `sage-core/tests/test_map_elites.rs`
+- Create: `sage-core/src/topology/templates.rs`
+- Create: `sage-core/src/topology/verifier.rs`
+- Test: `sage-core/tests/test_verifier.rs`
 
-**Implementation:** N-dimensional grid archive. Behavior descriptors: `(agent_count_bucket, max_depth_bucket, cost_bucket, diversity_bucket)`. Each cell holds best TopologyGraph by Pareto dominance. Insert validates Z3 constraints before acceptance.
+**Implementation:** 8 built-in templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). HybridVerifier: DAG validity (petgraph), capability coverage (bitset), budget feasibility (arithmetic), fan-in/out (degree check), security labels (lattice comparison). OxiZ only for genuinely symbolic constraints (behind `smt` feature). **Semantic Diagnosis Layer** (inspired by MASFactory diagnose_node): role coherence, switch condition completeness, loop termination guarantee, entry/exit reachability (BFS), field mapping consistency, capability aggregation.
 
 ---
 
-### Task 10: Mutation operators
+### Task 13: Wire Phase 2 into boot.py
 
 **Files:**
-- Create: `sage-core/src/topology/mutations.rs`
-
-**Implementation:** 7 operators: add_node, remove_node, swap_model, rewire_edge, split_node, merge_nodes, mutate_prompt (PyO3 callback for LLM-guided mutation).
-
----
-
-### Task 11: DynamicTopologyEngine
-
-**Files:**
-- Create: `sage-core/src/topology/engine.rs`
-
-**Implementation:** `generate(query, budget)` selects from archive + optional mutation. `evolve(pop_size, generations)` runs offline evolution. `record_outcome(topology_id, quality, cost, latency)` feeds back to archive.
-
----
-
-### Task 12: Wire TopologyEngine + delete Python topology
-
-**Files:**
-- Modify: `sage-core/src/lib.rs` (add topology module)
 - Modify: `sage-python/src/sage/boot.py`
-- Delete: `sage-python/src/sage/topology/evo_topology.py`
-- Delete: `sage-python/src/sage/topology/engine.py`
-- Delete: `sage-python/src/sage/topology/patterns.py`
-- Delete: `sage-python/src/sage/topology/topology_archive.py`
-- Delete: `sage-python/src/sage/topology/topology_verifier.py`
-- Delete: `sage-python/src/sage/topology/planner.py`
+- Modify: `sage-core/src/lib.rs`
+
+**Implementation:** Register new PyClasses. Wire TemplateStore + HybridVerifier into SystemRouter. Python topology kept as shadow.
 
 ---
 
-## Phase 3: Bandit Pareto + Persistence + Z3 Dual
+## Phase 3: Contextual Bandit + Persistence
 
-### Task 13: ParetoFront + BanditState
+### Task 14: ContextualBandit with per-arm posteriors
 
 **Files:**
 - Create: `sage-core/src/routing/bandit.rs`
 - Test: `sage-core/tests/test_bandit.rs`
 
-**Implementation:** `ParetoFront<3>` with insert/prune/Thompson sampling. `BanditState` with `HashMap<ComboKey, ParetoFront<3>>`. ComboKey = (CognitiveSystem, ModelId, TopologyId).
+**Implementation:** Per-arm `ArmPosterior` (Beta for quality, Gamma for cost/latency). `ContextualBandit` builds global Pareto front at decision time from current posteriors. LinUCB-inspired context features. `select(system, constraints, features)` returns RoutingDecision. `record(decision_id, quality, cost, latency)` updates posteriors with decay.
 
 ---
 
-### Task 14: SQLite persistence for BanditState + MAP-Elites archive
+### Task 15: SQLite persistence for ContextualBandit
 
 **Files:**
-- Create: `sage-core/src/topology/persistence.rs`
+- Create: `sage-core/src/routing/persistence.rs`
 
-**Implementation:** `save_to_sqlite(path)` / `load_from_sqlite(path)` for both BanditState and MapElitesArchive. Schema: `combos(system, model_id, topology_id, quality, cost, latency, timestamp)` + `topologies(id, graph_json, fitness_json, behavior_json)`.
+**Implementation:** `save_to_sqlite(path)` / `load_from_sqlite(path)` for ContextualBandit. Schema: `arms(model_id, template, quality_alpha, quality_beta, cost_shape, cost_rate, latency_shape, latency_rate, obs_count, updated_at)`. WAL mode + MPSC async flush. DashMap as hot state, SQLite as durable truth.
 
 ---
 
-### Task 15: S-MMU integration for semantic topology retrieval
+### Task 16: S-MMU integration + tracing
 
 **Files:**
 - Modify: `sage-core/src/routing/system_router.rs`
 
-**Implementation:** On `record_outcome`, register topology as S-MMU chunk with task embedding. On `route`, query S-MMU for similar past tasks → retrieve their best topology.
+**Implementation:** On `record()`, register template as S-MMU chunk with task embedding. On `route()`, query S-MMU for similar past tasks → retrieve best template. Add `tracing` spans for all routing decisions.
 
 ---
 
-### Task 16: Z3 dual verification
+## Phase 4: S-MMU Topology Retrieval + MAP-Elites + Custom DAGs
 
-**Implementation:** Z3 constraints in MAP-Elites (via PyO3 callback to Python z3-solver). Z3 runtime verify in SystemRouter (budget check, capability check, DAG validity — these 3 are Python-native, ~2000x faster than Z3 as documented in CLAUDE.md).
-
----
-
-### Task 17: Wire Phase 3 + delete remaining Python evolution/strategy
+### Task 17a: S-MMU topology bridge
 
 **Files:**
-- Delete: `sage-python/src/sage/strategy/solvers.py`
-- Delete: `sage-python/src/sage/evolution/engine.py`
-- Delete: `sage-python/src/sage/evolution/llm_mutator.py`
-- Delete: `sage-python/src/sage/evolution/population.py`
-- Delete: `sage-python/src/sage/evolution/evaluator.py`
-- Delete: `sage-python/src/sage/evolution/mutator.py`
-- Delete: `sage-python/src/sage/evolution/self_improve.py`
-- Delete: `sage-python/src/sage/evolution/ebpf_evaluator.py`
+- Create: `sage-core/src/topology/smmu_bridge.rs`
+- Test: `sage-core/tests/test_smmu_bridge.rs`
+
+**Implementation:** Write path: on `record_outcome()`, store `TopologyChunk` (task_embedding + topology_id + quality/cost/latency + structural features) as S-MMU chunk via `register_chunk()`. Read path: on `route()`, query S-MMU with task embedding for top-5 similar past tasks, return `(topology_id, quality, similarity_score)`. Inject as prior into contextual bandit to boost arms that worked for similar tasks.
+
+This creates the **task→topology learning feedback loop** — the core mechanism for adaptive topology selection.
 
 ---
 
-### Task 18: Final integration test + benchmark
+### Task 17b: MAP-Elites archive
+
+**Files:**
+- Create: `sage-core/src/topology/map_elites.rs`
+- Test: `sage-core/tests/test_map_elites.rs`
+
+**Implementation:** N-dimensional grid archive with `BehaviorDescriptor` (agent_count_bucket, max_depth_bucket, cost_bucket, model_diversity_bucket). Each cell holds best `TopologyGraph` by Pareto dominance. Insert validates via hybrid verifier (DAG + capabilities + budget + optional OxiZ for security labels). `save()`/`load()` to SQLite for cross-session persistence.
+
+---
+
+### Task 17c: 7 mutation operators
+
+**Files:**
+- Create: `sage-core/src/topology/mutations.rs`
+- Test: `sage-core/tests/test_mutations.rs`
+
+**Implementation:** 7 operators: `add_node` (insert agent with model from registry), `remove_node` (prune + rewire), `swap_model` (change model_id), `rewire_edge` (add/remove/redirect), `split_node` (one→two specialized), `merge_nodes` (two→one generalist), `mutate_prompt` (LLM-guided via PyO3 callback, async). Every mutation product validated by hybrid verifier — invalid mutations discarded, not retried.
+
+---
+
+### Task 17d: DynamicTopologyEngine
+
+**Files:**
+- Create: `sage-core/src/topology/engine.rs`
+- Test: `sage-core/tests/test_engine.rs`
+
+**Implementation:** Ties together S-MMU retrieval, archive lookup, mutation, LLM synthesis, and evolution.
+- `generate(task, system, constraints)`: 5-path strategy: S-MMU hit → archive hit → LLM synthesis (if exploration_budget > 0.3) → mutation → template fallback.
+- `evolve(pop_size, generations)`: async/background. Sample N from archive, apply 1-3 mutations each, validate, estimate fitness via surrogate model or S-MMU replay, insert survivors. Called every 100 requests or on explicit trigger.
+- `record_outcome(topology_id, task_embedding, quality, cost, latency)`: feeds S-MMU + archive + bandit.
+- `get_topology(id)`: lazy-load for opaque Ulid from RoutingDecision.
+
+This is where **task-adaptive custom DAGs** emerge: mutations on archive entries AND LLM-synthesized topologies create novel topologies (e.g., "coder→tester→fixer" loop discovered by evolution, or a hub-and-spoke delegator synthesized by LLM for a complex multi-domain task).
+
+---
+
+### Task 17e: LLM-synthesized topology generation
+
+**Files:**
+- Create: `sage-core/src/topology/llm_synthesis.rs`
+- Test: `sage-core/tests/test_llm_synthesis.rs`
+
+**Implementation:** `TopologySynthesizer` with 3-stage pipeline (inspired by MASFactory Vibe Graphing, arXiv 2603.06007):
+1. **Role Assignment**: LLM decomposes task into agent roles + required capabilities
+2. **Structure Design**: LLM generates adjacency matrix + node specs (JSON output format — LLMs produce matrices more reliably than edge lists)
+3. **Validation + Instantiation**: Parse JSON → TopologyGraph → HybridVerifier + semantic diagnosis → accept or discard
+
+LLM call via PyO3 callback (`py.allow_threads()` released). Result cached in MAP-Elites archive + S-MMU. Rate-limited to 1/min, budget deducted from RoutingConstraints. Only invoked when S-MMU miss + archive miss + exploration_budget > 0.3 (~5-10% of requests).
+
+---
+
+### Task 17f: Dual-mode topology executor
+
+**Files:**
+- Create: `sage-core/src/topology/executor.rs`
+- Test: `sage-core/tests/test_executor.rs`
+
+**Implementation:** `TopologyExecutor` with two modes:
+- **Static** (petgraph `Topo` iterator): Deterministic O(V+E) topological ordering. Used for Sequential, Parallel, Hierarchical, Brainstorming.
+- **Dynamic** (gate-based readiness polling): Nodes fire when all input gates are Open. Supports loops (controller reopens gates), switches (closes non-taken branches), handoffs (activates/deactivates spokes). Used for AVR, Hub, Debate, SelfMoA, Custom. Safety limit: max_iterations (default 1000).
+
+`mode_for(template)` auto-selects execution mode. `next_ready(graph)` returns next executable node(s). Python `AgentLoop` calls `next_ready()` in a loop, keeping scheduling in Rust while LLM calls stay in Python.
+
+---
+
+## Phase 5: Python Cleanup (only after all evidence gates passed)
+
+### Task 18: Freeze + delete Python routing modules
+
+**Prerequisite:** Shadow mode divergence < 5% on 1000+ traces, downstream quality ≥ baseline.
+
+**Files to freeze-then-delete:**
+- `sage-python/src/sage/strategy/metacognition.py`
+- `sage-python/src/sage/strategy/adaptive_router.py`
+- `sage-python/src/sage/strategy/training.py`
+- `sage-python/src/sage/topology/evo_topology.py`
+- `sage-python/src/sage/topology/engine.py`
+- `sage-python/src/sage/topology/patterns.py`
+- `sage-python/src/sage/strategy/solvers.py`
+- `sage-python/src/sage/evolution/` (all files)
+
+---
+
+### Task 21: Embedding model upgrade (arctic-embed-m)
+
+**Files:**
+- Modify: `sage-core/models/download_model.py` — MODEL_ID → "Snowflake/snowflake-arctic-embed-m"
+- Modify: `sage-core/src/memory/embedder.rs` — update docs, dimension 384→768
+- Modify: `sage-python/src/sage/memory/embedder.py` — EMBEDDING_DIM=768, _MODEL_NAME
+- Modify: `sage-core/src/memory/mod.rs` — update EMBEDDING_DIM constant if present
+- Test all embedder tests pass with new dimension
+
+**Note:** This task can be done independently at any point. Dimension change from 384→768 requires clearing existing S-MMU data (one-time migration).
+
+---
+
+### Task 22: Final integration test + benchmark
 
 **Step 1:** Run full Python test suite: `cd sage-python && python -m pytest tests/ -v`
-**Step 2:** Run routing benchmark: `python -m sage.bench --type routing`
+**Step 2:** Run routing quality benchmark: `python -m sage.bench --type routing`
 **Step 3:** Run E2E proof: `python tests/e2e_proof.py`
 **Step 4:** Run Rust test suite: `cd sage-core && cargo test --features cognitive,onnx`
-**Step 5:** Update CLAUDE.md with new architecture docs
-**Step 6:** Final commit + tag
+**Step 5:** Run shadow divergence report: verify < 5% on collected traces
+**Step 6:** Run downstream quality comparison: verify ≥ baseline
+**Step 7:** Update CLAUDE.md with new architecture docs
+**Step 8:** Final commit + tag
 
 ```bash
 git tag v0.2.0-cognitive-engine
