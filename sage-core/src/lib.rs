@@ -42,6 +42,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<routing::model_registry::ModelRegistry>()?;
     m.add_class::<routing::system_router::SystemRouter>()?;
     m.add_class::<routing::system_router::RoutingDecision>()?;
+    m.add_class::<routing::system_router::RoutingConstraints>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;

@@ -48,6 +48,11 @@ impl ModelRegistry {
         candidates
     }
 
+    /// Return all registered models (unordered).
+    pub fn all_models(&self) -> Vec<ModelCard> {
+        self.cards.values().cloned().collect()
+    }
+
     pub fn list_ids(&self) -> Vec<String> {
         self.cards.keys().cloned().collect()
     }
