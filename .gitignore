@@ -55,3 +55,6 @@ humaneval_full.log
 Cert/
 ca-bundle.pem
 sage-python/src/sage/tools/generated_tools/
+
+# Worktrees
+.worktrees/
