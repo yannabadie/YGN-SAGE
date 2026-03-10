@@ -37,6 +37,8 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
     m.add_class::<routing::features::StructuralFeatures>()?;
+    m.add_class::<routing::model_card::ModelCard>()?;
+    m.add_class::<routing::model_card::CognitiveSystem>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;

@@ -5,6 +5,7 @@
 //! Stage 2-3: Python-side dynamic routing with feedback.
 
 pub mod features;
+pub mod model_card;
 
 #[cfg(feature = "onnx")]
 mod router;
