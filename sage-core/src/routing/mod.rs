@@ -6,6 +6,7 @@
 
 pub mod features;
 pub mod model_card;
+pub mod model_registry;
 
 #[cfg(feature = "onnx")]
 mod router;
