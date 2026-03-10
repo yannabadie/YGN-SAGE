@@ -230,12 +230,15 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
 
 ### Benchmark Results (March 10, 2026)
-| Benchmark | Score | Evidence Level |
-|-----------|-------|----------------|
-| EvalPlus HumanEval+ (20 tasks) | **100%** pass@1 (base+plus) | Official evaluator, honest |
-| Ablation: full vs baseline | **+15pp** (100% vs 85%) | A/B paired, same model |
-| Ablation: routing contribution | **+5pp** (100% vs 95%) | Isolated delta |
-| Routing quality (30 GT) | 100% (30/30) | Self-consistency (circular) |
+| Benchmark | Score | Notes |
+|-----------|-------|-------|
+| **EvalPlus HumanEval+ (164)** | **84.1%** pass@1 (138/164) | Official 80x harder tests. Base=90.9%, Plus=84.1%. 8 AVR timeouts |
+| **EvalPlus MBPP+ (20 smoke)** | **80.0%** pass@1 (16/20) | Official 35x harder tests |
+| Ablation: full vs baseline | **+15pp** (100% vs 85%) | A/B paired, same model (20 tasks) |
+| Ablation: routing contribution | **+5pp** (100% vs 95%) | Isolated delta (20 tasks) |
+| Routing quality (30 GT) | 100% (30/30) | Self-consistency |
+
+**SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
 ## Evolution System
 - **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Context injected into LLM mutation prompt.

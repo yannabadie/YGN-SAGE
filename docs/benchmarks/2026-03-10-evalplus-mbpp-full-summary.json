@@ -1,0 +1,9 @@
+{
+  "benchmark": "evalplus_mbpp",
+  "model": "unknown",
+  "git_sha": "517efcf8e75c",
+  "total": 378,
+  "passed": 284,
+  "pass_rate": 0.7513,
+  "avg_latency_ms": 4815.6
+}
