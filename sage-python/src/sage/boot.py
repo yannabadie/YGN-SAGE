@@ -28,6 +28,8 @@ try:
     from sage_core import CognitiveSystem  # noqa: F401
     from sage_core import PyTemplateStore as RustTemplateStore  # Phase 2
     from sage_core import PyHybridVerifier as RustHybridVerifier  # Phase 2
+    from sage_core import TopologyEngine as RustTopologyEngine  # Phase 6
+    from sage_core import ContextualBandit as RustBandit  # Phase 6
     _HAS_RUST_ROUTER = True
 except ImportError:
     _HAS_RUST_ROUTER = False
@@ -81,6 +83,10 @@ class AgentSystem:
     # Phase 2: Topology templates + verifier (None if sage_core not compiled)
     template_store: Any = None
     verifier: Any = None
+    # Phase 6: Rust TopologyEngine (5-path generate, MAP-Elites, bandit)
+    topology_engine: Any = None
+    # Phase 6: Standalone ContextualBandit for model selection
+    bandit: Any = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -291,6 +297,19 @@ def boot_agent_system(
         except Exception as e:
             _log.warning("Boot: Phase 2 init failed (%s)", e)
 
+    # Phase 6: Rust TopologyEngine (5-path generation + learning loop)
+    rust_topology_engine = None
+    rust_bandit = None
+    if _HAS_RUST_ROUTER:
+        try:
+            rust_topology_engine = RustTopologyEngine()
+            rust_bandit = RustBandit(0.995, 0.1)
+            _log.info(
+                "Boot: Phase 6 active — TopologyEngine + ContextualBandit ready"
+            )
+        except Exception as e:
+            _log.warning("Boot: Phase 6 TopologyEngine init failed (%s)", e)
+
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider if not use_mock_llm else None)
@@ -452,6 +471,7 @@ def boot_agent_system(
         tool_executor = None
         _log.info("ToolExecutor (Rust) not available — S2 AVR uses Python sandbox")
     loop.tool_executor = tool_executor
+    loop.topology_engine = rust_topology_engine
 
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
@@ -486,4 +506,6 @@ def boot_agent_system(
         shadow_router=shadow_router,
         template_store=template_store,
         verifier=verifier,
+        topology_engine=rust_topology_engine,
+        bandit=rust_bandit,
     )

@@ -190,6 +190,7 @@ class AgentLoop:
         self.memory_agent: Any = None       # MemoryAgent for entity extraction
         self.semantic_memory: Any = None    # SemanticMemory entity graph
         self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
+        self.topology_engine: Any = None  # Injected by boot.py (Rust TopologyEngine)
 
         # Ablation skip flags (set by AblationConfig.apply)
         self._skip_memory: bool = False
