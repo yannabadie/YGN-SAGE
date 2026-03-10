@@ -3,6 +3,7 @@
 //! Wraps `petgraph::DiGraph` with typed nodes (roles, capabilities, budgets)
 //! and three-flow edges (Control, Message, State).
 
+pub mod map_elites;
 pub mod smmu_bridge;
 pub mod templates;
 pub mod topology_graph;

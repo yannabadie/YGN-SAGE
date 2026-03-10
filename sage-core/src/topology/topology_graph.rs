@@ -374,7 +374,7 @@ impl TopologyEdge {
 /// The unified topology intermediate representation.
 /// Wraps a petgraph DiGraph with typed nodes and three-flow edges.
 #[pyclass]
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TopologyGraph {
     graph: DiGraph<TopologyNode, TopologyEdge>,
     #[pyo3(get)]
