@@ -224,10 +224,12 @@ impl RustEmbedder {
 
         // Check if the ONNX model expects token_type_ids (standard BERT input).
         // Some models (e.g. snowflake-arctic-embed-m) may not include it.
-        let has_token_type = self.session.inputs.iter().any(|input| input.name == "token_type_ids");
+        let has_token_type = self.session.inputs().iter().any(|input| input.name() == "token_type_ids");
+
+        // Allocate token_type_ids outside the if block so the borrow lives long enough
+        let token_type_ids = vec![0i64; batch_size * max_len];
 
         let session_inputs = if has_token_type {
-            let token_type_ids = vec![0i64; batch_size * max_len];
             let type_tensor =
                 TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
                     pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
