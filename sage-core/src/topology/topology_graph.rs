@@ -360,6 +360,12 @@ impl TopologyEdge {
         self
     }
 
+    /// Mutate the gate state in-place (for executor gate manipulation).
+    pub fn set_gate(&mut self, gate: Gate) {
+        self.gate = gate.as_str().to_string();
+        self.gate_enum = Some(gate);
+    }
+
     /// Convenience: set a condition on this edge (builder pattern).
     pub fn with_condition(mut self, condition: String) -> Self {
         self.condition = Some(condition);
