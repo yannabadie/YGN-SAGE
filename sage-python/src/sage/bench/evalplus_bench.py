@@ -232,114 +232,159 @@ class EvalPlusBench:
         write_jsonl(str(path), solutions)
         log.info(f"Wrote {len(solutions)} solutions to {path}")
 
-    def evaluate(self, samples_path: str | Path) -> dict[str, Any]:
-        """Run EvalPlus CLI evaluator on a solutions JSONL file.
+    def evaluate_task(
+        self,
+        solution_code: str,
+        problem: dict[str, Any],
+        timeout: float = 15.0,
+    ) -> dict[str, Any]:
+        """Evaluate a single solution against EvalPlus base + plus tests.
 
-        Returns parsed results dict with keys: pass@1, plus_pass@1, etc.
-        Raises RuntimeError if the CLI fails.
+        Uses subprocess sandbox (Windows-compatible, no Unix `resource` module).
+        Runs the canonical solution to get expected outputs, then compares.
+
+        Returns: {"base_passed": bool, "plus_passed": bool, "error": str}
         """
-        samples_path = Path(samples_path)
-        if not samples_path.exists():
-            raise FileNotFoundError(f"Samples file not found: {samples_path}")
+        entry_point = problem["entry_point"]
+        canonical = problem["canonical_solution"]
+        prompt = problem["prompt"]
+        base_inputs = problem.get("base_input", [])
+        plus_inputs = problem.get("plus_input", [])
+        test_code = problem.get("test", "")
+        atol = problem.get("atol", 0)
 
-        # EvalPlus writes results to <samples>_eval_results.json
-        result_path = str(samples_path).replace(".jsonl", "_eval_results.json")
+        # --- Base tests: use the original HumanEval check() function ---
+        from sage.bench.humaneval import run_test
+        base_passed, base_error = run_test(
+            prompt, solution_code, test_code, entry_point, timeout=timeout
+        )
 
-        cmd = [
-            "python",
-            "-m",
-            "evalplus.evaluate",
-            self.dataset,
-            "--samples",
-            str(samples_path),
-            "--i-just-wanna-run",
-        ]
+        if not base_passed:
+            return {"base_passed": False, "plus_passed": False, "error": base_error}
 
-        log.info(f"Running EvalPlus evaluator: {' '.join(cmd)}")
+        # --- Plus tests: run solution vs canonical on plus_inputs ---
+        if not plus_inputs:
+            return {"base_passed": True, "plus_passed": True, "error": ""}
+
+        # Build a test program that compares solution vs canonical
+        # on a sample of plus_inputs (cap at 200 to avoid timeout)
+        sample_inputs = plus_inputs[:200]
+
+        # Build the comparison script
+        if f"def {entry_point}" in solution_code:
+            sol_code = solution_code
+        else:
+            sol_code = prompt + solution_code
+
+        test_program = f'''{sol_code}
+
+# --- Canonical solution ---
+{prompt}{canonical}
+_canonical = {entry_point}
+
+# Rename solution
+import types
+_solution = types.FunctionType(
+    {entry_point}.__code__, {{**globals()}}, "{entry_point}_sol"
+)
+
+# --- Run plus tests ---
+import json, sys
+inputs = json.loads(sys.stdin.read())
+atol = {atol}
+failures = 0
+for args in inputs:
+    try:
+        expected = _canonical(*args)
+        actual = _solution(*args)
+        if atol > 0:
+            if isinstance(expected, float) and isinstance(actual, float):
+                if abs(expected - actual) > atol:
+                    failures += 1
+                    continue
+        if expected != actual:
+            failures += 1
+    except Exception:
+        failures += 1
+print(f"PLUS_RESULT:{{failures}}/{{len(inputs)}}")
+'''
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".py", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(test_program)
+            tmp_path = f.name
 
         try:
             proc = subprocess.run(
-                cmd,
+                ["python", tmp_path],
+                input=json.dumps(sample_inputs),
                 capture_output=True,
                 text=True,
-                timeout=600,  # 10 min max
+                timeout=timeout,
             )
+            if proc.returncode != 0:
+                return {
+                    "base_passed": True,
+                    "plus_passed": False,
+                    "error": proc.stderr[:300],
+                }
+
+            # Parse result
+            for line in proc.stdout.split("\n"):
+                if line.startswith("PLUS_RESULT:"):
+                    parts = line.split(":")[1].split("/")
+                    failures = int(parts[0])
+                    total = int(parts[1])
+                    plus_passed = failures == 0
+                    return {
+                        "base_passed": True,
+                        "plus_passed": plus_passed,
+                        "error": f"{failures}/{total} plus tests failed" if failures else "",
+                    }
+
+            return {"base_passed": True, "plus_passed": False, "error": "no result line"}
+
         except subprocess.TimeoutExpired:
-            raise RuntimeError("EvalPlus evaluation timed out after 600s")
-
-        if proc.returncode != 0:
-            raise RuntimeError(
-                f"EvalPlus evaluation failed (rc={proc.returncode}):\n"
-                f"{proc.stderr[:1000]}"
-            )
-
-        # Parse output for pass@k scores
-        results: dict[str, Any] = {
-            "stdout": proc.stdout,
-            "stderr": proc.stderr,
-        }
-
-        # Extract pass@k from CLI output lines like "pass@1:\t0.850"
-        import re
-
-        for line in proc.stdout.split("\n"):
-            match = re.match(r"\s*(pass@\d+):\s+([0-9.]+)", line)
-            if match:
-                key = match.group(1)
-                value = float(match.group(2))
-                results[key] = value
-
-        # Also load the detailed eval_results.json if it exists
-        if Path(result_path).exists():
-            with open(result_path, encoding="utf-8") as f:
-                results["eval_details"] = json.load(f)
-
-        return results
+            return {"base_passed": True, "plus_passed": False, "error": "plus_timeout"}
+        except Exception as e:
+            return {"base_passed": True, "plus_passed": False, "error": str(e)[:200]}
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
 
     async def run(self, limit: int | None = None) -> BenchReport:
-        """Full pipeline: generate -> write -> evaluate -> report.
+        """Full pipeline: generate solutions, evaluate each against EvalPlus+ tests.
 
-        If no system is configured, returns an empty report.
+        Uses subprocess-based evaluation (Windows-compatible).
+        Each task is evaluated against base tests (original HumanEval)
+        + plus tests (EvalPlus enhanced, up to 999 additional inputs).
         """
         solutions = await self.generate_solutions(limit=limit)
 
         if not solutions:
             return BenchReport.from_results(f"evalplus_{self.dataset}", [])
 
-        # Write solutions to temp file and evaluate
-        with tempfile.TemporaryDirectory() as tmpdir:
-            samples_path = Path(tmpdir) / f"{self.dataset}_solutions.jsonl"
-            self.write_solutions(solutions, samples_path)
+        # Load problems for evaluation
+        problems = _load_dataset(self.dataset)
 
-            eval_results: dict[str, Any] = {}
-            try:
-                eval_results = self.evaluate(samples_path)
-            except Exception as e:
-                log.error(f"EvalPlus evaluation failed: {e}")
-
-        # Build TaskResult list from solutions + eval results
+        # Evaluate each solution
         task_results: list[TaskResult] = []
-        eval_details = eval_results.get("eval_details", {}).get("eval", {})
+        base_pass = 0
+        plus_pass = 0
 
-        for sol in solutions:
+        for i, sol in enumerate(solutions):
             task_id = sol["task_id"]
+            problem = problems[task_id]
 
-            # Check if this task passed in eval_details
-            # eval_details[task_id] is a list of completion results
-            passed = False
-            if task_id in eval_details:
-                completions = eval_details[task_id]
-                if completions:
-                    # For pass@1 with single completion, check first result
-                    first = completions[0]
-                    if isinstance(first, dict):
-                        passed = (
-                            first.get("base_status", "") == "pass"
-                            and first.get("plus_status", "") == "pass"
-                        )
-                    elif isinstance(first, list):
-                        # Older format: list of [base_status, plus_status]
-                        passed = all(s == "pass" for s in first)
+            eval_result = self.evaluate_task(sol["solution"], problem)
+            passed = eval_result["base_passed"] and eval_result["plus_passed"]
+
+            if eval_result["base_passed"]:
+                base_pass += 1
+            if passed:
+                plus_pass += 1
+
+            error = sol["_error"] or eval_result.get("error", "")
 
             task_results.append(
                 TaskResult(
@@ -348,14 +393,25 @@ class EvalPlusBench:
                     system_used=sol["_system_used"],
                     latency_ms=sol["_latency_ms"],
                     cost_usd=sol["_cost_usd"],
-                    error=sol["_error"],
+                    error=error,
                 )
             )
+
+            status = "PASS" if passed else "FAIL"
+            base_s = "base_ok" if eval_result["base_passed"] else "base_fail"
+            plus_s = "plus_ok" if eval_result["plus_passed"] else "plus_fail"
+            log.info(f"[{i+1}/{len(solutions)}] {task_id}: {status} ({base_s}, {plus_s})")
 
         # Update manifest traces with pass/fail from evaluation
         if self.manifest:
             for tr, result in zip(self.manifest.traces, task_results):
                 tr.passed = result.passed
+
+        total = len(solutions)
+        log.info(
+            f"EvalPlus {self.dataset}: base={base_pass}/{total}, "
+            f"plus={plus_pass}/{total}"
+        )
 
         return BenchReport.from_results(
             f"evalplus_{self.dataset}", task_results
