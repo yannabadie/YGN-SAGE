@@ -4,6 +4,7 @@
 //! and three-flow edges (Control, Message, State).
 
 pub mod map_elites;
+pub mod mutations;
 pub mod smmu_bridge;
 pub mod templates;
 pub mod topology_graph;

@@ -615,6 +615,11 @@ impl TopologyGraph {
         &self.graph
     }
 
+    /// Mutable access to inner graph (for mutations).
+    pub fn inner_graph_mut(&mut self) -> &mut DiGraph<TopologyNode, TopologyEdge> {
+        &mut self.graph
+    }
+
     /// Parse template name string to enum.
     pub fn parse_template(name: &str) -> Option<TopologyTemplate> {
         TopologyTemplate::parse(name)
