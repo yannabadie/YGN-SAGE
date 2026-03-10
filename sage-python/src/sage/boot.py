@@ -21,6 +21,15 @@ try:
 except ImportError:
     pass
 
+# Rust Cognitive Engine (primary routing when sage_core is compiled)
+try:
+    from sage_core import SystemRouter as RustSystemRouter
+    from sage_core import ModelRegistry as RustModelRegistry
+    from sage_core import CognitiveSystem  # noqa: F401
+    _HAS_RUST_ROUTER = True
+except ImportError:
+    _HAS_RUST_ROUTER = False
+
 from sage.agent import AgentConfig
 from sage.agent_loop import AgentLoop
 from sage.agent_pool import AgentPool
@@ -62,6 +71,8 @@ class AgentSystem:
     registry: Any = None
     # CapabilityMatrix: semantic capability lookup for discovered providers
     capability_matrix: Any = None
+    # Rust SystemRouter (None if sage_core not compiled with cognitive engine)
+    rust_router: Any = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -70,23 +81,37 @@ class AgentSystem:
         Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
         Mock mode: direct AgentLoop (no orchestrator).
         """
-        # 1. Assess task complexity
-        profile = await self.metacognition.assess_complexity_async(task)
-        decision = self.metacognition.route(profile)
-
-        # 1b. Speculative execution: detect indecisive zone
-        if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+        # 1. Route task to cognitive system
+        if self.rust_router:
+            # Primary path: Rust SystemRouter
+            budget = 10.0  # Default budget (USD)
+            if hasattr(self, '_guardrail_budget'):
+                budget = self._guardrail_budget
+            decision = self.rust_router.route(task, budget)
+            system_num = int(decision.system)  # CognitiveSystem enum -> int
+            model_id = decision.model_id
             _log.info(
-                "Speculative zone: complexity=%.2f (indecisive). "
-                "Would fire S1+S2 in parallel when architecture supports it. "
-                "Using S%d for now.",
-                profile.complexity, decision.system,
+                "Rust routing: %s -> system=S%d, model=%s (conf=%.2f, cost=%.4f)",
+                task[:60], system_num, model_id,
+                decision.confidence, decision.estimated_cost,
             )
+        else:
+            # Fallback: Python AdaptiveRouter
+            profile = await self.metacognition.assess_complexity_async(task)
+            decision = self.metacognition.route(profile)
+            system_num = decision.system
+            model_id = None  # Python path uses llm_tier, not model_id
+            # Speculative execution detection
+            if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+                _log.info(
+                    "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
+                    profile.complexity, decision.system,
+                )
 
         # 2. Set validation level from routing decision
-        if decision.system >= 3:
+        if system_num >= 3:
             self.agent_loop.config.validation_level = 3
-        elif decision.system == 2 and self.agent_loop.sandbox_manager:
+        elif system_num == 2 and self.agent_loop.sandbox_manager:
             self.agent_loop.config.validation_level = 2
         else:
             self.agent_loop.config.validation_level = 1
@@ -108,20 +133,21 @@ class AgentSystem:
                     "Orchestrator failed (%s), falling back to legacy routing", e
                 )
 
-        # 4. Fallback: legacy ModelRouter path (Codex + Google only)
-        new_config = ModelRouter.get_config(decision.llm_tier)
-        if current_provider == "codex" and new_config.provider == "google":
-            pass  # Don't downgrade from Codex to Gemini
-        elif new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
-            pass  # Google unavailable, keep current
-        else:
-            self.agent_loop.config.llm = new_config
-            if new_config.provider == "codex":
-                from sage.llm.codex import CodexProvider
-                self.agent_loop._llm = CodexProvider()
-            elif new_config.provider == "google":
-                from sage.llm.google import GoogleProvider
-                self.agent_loop._llm = GoogleProvider()
+        # 4. Fallback: legacy ModelRouter path (only used with Python router)
+        if not self.rust_router:
+            new_config = ModelRouter.get_config(decision.llm_tier)
+            if current_provider == "codex" and new_config.provider == "google":
+                pass  # Don't downgrade from Codex to Gemini
+            elif new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
+                pass  # Google unavailable, keep current
+            else:
+                self.agent_loop.config.llm = new_config
+                if new_config.provider == "codex":
+                    from sage.llm.codex import CodexProvider
+                    self.agent_loop._llm = CodexProvider()
+                elif new_config.provider == "google":
+                    from sage.llm.google import GoogleProvider
+                    self.agent_loop._llm = GoogleProvider()
 
         result = await self.agent_loop.run(task)
         await self._persist_memory()
@@ -184,6 +210,35 @@ def boot_agent_system(
     tool_registry = ToolRegistry()
     agent_pool = AgentPool()
     metacognition = AdaptiveRouter(llm_provider=provider if not use_mock_llm else None)
+
+    # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
+    rust_router = None
+    if _HAS_RUST_ROUTER:
+        try:
+            _cards_toml = None
+            # Search for cards.toml in standard locations
+            for _cards_dir in [
+                Path.cwd() / "sage-core" / "config" / "cards.toml",
+                Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "config" / "cards.toml",
+                Path.home() / ".sage" / "cards.toml",
+            ]:
+                if _cards_dir.exists():
+                    _cards_toml = str(_cards_dir)
+                    break
+            if _cards_toml:
+                rust_registry = RustModelRegistry.from_toml_file(_cards_toml)
+                rust_router = RustSystemRouter(rust_registry)
+                _log.info(
+                    "Boot: Rust SystemRouter active (%d models from %s)",
+                    len(rust_registry), _cards_toml,
+                )
+            else:
+                _log.info("Boot: cards.toml not found, using Python AdaptiveRouter")
+        except Exception as e:
+            _log.warning(
+                "Boot: Rust SystemRouter init failed (%s), using Python AdaptiveRouter", e,
+            )
+
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider if not use_mock_llm else None)
@@ -375,4 +430,5 @@ def boot_agent_system(
         orchestrator=orchestrator,
         registry=registry,
         capability_matrix=_cap_matrix,
+        rust_router=rust_router,
     )
