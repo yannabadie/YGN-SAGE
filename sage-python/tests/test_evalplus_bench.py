@@ -269,8 +269,8 @@ async def test_run_with_mock_system():
 
     bench = EvalPlusBench(system=mock_system)
 
-    # Mock evaluate to avoid running the real CLI
-    with patch.object(bench, "evaluate", return_value={"eval_details": {"eval": {}}}):
+    # Mock evaluate_task to avoid running real subprocess evaluation
+    with patch.object(bench, "evaluate_task", return_value={"base_passed": True, "plus_passed": False, "error": ""}):
         report = await bench.run(limit=2)
 
     assert isinstance(report, BenchReport)

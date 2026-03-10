@@ -6,6 +6,7 @@ write them in EvalPlus JSONL format, and evaluate with the EvalPlus CLI.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import subprocess
@@ -130,8 +131,11 @@ class EvalPlusBench:
                     # Bypass routing/memory/guardrails
                     from sage.llm.base import Message, Role
 
-                    llm_response = await self.system.agent_loop._llm.generate(
-                        [Message(role=Role.USER, content=task_prompt)]
+                    llm_response = await asyncio.wait_for(
+                        self.system.agent_loop._llm.generate(
+                            [Message(role=Role.USER, content=task_prompt)]
+                        ),
+                        timeout=60.0,
                     )
                     response = (
                         llm_response.content
@@ -140,7 +144,10 @@ class EvalPlusBench:
                     )
                     system_used = 0
                 else:
-                    response = await self.system.run(task_prompt)
+                    response = await asyncio.wait_for(
+                        self.system.run(task_prompt),
+                        timeout=60.0,
+                    )
                     system_used = (
                         getattr(
                             self.system.agent_loop, "_last_routing_system", 0
@@ -150,6 +157,10 @@ class EvalPlusBench:
 
                 completion = extract_code(response, entry_point)
 
+            except asyncio.TimeoutError:
+                completion = ""
+                error = "generation_timeout_60s"
+                log.warning(f"[{task_id}] Generation timed out after 60s")
             except Exception as e:
                 completion = ""
                 error = str(e)[:200]
@@ -205,9 +216,11 @@ class EvalPlusBench:
                     )
                 )
 
-            log.info(
-                f"[{i + 1}/{len(task_ids)}] {task_id}: "
-                f"generated ({latency:.0f}ms)"
+            status = "OK" if not error else f"ERR:{error[:30]}"
+            print(
+                f"  [{i + 1}/{len(task_ids)}] {task_id}: "
+                f"{status} ({latency:.0f}ms)",
+                flush=True,
             )
 
         return solutions
@@ -253,11 +266,23 @@ class EvalPlusBench:
         test_code = problem.get("test", "")
         atol = problem.get("atol", 0)
 
-        # --- Base tests: use the original HumanEval check() function ---
-        from sage.bench.humaneval import run_test
-        base_passed, base_error = run_test(
-            prompt, solution_code, test_code, entry_point, timeout=timeout
-        )
+        # --- Base tests ---
+        if test_code:
+            # HumanEval: use the original check() function
+            from sage.bench.humaneval import run_test
+            base_passed, base_error = run_test(
+                prompt, solution_code, test_code, entry_point, timeout=timeout
+            )
+        elif base_inputs:
+            # MBPP: compare solution vs canonical on base_inputs
+            base_result = self._run_comparison(
+                solution_code, prompt, canonical, entry_point,
+                base_inputs, atol, timeout,
+            )
+            base_passed = base_result["passed"]
+            base_error = base_result["error"]
+        else:
+            base_passed, base_error = True, ""
 
         if not base_passed:
             return {"base_passed": False, "plus_passed": False, "error": base_error}
@@ -266,11 +291,30 @@ class EvalPlusBench:
         if not plus_inputs:
             return {"base_passed": True, "plus_passed": True, "error": ""}
 
-        # Build a test program that compares solution vs canonical
-        # on a sample of plus_inputs (cap at 200 to avoid timeout)
-        sample_inputs = plus_inputs[:200]
+        plus_result = self._run_comparison(
+            solution_code, prompt, canonical, entry_point,
+            plus_inputs[:200], atol, timeout,
+        )
+        return {
+            "base_passed": True,
+            "plus_passed": plus_result["passed"],
+            "error": plus_result["error"],
+        }
 
-        # Build the comparison script
+    def _run_comparison(
+        self,
+        solution_code: str,
+        prompt: str,
+        canonical: str,
+        entry_point: str,
+        inputs: list,
+        atol: float,
+        timeout: float,
+    ) -> dict[str, Any]:
+        """Run solution vs canonical on a set of inputs. Returns {"passed": bool, "error": str}."""
+        if not inputs:
+            return {"passed": True, "error": ""}
+
         if f"def {entry_point}" in solution_code:
             sol_code = solution_code
         else:
@@ -278,17 +322,17 @@ class EvalPlusBench:
 
         test_program = f'''{sol_code}
 
-# --- Canonical solution ---
-{prompt}{canonical}
-_canonical = {entry_point}
-
-# Rename solution
+# Save reference to solution BEFORE canonical overwrites the name
 import types
 _solution = types.FunctionType(
     {entry_point}.__code__, {{**globals()}}, "{entry_point}_sol"
 )
 
-# --- Run plus tests ---
+# --- Canonical solution (overwrites {entry_point}) ---
+{prompt}{canonical}
+_canonical = {entry_point}
+
+# --- Run comparison tests ---
 import json, sys
 inputs = json.loads(sys.stdin.read())
 atol = {atol}
@@ -306,7 +350,7 @@ for args in inputs:
             failures += 1
     except Exception:
         failures += 1
-print(f"PLUS_RESULT:{{failures}}/{{len(inputs)}}")
+print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
 '''
 
         with tempfile.NamedTemporaryFile(
@@ -318,37 +362,29 @@ print(f"PLUS_RESULT:{{failures}}/{{len(inputs)}}")
         try:
             proc = subprocess.run(
                 ["python", tmp_path],
-                input=json.dumps(sample_inputs),
+                input=json.dumps(inputs),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
             )
             if proc.returncode != 0:
-                return {
-                    "base_passed": True,
-                    "plus_passed": False,
-                    "error": proc.stderr[:300],
-                }
+                return {"passed": False, "error": proc.stderr[:300]}
 
-            # Parse result
             for line in proc.stdout.split("\n"):
-                if line.startswith("PLUS_RESULT:"):
+                if line.startswith("COMPARE_RESULT:"):
                     parts = line.split(":")[1].split("/")
                     failures = int(parts[0])
                     total = int(parts[1])
-                    plus_passed = failures == 0
-                    return {
-                        "base_passed": True,
-                        "plus_passed": plus_passed,
-                        "error": f"{failures}/{total} plus tests failed" if failures else "",
-                    }
+                    passed = failures == 0
+                    error = f"{failures}/{total} tests failed" if failures else ""
+                    return {"passed": passed, "error": error}
 
-            return {"base_passed": True, "plus_passed": False, "error": "no result line"}
+            return {"passed": False, "error": "no result line"}
 
         except subprocess.TimeoutExpired:
-            return {"base_passed": True, "plus_passed": False, "error": "plus_timeout"}
+            return {"passed": False, "error": "timeout"}
         except Exception as e:
-            return {"base_passed": True, "plus_passed": False, "error": str(e)[:200]}
+            return {"passed": False, "error": str(e)[:200]}
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
@@ -400,7 +436,10 @@ print(f"PLUS_RESULT:{{failures}}/{{len(inputs)}}")
             status = "PASS" if passed else "FAIL"
             base_s = "base_ok" if eval_result["base_passed"] else "base_fail"
             plus_s = "plus_ok" if eval_result["plus_passed"] else "plus_fail"
-            log.info(f"[{i+1}/{len(solutions)}] {task_id}: {status} ({base_s}, {plus_s})")
+            print(
+                f"  eval [{i+1}/{len(solutions)}] {task_id}: {status} ({base_s}, {plus_s})",
+                flush=True,
+            )
 
         # Update manifest traces with pass/fail from evaluation
         if self.manifest:
