@@ -47,6 +47,7 @@ from sage.memory.episodic import EpisodicMemory
 from sage.memory.remote_rag import ExoCortex
 from sage.tools.memory_tools import create_memory_tools
 from sage.events.bus import EventBus
+from sage.routing.shadow import ShadowRouter
 
 
 @dataclass
@@ -73,6 +74,8 @@ class AgentSystem:
     capability_matrix: Any = None
     # Rust SystemRouter (None if sage_core not compiled with cognitive engine)
     rust_router: Any = None
+    # ShadowRouter: dual Rust/Python routing comparison (None if shadow mode inactive)
+    shadow_router: ShadowRouter | None = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -82,11 +85,27 @@ class AgentSystem:
         Mock mode: direct AgentLoop (no orchestrator).
         """
         # 1. Route task to cognitive system
-        if self.rust_router:
-            # Primary path: Rust SystemRouter
-            budget = 10.0  # Default budget (USD)
-            if hasattr(self, '_guardrail_budget'):
-                budget = self._guardrail_budget
+        budget = 10.0  # Default budget (USD)
+        if hasattr(self, '_guardrail_budget'):
+            budget = self._guardrail_budget
+
+        if self.shadow_router:
+            # Shadow mode: runs both routers, returns primary decision
+            decision = await self.shadow_router.route(task, budget)
+            # Determine which router produced the primary decision
+            if self.rust_router:
+                system_num = int(decision.system)
+                model_id = decision.model_id
+                _log.info(
+                    "Shadow routing (Rust primary): %s -> S%d, model=%s (conf=%.2f, cost=%.4f)",
+                    task[:60], system_num, model_id,
+                    decision.confidence, decision.estimated_cost,
+                )
+            else:
+                system_num = decision.system
+                model_id = None
+        elif self.rust_router:
+            # Primary path: Rust SystemRouter (no shadow)
             decision = self.rust_router.route(task, budget)
             system_num = int(decision.system)  # CognitiveSystem enum -> int
             model_id = decision.model_id
@@ -238,6 +257,20 @@ def boot_agent_system(
             _log.warning(
                 "Boot: Rust SystemRouter init failed (%s), using Python AdaptiveRouter", e,
             )
+
+    # Shadow router: dual Rust/Python comparison when both are available.
+    # Always created — handles all combinations internally:
+    # both routers (shadow comparison), rust-only, python-only.
+    # Zero-overhead when only one router is present.
+    shadow_router = ShadowRouter(
+        rust_router=rust_router,
+        python_metacognition=metacognition,
+    )
+    if rust_router is not None:
+        _log.info(
+            "Boot: ShadowRouter active (dual Rust/Python comparison, "
+            "traces -> %s)", shadow_router._trace_path,
+        )
 
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
@@ -431,4 +464,5 @@ def boot_agent_system(
         registry=registry,
         capability_matrix=_cap_matrix,
         rust_router=rust_router,
+        shadow_router=shadow_router,
     )
