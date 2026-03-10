@@ -398,6 +398,58 @@ impl ContextualBandit {
         &self.arms
     }
 
+    /// Get decay factor.
+    pub fn decay_factor(&self) -> f64 {
+        self.decay_factor
+    }
+
+    /// Get exploration bonus.
+    pub fn exploration_bonus(&self) -> f64 {
+        self.exploration_bonus
+    }
+
+    /// Iterate over all arm posteriors.
+    pub fn arms_iter(&self) -> impl Iterator<Item = &ArmPosterior> {
+        self.arms.values()
+    }
+
+    /// Restore an arm with pre-computed posteriors (from SQLite load).
+    #[allow(clippy::too_many_arguments)]
+    pub fn restore_arm(
+        &mut self,
+        model_id: String,
+        template: String,
+        quality_alpha: f64,
+        quality_beta: f64,
+        cost_shape: f64,
+        cost_rate: f64,
+        latency_shape: f64,
+        latency_rate: f64,
+        observation_count: u32,
+    ) {
+        let key = ArmKey {
+            model_id,
+            template,
+        };
+        let arm = ArmPosterior {
+            key: key.clone(),
+            quality: BetaPosterior {
+                alpha: quality_alpha,
+                beta: quality_beta,
+            },
+            cost: GammaPosterior {
+                shape: cost_shape,
+                rate: cost_rate,
+            },
+            latency: GammaPosterior {
+                shape: latency_shape,
+                rate: latency_rate,
+            },
+            observation_count,
+        };
+        self.arms.insert(key, arm);
+    }
+
     /// Format the bandit state as a string.
     pub fn repr(&self) -> String {
         format!(
@@ -461,6 +513,23 @@ impl ContextualBandit {
     #[pyo3(name = "arm_summaries")]
     pub fn py_arm_summaries(&self) -> Vec<(String, String, f32, f32, f32, u32)> {
         self.arm_summaries()
+    }
+
+    /// Save bandit state to SQLite (requires `cognitive` feature).
+    #[cfg(feature = "cognitive")]
+    #[pyo3(name = "save_to_sqlite")]
+    pub fn py_save_to_sqlite(&self, path: &str) -> PyResult<()> {
+        super::persistence::save_bandit(self, path)
+            .map_err(pyo3::exceptions::PyIOError::new_err)
+    }
+
+    /// Load bandit state from SQLite (requires `cognitive` feature).
+    #[cfg(feature = "cognitive")]
+    #[staticmethod]
+    #[pyo3(name = "load_from_sqlite")]
+    pub fn py_load_from_sqlite(path: &str) -> PyResult<Self> {
+        super::persistence::load_bandit(path)
+            .map_err(pyo3::exceptions::PyIOError::new_err)
     }
 
     fn __repr__(&self) -> String {

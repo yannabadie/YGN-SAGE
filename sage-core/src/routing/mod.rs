@@ -10,6 +10,9 @@ pub mod model_card;
 pub mod model_registry;
 pub mod system_router;
 
+#[cfg(feature = "cognitive")]
+pub mod persistence;
+
 #[cfg(feature = "onnx")]
 mod router;
 #[cfg(feature = "onnx")]
