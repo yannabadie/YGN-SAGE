@@ -4,6 +4,7 @@
 //! Stage 1: `router.rs` — ONNX classifier for S1/S2/S3 (behind `onnx` feature).
 //! Stage 2-3: Python-side dynamic routing with feedback.
 
+pub mod bandit;
 pub mod features;
 pub mod model_card;
 pub mod model_registry;

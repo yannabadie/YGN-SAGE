@@ -44,6 +44,8 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<routing::system_router::SystemRouter>()?;
     m.add_class::<routing::system_router::RoutingDecision>()?;
     m.add_class::<routing::system_router::RoutingConstraints>()?;
+    m.add_class::<routing::bandit::BanditDecision>()?;
+    m.add_class::<routing::bandit::ContextualBandit>()?;
     m.add_class::<topology::TopologyGraph>()?;
     m.add_class::<topology::TopologyNode>()?;
     m.add_class::<topology::TopologyEdge>()?;
