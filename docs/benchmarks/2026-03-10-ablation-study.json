@@ -1,0 +1,86 @@
+{
+  "full": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": true,
+      "label": "full"
+    },
+    "pass_rate": 1.0,
+    "passed": 20,
+    "total": 20,
+    "avg_latency_ms": 4015.8050000000003,
+    "avg_cost_usd": 0.0
+  },
+  "baseline": {
+    "config": {
+      "memory": false,
+      "avr": false,
+      "routing": false,
+      "guardrails": false,
+      "label": "baseline"
+    },
+    "pass_rate": 0.85,
+    "passed": 17,
+    "total": 20,
+    "avg_latency_ms": 9084.555,
+    "avg_cost_usd": 0.0
+  },
+  "no-memory": {
+    "config": {
+      "memory": false,
+      "avr": true,
+      "routing": true,
+      "guardrails": true,
+      "label": "no-memory"
+    },
+    "pass_rate": 1.0,
+    "passed": 20,
+    "total": 20,
+    "avg_latency_ms": 3775.3650000000002,
+    "avg_cost_usd": 0.0
+  },
+  "no-avr": {
+    "config": {
+      "memory": true,
+      "avr": false,
+      "routing": true,
+      "guardrails": true,
+      "label": "no-avr"
+    },
+    "pass_rate": 1.0,
+    "passed": 20,
+    "total": 20,
+    "avg_latency_ms": 4587.795,
+    "avg_cost_usd": 0.0
+  },
+  "no-routing": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": false,
+      "guardrails": true,
+      "label": "no-routing"
+    },
+    "pass_rate": 0.95,
+    "passed": 19,
+    "total": 20,
+    "avg_latency_ms": 4370.75,
+    "avg_cost_usd": 0.0
+  },
+  "no-guardrails": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": false,
+      "label": "no-guardrails"
+    },
+    "pass_rate": 1.0,
+    "passed": 20,
+    "total": 20,
+    "avg_latency_ms": 4356.27,
+    "avg_cost_usd": 0.0
+  }
+}
