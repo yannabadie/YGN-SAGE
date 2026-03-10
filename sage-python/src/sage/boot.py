@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -172,13 +173,16 @@ class AgentSystem:
 
         # Mock mode: skip orchestrator, use AgentLoop directly
         if current_provider == "mock":
-            return await self.agent_loop.run(task)
+            result = await self.agent_loop.run(task)
+            self._record_topology_outcome(task, result, topology_result)
+            return result
 
         # 4. Try CognitiveOrchestrator as primary path (multi-provider)
         if self.orchestrator and self.registry and self.registry.list_available():
             try:
                 result = await self.orchestrator.run(task)
                 await self._persist_memory()
+                self._record_topology_outcome(task, result, topology_result)
                 return result
             except Exception as e:
                 _log.warning(
@@ -203,7 +207,41 @@ class AgentSystem:
 
         result = await self.agent_loop.run(task)
         await self._persist_memory()
+        self._record_topology_outcome(task, result, topology_result)
         return result
+
+    def _record_topology_outcome(self, task: str, result: str, topology_result: Any) -> None:
+        """Record outcome into topology engine's learning loop (S-MMU + MAP-Elites)."""
+        if not self.topology_engine or topology_result is None:
+            return
+        try:
+            import re as _re
+            # Estimate quality from result (0.0 = empty/error, 1.0 = complete)
+            quality = 1.0 if result and len(result) > 10 else 0.3
+            cost = self.agent_loop.total_cost_usd
+            latency_ms = (time.perf_counter() - self.agent_loop.start_time) * 1000
+
+            # Extract keywords from task
+            keywords = list(set(
+                w.lower() for w in _re.findall(r'\b\w{4,}\b', task)
+            ))[:10]
+
+            topology_id = topology_result.topology.id
+            self.topology_engine.record_outcome(
+                topology_id,
+                task[:200],
+                keywords,
+                None,  # embedding (future: compute at learn time)
+                quality,
+                cost,
+                latency_ms,
+            )
+            _log.info(
+                "Topology outcome recorded: id=%s, quality=%.2f, cost=%.4f, latency=%.0fms",
+                topology_id, quality, cost, latency_ms,
+            )
+        except Exception as e:
+            _log.warning("Topology outcome recording failed (%s)", e)
 
     async def _persist_memory(self) -> None:
         """Persist semantic and causal memory after a run."""
