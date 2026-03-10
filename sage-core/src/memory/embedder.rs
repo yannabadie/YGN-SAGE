@@ -1,7 +1,7 @@
 //! ONNX Runtime embedder for S-MMU semantic edges.
 //!
-//! Behind the `onnx` feature flag. Loads all-MiniLM-L6-v2 ONNX model
-//! and produces 384-dim L2-normalized embeddings.
+//! Behind the `onnx` feature flag. Loads snowflake-arctic-embed-m ONNX model
+//! and produces 768-dim L2-normalized embeddings.
 //!
 //! Uses `load-dynamic` strategy: onnxruntime DLL is loaded at runtime
 //! via `ort::init_from()` (ort 2.x API) or `ORT_DYLIB_PATH` env var.
@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
-const EMBEDDING_DIM: usize = 384;
+const EMBEDDING_DIM: usize = 768;
 
 /// Cached ORT dylib path — resolved once, reused everywhere.
 static ORT_DYLIB_RESOLVED: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
@@ -168,13 +168,13 @@ impl RustEmbedder {
         Ok(Self { session, tokenizer })
     }
 
-    /// Embed a single text string. Returns a 384-dim L2-normalized vector.
+    /// Embed a single text string. Returns a 768-dim L2-normalized vector.
     pub fn embed(&mut self, text: &str) -> PyResult<Vec<f32>> {
         let batch = self.embed_batch(vec![text.to_string()])?;
         Ok(batch.into_iter().next().unwrap_or_default())
     }
 
-    /// Embed a batch of text strings. Returns a list of 384-dim L2-normalized vectors.
+    /// Embed a batch of text strings. Returns a list of 768-dim L2-normalized vectors.
     pub fn embed_batch(&mut self, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -209,9 +209,6 @@ impl RustEmbedder {
             }
         }
 
-        // token_type_ids: all zeros (single-sentence, required by BERT-like models)
-        let token_type_ids = vec![0i64; batch_size * max_len];
-
         // Build tensors using (shape, &[T]) tuple form accepted by ort 2.x
         let shape = vec![batch_size, max_len];
 
@@ -225,22 +222,33 @@ impl RustEmbedder {
                 pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (mask): {e}"))
             })?;
 
-        let type_tensor =
-            TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
-            })?;
+        // Check if the ONNX model expects token_type_ids (standard BERT input).
+        // Some models (e.g. snowflake-arctic-embed-m) may not include it.
+        let has_token_type = self.session.inputs.iter().any(|input| input.name == "token_type_ids");
 
-        let session_inputs = inputs![
-            "input_ids" => id_tensor,
-            "attention_mask" => mask_tensor,
-            "token_type_ids" => type_tensor
-        ];
+        let session_inputs = if has_token_type {
+            let token_type_ids = vec![0i64; batch_size * max_len];
+            let type_tensor =
+                TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
+                    pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
+                })?;
+            inputs![
+                "input_ids" => id_tensor,
+                "attention_mask" => mask_tensor,
+                "token_type_ids" => type_tensor
+            ]
+        } else {
+            inputs![
+                "input_ids" => id_tensor,
+                "attention_mask" => mask_tensor
+            ]
+        };
 
         let outputs = self.session.run(session_inputs).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("ORT inference error: {e}"))
         })?;
 
-        // Extract output — for all-MiniLM-L6-v2 shape is [batch, seq_len, 384]
+        // Extract output — shape is [batch, seq_len, hidden_dim] (768 for arctic-embed-m)
         // try_extract_tensor returns (&Shape, &[f32]) where Shape derefs to [i64]
         let (out_shape, out_data) =
             outputs[0].try_extract_tensor::<f32>().map_err(|e| {
@@ -291,7 +299,7 @@ impl RustEmbedder {
         Ok(results)
     }
 
-    /// Embedding dimensionality (384 for all-MiniLM-L6-v2).
+    /// Embedding dimensionality (768 for snowflake-arctic-embed-m).
     #[getter]
     pub fn dim(&self) -> usize {
         EMBEDDING_DIM

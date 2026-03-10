@@ -134,7 +134,7 @@ impl TopologyEngine {
     /// # Arguments
     /// - `smmu`: The multi-view S-MMU for context retrieval.
     /// - `task_description`: Human-readable task description.
-    /// - `task_embedding`: Optional 384-dim embedding for semantic search.
+    /// - `task_embedding`: Optional 768-dim embedding for semantic search.
     /// - `system`: Cognitive system tier (1=S1, 2=S2, 3=S3).
     /// - `exploration_budget`: 0.0 = pure exploit, 1.0 = pure explore.
     pub fn generate(

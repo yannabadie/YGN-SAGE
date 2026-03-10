@@ -4,7 +4,7 @@
 //! This is a deeper bridge than `routing::smmu_bridge::TopologyBridge`, which
 //! only stores template + model_id. This bridge additionally tracks:
 //! - `topology_id` (ULID referencing a `TopologyGraph`)
-//! - Structural features: agent_count, max_depth, model_diversity_score
+//! - Structural features: agent_count, max_depth, model_diversity
 //! - Rich `TopologySuggestion` return values
 //! - Bandit prior injection from retrieved suggestions
 
@@ -29,7 +29,7 @@ pub struct TopologyOutcome {
     pub task_summary: String,
     /// Keywords / entity tags for entity-graph linking.
     pub keywords: Vec<String>,
-    /// 384-dim embedding vector for semantic similarity.
+    /// 768-dim embedding vector for semantic similarity.
     pub task_embedding: Option<Vec<f32>>,
     /// Template name (e.g., "sequential", "avr", "parallel").
     pub template: String,
@@ -194,7 +194,10 @@ impl TopologySmmuBridge {
         )
         .entered();
 
-        // Semantic weight heavily for topology retrieval
+        // Semantic weight heavily for topology retrieval.
+        // BFS max_hops=2 is intentionally fixed: topology chunks form a shallow
+        // semantic graph, and deeper traversal adds noise without improving recall.
+        // Result count is limited by `.take(max_results)` below.
         let weights = [0.1, 0.7, 0.1, 0.1]; // temporal, semantic, causal, entity
         let results = smmu.retrieve_relevant(query_chunk_id, 2, weights);
 

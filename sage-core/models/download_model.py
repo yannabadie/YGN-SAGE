@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
-"""Download all-MiniLM-L6-v2 ONNX model and tokenizer for sage-core."""
+"""Download snowflake-arctic-embed-m ONNX model and tokenizer for sage-core.
+
+NOTE: If upgrading from all-MiniLM-L6-v2, delete the old model.onnx and
+tokenizer.json files in this directory before running.
+"""
 from huggingface_hub import hf_hub_download
 import os
 import shutil
 
-MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+MODEL_ID = "Snowflake/snowflake-arctic-embed-m"
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 files = {
