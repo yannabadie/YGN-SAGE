@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -96,6 +97,8 @@ class AgentSystem:
         Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
         Mock mode: direct AgentLoop (no orchestrator).
         """
+        _run_start = time.perf_counter()
+
         # 1. Route task to cognitive system
         budget = 10.0  # Default budget (USD)
         if hasattr(self, '_guardrail_budget'):
@@ -233,7 +236,7 @@ class AgentSystem:
         # Mock mode: skip orchestrator, use AgentLoop directly
         if current_provider == "mock":
             result = await self.agent_loop.run(task)
-            self._record_topology_outcome(task, result, topology_result, bandit_decision)
+            self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
             return result
 
         # 4. Try CognitiveOrchestrator as primary path (multi-provider)
@@ -241,7 +244,7 @@ class AgentSystem:
             try:
                 result = await self.orchestrator.run(task)
                 await self._persist_memory()
-                self._record_topology_outcome(task, result, topology_result, bandit_decision)
+                self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
                 return result
             except Exception as e:
                 _log.warning(
@@ -266,23 +269,22 @@ class AgentSystem:
 
         result = await self.agent_loop.run(task)
         await self._persist_memory()
-        self._record_topology_outcome(task, result, topology_result, bandit_decision)
+        self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
         return result
 
-    def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None) -> None:
+    def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None, run_start: float = 0.0) -> None:
         """Record outcome into topology engine's learning loop (S-MMU + MAP-Elites)."""
         if not self.topology_engine or topology_result is None:
             return
         try:
-            import re as _re
             # Estimate quality from result (0.0 = empty/error, 1.0 = complete)
             quality = 1.0 if result and len(result) > 10 else 0.3
             cost = self.agent_loop.total_cost_usd
-            latency_ms = (time.perf_counter() - self.agent_loop.start_time) * 1000
+            latency_ms = (time.perf_counter() - run_start) * 1000
 
             # Extract keywords from task
             keywords = list(set(
-                w.lower() for w in _re.findall(r'\b\w{4,}\b', task)
+                w.lower() for w in re.findall(r'\b\w{4,}\b', task)
             ))[:10]
 
             topology_id = topology_result.topology.id
