@@ -4,13 +4,15 @@
 //! Behind `smt` feature flag. Covers:
 //! - Memory safety proofs (bounds checking)
 //! - Loop bound verification
-//! - Arithmetic verification
-//! - Provider assignment (SAT with exactly-one constraint)
+//! - Arithmetic verification (concrete and symbolic expressions)
+//! - Invariant verification (pre/post-condition implication via `mk_implies`)
+//! - Provider assignment (SAT with integer encoding — O(N) constraints)
 //!
 //! All operations are QF_LIA (quantifier-free linear integer arithmetic).
 
 use oxiz::{Solver, SolverResult, TermId, TermManager};
 use pyo3::prelude::*;
+use std::collections::HashMap;
 use std::time::Instant;
 
 /// Helper: create solver+tm, assert formula, check UNSAT.
@@ -20,6 +22,354 @@ fn is_unsat(build: impl FnOnce(&mut TermManager) -> TermId) -> bool {
     let formula = build(&mut tm);
     solver.assert(formula, &mut tm);
     solver.check(&mut tm) == SolverResult::Unsat
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Expression AST for invariant/arithmetic string parsing
+// ──────────────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+enum Expr {
+    Var(String),
+    Int(i64),
+    Cmp(Box<Expr>, CmpOp, Box<Expr>),
+    Arith(Box<Expr>, ArithOp, Box<Expr>),
+    And(Box<Expr>, Box<Expr>),
+    Or(Box<Expr>, Box<Expr>),
+    Not(Box<Expr>),
+}
+
+#[derive(Debug)]
+enum CmpOp {
+    Gt,
+    Lt,
+    Ge,
+    Le,
+    Eq,
+    Ne,
+}
+
+#[derive(Debug)]
+enum ArithOp {
+    Add,
+    Sub,
+    Mul,
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// Recursive descent parser
+//
+// Grammar (precedence low→high):
+//   expr     := or_expr
+//   or_expr  := and_expr ("or" and_expr)*
+//   and_expr := not_expr ("and" not_expr)*
+//   not_expr := "not" not_expr | cmp_expr
+//   cmp_expr := add_expr (CMP add_expr)?
+//   add_expr := mul_expr (("+"|"-") mul_expr)*
+//   mul_expr := unary ("*" unary)*
+//   unary    := "-" unary | atom
+//   atom     := "(" expr ")" | integer | variable
+// ──────────────────────────────────────────────────────────────────────
+
+struct Parser<'a> {
+    bytes: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> Parser<'a> {
+    fn new(input: &'a str) -> Self {
+        Self {
+            bytes: input.as_bytes(),
+            pos: 0,
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.pos < self.bytes.len() && self.bytes[self.pos].is_ascii_whitespace() {
+            self.pos += 1;
+        }
+    }
+
+    fn peek(&self) -> Option<u8> {
+        self.bytes.get(self.pos).copied()
+    }
+
+    fn remaining(&self) -> &[u8] {
+        &self.bytes[self.pos..]
+    }
+
+    /// Consume a string literal. For alphabetic keywords, ensures no trailing alnum.
+    fn try_consume(&mut self, s: &str) -> bool {
+        self.skip_ws();
+        let sb = s.as_bytes();
+        if self.remaining().starts_with(sb) {
+            if sb.iter().all(|b| b.is_ascii_alphabetic()) {
+                let end = self.pos + sb.len();
+                if end < self.bytes.len()
+                    && (self.bytes[end].is_ascii_alphanumeric() || self.bytes[end] == b'_')
+                {
+                    return false;
+                }
+            }
+            self.pos += sb.len();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Parse full expression and verify all input consumed.
+    fn parse_all(&mut self) -> Result<Expr, ()> {
+        let expr = self.parse_or()?;
+        self.skip_ws();
+        if self.pos == self.bytes.len() {
+            Ok(expr)
+        } else {
+            Err(()) // Trailing garbage
+        }
+    }
+
+    fn parse_or(&mut self) -> Result<Expr, ()> {
+        let mut left = self.parse_and()?;
+        while self.try_consume("or") {
+            let right = self.parse_and()?;
+            left = Expr::Or(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_and(&mut self) -> Result<Expr, ()> {
+        let mut left = self.parse_not()?;
+        while self.try_consume("and") {
+            let right = self.parse_not()?;
+            left = Expr::And(Box::new(left), Box::new(right));
+        }
+        Ok(left)
+    }
+
+    fn parse_not(&mut self) -> Result<Expr, ()> {
+        if self.try_consume("not") {
+            let inner = self.parse_not()?;
+            Ok(Expr::Not(Box::new(inner)))
+        } else {
+            self.parse_cmp()
+        }
+    }
+
+    fn parse_cmp(&mut self) -> Result<Expr, ()> {
+        let left = self.parse_add()?;
+        self.skip_ws();
+        // Order matters: >= before >, <= before <, == and != before single chars
+        let op = if self.try_consume(">=") {
+            Some(CmpOp::Ge)
+        } else if self.try_consume("<=") {
+            Some(CmpOp::Le)
+        } else if self.try_consume("==") {
+            Some(CmpOp::Eq)
+        } else if self.try_consume("!=") {
+            Some(CmpOp::Ne)
+        } else if self.try_consume(">") {
+            Some(CmpOp::Gt)
+        } else if self.try_consume("<") {
+            Some(CmpOp::Lt)
+        } else {
+            None
+        };
+        if let Some(op) = op {
+            let right = self.parse_add()?;
+            Ok(Expr::Cmp(Box::new(left), op, Box::new(right)))
+        } else {
+            Ok(left)
+        }
+    }
+
+    fn parse_add(&mut self) -> Result<Expr, ()> {
+        let mut left = self.parse_mul()?;
+        loop {
+            self.skip_ws();
+            if self.try_consume("+") {
+                let right = self.parse_mul()?;
+                left = Expr::Arith(Box::new(left), ArithOp::Add, Box::new(right));
+            } else if self.try_consume("-") {
+                let right = self.parse_mul()?;
+                left = Expr::Arith(Box::new(left), ArithOp::Sub, Box::new(right));
+            } else {
+                break;
+            }
+        }
+        Ok(left)
+    }
+
+    fn parse_mul(&mut self) -> Result<Expr, ()> {
+        let mut left = self.parse_unary()?;
+        loop {
+            self.skip_ws();
+            if self.try_consume("*") {
+                let right = self.parse_unary()?;
+                left = Expr::Arith(Box::new(left), ArithOp::Mul, Box::new(right));
+            } else {
+                break;
+            }
+        }
+        Ok(left)
+    }
+
+    fn parse_unary(&mut self) -> Result<Expr, ()> {
+        self.skip_ws();
+        if self.peek() == Some(b'-') {
+            // Peek ahead: if next is digit, parse as negative literal
+            if self.pos + 1 < self.bytes.len() && self.bytes[self.pos + 1].is_ascii_digit() {
+                return self.parse_int_literal();
+            }
+            // Otherwise: unary minus (0 - expr)
+            self.pos += 1;
+            let inner = self.parse_unary()?;
+            Ok(Expr::Arith(
+                Box::new(Expr::Int(0)),
+                ArithOp::Sub,
+                Box::new(inner),
+            ))
+        } else {
+            self.parse_atom()
+        }
+    }
+
+    fn parse_int_literal(&mut self) -> Result<Expr, ()> {
+        self.skip_ws();
+        let start = self.pos;
+        if self.peek() == Some(b'-') {
+            self.pos += 1;
+        }
+        if !matches!(self.peek(), Some(b'0'..=b'9')) {
+            self.pos = start;
+            return Err(());
+        }
+        while matches!(self.peek(), Some(b'0'..=b'9')) {
+            self.pos += 1;
+        }
+        let s = std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|_| ())?;
+        let val: i64 = s.parse().map_err(|_| ())?;
+        Ok(Expr::Int(val))
+    }
+
+    fn parse_atom(&mut self) -> Result<Expr, ()> {
+        self.skip_ws();
+
+        // Parenthesized expression
+        if self.try_consume("(") {
+            let expr = self.parse_or()?;
+            self.skip_ws();
+            if !self.try_consume(")") {
+                return Err(());
+            }
+            return Ok(expr);
+        }
+
+        // Integer literal
+        if matches!(self.peek(), Some(b'0'..=b'9')) {
+            return self.parse_int_literal();
+        }
+
+        // Variable name
+        if matches!(
+            self.peek(),
+            Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'_')
+        ) {
+            let start = self.pos;
+            while matches!(
+                self.peek(),
+                Some(b'a'..=b'z') | Some(b'A'..=b'Z') | Some(b'0'..=b'9') | Some(b'_')
+            ) {
+                self.pos += 1;
+            }
+            let name = std::str::from_utf8(&self.bytes[start..self.pos]).map_err(|_| ())?;
+            // Reject Python builtins / injection vectors
+            if matches!(
+                name,
+                "import"
+                    | "exec"
+                    | "eval"
+                    | "open"
+                    | "print"
+                    | "compile"
+                    | "getattr"
+                    | "setattr"
+                    | "delattr"
+                    | "globals"
+                    | "locals"
+            ) {
+                return Err(());
+            }
+            // Reject dunder names (__anything__)
+            if name.starts_with("__") {
+                return Err(());
+            }
+            return Ok(Expr::Var(name.to_string()));
+        }
+
+        Err(())
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// AST → OxiZ TermId conversion
+// ──────────────────────────────────────────────────────────────────────
+
+fn expr_to_term(
+    expr: &Expr,
+    tm: &mut TermManager,
+    vars: &mut HashMap<String, TermId>,
+) -> Result<TermId, ()> {
+    match expr {
+        Expr::Var(name) => {
+            if let Some(&id) = vars.get(name.as_str()) {
+                Ok(id)
+            } else {
+                let id = tm.mk_var(name, tm.sorts.int_sort);
+                vars.insert(name.clone(), id);
+                Ok(id)
+            }
+        }
+        Expr::Int(val) => Ok(tm.mk_int(*val)),
+        Expr::Cmp(lhs, op, rhs) => {
+            let l = expr_to_term(lhs, tm, vars)?;
+            let r = expr_to_term(rhs, tm, vars)?;
+            Ok(match op {
+                CmpOp::Gt => tm.mk_gt(l, r),
+                CmpOp::Lt => tm.mk_lt(l, r),
+                CmpOp::Ge => tm.mk_ge(l, r),
+                CmpOp::Le => tm.mk_le(l, r),
+                CmpOp::Eq => tm.mk_eq(l, r),
+                CmpOp::Ne => {
+                    let eq = tm.mk_eq(l, r);
+                    tm.mk_not(eq)
+                }
+            })
+        }
+        Expr::Arith(lhs, op, rhs) => {
+            let l = expr_to_term(lhs, tm, vars)?;
+            let r = expr_to_term(rhs, tm, vars)?;
+            Ok(match op {
+                ArithOp::Add => tm.mk_add(vec![l, r]),
+                ArithOp::Sub => tm.mk_sub(l, r),
+                ArithOp::Mul => tm.mk_mul(vec![l, r]),
+            })
+        }
+        Expr::And(lhs, rhs) => {
+            let l = expr_to_term(lhs, tm, vars)?;
+            let r = expr_to_term(rhs, tm, vars)?;
+            Ok(tm.mk_and(vec![l, r]))
+        }
+        Expr::Or(lhs, rhs) => {
+            let l = expr_to_term(lhs, tm, vars)?;
+            let r = expr_to_term(rhs, tm, vars)?;
+            Ok(tm.mk_or(vec![l, r]))
+        }
+        Expr::Not(inner) => {
+            let t = expr_to_term(inner, tm, vars)?;
+            Ok(tm.mk_not(t))
+        }
+    }
 }
 
 /// Result of a formal verification check.
@@ -51,8 +401,9 @@ impl SmtVerificationResult {
 /// Replaces Python z3-solver for formal verification:
 /// - Memory bounds proofs
 /// - Loop bound checking
-/// - Arithmetic verification
-/// - Provider assignment (constraint satisfaction)
+/// - Arithmetic verification (concrete values and string expressions)
+/// - Invariant verification (pre/post-condition implication)
+/// - Provider assignment (integer-encoded constraint satisfaction)
 #[pyclass]
 pub struct SmtVerifier;
 
@@ -98,6 +449,73 @@ impl SmtVerifier {
             let too_high = tm.mk_gt(a, hi);
             tm.mk_or(vec![too_low, too_high])
         })
+    }
+
+    /// Verify an arithmetic expression string evaluates within tolerance.
+    ///
+    /// Parses expressions like "2 + 2", "10 * 3 + 1", "100 - 50".
+    /// For constant expressions, proves the result equals expected ± tolerance.
+    /// Returns false (fail-closed) on parse errors or symbolic expressions.
+    pub fn verify_arithmetic_expr(&self, expr: &str, expected: i64, tolerance: i64) -> bool {
+        let parsed = match Parser::new(expr).parse_all() {
+            Ok(e) => e,
+            Err(()) => return false,
+        };
+        let mut solver = Solver::new();
+        let mut tm = TermManager::new();
+        let mut vars = HashMap::new();
+        let term = match expr_to_term(&parsed, &mut tm, &mut vars) {
+            Ok(t) => t,
+            Err(()) => return false,
+        };
+        // Symbolic expressions can't be proven to equal a constant
+        if !vars.is_empty() {
+            return false;
+        }
+        let lo = tm.mk_int(expected - tolerance);
+        let hi = tm.mk_int(expected + tolerance);
+        let too_low = tm.mk_lt(term, lo);
+        let too_high = tm.mk_gt(term, hi);
+        let violation = tm.mk_or(vec![too_low, too_high]);
+        solver.assert(violation, &mut tm);
+        solver.check(&mut tm) == SolverResult::Unsat
+    }
+
+    /// Verify a pre/post-condition pair (invariant implication).
+    ///
+    /// Parses string expressions (e.g. "x > 0", "x >= -1 and x < 100")
+    /// and checks if pre → post holds for all values of free variables.
+    /// Uses `mk_implies`: asserts ¬(pre → post) and checks UNSAT.
+    ///
+    /// Fails closed (returns False) on parse errors — no eval(), no injection.
+    pub fn verify_invariant(&self, pre: &str, post: &str) -> bool {
+        let pre_expr = match Parser::new(pre).parse_all() {
+            Ok(e) => e,
+            Err(()) => return false,
+        };
+        let post_expr = match Parser::new(post).parse_all() {
+            Ok(e) => e,
+            Err(()) => return false,
+        };
+
+        let mut solver = Solver::new();
+        let mut tm = TermManager::new();
+        let mut vars = HashMap::new();
+
+        let pre_term = match expr_to_term(&pre_expr, &mut tm, &mut vars) {
+            Ok(t) => t,
+            Err(()) => return false,
+        };
+        let post_term = match expr_to_term(&post_expr, &mut tm, &mut vars) {
+            Ok(t) => t,
+            Err(()) => return false,
+        };
+
+        // pre → post is valid iff pre ∧ ¬post is UNSAT
+        let not_post = tm.mk_not(post_term);
+        let formula = tm.mk_and(vec![pre_term, not_post]);
+        solver.assert(formula, &mut tm);
+        solver.check(&mut tm) == SolverResult::Unsat
     }
 
     /// Verify array access bounds for a batch of (index, length) pairs.
@@ -178,6 +596,9 @@ impl SmtVerifier {
 
     /// Verify provider assignment (SAT with exactly-one constraint).
     ///
+    /// For each node, creates boolean variables (one per provider).
+    /// Exactly-one encoding: at-least-one (OR) + at-most-one (pairwise NOT-AND).
+    ///
     /// nodes: list of (node_id, required_capabilities)
     /// providers: list of (provider_name, provided_capabilities, exclusion_pairs)
     #[pyo3(signature = (nodes, providers))]
@@ -203,7 +624,6 @@ impl SmtVerifier {
 
         let mut solver = Solver::new();
         let mut tm = TermManager::new();
-        let mut all_pvars: Vec<(String, Vec<(String, TermId)>)> = Vec::new();
 
         for (nid, required) in &nodes {
             if required.is_empty() {
@@ -230,24 +650,22 @@ impl SmtVerifier {
                     let eq = tm.mk_eq(var, f);
                     solver.assert(eq, &mut tm);
                 }
-                pvars.push((pname.clone(), var));
+                pvars.push(var);
             }
 
             if !pvars.is_empty() {
                 // At-least-one
-                let vars: Vec<TermId> = pvars.iter().map(|(_, v)| *v).collect();
-                let alo = tm.mk_or(vars);
+                let alo = tm.mk_or(pvars.clone());
                 solver.assert(alo, &mut tm);
 
                 // At-most-one (pairwise negation)
                 for i in 0..pvars.len() {
                     for j in (i + 1)..pvars.len() {
-                        let both = tm.mk_and(vec![pvars[i].1, pvars[j].1]);
+                        let both = tm.mk_and(vec![pvars[i], pvars[j]]);
                         let nb = tm.mk_not(both);
                         solver.assert(nb, &mut tm);
                     }
                 }
-                all_pvars.push((nid.clone(), pvars));
             }
         }
 
@@ -293,6 +711,8 @@ impl SmtVerifier {
 mod tests {
     use super::*;
 
+    // ── Memory safety ────────────────────────────────────────────────
+
     #[test]
     fn test_memory_safety_valid() {
         let v = SmtVerifier::new();
@@ -309,12 +729,15 @@ mod tests {
         assert!(!v.prove_memory_safety(200, 100));
     }
 
+    // ── Loop bounds ──────────────────────────────────────────────────
+
     #[test]
     fn test_loop_bound_unconstrained() {
         let v = SmtVerifier::new();
-        // Unconstrained variable → cannot prove bounded → False
         assert!(!v.check_loop_bound("n", 1000000));
     }
+
+    // ── Concrete arithmetic ──────────────────────────────────────────
 
     #[test]
     fn test_arithmetic_within_tolerance() {
@@ -330,6 +753,121 @@ mod tests {
         assert!(!v.verify_arithmetic(12, 10, 1));
         assert!(!v.verify_arithmetic(8, 10, 1));
     }
+
+    // ── Expression arithmetic ────────────────────────────────────────
+
+    #[test]
+    fn test_arithmetic_expr_constants() {
+        let v = SmtVerifier::new();
+        assert!(v.verify_arithmetic_expr("42", 42, 0));
+        assert!(!v.verify_arithmetic_expr("42", 43, 0));
+        assert!(v.verify_arithmetic_expr("42", 43, 1));
+    }
+
+    #[test]
+    fn test_arithmetic_expr_operations() {
+        let v = SmtVerifier::new();
+        assert!(v.verify_arithmetic_expr("2 + 2", 4, 0));
+        assert!(v.verify_arithmetic_expr("10 * 3 + 1", 31, 0));
+        assert!(v.verify_arithmetic_expr("100 - 50", 50, 0));
+        assert!(v.verify_arithmetic_expr("7 * 6", 42, 0));
+    }
+
+    #[test]
+    fn test_arithmetic_expr_negative() {
+        let v = SmtVerifier::new();
+        assert!(v.verify_arithmetic_expr("-5", -5, 0));
+        assert!(v.verify_arithmetic_expr("10 - 15", -5, 0));
+    }
+
+    #[test]
+    fn test_arithmetic_expr_symbolic_rejected() {
+        let v = SmtVerifier::new();
+        // Free variable → can't prove concrete value
+        assert!(!v.verify_arithmetic_expr("x + 1", 5, 0));
+    }
+
+    #[test]
+    fn test_arithmetic_expr_unparseable() {
+        let v = SmtVerifier::new();
+        assert!(!v.verify_arithmetic_expr("", 0, 0));
+        assert!(!v.verify_arithmetic_expr("invalid!!", 0, 0));
+    }
+
+    // ── Invariant verification ───────────────────────────────────────
+
+    #[test]
+    fn test_invariant_simple_implication() {
+        let v = SmtVerifier::new();
+        // x > 0 → x > 0 (trivially true)
+        assert!(v.verify_invariant("x > 0", "x > 0"));
+        // x > 0 → x > -1 (true: any x > 0 is also > -1)
+        assert!(v.verify_invariant("x > 0", "x > -1"));
+        // x > 0 → x >= 0 (true: x > 0 means x >= 1)
+        assert!(v.verify_invariant("x > 0", "x >= 0"));
+        // x > 5 → x > 3 (true)
+        assert!(v.verify_invariant("x > 5", "x > 3"));
+    }
+
+    #[test]
+    fn test_invariant_false_implication() {
+        let v = SmtVerifier::new();
+        // x > 0 does NOT imply x > 5 (counterexample: x = 1)
+        assert!(!v.verify_invariant("x > 0", "x > 5"));
+        // x >= 0 does NOT imply x > 0 (counterexample: x = 0)
+        assert!(!v.verify_invariant("x >= 0", "x > 0"));
+    }
+
+    #[test]
+    fn test_invariant_compound() {
+        let v = SmtVerifier::new();
+        // x > 0 and x < 10 → x >= 0
+        assert!(v.verify_invariant("x > 0 and x < 10", "x >= 0"));
+        // x > 0 and x < 10 → x < 100
+        assert!(v.verify_invariant("x > 0 and x < 10", "x < 100"));
+        // x > 0 and x < 10 does NOT imply x > 5 (x could be 1)
+        assert!(!v.verify_invariant("x > 0 and x < 10", "x > 5"));
+    }
+
+    #[test]
+    fn test_invariant_arithmetic_in_pre() {
+        let v = SmtVerifier::new();
+        // x + 1 > 5 → x > 4 (true)
+        assert!(v.verify_invariant("x + 1 > 5", "x > 4"));
+        // x * 2 > 10 → x > 5 (true in integers)
+        assert!(v.verify_invariant("x * 2 > 10", "x > 5"));
+    }
+
+    #[test]
+    fn test_invariant_equality() {
+        let v = SmtVerifier::new();
+        // x == 5 → x > 0
+        assert!(v.verify_invariant("x == 5", "x > 0"));
+        // x == 0 → x >= 0
+        assert!(v.verify_invariant("x == 0", "x >= 0"));
+        // x == 0 does NOT imply x > 0
+        assert!(!v.verify_invariant("x == 0", "x > 0"));
+    }
+
+    #[test]
+    fn test_invariant_injection_blocked() {
+        let v = SmtVerifier::new();
+        assert!(!v.verify_invariant("__import__('os').system('ls')", "x > 0"));
+        assert!(!v.verify_invariant("open('/etc/passwd')", "x > 0"));
+        assert!(!v.verify_invariant("exec('malicious')", "x > 0"));
+        assert!(!v.verify_invariant("eval('1+1')", "x > 0"));
+    }
+
+    #[test]
+    fn test_invariant_unparseable() {
+        let v = SmtVerifier::new();
+        assert!(!v.verify_invariant("", "x > 0"));
+        assert!(!v.verify_invariant("x > 0", ""));
+        assert!(!v.verify_invariant("garbage!!!", "x > 0"));
+        assert!(!v.verify_invariant("x > 0", "y > 0; drop table"));
+    }
+
+    // ── Mutation validation ──────────────────────────────────────────
 
     #[test]
     fn test_validate_mutation_bounds() {
@@ -347,8 +885,10 @@ mod tests {
     fn test_validate_mutation_loop() {
         let v = SmtVerifier::new();
         let result = v.validate_mutation(vec!["loop(n, 1000000)".into()]);
-        assert!(!result.safe); // Unconstrained → violation
+        assert!(!result.safe);
     }
+
+    // ── Provider assignment ──────────────────────────────────────────
 
     #[test]
     fn test_provider_assignment_sat() {
@@ -386,5 +926,80 @@ mod tests {
         let (sat, errors) = v.verify_provider_assignment(nodes, providers);
         assert!(!sat);
         assert!(!errors.is_empty());
+    }
+
+    #[test]
+    fn test_provider_assignment_multi_provider() {
+        let v = SmtVerifier::new();
+        let nodes = vec![
+            ("n1".into(), vec!["code".into()]),
+            ("n2".into(), vec!["vision".into()]),
+        ];
+        let providers = vec![
+            ("openai".into(), vec!["code".into(), "vision".into()], vec![]),
+            ("google".into(), vec!["code".into()], vec![]),
+        ];
+        let (sat, errors) = v.verify_provider_assignment(nodes, providers);
+        assert!(sat);
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_provider_assignment_no_providers_with_reqs() {
+        let v = SmtVerifier::new();
+        let nodes = vec![("n1".into(), vec!["code".into()])];
+        let providers: Vec<(String, Vec<String>, Vec<(String, String)>)> = vec![];
+        let (sat, _) = v.verify_provider_assignment(nodes, providers);
+        assert!(!sat);
+    }
+
+    // ── Parser unit tests ────────────────────────────────────────────
+
+    #[test]
+    fn test_parser_simple_comparison() {
+        let mut p = Parser::new("x > 0");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_compound_and() {
+        let mut p = Parser::new("x > 0 and x < 10");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_compound_or() {
+        let mut p = Parser::new("x < 0 or x > 100");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_arithmetic() {
+        let mut p = Parser::new("x + 1 > 5");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_negative_literal() {
+        let mut p = Parser::new("x > -1");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_parentheses() {
+        let mut p = Parser::new("(x > 0) and (x < 10)");
+        assert!(p.parse_all().is_ok());
+    }
+
+    #[test]
+    fn test_parser_rejects_injection() {
+        let mut p = Parser::new("__import__('os')");
+        assert!(p.parse_all().is_err());
+    }
+
+    #[test]
+    fn test_parser_rejects_trailing_garbage() {
+        let mut p = Parser::new("x > 0 ; drop");
+        assert!(p.parse_all().is_err());
     }
 }

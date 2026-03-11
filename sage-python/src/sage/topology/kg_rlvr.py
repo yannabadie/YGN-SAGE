@@ -116,11 +116,12 @@ class FormalKnowledgeGraph:
         """Evaluate arithmetic expr and verify result is within tolerance."""
         if not self.has_z3:
             return False
-        # Try simple constant evaluation first (no SMT needed)
+        # Rust OxiZ handles full expression parsing (2+2, 10*3+1, etc.)
+        if self._rust:
+            return self._rust.verify_arithmetic_expr(expr, expected, tolerance)
+        # Fallback: simple constant evaluation (no SMT needed)
         try:
             actual = ast.literal_eval(expr)
-            if self._rust:
-                return self._rust.verify_arithmetic(actual, expected, tolerance)
             return expected - tolerance <= actual <= expected + tolerance
         except (ValueError, SyntaxError):
             pass
@@ -129,8 +130,6 @@ class FormalKnowledgeGraph:
         try:
             result = _safe_z3_eval(expr, {"z3": z3})
             if isinstance(result, (int, float)):
-                if self._rust:
-                    return self._rust.verify_arithmetic(int(result), expected, tolerance)
                 return expected - tolerance <= result <= expected + tolerance
             if hasattr(result, 'sort'):  # Z3 ArithRef
                 solver = z3.Solver()
@@ -141,12 +140,19 @@ class FormalKnowledgeGraph:
             return False  # Fail-closed
 
     def verify_invariant(self, pre: str, post: str) -> bool:
-        """Verify a pre/post-condition pair using Z3.
+        """Verify a pre/post-condition pair (pre → post for all free vars).
 
-        Uses a restricted AST evaluator. Fails closed on error.
-        Note: invariant verification requires Z3 AST — no Rust path yet.
+        Rust OxiZ: parses string expressions ("x > 0", "x >= -1 and x < 100").
+        Fallback: Python z3-solver via restricted AST evaluator.
+        Fails closed on error.
         """
-        if not self.has_z3 or not z3:
+        if not self.has_z3:
+            return False
+        # Rust OxiZ handles expression parsing natively
+        if self._rust:
+            return self._rust.verify_invariant(pre, post)
+        # Fallback: Python z3-solver
+        if not z3:
             return False
         solver = z3.Solver()
         x = z3.Int("x")

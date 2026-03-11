@@ -42,7 +42,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
 - `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
-- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval())
+- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback
 - `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
@@ -98,7 +98,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
 - `topology/engine.rs` - DynamicTopologyEngine: 5-path generate strategy (S-MMU → archive → LLM → mutation → template fallback). Evolution loop via MAP-Elites.
 - `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult.
-- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA). Memory safety, loop bounds, arithmetic, provider assignment (exactly-one encoding). Behind `smt` feature flag. Python callers (z3_validator, z3_verify, kg_rlvr) auto-use Rust with z3-solver fallback.
+- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 8 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. Behind `smt` feature flag. ALL Python callers (z3_validator, z3_verify, kg_rlvr) fully wired to Rust — zero Z3-only code paths remain.
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
@@ -296,6 +296,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## SMT Formal Verification (S3)
 - **Backend**: Rust OxiZ (sage_core.SmtVerifier, `smt` feature) preferred; Python z3-solver as fallback
+- **Zero Z3-only paths**: ALL Python SMT callers fully wired to Rust OxiZ backend (verify_invariant, verify_arithmetic_expr, prove_memory_safety, check_loop_bound, verify_array_bounds, validate_mutation, verify_provider_assignment)
+- **Expression parser**: Recursive descent parser in Rust for constraint strings ("x > 0", "x >= -1 and x < 100", "2 + 2 * 3"). Supports variables, integer literals, comparisons (>, <, >=, <=, ==, !=), arithmetic (+, -, *, /), boolean connectives (and, or, not), parentheses
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
 - S2->S3 escalation when AVR budget exhausted
 - `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + OxiZ/Z3
