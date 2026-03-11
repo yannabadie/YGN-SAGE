@@ -14,6 +14,7 @@ use oxiz::{Solver, SolverResult, TermId, TermManager};
 use pyo3::prelude::*;
 use std::collections::HashMap;
 use std::time::Instant;
+use tracing::instrument;
 
 /// Helper: create solver+tm, assert formula, check UNSAT.
 fn is_unsat(build: impl FnOnce(&mut TermManager) -> TermId) -> bool {
@@ -418,6 +419,7 @@ impl SmtVerifier {
     /// Prove that 0 <= addr < limit (memory bounds check).
     ///
     /// Returns True if addr is provably within bounds.
+    #[instrument(skip(self))]
     pub fn prove_memory_safety(&self, addr: i64, limit: i64) -> bool {
         is_unsat(|tm| {
             let a = tm.mk_int(addr);
@@ -432,6 +434,7 @@ impl SmtVerifier {
     /// Check if a symbolic loop variable is provably bounded below hard_cap.
     ///
     /// For an unconstrained variable, correctly returns False.
+    #[instrument(skip(self))]
     pub fn check_loop_bound(&self, _var_name: &str, hard_cap: i64) -> bool {
         is_unsat(|tm| {
             let iters = tm.mk_var("iters", tm.sorts.int_sort);
@@ -441,6 +444,7 @@ impl SmtVerifier {
     }
 
     /// Verify that actual value is within [expected-tol, expected+tol].
+    #[instrument(skip(self))]
     pub fn verify_arithmetic(&self, actual: i64, expected: i64, tolerance: i64) -> bool {
         is_unsat(|tm| {
             let a = tm.mk_int(actual);
@@ -457,6 +461,7 @@ impl SmtVerifier {
     /// Parses expressions like "2 + 2", "10 * 3 + 1", "100 - 50".
     /// For constant expressions, proves the result equals expected ± tolerance.
     /// Returns false (fail-closed) on parse errors or symbolic expressions.
+    #[instrument(skip(self))]
     pub fn verify_arithmetic_expr(&self, expr: &str, expected: i64, tolerance: i64) -> bool {
         let parsed = match Parser::new(expr).parse_all() {
             Ok(e) => e,
@@ -490,6 +495,7 @@ impl SmtVerifier {
     /// Uses `mk_implies`: asserts ¬(pre → post) and checks UNSAT.
     ///
     /// Fails closed (returns False) on parse errors — no eval(), no injection.
+    #[instrument(skip(self))]
     pub fn verify_invariant(&self, pre: &str, post: &str) -> bool {
         let pre_expr = match Parser::new(pre).parse_all() {
             Ok(e) => e,
@@ -522,6 +528,7 @@ impl SmtVerifier {
     }
 
     /// Verify array access bounds for a batch of (index, length) pairs.
+    #[instrument(skip(self))]
     pub fn verify_array_bounds(&self, accesses: Vec<(i64, i64)>) -> SmtVerificationResult {
         let start = Instant::now();
         let mut violations = Vec::new();
@@ -545,6 +552,7 @@ impl SmtVerifier {
     /// Validate a batch of constraint strings.
     ///
     /// Supports: "bounds(addr, limit)", "loop(var, cap)"
+    #[instrument(skip(self))]
     pub fn validate_mutation(&self, constraints: Vec<String>) -> SmtVerificationResult {
         let start = Instant::now();
         let mut violations = Vec::new();
@@ -604,6 +612,7 @@ impl SmtVerifier {
     ///
     /// nodes: list of (node_id, required_capabilities)
     /// providers: list of (provider_name, provided_capabilities, exclusion_pairs)
+    #[instrument(skip(self))]
     #[pyo3(signature = (nodes, providers))]
     pub fn verify_provider_assignment(
         &self,
