@@ -18,6 +18,7 @@ use std::time::Instant;
 /// Helper: create solver+tm, assert formula, check UNSAT.
 fn is_unsat(build: impl FnOnce(&mut TermManager) -> TermId) -> bool {
     let mut solver = Solver::new();
+    solver.set_logic("QF_LIA");
     let mut tm = TermManager::new();
     let formula = build(&mut tm);
     solver.assert(formula, &mut tm);
@@ -462,6 +463,7 @@ impl SmtVerifier {
             Err(()) => return false,
         };
         let mut solver = Solver::new();
+        solver.set_logic("QF_LIA");
         let mut tm = TermManager::new();
         let mut vars = HashMap::new();
         let term = match expr_to_term(&parsed, &mut tm, &mut vars) {
@@ -499,6 +501,7 @@ impl SmtVerifier {
         };
 
         let mut solver = Solver::new();
+        solver.set_logic("QF_LIA");
         let mut tm = TermManager::new();
         let mut vars = HashMap::new();
 
@@ -623,6 +626,7 @@ impl SmtVerifier {
         }
 
         let mut solver = Solver::new();
+        solver.set_logic("QF_LIA");
         let mut tm = TermManager::new();
 
         for (nid, required) in &nodes {
@@ -805,8 +809,8 @@ mod tests {
         assert!(v.verify_invariant("x > 0", "x > -1"));
         // x > 0 → x >= 0 (true: x > 0 means x >= 1)
         assert!(v.verify_invariant("x > 0", "x >= 0"));
-        // x > 5 → x > 3 (true)
-        assert!(v.verify_invariant("x > 5", "x > 3"));
+        // x > 0 → x >= 1 (true in integers: branch-and-bound, requires set_logic QF_LIA)
+        assert!(v.verify_invariant("x > 0", "x >= 1"));
     }
 
     #[test]
