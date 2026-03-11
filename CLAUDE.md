@@ -98,7 +98,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
 - `topology/engine.rs` - DynamicTopologyEngine: 5-path generate strategy (S-MMU → archive → LLM → mutation → template fallback). Evolution loop via MAP-Elites.
 - `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult.
-- `z3/` - Z3 formal verification bindings
+- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA). Memory safety, loop bounds, arithmetic, provider assignment (exactly-one encoding). Behind `smt` feature flag. Python callers (z3_validator, z3_verify, kg_rlvr) auto-use Rust with z3-solver fallback.
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
@@ -143,7 +143,8 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --features onnx     # Run all Rust tests (341 passing: 141 lib + 200 integration)
+cargo test --features onnx     # Run all Rust tests (341 passing: 141 lib + 200 integration, +10 with smt)
+cargo test --features smt      # Run SMT verification tests (10 tests for OxiZ verifier)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
@@ -293,11 +294,13 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **Self-modification**: Actions 2/3/4 modify engine hyperparameters (mutations_per_generation, clip_epsilon, filter_threshold)
 - **SnapBPF**: Rust CoW memory snapshots for mutation rollback
 
-## Z3 Formal Verification (S3)
+## SMT Formal Verification (S3)
+- **Backend**: Rust OxiZ (sage_core.SmtVerifier, `smt` feature) preferred; Python z3-solver as fallback
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
 - S2->S3 escalation when AVR budget exhausted
-- `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + Z3
-- `z3_verify.py`: 3 of 4 checks are Python-native (capability_coverage, budget_feasibility, type_compatibility — ~2000x faster). Only `verify_provider_assignment()` uses Z3 SAT with `z3.PbEq` exactly-one constraint (was at-least-one via `z3.Or`)
+- `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + OxiZ/Z3
+- `z3_verify.py`: 3 of 4 checks are Python-native. `verify_provider_assignment()` uses Rust OxiZ SAT (exactly-one encoding) or Z3 `PbEq` fallback
+- `z3_validator.py`: Z3Validator auto-delegates to Rust SmtVerifier (sub-0.1ms) with z3-solver fallback
 
 ## Resilience
 - **CircuitBreaker** (`resilience.py`): per-subsystem failure tracking (max_failures=3)
@@ -351,7 +354,7 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
 - 7 LLM providers: Google, OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi, Codex CLI — auto-discovered at boot, cascade fallback (FrugalGPT)
 - FastAPI + WebSocket + EventBus (dashboard)
-- Z3 Solver 4.16 (formal verification, S3)
+- OxiZ 0.1 (pure Rust SMT solver, S3 formal verification) + Z3 Solver 4.16 (fallback)
 - aiosqlite (episodic + semantic memory persistence)
 - Apache Arrow / PyArrow (zero-copy memory compaction)
 - Wasm (wasmtime v36 LTS, Component Model, WASI p2 deny-by-default) + Docker (multi-tier sandboxing)
