@@ -162,6 +162,9 @@ class SemanticMemory:
             return
         conn = sqlite3.connect(self.db_path)
         try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS entities (name TEXT PRIMARY KEY)"
             )
