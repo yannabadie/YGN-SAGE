@@ -527,6 +527,82 @@ impl SmtVerifier {
         solver.check(&mut tm) == SolverResult::Unsat
     }
 
+    /// Verify a pre/post-condition pair and return diagnostic feedback.
+    ///
+    /// If the implication holds, returns `safe: true`.
+    /// If it fails, diagnoses which clause of `post` is the culprit:
+    /// - Splits `post` on `" and "` and tests each clause independently
+    /// - Collects failing clauses into `violations`
+    #[instrument(skip(self))]
+    pub fn verify_invariant_with_feedback(&self, pre: &str, post: &str) -> SmtVerificationResult {
+        let start = Instant::now();
+
+        // Fast path: if the full implication holds, return success
+        if self.verify_invariant(pre, post) {
+            return SmtVerificationResult {
+                safe: true,
+                violations: vec![],
+                proof_time_ms: start.elapsed().as_secs_f64() * 1000.0,
+            };
+        }
+
+        // Diagnose which clauses fail
+        let mut violations = Vec::new();
+
+        // Split post on " and " to get individual clauses
+        let clauses: Vec<&str> = post.split(" and ").collect();
+        if clauses.len() > 1 {
+            for clause in &clauses {
+                let clause = clause.trim();
+                if !self.verify_invariant(pre, clause) {
+                    violations.push(format!("Failed clause: {}", clause));
+                }
+            }
+        } else {
+            // Single clause — the whole implication fails
+            violations.push(format!("Implication {} → {} does not hold", pre, post));
+        }
+
+        SmtVerificationResult {
+            safe: false,
+            violations,
+            proof_time_ms: start.elapsed().as_secs_f64() * 1000.0,
+        }
+    }
+
+    /// Synthesize a valid invariant from candidate postconditions.
+    ///
+    /// Tries each candidate in order. If none work, attempts weakening
+    /// the last candidate by replacing `" > "` with `" >= "` and
+    /// `" == "` with `" >= "`. Returns `None` if no valid invariant found.
+    #[instrument(skip(self))]
+    pub fn synthesize_invariant(
+        &self,
+        pre: &str,
+        post_candidates: Vec<String>,
+        max_rounds: u32,
+    ) -> Option<String> {
+        let limit = (max_rounds as usize).min(post_candidates.len());
+        let mut last_candidate: Option<&str> = None;
+
+        for candidate in post_candidates.iter().take(limit) {
+            if self.verify_invariant(pre, candidate) {
+                return Some(candidate.clone());
+            }
+            last_candidate = Some(candidate.as_str());
+        }
+
+        // Try weakening the last candidate
+        if let Some(last) = last_candidate {
+            let weakened = last.replace(" > ", " >= ").replace(" == ", " >= ");
+            if weakened != last && self.verify_invariant(pre, &weakened) {
+                return Some(weakened);
+            }
+        }
+
+        None
+    }
+
     /// Verify array access bounds for a batch of (index, length) pairs.
     #[instrument(skip(self))]
     pub fn verify_array_bounds(&self, accesses: Vec<(i64, i64)>) -> SmtVerificationResult {
@@ -1014,5 +1090,67 @@ mod tests {
     fn test_parser_rejects_trailing_garbage() {
         let mut p = Parser::new("x > 0 ; drop");
         assert!(p.parse_all().is_err());
+    }
+
+    // ── Invariant feedback ──────────────────────────────────────────
+
+    #[test]
+    fn test_invariant_feedback_success() {
+        let v = SmtVerifier::new();
+        let r = v.verify_invariant_with_feedback("x > 5", "x > 3");
+        assert!(r.safe);
+        assert!(r.violations.is_empty());
+    }
+
+    #[test]
+    fn test_invariant_feedback_failure_single_clause() {
+        let v = SmtVerifier::new();
+        let r = v.verify_invariant_with_feedback("x > 0", "x > 10");
+        assert!(!r.safe);
+        assert!(!r.violations.is_empty());
+    }
+
+    #[test]
+    fn test_invariant_feedback_compound_diagnosis() {
+        let v = SmtVerifier::new();
+        // x > 0 → (x > -1 and x > 10): first clause passes, second fails
+        let r = v.verify_invariant_with_feedback("x > 0", "x > -1 and x > 10");
+        assert!(!r.safe);
+        // Should identify "x > 10" as the failing clause
+        assert!(r.violations.iter().any(|v| v.contains("x > 10")));
+    }
+
+    // ── Invariant synthesis ─────────────────────────────────────────
+
+    #[test]
+    fn test_synthesize_finds_valid() {
+        let v = SmtVerifier::new();
+        let result = v.synthesize_invariant(
+            "x > 5",
+            vec!["x > 100".into(), "x > 10".into(), "x > 3".into()],
+            5,
+        );
+        assert_eq!(result, Some("x > 3".to_string()));
+    }
+
+    #[test]
+    fn test_synthesize_weakens() {
+        let v = SmtVerifier::new();
+        // x > 0 → x > 0 works directly
+        let result = v.synthesize_invariant("x > 0", vec!["x > 0".into()], 5);
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_synthesize_returns_none() {
+        let v = SmtVerifier::new();
+        let result = v.synthesize_invariant(
+            "x > 0",
+            vec!["x > 100".into(), "x > 50".into()],
+            2,
+        );
+        // These are too strong and weakening to >= won't help
+        // x > 0 → x >= 50 is still false
+        assert!(result.is_none());
     }
 }

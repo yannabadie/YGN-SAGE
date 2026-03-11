@@ -614,13 +614,21 @@ class AgentLoop:
                     self._avr_error_history.clear()
                     self._emit(LoopPhase.THINK, escalation="s2_to_s3",
                                reason="AVR budget exhausted")
+                    escalation_msg = (
+                        "SYSTEM: Escalating to formal verification. Use <think> tags "
+                        "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
+                        "assert invariant) for rigorous step-by-step reasoning."
+                    )
+                    # Append invariant feedback from last verification if available
+                    inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
+                    if inv_feedback:
+                        escalation_msg += (
+                            "\n\nPrevious invariant verification failures:\n"
+                            + "\n".join(f"- {f}" for f in inv_feedback)
+                        )
                     messages.append(Message(
                         role=Role.USER,
-                        content=(
-                            "SYSTEM: Escalating to formal verification. Use <think> tags "
-                            "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
-                            "assert invariant) for rigorous step-by-step reasoning."
-                        ),
+                        content=escalation_msg,
                     ))
                     continue
 

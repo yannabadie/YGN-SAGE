@@ -76,6 +76,7 @@ class FormalKnowledgeGraph:
         if _RUST_SMT_AVAILABLE:
             self._rust = _RustSmtVerifier()
         self.has_z3 = self._rust is not None or z3 is not None
+        self._last_invariant_feedback: list[str] = []
         if not self.has_z3:
             logging.error(
                 "No SMT backend (sage_core[smt] or z3-solver). "
@@ -143,15 +144,21 @@ class FormalKnowledgeGraph:
         """Verify a pre/post-condition pair (pre → post for all free vars).
 
         Rust OxiZ: parses string expressions ("x > 0", "x >= -1 and x < 100").
+        When Rust backend available, uses verify_invariant_with_feedback() for
+        diagnostic clause-level feedback stored in _last_invariant_feedback.
         Fallback: Python z3-solver via restricted AST evaluator.
         Fails closed on error.
         """
         if not self.has_z3:
+            self._last_invariant_feedback = []
             return False
-        # Rust OxiZ handles expression parsing natively
+        # Rust OxiZ: use feedback variant for clause-level diagnostics
         if self._rust:
-            return self._rust.verify_invariant(pre, post)
-        # Fallback: Python z3-solver
+            r = self._rust.verify_invariant_with_feedback(pre, post)
+            self._last_invariant_feedback = list(r.violations)
+            return r.safe
+        # Fallback: Python z3-solver (no clause-level feedback)
+        self._last_invariant_feedback = []
         if not z3:
             return False
         solver = z3.Solver()
