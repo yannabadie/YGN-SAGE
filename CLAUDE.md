@@ -98,7 +98,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
 - `topology/engine.rs` - DynamicTopologyEngine: 5-path generate strategy (S-MMU → archive → LLM → mutation → template fallback). Evolution loop via MAP-Elites.
 - `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult.
-- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 8 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. Behind `smt` feature flag. ALL Python callers (z3_validator, z3_verify, kg_rlvr) fully wired to Rust — zero Z3-only code paths remain.
+- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA with `set_logic("QF_LIA")` for branch-and-bound integer solving). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one boolean encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 8 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. Behind `smt` feature flag. ALL Python callers (z3_validator, z3_verify, kg_rlvr) fully wired to Rust — zero Z3-only code paths remain.
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
@@ -297,6 +297,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 ## SMT Formal Verification (S3)
 - **Backend**: Rust OxiZ (sage_core.SmtVerifier, `smt` feature) preferred; Python z3-solver as fallback
 - **Zero Z3-only paths**: ALL Python SMT callers fully wired to Rust OxiZ backend (verify_invariant, verify_arithmetic_expr, prove_memory_safety, check_loop_bound, verify_array_bounds, validate_mutation, verify_provider_assignment)
+- **QF_LIA integer sort**: `solver.set_logic("QF_LIA")` enables OxiZ 0.1.3 branch-and-bound for proper integer domain reasoning (e.g. x > 0 → x >= 1)
 - **Expression parser**: Recursive descent parser in Rust for constraint strings ("x > 0", "x >= -1 and x < 100", "2 + 2 * 3"). Supports variables, integer literals, comparisons (>, <, >=, <=, ==, !=), arithmetic (+, -, *, /), boolean connectives (and, or, not), parentheses
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
 - S2->S3 escalation when AVR budget exhausted
