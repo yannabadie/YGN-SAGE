@@ -26,6 +26,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1048576
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.83
+code = 0.81
+reasoning = 0.92
+tool_use = 0.85
+formal = 0.64
+creative = 0.71
+factual = 0.34
 
 [[models]]
 id = "gemini-3.1-flash-lite-preview"
@@ -48,6 +57,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1048576
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.70
+code = 0.65
+reasoning = 0.78
+tool_use = 0.70
+formal = 0.55
+creative = 0.64
+factual = 0.77
 
 [[models]]
 id = "gemini-3-flash-preview"
@@ -70,6 +88,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1048576
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.77
+code = 0.72
+reasoning = 0.85
+tool_use = 0.80
+formal = 0.59
+creative = 0.68
+factual = 0.53
 
 [[models]]
 id = "gemini-2.5-flash"
@@ -92,6 +119,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1048576
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.65
+code = 0.60
+reasoning = 0.72
+tool_use = 0.70
+formal = 0.50
+creative = 0.61
+factual = 0.79
 
 # --- OpenAI models ---
 
@@ -116,6 +152,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = true
 context_window = 1100000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.85
+code = 0.86
+reasoning = 0.95
+tool_use = 0.92
+formal = 0.66
+creative = 0.73
+factual = 0.35
 
 [[models]]
 id = "gpt-5.4-pro"
@@ -138,6 +183,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = true
 context_window = 1100000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.87
+code = 0.90
+reasoning = 0.97
+tool_use = 0.93
+formal = 0.68
+creative = 0.74
+factual = 0.32
 
 [[models]]
 id = "gpt-5.2"
@@ -160,6 +214,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1000000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.84
+code = 0.80
+reasoning = 0.93
+tool_use = 0.88
+formal = 0.65
+creative = 0.72
+factual = 0.34
 
 [[models]]
 id = "gpt-5-mini"
@@ -182,6 +245,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1000000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.63
+code = 0.60
+reasoning = 0.70
+tool_use = 0.65
+formal = 0.49
+creative = 0.60
+factual = 0.51
 
 [[models]]
 id = "gpt-5-nano"
@@ -204,6 +276,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 128000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.45
+code = 0.45
+reasoning = 0.50
+tool_use = 0.40
+formal = 0.35
+creative = 0.50
+factual = 0.70
 
 [[models]]
 id = "gpt-5.3-codex"
@@ -226,6 +307,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1000000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.84
+code = 0.85
+reasoning = 0.93
+tool_use = 0.90
+formal = 0.65
+creative = 0.72
+factual = 0.34
 
 # --- xAI models ---
 
@@ -250,6 +340,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 131072
+safety_rating = 0.75
+[models.domain_scores]
+math = 0.74
+code = 0.75
+reasoning = 0.82
+tool_use = 0.80
+formal = 0.57
+creative = 0.66
+factual = 0.52
 
 [[models]]
 id = "grok-code-fast-1"
@@ -272,6 +371,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 131072
+safety_rating = 0.75
+[models.domain_scores]
+math = 0.63
+code = 0.78
+reasoning = 0.70
+tool_use = 0.75
+formal = 0.49
+creative = 0.60
+factual = 0.51
 
 [[models]]
 id = "grok-3"
@@ -294,6 +402,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 131072
+safety_rating = 0.75
+[models.domain_scores]
+math = 0.72
+code = 0.70
+reasoning = 0.80
+tool_use = 0.75
+formal = 0.56
+creative = 0.65
+factual = 0.30
 
 # --- DeepSeek models ---
 
@@ -318,6 +435,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 65536
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.68
+code = 0.72
+reasoning = 0.75
+tool_use = 0.70
+formal = 0.52
+creative = 0.63
+factual = 0.53
 
 [[models]]
 id = "deepseek-reasoner"
@@ -340,6 +466,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 65536
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.81
+code = 0.75
+reasoning = 0.90
+tool_use = 0.70
+formal = 0.63
+creative = 0.70
+factual = 0.54
 
 # --- MiniMax models ---
 
@@ -364,6 +499,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 1000000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.77
+code = 0.80
+reasoning = 0.85
+tool_use = 0.80
+formal = 0.59
+creative = 0.68
+factual = 0.53
 
 [[models]]
 id = "MiniMax-M2.5-highspeed"
@@ -386,6 +530,15 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 200000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.77
+code = 0.80
+reasoning = 0.85
+tool_use = 0.80
+formal = 0.59
+creative = 0.68
+factual = 0.56
 
 # --- Kimi models ---
 
@@ -410,3 +563,12 @@ supports_tools = true
 supports_json_mode = true
 supports_vision = false
 context_window = 128000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.79
+code = 0.78
+reasoning = 0.88
+tool_use = 0.80
+formal = 0.62
+creative = 0.69
+factual = 0.32

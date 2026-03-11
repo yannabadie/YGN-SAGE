@@ -7,6 +7,7 @@
 //! 4. Budget constraint — downgrade to cheapest available if over budget
 
 use pyo3::prelude::*;
+use std::collections::{HashMap, VecDeque};
 use tracing::{info, info_span};
 
 use super::bandit::ContextualBandit;
@@ -62,12 +63,16 @@ pub struct RoutingConstraints {
     /// Exploration budget: 0.0 = pure exploit, 1.0 = pure explore.
     #[pyo3(get, set)]
     pub exploration_budget: f32,
+    /// Optional domain hint for domain-aware model selection (e.g. "math", "code").
+    /// Empty string = no hint (default scoring).
+    #[pyo3(get, set)]
+    pub domain_hint: String,
 }
 
 #[pymethods]
 impl RoutingConstraints {
     #[new]
-    #[pyo3(signature = (max_cost_usd=0.0, max_latency_ms=0.0, min_quality=0.0, required_capabilities=vec![], security_label=String::new(), exploration_budget=0.0))]
+    #[pyo3(signature = (max_cost_usd=0.0, max_latency_ms=0.0, min_quality=0.0, required_capabilities=vec![], security_label=String::new(), exploration_budget=0.0, domain_hint=String::new()))]
     pub fn new(
         max_cost_usd: f32,
         max_latency_ms: f32,
@@ -75,6 +80,7 @@ impl RoutingConstraints {
         required_capabilities: Vec<String>,
         security_label: String,
         exploration_budget: f32,
+        domain_hint: String,
     ) -> Self {
         Self {
             max_cost_usd,
@@ -83,18 +89,20 @@ impl RoutingConstraints {
             required_capabilities,
             security_label,
             exploration_budget,
+            domain_hint,
         }
     }
 
     fn __repr__(&self) -> String {
         format!(
-            "RoutingConstraints(max_cost={:.4}, max_latency={:.0}ms, min_quality={:.2}, caps={:?}, security='{}', explore={:.2})",
+            "RoutingConstraints(max_cost={:.4}, max_latency={:.0}ms, min_quality={:.2}, caps={:?}, security='{}', explore={:.2}, domain='{}')",
             self.max_cost_usd,
             self.max_latency_ms,
             self.min_quality,
             self.required_capabilities,
             self.security_label,
             self.exploration_budget,
+            self.domain_hint,
         )
     }
 }
@@ -141,6 +149,10 @@ impl RoutingDecision {
 pub struct SystemRouter {
     registry: ModelRegistry,
     bandit: Option<ContextualBandit>,
+    /// Recent decision_id → model_id mapping for record_outcome telemetry.
+    /// Bounded to last 1000 decisions.
+    decision_models: HashMap<String, String>,
+    decision_order: VecDeque<String>,
 }
 
 #[pymethods]
@@ -150,6 +162,8 @@ impl SystemRouter {
         Self {
             registry,
             bandit: None,
+            decision_models: HashMap::new(),
+            decision_order: VecDeque::new(),
         }
     }
 
@@ -353,6 +367,15 @@ impl SystemRouter {
             candidates = self.registry.all_models();
         }
 
+        // Step 2.5: Domain hint — reorder candidates by domain preference
+        if !constraints.domain_hint.is_empty() {
+            candidates.sort_by(|a, b| {
+                let sa = a.domain_score(&constraints.domain_hint);
+                let sb = b.domain_score(&constraints.domain_hint);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
         // Step 3: Model selection — bandit or budget-constrained
         let (model_id, estimated_cost, decision_id) = if let Some(ref mut bandit) = self.bandit {
             match bandit.choose(constraints.exploration_budget) {
@@ -406,6 +429,15 @@ impl SystemRouter {
             topology_id: topology_id.to_string(),
         };
 
+        // Store decision → model mapping for record_outcome telemetry
+        if self.decision_models.len() >= 1000 {
+            if let Some(old_id) = self.decision_order.pop_front() {
+                self.decision_models.remove(&old_id);
+            }
+        }
+        self.decision_models.insert(decision.decision_id.clone(), decision.model_id.clone());
+        self.decision_order.push_back(decision.decision_id.clone());
+
         info!(
             system = %decision.system,
             model = %decision.model_id,
@@ -418,7 +450,7 @@ impl SystemRouter {
         Ok(decision)
     }
 
-    /// Record outcome: forwards to bandit (if available) and records telemetry.
+    /// Record outcome: forwards to bandit (if available) and updates registry telemetry.
     pub fn record_outcome(
         &mut self,
         decision_id: &str,
@@ -442,15 +474,12 @@ impl SystemRouter {
             }
         }
 
-        // Always record telemetry — we need the model_id but don't have it here
-        // from the decision. We log with the decision_id for traceability.
-        // The caller should also call registry.record_telemetry() with the model_id.
-        info!(
-            decision_id = decision_id,
-            quality = quality,
-            cost = cost,
-            "outcome_recorded"
-        );
+        // Record telemetry on registry using stored decision→model mapping
+        if let Some(model_id) = self.decision_models.get(decision_id).cloned() {
+            self.registry.record_telemetry_full(&model_id, quality, cost, latency_ms);
+        } else {
+            info!(decision_id = decision_id, "no_model_mapping_for_telemetry");
+        }
 
         Ok(())
     }
@@ -664,7 +693,7 @@ mod tests {
     fn route_constrained_has_empty_topology_id() {
         let registry = test_registry();
         let router = SystemRouter::new(registry);
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router.route_constrained("Write a function", &constraints);
         assert!(decision.topology_id.is_empty());
     }
@@ -673,7 +702,7 @@ mod tests {
     fn route_integrated_without_bandit() {
         let registry = test_registry();
         let mut router = SystemRouter::new(registry);
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("hello world", &constraints, "topo-123")
             .unwrap();
@@ -691,7 +720,7 @@ mod tests {
         bandit.add_arm("smart-model", "avr");
         router.bandit = Some(bandit);
 
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("explain quantum computing", &constraints, "topo-456")
             .unwrap();
@@ -722,7 +751,7 @@ mod tests {
         router.bandit = Some(bandit);
 
         // Make a decision first via bandit
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("hello", &constraints, "t1")
             .unwrap();
@@ -740,5 +769,93 @@ mod tests {
 
         router.bandit = Some(ContextualBandit::create(0.995, 0.1));
         assert!(router.__repr__().contains("bandit=true"));
+    }
+
+    #[test]
+    fn route_integrated_uses_domain_hint() {
+        let toml_str = r#"
+            [[models]]
+            id = "math-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.5
+            cost_input_per_m = 1.0
+            cost_output_per_m = 2.0
+            latency_ttft_ms = 500.0
+            tokens_per_sec = 100.0
+            s1_affinity = 0.5
+            s2_affinity = 0.5
+            s3_affinity = 0.9
+            recommended_topologies = []
+            supports_tools = true
+            supports_json_mode = false
+            supports_vision = false
+            context_window = 128000
+            safety_rating = 0.8
+            [models.domain_scores]
+            math = 0.94
+
+            [[models]]
+            id = "general-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.5
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.9
+            s2_affinity = 0.5
+            s3_affinity = 0.2
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = false
+            supports_vision = false
+            context_window = 128000
+        "#;
+        let reg = ModelRegistry::from_toml_str(toml_str).unwrap();
+        let mut router = SystemRouter::new(reg);
+
+        // With math domain hint — should prefer math-model
+        let math_hint = RoutingConstraints::new(
+            0.0, 0.0, 0.0, vec![], String::new(), 0.0, "math".to_string(),
+        );
+        let d = router
+            .route_integrated("solve this equation", &math_hint, "")
+            .unwrap();
+        assert_eq!(d.model_id, "math-model");
+    }
+
+    #[test]
+    fn record_outcome_updates_registry_telemetry() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router
+            .route_integrated("test task", &constraints, "")
+            .unwrap();
+        let decision_id = decision.decision_id.clone();
+        let model_id = decision.model_id.clone();
+
+        router.record_outcome(&decision_id, 0.9, 0.05, 150.0).unwrap();
+
+        let p95 = router.registry.observed_latency_p95(&model_id);
+        assert!((p95 - 150.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn domain_hint_repr_included() {
+        let c = RoutingConstraints::new(
+            0.0, 0.0, 0.0, vec![], String::new(), 0.0, "code".to_string(),
+        );
+        assert!(c.__repr__().contains("domain='code'"));
     }
 }

@@ -6,7 +6,12 @@
 
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
+
+fn default_safety() -> f32 {
+    0.5
+}
 
 // ── CognitiveSystem ─────────────────────────────────────────────────────────
 
@@ -132,6 +137,18 @@ pub struct ModelCard {
     /// Maximum context window size (tokens).
     #[pyo3(get)]
     pub context_window: u32,
+
+    // ── Domain-specific scores (0.0–1.0) ──────────────────────────────
+    /// Per-domain benchmark scores (e.g. "math" → 0.94, "code" → 0.87).
+    /// Parsed from TOML `[models.domain_scores]` sub-table.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub domain_scores: HashMap<String, f32>,
+
+    /// Safety rating (0.0–1.0). Higher = safer output, fewer refusals.
+    #[pyo3(get)]
+    #[serde(default = "default_safety")]
+    pub safety_rating: f32,
 }
 
 #[pymethods]
@@ -165,6 +182,11 @@ impl ModelCard {
         (input_tokens as f32 * self.cost_input_per_m
             + output_tokens as f32 * self.cost_output_per_m)
             / 1_000_000.0
+    }
+
+    /// Get domain-specific score. Returns 0.5 (neutral) if domain unknown.
+    pub fn domain_score(&self, domain: &str) -> f32 {
+        self.domain_scores.get(domain).copied().unwrap_or(0.5)
     }
 
     fn __repr__(&self) -> String {
@@ -226,6 +248,8 @@ mod tests {
             supports_json_mode: false,
             supports_vision: false,
             context_window: 128000,
+            domain_scores: HashMap::new(),
+            safety_rating: 0.5,
         }
     }
 
@@ -385,5 +409,61 @@ mod tests {
         assert!(repr.contains("0.30"));
         assert!(repr.contains("0.80"));
         assert!(repr.contains("0.50"));
+    }
+
+    #[test]
+    fn domain_scores_default_empty() {
+        let card = make_test_card(0.5, 0.5, 0.5);
+        assert!(card.domain_scores.is_empty());
+        assert!((card.safety_rating - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn domain_score_for_known_domain() {
+        let mut card = make_test_card(0.5, 0.5, 0.5);
+        card.domain_scores.insert("math".to_string(), 0.94);
+        card.domain_scores.insert("code".to_string(), 0.87);
+        assert!((card.domain_score("math") - 0.94).abs() < 0.001);
+        assert!((card.domain_score("code") - 0.87).abs() < 0.001);
+        assert!((card.domain_score("unknown") - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_toml_with_domain_scores() {
+        let toml_str = r#"
+            [[models]]
+            id = "test-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.85
+            reasoning_score = 0.80
+            tool_use_score = 0.90
+            math_score = 0.75
+            formal_z3_strength = 0.60
+            cost_input_per_m = 0.075
+            cost_output_per_m = 0.30
+            latency_ttft_ms = 200.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.70
+            s2_affinity = 0.85
+            s3_affinity = 0.40
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 1048576
+            safety_rating = 0.85
+
+            [models.domain_scores]
+            math = 0.94
+            code = 0.87
+            reasoning = 0.80
+        "#;
+        let cards = ModelCard::parse_toml(toml_str).unwrap();
+        assert_eq!(cards.len(), 1);
+        assert!((cards[0].safety_rating - 0.85).abs() < 0.001);
+        assert!((cards[0].domain_score("math") - 0.94).abs() < 0.001);
+        assert!((cards[0].domain_score("code") - 0.87).abs() < 0.001);
+        assert!((cards[0].domain_score("reasoning") - 0.80).abs() < 0.001);
     }
 }
