@@ -216,7 +216,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -253,6 +253,27 @@ def main() -> None:
 
     if args.type == "ablation":
         asyncio.run(_run_ablation(args.output, args.limit))
+
+    if args.type == "routing_gt":
+        from sage.bench.routing_ground_truth import run_routing_gt
+        from sage.strategy.metacognition import ComplexityRouter
+        router = ComplexityRouter()
+        result = run_routing_gt(router, verbose=True)
+        print(f"\nRouting GT Accuracy: {result.accuracy:.1%} ({result.correct}/{result.total})")
+        print(f"Elapsed: {result.elapsed_ms:.0f}ms")
+        for sys, stats in sorted(result.per_system.items()):
+            acc = stats["correct"] / stats["total"] if stats["total"] > 0 else 0
+            print(f"  S{sys}: {acc:.0%} ({stats['correct']}/{stats['total']})")
+        if result.misroutes:
+            print(f"\nMisroutes ({len(result.misroutes)}):")
+            for m in result.misroutes:
+                print(f"  [{m['id']}] expected=S{m['expected']} got=S{m['actual']}: {m['task']}")
+
+    if args.type == "memory_ablation":
+        print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
+
+    if args.type == "evolution_ablation":
+        print("Evolution Ablation requires full boot. Run: python -m sage.bench.evolution_ablation")
 
 
 if __name__ == "__main__":

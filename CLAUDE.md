@@ -85,9 +85,9 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
 - `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
 - `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support. Rust-native shadow trace collection (JSONL), `retrain_thresholds()` logistic regression on feedback, `flush_shadow_traces(path)` PyO3 method.
-- `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + TOML parsing. PyO3 classes.
-- `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection. PyO3 class.
-- `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → affinity). PyO3 class with RoutingDecision + RoutingConstraints.
+- `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
+- `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection, telemetry calibration (quality + latency P95 via VecDeque ring buffer), `select_best_for_domain(domain, budget)` for domain-aware model selection. PyO3 class.
+- `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → domain hint → bandit/budget selection). `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`).
 - `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature.
 - `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval.
 - `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
@@ -113,6 +113,12 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - Task queue: `asyncio.Queue(maxsize=10)` replaces single-task slot. New `/api/tasks` endpoint for queue status.
 - Sections: Routing S1/S2/S3, Response, Memory 4-tier, Guardrails, Events, Benchmarks
 
+### Protocols (MCP + A2A)
+- `protocols/__init__.py` - Feature detection (HAS_MCP, HAS_A2A)
+- `protocols/mcp_server.py` - MCP server: ToolRegistry → MCP tools, `run_task` meta-tool, EventBus resource
+- `protocols/a2a_server.py` - A2A agent: AgentLoop → AgentExecutor, AgentCard with 3 skills (general, code, research). Uses a2a-sdk >= 1.0
+- `protocols/serve.py` - Unified CLI: `python -m sage.protocols.serve --mcp --a2a`
+
 ## Development Commands
 
 ### Python SDK
@@ -135,6 +141,11 @@ python -m sage.bench --type evalplus --dataset mbpp               # MBPP+ (378 p
 # Ablation study (proves each pillar's value vs bare LLM)
 python -m sage.bench --type ablation --limit 20                   # 6 configs x 20 tasks
 
+# Evidence collection benchmarks (non-circular ground truth)
+python -m sage.bench --type routing_gt                              # Non-circular routing ground truth (50 human-labeled tasks)
+python -m sage.bench --type memory_ablation                         # Memory tier ablation (4 configs)
+python -m sage.bench --type evolution_ablation                      # Evolution search ablation (3 configs)
+
 # Legacy benchmarks
 python -m sage.bench --type routing                    # Routing accuracy (instant, no API key)
 python -m sage.bench --type humaneval --limit 20       # Original HumanEval (custom tests)
@@ -148,6 +159,14 @@ python -m sage.bench.eval_protocol --replay docs/benchmarks/errors.jsonl  # Post
 ### Dashboard
 ```bash
 python ui/app.py                # Start dashboard on http://localhost:8000
+```
+
+### Protocol Servers
+```bash
+pip install ygn-sage[protocols]                           # Install MCP + A2A deps
+python -m sage.protocols.serve --mcp --mcp-port 8001     # MCP server
+python -m sage.protocols.serve --a2a --a2a-port 8002     # A2A agent
+python -m sage.protocols.serve --mcp --a2a               # Both
 ```
 
 ### Rust Core
@@ -278,7 +297,10 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **EvalPlus MBPP+** (official): 378 Python problems with 35x more tests. CLI: `python -m sage.bench --type evalplus --dataset mbpp`
 - **Ablation Study**: 6-config framework value proof (full, baseline, no-memory, no-avr, no-routing, no-guardrails). Quantifies each pillar's contribution vs bare LLM. CLI: `python -m sage.bench --type ablation --limit 20`
 - **HumanEval** (legacy): 164 problems bundled as JSON. pass@1 with subprocess sandbox. CLI: `python -m sage.bench --type humaneval`
-- **Routing Accuracy**: 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures ComplexityRouter precision.
+- **Routing Ground Truth**: 50 human-labeled tasks (10 S1 + 20 S2 + 20 S3). Non-circular: labels by domain expertise, NOT reverse-engineered from heuristic. CLI: `python -m sage.bench --type routing_gt`
+- **Memory Ablation**: 4-config measurement (none, tier0, tier01, full). Proves memory tier value. CLI: `python -m sage.bench --type memory_ablation`
+- **Evolution Ablation**: 3-config measurement (none, random, full). Proves evolutionary search value. CLI: `python -m sage.bench --type evolution_ablation`
+- **Routing Accuracy** (legacy): 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures ComplexityRouter precision.
 - **Routing Quality**: 45 labeled tasks. Measures both ComplexityRouter and AdaptiveRouter against human-labeled ground truth.
 - **Downstream Quality**: DownstreamEvaluator tracks tier precision, escalation rate (<20% target), routing P50/P99 latency (<50ms target).
 - **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
