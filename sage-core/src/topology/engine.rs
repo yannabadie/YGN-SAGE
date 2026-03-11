@@ -20,6 +20,7 @@ use tracing::{debug, info, info_span, warn};
 use crate::memory::smmu::MultiViewMMU;
 use crate::routing::bandit::ContextualBandit;
 
+use super::cma_me::CmaEmitter;
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mutations::{apply_random_mutation, MutationResult};
@@ -80,6 +81,8 @@ pub struct TopologyEngine {
     verifier: HybridVerifier,
     synthesizer: TopologySynthesizer,
     bandit: ContextualBandit,
+    /// CMA-ME emitter for continuous parameter optimisation (cost, time, edge weight).
+    cma_emitter: CmaEmitter,
     /// All known topologies by ULID id, for lazy-load from RoutingDecision.
     topology_cache: HashMap<String, TopologyGraph>,
 }
@@ -93,6 +96,7 @@ impl TopologyEngine {
             verifier: HybridVerifier::new(),
             synthesizer: TopologySynthesizer::new(),
             bandit: ContextualBandit::create(0.995, 0.1),
+            cma_emitter: CmaEmitter::new(3, 0.3),
             topology_cache: HashMap::new(),
         }
     }
@@ -553,12 +557,86 @@ impl TopologyEngine {
             }
         }
 
+        // ── CMA-ME continuous parameter refinement ──────────────────────────
+        // After structural mutations, use the CMA emitter to optimise continuous
+        // parameters (max_cost_usd, max_wall_time_s, edge_weight) on the archive
+        // elites. Sample parameter vectors, apply them to copies of the best
+        // topologies, score by parent quality, and feed back to the emitter.
+
+        let cma_entries = self.archive.all_entries();
+        if !cma_entries.is_empty() {
+            let cma_n = pop_size.max(4); // at least 4 samples for CMA
+            let cma_samples = self.cma_emitter.ask(cma_n);
+
+            let mut cma_graphs: Vec<TopologyGraph> = Vec::new();
+            let mut cma_fitnesses: Vec<f64> = Vec::new();
+
+            for (i, params) in cma_samples.iter().enumerate() {
+                // Pick a base entry (round-robin across archive entries)
+                let (_, base_entry) = &cma_entries[i % cma_entries.len()];
+                let mut graph = base_entry.graph.clone();
+
+                // Apply CMA-sampled continuous params to the first node
+                let inner = graph.inner_graph_mut();
+                if let Some(first_node) = inner.node_weight_mut(petgraph::graph::NodeIndex::new(0))
+                {
+                    first_node.max_cost_usd = params[0] as f32;
+                    first_node.max_wall_time_s = params[1] as f32;
+                }
+
+                // Apply edge weight to the first edge
+                if let Some(first_edge) =
+                    inner.edge_weights_mut().next()
+                {
+                    first_edge.weight = params[2] as f32;
+                }
+
+                // Fitness: base quality scaled by parameter reasonableness
+                // (penalise extreme costs and times)
+                let cost_penalty = if params[0] > 5.0 { 0.8 } else { 1.0 };
+                let time_penalty = if params[1] > 5.0 { 0.9 } else { 1.0 };
+                let fitness = base_entry.quality as f64 * cost_penalty * time_penalty;
+
+                cma_fitnesses.push(fitness);
+                cma_graphs.push(graph);
+            }
+
+            // Feed fitness back to CMA emitter
+            self.cma_emitter.tell(&cma_samples, &cma_fitnesses);
+
+            // Try to insert CMA-refined graphs into archive
+            for (graph, &fitness) in cma_graphs.into_iter().zip(cma_fitnesses.iter()) {
+                let vr = self.verifier.verify(&graph);
+                if vr.valid {
+                    let first_node = graph.inner_graph().node_weight(
+                        petgraph::graph::NodeIndex::new(0),
+                    );
+                    let est_cost = first_node.map(|n| n.max_cost_usd).unwrap_or(0.05);
+                    let descriptor = BehaviorDescriptor::from_topology(&graph, est_cost);
+                    self.archive.insert(
+                        &descriptor,
+                        graph,
+                        fitness as f32,
+                        est_cost,
+                        0.0, // latency unknown for CMA-refined
+                    );
+                }
+            }
+
+            debug!(
+                cma_generation = self.cma_emitter.generation,
+                cma_samples = cma_n,
+                "cma_me_refinement_complete"
+            );
+        }
+
         info!(
             generations = generations,
             pop_size = pop_size,
             total_mutations = total_mutations,
             total_successes = total_successes,
             archive_cells = self.archive.cell_count(),
+            cma_generation = self.cma_emitter.generation,
             "evolution_complete"
         );
     }
@@ -672,5 +750,30 @@ mod tests {
 
         let result = engine.generate(&smmu, "test task", None, 1, 0.0);
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+    }
+
+    #[test]
+    fn test_evolve_uses_cma_emitter() {
+        let mut engine = TopologyEngine::new();
+
+        // Seed the archive with a valid topology so evolve() has something to work with.
+        let graph = templates::sequential("gemini-2.5-flash");
+        engine.cache_topology(graph.clone());
+
+        let desc = super::super::map_elites::BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);
+        engine.archive.insert(&desc, graph, 0.8, 0.05, 100.0);
+
+        // CMA generation should be 0 before evolve.
+        assert_eq!(engine.cma_emitter.generation, 0);
+
+        // Run one generation of evolution.
+        engine.evolve(4, 1);
+
+        // CMA emitter should have been called (generation incremented).
+        assert!(
+            engine.cma_emitter.generation >= 1,
+            "CMA emitter generation should be >= 1 after evolve, got {}",
+            engine.cma_emitter.generation
+        );
     }
 }

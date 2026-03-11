@@ -3,6 +3,7 @@
 //! Wraps `petgraph::DiGraph` with typed nodes (roles, capabilities, budgets)
 //! and three-flow edges (Control, Message, State).
 
+pub mod cma_me;
 pub mod engine;
 pub mod executor;
 pub mod llm_synthesis;
