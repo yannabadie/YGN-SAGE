@@ -42,7 +42,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
 - `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
-- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback
+- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback. verify_invariant uses Rust verify_invariant_with_feedback() for clause-level diagnostic feedback stored in _last_invariant_feedback
 - `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
@@ -70,7 +70,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
 - `contracts/cost_tracker.py` - CostTracker: cumulative per-node cost accounting with budget cap
 - `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
-- `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. Phase 5 gate: <5% divergence on 1000+ traces
+- `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. 2-tier Phase 5 gate: soft (500 traces, <10% divergence), hard (1000 traces, <5% divergence)
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
@@ -82,7 +82,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
 - `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
-- `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support.
+- `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support. Rust-native shadow trace collection (JSONL), `retrain_thresholds()` logistic regression on feedback, `flush_shadow_traces(path)` PyO3 method.
 - `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + TOML parsing. PyO3 classes.
 - `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection. PyO3 class.
 - `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → affinity). PyO3 class with RoutingDecision + RoutingConstraints.
@@ -90,15 +90,19 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval.
 - `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
 - `topology/templates.rs` - 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). PyTemplateStore PyO3 class.
-- `topology/verifier.rs` - HybridVerifier: 6 structural + 4 semantic checks, all O(V+E). PyO3 class.
+- `topology/verifier.rs` - HybridVerifier: 6 structural + 4 semantic checks + LTL integration (safety→errors, liveness→warnings), all O(V+E). PyO3 class.
 - `topology/smmu_bridge.rs` - TopologySmmuBridge: stores topology outcomes in S-MMU, retrieves similar topologies, injects bandit priors.
 - `topology/map_elites.rs` - MapElitesArchive: quality-diversity archive with 4-dim BehaviorDescriptor (108 cells), Pareto dominance. SQLite persistence behind `cognitive` feature.
+- `topology/cma_me.rs` - CmaEmitter: CMA-ME (Covariance Matrix Adaptation MAP-Elites) for directional search on continuous topology parameters. Diagonal covariance, elite-weighted mean/variance update. Integrated into DynamicTopologyEngine.evolve() (50% random / 50% CMA-sampled mutations).
 - `topology/mutations.rs` - 7 mutation operators (add_node, remove_node, swap_model, rewire_edge, split_node, merge_nodes, mutate_prompt). Validation via HybridVerifier.
 - `topology/llm_synthesis.rs` - TopologySynthesizer: 3-stage LLM pipeline (Role Assignment → Structure Design → Validation). Rate-limited.
 - `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
-- `topology/engine.rs` - DynamicTopologyEngine: 5-path generate strategy (S-MMU → archive → LLM → mutation → template fallback). Evolution loop via MAP-Elites.
-- `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult.
-- `verification/mod.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA with `set_logic("QF_LIA")` for branch-and-bound integer solving). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one boolean encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 8 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. Behind `smt` feature flag. ALL Python callers (z3_validator, z3_verify, kg_rlvr) fully wired to Rust — zero Z3-only code paths remain.
+- `topology/mcts.rs` - MctsSearcher: Monte Carlo Tree Search for topology space exploration. UCB1 selection, random mutation expansion, HybridVerifier-based rollout heuristic. Budget: 50 simulations or 100ms. 6th path in DynamicTopologyEngine.generate().
+- `topology/engine.rs` - DynamicTopologyEngine: 6-path generate strategy (S-MMU → archive → LLM → mutation → MCTS → template fallback). Evolution loop via MAP-Elites + CMA-ME refinement.
+- `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult (with opaque topology_id for lazy-load).
+- `verification/mod.rs` - Module hub: re-exports `smt` (behind `smt` feature) and `ltl` (always compiled).
+- `verification/smt.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA with `set_logic("QF_LIA")` for branch-and-bound integer solving). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one boolean encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 10 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_invariant_with_feedback, synthesize_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. `#[instrument]` tracing on all public methods. Behind `smt` feature flag. ALL Python callers fully wired to Rust — zero Z3-only code paths remain.
+- `verification/ltl.rs` - LtlVerifier: temporal property verification on TopologyGraph via petgraph. 4 checks: check_reachability (BFS), check_safety (no HIGH→LOW paths), check_liveness (all entries reach exits), check_bounded_liveness (depth ≤ K). LtlResult PyO3 class. Wired into HybridVerifier (safety→errors, liveness→warnings). Always compiled (no feature flag).
 
 ### Dashboard (ui/)
 - `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
@@ -113,7 +117,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1075 passed, 95 skipped)
+python -m pytest tests/ -v     # Run tests (1149 passed, 102 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -143,8 +147,8 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --features onnx     # Run all Rust tests (341 passing: 141 lib + 200 integration, +10 with smt)
-cargo test --features smt      # Run SMT verification tests (10 tests for OxiZ verifier)
+cargo test --features onnx     # Run all Rust tests (432 passing, +25 with smt)
+cargo test --features smt      # Run SMT verification tests (25 tests for OxiZ verifier + CEGAR)
 cargo clippy                   # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
@@ -299,8 +303,10 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **Zero Z3-only paths**: ALL Python SMT callers fully wired to Rust OxiZ backend (verify_invariant, verify_arithmetic_expr, prove_memory_safety, check_loop_bound, verify_array_bounds, validate_mutation, verify_provider_assignment)
 - **QF_LIA integer sort**: `solver.set_logic("QF_LIA")` enables OxiZ 0.1.3 branch-and-bound for proper integer domain reasoning (e.g. x > 0 → x >= 1)
 - **Expression parser**: Recursive descent parser in Rust for constraint strings ("x > 0", "x >= -1 and x < 100", "2 + 2 * 3"). Supports variables, integer literals, comparisons (>, <, >=, <=, ==, !=), arithmetic (+, -, *, /), boolean connectives (and, or, not), parentheses
+- **CEGAR invariant synthesis**: `synthesize_invariant(pre, post_candidates, max_rounds)` iteratively weakens/strengthens post-conditions over max 5 rounds. `verify_invariant_with_feedback()` returns clause-level diagnostic violations. Python `kg_rlvr.py` wires feedback into S3 escalation prompt via `_last_invariant_feedback`
+- **LTL model checking**: `LtlVerifier` checks temporal properties on TopologyGraph — reachability (BFS), safety (no HIGH→LOW paths), liveness (all entries reach exits), bounded liveness (depth ≤ K). Wired into HybridVerifier
 - S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
-- S2->S3 escalation when AVR budget exhausted
+- S2->S3 escalation when AVR budget exhausted (now includes clause-level invariant feedback)
 - `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + OxiZ/Z3
 - `z3_verify.py`: 3 of 4 checks are Python-native. `verify_provider_assignment()` uses Rust OxiZ SAT (exactly-one encoding) or Z3 `PbEq` fallback
 - `z3_validator.py`: Z3Validator auto-delegates to Rust SmtVerifier (sub-0.1ms) with z3-solver fallback

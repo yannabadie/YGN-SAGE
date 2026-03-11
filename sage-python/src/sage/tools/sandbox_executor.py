@@ -27,6 +27,19 @@ BLOCKED_IMPORTS: frozenset[str] = frozenset({
 
 BLOCKED_CALLS: frozenset[str] = frozenset({
     "exec", "eval", "compile", "__import__", "breakpoint", "open",
+    # Parity with Rust validator (Audit3 F-01, F-11):
+    "getattr", "setattr", "delattr", "globals", "locals",
+    # Indirect bypass vectors (chr builds strings, type/vars/dir introspect):
+    "vars", "dir", "chr", "type", "hasattr",
+})
+
+# Dangerous dunder attributes — blocks __class__.__mro__.__subclasses__ chains
+BLOCKED_DUNDERS: frozenset[str] = frozenset({
+    "__class__", "__bases__", "__mro__", "__subclasses__",
+    "__globals__", "__builtins__", "__import__", "__init__",
+    "__dict__", "__getattr__", "__setattr__", "__delattr__",
+    "__code__", "__func__", "__self__", "__module__",
+    "__qualname__", "__wrapped__", "__loader__", "__spec__",
 })
 
 
@@ -88,6 +101,14 @@ def validate_tool_code(code: str) -> list[str]:
                     f"(line {node.lineno})"
                 )
 
+        # ── dunder attribute access (Audit3 F-01) ─────────
+        elif isinstance(node, ast.Attribute):
+            if node.attr in BLOCKED_DUNDERS:
+                errors.append(
+                    f"Blocked dunder access: '{node.attr}' "
+                    f"(line {node.lineno})"
+                )
+
     return errors
 
 
@@ -107,6 +128,12 @@ def _extract_call_name(node: ast.Call) -> str | None:
 
 
 # ── Subprocess execution ────────────────────────────────────────
+# SECURITY NOTE (Audit3 F-02):
+# The subprocess fallback provides TIMEOUT isolation only.
+# No OS-level isolation: no seccomp, no namespaces, no cgroups.
+# For production use, compile sage_core with sandbox+tool-executor features
+# to get Wasm WASI deny-by-default isolation.
+# See: CLAUDE.md "Sandbox & Tool Security" section.
 
 _WRAPPER_TEMPLATE = """\
 import json, sys

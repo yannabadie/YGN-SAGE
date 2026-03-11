@@ -20,6 +20,17 @@ const BLOCKED_MODULES: &[&str] = &[
 const BLOCKED_CALLS: &[&str] = &[
     "exec", "eval", "compile", "__import__", "breakpoint",
     "open", "getattr", "setattr", "delattr", "globals", "locals",
+    // Indirect bypass vectors (Audit3 F-01):
+    "vars", "dir", "chr", "type", "hasattr",
+];
+
+/// Blocked dunder attributes — kills __class__.__mro__.__subclasses__ chains.
+const BLOCKED_DUNDERS: &[&str] = &[
+    "__class__", "__bases__", "__mro__", "__subclasses__",
+    "__globals__", "__builtins__", "__import__", "__init__",
+    "__dict__", "__getattr__", "__setattr__", "__delattr__",
+    "__code__", "__func__", "__self__", "__module__",
+    "__qualname__", "__wrapped__", "__loader__", "__spec__",
 ];
 
 /// S-expression queries for tree-sitter-python.
@@ -31,6 +42,11 @@ const IMPORT_QUERY: &str = r#"
 const CALL_QUERY: &str = r#"
 (call function: (identifier) @fn)
 (call function: (attribute attribute: (identifier) @method))
+"#;
+
+/// Query to find all attribute access (obj.attr) patterns.
+const ATTR_QUERY: &str = r#"
+(attribute attribute: (identifier) @attr)
 "#;
 
 /// Validation result returned to Python.
@@ -112,6 +128,24 @@ pub fn validate_python_code(code: &str) -> ValidationResult {
         }
     }
 
+    // 4. Check dunder attribute access (Audit3 F-01: __class__.__mro__.__subclasses__ chains)
+    if let Ok(query) = Query::new(&language.into(), ATTR_QUERY) {
+        let mut cursor = QueryCursor::new();
+        let mut matches = cursor.matches(&query, root, source);
+        while let Some(m) = matches.next() {
+            for capture in m.captures {
+                let text = capture.node.utf8_text(source).unwrap_or("");
+                if BLOCKED_DUNDERS.contains(&text) {
+                    errors.push(format!(
+                        "Blocked dunder access: '{}' — not allowed (line {})",
+                        text,
+                        capture.node.start_position().row + 1,
+                    ));
+                }
+            }
+        }
+    }
+
     ValidationResult {
         valid: errors.is_empty(),
         errors,
@@ -182,6 +216,79 @@ mod tests {
         let r = validate_python_code(
             "import json\nimport math\nimport re\nimport collections\nimport itertools"
         );
+        assert!(r.valid, "errors: {:?}", r.errors);
+    }
+
+    // ── Dunder bypass regression tests (Audit3 F-01) ────────
+
+    #[test]
+    fn test_blocks_dunder_class() {
+        let r = validate_python_code("x = ().__class__");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__class__")));
+    }
+
+    #[test]
+    fn test_blocks_dunder_mro() {
+        let r = validate_python_code("x = ().__class__.__mro__");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__mro__")));
+    }
+
+    #[test]
+    fn test_blocks_dunder_subclasses() {
+        let r = validate_python_code("x = object.__subclasses__()");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__subclasses__")));
+    }
+
+    #[test]
+    fn test_blocks_dunder_globals() {
+        let r = validate_python_code("x = func.__globals__");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__globals__")));
+    }
+
+    #[test]
+    fn test_blocks_dunder_builtins() {
+        let r = validate_python_code("x = obj.__builtins__");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__builtins__")));
+    }
+
+    #[test]
+    fn test_blocks_dunder_dict() {
+        let r = validate_python_code("x = cls.__dict__");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("__dict__")));
+    }
+
+    #[test]
+    fn test_blocks_full_exploit_chain() {
+        let code = "subs = ().__class__.__mro__[-1].__subclasses__()\nfor s in subs:\n    x = s.__init__.__globals__";
+        let r = validate_python_code(code);
+        assert!(!r.valid);
+        assert!(r.errors.len() >= 3, "Expected 3+ errors, got {:?}", r.errors);
+    }
+
+    #[test]
+    fn test_blocks_vars_dir_chr_type() {
+        let r = validate_python_code("vars()\ndir()\nchr(65)\ntype(x)");
+        assert!(!r.valid);
+        assert!(r.errors.len() >= 4, "Expected 4+ blocked calls, got {:?}", r.errors);
+    }
+
+    #[test]
+    fn test_blocks_hasattr() {
+        let r = validate_python_code("hasattr(obj, 'x')");
+        assert!(!r.valid);
+        assert!(r.errors.iter().any(|e| e.contains("hasattr")));
+    }
+
+    #[test]
+    fn test_safe_attribute_access_allowed() {
+        // Normal attribute access like obj.name should be fine
+        let r = validate_python_code("x = obj.name\ny = obj.value");
         assert!(r.valid, "errors: {:?}", r.errors);
     }
 }

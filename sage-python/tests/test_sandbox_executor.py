@@ -89,6 +89,91 @@ class TestValidateToolCode:
         assert len(errors) > 0
 
 
+# ── Bypass regression tests (Audit3 F-01) ────────────────────────
+
+
+class TestSandboxBypassVectors:
+    """Regression tests for Audit3 F-01 bypass vectors."""
+
+    def test_getattr_blocked(self):
+        errs = validate_tool_code("getattr(object, '__subclasses__')")
+        assert any("getattr" in e for e in errs)
+
+    def test_setattr_blocked(self):
+        errs = validate_tool_code("setattr(obj, 'x', 1)")
+        assert any("setattr" in e for e in errs)
+
+    def test_delattr_blocked(self):
+        errs = validate_tool_code("delattr(obj, 'x')")
+        assert any("delattr" in e for e in errs)
+
+    def test_globals_blocked(self):
+        errs = validate_tool_code("globals()")
+        assert any("globals" in e for e in errs)
+
+    def test_locals_blocked(self):
+        errs = validate_tool_code("locals()")
+        assert any("locals" in e for e in errs)
+
+    def test_vars_blocked(self):
+        errs = validate_tool_code("vars()")
+        assert any("vars" in e for e in errs)
+
+    def test_dir_blocked(self):
+        errs = validate_tool_code("dir()")
+        assert any("dir" in e for e in errs)
+
+    def test_chr_blocked(self):
+        errs = validate_tool_code("chr(101)+chr(118)+chr(97)+chr(108)")
+        assert any("chr" in e for e in errs)
+
+    def test_type_blocked(self):
+        errs = validate_tool_code("type(compile)")
+        assert any("type" in e for e in errs)
+
+    def test_hasattr_blocked(self):
+        errs = validate_tool_code("hasattr(obj, 'x')")
+        assert any("hasattr" in e for e in errs)
+
+    def test_dunder_class_attribute(self):
+        errs = validate_tool_code("x = ().__class__")
+        assert any("__class__" in e for e in errs)
+
+    def test_dunder_mro_attribute(self):
+        errs = validate_tool_code("x = ().__class__.__mro__")
+        assert any("__mro__" in e for e in errs)
+
+    def test_dunder_subclasses(self):
+        errs = validate_tool_code(
+            "[x for x in ().__class__.__mro__[-1].__subclasses__()]"
+        )
+        assert len(errs) > 0
+
+    def test_dunder_globals_attr(self):
+        errs = validate_tool_code("s.__init__.__globals__")
+        assert any("__globals__" in e for e in errs)
+
+    def test_dunder_builtins_attr(self):
+        errs = validate_tool_code("s.__builtins__")
+        assert any("__builtins__" in e for e in errs)
+
+    def test_dunder_dict_attr(self):
+        errs = validate_tool_code("obj.__dict__")
+        assert any("__dict__" in e for e in errs)
+
+    def test_full_exploit_chain(self):
+        """Full exploit from Audit3 lines 72-78."""
+        code = (
+            "subs = ().__class__.__mro__[-1].__subclasses__()\n"
+            "for s in subs:\n"
+            "    if 'warning' in str(s).lower():\n"
+            "        import_func = s.__init__.__globals__.get('__builtins__', {})\n"
+            "        break\n"
+        )
+        errs = validate_tool_code(code)
+        assert len(errs) >= 3  # __class__, __mro__, __subclasses__, __init__, __globals__
+
+
 # ── Execution tests ──────────────────────────────────────────────
 
 
