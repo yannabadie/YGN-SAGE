@@ -7,6 +7,7 @@
 //! 2. Subprocess fallback (always available)
 
 use pyo3::prelude::*;
+use tracing::warn;
 use super::validator::{validate_python_code, ValidationResult};
 use super::subprocess::{execute_python_subprocess, ExecResult};
 
@@ -200,13 +201,23 @@ impl ToolExecutor {
     }
 
     /// Execute Python code without validation (for pre-validated code).
-    /// Use with caution — caller is responsible for validation.
+    ///
+    /// # Security Warning (Audit5 §6)
+    /// This method bypasses tree-sitter AST validation entirely.
+    /// Caller is responsible for ensuring code safety.
+    /// Every call is logged at WARN level for audit trail.
     pub fn execute_raw(
         &self,
         py: Python<'_>,
         code: &str,
         args_json: &str,
     ) -> ExecResult {
+        warn!(
+            code_len = code.len(),
+            has_wasm = self.has_wasm(),
+            "execute_raw called — bypassing AST validation"
+        );
+
         let python_exe = self.python_exe.clone();
         let code = code.to_string();
         let args = args_json.to_string();

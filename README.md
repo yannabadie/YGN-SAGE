@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1127%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1494%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -73,24 +73,28 @@ AgentLoop: perceive -> think -> act -> learn
 EventBus ---> Dashboard (WebSocket, real-time)
 ```
 
-## Benchmarks (March 9, 2026)
+## Benchmarks (March 10, 2026)
 
-| Benchmark | Result | Target | Status |
-|-----------|--------|--------|--------|
-| **HumanEval pass@1** (20 tasks) | **95%** (19/20) | >= 70% | EXCEEDED |
-| **Routing Quality** (30 ground-truth) | **100%** (30/30) | >= 80% | EXCEEDED |
-| **E2E Proof** (real LLM) | **18/20** | 25/25 | 2 expected fails (no Rust ext) |
-| **Unit Tests** (Python) | **1036 passed** | all green | PASS |
-| **Unit Tests** (Rust) | **7 passed** | all green | PASS |
+| Benchmark | Result | Notes |
+|-----------|--------|-------|
+| **EvalPlus HumanEval+** (164 tasks) | **84.1%** pass@1 (138/164) | Official 80x harder tests |
+| **EvalPlus MBPP+** (378 tasks) | **75.1%** pass@1 (284/378) | Official 35x harder tests |
+| **Routing Self-Consistency** (30 tasks) | **100%** (30/30) | Heuristic determinism check |
+| **Ablation: full vs baseline** | **+15pp** (100% vs 85%) | Paired, same model (20 tasks) |
+| **Unit Tests** (Python) | **1143 passed** | 102 skipped (optional features) |
+| **Unit Tests** (Rust) | **351 passed** | 141 lib + 200 integration + 10 smt |
+
+> **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, **YGN-SAGE 84.1%** (budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
 ```bash
 # Run benchmarks
-python -m sage.bench --type humaneval --limit 20    # HumanEval (requires GOOGLE_API_KEY)
-python -m sage.bench --type routing                  # Routing self-consistency (instant)
-python tests/e2e_proof.py                            # E2E proof (requires GOOGLE_API_KEY)
+python -m sage.bench --type evalplus --dataset humaneval   # EvalPlus HumanEval+ (requires GOOGLE_API_KEY)
+python -m sage.bench --type routing                        # Routing self-consistency (instant)
+python -m sage.bench --type ablation --limit 20            # Ablation study (6 configs)
+python tests/e2e_proof.py                                  # E2E proof (requires GOOGLE_API_KEY)
 ```
 
-Reports: `docs/benchmarks/2026-03-09-*.json`
+Reports: `docs/benchmarks/2026-03-10-*.json`
 
 ## Run Benchmarks
 
@@ -105,8 +109,8 @@ python -m sage.bench --type humaneval --limit 20
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 1036 passed, 91 skipped
-cd sage-core && cargo test --no-default-features # 7 passed (+ ONNX feature-gated)
+cd sage-python && python -m pytest tests/ -v    # 1143 passed, 102 skipped
+cd sage-core && cargo test --features onnx      # 351 tests (141 lib + 200 integration + 10 smt)
 cd sage-discover && python -m pytest tests/ -v   # 52 passed
 # Integration tests: sage-python/tests/integration/ (50 tests, no mocks)
 ```
@@ -191,9 +195,9 @@ pipeline = GuardrailPipeline([
 
 > **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
 
-- **HumanEval 95%** pass@1 (19/20) with real Gemini LLM — up from 75% pre-audit
-- **Routing 100%** accuracy on 30 ground-truth tasks (0% under-routing)
-- **1036 tests passed** (Python) + 7 Rust + 52 Discover + 50 integration tests (no mocks)
+- **EvalPlus HumanEval+ 84.1%** pass@1 (138/164) with budget Gemini 2.5 Flash — official 80x harder tests
+- **Routing 100%** self-consistency on 30 deterministic tasks (heuristic, not learned)
+- **1143 tests passed** (Python) + 351 Rust + 52 Discover + 50 integration tests (no mocks)
 - **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing (5-tier keyword analysis + formal/domain stacking)
@@ -201,7 +205,7 @@ pipeline = GuardrailPipeline([
 - **Embeddings**: RustEmbedder ONNX with auto-discovery, 3-tier fallback + hash fallback warning
 - **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds
 - **Sandbox**: Wasm (wasmtime v36 LTS) + WASI deny-by-default + Rust ToolExecutor (tree-sitter validator + subprocess with kill-on-drop), wired to S2 AVR path
-- **Benchmarks**: HumanEval 164 built-in, routing quality (30 ground-truth tasks), E2E proof script
+- **Benchmarks**: EvalPlus HumanEval+ (164), MBPP+ (378), ablation study, routing self-consistency (30 tasks), E2E proof
 - **Composition**: Sequential, Parallel, Loop, Handoff patterns
 - **Security**: thread-safe ModelRegistry, bounded messages (MAX_MESSAGES=40), EventBus timeout, OnceLock ORT resolution
 

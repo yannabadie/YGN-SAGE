@@ -5,6 +5,22 @@
 //! - kill_on_drop for clean process cleanup
 //! - No shell=True (uses Command directly)
 //! - GIL-safe (designed for use via py.allow_threads())
+//!
+//! # Security Limitations (Audit3 F-02)
+//!
+//! This executor provides **timeout isolation only**.
+//! There is NO OS-level sandboxing:
+//! - No seccomp filters (Linux)
+//! - No namespace isolation
+//! - No cgroup resource limits
+//! - No filesystem/network deny-by-default
+//!
+//! **Defense-in-depth**: AST validation (tree-sitter) runs BEFORE this executor
+//! via `ToolExecutor::validate_and_execute()`. The subprocess is a fallback for
+//! when Wasm WASI sandbox is unavailable.
+//!
+//! **Production recommendation**: Compile with `sandbox` feature for Wasm WASI
+//! deny-by-default isolation. For Linux deployments, consider nsjail wrapper.
 
 use pyo3::prelude::*;
 use std::time::{Duration, Instant};

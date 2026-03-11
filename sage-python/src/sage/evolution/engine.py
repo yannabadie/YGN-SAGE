@@ -2,6 +2,11 @@
 
 Combines population management, LLM mutation, and evaluation cascade
 into a complete evolutionary optimization cycle.
+
+# Evidence Status (Audit3 F-09, March 2026)
+# No quantitative evidence that evolution improves task outcomes yet.
+# Needed: N>=10 runs per config, Wilcoxon signed-rank test, Cohen's d,
+# convergence curves. See docs/superpowers/specs/2026-03-11-audit-verification-report.md
 """
 from __future__ import annotations
 
