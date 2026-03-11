@@ -186,6 +186,33 @@ class ShadowRouter:
         """Hard gate: 1000 traces, <5% divergence. Safe to delete Python router."""
         return self.total >= 1000 and self.divergence_rate() < 0.05
 
+    def load_existing_traces(self) -> None:
+        """Load trace counts from existing JSONL file for cross-session gate continuity."""
+        if not self._trace_path.exists():
+            return
+        try:
+            total = 0
+            mismatches = 0
+            with open(self._trace_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    total += 1
+                    try:
+                        record = json.loads(line)
+                        if not record.get("match", True):
+                            mismatches += 1
+                    except json.JSONDecodeError:
+                        continue
+            self.stats["total_comparisons"] = total
+            self.stats["system_mismatches"] = mismatches
+            _log.info(
+                "Shadow: loaded %d existing traces (%.1f%% divergence)",
+                total, self.divergence_rate() * 100,
+            )
+        except Exception as exc:
+            _log.warning("Shadow: failed to load existing traces (%s)", exc)
+
     def is_phase5_ready(self) -> bool:
         """Check if divergence is low enough to safely remove the Python router.
 

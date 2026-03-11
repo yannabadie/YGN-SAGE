@@ -430,6 +430,7 @@ def boot_agent_system(
 
     # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
     rust_router = None
+    rust_registry = None  # Hoisted for Phase 6 bandit warm-start
     if _HAS_RUST_ROUTER:
         try:
             _cards_toml = None
@@ -470,6 +471,30 @@ def boot_agent_system(
             "traces -> %s)", shadow_router._trace_path,
         )
 
+    # Phase 5 gate: load existing traces for cross-session continuity
+    if shadow_router._shadow_active:
+        shadow_router.load_existing_traces()
+        if shadow_router.is_phase5_hard_ready():
+            _log.info(
+                "Shadow Phase 5 HARD gate passed (%d traces, %.1f%% divergence) — "
+                "Python router can be safely removed",
+                shadow_router.stats.get("total_comparisons", 0),
+                shadow_router.divergence_rate() * 100,
+            )
+        elif shadow_router.is_phase5_soft_ready():
+            _log.info(
+                "Shadow Phase 5 SOFT gate passed (%d traces, %.1f%% divergence) — "
+                "Rust router preferred",
+                shadow_router.stats.get("total_comparisons", 0),
+                shadow_router.divergence_rate() * 100,
+            )
+        else:
+            _log.info(
+                "Shadow Phase 5: %d/1000 traces collected (divergence=%.1f%%)",
+                shadow_router.stats.get("total_comparisons", 0),
+                shadow_router.divergence_rate() * 100,
+            )
+
     # Phase 2: Topology templates + HybridVerifier (Rust)
     template_store = None
     verifier = None
@@ -497,6 +522,29 @@ def boot_agent_system(
                     _log.info("Boot: Bandit wired into SystemRouter for integrated routing")
                 except Exception as e:
                     _log.debug("Boot: Failed to wire bandit into router (%s)", e)
+            # Warm-start bandit arms from ModelCard affinities
+            if rust_registry and rust_bandit:
+                try:
+                    cards = rust_registry.all_models()
+                    templates = ["sequential", "avr", "parallel", "debate"]
+                    model_ids = [c.id for c in cards]
+                    # Build affinities in row-major: [model0_tmpl0, model0_tmpl1, ..., modelN_tmplT]
+                    affinities: list[float] = []
+                    for c in cards:
+                        for t in templates:
+                            if t in ("sequential", "avr"):
+                                affinities.append(c.s2_affinity)
+                            elif t in ("parallel", "debate"):
+                                affinities.append(c.s3_affinity)
+                            else:
+                                affinities.append(max(c.s1_affinity, c.s2_affinity, c.s3_affinity))
+                    rust_bandit.warm_start_from_affinities(model_ids, templates, affinities)
+                    _log.info(
+                        "Boot: Bandit warm-started with %d models x %d templates (%d arms)",
+                        len(model_ids), len(templates), len(model_ids) * len(templates),
+                    )
+                except Exception as e:
+                    _log.debug("Boot: Bandit warm-start failed (%s)", e)
             _log.info(
                 "Boot: Phase 6 active — TopologyEngine + ContextualBandit ready"
             )

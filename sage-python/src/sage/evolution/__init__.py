@@ -3,7 +3,6 @@ from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator, Mutation
 from sage.evolution.evaluator import Evaluator, EvalResult
 from sage.evolution.engine import EvolutionEngine
-from sage.evolution.ebpf_evaluator import EbpfEvaluator
 
 __all__ = [
     "Population",
@@ -13,5 +12,4 @@ __all__ = [
     "Evaluator",
     "EvalResult",
     "EvolutionEngine",
-    "EbpfEvaluator",
 ]

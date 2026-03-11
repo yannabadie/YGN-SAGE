@@ -42,12 +42,27 @@ if not _has_rust:
             self.timestamp_str = ""
             self.is_summary = False
 
+    _mock_logger = logging.getLogger("sage.memory.working")
+
     class _PyWorkingMemory:
+        _mock_warned: set[str] = set()
+
         def __init__(self, agent_id="", parent_id=None):
             self.agent_id = agent_id
             self.parent_id = parent_id
             self._events: list = []
             self._counter = 0
+
+        @classmethod
+        def _warn_once(cls, method: str) -> None:
+            """Log a warning the first time a mock S-MMU method is called."""
+            if method not in cls._mock_warned:
+                cls._mock_warned.add(method)
+                _mock_logger.warning(
+                    "%s(): sage_core not available — returning mock value. "
+                    "Install sage_core for real S-MMU support.",
+                    method,
+                )
 
         def add_event(self, t, c):
             self._counter += 1
@@ -67,15 +82,33 @@ if not _has_rust:
         def add_child_agent(self, cid): pass
         def child_agents(self): return []
         def compress_old_events(self, k, s): self._events = self._events[-k:]
-        def compact_to_arrow(self): return 0
-        def compact_to_arrow_with_meta(self, kw, emb=None, parent=None, summary=None): return 0
-        def retrieve_relevant_chunks(self, cid, hops, w=None): return []
-        def get_page_out_candidates(self, cid, hops, budget): return []
+
+        def compact_to_arrow(self):
+            self._warn_once("compact_to_arrow")
+            return 0
+
+        def compact_to_arrow_with_meta(self, kw, emb=None, parent=None, summary=None):
+            self._warn_once("compact_to_arrow_with_meta")
+            return 0
+
+        def retrieve_relevant_chunks(self, cid, hops, w=None):
+            self._warn_once("retrieve_relevant_chunks")
+            return []
+
+        def get_page_out_candidates(self, cid, hops, budget):
+            self._warn_once("get_page_out_candidates")
+            return []
+
         def smmu_chunk_count(self): return 0
+
         def get_chunk_summary(self, chunk_id: int) -> str:
             """Return summary text for a compacted chunk. Mock returns empty."""
+            self._warn_once("get_chunk_summary")
             return ""
-        def get_latest_arrow_chunk(self): return None
+
+        def get_latest_arrow_chunk(self):
+            self._warn_once("get_latest_arrow_chunk")
+            return None
 
     sage_core = _types.ModuleType("sage_core")
     sage_core.WorkingMemory = _PyWorkingMemory

@@ -1,23 +1,13 @@
-"""Memory Compressor: uses LLMs to summarize and persist memory to Graph/Vector DBs."""
+"""Memory Compressor: uses LLMs to summarize and persist memory."""
 from __future__ import annotations
 
 import logging
 import re
-from typing import Any, Protocol
-from datetime import datetime, timezone
 
 from sage.llm.base import LLMProvider, Message, Role
 from sage.memory.embedder import Embedder
 from sage.memory.working import WorkingMemory
 
-class GraphDatabase(Protocol):
-    """Protocol for graph DB interaction (e.g. Neo4j). Not yet wired."""
-    def create_node(self, label: str, properties: dict[str, Any]) -> str: ...
-    def create_relationship(self, from_id: str, to_id: str, rel_type: str) -> None: ...
-
-class VectorDatabase(Protocol):
-    """Protocol for vector DB interaction (e.g. Qdrant). Not yet wired."""
-    def upsert(self, collection: str, text: str, metadata: dict[str, Any]) -> str: ...
 
 class MemoryCompressor:
     """Agent that monitors working memory and performs compression & persistence."""
@@ -25,14 +15,10 @@ class MemoryCompressor:
     def __init__(
         self,
         llm: LLMProvider,
-        graph_db: GraphDatabase | None = None,
-        vector_db: VectorDatabase | None = None,
         compression_threshold: int = 20,
         keep_recent: int = 5,
     ):
         self.llm = llm
-        self.graph_db = graph_db
-        self.vector_db = vector_db
         self.compression_threshold = compression_threshold
         self.keep_recent = keep_recent
         self.logger = logging.getLogger(__name__)
@@ -118,32 +104,10 @@ DISCOVERIES:
             elif current_section == "discoveries" and line.strip().startswith("-"):
                 discoveries.append(line.strip().replace("-", "", 1).strip())
 
-        # 3. Persist to Graph & Vector DBs (GraphRAG Sync)
-        summary_node_id = None
-        if self.graph_db:
-            summary_node_id = self.graph_db.create_node("SummaryEvent", {
-                "agent_id": working_memory.agent_id,
-                "content": summary,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
-            
-            for discovery in discoveries:
-                disc_node_id = self.graph_db.create_node("Discovery", {
-                    "content": discovery,
-                    "agent_id": working_memory.agent_id
-                })
-                self.graph_db.create_relationship(summary_node_id, disc_node_id, "CONTAINS_DISCOVERY")
-                
-                if self.vector_db:
-                    self.vector_db.upsert("discoveries", discovery, {
-                        "agent_id": working_memory.agent_id,
-                        "graph_node_id": disc_node_id
-                    })
-
-        # 4. Update Working Memory — compress_old_events keeps N recent + prepends summary
+        # 3. Update Working Memory — compress_old_events keeps N recent + prepends summary
         working_memory.compress(self.keep_recent, summary or "No summary generated.")
 
-        # 5. Compact to Arrow + S-MMU (best-effort — failure must not break compression)
+        # 4. Compact to Arrow + S-MMU (best-effort — failure must not break compression)
         try:
             # Extract keywords: words > 3 chars from summary, max 10
             keywords = self._extract_keywords(summary) if summary else []
