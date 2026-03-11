@@ -24,7 +24,7 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --check
       - run: cargo clippy --no-default-features -- -D warnings
-      - run: cargo test --no-default-features
+      - run: cargo test --no-default-features --lib
       - name: Check ONNX feature compiles
         run: cargo check --features onnx
 
@@ -41,13 +41,16 @@ jobs:
           python-version: "3.12"
       - run: pip install maturin
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --features sandbox,cranelift
+      - name: Sandbox lib tests (cranelift JIT)
+        run: cargo test --features sandbox,cranelift --lib
       - name: SMT verification tests
-        run: cargo test --features smt
+        run: cargo test --features smt --lib
       - name: Tool executor tests (tree-sitter validator)
-        run: cargo test --features tool-executor -- sandbox::validator
+        run: cargo test --features tool-executor --lib -- sandbox::validator
       - name: ONNX compile check
         run: cargo check --features onnx
+      - name: Integration tests (with Python)
+        run: cargo test --features sandbox,cranelift --test '*'
 
   python-sage:
     name: Python SDK (sage-python)

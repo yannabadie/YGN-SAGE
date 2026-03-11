@@ -57,5 +57,8 @@ tool-executor = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:process-wrap"
 cognitive = ["dep:rusqlite"]
 smt = ["dep:oxiz"]
 
+[dev-dependencies]
+pyo3 = { version = "0.25", features = ["auto-initialize"] }
+
 [lints]
 workspace = true
