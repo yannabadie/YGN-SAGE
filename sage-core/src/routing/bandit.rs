@@ -243,6 +243,7 @@ impl BanditDecision {
 /// cost/latency. Early selections are effectively random due to high
 /// posterior variance, providing natural exploration.
 #[pyclass]
+#[derive(Clone)]
 pub struct ContextualBandit {
     arms: HashMap<ArmKey, ArmPosterior>,
     decay_factor: f64,
@@ -481,6 +482,61 @@ impl ContextualBandit {
         self.arms.insert(key, arm);
     }
 
+    /// Set the temporal decay factor, clamped to [0.9, 1.0].
+    pub fn set_decay(&mut self, factor: f64) {
+        self.decay_factor = factor.clamp(0.9, 1.0);
+        info!(decay = self.decay_factor, "bandit_decay_updated");
+    }
+
+    /// Warm-start the bandit from model affinity scores.
+    ///
+    /// Registers one arm per (model_id, template) pair and sets the quality
+    /// prior proportional to the affinity score: higher affinity → higher alpha.
+    /// `affinities` must have length `model_ids.len() * templates.len()`,
+    /// laid out in row-major order (model-major): `affinities[i * T + j]`
+    /// corresponds to `(model_ids[i], templates[j])`.
+    pub fn warm_start(&mut self, model_ids: &[String], templates: &[String], affinities: &[f32]) {
+        let n_models = model_ids.len();
+        let n_templates = templates.len();
+        let expected = n_models * n_templates;
+
+        if affinities.len() != expected {
+            info!(
+                expected = expected,
+                got = affinities.len(),
+                "warm_start: affinity length mismatch, skipping"
+            );
+            return;
+        }
+
+        for (i, model_id) in model_ids.iter().enumerate() {
+            for (j, template) in templates.iter().enumerate() {
+                let affinity = affinities[i * n_templates + j] as f64;
+                let key = ArmKey {
+                    model_id: model_id.clone(),
+                    template: template.clone(),
+                };
+                let arm = self
+                    .arms
+                    .entry(key.clone())
+                    .or_insert_with(|| ArmPosterior::new(key));
+                // Set quality prior: Beta(1 + 2*affinity, 1 + 2*(1-affinity))
+                // affinity=1.0 → Beta(3, 1) mean=0.75 (strong prior)
+                // affinity=0.5 → Beta(2, 2) mean=0.50 (neutral)
+                // affinity=0.0 → Beta(1, 3) mean=0.25 (weak prior)
+                arm.quality.alpha = 1.0 + 2.0 * affinity;
+                arm.quality.beta = 1.0 + 2.0 * (1.0 - affinity);
+            }
+        }
+
+        info!(
+            arms = self.arms.len(),
+            models = n_models,
+            templates = n_templates,
+            "bandit_warm_started"
+        );
+    }
+
     /// Format the bandit state as a string.
     pub fn repr(&self) -> String {
         format!(
@@ -544,6 +600,23 @@ impl ContextualBandit {
     #[pyo3(name = "arm_summaries")]
     pub fn py_arm_summaries(&self) -> Vec<(String, String, f32, f32, f32, u32)> {
         self.arm_summaries()
+    }
+
+    /// Set the temporal decay factor, clamped to [0.9, 1.0].
+    #[pyo3(name = "set_decay_factor")]
+    pub fn py_set_decay_factor(&mut self, factor: f64) {
+        self.set_decay(factor);
+    }
+
+    /// Warm-start the bandit from model affinity scores.
+    #[pyo3(name = "warm_start_from_affinities")]
+    pub fn py_warm_start_from_affinities(
+        &mut self,
+        model_ids: Vec<String>,
+        templates: Vec<String>,
+        affinities: Vec<f32>,
+    ) {
+        self.warm_start(&model_ids, &templates, &affinities);
     }
 
     /// Save bandit state to SQLite (requires `cognitive` feature).
@@ -642,5 +715,84 @@ mod tests {
         assert_eq!(arm.observation_count, 1);
         arm.update(0.9, 0.02, 150.0, 0.995);
         assert_eq!(arm.observation_count, 2);
+    }
+
+    #[test]
+    fn set_decay_clamps_low() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.set_decay(0.5); // below 0.9
+        assert!((bandit.decay_factor() - 0.9).abs() < 1e-10);
+    }
+
+    #[test]
+    fn set_decay_clamps_high() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.set_decay(1.5); // above 1.0
+        assert!((bandit.decay_factor() - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn set_decay_accepts_valid_value() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.set_decay(0.97);
+        assert!((bandit.decay_factor() - 0.97).abs() < 1e-10);
+    }
+
+    #[test]
+    fn warm_start_creates_arms() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        let models = vec!["model-a".to_string(), "model-b".to_string()];
+        let templates = vec!["seq".to_string(), "avr".to_string()];
+        // 2 models x 2 templates = 4 affinities
+        let affinities = vec![0.9, 0.3, 0.5, 0.8];
+        bandit.warm_start(&models, &templates, &affinities);
+        assert_eq!(bandit.arm_count(), 4);
+    }
+
+    #[test]
+    fn warm_start_sets_quality_prior() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        let models = vec!["model-a".to_string()];
+        let templates = vec!["seq".to_string()];
+        let affinities = vec![1.0]; // max affinity
+        bandit.warm_start(&models, &templates, &affinities);
+
+        let key = ArmKey {
+            model_id: "model-a".into(),
+            template: "seq".into(),
+        };
+        let arm = &bandit.arms_map()[&key];
+        // affinity=1.0 → Beta(3, 1), mean=0.75
+        assert!((arm.quality.alpha - 3.0).abs() < 1e-10);
+        assert!((arm.quality.beta - 1.0).abs() < 1e-10);
+        assert!((arm.quality.mean() - 0.75).abs() < 1e-10);
+    }
+
+    #[test]
+    fn warm_start_skips_on_length_mismatch() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        let models = vec!["model-a".to_string()];
+        let templates = vec!["seq".to_string()];
+        let affinities = vec![0.5, 0.6]; // wrong length: expected 1, got 2
+        bandit.warm_start(&models, &templates, &affinities);
+        assert_eq!(bandit.arm_count(), 0); // no arms created
+    }
+
+    #[test]
+    fn warm_start_neutral_affinity() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        let models = vec!["m".to_string()];
+        let templates = vec!["t".to_string()];
+        let affinities = vec![0.5]; // neutral
+        bandit.warm_start(&models, &templates, &affinities);
+
+        let key = ArmKey {
+            model_id: "m".into(),
+            template: "t".into(),
+        };
+        let arm = &bandit.arms_map()[&key];
+        // affinity=0.5 → Beta(2, 2), mean=0.5
+        assert!((arm.quality.alpha - 2.0).abs() < 1e-10);
+        assert!((arm.quality.beta - 2.0).abs() < 1e-10);
     }
 }

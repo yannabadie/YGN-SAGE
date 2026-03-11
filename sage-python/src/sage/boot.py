@@ -97,6 +97,7 @@ class AgentSystem:
         Mock mode: direct AgentLoop (no orchestrator).
         """
         _run_start = time.perf_counter()
+        self._last_decision = None  # Routing decision for telemetry feedback
 
         # 1. Route task to cognitive system
         budget = 10.0  # Default budget (USD)
@@ -148,6 +149,8 @@ class AgentSystem:
                     profile.complexity, decision.system,
                 )
 
+        self._last_decision = decision  # Store for telemetry in _record_topology_outcome
+
         # 2. Topology generation (Rust engine, 5-path strategy)
         topology_result = None
         if self.topology_engine:
@@ -161,6 +164,7 @@ class AgentSystem:
                 )
                 # Cache topology for later outcome recording
                 self.topology_engine.cache_topology(topology_result.topology)
+                self.agent_loop._current_topology = topology_result.topology
                 _log.info(
                     "Topology generated: source=%s, confidence=%.2f, template=%s",
                     topology_result.source,
@@ -206,6 +210,37 @@ class AgentSystem:
                 ))
             except Exception as e:
                 _log.warning("Topology generation failed (%s), continuing without", e)
+                self.agent_loop._current_topology = None
+        else:
+            self.agent_loop._current_topology = None
+
+        # Integrated routing: use route_integrated when bandit is wired into router
+        if (self.rust_router and hasattr(self.rust_router, 'route_integrated')
+                and self.bandit):
+            try:
+                from sage_core import RoutingConstraints  # noqa: E402
+                constraints = RoutingConstraints(
+                    max_cost_usd=budget,
+                    exploration_budget=0.3 if system_num <= 2 else 0.5,
+                )
+                topology_id_str = (
+                    topology_result.topology.id if topology_result else ""
+                )
+                integrated_decision = self.rust_router.route_integrated(
+                    task, constraints, topology_id_str,
+                )
+                # Override decision with integrated result
+                decision = integrated_decision
+                system_num = int(decision.system)
+                model_id = decision.model_id
+                _log.info(
+                    "Integrated routing: S%d, model=%s, topology=%s",
+                    system_num, model_id, decision.topology_id,
+                )
+                bandit_decision = None  # Bandit handled inside route_integrated
+                self._last_decision = decision  # Update stored decision
+            except Exception as e:
+                _log.debug("Integrated routing failed (%s), using separate paths", e)
 
         # Phase 6: Bandit model suggestion (Thompson sampling)
         bandit_decision = None
@@ -283,8 +318,13 @@ class AgentSystem:
         if not self.topology_engine or topology_result is None:
             return
         try:
-            # Estimate quality from result (0.0 = empty/error, 1.0 = complete)
-            quality = 1.0 if result and len(result) > 10 else 0.3
+            # Estimate quality from result (multi-signal, 0.0-1.0)
+            from sage.quality_estimator import QualityEstimator  # noqa: E402
+            quality = QualityEstimator.estimate(
+                task, result, latency_ms=(time.perf_counter() - run_start) * 1000,
+                had_errors=bool(getattr(self.agent_loop, '_last_error', None)),
+                avr_iterations=getattr(self.agent_loop, '_last_avr_iterations', 0),
+            )
             cost = self.agent_loop.total_cost_usd
             latency_ms = (time.perf_counter() - run_start) * 1000
 
@@ -316,6 +356,17 @@ class AgentSystem:
                     )
                 except Exception as e2:
                     _log.warning("Bandit outcome recording failed (%s)", e2)
+
+            # Feed telemetry back to SystemRouter
+            if self.rust_router and hasattr(self.rust_router, 'record_outcome'):
+                try:
+                    _decision = getattr(self, '_last_decision', None)
+                    self.rust_router.record_outcome(
+                        getattr(_decision, 'decision_id', ''),
+                        quality, cost, latency_ms,
+                    )
+                except Exception as e3:
+                    _log.debug("Router telemetry recording failed (%s)", e3)
         except Exception as e:
             _log.warning("Topology outcome recording failed (%s)", e)
 
@@ -440,6 +491,12 @@ def boot_agent_system(
         try:
             rust_topology_engine = RustTopologyEngine()
             rust_bandit = RustBandit(0.995, 0.1)
+            if rust_router and rust_bandit:
+                try:
+                    rust_router.set_bandit(rust_bandit)
+                    _log.info("Boot: Bandit wired into SystemRouter for integrated routing")
+                except Exception as e:
+                    _log.debug("Boot: Failed to wire bandit into router (%s)", e)
             _log.info(
                 "Boot: Phase 6 active — TopologyEngine + ContextualBandit ready"
             )

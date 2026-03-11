@@ -191,6 +191,7 @@ class AgentLoop:
         self.semantic_memory: Any = None    # SemanticMemory entity graph
         self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
         self.topology_engine: Any = None  # Injected by boot.py (Rust TopologyEngine)
+        self._current_topology: Any = None  # Set by boot.py before each run
 
         # Ablation skip flags (set by AblationConfig.apply)
         self._skip_memory: bool = False
@@ -243,6 +244,35 @@ class AgentLoop:
 
     def _default_event_handler(self, event: AgentEvent) -> None:
         log.info(f"[{event.type}] step={event.step} model={event.model}")
+
+    def _schedule_from_topology(self) -> list[dict]:
+        """Use Rust TopologyExecutor to get node execution order.
+
+        Returns list of node specs for topology-aware execution.
+        Falls back to empty list if executor unavailable.
+        """
+        if not self._current_topology:
+            return []
+        try:
+            from sage_core import PyTopologyExecutor  # noqa: E402
+            executor = PyTopologyExecutor(self._current_topology)
+            schedule: list[dict] = []
+            while not executor.is_done():
+                ready = executor.next_ready(self._current_topology)
+                if not ready:
+                    break
+                for idx in ready:
+                    node = self._current_topology.get_node(idx)
+                    schedule.append({
+                        "index": idx,
+                        "role": node.role,
+                        "model_id": node.model_id,
+                        "system": node.system,
+                    })
+                    executor.mark_completed(idx)
+            return schedule
+        except Exception:
+            return []
 
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
@@ -383,6 +413,19 @@ class AgentLoop:
                     messages = self._rebuild_messages(system_prompt)
 
             # === THINK: Call LLM ===
+            # Topology-aware execution context
+            if self.step_count == 1:  # Only inject on first iteration
+                topology_schedule = self._schedule_from_topology()
+                if len(topology_schedule) > 1:
+                    roles_desc = ", ".join(
+                        f"{n['role']}(S{n['system']})" for n in topology_schedule
+                    )
+                    topology_hint = (
+                        f"[Topology: {len(topology_schedule)} agents — {roles_desc}. "
+                        f"You are acting as: {topology_schedule[0]['role']}]"
+                    )
+                    messages.insert(0, Message(role=Role.SYSTEM, content=topology_hint))
+
             model_name = self.config.llm.model
             self._emit(LoopPhase.THINK, model=model_name)
 

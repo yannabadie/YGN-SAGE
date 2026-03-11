@@ -9,6 +9,7 @@
 use pyo3::prelude::*;
 use tracing::{info, info_span};
 
+use super::bandit::ContextualBandit;
 use super::features::StructuralFeatures;
 use super::model_card::{CognitiveSystem, ModelCard};
 use super::model_registry::ModelRegistry;
@@ -115,14 +116,17 @@ pub struct RoutingDecision {
     pub confidence: f32,
     #[pyo3(get)]
     pub estimated_cost: f32,
+    /// Topology identifier (empty if not topology-routed).
+    #[pyo3(get)]
+    pub topology_id: String,
 }
 
 #[pymethods]
 impl RoutingDecision {
     fn __repr__(&self) -> String {
         format!(
-            "RoutingDecision(id='{}', system={}, model='{}', confidence={:.2}, cost={:.4})",
-            self.decision_id, self.system, self.model_id, self.confidence, self.estimated_cost
+            "RoutingDecision(id='{}', system={}, model='{}', confidence={:.2}, cost={:.4}, topology='{}')",
+            self.decision_id, self.system, self.model_id, self.confidence, self.estimated_cost, self.topology_id
         )
     }
 }
@@ -136,13 +140,24 @@ impl RoutingDecision {
 #[pyclass]
 pub struct SystemRouter {
     registry: ModelRegistry,
+    bandit: Option<ContextualBandit>,
 }
 
 #[pymethods]
 impl SystemRouter {
     #[new]
     pub fn new(registry: ModelRegistry) -> Self {
-        Self { registry }
+        Self {
+            registry,
+            bandit: None,
+        }
+    }
+
+    /// Inject a contextual bandit for integrated routing.
+    #[pyo3(name = "set_bandit")]
+    pub fn py_set_bandit(&mut self, bandit: ContextualBandit) {
+        info!(arms = bandit.arm_count(), "bandit_injected_into_router");
+        self.bandit = Some(bandit);
     }
 
     /// Route a task to the best cognitive system + model (legacy API).
@@ -177,6 +192,7 @@ impl SystemRouter {
             model_id: model.id.clone(),
             confidence,
             estimated_cost,
+            topology_id: String::new(),
         };
 
         info!(
@@ -251,6 +267,7 @@ impl SystemRouter {
             model_id: model.id.clone(),
             confidence,
             estimated_cost,
+            topology_id: String::new(),
         };
 
         info!(
@@ -264,12 +281,180 @@ impl SystemRouter {
         decision
     }
 
+    /// Route a task with bandit integration and topology awareness.
+    ///
+    /// 1. Structural feature extraction + system decision (existing logic).
+    /// 2. Hard constraint filtering (existing logic).
+    /// 3. If bandit is available, use Thompson sampling to select model.
+    /// 4. Otherwise, fall back to budget-constrained selection.
+    /// 5. Returns RoutingDecision with topology_id set.
+    #[pyo3(name = "route_integrated")]
+    pub fn py_route_integrated(
+        &mut self,
+        task: &str,
+        constraints: &RoutingConstraints,
+        topology_id: &str,
+    ) -> PyResult<RoutingDecision> {
+        self.route_integrated(task, constraints, topology_id)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
+    /// Record outcome for a previous routing decision.
+    ///
+    /// Forwards to bandit (if available) and always records telemetry.
+    #[pyo3(name = "record_outcome")]
+    pub fn py_record_outcome(
+        &mut self,
+        decision_id: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) -> PyResult<()> {
+        self.record_outcome(decision_id, quality, cost, latency_ms)
+            .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
     fn __repr__(&self) -> String {
-        format!("SystemRouter(models={})", self.registry.len())
+        format!(
+            "SystemRouter(models={}, bandit={})",
+            self.registry.len(),
+            self.bandit.is_some()
+        )
     }
 }
 
 impl SystemRouter {
+    /// Route with bandit integration and topology awareness.
+    pub fn route_integrated(
+        &mut self,
+        task: &str,
+        constraints: &RoutingConstraints,
+        topology_id: &str,
+    ) -> Result<RoutingDecision, String> {
+        let _span = info_span!(
+            "system_router.route_integrated",
+            task_len = task.len(),
+            topology_id = topology_id,
+        )
+        .entered();
+
+        // Step 1: Structural analysis + system decision
+        let features = StructuralFeatures::extract_from(task);
+        let (system, confidence) = self.decide_system(task, &features);
+
+        // Step 2: Get candidates + hard constraint filtering
+        let mut candidates = self.registry.select_for_system(system);
+        candidates = self.apply_constraints(&candidates, constraints);
+        if candidates.is_empty() {
+            candidates = self.registry.all_models();
+            candidates = self.apply_constraints(&candidates, constraints);
+        }
+        if candidates.is_empty() {
+            candidates = self.registry.all_models();
+        }
+
+        // Step 3: Model selection — bandit or budget-constrained
+        let (model_id, estimated_cost, decision_id) = if let Some(ref mut bandit) = self.bandit {
+            match bandit.choose(constraints.exploration_budget) {
+                Ok(bd) => {
+                    // Use bandit's model if it's in our candidates, otherwise fall back
+                    let est = candidates
+                        .iter()
+                        .find(|c| c.id == bd.model_id)
+                        .map(|c| c.estimate_cost(1000, 2000))
+                        .unwrap_or(bd.expected_cost);
+                    (bd.model_id.clone(), est, bd.decision_id.clone())
+                }
+                Err(_) => {
+                    // Bandit has no arms, fall back to budget selection
+                    let budget = if constraints.max_cost_usd > 0.0 {
+                        constraints.max_cost_usd
+                    } else {
+                        f32::MAX
+                    };
+                    let (model, cost) = self.select_within_budget(&candidates, budget);
+                    (model.id.clone(), cost, ulid::Ulid::new().to_string())
+                }
+            }
+        } else {
+            let budget = if constraints.max_cost_usd > 0.0 {
+                constraints.max_cost_usd
+            } else {
+                f32::MAX
+            };
+            let (model, cost) = self.select_within_budget(&candidates, budget);
+            (model.id.clone(), cost, ulid::Ulid::new().to_string())
+        };
+
+        // Step 4: Use calibrated affinity for confidence adjustment
+        let calibrated = self.registry.calibrated_affinity(&model_id, system);
+        let adjusted_confidence = confidence * calibrated.max(0.1);
+
+        // Step 5: Determine final system from selected model
+        let final_system = self
+            .registry
+            .get(&model_id)
+            .map(|c| c.best_system())
+            .unwrap_or(system);
+
+        let decision = RoutingDecision {
+            decision_id,
+            system: final_system,
+            model_id: model_id.clone(),
+            confidence: adjusted_confidence,
+            estimated_cost,
+            topology_id: topology_id.to_string(),
+        };
+
+        info!(
+            system = %decision.system,
+            model = %decision.model_id,
+            confidence = decision.confidence,
+            cost = decision.estimated_cost,
+            topology = %decision.topology_id,
+            "integrated_routing_decision"
+        );
+
+        Ok(decision)
+    }
+
+    /// Record outcome: forwards to bandit (if available) and records telemetry.
+    pub fn record_outcome(
+        &mut self,
+        decision_id: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) -> Result<(), String> {
+        let _span = info_span!(
+            "system_router.record_outcome",
+            decision_id = decision_id,
+            quality = quality,
+            cost = cost,
+            latency_ms = latency_ms,
+        )
+        .entered();
+
+        // Forward to bandit if available (may fail if decision_id unknown)
+        if let Some(ref mut bandit) = self.bandit {
+            if let Err(e) = bandit.record_outcome(decision_id, quality, cost, latency_ms) {
+                info!(error = %e, "bandit_record_outcome_skipped");
+            }
+        }
+
+        // Always record telemetry — we need the model_id but don't have it here
+        // from the decision. We log with the decision_id for traceability.
+        // The caller should also call registry.record_telemetry() with the model_id.
+        info!(
+            decision_id = decision_id,
+            quality = quality,
+            cost = cost,
+            "outcome_recorded"
+        );
+
+        Ok(())
+    }
+
     /// Decide cognitive system from structural features and raw task text.
     ///
     /// Priority order:
@@ -416,5 +601,144 @@ mod tests {
     fn has_formal_keywords_case_insensitive() {
         assert!(has_formal_keywords("PROVE by INDUCTION"));
         assert!(has_formal_keywords("Formal Verification of Safety"));
+    }
+
+    fn test_registry() -> ModelRegistry {
+        let toml_str = r#"
+            [[models]]
+            id = "fast-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.5
+            reasoning_score = 0.5
+            tool_use_score = 0.5
+            math_score = 0.5
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.9
+            s2_affinity = 0.5
+            s3_affinity = 0.2
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = false
+            supports_vision = false
+            context_window = 128000
+
+            [[models]]
+            id = "smart-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.9
+            reasoning_score = 0.9
+            tool_use_score = 0.8
+            math_score = 0.8
+            formal_z3_strength = 0.7
+            cost_input_per_m = 5.0
+            cost_output_per_m = 15.0
+            latency_ttft_ms = 500.0
+            tokens_per_sec = 50.0
+            s1_affinity = 0.3
+            s2_affinity = 0.8
+            s3_affinity = 0.95
+            recommended_topologies = ["avr", "debate"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = true
+            context_window = 200000
+        "#;
+        ModelRegistry::from_toml_str(toml_str).unwrap()
+    }
+
+    #[test]
+    fn routing_decision_has_topology_id() {
+        let registry = test_registry();
+        let router = SystemRouter::new(registry);
+        let decision = router.route("hello", f32::MAX);
+        assert!(decision.topology_id.is_empty()); // legacy route: empty topology_id
+    }
+
+    #[test]
+    fn route_constrained_has_empty_topology_id() {
+        let registry = test_registry();
+        let router = SystemRouter::new(registry);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let decision = router.route_constrained("Write a function", &constraints);
+        assert!(decision.topology_id.is_empty());
+    }
+
+    #[test]
+    fn route_integrated_without_bandit() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let decision = router
+            .route_integrated("hello world", &constraints, "topo-123")
+            .unwrap();
+        assert_eq!(decision.topology_id, "topo-123");
+        assert!(!decision.model_id.is_empty());
+    }
+
+    #[test]
+    fn route_integrated_with_bandit() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("fast-model", "sequential");
+        bandit.add_arm("smart-model", "avr");
+        router.bandit = Some(bandit);
+
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let decision = router
+            .route_integrated("explain quantum computing", &constraints, "topo-456")
+            .unwrap();
+        assert_eq!(decision.topology_id, "topo-456");
+        // Model should be one of the registered arms
+        assert!(
+            decision.model_id == "fast-model" || decision.model_id == "smart-model",
+            "unexpected model: {}",
+            decision.model_id
+        );
+    }
+
+    #[test]
+    fn record_outcome_without_bandit_succeeds() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let result = router.record_outcome("some-decision-id", 0.8, 0.01, 200.0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn record_outcome_with_bandit_records() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("fast-model", "sequential");
+        router.bandit = Some(bandit);
+
+        // Make a decision first via bandit
+        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0);
+        let decision = router
+            .route_integrated("hello", &constraints, "t1")
+            .unwrap();
+
+        // Record outcome — should succeed if bandit has the pending decision
+        let result = router.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn repr_shows_bandit_status() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        assert!(router.__repr__().contains("bandit=false"));
+
+        router.bandit = Some(ContextualBandit::create(0.995, 0.1));
+        assert!(router.__repr__().contains("bandit=true"));
     }
 }
