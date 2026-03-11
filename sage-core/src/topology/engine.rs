@@ -21,6 +21,7 @@ use crate::memory::smmu::MultiViewMMU;
 use crate::routing::bandit::ContextualBandit;
 
 use super::cma_me::CmaEmitter;
+use super::mcts::MctsSearcher;
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mutations::{apply_random_mutation, MutationResult};
@@ -42,6 +43,8 @@ pub enum TopologySource {
     LlmSynthesis,
     /// Mutated from an existing topology.
     Mutation,
+    /// Found via MCTS search over mutation space.
+    MctsSearch,
     /// Fell back to a built-in template.
     TemplateFallback,
 }
@@ -53,6 +56,7 @@ impl TopologySource {
             Self::ArchiveHit => "archive_hit",
             Self::LlmSynthesis => "llm_synthesis",
             Self::Mutation => "mutation",
+            Self::MctsSearch => "mcts_search",
             Self::TemplateFallback => "template_fallback",
         }
     }
@@ -180,7 +184,13 @@ impl TopologyEngine {
             return result;
         }
 
-        // Path 5: Template fallback
+        // Path 5: MCTS search (if archive has enough diversity)
+        if let Some(result) = self.try_mcts_search() {
+            info!(source = "mcts_search", confidence = result.confidence, "topology_generated");
+            return result;
+        }
+
+        // Path 6: Template fallback
         let result = self.template_fallback(system);
         info!(
             source = "template_fallback",
@@ -336,7 +346,38 @@ impl TopologyEngine {
         }
     }
 
-    /// Path 5: Template fallback based on system tier.
+    /// Path 5: Try MCTS search over mutation space (requires archive diversity).
+    fn try_mcts_search(&self) -> Option<GenerateResult> {
+        let _span = info_span!("topology_engine.mcts_path").entered();
+
+        if self.archive.cell_count() < 5 {
+            debug!(
+                cells = self.archive.cell_count(),
+                "mcts_path_skip_insufficient_diversity"
+            );
+            return None;
+        }
+
+        let best = self.archive.best_by_quality()?;
+
+        let searcher = MctsSearcher::new(50, 100);
+        if let Some(topology) = searcher.search(best.graph.clone()) {
+            info!(
+                parent_quality = best.quality,
+                "mcts_search_success"
+            );
+            Some(GenerateResult {
+                topology,
+                source: TopologySource::MctsSearch,
+                confidence: best.quality * 0.85,
+            })
+        } else {
+            debug!("mcts_search_no_result");
+            None
+        }
+    }
+
+    /// Path 6: Template fallback based on system tier.
     fn template_fallback(&self, system: u8) -> GenerateResult {
         let _span = info_span!("topology_engine.template_fallback", system = system).entered();
 
@@ -731,6 +772,7 @@ mod tests {
         assert_eq!(TopologySource::ArchiveHit.as_str(), "archive_hit");
         assert_eq!(TopologySource::LlmSynthesis.as_str(), "llm_synthesis");
         assert_eq!(TopologySource::Mutation.as_str(), "mutation");
+        assert_eq!(TopologySource::MctsSearch.as_str(), "mcts_search");
         assert_eq!(TopologySource::TemplateFallback.as_str(), "template_fallback");
     }
 
@@ -775,5 +817,22 @@ mod tests {
             "CMA emitter generation should be >= 1 after evolve, got {}",
             engine.cma_emitter.generation
         );
+    }
+
+    #[test]
+    fn test_mcts_path_in_generate() {
+        // This verifies the MCTS path doesn't break generate().
+        // MCTS activates only with archive >= 5 cells, so normal generate still works.
+        let mut engine = TopologyEngine::new();
+        let smmu = MultiViewMMU::new();
+        let result = engine.generate(&smmu, "test task", None, 2, 0.5);
+        assert!(result.topology.node_count() > 0);
+    }
+
+    #[test]
+    fn test_try_mcts_search_skips_when_archive_small() {
+        let engine = TopologyEngine::new();
+        // Empty archive should skip MCTS path.
+        assert!(engine.try_mcts_search().is_none());
     }
 }
