@@ -39,6 +39,9 @@ class BenchReport:
     routing_breakdown: dict[str, int]   # {"S1": n, "S2": n, "S3": n}
     results: list[TaskResult]
     model_config: dict[str, Any] = field(default_factory=dict)
+    provider: str = ""
+    git_sha: str = ""
+    feature_flags: list[str] = field(default_factory=list)
     timestamp: str = ""
 
     @staticmethod

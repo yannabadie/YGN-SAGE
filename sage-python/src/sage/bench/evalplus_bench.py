@@ -97,16 +97,20 @@ class EvalPlusBench:
         if limit is not None:
             task_ids = task_ids[:limit]
 
-        model_id = ""
+        # Model ID captured lazily — _last_model is only set after first LLM call
+        model_id = "pending"
+
+        # Detect provider name from the system
+        provider_name = ""
         if hasattr(self.system, "agent_loop"):
-            model_id = (
-                getattr(self.system.agent_loop, "_last_model", "") or "unknown"
-            )
-        if self.baseline_mode:
-            model_id = f"baseline:{model_id}" if model_id else "baseline"
+            llm = getattr(self.system.agent_loop, "_llm", None)
+            if llm:
+                provider_name = type(llm).__name__
 
         self.manifest = BenchmarkManifest(
-            benchmark=f"evalplus_{self.dataset}", model=model_id
+            benchmark=f"evalplus_{self.dataset}",
+            model=model_id,
+            provider=provider_name,
         )
 
         solutions: list[dict[str, Any]] = []
@@ -222,6 +226,17 @@ class EvalPlusBench:
                 f"{status} ({latency:.0f}ms)",
                 flush=True,
             )
+
+        # Update model ID after tasks ran (_last_model set by first LLM call)
+        if hasattr(self.system, "agent_loop"):
+            model_id = (
+                getattr(self.system.agent_loop, "_last_model", "") or "unknown"
+            )
+        else:
+            model_id = "unknown"
+        if self.baseline_mode:
+            model_id = f"baseline:{model_id}" if model_id else "baseline"
+        self.manifest.model = model_id
 
         return solutions
 
