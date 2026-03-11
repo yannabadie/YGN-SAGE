@@ -10,6 +10,8 @@ pub mod sandbox;
 pub mod simd_sort;
 pub mod topology;
 pub mod types;
+#[cfg(feature = "smt")]
+pub mod verification;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -60,6 +62,11 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<memory::embedder::RustEmbedder>()?;
         m.add_class::<routing::AdaptiveRouter>()?;
         m.add_class::<routing::RoutingResult>()?;
+    }
+    #[cfg(feature = "smt")]
+    {
+        m.add_class::<verification::SmtVerifier>()?;
+        m.add_class::<verification::SmtVerificationResult>()?;
     }
 
     // Add SIMD functions
