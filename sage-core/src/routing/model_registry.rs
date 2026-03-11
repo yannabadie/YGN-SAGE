@@ -49,6 +49,11 @@ impl ModelRegistry {
         self.cards.len()
     }
 
+    #[pyo3(name = "is_empty")]
+    pub fn is_empty(&self) -> bool {
+        self.cards.is_empty()
+    }
+
     pub fn get(&self, id: &str) -> Option<ModelCard> {
         self.cards.get(id).cloned()
     }

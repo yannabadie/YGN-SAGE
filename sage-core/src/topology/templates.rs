@@ -526,7 +526,7 @@ impl PyTemplateStore {
     /// Create a topology from a template name and default model ID.
     pub fn create(&self, template_name: &str, model_id: &str) -> PyResult<TopologyGraph> {
         TemplateStore::create(template_name, model_id)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// List all available template names.
@@ -542,6 +542,12 @@ impl PyTemplateStore {
             "TemplateStore(templates={})",
             TemplateStore::available().len()
         )
+    }
+}
+
+impl Default for PyTemplateStore {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -273,7 +273,7 @@ impl TopologyEdge {
         weight: f32,
     ) -> PyResult<Self> {
         Self::try_new(edge_type, field_mapping, gate, condition, weight)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     fn __repr__(&self) -> String {
@@ -405,7 +405,7 @@ impl TopologyGraph {
     /// Create an empty topology with the given template type (Python entry point).
     #[new]
     pub fn py_new(template_type: &str) -> PyResult<Self> {
-        Self::try_new(template_type).map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+        Self::try_new(template_type).map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     /// Add a node to the graph. Returns the node index.
@@ -418,7 +418,7 @@ impl TopologyGraph {
     #[pyo3(name = "add_edge")]
     pub fn py_add_edge(&mut self, from: usize, to: usize, edge: TopologyEdge) -> PyResult<()> {
         self.try_add_edge(from, to, edge)
-            .map_err(|e| pyo3::exceptions::PyIndexError::new_err(e))
+            .map_err(pyo3::exceptions::PyIndexError::new_err)
     }
 
     /// Number of nodes.
@@ -449,7 +449,7 @@ impl TopologyGraph {
     #[pyo3(name = "get_node")]
     pub fn py_get_node(&self, index: usize) -> PyResult<TopologyNode> {
         self.try_get_node(index)
-            .map_err(|e| pyo3::exceptions::PyIndexError::new_err(e))
+            .map_err(pyo3::exceptions::PyIndexError::new_err)
     }
 
     /// Get topological ordering of nodes.
@@ -457,7 +457,7 @@ impl TopologyGraph {
     #[pyo3(name = "topological_sort")]
     pub fn py_topological_sort(&self) -> PyResult<Vec<usize>> {
         self.try_topological_sort()
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
+            .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
     fn __repr__(&self) -> String {

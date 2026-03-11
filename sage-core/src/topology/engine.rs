@@ -420,6 +420,7 @@ impl TopologyEngine {
     /// 1. S-MMU bridge (with structural features extracted from topology)
     /// 2. MAP-Elites archive (with behavior descriptor)
     /// 3. Bandit (adds arm for the topology's template)
+    #[allow(clippy::too_many_arguments)]
     pub fn record_outcome(
         &mut self,
         smmu: &mut MultiViewMMU,
