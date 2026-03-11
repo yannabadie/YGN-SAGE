@@ -11,6 +11,16 @@ if "sage_core" not in sys.modules:
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
+try:
+    import openai  # noqa: F401
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+_skip_no_openai = pytest.mark.skipif(
+    not HAS_OPENAI, reason="openai not installed"
+)
+
 from sage.orchestrator import (
     CognitiveOrchestrator,
     ExecutionPlan,
@@ -392,6 +402,7 @@ class TestOpenAICompatProvider:
         assert p.api_key == "test"
         assert p.model_id == "m"
 
+    @_skip_no_openai
     @pytest.mark.asyncio
     async def test_generate_calls_openai(self):
         from sage.providers.openai_compat import OpenAICompatProvider
@@ -416,6 +427,7 @@ class TestOpenAICompatProvider:
         assert result.content == "Hello world"
         assert result.model == "test-m"
 
+    @_skip_no_openai
     @pytest.mark.asyncio
     async def test_generate_uses_config_model(self):
         """Config model should override the default model_id."""

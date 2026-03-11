@@ -11,6 +11,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from sage.bench.evalplus_bench import EvalPlusBench, _load_dataset
+
+try:
+    import evalplus  # noqa: F401
+    HAS_EVALPLUS = True
+except ImportError:
+    HAS_EVALPLUS = False
+
+_skip_no_evalplus = pytest.mark.skipif(
+    not HAS_EVALPLUS, reason="evalplus not installed"
+)
+
 from sage.bench.runner import BenchReport
 
 
@@ -74,6 +85,7 @@ async def test_generate_solutions_no_system():
     assert solutions == []
 
 
+@_skip_no_evalplus
 async def test_generate_solutions_with_mock_system():
     """Mock system generates solutions in the expected format."""
     # Build a mock AgentSystem
@@ -124,6 +136,7 @@ async def test_generate_solutions_with_mock_system():
     assert bench.manifest.benchmark == "evalplus_humaneval"
 
 
+@_skip_no_evalplus
 async def test_generate_solutions_baseline_mode():
     """Baseline mode calls LLM directly, bypassing routing."""
     mock_llm_response = MagicMock()
@@ -154,6 +167,7 @@ async def test_generate_solutions_baseline_mode():
     assert bench.manifest.model.startswith("baseline:")
 
 
+@_skip_no_evalplus
 async def test_generate_solutions_with_event_bus():
     """Event bus receives BENCH_RESULT events during generation."""
     mock_system = MagicMock()
@@ -177,6 +191,7 @@ async def test_generate_solutions_with_event_bus():
         assert "evalplus_humaneval" in event.meta["benchmark"]
 
 
+@_skip_no_evalplus
 async def test_generate_solutions_handles_errors():
     """Errors during generation are captured, not raised."""
     mock_system = MagicMock()
@@ -200,6 +215,7 @@ async def test_generate_solutions_handles_errors():
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_evalplus
 def test_write_solutions(tmp_path):
     """write_solutions creates a valid JSONL file."""
     bench = EvalPlusBench()
@@ -227,6 +243,7 @@ def test_write_solutions(tmp_path):
 # ---------------------------------------------------------------------------
 
 
+@_skip_no_evalplus
 def test_load_dataset_humaneval():
     """Loading humaneval dataset returns 164 tasks."""
     data = _load_dataset("humaneval")
@@ -257,6 +274,7 @@ async def test_run_no_system():
     assert report.benchmark == "evalplus_humaneval"
 
 
+@_skip_no_evalplus
 async def test_run_with_mock_system():
     """run() with mock system returns a BenchReport."""
     mock_system = MagicMock()

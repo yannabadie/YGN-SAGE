@@ -14,6 +14,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from sage.providers.connector import ProviderConnector, DiscoveredModel, PROVIDER_CONFIGS
 from sage.providers.registry import ModelRegistry, ModelProfile
 
+try:
+    import openai  # noqa: F401
+    HAS_OPENAI = True
+except ImportError:
+    HAS_OPENAI = False
+
+_skip_no_openai = pytest.mark.skipif(
+    not HAS_OPENAI, reason="openai not installed"
+)
+
 
 # ── ModelProfile tests ────────────────────────────────────────────────────────
 
@@ -150,6 +160,7 @@ class TestProviderConnector:
         assert models[0].id == "codex-cli"
         assert models[0].provider == "codex"
 
+    @_skip_no_openai
     @pytest.mark.asyncio
     async def test_discover_openai_compat(self, monkeypatch):
         """OpenAI-compatible discovery returns model IDs."""
@@ -207,6 +218,7 @@ class TestProviderConnector:
         assert models[0].context_window == 1_000_000
         assert models[0].max_output_tokens == 65_536
 
+    @_skip_no_openai
     @pytest.mark.asyncio
     async def test_provider_failure_doesnt_crash(self, monkeypatch):
         """A failing provider is skipped without crashing."""
