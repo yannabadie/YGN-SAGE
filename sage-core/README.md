@@ -13,7 +13,9 @@ Built as both `cdylib` (for PyO3/maturin) and `rlib` (for Rust consumers).
 | `tool-executor` | Enables `ToolExecutor`, `ValidationResult`, `ExecResult` via tree-sitter 0.26 + process-wrap 9 | off |
 | `sandbox` | Enables `WasmSandbox` + WASI sandbox via wasmtime v36 LTS (runtime + component-model + wasmtime-wasi) | off |
 | `cranelift` | Adds JIT compilation to `sandbox` (Linux only; causes MSVC stack overflow on Windows) | off |
-| `onnx` | Enables `RustEmbedder` via ort 2.0 + tokenizers 0.21 (all-MiniLM-L6-v2, 384-dim) | off |
+| `onnx` | Enables `RustEmbedder` via ort 2.0 + tokenizers 0.21 (snowflake-arctic-embed-m, 768-dim) | off |
+| `cognitive` | Enables SQLite persistence for ContextualBandit + MapElitesArchive via rusqlite 0.33 | off |
+| `smt` | Enables OxiZ pure-Rust SMT verifier (QF_LIA) for formal verification | off |
 
 ## Build Commands
 
@@ -42,12 +44,13 @@ maturin develop --features onnx
 maturin develop --features tool-executor
 maturin develop --features sandbox,tool-executor
 
-# Run tests
-cargo test --workspace                            # 7 tests (default features)
-cargo test --features tool-executor               # 36 tests (validator + subprocess + ToolExecutor)
-cargo test --features sandbox,tool-executor       # 63 tests (full sandbox + ToolExecutor)
-cargo test --features onnx                        # +16 routing tests + 5 ONNX embedder tests (requires model download + onnxruntime DLL)
-cargo clippy                                      # Lint
+# Run tests (all use --no-default-features to disable extension-module)
+cargo test --no-default-features --lib                    # ~200 tests (baseline)
+cargo test --no-default-features --features sandbox,cranelift --lib  # +sandbox tests (Linux only)
+cargo test --no-default-features --features smt --lib     # +25 SMT verification tests
+cargo test --no-default-features --features tool-executor --lib -- sandbox::validator  # +validator tests
+cargo test --no-default-features --features sandbox,cranelift --test '*'  # Integration tests
+cargo clippy --no-default-features                        # Lint
 ```
 
 ## Module Overview
@@ -63,10 +66,12 @@ cargo clippy                                      # Lint
 | `hardware.rs` | HardwareProfile -- CPU/memory/SIMD capability detection |
 | `simd_sort.rs` | SIMD-accelerated sorting functions for topology planning |
 | `lib.rs` | PyModule entry point, registers all PyClasses and PyFunctions |
+| `topology/` | DynamicTopologyEngine: 6-path topology generation (S-MMU → archive → LLM → mutation → MCTS → template), MAP-Elites + CMA-ME evolution, TopologyExecutor (dual-mode scheduling), TopologyGraph IR, HybridVerifier, TopologySynthesizer |
+| `verification/` | SmtVerifier (OxiZ QF_LIA, 10 PyO3 methods), LtlVerifier (temporal properties on TopologyGraph: reachability, safety, liveness, bounded liveness) |
 
 ## Key Dependencies
 
-- **pyo3 0.25** -- Python bindings (extension-module)
+- **pyo3 0.25** -- Python bindings (extension-module as default feature)
 - **arrow 55.0 + pyo3-arrow** -- Zero-copy columnar memory
 - **petgraph 0.6** -- S-MMU multi-view directed graph
 - **dashmap 6** -- Lock-free concurrent maps (AgentPool, RagCache, SnapBPF)
@@ -82,11 +87,30 @@ cargo clippy                                      # Lint
 
 All PyClasses registered in `lib.rs`:
 
+**Always available:**
 - `AgentConfig`, `ToolSpec`, `MemoryScope`, `AgentStatus`, `TopologyRole`
 - `AgentPool`, `WorkingMemory`, `MemoryEvent`, `HardwareProfile`
 - `RagCache`
-- `WasmSandbox` (behind `sandbox` feature)
-- `ToolExecutor`, `ValidationResult`, `ExecResult` (behind `tool-executor` feature)
-- `RustEmbedder` (behind `onnx` feature)
-- `AdaptiveRouter`, `RoutingResult`, `StructuralFeatures` (behind `onnx` feature)
+- `ModelCard`, `CognitiveSystem`, `ModelRegistry`, `SystemRouter`, `RoutingDecision`, `RoutingConstraints`
+- `ContextualBandit`
+- `TopologyGraph`, `TopologyNode`, `TopologyEdge`, `EdgeKind`
+- `PyTemplateStore`, `PyTopologyEngine`, `PyTopologyExecutor`, `PyGenerateResult`
+- `HybridVerifier`, `VerificationReport`
+- `MapElitesArchive`, `BehaviorDescriptor`
+- `StructuralFeatures`
 - `h96_quicksort`, `h96_quicksort_zerocopy`, `h96_argsort`, `vectorized_partition_h96` (functions)
+
+**Behind `sandbox` feature:**
+- `WasmSandbox`
+
+**Behind `tool-executor` feature:**
+- `ToolExecutor`, `ValidationResult`, `ExecResult`
+
+**Behind `onnx` feature:**
+- `RustEmbedder`, `AdaptiveRouter`, `RoutingResult`
+
+**Behind `smt` feature:**
+- `SmtVerifier`, `SmtVerificationResult`
+
+**Behind `cognitive` feature:**
+- SQLite persistence for `ContextualBandit` and `MapElitesArchive`

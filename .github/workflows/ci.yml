@@ -26,7 +26,7 @@ jobs:
       - run: cargo clippy --no-default-features -- -D warnings
       - run: cargo test --no-default-features --lib
       - name: Check ONNX feature compiles
-        run: cargo check --features onnx
+        run: cargo check --no-default-features --features onnx
 
   rust-features:
     name: Rust (sandbox + ONNX + SMT + tool-executor)
@@ -42,15 +42,15 @@ jobs:
       - run: pip install maturin
       - uses: dtolnay/rust-toolchain@stable
       - name: Sandbox lib tests (cranelift JIT)
-        run: cargo test --features sandbox,cranelift --lib
+        run: cargo test --no-default-features --features sandbox,cranelift --lib
       - name: SMT verification tests
-        run: cargo test --features smt --lib
+        run: cargo test --no-default-features --features smt --lib
       - name: Tool executor tests (tree-sitter validator)
-        run: cargo test --features tool-executor --lib -- sandbox::validator
+        run: cargo test --no-default-features --features tool-executor --lib -- sandbox::validator
       - name: ONNX compile check
-        run: cargo check --features onnx
+        run: cargo check --no-default-features --features onnx
       - name: Integration tests (with Python)
-        run: cargo test --features sandbox,cranelift --test '*'
+        run: cargo test --no-default-features --features sandbox,cranelift --test '*'
 
   python-sage:
     name: Python SDK (sage-python)
@@ -85,6 +85,8 @@ jobs:
   windows:
     name: Windows (Python SDK + Rust check)
     runs-on: windows-latest
+    env:
+      HF_HUB_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -102,4 +104,4 @@ jobs:
         run: cargo check --no-default-features
       - name: Rust check (ONNX feature)
         working-directory: sage-core
-        run: cargo check --features onnx
+        run: cargo check --no-default-features --features onnx

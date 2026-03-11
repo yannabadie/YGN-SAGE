@@ -25,11 +25,15 @@ result = await system.run("Solve X")   # S1/S2/S3 routing + full agent loop
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # Unit tests (1041 passed, 91 skipped)
+python -m pytest tests/ -v             # Unit tests (1170 passed, 102 skipped)
 ruff check src/                        # Lint
 mypy src/                              # Type check
 python -m sage.bench --type routing    # Routing benchmark (no API key needed)
 python -m sage.bench --type humaneval  # HumanEval 164 (needs LLM provider)
+python -m sage.bench --type evalplus --dataset humaneval   # EvalPlus HumanEval+ (80x harder)
+python -m sage.bench --type evalplus --dataset mbpp         # EvalPlus MBPP+ (35x harder)
+python -m sage.bench --type ablation --limit 20             # Ablation study (6 configs)
+python -m sage.bench.eval_protocol --suite humaneval -v     # Official evaluation protocol
 ```
 
 ## Package Structure
@@ -43,14 +47,14 @@ python -m sage.bench --type humaneval  # HumanEval 164 (needs LLM provider)
 | `sage/llm/` | LLM providers: Google Gemini, OpenAI Codex CLI, model router |
 | `sage/providers/` | Provider discovery, capability matrix, OpenAI-compat adapter |
 | `sage/strategy/` | AdaptiveRouter (4-stage learned routing), ComplexityRouter (heuristic fallback), CGRS self-braking, training data export |
-| `sage/topology/` | MAP-Elites topology search, KG-RLVR process reward model |
+| `sage/topology/` | MAP-Elites + CMA-ME + MCTS topology search, LLM synthesis, KG-RLVR process reward model |
 | `sage/evolution/` | Evolutionary engine, LLM-driven mutation |
 | `sage/tools/` | Tool registry, dynamic tool creation (Rust ToolExecutor first, Python fallback), memory tools, ExoCortex tools |
 | `sage/events/` | EventBus: in-proc event system for observability |
 | `sage/guardrails/` | 3-layer guardrails: input, runtime, output |
-| `sage/bench/` | Benchmarks: HumanEval, routing accuracy, routing quality (ground truth), downstream quality evaluator |
+| `sage/bench/` | EvalPlus HumanEval+/MBPP+, routing accuracy, routing quality, ablation, evaluation protocol with error logging |
 | `sage/sandbox/` | Sandbox manager (host execution disabled by default) |
-| `sage/routing/` | DynamicRouter: capability-constrained model selection |
+| `sage/routing/` | DynamicRouter (capability-constrained), ShadowRouter (dual Rust/Python traces) |
 
 ## Environment Variables
 

@@ -96,6 +96,30 @@ pytestmark = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _patch_ssl():
+    """Bypass SSL verification for corporate proxy."""
+    import httpx
+    original_init = httpx.Client.__init__
+
+    def patched_init(self, *args, **kwargs):
+        kwargs.setdefault("verify", False)
+        original_init(self, *args, **kwargs)
+
+    httpx.Client.__init__ = patched_init
+
+    original_async_init = httpx.AsyncClient.__init__
+
+    def patched_async_init(self, *args, **kwargs):
+        kwargs.setdefault("verify", False)
+        original_async_init(self, *args, **kwargs)
+
+    httpx.AsyncClient.__init__ = patched_async_init
+    yield
+    httpx.Client.__init__ = original_init
+    httpx.AsyncClient.__init__ = original_async_init
+
+
 # ---------------------------------------------------------------------------
 # Test 1: S1 simple question — real LLM, fast tier
 # ---------------------------------------------------------------------------

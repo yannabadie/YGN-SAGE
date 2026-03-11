@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1494%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1654%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -22,14 +22,14 @@ YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive
 
 ## Features
 
-- **S1/S2/S3 cognitive routing** — word-boundary regex heuristic routes tasks to appropriate model tiers
+- **S1/S2/S3 cognitive routing** — adaptive 4-stage routing (structural → BERT ONNX → entropy → cascade) with Rust ContextualBandit + telemetry calibration
 - **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
 - **Composable guardrails** — cost limits, output validation, schema validation, Z3 bounds checking at input/runtime/output
 - **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
 - **Tool Security** — Rust ToolExecutor: tree-sitter AST validation (23 blocked modules + 11 blocked calls) + Wasm WASI sandbox (deny-by-default) + subprocess fallback with timeout
 - **Sandbox** — Wasm (wasmtime v36 LTS) Component Model sandbox with WASI deny-by-default capabilities
 - **Dashboard** — built-in FastAPI + WebSocket real-time event viewer with task queue
-- **Benchmarks** — HumanEval (164 problems) + routing self-consistency test built-in
+- **Benchmarks** — EvalPlus HumanEval+ (164), MBPP+ (378), ablation study, routing quality, official evaluation protocol with error logging
 
 See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component status and known limitations.
 
@@ -73,7 +73,7 @@ AgentLoop: perceive -> think -> act -> learn
 EventBus ---> Dashboard (WebSocket, real-time)
 ```
 
-## Benchmarks (March 10, 2026)
+## Benchmarks (March 11, 2026)
 
 | Benchmark | Result | Notes |
 |-----------|--------|-------|
@@ -81,8 +81,8 @@ EventBus ---> Dashboard (WebSocket, real-time)
 | **EvalPlus MBPP+** (378 tasks) | **75.1%** pass@1 (284/378) | Official 35x harder tests |
 | **Routing Self-Consistency** (30 tasks) | **100%** (30/30) | Heuristic determinism check |
 | **Ablation: full vs baseline** | **+15pp** (100% vs 85%) | Paired, same model (20 tasks) |
-| **Unit Tests** (Python) | **1143 passed** | 102 skipped (optional features) |
-| **Unit Tests** (Rust) | **351 passed** | 141 lib + 200 integration + 10 smt |
+| **Unit Tests** (Python) | **1170 passed** | 102 skipped (optional features) |
+| **Unit Tests** (Rust) | **432 passed** | lib + integration + smt + topology + routing |
 
 > **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, **YGN-SAGE 84.1%** (budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
@@ -91,26 +91,20 @@ EventBus ---> Dashboard (WebSocket, real-time)
 python -m sage.bench --type evalplus --dataset humaneval   # EvalPlus HumanEval+ (requires GOOGLE_API_KEY)
 python -m sage.bench --type routing                        # Routing self-consistency (instant)
 python -m sage.bench --type ablation --limit 20            # Ablation study (6 configs)
+
+# Official evaluation protocol (with full error logging)
+python -m sage.bench.eval_protocol --suite humaneval --limit 20 -v   # HumanEval+ with error capture
+python -m sage.bench.eval_protocol --suite mbpp --limit 20 -v       # MBPP+ with error capture
+python -m sage.bench.eval_protocol --replay docs/benchmarks/errors.jsonl  # Post-mortem analysis
+
 python tests/e2e_proof.py                                  # E2E proof (requires GOOGLE_API_KEY)
-```
-
-Reports: `docs/benchmarks/2026-03-10-*.json`
-
-## Run Benchmarks
-
-```bash
-# Routing accuracy (no API key needed, instant)
-python -m sage.bench --type routing
-
-# HumanEval pass@1 (requires GOOGLE_API_KEY)
-python -m sage.bench --type humaneval --limit 20
 ```
 
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 1143 passed, 102 skipped
-cd sage-core && cargo test --features onnx      # 351 tests (141 lib + 200 integration + 10 smt)
+cd sage-python && python -m pytest tests/ -v    # 1170 passed, 102 skipped
+cd sage-core && cargo test --no-default-features --features smt --lib  # 432+ tests
 cd sage-discover && python -m pytest tests/ -v   # 52 passed
 # Integration tests: sage-python/tests/integration/ (50 tests, no mocks)
 ```
@@ -123,14 +117,14 @@ YGN-SAGE/
 |-- sage-python/         # Python SDK
 |   +-- src/sage/
 |       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
-|       |-- bench/       # HumanEval + Routing benchmarks
+|       |-- bench/       # EvalPlus HumanEval+/MBPP+, routing, ablation, evaluation protocol
 |       |-- events/      # EventBus (central nervous system)
 |       |-- guardrails/  # Cost, Output, Schema, Z3 formal guardrails
 |       |-- llm/         # Google Gemini + Codex CLI providers
 |       |-- memory/      # 4-tier: STM, Episodic (SQLite), Semantic, ExoCortex
 |       |-- strategy/    # S1/S2/S3 metacognitive routing + CGRS self-braking
 |       |-- tools/       # Dynamic tool creation + 9 memory tools
-|       |-- topology/    # MAP-Elites + Z3 PRM validator
+|       |-- topology/    # MAP-Elites + CMA-ME + MCTS + LLM synthesis + Z3 PRM
 |       |-- evolution/   # LLM mutator + SAMPO solver
 |       |-- agent_loop.py
 |       +-- boot.py
@@ -197,7 +191,7 @@ pipeline = GuardrailPipeline([
 
 - **EvalPlus HumanEval+ 84.1%** pass@1 (138/164) with budget Gemini 2.5 Flash — official 80x harder tests
 - **Routing 100%** self-consistency on 30 deterministic tasks (heuristic, not learned)
-- **1143 tests passed** (Python) + 351 Rust + 52 Discover + 50 integration tests (no mocks)
+- **1170 tests passed** (Python) + 432 Rust + 52 Discover + 50 integration tests (no mocks)
 - **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 heuristic routing (5-tier keyword analysis + formal/domain stacking)

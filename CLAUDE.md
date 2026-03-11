@@ -24,6 +24,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `events/bus.py` - EventBus: in-proc event system (emit/subscribe/stream/query)
 - `guardrails/base.py` - GuardrailResult, Guardrail, GuardrailPipeline
 - `guardrails/builtin.py` - CostGuardrail, OutputGuardrail (default for text), SchemaGuardrail (for JSON mode)
+- `quality_estimator.py` - QualityEstimator: 5-signal quality scoring (non-empty, length adequacy, code presence, error absence, AVR convergence). Replaces `len>10` heuristic
 - `bench/runner.py` - BenchmarkRunner, BenchReport, TaskResult
 - `bench/humaneval.py` - HumanEval benchmark (164 problems, pass@1)
 - `bench/routing.py` - Routing accuracy benchmark (30 labeled tasks)
@@ -31,6 +32,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `bench/routing_downstream.py` - DownstreamEvaluator: tier precision, escalation rate, routing P50/P99 latency, quality tracking
 - `bench/evalplus_bench.py` - EvalPlus HumanEval+/MBPP+ adapter: 80x harder tests, subprocess evaluator (Windows-compatible)
 - `bench/ablation.py` - 6-config ablation framework: full, baseline, no-memory, no-avr, no-routing, no-guardrails
+- `bench/eval_protocol.py` - Official evaluation protocol: real-condition benchmarks with full error logging (traceback, phase, model, routing), JSONL error logs, JSON reports, post-mortem replay
 - `llm/router.py` - Model Router with 7 tiers, data-driven lookup from TOML + env vars
 - `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
 - `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
@@ -117,7 +119,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1149 passed, 102 skipped)
+python -m pytest tests/ -v     # Run tests (1170 passed, 102 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -136,6 +138,11 @@ python -m sage.bench --type ablation --limit 20                   # 6 configs x 
 # Legacy benchmarks
 python -m sage.bench --type routing                    # Routing accuracy (instant, no API key)
 python -m sage.bench --type humaneval --limit 20       # Original HumanEval (custom tests)
+
+# Official evaluation protocol (full error logging for debugging)
+python -m sage.bench.eval_protocol --suite humaneval --limit 20 -v  # HumanEval+ with error capture
+python -m sage.bench.eval_protocol --suite mbpp --limit 20 -v      # MBPP+ with error capture
+python -m sage.bench.eval_protocol --replay docs/benchmarks/errors.jsonl  # Post-mortem error analysis
 ```
 
 ### Dashboard
@@ -147,9 +154,10 @@ python ui/app.py                # Start dashboard on http://localhost:8000
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --features onnx     # Run all Rust tests (432 passing, +25 with smt)
-cargo test --features smt      # Run SMT verification tests (25 tests for OxiZ verifier + CEGAR)
-cargo clippy                   # Lint Rust code
+cargo test --no-default-features --lib  # Run unit tests (~200 baseline)
+cargo test --no-default-features --features smt --lib  # +25 SMT tests
+cargo test --no-default-features --features sandbox,cranelift --lib  # +sandbox tests (Linux)
+cargo clippy --no-default-features  # Lint Rust code
 maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
 maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
