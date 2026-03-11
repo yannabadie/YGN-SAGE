@@ -370,3 +370,95 @@ class TestShadowResilience:
         await shadow.route("Test", budget=10.0)
         assert shadow.stats["total_comparisons"] == 0
         assert not trace_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# Tests: 2-tier Phase 5 gate (soft + hard)
+# ---------------------------------------------------------------------------
+
+class TestPhase5TwoTierGate:
+    """Test the 2-tier Phase 5 readiness gates."""
+
+    def test_total_property(self, tmp_path: Path) -> None:
+        """total property returns total_comparisons count."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        assert shadow.total == 0
+        shadow.stats["total_comparisons"] = 42
+        assert shadow.total == 42
+
+    def test_soft_gate_not_ready_few_traces(self, tmp_path: Path) -> None:
+        """Soft gate requires >= 500 traces."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 499
+        shadow.stats["system_mismatches"] = 0
+        assert not shadow.is_phase5_soft_ready()
+
+    def test_soft_gate_ready(self, tmp_path: Path) -> None:
+        """Soft gate passes with 500+ traces and <10% divergence."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 500
+        shadow.stats["system_mismatches"] = 49  # 9.8%
+        assert shadow.is_phase5_soft_ready()
+
+    def test_soft_gate_fails_high_divergence(self, tmp_path: Path) -> None:
+        """Soft gate fails at >= 10% divergence."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 500
+        shadow.stats["system_mismatches"] = 50  # exactly 10%
+        assert not shadow.is_phase5_soft_ready()
+
+    def test_hard_gate_ready(self, tmp_path: Path) -> None:
+        """Hard gate passes with 1000+ traces and <5% divergence."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 1000
+        shadow.stats["system_mismatches"] = 40  # 4%
+        assert shadow.is_phase5_hard_ready()
+
+    def test_hard_gate_fails_at_5_percent(self, tmp_path: Path) -> None:
+        """Hard gate fails at exactly 5% (must be strictly less)."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 1000
+        shadow.stats["system_mismatches"] = 50
+        assert not shadow.is_phase5_hard_ready()
+
+    def test_is_phase5_ready_is_alias(self, tmp_path: Path) -> None:
+        """is_phase5_ready() is an alias for is_phase5_hard_ready()."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 1000
+        shadow.stats["system_mismatches"] = 40
+        assert shadow.is_phase5_ready() == shadow.is_phase5_hard_ready()
+
+        shadow.stats["system_mismatches"] = 60
+        assert shadow.is_phase5_ready() == shadow.is_phase5_hard_ready()
+
+    def test_soft_ready_but_not_hard(self, tmp_path: Path) -> None:
+        """Can be soft-ready without being hard-ready."""
+        shadow = ShadowRouter(
+            rust_router=MagicMock(), python_metacognition=MagicMock(),
+            trace_path=tmp_path / "traces.jsonl",
+        )
+        shadow.stats["total_comparisons"] = 600
+        shadow.stats["system_mismatches"] = 40  # 6.7% — soft OK, hard needs 1000+
+        assert shadow.is_phase5_soft_ready()
+        assert not shadow.is_phase5_hard_ready()

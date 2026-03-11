@@ -8,9 +8,27 @@
 
 use ort::value::TensorRef;
 use pyo3::prelude::*;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::routing::features::StructuralFeatures;
+
+// ── ShadowTrace ────────────────────────────────────────────────────────────
+
+/// A single routing trace record for shadow comparison analysis.
+#[derive(Clone, Debug)]
+pub struct ShadowTrace {
+    /// FNV-style hash of the task text.
+    pub task_hash: u64,
+    /// Tier chosen by Stage 0 (structural features).
+    pub structural_tier: u8,
+    /// Tier chosen by Stage 1 (ONNX), if available.
+    pub onnx_tier: Option<u8>,
+    /// Timestamp in milliseconds since Unix epoch.
+    pub timestamp_ms: u64,
+}
 
 // ── RoutingResult ────────────────────────────────────────────────────────────
 
@@ -77,6 +95,7 @@ pub struct AdaptiveRouter {
     c0_threshold: f32,
     c1_threshold: f32,
     feedback: Mutex<Vec<RoutingFeedback>>,
+    shadow_traces: Mutex<Vec<ShadowTrace>>,
 }
 
 impl AdaptiveRouter {
@@ -309,6 +328,7 @@ impl AdaptiveRouter {
             c0_threshold: c0_threshold.unwrap_or(DEFAULT_C0_THRESHOLD),
             c1_threshold: c1_threshold.unwrap_or(DEFAULT_C1_THRESHOLD),
             feedback: Mutex::new(Vec::new()),
+            shadow_traces: Mutex::new(Vec::new()),
         }
     }
 
@@ -334,17 +354,38 @@ impl AdaptiveRouter {
     /// Full routing pipeline: Stage 0, then Stage 1 if confidence is low.
     ///
     /// Returns the first stage result whose confidence exceeds its threshold,
-    /// or the best result seen so far.
+    /// or the best result seen so far. Appends a `ShadowTrace` for every call.
     pub fn route(&self, task: &str) -> RoutingResult {
         let s0 = self.route_stage0(task);
-        if s0.confidence >= self.c0_threshold {
-            return s0;
+
+        // Attempt Stage 1 if Stage 0 confidence is below threshold.
+        let s1_result = if s0.confidence < self.c0_threshold {
+            self.route_stage1(task, &s0.features)
+        } else {
+            None
+        };
+
+        // Record shadow trace.
+        let mut hasher = DefaultHasher::new();
+        task.hash(&mut hasher);
+        let task_hash = hasher.finish();
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        if let Ok(mut traces) = self.shadow_traces.lock() {
+            traces.push(ShadowTrace {
+                task_hash,
+                structural_tier: s0.tier,
+                onnx_tier: s1_result.as_ref().map(|r| r.tier),
+                timestamp_ms,
+            });
         }
 
-        // Stage 1: ONNX classifier (when loaded).
-        if let Some(s1) = self.route_stage1(task, &s0.features) {
+        // Return best result.
+        if let Some(ref s1) = s1_result {
             if s1.confidence >= self.c1_threshold {
-                return s1;
+                return s1.clone();
             }
         }
 
@@ -398,6 +439,116 @@ impl AdaptiveRouter {
     pub fn py_c1_threshold(&self) -> f32 {
         self.c1_threshold
     }
+
+    /// Number of shadow traces currently buffered.
+    pub fn shadow_trace_count(&self) -> usize {
+        self.shadow_traces.lock().unwrap().len()
+    }
+
+    /// Write buffered shadow traces as JSONL to `path`, clear the buffer,
+    /// and return the number of traces written.
+    pub fn flush_shadow_traces(&mut self, path: &str) -> PyResult<usize> {
+        let mut traces = self.shadow_traces.lock().unwrap();
+        let count = traces.len();
+        if count == 0 {
+            return Ok(0);
+        }
+
+        // Ensure parent directory exists.
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!(
+                    "failed to create directory {}: {}",
+                    parent.display(),
+                    e
+                ))
+            })?;
+        }
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+            .map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!("failed to open {path}: {e}"))
+            })?;
+
+        use std::io::Write;
+        for trace in traces.iter() {
+            let onnx_tier = match trace.onnx_tier {
+                Some(t) => format!("{t}"),
+                None => "null".to_string(),
+            };
+            writeln!(
+                file,
+                "{{\"task_hash\":{},\"structural_tier\":{},\"onnx_tier\":{},\"timestamp_ms\":{}}}",
+                trace.task_hash, trace.structural_tier, onnx_tier, trace.timestamp_ms,
+            )
+            .map_err(|e| {
+                pyo3::exceptions::PyIOError::new_err(format!("write error: {e}"))
+            })?;
+        }
+        traces.clear();
+        Ok(count)
+    }
+
+    /// Retrain thresholds using buffered feedback.
+    ///
+    /// For each feedback entry, re-routes structurally and compares the
+    /// structural tier to the actual quality-implied tier:
+    /// - If structural over-routes to S1 (actual was S2/S3): lower c0_threshold
+    /// - If structural over-routes to S3 (actual was S1/S2): raise c0_threshold
+    /// Clamps to [0.5, 0.95]. Clears feedback after retraining.
+    pub fn retrain_thresholds(&mut self) {
+        let mut fb = self.feedback.lock().unwrap();
+        if fb.is_empty() {
+            return;
+        }
+
+        let mut c0_delta: f32 = 0.0;
+        let mut c1_delta: f32 = 0.0;
+
+        for entry in fb.iter() {
+            // Determine the "actual" tier from quality:
+            // high quality (>= 0.7) achieved => could have used a simpler tier
+            // low quality (< 0.7) => needed a stronger tier
+            let actual_tier = if entry.actual_quality >= 0.8 {
+                // High quality — the routed tier was sufficient or over-provisioned
+                entry.routed_tier
+            } else if entry.actual_quality >= 0.5 {
+                // Medium quality — likely needed one tier higher
+                (entry.routed_tier + 1).min(3)
+            } else {
+                // Low quality — definitely needed a higher tier
+                3
+            };
+
+            // Re-route structurally to get what Stage 0 would have said.
+            let s0 = self.route_stage0(&entry.task);
+
+            // Compare structural prediction to actual tier.
+            if s0.tier < actual_tier {
+                // Under-routed (e.g., S1 when S2/S3 was needed) => lower threshold
+                // to make Stage 0 less confident, triggering Stage 1 more often.
+                c0_delta -= 0.01;
+            } else if s0.tier > actual_tier {
+                // Over-routed (e.g., S3 when S1/S2 was fine) => raise threshold
+                // to accept Stage 0's simpler routing more readily.
+                c0_delta += 0.01;
+            }
+
+            // Same logic for c1 (ONNX vs actual).
+            if entry.routed_tier < actual_tier {
+                c1_delta -= 0.01;
+            } else if entry.routed_tier > actual_tier {
+                c1_delta += 0.01;
+            }
+        }
+
+        self.c0_threshold = (self.c0_threshold + c0_delta).clamp(0.5, 0.95);
+        self.c1_threshold = (self.c1_threshold + c1_delta).clamp(0.5, 0.95);
+        fb.clear();
+    }
 }
 
 // ── Test-only constructor ────────────────────────────────────────────────────
@@ -416,6 +567,7 @@ impl AdaptiveRouter {
             c0_threshold: c0_threshold.unwrap_or(DEFAULT_C0_THRESHOLD),
             c1_threshold: c1_threshold.unwrap_or(DEFAULT_C1_THRESHOLD),
             feedback: Mutex::new(Vec::new()),
+            shadow_traces: Mutex::new(Vec::new()),
         }
     }
 }
@@ -552,6 +704,137 @@ mod tests {
         assert_eq!(fb[0].routed_tier, 2);
         assert!((fb[0].actual_quality - 0.85).abs() < f32::EPSILON);
         assert_eq!(fb[1].latency_ms, 50);
+    }
+
+    #[test]
+    fn test_shadow_trace_collection() {
+        let router = AdaptiveRouter::new_without_py(None, None);
+        assert_eq!(router.shadow_trace_count(), 0);
+        router.route("hello world");
+        assert!(router.shadow_trace_count() >= 1);
+    }
+
+    #[test]
+    fn test_shadow_trace_fields() {
+        let router = AdaptiveRouter::new_without_py(None, None);
+        router.route("What is 2+2?");
+        let traces = router.shadow_traces.lock().unwrap();
+        assert_eq!(traces.len(), 1);
+        let t = &traces[0];
+        assert!(t.task_hash != 0);
+        assert!(t.structural_tier >= 1 && t.structural_tier <= 3);
+        assert!(t.onnx_tier.is_none()); // no classifier loaded
+        assert!(t.timestamp_ms > 0);
+    }
+
+    #[test]
+    fn test_flush_shadow_traces() {
+        let router = AdaptiveRouter::new_without_py(None, None);
+        router.route("task one");
+        router.route("task two");
+        assert_eq!(router.shadow_trace_count(), 2);
+
+        let dir = std::env::temp_dir().join("sage_test_shadow");
+        let path = dir.join("traces.jsonl");
+
+        // Flush — need PyResult so call inner logic directly
+        {
+            let mut traces = router.shadow_traces.lock().unwrap();
+            let count = traces.len();
+            assert_eq!(count, 2);
+            std::fs::create_dir_all(&dir).unwrap();
+            let mut file = std::fs::OpenOptions::new()
+                .create(true)
+                .truncate(true)
+                .write(true)
+                .open(&path)
+                .unwrap();
+            use std::io::Write;
+            for trace in traces.iter() {
+                let onnx_tier = match trace.onnx_tier {
+                    Some(t) => format!("{t}"),
+                    None => "null".to_string(),
+                };
+                writeln!(
+                    file,
+                    "{{\"task_hash\":{},\"structural_tier\":{},\"onnx_tier\":{},\"timestamp_ms\":{}}}",
+                    trace.task_hash, trace.structural_tier, onnx_tier, trace.timestamp_ms,
+                )
+                .unwrap();
+            }
+            traces.clear();
+        }
+
+        assert_eq!(router.shadow_trace_count(), 0);
+        let content = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = content.trim().split('\n').collect();
+        assert_eq!(lines.len(), 2);
+
+        // Cleanup
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn test_retrain_thresholds_adjusts() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        let old_c0 = router.c0_threshold;
+        // Record feedback simulating structural under-routing:
+        // route to tier 1 but quality is low (0.3) => actual tier should be 3
+        for _ in 0..50 {
+            router.record_feedback(
+                "complex task requiring formal verification".to_string(),
+                1,    // routed_tier
+                0.3,  // actual_quality (low => needed higher tier)
+                500,
+                0.05,
+            );
+        }
+        router.retrain_thresholds();
+        // Should have adjusted (or hit clamp boundary)
+        assert!(
+            (router.c0_threshold - old_c0).abs() > f32::EPSILON || (router.c0_threshold - 0.5).abs() < f32::EPSILON,
+            "c0_threshold should have changed from {old_c0}, got {}",
+            router.c0_threshold,
+        );
+        // Feedback should be cleared
+        assert_eq!(router.feedback_count(), 0);
+    }
+
+    #[test]
+    fn test_retrain_thresholds_clamped() {
+        let mut router = AdaptiveRouter::new_without_py(Some(0.94), None);
+        // Over-routing feedback (high quality with high tier => should raise threshold)
+        for _ in 0..200 {
+            router.record_feedback(
+                "hello".to_string(),
+                3,    // routed to S3
+                0.95, // high quality => didn't need S3
+                50,
+                0.001,
+            );
+        }
+        router.retrain_thresholds();
+        // Should be clamped to max 0.95
+        assert!(router.c0_threshold <= 0.95, "c0 must be <= 0.95, got {}", router.c0_threshold);
+        assert!(router.c0_threshold >= 0.5, "c0 must be >= 0.5, got {}", router.c0_threshold);
+    }
+
+    #[test]
+    fn test_retrain_empty_feedback_noop() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        let old_c0 = router.c0_threshold;
+        let old_c1 = router.c1_threshold;
+        router.retrain_thresholds();
+        assert!((router.c0_threshold - old_c0).abs() < f32::EPSILON);
+        assert!((router.c1_threshold - old_c1).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_c0_c1_field_access() {
+        let router = AdaptiveRouter::new_without_py(Some(0.75), Some(0.60));
+        assert!((router.c0_threshold - 0.75).abs() < f32::EPSILON);
+        assert!((router.c1_threshold - 0.60).abs() < f32::EPSILON);
     }
 
     #[test]

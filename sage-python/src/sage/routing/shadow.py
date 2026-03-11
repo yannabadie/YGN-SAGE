@@ -173,14 +173,26 @@ class ShadowRouter:
             return 0.0
         return self.stats["system_mismatches"] / total
 
+    @property
+    def total(self) -> int:
+        """Total number of shadow comparisons made."""
+        return self.stats["total_comparisons"]
+
+    def is_phase5_soft_ready(self) -> bool:
+        """Soft gate: 500 traces, <10% divergence. Can start preferring Rust router."""
+        return self.total >= 500 and self.divergence_rate() < 0.10
+
+    def is_phase5_hard_ready(self) -> bool:
+        """Hard gate: 1000 traces, <5% divergence. Safe to delete Python router."""
+        return self.total >= 1000 and self.divergence_rate() < 0.05
+
     def is_phase5_ready(self) -> bool:
         """Check if divergence is low enough to safely remove the Python router.
+
+        Alias for is_phase5_hard_ready() for backward compatibility.
 
         Phase 5 gate requires:
         - At least 1000 shadow comparisons
         - Strictly less than 5% divergence rate
         """
-        return (
-            self.stats["total_comparisons"] >= 1000
-            and self.divergence_rate() < 0.05
-        )
+        return self.is_phase5_hard_ready()
