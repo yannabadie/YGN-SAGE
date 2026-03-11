@@ -126,15 +126,17 @@ def test_verify_arithmetic_evaluates_expr():
     # won't parse as Z3 without z3 syntax, so fail-closed
     assert fkg.verify_arithmetic("invalid", 0) is False
 
-    # Without Z3 - fail-closed
+    # Without any SMT backend - fail-closed
     fkg.has_z3 = False
+    fkg._rust = None
     assert fkg.verify_arithmetic("42", 42) is False
 
 
-def test_fail_closed_without_z3():
-    """Z3-07: Without z3-solver, formal verification must fail-closed."""
+def test_fail_closed_without_smt():
+    """Z3-07: Without any SMT backend, formal verification must fail-closed."""
     fkg = FormalKnowledgeGraph()
     fkg.has_z3 = False
+    fkg._rust = None
 
     # prove_memory_safety: should use Python bounds check
     assert fkg.prove_memory_safety(5, 10) is True   # 0 <= 5 < 10

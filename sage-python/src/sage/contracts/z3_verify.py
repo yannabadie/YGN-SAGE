@@ -1,4 +1,4 @@
-"""Z3 SMT contract verification for TaskDAG.
+"""SMT contract verification for TaskDAG.
 
 Four properties:
 1. Capability coverage — every required capability is available
@@ -6,11 +6,22 @@ Four properties:
 3. Type compatibility — output fields of predecessor ⊇ input fields of successor
 4. Provider assignment — genuine SAT: assign providers to nodes respecting
    capability requirements and mutual exclusion constraints
+
+Backend priority: Rust OxiZ (sage_core.SmtVerifier) > Python z3-solver.
+Properties 1-3 are Python-native (no SMT needed).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+# Try Rust OxiZ backend first
+try:
+    from sage_core import SmtVerifier as _RustSmtVerifier
+    _RUST_SMT_AVAILABLE = True
+except ImportError:
+    _RUST_SMT_AVAILABLE = False
+
+# Fallback: Python z3-solver
 try:
     import z3
 except ImportError:
@@ -28,9 +39,9 @@ class ContractVerdict:
     counterexample: str | None = None
 
 
-def _require_z3() -> None:
-    if z3 is None:
-        raise ImportError("z3-solver is required for contract verification")
+def _require_smt() -> None:
+    if not _RUST_SMT_AVAILABLE and z3 is None:
+        raise ImportError("No SMT backend: install sage_core[smt] or z3-solver")
 
 
 # ---------------------------------------------------------------------------
@@ -124,18 +135,47 @@ def verify_provider_assignment(
     - If a node requires capabilities that are mutually exclusive on a provider,
       that provider cannot serve the node
 
-    Z3 models this as: for each node, exactly one provider must be assigned
-    (PbEq pseudo-boolean constraint). A provider can serve a node iff:
-      (a) provider.capabilities ⊇ node.capabilities_required
-      (b) no exclusion pair is fully required by the node
-
-    Returns unsatisfied if ANY node cannot be served by ANY provider.
-    The counterexample lists which nodes are unassignable and why.
+    Backend: Rust OxiZ (sage_core.SmtVerifier) when available, Python z3-solver fallback.
     """
-    _require_z3()
+    _require_smt()
 
+    # --- Rust OxiZ path (preferred) ---
+    if _RUST_SMT_AVAILABLE:
+        return _verify_provider_assignment_rust(dag, providers)
+
+    # --- Python Z3 fallback ---
+    return _verify_provider_assignment_z3(dag, providers)
+
+
+def _verify_provider_assignment_rust(
+    dag: TaskDAG,
+    providers: list[ProviderSpec],
+) -> ContractVerdict:
+    """Provider assignment via Rust OxiZ SmtVerifier."""
+    verifier = _RustSmtVerifier()
+    nodes = []
+    for nid in dag.node_ids:
+        node = dag.get_node(nid)
+        caps = list(node.capabilities_required) if node.capabilities_required else []
+        nodes.append((nid, caps))
+    provs = [
+        (p.name, list(p.capabilities), list(p.exclusions))
+        for p in providers
+    ]
+    sat, errors = verifier.verify_provider_assignment(nodes, provs)
+    return ContractVerdict(
+        satisfied=sat,
+        property_name="provider_assignment",
+        counterexample="; ".join(errors) if errors else None,
+    )
+
+
+def _verify_provider_assignment_z3(
+    dag: TaskDAG,
+    providers: list[ProviderSpec],
+) -> ContractVerdict:
+    """Provider assignment via Python z3-solver (fallback)."""
     if not providers:
-        # No providers — only satisfiable if no node requires capabilities
         for nid in dag.node_ids:
             node = dag.get_node(nid)
             if node.capabilities_required:
@@ -148,13 +188,12 @@ def verify_provider_assignment(
 
     solver = z3.Solver()
 
-    # For each node, create a Bool variable per provider: "node_i assigned to provider_j"
     assignment_vars: dict[str, dict[str, z3.BoolRef]] = {}
 
     for nid in dag.node_ids:
         node = dag.get_node(nid)
         if not node.capabilities_required:
-            continue  # No requirements — any provider works
+            continue
 
         required = set(node.capabilities_required)
         node_vars: dict[str, z3.BoolRef] = {}
@@ -163,29 +202,22 @@ def verify_provider_assignment(
             var = z3.Bool(f"assign_{nid}_{prov.name}")
             node_vars[prov.name] = var
 
-            # Check if provider CAN serve this node
             has_all_caps = required.issubset(prov.capabilities)
-
-            # Check mutual exclusion: if node requires both sides of an exclusion pair
             has_exclusion_conflict = any(
                 a in required and b in required
                 for a, b in prov.exclusions
             )
 
             if not has_all_caps or has_exclusion_conflict:
-                # Provider cannot serve this node
                 solver.add(var == False)  # noqa: E712
-            # else: provider CAN serve — variable is free
 
         if node_vars:
             assignment_vars[nid] = node_vars
-            # Exactly one provider must be assigned to this node
             solver.add(z3.PbEq([(v, 1) for v in node_vars.values()], 1))
 
     if solver.check() == z3.sat:
         return ContractVerdict(satisfied=True, property_name="provider_assignment")
 
-    # UNSAT — find which nodes are unassignable
     unassignable = []
     for nid, pvars in assignment_vars.items():
         node = dag.get_node(nid)

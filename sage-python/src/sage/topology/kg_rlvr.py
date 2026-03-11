@@ -11,6 +11,13 @@ import re
 import logging
 from typing import List, Dict, Any, Tuple
 
+# Try Rust OxiZ backend first (pure Rust, no C++ deps)
+try:
+    from sage_core import SmtVerifier as _RustSmtVerifier
+    _RUST_SMT_AVAILABLE = True
+except ImportError:
+    _RUST_SMT_AVAILABLE = False
+
 try:
     import z3
 except ImportError:
@@ -60,23 +67,31 @@ def _safe_z3_eval(expr: str, namespace: dict) -> Any:
 
 
 class FormalKnowledgeGraph:
-    """A formal Knowledge Graph backed by Z3 for verifiable reasoning."""
+    """A formal Knowledge Graph backed by SMT for verifiable reasoning.
+
+    Backend priority: Rust OxiZ (sage_core.SmtVerifier) > Python z3-solver.
+    """
     def __init__(self):
-        self.has_z3 = z3 is not None
+        self._rust: _RustSmtVerifier | None = None
+        if _RUST_SMT_AVAILABLE:
+            self._rust = _RustSmtVerifier()
+        self.has_z3 = self._rust is not None or z3 is not None
         if not self.has_z3:
             logging.error(
-                "z3-solver not installed. ALL formal verification disabled — "
-                "returning unverified (fail-closed)."
+                "No SMT backend (sage_core[smt] or z3-solver). "
+                "ALL formal verification disabled — returning unverified (fail-closed)."
             )
 
     def prove_memory_safety(self, addr_expr: int, limit: int) -> bool:
-        if not self.has_z3:
+        if self._rust:
+            return self._rust.prove_memory_safety(addr_expr, limit)
+        if not z3:
             return 0 <= addr_expr < limit
         solver = z3.Solver()
         addr = z3.IntVal(addr_expr)
         max_mem = z3.IntVal(limit)
         min_mem = z3.IntVal(0)
-        
+
         out_of_bounds = z3.Or(addr < min_mem, addr >= max_mem)
         solver.add(out_of_bounds)
         return solver.check() == z3.unsat
@@ -84,62 +99,54 @@ class FormalKnowledgeGraph:
     def check_loop_bound(self, iterations_symbolic: str, hard_cap: int) -> bool:
         """Check if a loop variable is provably bounded below hard_cap.
 
-        Creates a Z3 symbolic variable and checks if it can exceed hard_cap.
-        For an *unconstrained* symbolic variable, this correctly returns False:
-        we cannot prove boundedness without domain-specific constraints.
-
-        This is NOT a bug -- it's the mathematically correct answer. To get
-        meaningful results, callers must register additional constraints
-        (e.g., loop counter starts at 0 and increments by 1) before calling.
-
-        Returns:
-            True only if Z3 proves iters > hard_cap is unsatisfiable given
-            the registered constraints. False if unproven or Z3 unavailable.
+        For an *unconstrained* symbolic variable, correctly returns False.
         """
-        if not self.has_z3:
+        if self._rust:
+            return self._rust.check_loop_bound(iterations_symbolic, hard_cap)
+        if not z3:
             return False
         solver = z3.Solver()
         iters = z3.Int(iterations_symbolic)
         cap = z3.IntVal(hard_cap)
-        
+
         solver.add(iters > cap)
         return solver.check() == z3.unsat
 
     def verify_arithmetic(self, expr: str, expected: int, tolerance: int = 0) -> bool:
-        """Evaluate arithmetic expr and verify result is within tolerance.
-
-        Uses ast.literal_eval for simple constants, _safe_z3_eval for
-        Z3 expressions. Returns False on parse failure (fail-closed).
-        """
+        """Evaluate arithmetic expr and verify result is within tolerance."""
         if not self.has_z3:
             return False
+        # Try simple constant evaluation first (no SMT needed)
         try:
-            # Try simple constant evaluation first
             actual = ast.literal_eval(expr)
+            if self._rust:
+                return self._rust.verify_arithmetic(actual, expected, tolerance)
             return expected - tolerance <= actual <= expected + tolerance
         except (ValueError, SyntaxError):
             pass
+        if not z3:
+            return False
         try:
-            # Try safe Z3 eval for more complex expressions
             result = _safe_z3_eval(expr, {"z3": z3})
             if isinstance(result, (int, float)):
+                if self._rust:
+                    return self._rust.verify_arithmetic(int(result), expected, tolerance)
                 return expected - tolerance <= result <= expected + tolerance
-            # Z3 expression: use solver to check
             if hasattr(result, 'sort'):  # Z3 ArithRef
                 solver = z3.Solver()
                 solver.add(z3.Or(result > expected + tolerance, result < expected - tolerance))
                 return solver.check() == z3.unsat
-            return False  # Can't evaluate to number
+            return False
         except Exception:
             return False  # Fail-closed
 
     def verify_invariant(self, pre: str, post: str) -> bool:
         """Verify a pre/post-condition pair using Z3.
 
-        Uses a restricted AST evaluator instead of eval() to prevent
-        arbitrary code execution. Fails closed (returns False) on any error.
+        Uses a restricted AST evaluator. Fails closed on error.
+        Note: invariant verification requires Z3 AST — no Rust path yet.
         """
-        if not self.has_z3:
+        if not self.has_z3 or not z3:
             return False
         solver = z3.Solver()
         x = z3.Int("x")
@@ -253,9 +260,22 @@ class ProcessRewardModel:
         return r_path, details
 
     def score_with_z3(self, constraints: list[str]) -> tuple[float, dict[str, Any]]:
-        """Score constraints using the Python Z3Validator for sub-ms verification."""
+        """Score constraints using SMT verification (Rust OxiZ or Python Z3)."""
+        # Prefer Rust OxiZ — sub-ms, zero-dependency
+        if _RUST_SMT_AVAILABLE:
+            verifier = _RustSmtVerifier()
+            result = verifier.validate_mutation(constraints)
+            score = 1.0 if result.safe else -1.0
+            return score, {
+                "safe": result.safe,
+                "violations": result.violations,
+                "proof_time_ms": result.proof_time_ms,
+                "backend": "sage_core.SmtVerifier (OxiZ)",
+            }
+
+        # Fallback to Python Z3Validator
         if not _has_z3_validator:
-            return 0.0, {"error": "Z3Validator not available (install z3-solver)"}
+            return 0.0, {"error": "No SMT backend (install sage_core[smt] or z3-solver)"}
 
         validator = _Z3Validator()
         result = validator.validate_mutation(constraints)
@@ -265,6 +285,6 @@ class ProcessRewardModel:
             "safe": result.safe,
             "violations": result.violations,
             "proof_time_ms": result.proof_time_ms,
-            "backend": "sage.sandbox.z3_validator"
+            "backend": "sage.sandbox.z3_validator (Python z3)"
         }
         return score, details

@@ -1,15 +1,25 @@
-"""Z3-based SMT Firewall for evolved code validation.
+"""SMT Firewall for evolved code validation.
 
 Phase 1: Safety Gate — validates invariants before execution.
 Phase 2: PRM Backend — provides formal proof scoring for reasoning steps.
 
-Uses Python z3-solver package (pip install z3-solver).
+Prefers Rust OxiZ backend (sage_core.SmtVerifier) for zero-dependency, sub-ms
+verification. Falls back to Python z3-solver if sage_core[smt] is not built.
 """
 from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
 
+# Try Rust OxiZ backend first (pure Rust, no C++ deps)
+try:
+    from sage_core import SmtVerifier as _RustSmtVerifier
+    from sage_core import SmtVerificationResult as _RustSmtResult
+    _RUST_SMT_AVAILABLE = True
+except ImportError:
+    _RUST_SMT_AVAILABLE = False
+
+# Fallback: Python z3-solver
 try:
     import z3
     _Z3_AVAILABLE = True
@@ -26,16 +36,21 @@ class ValidationResult:
 
 
 class Z3Validator:
-    """Z3-based SMT solver for formal verification of evolved code.
+    """SMT solver for formal verification of evolved code.
 
     Provides memory safety proofs, loop bound checking, and
     constraint-based mutation validation.
+
+    Backend priority: Rust OxiZ (sage_core) > Python z3-solver.
     """
 
     def __init__(self) -> None:
-        if not _Z3_AVAILABLE:
+        self._rust: _RustSmtVerifier | None = None
+        if _RUST_SMT_AVAILABLE:
+            self._rust = _RustSmtVerifier()
+        elif not _Z3_AVAILABLE:
             raise ImportError(
-                "z3-solver not installed. Run: pip install z3-solver"
+                "No SMT backend: install sage_core[smt] or z3-solver"
             )
 
     def prove_memory_safety(self, addr_expr: int, limit: int) -> bool:
@@ -43,6 +58,8 @@ class Z3Validator:
 
         Returns True if 0 <= addr < limit is guaranteed.
         """
+        if self._rust:
+            return self._rust.prove_memory_safety(addr_expr, limit)
         s = z3.Solver()
         addr = z3.IntVal(addr_expr)
         max_mem = z3.IntVal(limit)
@@ -55,18 +72,10 @@ class Z3Validator:
     def check_loop_bound(self, var_name: str, hard_cap: int) -> bool:
         """Check if a loop variable is provably bounded below hard_cap.
 
-        Creates a Z3 symbolic variable and checks if it can exceed hard_cap.
-        For an *unconstrained* symbolic variable, this correctly returns False:
-        we cannot prove boundedness without domain-specific constraints.
-
-        This is NOT a bug -- it's the mathematically correct answer. To get
-        meaningful results, callers must register additional constraints
-        (e.g., loop counter starts at 0 and increments by 1) before calling.
-
-        Returns:
-            True only if Z3 proves iters > hard_cap is unsatisfiable given
-            the registered constraints. False if unproven or Z3 unavailable.
+        For an *unconstrained* symbolic variable, correctly returns False.
         """
+        if self._rust:
+            return self._rust.check_loop_bound(var_name, hard_cap)
         s = z3.Solver()
         iters = z3.Int(var_name)
         cap = z3.IntVal(hard_cap)
@@ -78,6 +87,9 @@ class Z3Validator:
         self, accesses: list[tuple[int, int]]
     ) -> ValidationResult:
         """Verify that all array accesses are within bounds."""
+        if self._rust:
+            r = self._rust.verify_array_bounds(accesses)
+            return ValidationResult(safe=r.safe, violations=r.violations, proof_time_ms=r.proof_time_ms)
         start = time.perf_counter()
         violations: list[str] = []
 
@@ -100,6 +112,9 @@ class Z3Validator:
 
         Parses constraint strings like "bounds(5, 100)" or "loop(n, 1000000)".
         """
+        if self._rust:
+            r = self._rust.validate_mutation(constraints)
+            return ValidationResult(safe=r.safe, violations=r.violations, proof_time_ms=r.proof_time_ms)
         start = time.perf_counter()
         violations: list[str] = []
 
