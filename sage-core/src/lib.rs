@@ -10,7 +10,6 @@ pub mod sandbox;
 pub mod simd_sort;
 pub mod topology;
 pub mod types;
-#[cfg(feature = "smt")]
 pub mod verification;
 
 #[pymodule]
@@ -63,6 +62,10 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<routing::AdaptiveRouter>()?;
         m.add_class::<routing::RoutingResult>()?;
     }
+    // LTL model checking (always available)
+    m.add_class::<verification::ltl::LtlResult>()?;
+    m.add_class::<verification::ltl::LtlVerifier>()?;
+
     #[cfg(feature = "smt")]
     {
         m.add_class::<verification::SmtVerifier>()?;

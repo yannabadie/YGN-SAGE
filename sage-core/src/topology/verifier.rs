@@ -4,6 +4,7 @@
 //! Provides both hard errors (invalid topology) and soft warnings (semantic issues).
 
 use super::topology_graph::*;
+use crate::verification::ltl::LtlVerifier;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{Bfs, EdgeRef};
 use pyo3::prelude::*;
@@ -143,7 +144,37 @@ impl HybridVerifier {
         result.add_errors(errs);
         result.add_warnings(warns);
 
+        // LTL temporal property checks
+        let (errs, warns) = Self::check_ltl_properties(graph);
+        result.add_errors(errs);
+        result.add_warnings(warns);
+
         result
+    }
+
+    // -----------------------------------------------------------------------
+    // LTL temporal property checks (delegated to LtlVerifier)
+    // -----------------------------------------------------------------------
+
+    /// Run LTL safety and liveness checks.
+    /// Safety violations are errors; liveness violations are warnings.
+    fn check_ltl_properties(graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        // Safety: no HIGH -> LOW info flow (errors)
+        let safety = LtlVerifier::check_safety(graph);
+        if !safety.passed {
+            errors.extend(safety.violations);
+        }
+
+        // Liveness: every entry reaches an exit (warnings)
+        let liveness = LtlVerifier::check_liveness(graph);
+        if !liveness.passed {
+            warnings.extend(liveness.violations);
+        }
+
+        (errors, warnings)
     }
 
     // -----------------------------------------------------------------------
