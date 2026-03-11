@@ -56,9 +56,7 @@ pub fn execute_python_subprocess(
         .enable_all()
         .build()
         .expect("tokio runtime");
-    rt.block_on(async {
-        execute_async(python_exe, code, args_json, timeout_secs).await
-    })
+    rt.block_on(async { execute_async(python_exe, code, args_json, timeout_secs).await })
 }
 
 async fn execute_async(
@@ -67,13 +65,10 @@ async fn execute_async(
     args_json: &str,
     timeout_secs: u64,
 ) -> ExecResult {
-    use tokio::process::Command;
     use tokio::io::AsyncWriteExt;
+    use tokio::process::Command;
 
-    let wrapper = format!(
-        "import json, sys\nargs = json.load(sys.stdin)\n{}",
-        code
-    );
+    let wrapper = format!("import json, sys\nargs = json.load(sys.stdin)\n{}", code);
 
     // Write to temp file to avoid argument length limits
     let temp_dir = std::env::temp_dir();
@@ -174,12 +169,7 @@ mod tests {
 
     #[test]
     fn test_simple_execution() {
-        let r = execute_python_subprocess(
-            &python_exe(),
-            r#"print("hello from rust")"#,
-            "{}",
-            10,
-        );
+        let r = execute_python_subprocess(&python_exe(), r#"print("hello from rust")"#, "{}", 10);
         assert_eq!(r.exit_code, 0, "stderr: {}", r.stderr);
         assert!(r.stdout.contains("hello from rust"));
     }
@@ -198,36 +188,22 @@ mod tests {
 
     #[test]
     fn test_timeout() {
-        let r = execute_python_subprocess(
-            &python_exe(),
-            "import time; time.sleep(999)",
-            "{}",
-            2,
-        );
+        let r = execute_python_subprocess(&python_exe(), "import time; time.sleep(999)", "{}", 2);
         assert!(r.timed_out);
         assert_eq!(r.exit_code, 137);
     }
 
     #[test]
     fn test_syntax_error() {
-        let r = execute_python_subprocess(
-            &python_exe(),
-            "def f(:\n  pass",
-            "{}",
-            10,
-        );
+        let r = execute_python_subprocess(&python_exe(), "def f(:\n  pass", "{}", 10);
         assert_ne!(r.exit_code, 0);
         assert!(r.stderr.contains("SyntaxError"));
     }
 
     #[test]
     fn test_runtime_error() {
-        let r = execute_python_subprocess(
-            &python_exe(),
-            "raise ValueError('test error')",
-            "{}",
-            10,
-        );
+        let r =
+            execute_python_subprocess(&python_exe(), "raise ValueError('test error')", "{}", 10);
         assert_ne!(r.exit_code, 0);
         assert!(r.stderr.contains("ValueError"));
     }

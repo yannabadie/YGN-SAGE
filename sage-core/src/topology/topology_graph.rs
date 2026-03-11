@@ -161,7 +161,15 @@ impl TopologyNode {
         max_cost_usd: f32,
         max_wall_time_s: f32,
     ) -> Self {
-        Self::new(role, model_id, system, required_capabilities, security_label, max_cost_usd, max_wall_time_s)
+        Self::new(
+            role,
+            model_id,
+            system,
+            required_capabilities,
+            security_label,
+            max_cost_usd,
+            max_wall_time_s,
+        )
     }
 
     fn __repr__(&self) -> String {
@@ -174,8 +182,12 @@ impl std::fmt::Display for TopologyNode {
         write!(
             f,
             "TopologyNode(role='{}', model='{}', S{}, label={}, budget=${:.2}, timeout={:.0}s)",
-            self.role, self.model_id, self.system, self.security_label,
-            self.max_cost_usd, self.max_wall_time_s
+            self.role,
+            self.model_id,
+            self.system,
+            self.security_label,
+            self.max_cost_usd,
+            self.max_wall_time_s
         )
     }
 }
@@ -260,9 +272,8 @@ impl TopologyEdge {
         condition: Option<String>,
         weight: f32,
     ) -> PyResult<Self> {
-        Self::try_new(edge_type, field_mapping, gate, condition, weight).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(e)
-        })
+        Self::try_new(edge_type, field_mapping, gate, condition, weight)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
     }
 
     fn __repr__(&self) -> String {
@@ -288,9 +299,8 @@ impl TopologyEdge {
                 edge_type
             )
         })?;
-        let gate_enum = Gate::parse(&gate).ok_or_else(|| {
-            format!("Invalid gate '{}'. Expected: open, closed", gate)
-        })?;
+        let gate_enum = Gate::parse(&gate)
+            .ok_or_else(|| format!("Invalid gate '{}'. Expected: open, closed", gate))?;
         Ok(Self {
             edge_type: edge_type_enum.as_str().to_string(),
             field_mapping,
@@ -395,9 +405,7 @@ impl TopologyGraph {
     /// Create an empty topology with the given template type (Python entry point).
     #[new]
     pub fn py_new(template_type: &str) -> PyResult<Self> {
-        Self::try_new(template_type).map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(e)
-        })
+        Self::try_new(template_type).map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
     }
 
     /// Add a node to the graph. Returns the node index.
@@ -409,9 +417,8 @@ impl TopologyGraph {
     /// Add an edge between two nodes (by index).
     #[pyo3(name = "add_edge")]
     pub fn py_add_edge(&mut self, from: usize, to: usize, edge: TopologyEdge) -> PyResult<()> {
-        self.try_add_edge(from, to, edge).map_err(|e| {
-            pyo3::exceptions::PyIndexError::new_err(e)
-        })
+        self.try_add_edge(from, to, edge)
+            .map_err(|e| pyo3::exceptions::PyIndexError::new_err(e))
     }
 
     /// Number of nodes.
@@ -441,18 +448,16 @@ impl TopologyGraph {
     /// Get a node by index.
     #[pyo3(name = "get_node")]
     pub fn py_get_node(&self, index: usize) -> PyResult<TopologyNode> {
-        self.try_get_node(index).map_err(|e| {
-            pyo3::exceptions::PyIndexError::new_err(e)
-        })
+        self.try_get_node(index)
+            .map_err(|e| pyo3::exceptions::PyIndexError::new_err(e))
     }
 
     /// Get topological ordering of nodes.
     /// Returns node indices in topological order. Errors if graph has cycles.
     #[pyo3(name = "topological_sort")]
     pub fn py_topological_sort(&self) -> PyResult<Vec<usize>> {
-        self.try_topological_sort().map_err(|e| {
-            pyo3::exceptions::PyValueError::new_err(e)
-        })
+        self.try_topological_sort()
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))
     }
 
     fn __repr__(&self) -> String {
@@ -500,7 +505,12 @@ impl TopologyGraph {
     }
 
     /// Add an edge between two nodes (by index). Returns error if indices are out of range.
-    pub fn try_add_edge(&mut self, from: usize, to: usize, edge: TopologyEdge) -> Result<(), String> {
+    pub fn try_add_edge(
+        &mut self,
+        from: usize,
+        to: usize,
+        edge: TopologyEdge,
+    ) -> Result<(), String> {
         let node_count = self.graph.node_count();
         if from >= node_count {
             return Err(format!(

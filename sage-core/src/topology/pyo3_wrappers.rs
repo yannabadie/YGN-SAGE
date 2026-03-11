@@ -61,7 +61,10 @@ impl PyGenerateResult {
     pub fn topology_id(&self) -> String {
         let node_count = self.topology.node_count();
         let id_prefix = &self.topology.id[..self.topology.id.len().min(8)];
-        format!("{}:n{}:{}", self.topology.template_type, node_count, id_prefix)
+        format!(
+            "{}:n{}:{}",
+            self.topology.template_type, node_count, id_prefix
+        )
     }
 
     pub fn __repr__(&self) -> String {
@@ -407,7 +410,11 @@ mod tests {
         let tid = result.topology_id();
         // Format: "<template>:n<node_count>:<8-char-ulid-prefix>"
         let parts: Vec<&str> = tid.splitn(3, ':').collect();
-        assert_eq!(parts.len(), 3, "topology_id must have 3 colon-separated parts");
+        assert_eq!(
+            parts.len(),
+            3,
+            "topology_id must have 3 colon-separated parts"
+        );
         assert_eq!(parts[0], "sequential");
         assert!(parts[1].starts_with('n'), "second part must start with 'n'");
         let node_count: usize = parts[1][1..].parse().expect("node count must be numeric");

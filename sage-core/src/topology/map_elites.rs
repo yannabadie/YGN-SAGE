@@ -187,10 +187,8 @@ fn compute_model_diversity(graph: &TopologyGraph) -> f32 {
         return 0.0;
     }
 
-    let unique_models: std::collections::HashSet<&str> = inner
-        .node_weights()
-        .map(|n| n.model_id.as_str())
-        .collect();
+    let unique_models: std::collections::HashSet<&str> =
+        inner.node_weights().map(|n| n.model_id.as_str()).collect();
 
     unique_models.len() as f32 / count as f32
 }
@@ -442,9 +440,11 @@ impl MapElitesArchive {
 
     /// Find the entry with the highest quality across all cells.
     pub fn best_by_quality(&self) -> Option<&EliteEntry> {
-        self.cells
-            .values()
-            .max_by(|a, b| a.quality.partial_cmp(&b.quality).unwrap_or(std::cmp::Ordering::Equal))
+        self.cells.values().max_by(|a, b| {
+            a.quality
+                .partial_cmp(&b.quality)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     }
 
     /// Iterate all entries as (key tuple, &EliteEntry) pairs.
@@ -489,8 +489,8 @@ impl MapElitesArchive {
 
         for (&(acb, mdb, cb, dvb), entry) in &self.cells {
             let proxy = serde_proxy::SerializableGraph::from_topology(&entry.graph);
-            let json = serde_json::to_string(&proxy)
-                .map_err(|e| format!("Serialize topology: {}", e))?;
+            let json =
+                serde_json::to_string(&proxy).map_err(|e| format!("Serialize topology: {}", e))?;
 
             stmt.execute(params![
                 acb as i32,
@@ -548,11 +548,11 @@ impl MapElitesArchive {
                     row.get::<_, i32>(1)? as u8,  // max_depth_bucket
                     row.get::<_, i32>(2)? as u8,  // cost_bucket
                     row.get::<_, i32>(3)? as u8,  // model_diversity_bucket
-                    row.get::<_, String>(4)?,      // topology_json
-                    row.get::<_, f64>(5)? as f32,  // quality
-                    row.get::<_, f64>(6)? as f32,  // cost
-                    row.get::<_, f64>(7)? as f32,  // latency_ms
-                    row.get::<_, u32>(8)?,          // evaluation_count
+                    row.get::<_, String>(4)?,     // topology_json
+                    row.get::<_, f64>(5)? as f32, // quality
+                    row.get::<_, f64>(6)? as f32, // cost
+                    row.get::<_, f64>(7)? as f32, // latency_ms
+                    row.get::<_, u32>(8)?,        // evaluation_count
                 ))
             })
             .map_err(|e| format!("Query: {}", e))?;
@@ -562,8 +562,7 @@ impl MapElitesArchive {
                 row_result.map_err(|e| format!("Row: {}", e))?;
 
             let proxy: serde_proxy::SerializableGraph =
-                serde_json::from_str(&json)
-                    .map_err(|e| format!("Deserialize topology: {}", e))?;
+                serde_json::from_str(&json).map_err(|e| format!("Deserialize topology: {}", e))?;
             let graph = proxy.to_topology()?;
 
             archive.cells.insert(
@@ -696,7 +695,7 @@ mod tests {
             "broken".into(),
             "".into(), // empty model_id
             1,
-            vec![],    // empty capabilities too
+            vec![], // empty capabilities too
             0,
             1.0,
             60.0,
@@ -771,9 +770,27 @@ mod tests {
         let desc2 = BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);
         let desc3 = BehaviorDescriptor::from_raw(6, 5, 0.20, 0.9);
 
-        archive.insert(&desc1, make_valid_graph("sequential", "m"), 0.7, 0.005, 50.0);
-        archive.insert(&desc2, make_valid_graph("sequential", "m"), 0.95, 0.05, 100.0);
-        archive.insert(&desc3, make_valid_graph("sequential", "m"), 0.8, 0.20, 200.0);
+        archive.insert(
+            &desc1,
+            make_valid_graph("sequential", "m"),
+            0.7,
+            0.005,
+            50.0,
+        );
+        archive.insert(
+            &desc2,
+            make_valid_graph("sequential", "m"),
+            0.95,
+            0.05,
+            100.0,
+        );
+        archive.insert(
+            &desc3,
+            make_valid_graph("sequential", "m"),
+            0.8,
+            0.20,
+            200.0,
+        );
 
         let best = archive.best_by_quality().unwrap();
         assert!((best.quality - 0.95).abs() < f32::EPSILON);
@@ -872,9 +889,9 @@ mod tests {
 
         // Full descriptor from raw values.
         let desc = BehaviorDescriptor::from_raw(4, 3, 0.05, 0.5);
-        assert_eq!(desc.agent_count_bucket, 3);   // 3-5 => bucket 3
-        assert_eq!(desc.max_depth_bucket, 2);      // 3-4 => bucket 2
-        assert_eq!(desc.cost_bucket, 2);           // $0.01-$0.10 => bucket 2
+        assert_eq!(desc.agent_count_bucket, 3); // 3-5 => bucket 3
+        assert_eq!(desc.max_depth_bucket, 2); // 3-4 => bucket 2
+        assert_eq!(desc.cost_bucket, 2); // $0.01-$0.10 => bucket 2
         assert_eq!(desc.model_diversity_bucket, 2); // 0.3-0.7 => bucket 2
         assert_eq!(desc.key(), (3, 2, 2, 2));
     }
@@ -888,10 +905,10 @@ mod tests {
         let desc = BehaviorDescriptor::from_topology(&graph, 0.005);
 
         assert_eq!(graph.node_count(), 3);
-        assert_eq!(desc.agent_count_bucket, 3);     // 3 agents => bucket 3 (small team)
-        assert_eq!(desc.max_depth_bucket, 1);        // depth 2 => bucket 1 (shallow)
-        assert_eq!(desc.cost_bucket, 1);             // $0.005 => bucket 1 (cheap)
-        // 1 unique model out of 3 nodes = 1/3 = 0.333 => bucket 2 (0.3-0.7).
+        assert_eq!(desc.agent_count_bucket, 3); // 3 agents => bucket 3 (small team)
+        assert_eq!(desc.max_depth_bucket, 1); // depth 2 => bucket 1 (shallow)
+        assert_eq!(desc.cost_bucket, 1); // $0.005 => bucket 1 (cheap)
+                                         // 1 unique model out of 3 nodes = 1/3 = 0.333 => bucket 2 (0.3-0.7).
         assert_eq!(desc.model_diversity_bucket, 2);
 
         // Multi-model graph: 3 nodes, 3 different models => diversity = 1.0.
@@ -899,9 +916,9 @@ mod tests {
         let desc2 = BehaviorDescriptor::from_topology(&multi, 0.20);
 
         assert_eq!(multi.node_count(), 3);
-        assert_eq!(desc2.agent_count_bucket, 3);     // 3 agents => bucket 3
-        assert_eq!(desc2.cost_bucket, 3);             // $0.20 => bucket 3 (expensive)
-        assert_eq!(desc2.model_diversity_bucket, 3);  // 3/3 = 1.0 => bucket 3 (diverse)
+        assert_eq!(desc2.agent_count_bucket, 3); // 3 agents => bucket 3
+        assert_eq!(desc2.cost_bucket, 3); // $0.20 => bucket 3 (expensive)
+        assert_eq!(desc2.model_diversity_bucket, 3); // 3/3 = 1.0 => bucket 3 (diverse)
     }
 
     // -- Test 11: Default trait implementation --------------------------------
@@ -920,17 +937,23 @@ mod tests {
 
         // Populate 5 distinct cells.
         let configs: Vec<(u32, u32, f32, f32)> = vec![
-            (1, 1, 0.005, 0.1),   // solo, shallow, cheap, homogeneous
-            (2, 2, 0.01, 0.3),    // pair, shallow, moderate, mixed
-            (4, 3, 0.05, 0.5),    // small team, medium, moderate, mixed
-            (6, 5, 0.10, 0.7),    // large, deep, moderate, mixed
-            (8, 6, 0.20, 0.9),    // large, deep, expensive, diverse
+            (1, 1, 0.005, 0.1), // solo, shallow, cheap, homogeneous
+            (2, 2, 0.01, 0.3),  // pair, shallow, moderate, mixed
+            (4, 3, 0.05, 0.5),  // small team, medium, moderate, mixed
+            (6, 5, 0.10, 0.7),  // large, deep, moderate, mixed
+            (8, 6, 0.20, 0.9),  // large, deep, expensive, diverse
         ];
 
         for (i, &(ac, md, cost, div)) in configs.iter().enumerate() {
             let desc = BehaviorDescriptor::from_raw(ac, md, cost, div);
             let graph = make_valid_graph("sequential", &format!("model-{}", i));
-            archive.insert(&desc, graph, 0.5 + i as f32 * 0.1, cost, 50.0 + i as f32 * 50.0);
+            archive.insert(
+                &desc,
+                graph,
+                0.5 + i as f32 * 0.1,
+                cost,
+                50.0 + i as f32 * 50.0,
+            );
         }
 
         assert_eq!(archive.cell_count(), 5);
@@ -957,7 +980,11 @@ mod tests {
         let depth = compute_max_depth(&graph);
         // source -> worker -> aggregator (via message edges too).
         // All edges count for depth: source->worker (control), worker->agg (message).
-        assert!(depth >= 2, "Parallel graph depth should be >= 2, got {}", depth);
+        assert!(
+            depth >= 2,
+            "Parallel graph depth should be >= 2, got {}",
+            depth
+        );
 
         let diversity = compute_model_diversity(&graph);
         // Single model => 1/5 = 0.2.

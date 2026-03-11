@@ -232,7 +232,11 @@ impl TopologyExecutor {
             debug!(node_index, "Marking node Completed");
             self.node_status[node_index] = NodeStatus::Completed;
         } else {
-            warn!(node_index, len = self.node_status.len(), "Node index out of range");
+            warn!(
+                node_index,
+                len = self.node_status.len(),
+                "Node index out of range"
+            );
         }
     }
 
@@ -242,7 +246,11 @@ impl TopologyExecutor {
             debug!(node_index, "Marking node Running");
             self.node_status[node_index] = NodeStatus::Running;
         } else {
-            warn!(node_index, len = self.node_status.len(), "Node index out of range");
+            warn!(
+                node_index,
+                len = self.node_status.len(),
+                "Node index out of range"
+            );
         }
     }
 
@@ -252,7 +260,11 @@ impl TopologyExecutor {
             debug!(node_index, "Marking node Skipped");
             self.node_status[node_index] = NodeStatus::Skipped;
         } else {
-            warn!(node_index, len = self.node_status.len(), "Node index out of range");
+            warn!(
+                node_index,
+                len = self.node_status.len(),
+                "Node index out of range"
+            );
         }
     }
 
@@ -274,7 +286,10 @@ impl TopologyExecutor {
                 }
             }
         }
-        warn!(from, to, "No control edge found between nodes for open_gate");
+        warn!(
+            from,
+            to, "No control edge found between nodes for open_gate"
+        );
     }
 
     /// Close a gate on a control edge between two nodes.
@@ -294,7 +309,10 @@ impl TopologyExecutor {
                 }
             }
         }
-        warn!(from, to, "No control edge found between nodes for close_gate");
+        warn!(
+            from,
+            to, "No control edge found between nodes for close_gate"
+        );
     }
 
     /// True if all nodes are either Completed or Skipped.

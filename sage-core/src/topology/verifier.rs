@@ -62,7 +62,11 @@ impl std::fmt::Display for VerificationResult {
         if self.valid {
             write!(f, "VerificationResult: VALID")?;
         } else {
-            write!(f, "VerificationResult: INVALID ({} errors)", self.errors.len())?;
+            write!(
+                f,
+                "VerificationResult: INVALID ({} errors)",
+                self.errors.len()
+            )?;
         }
         if !self.warnings.is_empty() {
             write!(f, ", {} warnings", self.warnings.len())?;
@@ -204,9 +208,7 @@ impl HybridVerifier {
         }
 
         if petgraph::algo::is_cyclic_directed(&control_graph) {
-            errors.push(
-                "Control-flow subgraph (open gates only) contains a cycle".to_string(),
-            );
+            errors.push("Control-flow subgraph (open gates only) contains a cycle".to_string());
         }
 
         (errors, warnings)
@@ -222,10 +224,7 @@ impl HybridVerifier {
     ///
     /// Closed-gate back-edges are excluded: they represent dormant repair paths and do
     /// not affect the normal execution flow.
-    fn check_entry_exit_reachability(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_entry_exit_reachability(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let mut errors = Vec::new();
         let warnings = Vec::new();
@@ -276,9 +275,7 @@ impl HybridVerifier {
             .collect();
 
         if exit_nodes.is_empty() {
-            errors.push(
-                "No exit node found (every node has outgoing control edges)".to_string(),
-            );
+            errors.push("No exit node found (every node has outgoing control edges)".to_string());
         }
 
         // BFS reachability: all nodes must be reachable from at least one entry
@@ -308,10 +305,7 @@ impl HybridVerifier {
     // -----------------------------------------------------------------------
 
     /// Each node must have either a non-empty model_id or non-empty required_capabilities.
-    fn check_capability_coverage(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_capability_coverage(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let mut errors = Vec::new();
         let warnings = Vec::new();
@@ -334,10 +328,7 @@ impl HybridVerifier {
     // -----------------------------------------------------------------------
 
     /// Sum of all node max_cost_usd must be > 0 and < 10000.
-    fn check_budget_feasibility(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_budget_feasibility(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let mut errors = Vec::new();
         let warnings = Vec::new();
@@ -346,10 +337,7 @@ impl HybridVerifier {
             return (errors, warnings);
         }
 
-        let total_budget: f32 = inner
-            .node_weights()
-            .map(|n| n.max_cost_usd)
-            .sum();
+        let total_budget: f32 = inner.node_weights().map(|n| n.max_cost_usd).sum();
 
         if total_budget <= 0.0 {
             errors.push(format!(
@@ -377,10 +365,7 @@ impl HybridVerifier {
     // -----------------------------------------------------------------------
 
     /// No node should exceed max_fan_in incoming edges or max_fan_out outgoing edges.
-    fn check_fan_limits(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_fan_limits(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let mut errors = Vec::new();
         let warnings = Vec::new();
@@ -418,10 +403,7 @@ impl HybridVerifier {
 
     /// Information can only flow from lower to higher labels (or same).
     /// An edge from security_label=2 to security_label=0 is a violation.
-    fn check_security_labels(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_security_labels(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let mut errors = Vec::new();
         let warnings = Vec::new();
@@ -446,10 +428,7 @@ impl HybridVerifier {
     // -----------------------------------------------------------------------
 
     /// Warn if a node has role containing "reviewer"/"verifier"/"judge" but system tier is S1.
-    fn check_role_coherence(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_role_coherence(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let errors = Vec::new();
         let mut warnings = Vec::new();
@@ -460,11 +439,7 @@ impl HybridVerifier {
             let node = &inner[idx];
             let role_lower = node.role.to_lowercase();
 
-            if node.system == 1
-                && complex_roles
-                    .iter()
-                    .any(|r| role_lower.contains(r))
-            {
+            if node.system == 1 && complex_roles.iter().any(|r| role_lower.contains(r)) {
                 warnings.push(format!(
                     "Role coherence: node '{}' has role '{}' (requires complex reasoning) but system tier is S1",
                     node.node_id, node.role
@@ -481,10 +456,7 @@ impl HybridVerifier {
 
     /// If any outgoing edge from a node has a condition, warn if not ALL outgoing edges
     /// from that node have conditions (missing default branch).
-    fn check_switch_completeness(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_switch_completeness(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let errors = Vec::new();
         let mut warnings = Vec::new();
@@ -522,10 +494,7 @@ impl HybridVerifier {
 
     /// If graph has any closed-gate back-edge, check that the back-edge target
     /// has max_wall_time_s > 0 (timeout ensures termination).
-    fn check_loop_termination(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_loop_termination(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let errors = Vec::new();
         let mut warnings = Vec::new();
@@ -552,10 +521,7 @@ impl HybridVerifier {
     // -----------------------------------------------------------------------
 
     /// For message edges with field_mapping, check that all keys and values are non-empty.
-    fn check_field_mapping_consistency(
-        &self,
-        graph: &TopologyGraph,
-    ) -> (Vec<String>, Vec<String>) {
+    fn check_field_mapping_consistency(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let inner = graph.inner_graph();
         let errors = Vec::new();
         let mut warnings = Vec::new();

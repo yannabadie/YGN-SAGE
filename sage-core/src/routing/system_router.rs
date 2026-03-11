@@ -147,8 +147,12 @@ impl SystemRouter {
 
     /// Route a task to the best cognitive system + model (legacy API).
     pub fn route(&self, task: &str, budget: f32) -> RoutingDecision {
-        let _span =
-            info_span!("system_router.route", task_len = task.len(), budget = budget).entered();
+        let _span = info_span!(
+            "system_router.route",
+            task_len = task.len(),
+            budget = budget
+        )
+        .entered();
 
         // Step 1: Structural analysis
         let features = StructuralFeatures::extract_from(task);

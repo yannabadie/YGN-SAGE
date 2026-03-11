@@ -180,19 +180,10 @@ fn route_constrained_filters_by_capability() {
     let router = SystemRouter::new(reg);
 
     // Require vision — only "coder" has supports_vision=true
-    let constraints = RoutingConstraints::new(
-        0.0,
-        0.0,
-        0.0,
-        vec!["vision".into()],
-        String::new(),
-        0.0,
-    );
+    let constraints =
+        RoutingConstraints::new(0.0, 0.0, 0.0, vec!["vision".into()], String::new(), 0.0);
     let decision = router.route_constrained("What is the capital of France?", &constraints);
-    assert_eq!(
-        decision.model_id, "coder",
-        "Only 'coder' supports vision"
-    );
+    assert_eq!(decision.model_id, "coder", "Only 'coder' supports vision");
 }
 
 #[test]
@@ -206,10 +197,7 @@ fn route_constrained_filters_by_latency() {
         "Write a Python function to sort a list using quicksort",
         &constraints,
     );
-    assert_eq!(
-        decision.model_id, "fast",
-        "Only 'fast' has latency < 500ms"
-    );
+    assert_eq!(decision.model_id, "fast", "Only 'fast' has latency < 500ms");
 }
 
 #[test]
@@ -257,14 +245,8 @@ fn route_constrained_widens_on_empty() {
 
     // S1 task with vision requirement: "fast" is best S1 but has no vision.
     // Should widen to all models and pick "coder" (only one with vision).
-    let constraints = RoutingConstraints::new(
-        0.0,
-        0.0,
-        0.0,
-        vec!["vision".into()],
-        String::new(),
-        0.0,
-    );
+    let constraints =
+        RoutingConstraints::new(0.0, 0.0, 0.0, vec!["vision".into()], String::new(), 0.0);
     let decision = router.route_constrained("What is 2+2?", &constraints);
     assert_eq!(
         decision.model_id, "coder",
@@ -280,14 +262,8 @@ fn route_constrained_unsatisfiable_falls_back() {
     // Impossible: require vision + latency < 50ms (no model satisfies both)
     // "coder" has vision but latency=3000ms
     // "fast" has latency=100ms but no vision
-    let constraints = RoutingConstraints::new(
-        0.0,
-        50.0,
-        0.0,
-        vec!["vision".into()],
-        String::new(),
-        0.0,
-    );
+    let constraints =
+        RoutingConstraints::new(0.0, 50.0, 0.0, vec!["vision".into()], String::new(), 0.0);
     let decision = router.route_constrained("Describe this image", &constraints);
 
     // When no constraints can be satisfied, falls back to all models.

@@ -55,14 +55,8 @@ fn test_retrieve_similar_tasks() {
     );
 
     // Register a query task directly in S-MMU (simulating a new task arrival)
-    let query_id = smmu.register_chunk(
-        0,
-        0,
-        "Sort an array",
-        vec!["sort".into()],
-        Some(emb2),
-        None,
-    );
+    let query_id =
+        smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
     let results = bridge.retrieve_similar(&smmu, query_id, 5);
     // Should find the similar task via semantic edge

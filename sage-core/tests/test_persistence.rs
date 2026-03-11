@@ -27,8 +27,7 @@ fn test_save_and_load_roundtrip() {
     sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
 
     // Load
-    let loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
     assert_eq!(loaded.arm_count(), 2);
     assert_eq!(loaded.total_observations(), 1);
 
@@ -43,8 +42,7 @@ fn test_save_empty_bandit() {
     let db = temp_db();
     let bandit = ContextualBandit::create(0.995, 0.1);
     sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
-    let loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
     assert_eq!(loaded.arm_count(), 0);
     let _ = std::fs::remove_file(&db);
 }
@@ -69,8 +67,7 @@ fn test_posteriors_preserved() {
     let before = bandit.arm_summaries();
 
     sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
-    let loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
     let after = loaded.arm_summaries();
 
     // Quality mean should be approximately preserved
@@ -93,8 +90,7 @@ fn test_config_preserved() {
     let db = temp_db();
     let bandit = ContextualBandit::create(0.987, 0.42);
     sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
-    let loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
 
     // Verify config was preserved via accessor methods
     assert!(
@@ -129,8 +125,7 @@ fn test_overwrite_existing_db() {
     sage_core::routing::persistence::save_bandit(&bandit2, db.to_str().unwrap()).unwrap();
 
     // Load should have model-a (from first save, still in table) + model-b, model-c
-    let loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
     assert!(
         loaded.arm_count() >= 2,
         "Should have at least 2 arms, got {}",
@@ -146,8 +141,7 @@ fn test_overwrite_existing_db() {
 fn test_load_nonexistent_db() {
     // rusqlite creates the file if it doesn't exist (but the directory must exist).
     // On a path with nonexistent directory, it should fail gracefully (no panic).
-    let result =
-        sage_core::routing::persistence::load_bandit("/nonexistent/path/bandit.db");
+    let result = sage_core::routing::persistence::load_bandit("/nonexistent/path/bandit.db");
     // Either way, no panic — just assert we got through
     let _ = result;
 }
@@ -170,8 +164,7 @@ fn test_loaded_bandit_is_functional() {
     }
 
     sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
-    let mut loaded =
-        sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+    let mut loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
 
     // The loaded bandit should be fully functional: choose + record
     let decision = loaded.choose(0.0).unwrap();

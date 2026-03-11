@@ -25,7 +25,9 @@ mod security {
 
     #[test]
     fn v1_blocks_from_pathlib() {
-        let r = validate_python_code("from pathlib import Path\ndata = Path('/etc/hosts').read_bytes()");
+        let r = validate_python_code(
+            "from pathlib import Path\ndata = Path('/etc/hosts').read_bytes()",
+        );
         assert!(!r.valid, "Should block from pathlib: {:?}", r.errors);
     }
 
@@ -91,7 +93,8 @@ mod security {
 
     #[test]
     fn v4_blocks_http_client() {
-        let r = validate_python_code("import http.client\nc = http.client.HTTPConnection('evil.com')");
+        let r =
+            validate_python_code("import http.client\nc = http.client.HTTPConnection('evil.com')");
         assert!(!r.valid, "Should block http: {:?}", r.errors);
     }
 
@@ -115,7 +118,9 @@ mod security {
 
     #[test]
     fn v4_blocks_xmlrpc() {
-        let r = validate_python_code("import xmlrpc.client\nc = xmlrpc.client.ServerProxy('http://evil.com')");
+        let r = validate_python_code(
+            "import xmlrpc.client\nc = xmlrpc.client.ServerProxy('http://evil.com')",
+        );
         assert!(!r.valid, "Should block xmlrpc: {:?}", r.errors);
     }
 
@@ -131,7 +136,8 @@ mod security {
 
     #[test]
     fn v5_blocks_from_subprocess() {
-        let r = validate_python_code("from subprocess import Popen\np = Popen(['cat', '/etc/passwd'])");
+        let r =
+            validate_python_code("from subprocess import Popen\np = Popen(['cat', '/etc/passwd'])");
         assert!(!r.valid, "Should block from subprocess: {:?}", r.errors);
     }
 
@@ -149,7 +155,9 @@ mod security {
 
     #[test]
     fn v5_blocks_multiprocessing() {
-        let r = validate_python_code("import multiprocessing\np = multiprocessing.Process(target=print)");
+        let r = validate_python_code(
+            "import multiprocessing\np = multiprocessing.Process(target=print)",
+        );
         assert!(!r.valid, "Should block multiprocessing: {:?}", r.errors);
     }
 
@@ -160,18 +168,38 @@ mod security {
     #[test]
     fn v6_blocks_all_23_modules() {
         let blocked = [
-            "os", "sys", "subprocess", "shutil", "ctypes", "importlib",
-            "socket", "http", "ftplib", "smtplib", "xmlrpc",
-            "multiprocessing", "threading", "signal", "resource",
-            "code", "codeop", "pathlib", "glob", "tempfile",
-            "pickle", "shelve", "builtins",
+            "os",
+            "sys",
+            "subprocess",
+            "shutil",
+            "ctypes",
+            "importlib",
+            "socket",
+            "http",
+            "ftplib",
+            "smtplib",
+            "xmlrpc",
+            "multiprocessing",
+            "threading",
+            "signal",
+            "resource",
+            "code",
+            "codeop",
+            "pathlib",
+            "glob",
+            "tempfile",
+            "pickle",
+            "shelve",
+            "builtins",
         ];
         for module in blocked {
             let r = validate_python_code(&format!("import {}", module));
             assert!(!r.valid, "Should block import {}: {:?}", module, r.errors);
             assert!(
                 r.errors.iter().any(|e| e.contains(module)),
-                "Error should mention '{}', got: {:?}", module, r.errors
+                "Error should mention '{}', got: {:?}",
+                module,
+                r.errors
             );
         }
     }
@@ -179,15 +207,37 @@ mod security {
     #[test]
     fn v6_blocks_all_23_from_imports() {
         let blocked = [
-            "os", "sys", "subprocess", "shutil", "ctypes", "importlib",
-            "socket", "http", "ftplib", "smtplib", "xmlrpc",
-            "multiprocessing", "threading", "signal", "resource",
-            "code", "codeop", "pathlib", "glob", "tempfile",
-            "pickle", "shelve", "builtins",
+            "os",
+            "sys",
+            "subprocess",
+            "shutil",
+            "ctypes",
+            "importlib",
+            "socket",
+            "http",
+            "ftplib",
+            "smtplib",
+            "xmlrpc",
+            "multiprocessing",
+            "threading",
+            "signal",
+            "resource",
+            "code",
+            "codeop",
+            "pathlib",
+            "glob",
+            "tempfile",
+            "pickle",
+            "shelve",
+            "builtins",
         ];
         for module in blocked {
             let r = validate_python_code(&format!("from {} import *", module));
-            assert!(!r.valid, "Should block from {} import *: {:?}", module, r.errors);
+            assert!(
+                !r.valid,
+                "Should block from {} import *: {:?}",
+                module, r.errors
+            );
         }
     }
 
@@ -272,7 +322,8 @@ mod security {
 
     #[test]
     fn allows_functools() {
-        let r = validate_python_code("import functools\nfunctools.reduce(lambda a,b: a+b, [1,2,3])");
+        let r =
+            validate_python_code("import functools\nfunctools.reduce(lambda a,b: a+b, [1,2,3])");
         assert!(r.valid, "Should allow functools: {:?}", r.errors);
     }
 }

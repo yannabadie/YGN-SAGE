@@ -128,10 +128,26 @@ fn affinity_for_each_system() {
 fn load_real_cards_toml() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/config/cards.toml");
     let cards = ModelCard::load_from_file(path).expect("Failed to load cards.toml");
-    assert!(cards.len() >= 18, "Expected at least 18 models, got {}", cards.len());
+    assert!(
+        cards.len() >= 18,
+        "Expected at least 18 models, got {}",
+        cards.len()
+    );
     for card in &cards {
-        assert!(card.s1_affinity >= 0.0 && card.s1_affinity <= 1.0, "Bad s1 for {}", card.id);
-        assert!(card.s2_affinity >= 0.0 && card.s2_affinity <= 1.0, "Bad s2 for {}", card.id);
-        assert!(card.s3_affinity >= 0.0 && card.s3_affinity <= 1.0, "Bad s3 for {}", card.id);
+        assert!(
+            card.s1_affinity >= 0.0 && card.s1_affinity <= 1.0,
+            "Bad s1 for {}",
+            card.id
+        );
+        assert!(
+            card.s2_affinity >= 0.0 && card.s2_affinity <= 1.0,
+            "Bad s2 for {}",
+            card.id
+        );
+        assert!(
+            card.s3_affinity >= 0.0 && card.s3_affinity <= 1.0,
+            "Bad s3 for {}",
+            card.id
+        );
     }
 }

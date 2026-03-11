@@ -166,8 +166,11 @@ impl TopologySynthesizer {
 
     /// Parse Stage 1 JSON into a list of role assignments.
     pub fn parse_roles(json: &str) -> Result<Vec<RoleAssignment>, SynthesisError> {
-        let _span = info_span!("synthesis_stage", stage = SynthesisStage::RoleAssignment.as_str())
-            .entered();
+        let _span = info_span!(
+            "synthesis_stage",
+            stage = SynthesisStage::RoleAssignment.as_str()
+        )
+        .entered();
 
         let envelope: RolesEnvelope = serde_json::from_str(json)
             .map_err(|e| SynthesisError::RoleParseFailed(e.to_string()))?;
@@ -182,9 +185,11 @@ impl TopologySynthesizer {
 
     /// Parse Stage 2 JSON into a structure design.
     pub fn parse_structure(json: &str) -> Result<StructureDesign, SynthesisError> {
-        let _span =
-            info_span!("synthesis_stage", stage = SynthesisStage::StructureDesign.as_str())
-                .entered();
+        let _span = info_span!(
+            "synthesis_stage",
+            stage = SynthesisStage::StructureDesign.as_str()
+        )
+        .entered();
 
         let design: StructureDesign = serde_json::from_str(json)
             .map_err(|e| SynthesisError::StructureParseFailed(e.to_string()))?;
@@ -206,8 +211,11 @@ impl TopologySynthesizer {
         roles: &[RoleAssignment],
         structure: &StructureDesign,
     ) -> Result<TopologyGraph, SynthesisError> {
-        let _span =
-            info_span!("synthesis_stage", stage = SynthesisStage::Validation.as_str()).entered();
+        let _span = info_span!(
+            "synthesis_stage",
+            stage = SynthesisStage::Validation.as_str()
+        )
+        .entered();
 
         let n = roles.len();
         let adj_n = structure.adjacency.len();
@@ -224,13 +232,19 @@ impl TopologySynthesizer {
             }
             // Same check for edge_types rows
             if i < structure.edge_types.len() && structure.edge_types[i].len() != n {
-                return Err(SynthesisError::DimensionMismatch(n, structure.edge_types[i].len()));
+                return Err(SynthesisError::DimensionMismatch(
+                    n,
+                    structure.edge_types[i].len(),
+                ));
             }
         }
 
         // Validate edge_types outer dimension
         if structure.edge_types.len() != n {
-            return Err(SynthesisError::DimensionMismatch(n, structure.edge_types.len()));
+            return Err(SynthesisError::DimensionMismatch(
+                n,
+                structure.edge_types.len(),
+            ));
         }
 
         // Validate template name
@@ -238,8 +252,8 @@ impl TopologySynthesizer {
             return Err(SynthesisError::InvalidTemplate(structure.template.clone()));
         }
 
-        let mut graph = TopologyGraph::try_new(&structure.template)
-            .map_err(SynthesisError::InvalidTemplate)?;
+        let mut graph =
+            TopologyGraph::try_new(&structure.template).map_err(SynthesisError::InvalidTemplate)?;
 
         // Add nodes from role assignments
         for role in roles {

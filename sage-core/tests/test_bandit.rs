@@ -334,7 +334,11 @@ fn test_bandit_repr() {
         "repr should contain class name: {}",
         repr
     );
-    assert!(repr.contains("arms=2"), "repr should show arm count: {}", repr);
+    assert!(
+        repr.contains("arms=2"),
+        "repr should show arm count: {}",
+        repr
+    );
     assert!(
         repr.contains("observations=0"),
         "repr should show observation count: {}",

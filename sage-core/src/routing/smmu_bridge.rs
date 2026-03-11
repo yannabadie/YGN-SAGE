@@ -62,11 +62,7 @@ impl TopologyBridge {
     /// Registers the task context as an S-MMU chunk and stores the routing
     /// outcome metadata (template, model, quality, cost, latency) locally.
     /// Returns the S-MMU chunk ID.
-    pub fn record_outcome(
-        &mut self,
-        smmu: &mut MultiViewMMU,
-        chunk: TopologyChunk,
-    ) -> usize {
+    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, chunk: TopologyChunk) -> usize {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -259,14 +255,8 @@ mod tests {
         );
 
         // Register a query chunk directly in S-MMU
-        let query_id = smmu.register_chunk(
-            0,
-            0,
-            "Sort an array",
-            vec!["sort".into()],
-            Some(emb2),
-            None,
-        );
+        let query_id =
+            smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
         let results = bridge.retrieve_similar(&smmu, query_id, 5);
         // Should find the similar task via semantic edge

@@ -198,7 +198,7 @@ impl WasmSandbox {
         Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
             "JIT compilation requires the 'cranelift' feature. \
              Use execute_precompiled() with pre-compiled components, \
-             or build with: cargo build --features sandbox,cranelift"
+             or build with: cargo build --features sandbox,cranelift",
         ))
     }
 }
@@ -326,7 +326,8 @@ pub fn execute_wasi_component(
         env: Vec::new(),
     };
 
-    let output = instance.call_run(&mut store, &input)
+    let output = instance
+        .call_run(&mut store, &input)
         .map_err(|e| format!("WASI call_run: {}", e))?;
 
     Ok((output.stdout, output.stderr, output.exit_code))
@@ -352,7 +353,8 @@ pub fn execute_bare_component(
         env: Vec::new(),
     };
 
-    let output = instance.call_run(&mut store, &input)
+    let output = instance
+        .call_run(&mut store, &input)
         .map_err(|e| format!("call_run: {}", e))?;
 
     Ok((output.stdout, output.stderr, output.exit_code))

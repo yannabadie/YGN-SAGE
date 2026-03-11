@@ -9,28 +9,74 @@ use tree_sitter::{Parser, Query, QueryCursor, StreamingIterator};
 
 /// Blocked module names — security-critical stdlib modules.
 const BLOCKED_MODULES: &[&str] = &[
-    "os", "sys", "subprocess", "shutil", "ctypes", "importlib",
-    "socket", "http", "ftplib", "smtplib", "xmlrpc",
-    "multiprocessing", "threading", "signal", "resource",
-    "code", "codeop", "pathlib", "glob", "tempfile",
-    "pickle", "shelve", "builtins",
+    "os",
+    "sys",
+    "subprocess",
+    "shutil",
+    "ctypes",
+    "importlib",
+    "socket",
+    "http",
+    "ftplib",
+    "smtplib",
+    "xmlrpc",
+    "multiprocessing",
+    "threading",
+    "signal",
+    "resource",
+    "code",
+    "codeop",
+    "pathlib",
+    "glob",
+    "tempfile",
+    "pickle",
+    "shelve",
+    "builtins",
 ];
 
 /// Blocked function/method calls.
 const BLOCKED_CALLS: &[&str] = &[
-    "exec", "eval", "compile", "__import__", "breakpoint",
-    "open", "getattr", "setattr", "delattr", "globals", "locals",
+    "exec",
+    "eval",
+    "compile",
+    "__import__",
+    "breakpoint",
+    "open",
+    "getattr",
+    "setattr",
+    "delattr",
+    "globals",
+    "locals",
     // Indirect bypass vectors (Audit3 F-01):
-    "vars", "dir", "chr", "type", "hasattr",
+    "vars",
+    "dir",
+    "chr",
+    "type",
+    "hasattr",
 ];
 
 /// Blocked dunder attributes — kills __class__.__mro__.__subclasses__ chains.
 const BLOCKED_DUNDERS: &[&str] = &[
-    "__class__", "__bases__", "__mro__", "__subclasses__",
-    "__globals__", "__builtins__", "__import__", "__init__",
-    "__dict__", "__getattr__", "__setattr__", "__delattr__",
-    "__code__", "__func__", "__self__", "__module__",
-    "__qualname__", "__wrapped__", "__loader__", "__spec__",
+    "__class__",
+    "__bases__",
+    "__mro__",
+    "__subclasses__",
+    "__globals__",
+    "__builtins__",
+    "__import__",
+    "__init__",
+    "__dict__",
+    "__getattr__",
+    "__setattr__",
+    "__delattr__",
+    "__code__",
+    "__func__",
+    "__self__",
+    "__module__",
+    "__qualname__",
+    "__wrapped__",
+    "__loader__",
+    "__spec__",
 ];
 
 /// S-expression queries for tree-sitter-python.
@@ -69,7 +115,9 @@ pub fn validate_python_code(code: &str) -> ValidationResult {
     // 1. Parse with tree-sitter
     let mut parser = Parser::new();
     let language = tree_sitter_python::LANGUAGE;
-    parser.set_language(&language.into()).expect("tree-sitter-python language");
+    parser
+        .set_language(&language.into())
+        .expect("tree-sitter-python language");
 
     let tree = match parser.parse(code, None) {
         Some(t) => t,
@@ -214,7 +262,7 @@ mod tests {
     #[test]
     fn test_allowed_modules() {
         let r = validate_python_code(
-            "import json\nimport math\nimport re\nimport collections\nimport itertools"
+            "import json\nimport math\nimport re\nimport collections\nimport itertools",
         );
         assert!(r.valid, "errors: {:?}", r.errors);
     }
@@ -268,14 +316,22 @@ mod tests {
         let code = "subs = ().__class__.__mro__[-1].__subclasses__()\nfor s in subs:\n    x = s.__init__.__globals__";
         let r = validate_python_code(code);
         assert!(!r.valid);
-        assert!(r.errors.len() >= 3, "Expected 3+ errors, got {:?}", r.errors);
+        assert!(
+            r.errors.len() >= 3,
+            "Expected 3+ errors, got {:?}",
+            r.errors
+        );
     }
 
     #[test]
     fn test_blocks_vars_dir_chr_type() {
         let r = validate_python_code("vars()\ndir()\nchr(65)\ntype(x)");
         assert!(!r.valid);
-        assert!(r.errors.len() >= 4, "Expected 4+ blocked calls, got {:?}", r.errors);
+        assert!(
+            r.errors.len() >= 4,
+            "Expected 4+ blocked calls, got {:?}",
+            r.errors
+        );
     }
 
     #[test]

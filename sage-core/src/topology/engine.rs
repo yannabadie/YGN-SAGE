@@ -21,9 +21,9 @@ use crate::memory::smmu::MultiViewMMU;
 use crate::routing::bandit::ContextualBandit;
 
 use super::cma_me::CmaEmitter;
-use super::mcts::MctsSearcher;
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
+use super::mcts::MctsSearcher;
 use super::mutations::{apply_random_mutation, MutationResult};
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;
@@ -163,13 +163,21 @@ impl TopologyEngine {
 
         // Path 1: S-MMU hit — retrieve similar past task
         if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
-            info!(source = "smmu_hit", confidence = result.confidence, "topology_generated");
+            info!(
+                source = "smmu_hit",
+                confidence = result.confidence,
+                "topology_generated"
+            );
             return result;
         }
 
         // Path 2: Archive hit — look up MAP-Elites by behavior descriptor
         if let Some(result) = self.try_archive_hit(system) {
-            info!(source = "archive_hit", confidence = result.confidence, "topology_generated");
+            info!(
+                source = "archive_hit",
+                confidence = result.confidence,
+                "topology_generated"
+            );
             return result;
         }
 
@@ -180,13 +188,21 @@ impl TopologyEngine {
 
         // Path 4: Mutation — mutate best-by-quality from archive
         if let Some(result) = self.try_mutation() {
-            info!(source = "mutation", confidence = result.confidence, "topology_generated");
+            info!(
+                source = "mutation",
+                confidence = result.confidence,
+                "topology_generated"
+            );
             return result;
         }
 
         // Path 5: MCTS search (if archive has enough diversity)
         if let Some(result) = self.try_mcts_search() {
-            info!(source = "mcts_search", confidence = result.confidence, "topology_generated");
+            info!(
+                source = "mcts_search",
+                confidence = result.confidence,
+                "topology_generated"
+            );
             return result;
         }
 
@@ -280,10 +296,10 @@ impl TopologyEngine {
 
         // Estimate behavior descriptor from system tier heuristics
         let (agent_count, max_depth) = match system {
-            1 => (1u32, 1u32),   // S1: solo agent, shallow
-            2 => (3u32, 2u32),   // S2: small team, medium depth
-            3 => (4u32, 3u32),   // S3: larger team, deeper
-            _ => (2u32, 2u32),   // default
+            1 => (1u32, 1u32), // S1: solo agent, shallow
+            2 => (3u32, 2u32), // S2: small team, medium depth
+            3 => (4u32, 3u32), // S3: larger team, deeper
+            _ => (2u32, 2u32), // default
         };
 
         let descriptor = BehaviorDescriptor::from_raw(agent_count, max_depth, 0.05, 0.5);
@@ -325,10 +341,7 @@ impl TopologyEngine {
                 // Verify the mutation result
                 let vr = self.verifier.verify(&mutated);
                 if vr.valid {
-                    info!(
-                        parent_quality = best.quality,
-                        "mutation_success"
-                    );
+                    info!(parent_quality = best.quality, "mutation_success");
                     Some(GenerateResult {
                         topology: mutated,
                         source: TopologySource::Mutation,
@@ -362,10 +375,7 @@ impl TopologyEngine {
 
         let searcher = MctsSearcher::new(50, 100);
         if let Some(topology) = searcher.search(best.graph.clone()) {
-            info!(
-                parent_quality = best.quality,
-                "mcts_search_success"
-            );
+            info!(parent_quality = best.quality, "mcts_search_success");
             Some(GenerateResult {
                 topology,
                 source: TopologySource::MctsSearch,
@@ -387,7 +397,10 @@ impl TopologyEngine {
             2 => templates::avr(default_model, default_model),
             3 => templates::debate(default_model, default_model),
             _ => {
-                warn!(system = system, "unknown_system_tier_defaulting_to_sequential");
+                warn!(
+                    system = system,
+                    "unknown_system_tier_defaulting_to_sequential"
+                );
                 templates::sequential(default_model)
             }
         };
@@ -437,7 +450,10 @@ impl TopologyEngine {
                     graph.template_type.clone(),
                 )
             } else {
-                debug!(topology_id = topology_id, "topology_not_in_cache_using_defaults");
+                debug!(
+                    topology_id = topology_id,
+                    "topology_not_in_cache_using_defaults"
+                );
                 (1u32, 1u32, 0.0, "sequential".to_string())
             };
 
@@ -460,13 +476,9 @@ impl TopologyEngine {
         // 2. Feed MAP-Elites archive
         if let Some(graph) = self.topology_cache.get(topology_id) {
             let descriptor = BehaviorDescriptor::from_topology(graph, cost);
-            let inserted = self.archive.insert(
-                &descriptor,
-                graph.clone(),
-                quality,
-                cost,
-                latency_ms,
-            );
+            let inserted =
+                self.archive
+                    .insert(&descriptor, graph.clone(), quality, cost, latency_ms);
             if inserted {
                 info!(
                     cell = ?descriptor.key(),
@@ -528,12 +540,7 @@ impl TopologyEngine {
 
             // Always include best-by-quality if available
             if let Some(best) = self.archive.best_by_quality() {
-                candidates.push((
-                    best.graph.clone(),
-                    best.quality,
-                    best.cost,
-                    best.latency_ms,
-                ));
+                candidates.push((best.graph.clone(), best.quality, best.cost, best.latency_ms));
             }
 
             // Fill rest from random cells
@@ -626,9 +633,7 @@ impl TopologyEngine {
                 }
 
                 // Apply edge weight to the first edge
-                if let Some(first_edge) =
-                    inner.edge_weights_mut().next()
-                {
+                if let Some(first_edge) = inner.edge_weights_mut().next() {
                     first_edge.weight = params[2] as f32;
                 }
 
@@ -649,9 +654,9 @@ impl TopologyEngine {
             for (graph, &fitness) in cma_graphs.into_iter().zip(cma_fitnesses.iter()) {
                 let vr = self.verifier.verify(&graph);
                 if vr.valid {
-                    let first_node = graph.inner_graph().node_weight(
-                        petgraph::graph::NodeIndex::new(0),
-                    );
+                    let first_node = graph
+                        .inner_graph()
+                        .node_weight(petgraph::graph::NodeIndex::new(0));
                     let est_cost = first_node.map(|n| n.max_cost_usd).unwrap_or(0.05);
                     let descriptor = BehaviorDescriptor::from_topology(&graph, est_cost);
                     self.archive.insert(
@@ -773,7 +778,10 @@ mod tests {
         assert_eq!(TopologySource::LlmSynthesis.as_str(), "llm_synthesis");
         assert_eq!(TopologySource::Mutation.as_str(), "mutation");
         assert_eq!(TopologySource::MctsSearch.as_str(), "mcts_search");
-        assert_eq!(TopologySource::TemplateFallback.as_str(), "template_fallback");
+        assert_eq!(
+            TopologySource::TemplateFallback.as_str(),
+            "template_fallback"
+        );
     }
 
     #[test]

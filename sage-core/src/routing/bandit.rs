@@ -25,9 +25,7 @@ pub enum BanditError {
 impl From<BanditError> for PyErr {
     fn from(err: BanditError) -> PyErr {
         match &err {
-            BanditError::NoArms => {
-                pyo3::exceptions::PyRuntimeError::new_err(err.to_string())
-            }
+            BanditError::NoArms => pyo3::exceptions::PyRuntimeError::new_err(err.to_string()),
             BanditError::UnknownDecision(_) => {
                 pyo3::exceptions::PyValueError::new_err(err.to_string())
             }
@@ -463,10 +461,7 @@ impl ContextualBandit {
         latency_rate: f64,
         observation_count: u32,
     ) {
-        let key = ArmKey {
-            model_id,
-            template,
-        };
+        let key = ArmKey { model_id, template };
         let arm = ArmPosterior {
             key: key.clone(),
             quality: BetaPosterior {
@@ -555,8 +550,7 @@ impl ContextualBandit {
     #[cfg(feature = "cognitive")]
     #[pyo3(name = "save_to_sqlite")]
     pub fn py_save_to_sqlite(&self, path: &str) -> PyResult<()> {
-        super::persistence::save_bandit(self, path)
-            .map_err(pyo3::exceptions::PyIOError::new_err)
+        super::persistence::save_bandit(self, path).map_err(pyo3::exceptions::PyIOError::new_err)
     }
 
     /// Load bandit state from SQLite (requires `cognitive` feature).
@@ -564,8 +558,7 @@ impl ContextualBandit {
     #[staticmethod]
     #[pyo3(name = "load_from_sqlite")]
     pub fn py_load_from_sqlite(path: &str) -> PyResult<Self> {
-        super::persistence::load_bandit(path)
-            .map_err(pyo3::exceptions::PyIOError::new_err)
+        super::persistence::load_bandit(path).map_err(pyo3::exceptions::PyIOError::new_err)
     }
 
     fn __repr__(&self) -> String {

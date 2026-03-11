@@ -181,12 +181,7 @@ impl MctsSearcher {
 
     /// EXPAND + ROLLOUT: navigate to the node at `path`, apply a random mutation
     /// to create a new child, score it with the rollout heuristic.
-    fn expand_and_rollout<R: Rng>(
-        &self,
-        tree: &mut MctsNode,
-        path: &[usize],
-        rng: &mut R,
-    ) -> f64 {
+    fn expand_and_rollout<R: Rng>(&self, tree: &mut MctsNode, path: &[usize], rng: &mut R) -> f64 {
         // Navigate to the leaf node.
         let mut current = tree;
         for &idx in path {
@@ -288,11 +283,7 @@ mod tests {
         let g = templates::sequential("gemini-2.5-flash");
         let score = rollout_score(&g);
         // Valid 3-node graph: base 0.6 + min(3, 5)/10 = 0.6 + 0.3 = 0.9
-        assert!(
-            (score - 0.9).abs() < 0.01,
-            "Expected ~0.9, got {}",
-            score
-        );
+        assert!((score - 0.9).abs() < 0.01, "Expected ~0.9, got {}", score);
     }
 
     #[test]
@@ -300,11 +291,7 @@ mod tests {
         let g = TopologyGraph::try_new("sequential").unwrap();
         let score = rollout_score(&g);
         // Empty graph is valid (verifier passes), base 0.6 + 0/10 = 0.6
-        assert!(
-            (score - 0.6).abs() < 0.01,
-            "Expected ~0.6, got {}",
-            score
-        );
+        assert!((score - 0.6).abs() < 0.01, "Expected ~0.6, got {}", score);
     }
 
     #[test]

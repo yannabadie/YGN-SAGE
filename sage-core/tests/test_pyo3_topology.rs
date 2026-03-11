@@ -44,9 +44,7 @@ fn test_engine_generate_s2_avr() {
 fn test_engine_generate_s3_debate() {
     let mut engine = PyTopologyEngine::new();
 
-    let result = engine
-        .generate("Prove that P != NP", None, 3, 0.0)
-        .unwrap();
+    let result = engine.generate("Prove that P != NP", None, 3, 0.0).unwrap();
     assert_eq!(result.source(), "template_fallback");
     assert_eq!(result.topology().template_type, "debate");
 }

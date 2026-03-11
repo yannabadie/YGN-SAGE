@@ -636,7 +636,9 @@ impl SmtVerifier {
         for constraint in &constraints {
             let trimmed = constraint.trim();
 
-            if let Some(inner) = trimmed.strip_prefix("bounds(").and_then(|s| s.strip_suffix(')'))
+            if let Some(inner) = trimmed
+                .strip_prefix("bounds(")
+                .and_then(|s| s.strip_suffix(')'))
             {
                 let parts: Vec<&str> = inner.split(',').collect();
                 if parts.len() == 2 {
@@ -645,25 +647,23 @@ impl SmtVerifier {
                         parts[1].trim().parse::<i64>(),
                     ) {
                         if !self.prove_memory_safety(addr, limit) {
-                            violations.push(format!(
-                                "Memory violation: {} out of [0, {})",
-                                addr, limit
-                            ));
+                            violations
+                                .push(format!("Memory violation: {} out of [0, {})", addr, limit));
                         }
                         continue;
                     }
                 }
                 violations.push(format!("Unparseable bounds constraint: {}", trimmed));
-            } else if let Some(inner) =
-                trimmed.strip_prefix("loop(").and_then(|s| s.strip_suffix(')'))
+            } else if let Some(inner) = trimmed
+                .strip_prefix("loop(")
+                .and_then(|s| s.strip_suffix(')'))
             {
                 let parts: Vec<&str> = inner.split(',').collect();
                 if parts.len() == 2 {
                     let var_name = parts[0].trim();
                     if let Ok(cap) = parts[1].trim().parse::<i64>() {
                         if !self.check_loop_bound(var_name, cap) {
-                            violations
-                                .push(format!("Loop '{}' may exceed cap {}", var_name, cap));
+                            violations.push(format!("Loop '{}' may exceed cap {}", var_name, cap));
                         }
                         continue;
                     }
@@ -723,10 +723,7 @@ impl SmtVerifier {
             let mut pvars = Vec::new();
 
             for (pname, pcaps, exclusions) in &providers {
-                let var = tm.mk_var(
-                    &format!("a_{}_{}", nid, pname),
-                    tm.sorts.bool_sort,
-                );
+                let var = tm.mk_var(&format!("a_{}_{}", nid, pname), tm.sorts.bool_sort);
                 let pcap_set: std::collections::HashSet<&str> =
                     pcaps.iter().map(|s| s.as_str()).collect();
                 let has_all = req_set.is_subset(&pcap_set);
@@ -777,9 +774,7 @@ impl SmtVerifier {
                 let missing: Vec<_> = req_set.difference(&pcap_set).collect();
                 let conflicts: Vec<String> = exclusions
                     .iter()
-                    .filter(|(a, b)| {
-                        req_set.contains(a.as_str()) && req_set.contains(b.as_str())
-                    })
+                    .filter(|(a, b)| req_set.contains(a.as_str()) && req_set.contains(b.as_str()))
                     .map(|(a, b)| format!("{}+{}", a, b))
                     .collect();
                 if !missing.is_empty() {
@@ -961,10 +956,7 @@ mod tests {
     #[test]
     fn test_validate_mutation_bounds() {
         let v = SmtVerifier::new();
-        let result = v.validate_mutation(vec![
-            "bounds(5, 100)".into(),
-            "bounds(200, 100)".into(),
-        ]);
+        let result = v.validate_mutation(vec!["bounds(5, 100)".into(), "bounds(200, 100)".into()]);
         assert!(!result.safe);
         assert_eq!(result.violations.len(), 1);
         assert!(result.violations[0].contains("200"));
@@ -1025,7 +1017,11 @@ mod tests {
             ("n2".into(), vec!["vision".into()]),
         ];
         let providers = vec![
-            ("openai".into(), vec!["code".into(), "vision".into()], vec![]),
+            (
+                "openai".into(),
+                vec!["code".into(), "vision".into()],
+                vec![],
+            ),
             ("google".into(), vec!["code".into()], vec![]),
         ];
         let (sat, errors) = v.verify_provider_assignment(nodes, providers);
@@ -1144,11 +1140,7 @@ mod tests {
     #[test]
     fn test_synthesize_returns_none() {
         let v = SmtVerifier::new();
-        let result = v.synthesize_invariant(
-            "x > 0",
-            vec!["x > 100".into(), "x > 50".into()],
-            2,
-        );
+        let result = v.synthesize_invariant("x > 0", vec!["x > 100".into(), "x > 50".into()], 2);
         // These are too strong and weakening to >= won't help
         // x > 0 → x >= 50 is still false
         assert!(result.is_none());

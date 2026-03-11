@@ -204,7 +204,9 @@ fn test_no_entry_node() {
     let r = verifier().verify(&g);
     assert!(!r.valid, "Should fail: no entry node");
     assert!(
-        r.errors.iter().any(|e| e.contains("entry node") || e.contains("cycle")),
+        r.errors
+            .iter()
+            .any(|e| e.contains("entry node") || e.contains("cycle")),
         "Expected no-entry or cycle error in: {:?}",
         r.errors
     );
@@ -244,7 +246,9 @@ fn test_budget_exceeds_limit() {
     let r = verifier().verify(&g);
     assert!(!r.valid, "Should fail: budget > $10000");
     assert!(
-        r.errors.iter().any(|e| e.contains("budget") && e.contains("10000")),
+        r.errors
+            .iter()
+            .any(|e| e.contains("budget") && e.contains("10000")),
         "Expected budget error in: {:?}",
         r.errors
     );
@@ -383,19 +387,13 @@ fn test_loop_termination_no_timeout() {
     g.try_add_edge(ai, vi, TopologyEdge::control()).unwrap();
     g.try_add_edge(vi, oi, TopologyEdge::control()).unwrap();
     // Closed-gate back-edge targets actor (which has 0 timeout)
-    g.try_add_edge(
-        vi,
-        ai,
-        TopologyEdge::control().with_gate(Gate::Closed),
-    )
-    .unwrap();
+    g.try_add_edge(vi, ai, TopologyEdge::control().with_gate(Gate::Closed))
+        .unwrap();
 
     let r = verifier().verify(&g);
     assert!(r.valid, "Loop termination is a warning, not an error");
     assert!(
-        r.warnings
-            .iter()
-            .any(|w| w.contains("Loop termination")),
+        r.warnings.iter().any(|w| w.contains("Loop termination")),
         "Expected loop termination warning in: {:?}",
         r.warnings
     );
@@ -604,9 +602,7 @@ fn test_open_gate_cycle_rejected() {
     let r = verifier().verify(&g);
     assert!(!r.valid, "Open-gate cycle should be rejected");
     assert!(
-        r.errors
-            .iter()
-            .any(|e| e.contains("cycle")),
+        r.errors.iter().any(|e| e.contains("cycle")),
         "Expected cycle error in: {:?}",
         r.errors
     );

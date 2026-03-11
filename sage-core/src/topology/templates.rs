@@ -163,12 +163,8 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     g.try_add_edge(vi, oi, TopologyEdge::control()).unwrap();
 
     // Back-edge: verifier -> actor (repair path, initially closed)
-    g.try_add_edge(
-        vi,
-        ai,
-        TopologyEdge::control().with_gate(Gate::Closed),
-    )
-    .unwrap();
+    g.try_add_edge(vi, ai, TopologyEdge::control().with_gate(Gate::Closed))
+        .unwrap();
 
     // Message: actor -> verifier
     let mut mapping = HashMap::new();
@@ -329,8 +325,7 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
         g.try_add_edge(
             ci,
             si,
-            TopologyEdge::control()
-                .with_condition(format!("task_type == 'type_{}'", i)),
+            TopologyEdge::control().with_condition(format!("task_type == 'type_{}'", i)),
         )
         .unwrap();
 
@@ -543,7 +538,10 @@ impl PyTemplateStore {
     }
 
     fn __repr__(&self) -> String {
-        format!("TemplateStore(templates={})", TemplateStore::available().len())
+        format!(
+            "TemplateStore(templates={})",
+            TemplateStore::available().len()
+        )
     }
 }
 

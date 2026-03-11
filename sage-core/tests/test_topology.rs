@@ -12,8 +12,7 @@ fn test_create_sequential_topology() {
     assert_eq!(topo.template(), TopologyTemplate::Sequential);
 
     let coder = TopologyNode::with_id("n1".into(), "coder".into(), "gemini-2.5-flash".into());
-    let reviewer =
-        TopologyNode::with_id("n2".into(), "reviewer".into(), "gemini-2.5-flash".into());
+    let reviewer = TopologyNode::with_id("n2".into(), "reviewer".into(), "gemini-2.5-flash".into());
 
     let i0 = topo.add_node(coder);
     let i1 = topo.add_node(reviewer);
@@ -219,7 +218,11 @@ fn test_topological_sort_fails_on_cycle() {
     let result = topo.try_topological_sort();
     assert!(result.is_err());
     let err_msg = result.unwrap_err();
-    assert!(err_msg.contains("cycle"), "Expected 'cycle' in: {}", err_msg);
+    assert!(
+        err_msg.contains("cycle"),
+        "Expected 'cycle' in: {}",
+        err_msg
+    );
 }
 
 // ---------------------------------------------------------------------------

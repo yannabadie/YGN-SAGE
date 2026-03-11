@@ -110,7 +110,10 @@ fn test_remove_node_on_two_node_graph_invalid() {
     assert_eq!(graph.node_count(), 2);
 
     let result = remove_node(graph, 0);
-    assert!(result.is_invalid(), "Expected Invalid for 2-node graph removal");
+    assert!(
+        result.is_invalid(),
+        "Expected Invalid for 2-node graph removal"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -172,7 +175,14 @@ fn test_split_node_increases_count_by_one() {
     let graph = make_sequential(); // 3 nodes
     assert_eq!(graph.node_count(), 3);
 
-    let result = split_node(graph, 1, "analyzer", "gemini-2.5-flash", "synthesizer", "gemini-2.5-flash");
+    let result = split_node(
+        graph,
+        1,
+        "analyzer",
+        "gemini-2.5-flash",
+        "synthesizer",
+        "gemini-2.5-flash",
+    );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     // Original 3 - 1 removed + 2 new = 4.
@@ -336,7 +346,14 @@ fn test_split_node_preserves_connectivity() {
     let graph = make_sequential(); // 0->1->2
 
     // Split node 1 (the middle "worker") into two nodes.
-    let result = split_node(graph, 1, "pre_worker", "gemini-2.5-flash", "post_worker", "gemini-2.5-flash");
+    let result = split_node(
+        graph,
+        1,
+        "pre_worker",
+        "gemini-2.5-flash",
+        "post_worker",
+        "gemini-2.5-flash",
+    );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
 
@@ -344,7 +361,10 @@ fn test_split_node_preserves_connectivity() {
     assert!(new_graph.is_acyclic(), "Split graph should remain acyclic");
 
     // Should have entry and exit nodes.
-    assert!(!new_graph.entry_nodes().is_empty(), "Should have entry nodes");
+    assert!(
+        !new_graph.entry_nodes().is_empty(),
+        "Should have entry nodes"
+    );
     assert!(!new_graph.exit_nodes().is_empty(), "Should have exit nodes");
 }
 

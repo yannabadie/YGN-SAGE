@@ -75,7 +75,13 @@ pub fn add_node(graph: TopologyGraph, role: &str, model_id: &str, system: u8) ->
 }
 
 /// Insert a new agent node, connecting from the specified exit node index.
-pub fn add_node_at(mut graph: TopologyGraph, role: &str, model_id: &str, system: u8, exit_hint: Option<usize>) -> MutationResult {
+pub fn add_node_at(
+    mut graph: TopologyGraph,
+    role: &str,
+    model_id: &str,
+    system: u8,
+    exit_hint: Option<usize>,
+) -> MutationResult {
     let node = TopologyNode::new(
         role.to_string(),
         model_id.to_string(),
@@ -182,7 +188,9 @@ pub fn remove_node(graph: TopologyGraph, node_index: usize) -> MutationResult {
             }
             if let (Some(new_pred), Some(new_succ)) = (old_to_new[pred], old_to_new[succ]) {
                 // Check if this edge already exists.
-                let exists = edges.iter().any(|(s, t, _)| *s == new_pred && *t == new_succ);
+                let exists = edges
+                    .iter()
+                    .any(|(s, t, _)| *s == new_pred && *t == new_succ);
                 if !exists {
                     edges.push((new_pred, new_succ, TopologyEdge::control()));
                 }
@@ -215,7 +223,11 @@ pub fn remove_node(graph: TopologyGraph, node_index: usize) -> MutationResult {
 // ---------------------------------------------------------------------------
 
 /// Change the model_id of a specific node.
-pub fn swap_model(mut graph: TopologyGraph, node_index: usize, new_model_id: &str) -> MutationResult {
+pub fn swap_model(
+    mut graph: TopologyGraph,
+    node_index: usize,
+    new_model_id: &str,
+) -> MutationResult {
     let target = NodeIndex::new(node_index);
     match graph.inner_graph_mut().node_weight_mut(target) {
         Some(node) => {
@@ -228,10 +240,7 @@ pub fn swap_model(mut graph: TopologyGraph, node_index: usize, new_model_id: &st
             node.model_id = new_model_id.to_string();
         }
         None => {
-            return MutationResult::Invalid(format!(
-                "Node index {} out of range",
-                node_index
-            ));
+            return MutationResult::Invalid(format!("Node index {} out of range", node_index));
         }
     }
 
@@ -247,10 +256,7 @@ pub fn swap_model(mut graph: TopologyGraph, node_index: usize, new_model_id: &st
 pub fn rewire_edge(mut graph: TopologyGraph, from: usize, to: usize) -> MutationResult {
     // Reject self-loops early.
     if from == to {
-        return MutationResult::Invalid(format!(
-            "Self-loop not allowed: from == to == {}",
-            from
-        ));
+        return MutationResult::Invalid(format!("Self-loop not allowed: from == to == {}", from));
     }
 
     // Check for duplicate edge.
@@ -268,9 +274,7 @@ pub fn rewire_edge(mut graph: TopologyGraph, from: usize, to: usize) -> Mutation
     // Check if a control edge already exists between these nodes.
     let already_exists = inner
         .edges_directed(from_idx, petgraph::Direction::Outgoing)
-        .any(|e| {
-            e.target() == to_idx && e.weight().typed_edge_type() == EdgeType::Control
-        });
+        .any(|e| e.target() == to_idx && e.weight().typed_edge_type() == EdgeType::Control);
 
     if already_exists {
         return MutationResult::Invalid(format!(
@@ -570,7 +574,11 @@ pub fn merge_nodes(
 // ---------------------------------------------------------------------------
 
 /// Change the role string of a node (simulates prompt mutation).
-pub fn mutate_prompt(mut graph: TopologyGraph, node_index: usize, new_role: &str) -> MutationResult {
+pub fn mutate_prompt(
+    mut graph: TopologyGraph,
+    node_index: usize,
+    new_role: &str,
+) -> MutationResult {
     let target = NodeIndex::new(node_index);
     match graph.inner_graph_mut().node_weight_mut(target) {
         Some(node) => {
@@ -583,10 +591,7 @@ pub fn mutate_prompt(mut graph: TopologyGraph, node_index: usize, new_role: &str
             node.role = new_role.to_string();
         }
         None => {
-            return MutationResult::Invalid(format!(
-                "Node index {} out of range",
-                node_index
-            ));
+            return MutationResult::Invalid(format!("Node index {} out of range", node_index));
         }
     }
 
@@ -601,7 +606,14 @@ pub fn mutate_prompt(mut graph: TopologyGraph, node_index: usize, new_role: &str
 const MODEL_IDS: &[&str] = &["gemini-2.5-flash", "gemini-3.1-pro", "gpt-5.3-codex"];
 
 /// Fixed set of role names for random mutation.
-const ROLES: &[&str] = &["coder", "reviewer", "planner", "formatter", "analyst", "reasoner"];
+const ROLES: &[&str] = &[
+    "coder",
+    "reviewer",
+    "planner",
+    "formatter",
+    "analyst",
+    "reasoner",
+];
 
 /// Pick one of the 7 mutations at random and apply it with random parameters.
 pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> MutationResult {
@@ -622,31 +634,54 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
         0 => {
             // add_node — random exit node for mutation diversity
             let exit_count = graph.exit_nodes().len();
-            let exit_hint = if exit_count > 0 { Some(rng.random_range(0..exit_count)) } else { None };
+            let exit_hint = if exit_count > 0 {
+                Some(rng.random_range(0..exit_count))
+            } else {
+                None
+            };
             let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
             let role = ROLES[rng.random_range(0..ROLES.len())];
             let system: u8 = rng.random_range(1..=3);
-            debug!(mutation = "add_node", role = role, model = model, "apply_random_mutation");
+            debug!(
+                mutation = "add_node",
+                role = role,
+                model = model,
+                "apply_random_mutation"
+            );
             add_node_at(graph, role, model, system, exit_hint)
         }
         1 => {
             // remove_node
             let idx = rng.random_range(0..node_count);
-            debug!(mutation = "remove_node", node_index = idx, "apply_random_mutation");
+            debug!(
+                mutation = "remove_node",
+                node_index = idx,
+                "apply_random_mutation"
+            );
             remove_node(graph, idx)
         }
         2 => {
             // swap_model
             let idx = rng.random_range(0..node_count);
             let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(mutation = "swap_model", node_index = idx, model = model, "apply_random_mutation");
+            debug!(
+                mutation = "swap_model",
+                node_index = idx,
+                model = model,
+                "apply_random_mutation"
+            );
             swap_model(graph, idx, model)
         }
         3 => {
             // rewire_edge
             let from = rng.random_range(0..node_count);
             let to = rng.random_range(0..node_count);
-            debug!(mutation = "rewire_edge", from = from, to = to, "apply_random_mutation");
+            debug!(
+                mutation = "rewire_edge",
+                from = from,
+                to = to,
+                "apply_random_mutation"
+            );
             rewire_edge(graph, from, to)
         }
         4 => {
@@ -656,7 +691,11 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
             let model_a = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
             let role_b = ROLES[rng.random_range(0..ROLES.len())];
             let model_b = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(mutation = "split_node", node_index = idx, "apply_random_mutation");
+            debug!(
+                mutation = "split_node",
+                node_index = idx,
+                "apply_random_mutation"
+            );
             split_node(graph, idx, role_a, model_a, role_b, model_b)
         }
         5 => {
@@ -672,14 +711,24 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
             }
             let role = ROLES[rng.random_range(0..ROLES.len())];
             let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(mutation = "merge_nodes", node_a = a, node_b = b, "apply_random_mutation");
+            debug!(
+                mutation = "merge_nodes",
+                node_a = a,
+                node_b = b,
+                "apply_random_mutation"
+            );
             merge_nodes(graph, a, b, role, model)
         }
         6 => {
             // mutate_prompt
             let idx = rng.random_range(0..node_count);
             let role = ROLES[rng.random_range(0..ROLES.len())];
-            debug!(mutation = "mutate_prompt", node_index = idx, new_role = role, "apply_random_mutation");
+            debug!(
+                mutation = "mutate_prompt",
+                node_index = idx,
+                new_role = role,
+                "apply_random_mutation"
+            );
             mutate_prompt(graph, idx, role)
         }
         _ => unreachable!(),

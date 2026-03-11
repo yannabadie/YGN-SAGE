@@ -125,14 +125,8 @@ fn test_retrieve_with_similar_embeddings() {
     bridge.record_outcome(&mut smmu, outcome);
 
     // Register a query chunk directly in S-MMU
-    let query_id = smmu.register_chunk(
-        0,
-        0,
-        "Sort an array",
-        vec!["sort".into()],
-        Some(emb2),
-        None,
-    );
+    let query_id =
+        smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
     let results = bridge.retrieve_similar(&smmu, query_id, 5);
     assert!(!results.is_empty(), "Should find the similar task");

@@ -62,7 +62,6 @@ pub struct ModelCard {
     pub family: String,
 
     // ── Benchmark scores (0.0–1.0) ──────────────────────────────────────
-
     /// Code generation benchmark score.
     #[pyo3(get)]
     pub code_score: f32,
@@ -84,7 +83,6 @@ pub struct ModelCard {
     pub formal_z3_strength: f32,
 
     // ── Cost & latency ──────────────────────────────────────────────────
-
     /// Input token cost per million tokens (USD).
     #[pyo3(get)]
     pub cost_input_per_m: f32,
@@ -102,7 +100,6 @@ pub struct ModelCard {
     pub tokens_per_sec: f32,
 
     // ── Cognitive affinities (0.0–1.0) ──────────────────────────────────
-
     /// Affinity for S1 (fast/intuitive) tasks.
     #[pyo3(get)]
     pub s1_affinity: f32,
@@ -116,7 +113,6 @@ pub struct ModelCard {
     pub s3_affinity: f32,
 
     // ── Topology & capabilities ─────────────────────────────────────────
-
     /// Recommended topology types (e.g. ["sequential", "avr", "parallel"]).
     #[pyo3(get)]
     pub recommended_topologies: Vec<String>,

@@ -69,15 +69,7 @@ const UNCERTAINTY_KEYWORDS: &[&str] = &[
 ];
 
 const TOOL_KEYWORDS: &[&str] = &[
-    "file",
-    "search",
-    "run",
-    "execute",
-    "compile",
-    "test",
-    "deploy",
-    "download",
-    "upload",
+    "file", "search", "run", "execute", "compile", "test", "deploy", "download", "upload",
 ];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -271,7 +263,10 @@ mod tests {
     #[test]
     fn tool_required_detection() {
         let f = StructuralFeatures::extract_from("Search the web for recent Rust async tutorials");
-        assert!(f.tool_required, "expected tool_required for 'search' keyword");
+        assert!(
+            f.tool_required,
+            "expected tool_required for 'search' keyword"
+        );
     }
 
     #[test]

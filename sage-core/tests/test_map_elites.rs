@@ -83,15 +83,7 @@ fn test_insert_invalid_topology_rejected() {
 
     // Node with empty model_id and empty capabilities => fails verifier.
     let mut graph = TopologyGraph::try_new("sequential").unwrap();
-    let node = TopologyNode::new(
-        "broken".into(),
-        "".into(),
-        1,
-        vec![],
-        0,
-        1.0,
-        60.0,
-    );
+    let node = TopologyNode::new("broken".into(), "".into(), 1, vec![], 0, 1.0, 60.0);
     graph.add_node(node);
 
     let desc = BehaviorDescriptor::from_raw(1, 1, 0.005, 0.0);
@@ -166,9 +158,27 @@ fn test_best_by_quality_finds_highest() {
     let desc2 = BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);
     let desc3 = BehaviorDescriptor::from_raw(6, 5, 0.20, 0.9);
 
-    archive.insert(&desc1, make_valid_graph("sequential", "m"), 0.70, 0.005, 50.0);
-    archive.insert(&desc2, make_valid_graph("sequential", "m"), 0.95, 0.05, 100.0);
-    archive.insert(&desc3, make_valid_graph("sequential", "m"), 0.80, 0.20, 200.0);
+    archive.insert(
+        &desc1,
+        make_valid_graph("sequential", "m"),
+        0.70,
+        0.005,
+        50.0,
+    );
+    archive.insert(
+        &desc2,
+        make_valid_graph("sequential", "m"),
+        0.95,
+        0.05,
+        100.0,
+    );
+    archive.insert(
+        &desc3,
+        make_valid_graph("sequential", "m"),
+        0.80,
+        0.20,
+        200.0,
+    );
 
     let best = archive.best_by_quality().unwrap();
     assert!((best.quality - 0.95).abs() < f32::EPSILON);
@@ -230,7 +240,13 @@ fn test_coverage_calculation() {
 
     // Insert second entry in different cell.
     let desc2 = BehaviorDescriptor::from_raw(6, 5, 0.20, 0.9);
-    archive.insert(&desc2, make_valid_graph("sequential", "m"), 0.7, 0.20, 200.0);
+    archive.insert(
+        &desc2,
+        make_valid_graph("sequential", "m"),
+        0.7,
+        0.20,
+        200.0,
+    );
 
     let expected2 = 2.0 / 108.0;
     assert!(
@@ -305,9 +321,9 @@ fn test_from_topology_extracts_features() {
     let desc = BehaviorDescriptor::from_topology(&graph, 0.005);
 
     assert_eq!(graph.node_count(), 3);
-    assert_eq!(desc.agent_count_bucket, 3);     // 3 agents => small team
-    assert_eq!(desc.max_depth_bucket, 1);        // depth 2 => shallow
-    assert_eq!(desc.cost_bucket, 1);             // $0.005 => cheap
+    assert_eq!(desc.agent_count_bucket, 3); // 3 agents => small team
+    assert_eq!(desc.max_depth_bucket, 1); // depth 2 => shallow
+    assert_eq!(desc.cost_bucket, 1); // $0.005 => cheap
 
     // 1 unique model / 3 nodes = 0.333 => mixed (0.3-0.7)
     assert_eq!(desc.model_diversity_bucket, 2);
@@ -346,9 +362,27 @@ mod cognitive_tests {
         let desc2 = BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);
         let desc3 = BehaviorDescriptor::from_raw(6, 5, 0.20, 0.9);
 
-        archive.insert(&desc1, make_valid_graph("sequential", "model-a"), 0.70, 0.005, 50.0);
-        archive.insert(&desc2, make_valid_graph("parallel", "model-b"), 0.85, 0.05, 100.0);
-        archive.insert(&desc3, make_valid_graph("sequential", "model-c"), 0.92, 0.20, 200.0);
+        archive.insert(
+            &desc1,
+            make_valid_graph("sequential", "model-a"),
+            0.70,
+            0.005,
+            50.0,
+        );
+        archive.insert(
+            &desc2,
+            make_valid_graph("parallel", "model-b"),
+            0.85,
+            0.05,
+            100.0,
+        );
+        archive.insert(
+            &desc3,
+            make_valid_graph("sequential", "model-c"),
+            0.92,
+            0.20,
+            200.0,
+        );
 
         assert_eq!(archive.cell_count(), 3);
 
@@ -404,14 +438,32 @@ mod cognitive_tests {
         let mut archive1 = MapElitesArchive::new();
         let desc1 = BehaviorDescriptor::from_raw(1, 1, 0.005, 0.1);
         let desc2 = BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);
-        archive1.insert(&desc1, make_valid_graph("sequential", "m"), 0.7, 0.005, 50.0);
-        archive1.insert(&desc2, make_valid_graph("sequential", "m"), 0.8, 0.05, 100.0);
+        archive1.insert(
+            &desc1,
+            make_valid_graph("sequential", "m"),
+            0.7,
+            0.005,
+            50.0,
+        );
+        archive1.insert(
+            &desc2,
+            make_valid_graph("sequential", "m"),
+            0.8,
+            0.05,
+            100.0,
+        );
         archive1.save_to_sqlite(db.to_str().unwrap()).unwrap();
 
         // Second save: 1 entry only.
         let mut archive2 = MapElitesArchive::new();
         let desc3 = BehaviorDescriptor::from_raw(6, 5, 0.20, 0.9);
-        archive2.insert(&desc3, make_valid_graph("sequential", "m"), 0.9, 0.20, 200.0);
+        archive2.insert(
+            &desc3,
+            make_valid_graph("sequential", "m"),
+            0.9,
+            0.20,
+            200.0,
+        );
         archive2.save_to_sqlite(db.to_str().unwrap()).unwrap();
 
         // Load should have only 1 entry (second save cleared the first).

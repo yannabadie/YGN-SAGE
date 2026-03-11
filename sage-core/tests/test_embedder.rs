@@ -30,7 +30,9 @@ mod onnx_embedder_tests {
     #[ignore = "deadlocks on Windows — PyO3 static init before main(). Run via Python or Linux CI."]
     fn test_embed_single() {
         pyo3::prepare_freethreaded_python();
-        if skip_if_no_model() { return; }
+        if skip_if_no_model() {
+            return;
+        }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let vec = emb.embed("Hello world").unwrap();
@@ -44,12 +46,14 @@ mod onnx_embedder_tests {
     #[ignore = "deadlocks on Windows — PyO3 static init before main(). Run via Python or Linux CI."]
     fn test_embed_batch() {
         pyo3::prepare_freethreaded_python();
-        if skip_if_no_model() { return; }
+        if skip_if_no_model() {
+            return;
+        }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
-            let vecs = emb.embed_batch(vec![
-                "Hello".into(), "World".into(), "Rust is fast".into()
-            ]).unwrap();
+            let vecs = emb
+                .embed_batch(vec!["Hello".into(), "World".into(), "Rust is fast".into()])
+                .unwrap();
             assert_eq!(vecs.len(), 3);
             assert!(vecs.iter().all(|v| v.len() == 384));
         });
@@ -59,7 +63,9 @@ mod onnx_embedder_tests {
     #[ignore = "deadlocks on Windows — PyO3 static init before main(). Run via Python or Linux CI."]
     fn test_embed_deterministic() {
         pyo3::prepare_freethreaded_python();
-        if skip_if_no_model() { return; }
+        if skip_if_no_model() {
+            return;
+        }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let v1 = emb.embed("deterministic test").unwrap();
@@ -72,7 +78,9 @@ mod onnx_embedder_tests {
     #[ignore = "deadlocks on Windows — PyO3 static init before main(). Run via Python or Linux CI."]
     fn test_embed_empty_batch() {
         pyo3::prepare_freethreaded_python();
-        if skip_if_no_model() { return; }
+        if skip_if_no_model() {
+            return;
+        }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let vecs = emb.embed_batch(vec![]).unwrap();
@@ -84,7 +92,9 @@ mod onnx_embedder_tests {
     #[ignore = "deadlocks on Windows — PyO3 static init before main(). Run via Python or Linux CI."]
     fn test_similar_texts_closer() {
         pyo3::prepare_freethreaded_python();
-        if skip_if_no_model() { return; }
+        if skip_if_no_model() {
+            return;
+        }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let cat = emb.embed("I love cats").unwrap();
@@ -94,8 +104,12 @@ mod onnx_embedder_tests {
             let sim_cat_dog: f32 = cat.iter().zip(&dog).map(|(a, b)| a * b).sum();
             let sim_cat_code: f32 = cat.iter().zip(&code).map(|(a, b)| a * b).sum();
 
-            assert!(sim_cat_dog > sim_cat_code,
-                "Expected cat-dog ({:.3}) > cat-code ({:.3})", sim_cat_dog, sim_cat_code);
+            assert!(
+                sim_cat_dog > sim_cat_code,
+                "Expected cat-dog ({:.3}) > cat-code ({:.3})",
+                sim_cat_dog,
+                sim_cat_code
+            );
         });
     }
 }

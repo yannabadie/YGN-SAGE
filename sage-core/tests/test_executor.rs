@@ -155,7 +155,11 @@ fn test_dynamic_avr_gate_open_loop_reentry() {
     // With back-edge open, actor(0) has an open control edge from verifier(1)
     // which is Completed, so actor is ready
     let w3 = exec.next_ready(&graph);
-    assert!(w3.contains(&0), "Actor should be ready for re-entry, got: {:?}", w3);
+    assert!(
+        w3.contains(&0),
+        "Actor should be ready for re-entry, got: {:?}",
+        w3
+    );
 
     // Close the back-edge gate to stop the loop
     exec.close_gate(&mut graph, 1, 0);
@@ -380,8 +384,16 @@ fn test_dynamic_debate_topology() {
     // topic_setter has no incoming edges. judge has only message edges (no control).
     let mut w1 = exec.next_ready(&graph);
     w1.sort();
-    assert!(w1.contains(&0), "topic_setter should be ready, got: {:?}", w1);
-    assert!(w1.contains(&3), "judge has no open-gate control deps, got: {:?}", w1);
+    assert!(
+        w1.contains(&0),
+        "topic_setter should be ready, got: {:?}",
+        w1
+    );
+    assert!(
+        w1.contains(&3),
+        "judge has no open-gate control deps, got: {:?}",
+        w1
+    );
     exec.mark_completed(0);
     exec.mark_completed(3);
 
@@ -481,9 +493,19 @@ fn test_mode_for_all_templates() {
     ];
 
     for t in static_templates {
-        assert_eq!(TopologyExecutor::mode_for(t), ExecutionMode::Static, "{:?}", t);
+        assert_eq!(
+            TopologyExecutor::mode_for(t),
+            ExecutionMode::Static,
+            "{:?}",
+            t
+        );
     }
     for t in dynamic_templates {
-        assert_eq!(TopologyExecutor::mode_for(t), ExecutionMode::Dynamic, "{:?}", t);
+        assert_eq!(
+            TopologyExecutor::mode_for(t),
+            ExecutionMode::Dynamic,
+            "{:?}",
+            t
+        );
     }
 }

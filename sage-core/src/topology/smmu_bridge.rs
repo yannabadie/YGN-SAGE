@@ -122,11 +122,7 @@ impl TopologySmmuBridge {
     /// Registers the task context as an S-MMU chunk and stores the topology
     /// outcome metadata (topology_id, template, quality, cost, latency, structural
     /// features) locally. Returns the S-MMU chunk ID.
-    pub fn record_outcome(
-        &mut self,
-        smmu: &mut MultiViewMMU,
-        outcome: TopologyOutcome,
-    ) -> usize {
+    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, outcome: TopologyOutcome) -> usize {
         let _span = info_span!(
             "topology_smmu.record",
             topology_id = %outcome.topology_id,
@@ -204,25 +200,24 @@ impl TopologySmmuBridge {
         let suggestions: Vec<TopologySuggestion> = results
             .into_iter()
             .filter_map(|(chunk_id, score)| {
-                self.chunk_meta.get(&chunk_id).map(|meta| TopologySuggestion {
-                    topology_id: meta.topology_id.clone(),
-                    template: meta.template.clone(),
-                    quality: meta.quality,
-                    cost: meta.cost,
-                    latency_ms: meta.latency_ms,
-                    similarity_score: score,
-                    agent_count: meta.agent_count,
-                    max_depth: meta.max_depth,
-                    model_diversity: meta.model_diversity,
-                })
+                self.chunk_meta
+                    .get(&chunk_id)
+                    .map(|meta| TopologySuggestion {
+                        topology_id: meta.topology_id.clone(),
+                        template: meta.template.clone(),
+                        quality: meta.quality,
+                        cost: meta.cost,
+                        latency_ms: meta.latency_ms,
+                        similarity_score: score,
+                        agent_count: meta.agent_count,
+                        max_depth: meta.max_depth,
+                        model_diversity: meta.model_diversity,
+                    })
             })
             .take(max_results)
             .collect();
 
-        info!(
-            found = suggestions.len(),
-            "topology_suggestions_retrieved"
-        );
+        info!(found = suggestions.len(), "topology_suggestions_retrieved");
 
         suggestions
     }
@@ -235,11 +230,7 @@ impl TopologySmmuBridge {
     ///
     /// The arm is registered with model_id "suggested" so the bandit can
     /// distinguish prior-injected arms from organically registered ones.
-    pub fn inject_priors(
-        &self,
-        bandit: &mut ContextualBandit,
-        suggestions: &[TopologySuggestion],
-    ) {
+    pub fn inject_priors(&self, bandit: &mut ContextualBandit, suggestions: &[TopologySuggestion]) {
         let _span = info_span!(
             "topology_smmu.inject_priors",
             suggestion_count = suggestions.len(),
@@ -317,13 +308,7 @@ mod tests {
         let mut smmu = MultiViewMMU::new();
         let mut bridge = TopologySmmuBridge::new();
 
-        let outcome = make_outcome(
-            "01JTEST0001",
-            "Sort an array",
-            "avr",
-            0.9,
-            None,
-        );
+        let outcome = make_outcome("01JTEST0001", "Sort an array", "avr", 0.9, None);
         bridge.record_outcome(&mut smmu, outcome);
 
         assert_eq!(bridge.chunk_count(), 1);
@@ -396,14 +381,8 @@ mod tests {
         bridge.record_outcome(&mut smmu, outcome);
 
         // Register a query chunk directly in S-MMU
-        let query_id = smmu.register_chunk(
-            0,
-            0,
-            "Sort an array",
-            vec!["sort".into()],
-            Some(emb2),
-            None,
-        );
+        let query_id =
+            smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
         let results = bridge.retrieve_similar(&smmu, query_id, 5);
         assert!(!results.is_empty(), "Should find the similar task");
@@ -538,14 +517,8 @@ mod tests {
         };
         bridge.record_outcome(&mut smmu, outcome);
 
-        let query_id = smmu.register_chunk(
-            0,
-            0,
-            "Similar task",
-            vec!["test".into()],
-            Some(emb),
-            None,
-        );
+        let query_id =
+            smmu.register_chunk(0, 0, "Similar task", vec!["test".into()], Some(emb), None);
 
         let suggestions = bridge.retrieve_similar(&smmu, query_id, 5);
         assert!(!suggestions.is_empty());

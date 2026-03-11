@@ -19,7 +19,10 @@ static ORT_DYLIB_RESOLVED: OnceLock<Option<std::path::PathBuf>> = OnceLock::new(
 
 /// Resolve and cache the ORT dylib path (thread-safe, one-time).
 /// Returns a reference to the cached path if found.
-pub fn resolve_ort_dylib_once(model_path: &str, sys_prefix: Option<&str>) -> Option<&'static std::path::PathBuf> {
+pub fn resolve_ort_dylib_once(
+    model_path: &str,
+    sys_prefix: Option<&str>,
+) -> Option<&'static std::path::PathBuf> {
     let resolved = ORT_DYLIB_RESOLVED.get_or_init(|| {
         if std::env::var("ORT_DYLIB_PATH").is_ok() {
             return None; // User already set it
@@ -33,7 +36,10 @@ pub fn resolve_ort_dylib_once(model_path: &str, sys_prefix: Option<&str>) -> Opt
 ///
 /// Search order: sibling of model > sys.prefix > VIRTUAL_ENV >
 /// user site-packages (%APPDATA%) > system Python (C:\Python3*).
-pub(crate) fn discover_ort_dylib(model_path: &str, sys_prefix: Option<&str>) -> Option<std::path::PathBuf> {
+pub(crate) fn discover_ort_dylib(
+    model_path: &str,
+    sys_prefix: Option<&str>,
+) -> Option<std::path::PathBuf> {
     #[cfg(target_os = "windows")]
     let dll_name = "onnxruntime.dll";
     #[cfg(target_os = "linux")]
@@ -153,17 +159,19 @@ impl RustEmbedder {
         // Release the GIL before loading ORT — on Windows, LoadLibraryW runs
         // onnxruntime.dll's DllMain which may attempt GIL acquisition, causing
         // deadlock if we're still holding it from this #[pymethods] call.
-        let (session, tokenizer) = py.allow_threads(|| -> Result<(Session, Tokenizer), String> {
-            let session = Session::builder()
-                .map_err(|e| format!("ORT session builder error: {e}"))?
-                .commit_from_file(&model_path)
-                .map_err(|e| format!("ORT model load error: {e}"))?;
+        let (session, tokenizer) = py
+            .allow_threads(|| -> Result<(Session, Tokenizer), String> {
+                let session = Session::builder()
+                    .map_err(|e| format!("ORT session builder error: {e}"))?
+                    .commit_from_file(&model_path)
+                    .map_err(|e| format!("ORT model load error: {e}"))?;
 
-            let tokenizer = Tokenizer::from_file(&tokenizer_path)
-                .map_err(|e| format!("Tokenizer load error: {e}"))?;
+                let tokenizer = Tokenizer::from_file(&tokenizer_path)
+                    .map_err(|e| format!("Tokenizer load error: {e}"))?;
 
-            Ok((session, tokenizer))
-        }).map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
+                Ok((session, tokenizer))
+            })
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
         Ok(Self { session, tokenizer })
     }
@@ -182,12 +190,9 @@ impl RustEmbedder {
 
         let str_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
-        let encodings = self
-            .tokenizer
-            .encode_batch(str_refs, true)
-            .map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Tokenization error: {e}"))
-            })?;
+        let encodings = self.tokenizer.encode_batch(str_refs, true).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Tokenization error: {e}"))
+        })?;
 
         let batch_size = encodings.len();
         let max_len = encodings
@@ -212,10 +217,9 @@ impl RustEmbedder {
         // Build tensors using (shape, &[T]) tuple form accepted by ort 2.x
         let shape = vec![batch_size, max_len];
 
-        let id_tensor =
-            TensorRef::from_array_view((shape.clone(), &*input_ids)).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (ids): {e}"))
-            })?;
+        let id_tensor = TensorRef::from_array_view((shape.clone(), &*input_ids)).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (ids): {e}"))
+        })?;
 
         let mask_tensor =
             TensorRef::from_array_view((shape.clone(), &*attention_mask)).map_err(|e| {
@@ -224,7 +228,11 @@ impl RustEmbedder {
 
         // Check if the ONNX model expects token_type_ids (standard BERT input).
         // Some models (e.g. snowflake-arctic-embed-m) may not include it.
-        let has_token_type = self.session.inputs().iter().any(|input| input.name() == "token_type_ids");
+        let has_token_type = self
+            .session
+            .inputs()
+            .iter()
+            .any(|input| input.name() == "token_type_ids");
 
         // Allocate token_type_ids outside the if block so the borrow lives long enough
         let token_type_ids = vec![0i64; batch_size * max_len];
@@ -232,7 +240,9 @@ impl RustEmbedder {
         let session_inputs = if has_token_type {
             let type_tensor =
                 TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
+                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                        "Tensor error (type_ids): {e}"
+                    ))
                 })?;
             inputs![
                 "input_ids" => id_tensor,
@@ -252,16 +262,17 @@ impl RustEmbedder {
 
         // Extract output — shape is [batch, seq_len, hidden_dim] (768 for arctic-embed-m)
         // try_extract_tensor returns (&Shape, &[f32]) where Shape derefs to [i64]
-        let (out_shape, out_data) =
-            outputs[0].try_extract_tensor::<f32>().map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Output extraction error: {e}"
-                ))
-            })?;
+        let (out_shape, out_data) = outputs[0].try_extract_tensor::<f32>().map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Output extraction error: {e}"))
+        })?;
 
         // Determine dimensions from the output shape
         let dims: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
-        let hidden_dim = if dims.len() == 3 { dims[2] } else { EMBEDDING_DIM };
+        let hidden_dim = if dims.len() == 3 {
+            dims[2]
+        } else {
+            EMBEDDING_DIM
+        };
 
         // Mean pooling with attention mask + L2 normalization
         let mut results = Vec::with_capacity(batch_size);

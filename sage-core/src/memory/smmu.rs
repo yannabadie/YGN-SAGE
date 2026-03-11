@@ -346,8 +346,14 @@ impl PyMultiViewMMU {
         embedding: Option<Vec<f32>>,
         parent_chunk_id: Option<usize>,
     ) -> usize {
-        self.inner
-            .register_chunk(start_time, end_time, summary, keywords, embedding, parent_chunk_id)
+        self.inner.register_chunk(
+            start_time,
+            end_time,
+            summary,
+            keywords,
+            embedding,
+            parent_chunk_id,
+        )
     }
 
     /// Number of chunks registered in the S-MMU.
@@ -462,7 +468,14 @@ mod tests {
 
         // Register chunk 0 with a known embedding.
         let emb = vec![1.0, 0.0, 0.5];
-        let first = smmu.register_chunk(0, 1, "first", vec!["shared".into()], Some(emb.clone()), None);
+        let first = smmu.register_chunk(
+            0,
+            1,
+            "first",
+            vec!["shared".into()],
+            Some(emb.clone()),
+            None,
+        );
 
         // Fill up MAX_SEMANTIC_NEIGHBORS + 10 intermediate chunks (no embedding,
         // no shared keywords) to push chunk 0 outside the recency window.

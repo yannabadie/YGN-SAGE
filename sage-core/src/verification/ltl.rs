@@ -518,7 +518,11 @@ mod tests {
         ] {
             let g = crate::topology::templates::TemplateStore::create(name, "m").unwrap();
             let result = LtlVerifier::check_safety(&g);
-            assert!(result.passed, "Template '{}' safety failed: {:?}", name, result.violations);
+            assert!(
+                result.passed,
+                "Template '{}' safety failed: {:?}",
+                name, result.violations
+            );
         }
         // hierarchical and hub use label=1 for all nodes, still safe (same level)
         let g = crate::topology::templates::TemplateStore::create("hierarchical", "m").unwrap();

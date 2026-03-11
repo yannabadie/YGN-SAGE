@@ -130,11 +130,7 @@ impl AdaptiveRouter {
     ///
     /// Dynamically discovers required model inputs from `session.inputs` so that
     /// models without `token_type_ids` (e.g., RoBERTa/XLM-RoBERTa) work correctly.
-    fn route_stage1(
-        &self,
-        task: &str,
-        features: &StructuralFeatures,
-    ) -> Option<RoutingResult> {
+    fn route_stage1(&self, task: &str, features: &StructuralFeatures) -> Option<RoutingResult> {
         let mut session_guard = self.classifier.lock().unwrap();
         let session = session_guard.as_mut()?;
         let tokenizer = self.classifier_tokenizer.as_ref()?;
@@ -275,7 +271,9 @@ impl AdaptiveRouter {
             if cp_exists && tp_exists {
                 // Ensure ORT_DYLIB_PATH is set before loading classifier
                 // (thread-safe via OnceLock — resolved once, reused everywhere).
-                if let Some(path) = crate::memory::embedder::resolve_ort_dylib_once(cp, sys_prefix.as_deref()) {
+                if let Some(path) =
+                    crate::memory::embedder::resolve_ort_dylib_once(cp, sys_prefix.as_deref())
+                {
                     if std::env::var("ORT_DYLIB_PATH").is_err() {
                         std::env::set_var("ORT_DYLIB_PATH", path);
                     }
@@ -297,9 +295,7 @@ impl AdaptiveRouter {
                         classifier = Some(session);
                     }
                     Err(e) => {
-                        eprintln!(
-                            "[AdaptiveRouter] WARN: failed to load classifier ONNX: {e}"
-                        );
+                        eprintln!("[AdaptiveRouter] WARN: failed to load classifier ONNX: {e}");
                     }
                 }
 
@@ -484,9 +480,7 @@ impl AdaptiveRouter {
                 "{{\"task_hash\":{},\"structural_tier\":{},\"onnx_tier\":{},\"timestamp_ms\":{}}}",
                 trace.task_hash, trace.structural_tier, onnx_tier, trace.timestamp_ms,
             )
-            .map_err(|e| {
-                pyo3::exceptions::PyIOError::new_err(format!("write error: {e}"))
-            })?;
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(format!("write error: {e}")))?;
         }
         traces.clear();
         Ok(count)
@@ -556,10 +550,7 @@ impl AdaptiveRouter {
 #[cfg(test)]
 impl AdaptiveRouter {
     /// Internal constructor for Rust unit tests (no GIL needed, no classifier).
-    pub(crate) fn new_without_py(
-        c0_threshold: Option<f32>,
-        c1_threshold: Option<f32>,
-    ) -> Self {
+    pub(crate) fn new_without_py(c0_threshold: Option<f32>, c1_threshold: Option<f32>) -> Self {
         Self {
             exemplar_embeddings: Vec::new(),
             classifier: Mutex::new(None),
@@ -591,10 +582,13 @@ mod tests {
         let router = AdaptiveRouter::new_without_py(None, None);
         // "write" -> CODE_KEYWORDS (complexity 0.35), "run" + "test" -> TOOL_KEYWORDS.
         // tool_required=true prevents S1, complexity <= 0.65 prevents S3 -> S2.
-        let result = router.route_stage0(
-            "Write a Python function to parse JSON, then run the test suite",
+        let result =
+            router.route_stage0("Write a Python function to parse JSON, then run the test suite");
+        assert_eq!(
+            result.tier, 2,
+            "Code task with tool keyword should route to S2, got S{}",
+            result.tier
         );
-        assert_eq!(result.tier, 2, "Code task with tool keyword should route to S2, got S{}", result.tier);
         assert_eq!(result.stage, 0);
     }
 
@@ -614,7 +608,11 @@ mod tests {
             "Task should have >100 words, got {}",
             result.features.word_count,
         );
-        assert_eq!(result.tier, 3, "Complex algo task (>100 words) should route to S3, got S{}", result.tier);
+        assert_eq!(
+            result.tier, 3,
+            "Complex algo task (>100 words) should route to S3, got S{}",
+            result.tier
+        );
         assert_eq!(result.stage, 0);
     }
 
@@ -683,7 +681,10 @@ mod tests {
         let router = AdaptiveRouter::new_without_py(None, None);
         let result = router.route("What is 2+2?");
         // Without a classifier, route() should fall through to stage0 result.
-        assert_eq!(result.stage, 0, "Without classifier, route should use stage 0");
+        assert_eq!(
+            result.stage, 0,
+            "Without classifier, route should use stage 0"
+        );
         assert_eq!(result.tier, 1, "Simple arithmetic question should be S1");
     }
 
@@ -784,8 +785,8 @@ mod tests {
         for _ in 0..50 {
             router.record_feedback(
                 "complex task requiring formal verification".to_string(),
-                1,    // routed_tier
-                0.3,  // actual_quality (low => needed higher tier)
+                1,   // routed_tier
+                0.3, // actual_quality (low => needed higher tier)
                 500,
                 0.05,
             );
@@ -793,7 +794,8 @@ mod tests {
         router.retrain_thresholds();
         // Should have adjusted (or hit clamp boundary)
         assert!(
-            (router.c0_threshold - old_c0).abs() > f32::EPSILON || (router.c0_threshold - 0.5).abs() < f32::EPSILON,
+            (router.c0_threshold - old_c0).abs() > f32::EPSILON
+                || (router.c0_threshold - 0.5).abs() < f32::EPSILON,
             "c0_threshold should have changed from {old_c0}, got {}",
             router.c0_threshold,
         );
@@ -816,8 +818,16 @@ mod tests {
         }
         router.retrain_thresholds();
         // Should be clamped to max 0.95
-        assert!(router.c0_threshold <= 0.95, "c0 must be <= 0.95, got {}", router.c0_threshold);
-        assert!(router.c0_threshold >= 0.5, "c0 must be >= 0.5, got {}", router.c0_threshold);
+        assert!(
+            router.c0_threshold <= 0.95,
+            "c0 must be <= 0.95, got {}",
+            router.c0_threshold
+        );
+        assert!(
+            router.c0_threshold >= 0.5,
+            "c0 must be >= 0.5, got {}",
+            router.c0_threshold
+        );
     }
 
     #[test]
@@ -843,13 +853,7 @@ mod tests {
 
         // Fill to capacity.
         for i in 0..FEEDBACK_MAX {
-            router.record_feedback(
-                format!("task_{}", i),
-                1,
-                0.9,
-                100,
-                0.01,
-            );
+            router.record_feedback(format!("task_{}", i), 1, 0.9, 100, 0.01);
         }
         assert_eq!(router.feedback_count(), FEEDBACK_MAX);
 

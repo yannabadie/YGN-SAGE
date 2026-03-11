@@ -6,10 +6,10 @@
 //!    - Falls back to bare component (for simple components without WASI)
 //! 2. Subprocess fallback (always available)
 
+use super::subprocess::{execute_python_subprocess, ExecResult};
+use super::validator::{validate_python_code, ValidationResult};
 use pyo3::prelude::*;
 use tracing::warn;
-use super::validator::{validate_python_code, ValidationResult};
-use super::subprocess::{execute_python_subprocess, ExecResult};
 
 #[cfg(feature = "sandbox")]
 use std::sync::Arc;
@@ -49,7 +49,11 @@ impl ToolExecutor {
     #[pyo3(signature = (python_exe=None, timeout_secs=30))]
     pub fn new(python_exe: Option<String>, timeout_secs: u64) -> Self {
         let exe = python_exe.unwrap_or_else(|| {
-            if cfg!(windows) { "python".to_string() } else { "python3".to_string() }
+            if cfg!(windows) {
+                "python".to_string()
+            } else {
+                "python3".to_string()
+            }
         });
 
         #[cfg(feature = "sandbox")]
@@ -77,7 +81,11 @@ impl ToolExecutor {
     /// Set `wasi` to true for CPython WASI components (deny-by-default capabilities).
     #[cfg(feature = "sandbox")]
     #[pyo3(signature = (compiled_bytes, wasi=false))]
-    pub fn load_precompiled_component(&mut self, compiled_bytes: Vec<u8>, wasi: bool) -> PyResult<()> {
+    pub fn load_precompiled_component(
+        &mut self,
+        compiled_bytes: Vec<u8>,
+        wasi: bool,
+    ) -> PyResult<()> {
         let engine = self.wasm_engine.as_ref().ok_or_else(|| {
             PyErr::new::<pyo3::exceptions::PyRuntimeError, _>("Wasm engine not initialized")
         })?;
@@ -127,24 +135,32 @@ impl ToolExecutor {
         Err(PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(
             "JIT compilation requires the 'cranelift' feature. \
              Use load_precompiled_component() with pre-compiled bytes, \
-             or build with: cargo build --features sandbox,cranelift"
+             or build with: cargo build --features sandbox,cranelift",
         ))
     }
 
     /// Check if a Wasm component is loaded and ready.
     pub fn has_wasm(&self) -> bool {
         #[cfg(feature = "sandbox")]
-        { self.wasm_component.is_some() }
+        {
+            self.wasm_component.is_some()
+        }
         #[cfg(not(feature = "sandbox"))]
-        { false }
+        {
+            false
+        }
     }
 
     /// Check if the loaded Wasm component uses WASI (deny-by-default sandbox).
     pub fn has_wasi(&self) -> bool {
         #[cfg(feature = "sandbox")]
-        { self.wasm_component.is_some() && self.needs_wasi }
+        {
+            self.wasm_component.is_some() && self.needs_wasi
+        }
         #[cfg(not(feature = "sandbox"))]
-        { false }
+        {
+            false
+        }
     }
 
     /// Validate Python code without executing it.
@@ -165,12 +181,10 @@ impl ToolExecutor {
         // 1. Validate
         let validation = validate_python_code(code);
         if !validation.valid {
-            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!(
-                    "Code validation failed:\n{}",
-                    validation.errors.join("\n")
-                )
-            ));
+            return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Code validation failed:\n{}",
+                validation.errors.join("\n")
+            )));
         }
 
         // 2. Try Wasm execution first
@@ -193,9 +207,8 @@ impl ToolExecutor {
         let args = args_json.to_string();
         let timeout = self.timeout_secs;
 
-        let result = py.allow_threads(move || {
-            execute_python_subprocess(&python_exe, &code, &args, timeout)
-        });
+        let result =
+            py.allow_threads(move || execute_python_subprocess(&python_exe, &code, &args, timeout));
 
         Ok(result)
     }
@@ -206,12 +219,7 @@ impl ToolExecutor {
     /// This method bypasses tree-sitter AST validation entirely.
     /// Caller is responsible for ensuring code safety.
     /// Every call is logged at WARN level for audit trail.
-    pub fn execute_raw(
-        &self,
-        py: Python<'_>,
-        code: &str,
-        args_json: &str,
-    ) -> ExecResult {
+    pub fn execute_raw(&self, py: Python<'_>, code: &str, args_json: &str) -> ExecResult {
         warn!(
             code_len = code.len(),
             has_wasm = self.has_wasm(),
@@ -223,9 +231,7 @@ impl ToolExecutor {
         let args = args_json.to_string();
         let timeout = self.timeout_secs;
 
-        py.allow_threads(move || {
-            execute_python_subprocess(&python_exe, &code, &args, timeout)
-        })
+        py.allow_threads(move || execute_python_subprocess(&python_exe, &code, &args, timeout))
     }
 }
 
@@ -246,7 +252,10 @@ impl ToolExecutor {
                 Ok(result) => result,
                 Err(wasi_err) => {
                     // WASI failed — try bare component as last resort
-                    eprintln!("WASI execution failed ({}), trying bare component", wasi_err);
+                    eprintln!(
+                        "WASI execution failed ({}), trying bare component",
+                        wasi_err
+                    );
                     super::wasm::execute_bare_component(engine, component, code, args_json)?
                 }
             }
@@ -322,9 +331,7 @@ mod tests {
     fn test_execute_raw_bypasses_validation() {
         init_python();
         let executor = ToolExecutor::new(None, 10);
-        let r = Python::with_gil(|py| {
-            executor.execute_raw(py, r#"print("raw exec")"#, "{}")
-        });
+        let r = Python::with_gil(|py| executor.execute_raw(py, r#"print("raw exec")"#, "{}"));
         assert_eq!(r.exit_code, 0, "stderr: {}", r.stderr);
         assert!(r.stdout.contains("raw exec"));
     }
