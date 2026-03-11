@@ -27,7 +27,6 @@ except ImportError:
 try:
     from sage_core import SystemRouter as RustSystemRouter
     from sage_core import ModelRegistry as RustModelRegistry
-    from sage_core import CognitiveSystem  # noqa: F401
     from sage_core import PyTemplateStore as RustTemplateStore  # Phase 2
     from sage_core import PyHybridVerifier as RustHybridVerifier  # Phase 2
     from sage_core import TopologyEngine as RustTopologyEngine  # Phase 6
@@ -119,6 +118,13 @@ class AgentSystem:
             else:
                 system_num = decision.system
                 model_id = None
+                # Speculative zone detection (Python-only path via ShadowRouter)
+                profile = await self.metacognition.assess_complexity_async(task)
+                if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+                    _log.info(
+                        "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
+                        profile.complexity, decision.system,
+                    )
         elif self.rust_router:
             # Primary path: Rust SystemRouter (no shadow)
             decision = self.rust_router.route(task, budget)
