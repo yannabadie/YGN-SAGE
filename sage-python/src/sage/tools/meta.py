@@ -12,7 +12,7 @@ import os
 import logging
 import re
 
-from sage.tools.base import Tool, ToolResult
+from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
 from sage.tools.sandbox_executor import validate_tool_code, execute_python_in_sandbox
 from sage.llm.base import ToolDef

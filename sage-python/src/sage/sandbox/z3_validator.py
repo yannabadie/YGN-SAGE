@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 # Try Rust OxiZ backend first (pure Rust, no C++ deps)
 try:
     from sage_core import SmtVerifier as _RustSmtVerifier
-    from sage_core import SmtVerificationResult as _RustSmtResult
     _RUST_SMT_AVAILABLE = True
 except ImportError:
     _RUST_SMT_AVAILABLE = False

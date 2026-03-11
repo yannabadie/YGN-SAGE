@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 import re
-import subprocess
 from sage.tools.base import Tool
 
 BLOCKED_PATTERNS = re.compile(r'rm\s+-rf|mkfs|dd\s+if=|:\(\)\s*\{|/dev/sd')

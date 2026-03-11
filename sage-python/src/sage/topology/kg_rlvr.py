@@ -52,11 +52,11 @@ def _safe_z3_eval(expr: str, namespace: dict) -> Any:
             raise ValueError(f"Disallowed AST node: {type(node).__name__}")
         if isinstance(node, ast.Attribute):
             if not (isinstance(node.value, ast.Name) and node.value.id == "z3"):
-                raise ValueError(f"Attribute access only allowed on 'z3'")
+                raise ValueError("Attribute access only allowed on 'z3'")
         if isinstance(node, ast.Call):
             if isinstance(node.func, ast.Attribute):
                 if not (isinstance(node.func.value, ast.Name) and node.func.value.id == "z3"):
-                    raise ValueError(f"Function calls only allowed on z3.*")
+                    raise ValueError("Function calls only allowed on z3.*")
             elif isinstance(node.func, ast.Name):
                 if node.func.id not in namespace:
                     raise ValueError(f"Unknown function: {node.func.id}")

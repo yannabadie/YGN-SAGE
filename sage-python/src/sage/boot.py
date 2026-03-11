@@ -35,24 +35,24 @@ try:
 except ImportError:
     _HAS_RUST_ROUTER = False
 
-from sage.agent import AgentConfig
-from sage.agent_loop import AgentLoop
-from sage.agent_pool import AgentPool
-from sage.llm.base import LLMConfig
-from sage.llm.mock import MockProvider
-from sage.llm.router import ModelRouter
-from sage.strategy.adaptive_router import AdaptiveRouter
-from sage.strategy.metacognition import ComplexityRouter  # backward compat
-from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation
-from sage.memory.memory_agent import MemoryAgent
-from sage.tools.registry import ToolRegistry
-from sage.memory.compressor import MemoryCompressor
-from sage.sandbox.manager import SandboxManager
-from sage.memory.episodic import EpisodicMemory
-from sage.memory.remote_rag import ExoCortex
-from sage.tools.memory_tools import create_memory_tools
-from sage.events.bus import EventBus
-from sage.routing.shadow import ShadowRouter
+from sage.agent import AgentConfig  # noqa: E402
+from sage.agent_loop import AgentLoop  # noqa: E402
+from sage.agent_pool import AgentPool  # noqa: E402
+from sage.llm.base import LLMConfig  # noqa: E402
+from sage.llm.mock import MockProvider  # noqa: E402
+from sage.llm.router import ModelRouter  # noqa: E402
+from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
+from sage.strategy.metacognition import ComplexityRouter  # backward compat  # noqa: E402
+from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation  # noqa: E402
+from sage.memory.memory_agent import MemoryAgent  # noqa: E402
+from sage.tools.registry import ToolRegistry  # noqa: E402
+from sage.memory.compressor import MemoryCompressor  # noqa: E402
+from sage.sandbox.manager import SandboxManager  # noqa: E402
+from sage.memory.episodic import EpisodicMemory  # noqa: E402
+from sage.memory.remote_rag import ExoCortex  # noqa: E402
+from sage.tools.memory_tools import create_memory_tools  # noqa: E402
+from sage.events.bus import EventBus  # noqa: E402
+from sage.routing.shadow import ShadowRouter  # noqa: E402
 
 
 @dataclass

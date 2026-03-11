@@ -15,7 +15,6 @@ import asyncio
 import dataclasses
 import json
 import logging
-import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -281,7 +280,7 @@ async def run_routing_proof() -> None:
     print("  Routing Distribution (30 unseen tasks)")
     print(f"{'=' * 60}")
     print(f"  S1: {by_system.get('S1', 0)}  S2: {by_system.get('S2', 0)}  S3: {by_system.get('S3', 0)}")
-    print(f"\n  By category:")
+    print("\n  By category:")
     for cat in ["simple", "medium", "complex"]:
         parts = []
         for sys in ["S1", "S2", "S3"]:
