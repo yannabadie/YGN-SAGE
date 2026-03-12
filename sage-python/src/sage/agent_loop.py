@@ -336,6 +336,61 @@ class AgentLoop:
             log.warning("TopologyRunner failed (%s), falling back to single-LLM", e)
             return None
 
+    async def _cegar_repair(
+        self,
+        content: str,
+        prm_details: str,
+        invariant_feedback: list[str],
+    ) -> str | None:
+        """Attempt CEGAR repair of failed S3 verification.
+
+        Extracts failed clauses from PRM details and invariant feedback,
+        builds a targeted repair prompt, and makes a single LLM call.
+        Returns repaired content if PRM passes, or None if repair fails.
+        """
+        repair_prompt = (
+            "SYSTEM: Your formal verification FAILED. "
+            "Do NOT regenerate from scratch — fix the specific failures below.\n\n"
+            f"Verification error: {prm_details}\n"
+        )
+        if invariant_feedback:
+            repair_prompt += (
+                "\nFailed invariant clauses:\n"
+                + "\n".join(f"- {f}" for f in invariant_feedback)
+                + "\n"
+            )
+        repair_prompt += (
+            "\nFix your reasoning by adding the missing formal assertions. "
+            "Use <think> tags with Z3 assertions for each step."
+        )
+
+        messages = [
+            Message(role=Role.SYSTEM, content=self.config.system_prompt),
+            Message(role=Role.ASSISTANT, content=content),
+            Message(role=Role.USER, content=repair_prompt),
+        ]
+
+        try:
+            response = await self._llm.generate(
+                messages=messages,
+                config=self.config.llm,
+            )
+            repaired = response.content or ""
+            if not repaired:
+                return None
+
+            # Verify the repair
+            r_path, details = self.prm.calculate_r_path(repaired)
+            if r_path >= 0.0 or "error" not in details:
+                log.info("CEGAR repair succeeded: r_path=%.2f", r_path)
+                return repaired
+            else:
+                log.warning("CEGAR repair failed: %s", details)
+                return None
+        except Exception as e:
+            log.warning("CEGAR repair LLM call failed: %s", e)
+            return None
+
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
         tool = self._tools.get(tc.name)
@@ -535,7 +590,7 @@ class AgentLoop:
                     f"[Step {self.step_count}] {content[:300]}"
                 )
 
-            # System 3 validation (Z3 PRM) -- max 2 retries then accept
+            # System 3 validation (Z3 PRM) -- hard gating with CEGAR repair
             if self.config.validation_level >= 3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
@@ -555,8 +610,29 @@ class AgentLoop:
                             ),
                         ))
                         continue
-                    # Max retries reached -- accept response as-is
-                    log.warning("S3 retry limit reached, accepting response without <think> tags.")
+
+                    # Max retries reached — attempt CEGAR repair
+                    inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
+                    repaired = await self._cegar_repair(content, details, inv_feedback)
+                    if repaired is not None:
+                        content = repaired
+                        self._s3_retries = 0
+                    else:
+                        # CEGAR failed — degrade to S2 (NOT accept unverified)
+                        log.warning(
+                            "S3 verification failed after CEGAR repair — "
+                            "degrading to S2 AVR."
+                        )
+                        self._emit(
+                            LoopPhase.THINK,
+                            s3_degradation=True,
+                            reason="CEGAR repair failed",
+                        )
+                        self.config.validation_level = 2
+                        self._s3_degraded = True  # Prevent S2→S3 re-escalation
+                        self._s3_retries = 0
+                        self._s2_avr_retries = 0
+                        continue  # Re-enter loop with S2 validation
                 else:
                     self._s3_retries = 0  # Reset on success
 
