@@ -1,6 +1,7 @@
-//! AdaptiveRouter — 4-stage learned S1/S2/S3 routing.
+//! AdaptiveRouter — 5-stage learned S1/S2/S3 routing.
 //!
 //! Stage 0: Structural features only (keyword complexity + uncertainty).
+//! Stage 0.5: kNN on pre-computed exemplar embeddings (arXiv 2505.12601).
 //! Stage 1: ONNX BERT classifier (routellm/bert) on task text.
 //! Stage 2-3: Python-side dynamic routing with feedback.
 //!
@@ -99,6 +100,67 @@ pub struct AdaptiveRouter {
 }
 
 impl AdaptiveRouter {
+    /// Stage 0.5: kNN routing on pre-computed exemplar embeddings.
+    ///
+    /// Computes cosine similarity (dot product on L2-normalized vectors) between
+    /// the query embedding and all exemplars. Returns weighted majority vote.
+    fn route_knn(&self, query_embedding: &[f32], k: usize, features: &StructuralFeatures) -> Option<RoutingResult> {
+        if self.exemplar_embeddings.is_empty() || query_embedding.len() != 768 {
+            return None;
+        }
+
+        let k = k.min(self.exemplar_embeddings.len());
+
+        // Compute cosine similarities (dot product — both sides L2-normalized).
+        let mut scored: Vec<(f32, u8)> = self
+            .exemplar_embeddings
+            .iter()
+            .map(|(emb, label)| {
+                let sim: f32 = emb.iter().zip(query_embedding.iter()).map(|(a, b)| a * b).sum();
+                (sim, *label)
+            })
+            .collect();
+
+        // Partial sort: top-k by descending similarity.
+        scored.select_nth_unstable_by(k.saturating_sub(1), |a, b| {
+            b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let top_k = &scored[..k];
+
+        // OOD rejection: if nearest neighbor similarity < 0.3
+        let max_sim = top_k.iter().map(|(s, _)| *s).fold(f32::NEG_INFINITY, f32::max);
+        if max_sim < 0.3 {
+            return None;
+        }
+
+        // Distance-weighted majority vote.
+        let mut votes = [0.0f32; 4]; // index 1,2,3 for S1/S2/S3
+        for &(sim, label) in top_k {
+            let weight = sim.max(0.0);
+            let idx = (label as usize).min(3);
+            if idx > 0 {
+                votes[idx] += weight;
+            }
+        }
+
+        let (winner, &max_vote) = votes
+            .iter()
+            .enumerate()
+            .skip(1)
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))?;
+
+        let total_weight: f32 = votes[1..].iter().sum();
+        let confidence = if total_weight > 0.0 { max_vote / total_weight } else { 0.0 };
+
+        Some(RoutingResult {
+            tier: winner as u8,
+            confidence,
+            stage: 0,
+            features: features.clone(),
+        })
+    }
+
     /// Map (complexity, uncertainty, tool_required) to (tier, confidence).
     fn tier_from_complexity(complexity: f32, uncertainty: f32, tool_req: bool) -> (u8, f32) {
         // S3: high complexity or high uncertainty.
@@ -417,6 +479,78 @@ impl AdaptiveRouter {
     /// Number of feedback records currently buffered.
     pub fn feedback_count(&self) -> usize {
         self.feedback.lock().unwrap().len()
+    }
+
+    /// Load pre-computed exemplar embeddings for kNN routing.
+    ///
+    /// # Arguments
+    /// * `embeddings` - Flat list of f32 values (N * 768 elements).
+    /// * `labels` - List of N labels (1=S1, 2=S2, 3=S3).
+    ///
+    /// Returns the number of exemplars loaded.
+    pub fn load_exemplars(&mut self, embeddings: Vec<f32>, labels: Vec<u8>) -> usize {
+        let dim = 768usize;
+        let n = labels.len();
+        if embeddings.len() != n * dim {
+            return 0;
+        }
+
+        self.exemplar_embeddings = (0..n)
+            .map(|i| {
+                let start = i * dim;
+                let mut vec = embeddings[start..start + dim].to_vec();
+                // L2-normalize
+                let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
+                if norm > 0.0 {
+                    vec.iter_mut().for_each(|x| *x /= norm);
+                }
+                (vec, labels[i])
+            })
+            .collect();
+
+        n
+    }
+
+    /// Number of loaded exemplar embeddings.
+    pub fn exemplar_count(&self) -> usize {
+        self.exemplar_embeddings.len()
+    }
+
+    /// Whether kNN exemplars are loaded (Stage 0.5 available).
+    pub fn has_knn(&self) -> bool {
+        !self.exemplar_embeddings.is_empty()
+    }
+
+    /// Route a task using a pre-computed embedding (kNN Stage 0.5 + structural fallback).
+    ///
+    /// If kNN exemplars are loaded, tries kNN first. Falls back to structural + ONNX.
+    pub fn route_with_embedding(&self, task: &str, embedding: Vec<f32>) -> RoutingResult {
+        let features = StructuralFeatures::extract_from(task);
+
+        // Stage 0.5: kNN on embedding
+        if !self.exemplar_embeddings.is_empty() {
+            if let Some(knn_result) = self.route_knn(&embedding, 5, &features) {
+                return knn_result;
+            }
+        }
+
+        // Fallback to structural + ONNX
+        let (tier, confidence) = Self::tier_from_complexity(
+            features.keyword_complexity,
+            features.keyword_uncertainty,
+            features.tool_required,
+        );
+        let s0 = RoutingResult { tier, confidence, stage: 0, features: features.clone() };
+
+        if s0.confidence < self.c0_threshold {
+            if let Some(s1) = self.route_stage1(task, &s0.features) {
+                if s1.confidence >= self.c1_threshold {
+                    return s1;
+                }
+            }
+        }
+
+        s0
     }
 
     /// Whether an ONNX classifier is loaded (Stage 1 available).
@@ -845,6 +979,127 @@ mod tests {
         let router = AdaptiveRouter::new_without_py(Some(0.75), Some(0.60));
         assert!((router.c0_threshold - 0.75).abs() < f32::EPSILON);
         assert!((router.c1_threshold - 0.60).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_knn_load_exemplars() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        assert_eq!(router.exemplar_count(), 0);
+        assert!(!router.has_knn());
+
+        // 3 exemplars of dimension 768
+        let dim = 768;
+        let mut embeddings = vec![0.0f32; 3 * dim];
+        // S1 exemplar: signal in dim 0
+        embeddings[0] = 1.0;
+        // S2 exemplar: signal in dim 1
+        embeddings[dim + 1] = 1.0;
+        // S3 exemplar: signal in dim 2
+        embeddings[2 * dim + 2] = 1.0;
+
+        let labels = vec![1u8, 2, 3];
+        let n = router.load_exemplars(embeddings, labels);
+        assert_eq!(n, 3);
+        assert_eq!(router.exemplar_count(), 3);
+        assert!(router.has_knn());
+    }
+
+    #[test]
+    fn test_knn_routing_basic() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        let dim = 768;
+
+        // Create 6 exemplars: 2 per system
+        let mut embeddings = vec![0.0f32; 6 * dim];
+        let labels = vec![1u8, 1, 2, 2, 3, 3];
+        // S1 exemplars: strong signal in dims 0-9
+        for i in 0..2 {
+            for d in 0..10 {
+                embeddings[i * dim + d] = 1.0;
+            }
+        }
+        // S2 exemplars: strong signal in dims 10-19
+        for i in 2..4 {
+            for d in 10..20 {
+                embeddings[i * dim + d] = 1.0;
+            }
+        }
+        // S3 exemplars: strong signal in dims 20-29
+        for i in 4..6 {
+            for d in 20..30 {
+                embeddings[i * dim + d] = 1.0;
+            }
+        }
+
+        router.load_exemplars(embeddings, labels);
+
+        // Query close to S3 cluster
+        let mut query = vec![0.0f32; dim];
+        for d in 20..30 {
+            query[d] = 1.0;
+        }
+        // L2 normalize
+        let norm: f32 = query.iter().map(|x| x * x).sum::<f32>().sqrt();
+        query.iter_mut().for_each(|x| *x /= norm);
+
+        let features = StructuralFeatures::extract_from("test");
+        let result = router.route_knn(&query, 5, &features);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().tier, 3);
+    }
+
+    #[test]
+    fn test_knn_ood_rejection() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        let dim = 768;
+
+        // Single exemplar
+        let mut embeddings = vec![0.0f32; dim];
+        embeddings[0] = 1.0;
+        router.load_exemplars(embeddings, vec![1u8]);
+
+        // Query orthogonal to exemplar → cosine sim ≈ 0 → OOD rejection
+        let mut query = vec![0.0f32; dim];
+        query[dim - 1] = 1.0;
+
+        let features = StructuralFeatures::extract_from("test");
+        let result = router.route_knn(&query, 1, &features);
+        assert!(result.is_none(), "Orthogonal query should be OOD-rejected");
+    }
+
+    #[test]
+    fn test_knn_load_bad_dimensions() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        // Mismatched: 3 labels but only 2*768 embedding values
+        let n = router.load_exemplars(vec![0.0; 2 * 768], vec![1, 2, 3]);
+        assert_eq!(n, 0);
+        assert!(!router.has_knn());
+    }
+
+    #[test]
+    fn test_route_with_embedding_uses_knn() {
+        let mut router = AdaptiveRouter::new_without_py(None, None);
+        let dim = 768;
+
+        // 2 S3 exemplars
+        let mut embeddings = vec![0.0f32; 2 * dim];
+        for i in 0..2 {
+            for d in 0..10 {
+                embeddings[i * dim + d] = 1.0;
+            }
+        }
+        router.load_exemplars(embeddings, vec![3u8, 3]);
+
+        // Query matching S3 cluster
+        let mut query = vec![0.0f32; dim];
+        for d in 0..10 {
+            query[d] = 1.0;
+        }
+        let norm: f32 = query.iter().map(|x| x * x).sum::<f32>().sqrt();
+        query.iter_mut().for_each(|x| *x /= norm);
+
+        let result = router.route_with_embedding("hello", query);
+        assert_eq!(result.tier, 3, "kNN should route to S3");
     }
 
     #[test]

@@ -454,6 +454,21 @@ def boot_agent_system(
         knn_router=_knn_router,
     )
 
+    # Load kNN exemplars into Rust AdaptiveRouter for native SIMD kNN search
+    if _knn_router is not None and _knn_router.is_ready and metacognition.has_rust:
+        try:
+            import numpy as np
+            emb = _knn_router._exemplar_embeddings
+            labels = _knn_router._exemplar_labels
+            if emb is not None and labels is not None:
+                flat_emb = emb.flatten().tolist()
+                flat_labels = labels.astype(np.uint8).tolist()
+                n = metacognition._rust.load_exemplars(flat_emb, flat_labels)
+                if n > 0:
+                    _log.info("Boot: Rust kNN loaded %d exemplars (native SIMD search)", n)
+        except Exception as e:
+            _log.info("Boot: Rust kNN exemplar load failed (%s), using Python kNN", e)
+
     # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
     rust_router = None
     rust_registry = None  # Hoisted for Phase 6 bandit warm-start

@@ -109,8 +109,14 @@ class AdaptiveRouter:
         return self._route_from_profile(profile)
 
     def assess_complexity(self, task: str) -> CognitiveProfile:
-        """Synchronous assessment: kNN > Rust structural > heuristic."""
-        # Stage 0.5: kNN on embeddings (highest priority when available)
+        """Synchronous assessment: Rust kNN > Python kNN > Rust structural > heuristic."""
+        # Best path: Rust kNN (embed in Python, kNN search in Rust)
+        if self._rust is not None and self._rust.has_knn():
+            knn_profile = self._try_rust_knn_profile(task)
+            if knn_profile is not None:
+                return knn_profile
+
+        # Fallback: Python kNN
         knn_profile = self._try_knn_profile(task)
         if knn_profile is not None:
             return knn_profile
@@ -144,7 +150,21 @@ class AdaptiveRouter:
 
     def route_adaptive(self, task: str) -> AdaptiveRoutingResult:
         """Full adaptive routing with stage info."""
-        # Stage 0.5: kNN on embeddings
+        # Best path: Rust kNN (embed in Python, kNN in Rust SIMD)
+        if self._rust is not None and self._rust.has_knn():
+            rust_knn = self._try_rust_knn(task)
+            if rust_knn is not None:
+                profile = self._knn_to_profile_from_tier(rust_knn.tier, rust_knn.confidence)
+                decision = self._route_from_profile(profile)
+                return AdaptiveRoutingResult(
+                    decision=decision,
+                    profile=profile,
+                    stage=0,
+                    confidence=rust_knn.confidence,
+                    method="rust_knn",
+                )
+
+        # Fallback: Python kNN
         knn_result = self._try_knn(task)
         if knn_result is not None:
             profile = self._knn_to_profile(knn_result)
@@ -271,7 +291,7 @@ class AdaptiveRouter:
         )
 
     def _try_knn(self, task: str):
-        """Try kNN routing, return KnnRoutingResult or None."""
+        """Try Python kNN routing, return KnnRoutingResult or None."""
         if self._knn is None or not self._knn.is_ready:
             return None
         try:
@@ -281,23 +301,49 @@ class AdaptiveRouter:
             return None
 
     def _try_knn_profile(self, task: str) -> CognitiveProfile | None:
-        """Try kNN routing and convert to CognitiveProfile."""
+        """Try Python kNN routing and convert to CognitiveProfile."""
         result = self._try_knn(task)
         if result is None:
             return None
         return self._knn_to_profile(result)
 
+    def _try_rust_knn(self, task: str):
+        """Try Rust kNN: embed in Python, search in Rust. Returns RoutingResult or None."""
+        if self._knn is None or self._rust is None:
+            return None
+        try:
+            emb = self._knn._get_embedder()
+            if emb is None or getattr(emb, "is_hash_fallback", True):
+                return None
+            query_vec = emb.embed(task)
+            result = self._rust.route_with_embedding(task, query_vec)
+            # Only accept if kNN was actually used (tier != structural fallback)
+            return result
+        except Exception as e:
+            log.warning("Rust kNN route failed: %s", e)
+            return None
+
+    def _try_rust_knn_profile(self, task: str) -> CognitiveProfile | None:
+        """Try Rust kNN routing and convert to CognitiveProfile."""
+        result = self._try_rust_knn(task)
+        if result is None:
+            return None
+        return self._knn_to_profile_from_tier(result.tier, result.confidence)
+
     @staticmethod
     def _knn_to_profile(knn_result) -> CognitiveProfile:
-        """Convert KnnRoutingResult to CognitiveProfile for _route_from_profile."""
-        # Map system to complexity/uncertainty that triggers _route_from_profile correctly
-        system = knn_result.system
-        if system == 1:
+        """Convert Python KnnRoutingResult to CognitiveProfile."""
+        return AdaptiveRouter._knn_to_profile_from_tier(knn_result.system, knn_result.confidence)
+
+    @staticmethod
+    def _knn_to_profile_from_tier(tier: int, confidence: float = 1.0) -> CognitiveProfile:
+        """Convert kNN tier to CognitiveProfile for _route_from_profile."""
+        if tier == 1:
             return CognitiveProfile(
                 complexity=0.2, uncertainty=0.1,
                 tool_required=False, reasoning="knn_s1",
             )
-        elif system == 3:
+        elif tier == 3:
             return CognitiveProfile(
                 complexity=0.8, uncertainty=0.7,
                 tool_required=False, reasoning="knn_s3",
