@@ -414,6 +414,8 @@ class AgentLoop:
         self._s3_retries = 0
         self._s2_avr_retries = 0
         self._avr_error_history = []
+        self._s3_degraded = False
+        self._original_validation_level = self.config.validation_level
         self.step_count = 0
 
         # === PERCEIVE: Gather context ===
@@ -539,6 +541,7 @@ class AgentLoop:
                     result_text = content
                     self.working_memory.add_event("ASSISTANT", content)
                     # Skip to LEARN phase (topology handled THINK+ACT internally)
+                    # TODO(Phase 1): Apply output guardrails to topology result
                     break
 
             model_name = self.config.llm.model
@@ -929,6 +932,8 @@ class AgentLoop:
         if self.semantic_memory:
             final_meta["semantic_entities"] = self.semantic_memory.entity_count()
         self._emit(LoopPhase.LEARN, **final_meta)
+        # Restore validation_level if S3→S2 degradation occurred (multi-run safety)
+        self.config.validation_level = self._original_validation_level
         return result_text or f"Agent finished at step {self.step_count}"
 
     def _compute_aio(self) -> float:

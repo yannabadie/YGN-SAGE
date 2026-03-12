@@ -27,11 +27,11 @@ class FakePRM:
         self.kg = MagicMock()
         self.kg._last_invariant_feedback = ["clause X failed: x > 0 not satisfied"]
 
-    def calculate_r_path(self, content: str) -> tuple[float, str]:
+    def calculate_r_path(self, content: str) -> tuple[float, dict]:
         self._calls += 1
         if self._calls <= self._fail_count:
-            return -1.0, "error: no formal assertions found"
-        return 0.8, "ok"
+            return -1.0, {"error": "No <think> blocks found. System 3 reasoning required."}
+        return 0.8, {"total_steps": 1, "step_scores": [0.8], "verifiable_ratio": 1.0}
 
 
 @pytest.mark.asyncio
