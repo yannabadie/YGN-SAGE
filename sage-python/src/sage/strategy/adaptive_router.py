@@ -21,6 +21,21 @@ from sage.strategy.metacognition import CognitiveProfile, RoutingDecision
 
 log = logging.getLogger(__name__)
 
+# ── StructuralFeatures: dual-import (migration shadow period) ─────────────────
+# During migration shadow period: Rust preferred (validated path).
+# After shadow validation passes, swap to Python-preferred.
+from sage.strategy.structural_features import StructuralFeatures as PyStructuralFeatures
+
+try:
+    from sage_core import StructuralFeatures as RustStructuralFeatures
+    _HAS_RUST_FEATURES = True
+except ImportError:
+    _HAS_RUST_FEATURES = False
+
+# TODO(rationalization): swap to PyStructuralFeatures after shadow validation
+StructuralFeatures = RustStructuralFeatures if _HAS_RUST_FEATURES else PyStructuralFeatures
+
+# ── Rust AdaptiveRouter backend ───────────────────────────────────────────────
 # Try Rust backend
 _rust_available = False
 try:
