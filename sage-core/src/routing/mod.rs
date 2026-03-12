@@ -6,8 +6,10 @@
 
 pub mod bandit;
 pub mod features;
+pub mod knn;
 pub mod model_card;
 pub mod model_registry;
+pub mod quality;
 pub mod smmu_bridge;
 pub mod system_router;
 

@@ -8,9 +8,11 @@
 pub mod arrow_tier;
 #[cfg(feature = "onnx")]
 pub mod embedder;
+pub mod entity_graph;
 pub mod event;
 pub mod paging;
 pub mod rag_cache;
+pub mod relevance_gate;
 pub mod smmu;
 
 // Re-export public types so that `memory::MemoryEvent` and `memory::WorkingMemory`

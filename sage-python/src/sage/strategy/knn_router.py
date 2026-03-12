@@ -26,6 +26,13 @@ import numpy as np
 
 _log = logging.getLogger(__name__)
 
+# Rust kNN hot-path acceleration
+try:
+    from sage_core import RustKnnRouter as _RustKnn
+    _HAS_RUST_KNN = True
+except ImportError:
+    _HAS_RUST_KNN = False
+
 # Search paths for pre-computed exemplar embeddings
 _EXEMPLAR_SEARCH_PATHS = [
     Path.cwd() / "config" / "routing_exemplars.npz",
@@ -90,6 +97,21 @@ class KnnRouter:
         else:
             self._try_auto_load()
 
+        # Rust kNN hot-path: load exemplars into RustKnnRouter if available
+        self._rust_knn = None
+        if _HAS_RUST_KNN and self._exemplar_embeddings is not None:
+            try:
+                self._rust_knn = _RustKnn(k=self._k, distance_threshold=self._distance_threshold)
+                self._rust_knn.load_exemplars(
+                    self._exemplar_embeddings.flatten().tolist(),
+                    self._exemplar_labels.tolist(),
+                    self._exemplar_embeddings.shape[1],
+                )
+                _log.info("kNN: Rust acceleration active (%d exemplars)", self._rust_knn.exemplar_count())
+            except Exception as e:
+                _log.warning("kNN: Rust acceleration unavailable: %s", e)
+                self._rust_knn = None
+
     @property
     def is_ready(self) -> bool:
         """True if exemplars are loaded and embedder is semantic."""
@@ -128,7 +150,26 @@ class KnnRouter:
         if emb.is_hash_fallback:
             return None
 
-        # Embed the query task
+        # Rust hot-path: try RustKnnRouter first (avoids Python numpy overhead)
+        if self._rust_knn is not None and self._rust_knn.has_exemplars():
+            try:
+                query_vec = np.array(emb.embed(task), dtype=np.float32)
+                norm = np.linalg.norm(query_vec)
+                if norm > 0:
+                    query_vec /= norm
+                result = self._rust_knn.route(query_vec.tolist())
+                if result is not None:
+                    system, confidence, nearest_dist = result
+                    return KnnRoutingResult(
+                        system=int(system),
+                        confidence=confidence,
+                        nearest_distance=nearest_dist,
+                        method="rust_knn",
+                    )
+            except Exception as e:
+                _log.warning("kNN: Rust route failed, falling back to Python: %s", e)
+
+        # Embed the query task (Python fallback path)
         try:
             query_vec = np.array(emb.embed(task), dtype=np.float32)
         except Exception as exc:

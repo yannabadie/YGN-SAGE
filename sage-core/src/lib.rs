@@ -38,7 +38,11 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<sandbox::tool_executor::ToolExecutor>()?;
     }
     m.add_class::<memory::rag_cache::RagCache>()?;
+    m.add_class::<memory::relevance_gate::RustRelevanceGate>()?;
+    m.add_class::<memory::entity_graph::RustEntityGraph>()?;
     m.add_class::<routing::features::StructuralFeatures>()?;
+    m.add_class::<routing::knn::RustKnnRouter>()?;
+    m.add_class::<routing::quality::RustQualityEstimator>()?;
     m.add_class::<routing::model_card::ModelCard>()?;
     m.add_class::<routing::model_card::CognitiveSystem>()?;
     m.add_class::<routing::model_registry::ModelRegistry>()?;
