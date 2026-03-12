@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -226,90 +225,26 @@ class ComplexityRouter:
         return profile
 
     def _assess_heuristic(self, task: str) -> CognitiveProfile:
-        """Fast keyword-based fallback (no LLM call).
+        """Degraded keyword-count fallback (no regex).
 
-        Calibrated so that simple factual and simple code tasks route to S1,
-        moderate code generation routes to S2, and complex debug/design tasks
-        route to S3.
+        Used only when ONNX model and kNN are both unavailable.
+        Returns complexity estimate in [0.0, 1.0].
         """
-        lower = task.lower()
-        words = lower.split()
-        word_count = len(words)
-
-        # --- Complexity ---
-        complexity = 0.2  # base: simple factual tasks
-
-        # Algorithmic / formal keywords (+0.35)
-        if re.search(r'\b(?:implement|build|algorithm|prove|proof|theorem)\b', lower):
-            complexity += 0.35
-        # Code generation keywords (+0.35) — only if no algorithmic/formal match
-        elif re.search(r'\b(?:write|create|code|function|class|method)\b', lower):
-            complexity += 0.35
-
-        # Debug / error keywords (+0.3)
-        if re.search(
-            r'\b(?:debug|fix|error|crash|bug|race condition|deadlock)\b',
-            lower,
-        ):
-            complexity += 0.3
-
-        # Design / architecture keywords (+0.2)
-        if re.search(
-            r'\b(?:optimize|evolve|design|architect|refactor|distributed|analyze)\b',
-            lower,
-        ):
-            complexity += 0.2
-
-        # Formal / domain-specific keywords (+0.26) — stacks with above
-        if re.search(
-            r'\b(?:formal|invariants?|correctness|specifications?|concurrent|'
-            r'consensus|crdt|lambda|calculus|capability|irrational|'
-            r'ackermann|microservices|exclusion)\b|lock[\s-]free',
-            lower,
-        ):
-            complexity += 0.26
-
-        # Multi-step indicators (+0.1)
-        if re.search(r'\b(?:then|after|first|next|finally|step)\b', lower):
-            complexity += 0.1
-
-        # Task-length scaling (word count)
-        if word_count > 100:
-            complexity += 0.15
-        elif word_count > 50:
-            complexity += 0.1
-        elif word_count > 20:
-            complexity += 0.05
-
-        # --- Uncertainty ---
-        uncertainty = 0.2
-
-        if "?" in task:
-            uncertainty += 0.1
-
-        if re.search(r'\b(?:maybe|possibly|explore|investigate)\b', lower):
-            uncertainty += 0.2
-
-        # Flakiness / nondeterminism keywords (+0.15)
-        if re.search(r'\b(?:intermittent|sometimes|random|flaky)\b', lower):
-            uncertainty += 0.15
-
-        # --- Tool requirement ---
-        # Note: "read/write" only match with file/disk/data context to avoid
-        # false positives on code-gen tasks like "write a function".
-        tool_required = bool(re.search(
-            r'\b(?:file|search|run|execute|compile|test|deploy|download|upload)\b',
-            lower,
-        )) or bool(re.search(
-            r'\b(?:read|write)\s+(?:file|disk|data|csv|json|log|output)\b',
-            lower,
-        ))
-
+        import warnings
+        warnings.warn(
+            "Using degraded keyword-count heuristic. "
+            "Install sage_core[onnx] or build kNN exemplars for accurate routing.",
+            stacklevel=2,
+        )
+        words = task.lower().split()
+        complex_kw = {"implement", "algorithm", "optimize", "distributed", "concurrent",
+                      "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
+        hits = sum(1 for w in words if w in complex_kw)
         return CognitiveProfile(
-            complexity=min(1.0, round(complexity, 4)),
-            uncertainty=min(1.0, round(uncertainty, 4)),
-            tool_required=tool_required,
-            reasoning="heuristic",
+            complexity=min(hits / 3.0, 1.0),
+            uncertainty=0.3 if "?" in task else 0.2,
+            tool_required=False,
+            reasoning="degraded_heuristic",
         )
 
 

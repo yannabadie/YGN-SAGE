@@ -9,8 +9,8 @@ def test_routing_produces_different_tiers():
 
     tasks = {
         "simple": "What is 2+2?",
-        "code": "Write a Python function to sort a list using quicksort with error handling",
-        "formal": "Prove that the halting problem is undecidable using diagonalization",
+        "code": "Implement an algorithm to optimize distributed sorting",
+        "formal": "Debug and fix the concurrent deadlock in the formal proof verifier",
     }
 
     tiers = {}

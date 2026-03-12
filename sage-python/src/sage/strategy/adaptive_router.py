@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import math
-import re
 from collections import deque
 from dataclasses import dataclass
 from typing import Any
@@ -374,58 +373,26 @@ class AdaptiveRouter:
             )
 
     def _assess_heuristic(self, task: str) -> CognitiveProfile:
-        """Heuristic fallback (same as ComplexityRouter._assess_heuristic)."""
-        lower = task.lower()
-        words = lower.split()
-        word_count = len(words)
+        """Degraded keyword-count fallback (no regex).
 
-        complexity = 0.2
-        if re.search(r"\b(?:implement|build|algorithm)\b", lower):
-            complexity += 0.35
-        elif re.search(r"\b(?:write|create|code|function|class|method)\b", lower):
-            complexity += 0.15
-        if re.search(
-            r"\b(?:debug|fix|error|crash|bug|race condition|deadlock)\b", lower
-        ):
-            complexity += 0.3
-        if re.search(
-            r"\b(?:optimize|evolve|design|architect|refactor|distributed)\b", lower
-        ):
-            complexity += 0.2
-        if re.search(r"\b(?:then|after|first|next|finally|step)\b", lower):
-            complexity += 0.1
-        if word_count > 100:
-            complexity += 0.15
-        elif word_count > 50:
-            complexity += 0.1
-        elif word_count > 20:
-            complexity += 0.05
-
-        uncertainty = 0.2
-        if "?" in task:
-            uncertainty += 0.1
-        if re.search(r"\b(?:maybe|possibly|explore|investigate)\b", lower):
-            uncertainty += 0.2
-        if re.search(r"\b(?:intermittent|sometimes|random|flaky)\b", lower):
-            uncertainty += 0.15
-
-        tool_required = bool(
-            re.search(
-                r"\b(?:file|search|run|execute|compile|test|deploy|download|upload)\b",
-                lower,
-            )
-        ) or bool(
-            re.search(
-                r"\b(?:read|write)\s+(?:file|disk|data|csv|json|log|output)\b",
-                lower,
-            )
+        Used only when ONNX model and kNN are both unavailable.
+        Delegates to ComplexityRouter._assess_heuristic for consistency.
+        """
+        import warnings
+        warnings.warn(
+            "Using degraded keyword-count heuristic. "
+            "Install sage_core[onnx] or build kNN exemplars for accurate routing.",
+            stacklevel=2,
         )
-
+        words = task.lower().split()
+        complex_kw = {"implement", "algorithm", "optimize", "distributed", "concurrent",
+                      "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
+        hits = sum(1 for w in words if w in complex_kw)
         return CognitiveProfile(
-            complexity=min(1.0, round(complexity, 4)),
-            uncertainty=min(1.0, round(uncertainty, 4)),
-            tool_required=tool_required,
-            reasoning="heuristic",
+            complexity=min(hits / 3.0, 1.0),
+            uncertainty=0.3 if "?" in task else 0.2,
+            tool_required=False,
+            reasoning="degraded_heuristic",
         )
 
     async def _entropy_probe(

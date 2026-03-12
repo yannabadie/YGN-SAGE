@@ -46,4 +46,4 @@ async def test_assess_falls_back_to_heuristic_on_provider_error(monkeypatch):
     router = ComplexityRouter(llm_provider=mock_provider)
     profile = await router.assess_complexity_async("What is 2+2?")
 
-    assert profile.reasoning == "heuristic"
+    assert profile.reasoning == "degraded_heuristic"

@@ -90,22 +90,23 @@ def test_assess_complexity_simple():
 
 def test_assess_complexity_complex():
     ctrl = MetacognitiveController()
-    profile = ctrl.assess_complexity("Debug and fix the crash in the authentication system, then run the test suite")
+    # "debug" + "fix" = 2 hits → min(2/3, 1.0) = 0.67
+    profile = ctrl.assess_complexity("Debug and fix the crash in the authentication system")
     assert profile.complexity > 0.5
-    assert profile.tool_required
 
 
 @pytest.mark.asyncio
 async def test_assess_complexity_async_fallback():
-    """Without GOOGLE_API_KEY, async falls back to heuristic."""
+    """Without GOOGLE_API_KEY, async falls back to degraded heuristic."""
     import os
     saved = os.environ.pop('GOOGLE_API_KEY', None)
     try:
         ctrl = MetacognitiveController()
         ctrl._llm_available = False
-        profile = await ctrl.assess_complexity_async('Debug the crash in auth')
-        assert profile.complexity >= 0.5
-        assert profile.reasoning == 'heuristic'
+        # "debug" + "fix" = 2 hits → 0.67
+        profile = await ctrl.assess_complexity_async('Debug and fix the auth crash')
+        assert profile.complexity > 0.5
+        assert profile.reasoning == 'degraded_heuristic'
     finally:
         if saved:
             os.environ['GOOGLE_API_KEY'] = saved
@@ -114,7 +115,7 @@ async def test_assess_complexity_async_fallback():
 def test_assess_complexity_has_reasoning():
     ctrl = MetacognitiveController()
     profile = ctrl.assess_complexity('Hello')
-    assert profile.reasoning == 'heuristic'
+    assert profile.reasoning == 'degraded_heuristic'
 
 
 def test_s2_validation_detects_code_block():
@@ -203,25 +204,34 @@ The answer is 42."""
     assert score == 0.0, f"Non-Z3 content should score 0.0, got {score}"
 
 
-def test_heuristic_word_boundary_no_false_positive():
-    """'test' in a question should NOT trigger tool_required."""
+def test_degraded_heuristic_returns_profile():
+    """Degraded keyword-count heuristic returns a valid CognitiveProfile."""
+    import warnings
     router = ComplexityRouter()
-    profile = router._assess_heuristic("What is a unit test?")
-    # "test" appears but in a conceptual question — word boundary still matches
-    # The key fix is that substrings like "attestation" won't match
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        profile = router._assess_heuristic("What is a unit test?")
     assert isinstance(profile, CognitiveProfile)
+    assert profile.tool_required is False  # degraded heuristic never sets tools
 
 
-def test_heuristic_no_substring_match():
-    """Words containing keywords as substrings should NOT match."""
+def test_degraded_heuristic_no_false_positives():
+    """Non-keyword tasks get zero complexity."""
+    import warnings
     router = ComplexityRouter()
-    profile = router._assess_heuristic("The attestation process is simple")
-    assert profile.tool_required is False  # "test" is substring of "attestation"
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        profile = router._assess_heuristic("The attestation process is simple")
+    assert profile.tool_required is False
+    assert profile.complexity == 0.0  # no complex keywords
 
 
-def test_heuristic_crash_diet_no_complexity_boost():
-    """'crash' in 'crash diet' should still match word boundary."""
+def test_degraded_heuristic_complex_keywords():
+    """Complex keywords increase complexity score."""
+    import warnings
     router = ComplexityRouter()
-    profile = router._assess_heuristic("Tell me about crash diet recipes")
-    # "crash" as a standalone word still matches — this is acceptable
-    assert profile.complexity >= 0.5  # 0.3 base + 0.3 for "crash" word match
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        profile = router._assess_heuristic("debug the algorithm and verify the fix")
+    # "debug", "algorithm", "verify", "fix" = 4 hits → min(4/3, 1.0) = 1.0
+    assert profile.complexity > 0.5
