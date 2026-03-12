@@ -55,6 +55,34 @@ from sage.events.bus import EventBus  # noqa: E402
 from sage.routing.shadow import ShadowRouter  # noqa: E402
 
 
+def _check_sandbox_availability() -> bool:
+    """Check if any code execution sandbox is available. Warns if not."""
+    has_wasm = False
+    has_docker = False
+
+    try:
+        from sage_core import ToolExecutor
+        te = ToolExecutor()
+        has_wasm = te.has_wasm() or te.has_wasi()
+    except Exception:
+        pass
+
+    if not has_wasm:
+        try:
+            import shutil
+            has_docker = shutil.which("docker") is not None
+        except Exception:
+            pass
+
+    available = has_wasm or has_docker
+    if not available:
+        _log.warning(
+            "Code execution sandbox unavailable (no Wasm, no Docker). "
+            "Tool execution will fail unless allow_local=True."
+        )
+    return available
+
+
 @dataclass
 class AgentSystem:
     """The complete YGN-SAGE agent system."""
@@ -779,6 +807,9 @@ def boot_agent_system(
         CostGuardrail(max_usd=10.0),  # Default budget limit
         OutputGuardrail(min_length=1),  # Free-text output validation
     ])
+
+    # Sandbox availability check — warn loudly if neither Wasm nor Docker present
+    _check_sandbox_availability()
 
     return AgentSystem(
         agent_loop=loop,
