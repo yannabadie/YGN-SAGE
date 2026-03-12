@@ -66,6 +66,7 @@ class EvalPlusBench:
         event_bus: Any = None,
         dataset: str = "humaneval",
         baseline_mode: bool = False,
+        official_mode: bool = False,
     ):
         if dataset not in _DATASET_LOADERS:
             raise ValueError(
@@ -76,6 +77,7 @@ class EvalPlusBench:
         self.event_bus = event_bus
         self.dataset = dataset
         self.baseline_mode = baseline_mode
+        self.official_mode = official_mode
         self.manifest: BenchmarkManifest | None = None
 
     async def generate_solutions(
@@ -473,3 +475,68 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
             f"evalplus_{self.dataset}", task_results,
             model_config={"model": self.manifest.model if self.manifest else "unknown"},
         )
+
+    async def run_official(self, limit: int | None = None, output_dir: str | None = None) -> dict[str, Any]:
+        """Generate samples.jsonl and evaluate with official EvalPlus CLI.
+
+        This produces scores comparable to the EvalPlus leaderboard.
+        Requires: pip install evalplus
+
+        Returns dict with 'base' and 'plus' pass rates.
+        """
+        try:
+            import evalplus  # noqa: F401
+        except ImportError:
+            raise RuntimeError(
+                "evalplus not installed. Run: pip install evalplus"
+            )
+
+        # 1. Generate solutions
+        solutions = await self.generate_solutions(limit=limit)
+        if not solutions:
+            return {"base": 0.0, "plus": 0.0, "error": "no solutions generated"}
+
+        # 2. Write samples.jsonl
+        out_dir = Path(output_dir) if output_dir else Path(tempfile.mkdtemp(prefix="sage_evalplus_"))
+        samples_path = out_dir / "samples.jsonl"
+        with open(samples_path, "w", encoding="utf-8") as f:
+            for sol in solutions:
+                entry = {"task_id": sol["task_id"], "solution": sol["solution"]}
+                f.write(json.dumps(entry) + "\n")
+        log.info("Wrote %d samples to %s", len(solutions), samples_path)
+
+        # 3. Sanitize
+        sanitize_result = subprocess.run(
+            ["python", "-m", "evalplus.sanitize", "--samples", str(samples_path)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if sanitize_result.returncode != 0:
+            log.warning("evalplus.sanitize failed: %s", sanitize_result.stderr[:300])
+
+        # Find sanitized file (evalplus appends -sanitized)
+        sanitized = samples_path.with_name(samples_path.stem + "-sanitized.jsonl")
+        eval_samples = str(sanitized) if sanitized.exists() else str(samples_path)
+
+        # 4. Evaluate
+        eval_result = subprocess.run(
+            ["python", "-m", "evalplus.evaluate",
+             "--dataset", self.dataset,
+             "--samples", eval_samples],
+            capture_output=True, text=True, timeout=600,
+        )
+        log.info("evalplus.evaluate stdout:\n%s", eval_result.stdout)
+
+        # 5. Parse results
+        results = {"base": 0.0, "plus": 0.0, "raw_output": eval_result.stdout}
+        for line in eval_result.stdout.split("\n"):
+            if "pass@1" in line.lower():
+                try:
+                    val = float(line.split(":")[-1].strip())
+                    if "plus" in line.lower() or "+" in line:
+                        results["plus"] = val
+                    else:
+                        results["base"] = val
+                except ValueError:
+                    pass
+
+        return results

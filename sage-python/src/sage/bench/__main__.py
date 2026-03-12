@@ -122,20 +122,26 @@ async def _run_routing(output: str | None) -> None:
 
 
 async def _run_evalplus(
-    output: str | None, limit: int | None, dataset: str
+    output: str | None, limit: int | None, dataset: str, official: bool = False,
 ) -> None:
     from sage.bench.evalplus_bench import EvalPlusBench
 
-    if os.environ.get("GOOGLE_API_KEY"):
-        system, bus = _boot_system()
-        bench = EvalPlusBench(system=system, event_bus=bus, dataset=dataset)
-    else:
+    if not os.environ.get("GOOGLE_API_KEY"):
         print("  ERROR: GOOGLE_API_KEY required for EvalPlus benchmark")
         return
 
-    report = await bench.run(limit=limit)
-    _print_report(report)
-    _save_report(report, bench, output, f"evalplus-{dataset}")
+    system, bus = _boot_system()
+    bench = EvalPlusBench(system=system, event_bus=bus, dataset=dataset, official_mode=official)
+
+    if official:
+        results = await bench.run_official(limit=limit)
+        print(f"\n  Official EvalPlus Results:")
+        print(f"    Base pass@1: {results.get('base', 0):.1%}")
+        print(f"    Plus pass@1: {results.get('plus', 0):.1%}")
+    else:
+        report = await bench.run(limit=limit)
+        _print_report(report)
+        _save_report(report, bench, output, f"evalplus-{dataset}")
 
 
 async def _run_ablation(output: str | None, limit: int | None) -> None:
@@ -238,6 +244,12 @@ def main() -> None:
         default="humaneval",
         help="Dataset for EvalPlus (default: humaneval)",
     )
+    parser.add_argument(
+        "--official",
+        action="store_true",
+        default=False,
+        help="Use official EvalPlus CLI evaluation (comparable to leaderboard)",
+    )
     args = parser.parse_args()
 
     _load_env()
@@ -249,7 +261,7 @@ def main() -> None:
         asyncio.run(_run_humaneval(args.output, args.limit))
 
     if args.type == "evalplus":
-        asyncio.run(_run_evalplus(args.output, args.limit, args.dataset))
+        asyncio.run(_run_evalplus(args.output, args.limit, args.dataset, args.official))
 
     if args.type == "ablation":
         asyncio.run(_run_ablation(args.output, args.limit))
