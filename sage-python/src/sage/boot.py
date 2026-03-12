@@ -426,7 +426,33 @@ def boot_agent_system(
     # Components
     tool_registry = ToolRegistry()
     agent_pool = AgentPool()
-    metacognition = AdaptiveRouter(llm_provider=provider if not use_mock_llm else None)
+
+    # Stage 0.5: kNN router (arXiv 2505.12601 — kNN on embeddings beats complex routers)
+    _knn_router = None
+    try:
+        from sage.strategy.knn_router import KnnRouter
+        _knn_router = KnnRouter()
+        if not _knn_router.is_ready:
+            # Try building from ground truth on-the-fly
+            if _knn_router.build_from_ground_truth():
+                _log.info(
+                    "Boot: kNN router built from ground truth (%d exemplars, %s)",
+                    _knn_router.exemplar_count, _knn_router.embedder_backend,
+                )
+            else:
+                _knn_router = None
+        else:
+            _log.info(
+                "Boot: kNN router loaded (%d exemplars, %s)",
+                _knn_router.exemplar_count, _knn_router.embedder_backend,
+            )
+    except Exception as e:
+        _log.info("Boot: kNN router unavailable (%s)", e)
+
+    metacognition = AdaptiveRouter(
+        llm_provider=provider if not use_mock_llm else None,
+        knn_router=_knn_router,
+    )
 
     # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
     rust_router = None

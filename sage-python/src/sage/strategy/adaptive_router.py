@@ -1,6 +1,7 @@
-"""Adaptive Router -- 4-stage learned routing pipeline.
+"""Adaptive Router -- 5-stage learned routing pipeline.
 
 Stage 0: Structural features (keyword complexity/uncertainty) -- Rust or Python.
+Stage 0.5: kNN on pre-computed embeddings (arXiv 2505.12601) -- Python/numpy.
 Stage 1: ONNX BERT classifier (routellm/bert) -- Rust only.
 Stage 2: Entropy probe (logprobs or token diversity) -- Python async.
 Stage 3: Reserved for cascade/online learning.
@@ -62,6 +63,7 @@ class AdaptiveRouter:
         classifier_path: str | None = None,
         tokenizer_path: str | None = None,
         enable_entropy_probe: bool = False,
+        knn_router: Any = None,
     ):
         self._llm_provider = llm_provider
         self._enable_entropy = enable_entropy_probe
@@ -76,6 +78,9 @@ class AdaptiveRouter:
         self.s1_uncertainty_ceil = s1_uncertainty_ceil
         self.s3_complexity_floor = s3_complexity_floor
         self.s3_uncertainty_floor = s3_uncertainty_floor
+
+        # Stage 0.5: kNN router (arXiv 2505.12601)
+        self._knn = knn_router
 
         # Rust backend
         self._rust = None
@@ -104,7 +109,12 @@ class AdaptiveRouter:
         return self._route_from_profile(profile)
 
     def assess_complexity(self, task: str) -> CognitiveProfile:
-        """Synchronous assessment (heuristic, no LLM call)."""
+        """Synchronous assessment: kNN > Rust structural > heuristic."""
+        # Stage 0.5: kNN on embeddings (highest priority when available)
+        knn_profile = self._try_knn_profile(task)
+        if knn_profile is not None:
+            return knn_profile
+
         if self._rust is not None:
             result = self._rust.route(task)
             return CognitiveProfile(
@@ -134,6 +144,19 @@ class AdaptiveRouter:
 
     def route_adaptive(self, task: str) -> AdaptiveRoutingResult:
         """Full adaptive routing with stage info."""
+        # Stage 0.5: kNN on embeddings
+        knn_result = self._try_knn(task)
+        if knn_result is not None:
+            profile = self._knn_to_profile(knn_result)
+            decision = self._route_from_profile(profile)
+            return AdaptiveRoutingResult(
+                decision=decision,
+                profile=profile,
+                stage=0,
+                confidence=knn_result.confidence,
+                method="knn",
+            )
+
         if self._rust is not None:
             result = self._rust.route(task)
             profile = CognitiveProfile(
@@ -204,6 +227,11 @@ class AdaptiveRouter:
         """Whether an ONNX classifier is loaded (Stage 1 available)."""
         return self._rust is not None and self._rust.has_classifier()
 
+    @property
+    def has_knn(self) -> bool:
+        """Whether kNN routing is available."""
+        return self._knn is not None and self._knn.is_ready
+
     # -- Private -------------------------------------------------------------
 
     def _route_from_profile(self, profile: CognitiveProfile) -> RoutingDecision:
@@ -241,6 +269,44 @@ class AdaptiveRouter:
             use_z3=False,
             validation_level=2,
         )
+
+    def _try_knn(self, task: str):
+        """Try kNN routing, return KnnRoutingResult or None."""
+        if self._knn is None or not self._knn.is_ready:
+            return None
+        try:
+            return self._knn.route(task)
+        except Exception as e:
+            log.warning("kNN route failed: %s", e)
+            return None
+
+    def _try_knn_profile(self, task: str) -> CognitiveProfile | None:
+        """Try kNN routing and convert to CognitiveProfile."""
+        result = self._try_knn(task)
+        if result is None:
+            return None
+        return self._knn_to_profile(result)
+
+    @staticmethod
+    def _knn_to_profile(knn_result) -> CognitiveProfile:
+        """Convert KnnRoutingResult to CognitiveProfile for _route_from_profile."""
+        # Map system to complexity/uncertainty that triggers _route_from_profile correctly
+        system = knn_result.system
+        if system == 1:
+            return CognitiveProfile(
+                complexity=0.2, uncertainty=0.1,
+                tool_required=False, reasoning="knn_s1",
+            )
+        elif system == 3:
+            return CognitiveProfile(
+                complexity=0.8, uncertainty=0.7,
+                tool_required=False, reasoning="knn_s3",
+            )
+        else:  # S2
+            return CognitiveProfile(
+                complexity=0.5, uncertainty=0.4,
+                tool_required=False, reasoning="knn_s2",
+            )
 
     def _assess_heuristic(self, task: str) -> CognitiveProfile:
         """Heuristic fallback (same as ComplexityRouter._assess_heuristic)."""

@@ -41,7 +41,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `providers/openai_compat.py` - OpenAI-compatible provider with per-provider quirk dispatch (DeepSeek, Kimi, Grok, MiniMax, OpenAI)
 - `providers/capabilities.py` - Provider capability registry: auto-populated at boot from discovered providers, 7 known provider capability sets
 - `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
-- `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
+- `strategy/adaptive_router.py` - AdaptiveRouter: 5-stage learned routing (structural → kNN embeddings → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
+- `strategy/knn_router.py` - KnnRouter: kNN-based S1/S2/S3 routing using pre-computed exemplar embeddings (arXiv 2505.12601). 92% accuracy on 50 GT tasks (vs 52% heuristic). Auto-builds from ground truth at boot if .npz missing. Refuses hash embeddings.
 - `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback. verify_invariant uses Rust verify_invariant_with_feedback() for clause-level diagnostic feedback stored in _last_invariant_feedback
@@ -125,7 +126,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1170 passed, 102 skipped)
+python -m pytest tests/ -v     # Run tests (1216 passed, 115 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -314,6 +315,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | Ablation: full vs baseline | **+15pp** (100% vs 85%) | A/B paired, same model (20 tasks) |
 | Ablation: routing contribution | **+5pp** (100% vs 95%) | Isolated delta (20 tasks) |
 | Routing quality (30 GT) | 100% (30/30) | Self-consistency |
+| **Routing GT heuristic (50)** | 52% (26/50) | Non-circular, human-labeled |
+| **Routing GT kNN (50)** | **92%** (46/50) | kNN on arctic-embed-m (arXiv 2505.12601). LOO-CV: 80% |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 

@@ -256,18 +256,41 @@ def main() -> None:
 
     if args.type == "routing_gt":
         from sage.bench.routing_ground_truth import run_routing_gt
+
+        def _run_gt_with(name, router):
+            print(f"\n{'=' * 60}")
+            print(f"  Routing GT: {name}")
+            print(f"{'=' * 60}")
+            result = run_routing_gt(router, verbose=True)
+            print(f"\n  Accuracy: {result.accuracy:.1%} ({result.correct}/{result.total})")
+            print(f"  Elapsed: {result.elapsed_ms:.0f}ms")
+            for sys, stats in sorted(result.per_system.items()):
+                acc = stats["correct"] / stats["total"] if stats["total"] > 0 else 0
+                print(f"    S{sys}: {acc:.0%} ({stats['correct']}/{stats['total']})")
+            if result.misroutes:
+                print(f"\n  Misroutes ({len(result.misroutes)}):")
+                for m in result.misroutes:
+                    print(f"    [{m['id']}] expected=S{m['expected']} got=S{m['actual']}: {m['task']}")
+            return result
+
+        # 1. ComplexityRouter (heuristic baseline)
         from sage.strategy.metacognition import ComplexityRouter
-        router = ComplexityRouter()
-        result = run_routing_gt(router, verbose=True)
-        print(f"\nRouting GT Accuracy: {result.accuracy:.1%} ({result.correct}/{result.total})")
-        print(f"Elapsed: {result.elapsed_ms:.0f}ms")
-        for sys, stats in sorted(result.per_system.items()):
-            acc = stats["correct"] / stats["total"] if stats["total"] > 0 else 0
-            print(f"  S{sys}: {acc:.0%} ({stats['correct']}/{stats['total']})")
-        if result.misroutes:
-            print(f"\nMisroutes ({len(result.misroutes)}):")
-            for m in result.misroutes:
-                print(f"  [{m['id']}] expected=S{m['expected']} got=S{m['actual']}: {m['task']}")
+        _run_gt_with("ComplexityRouter (heuristic)", ComplexityRouter())
+
+        # 2. AdaptiveRouter + kNN (if embedder available)
+        try:
+            from sage.strategy.adaptive_router import AdaptiveRouter
+            from sage.strategy.knn_router import KnnRouter
+            knn = KnnRouter()
+            if not knn.is_ready:
+                knn.build_from_ground_truth()
+            if knn.is_ready:
+                ar = AdaptiveRouter(knn_router=knn)
+                _run_gt_with(f"AdaptiveRouter + kNN ({knn.exemplar_count} exemplars, {knn.embedder_backend})", ar)
+            else:
+                print("\n  kNN router: not available (no semantic embedder)")
+        except Exception as e:
+            print(f"\n  kNN router failed: {e}")
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
