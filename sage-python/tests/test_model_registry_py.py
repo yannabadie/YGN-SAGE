@@ -92,6 +92,65 @@ class TestModelRegistry:
         aff = reg.calibrated_affinity("m1", CognitiveSystem.S1)
         assert abs(aff - 0.98) < 0.01
 
+    def test_unregister(self):
+        reg = ModelRegistry()
+        reg.register(self._make_card("m1"))
+        assert reg.get("m1") is not None
+        reg.unregister("m1")
+        assert reg.get("m1") is None
+        assert len(reg) == 0
+
+    def test_unregister_nonexistent(self):
+        reg = ModelRegistry()
+        reg.unregister("nope")  # should not raise
+
+    def test_is_empty(self):
+        reg = ModelRegistry()
+        assert reg.is_empty()
+        reg.register(self._make_card("m1"))
+        assert not reg.is_empty()
+
+    def test_all_models(self):
+        reg = ModelRegistry()
+        reg.register(self._make_card("a"))
+        reg.register(self._make_card("b"))
+        models = reg.all_models()
+        assert len(models) == 2
+        assert {m.id for m in models} == {"a", "b"}
+
+    def test_calibrated_affinity_unknown_model(self):
+        reg = ModelRegistry()
+        aff = reg.calibrated_affinity("nonexistent", CognitiveSystem.S1)
+        assert aff == 0.0
+
+    def test_select_best_for_domain_budget_filters(self):
+        reg = ModelRegistry()
+        reg.register(self._make_card("cheap", domain_scores={"math": 0.8}, s3_affinity=0.8,
+                                     cost_input_per_m=1.0, cost_output_per_m=1.0))
+        reg.register(self._make_card("expensive", domain_scores={"math": 0.95}, s3_affinity=0.9,
+                                     cost_input_per_m=100_000.0, cost_output_per_m=100_000.0))
+        # Budget 0.01 USD should filter out the expensive model
+        best = reg.select_best_for_domain("math", 0.01)
+        assert best is not None
+        assert best.id == "cheap"
+
+    def test_select_best_for_domain_no_budget(self):
+        reg = ModelRegistry()
+        reg.register(self._make_card("m1", domain_scores={"code": 0.9}, s2_affinity=0.9))
+        best = reg.select_best_for_domain("code", 0.0)
+        assert best is not None
+
+    def test_observed_latency_p95_no_data(self):
+        reg = ModelRegistry()
+        assert reg.observed_latency_p95("m1") == 0.0
+
+    def test_observed_latency_p95_with_data(self):
+        reg = ModelRegistry()
+        for i in range(20):
+            reg.record_telemetry_full("m1", 0.8, 0.01, 100.0 + i * 10.0)
+        p95 = reg.observed_latency_p95("m1")
+        assert p95 > 200.0
+
     def test_select_best_for_domain(self):
         reg = ModelRegistry()
         reg.register(self._make_card("math", domain_scores={"math": 0.94}, s3_affinity=0.9))

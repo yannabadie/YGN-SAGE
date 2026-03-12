@@ -41,6 +41,7 @@ class TelemetryRecord:
         if not self._latencies:
             return 0.0
         sorted_lats = sorted(self._latencies)
+        # int() truncates toward zero; equivalent to Rust floor() for non-negative values
         idx = int((len(sorted_lats) - 1) * 0.95)
         return sorted_lats[min(idx, len(sorted_lats) - 1)]
 

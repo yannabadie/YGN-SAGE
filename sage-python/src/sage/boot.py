@@ -531,18 +531,21 @@ def boot_agent_system(
     # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
     rust_router = None
     rust_registry = None  # Hoisted for Phase 6 bandit warm-start
+    py_model_registry = None  # Python fallback for rationalization
+
+    # Search for cards.toml in standard locations
+    _cards_toml = None
+    for _cards_dir in [
+        Path.cwd() / "sage-core" / "config" / "cards.toml",
+        Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "config" / "cards.toml",
+        Path.home() / ".sage" / "cards.toml",
+    ]:
+        if _cards_dir.exists():
+            _cards_toml = str(_cards_dir)
+            break
+
     if _HAS_RUST_ROUTER:
         try:
-            _cards_toml = None
-            # Search for cards.toml in standard locations
-            for _cards_dir in [
-                Path.cwd() / "sage-core" / "config" / "cards.toml",
-                Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "config" / "cards.toml",
-                Path.home() / ".sage" / "cards.toml",
-            ]:
-                if _cards_dir.exists():
-                    _cards_toml = str(_cards_dir)
-                    break
             if _cards_toml:
                 rust_registry = RustModelRegistry.from_toml_file(_cards_toml)
                 rust_router = RustSystemRouter(rust_registry)
@@ -556,6 +559,17 @@ def boot_agent_system(
             _log.warning(
                 "Boot: Rust SystemRouter init failed (%s), using Python AdaptiveRouter", e,
             )
+
+    # Python ModelRegistry fallback — used when Rust is unavailable
+    if rust_registry is None and _cards_toml:
+        try:
+            py_model_registry = PyModelRegistry.from_toml_file(_cards_toml)
+            _log.info(
+                "Boot: Python ModelRegistry active (%d models from %s)",
+                len(py_model_registry), _cards_toml,
+            )
+        except Exception as e:
+            _log.warning("Boot: Python ModelRegistry init failed (%s)", e)
 
     # Shadow router: dual Rust/Python comparison when both are available.
     # Always created — handles all combinations internally:
@@ -863,5 +877,5 @@ def boot_agent_system(
         shadow_router=shadow_router,
         topology_engine=rust_topology_engine,
         bandit=rust_bandit,
-        _rust_registry=rust_registry,
+        _rust_registry=rust_registry or py_model_registry,
     )
