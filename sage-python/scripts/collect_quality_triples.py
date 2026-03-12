@@ -139,7 +139,7 @@ async def collect_triples(
     heuristic_scores: list[float] = []
     gt_scores: list[float] = []
 
-    with open(out_path, "w", encoding="utf-8") as fout:
+    with open(out_path, "a", encoding="utf-8") as fout:
         for i, task_id in enumerate(task_ids):
             problem = problems[task_id]
             prompt = problem["prompt"]

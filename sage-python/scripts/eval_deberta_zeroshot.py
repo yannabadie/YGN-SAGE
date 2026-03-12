@@ -161,13 +161,24 @@ class DeBERTaClassifier:
     def __init__(self, model_name: str = "nvidia/prompt-task-and-complexity-classifier"):
         import torch
         import torch.nn as nn
-        from huggingface_hub import PyTorchModelHubMixin
-        from transformers import AutoConfig, AutoModel, AutoTokenizer
+        from huggingface_hub import hf_hub_download, PyTorchModelHubMixin
+        from transformers import AutoModel, AutoTokenizer
 
         print(f"Loading model: {model_name}")
         t0 = time.perf_counter()
 
-        self._config = AutoConfig.from_pretrained(model_name)
+        # Load config.json directly -- AutoConfig fails because the NVIDIA
+        # model has no standard model_type key.
+        cfg_path = hf_hub_download(model_name, "config.json")
+        with open(cfg_path) as f:
+            _raw_cfg = json.load(f)
+
+        class _CfgNamespace:
+            """Thin wrapper so downstream code can do cfg.target_sizes etc."""
+            def __init__(self, d: dict):
+                self.__dict__.update(d)
+
+        self._config = _CfgNamespace(_raw_cfg)
         self._tokenizer = AutoTokenizer.from_pretrained(model_name)
 
         # --- Replicate the NVIDIA custom model architecture ----------------

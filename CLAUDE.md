@@ -128,7 +128,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1220 passed, 114 skipped)
+python -m pytest tests/ -v     # Run tests (1307 passed, 107 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -191,6 +191,27 @@ maturin develop --features sandbox,tool-executor  # Build with ToolExecutor + Wa
 cd sage-python
 python scripts/collect_shadow_traces.py             # 1 round = 50 traces
 python scripts/collect_shadow_traces.py --rounds 20  # 1000 traces for hard gate
+```
+
+### SOTA Benchmark Scripts
+```bash
+cd sage-python
+# Quality triples collection (DistilBERT training data)
+python scripts/collect_quality_triples.py --dataset humaneval          # HumanEval+ (164 tasks)
+python scripts/collect_quality_triples.py --dataset mbpp               # MBPP+ (378 tasks)
+python scripts/collect_quality_triples.py --dataset humaneval --limit 5 # Quick smoke test
+
+# DeBERTa zero-shot routing evaluation (NVIDIA classifier on 50 GT tasks)
+python scripts/eval_deberta_zeroshot.py              # Real model (needs torch + HF access)
+python scripts/eval_deberta_zeroshot.py --offline     # Mock classifier (pipeline test)
+
+# TopologyBench (topology > model hypothesis)
+python scripts/run_topologybench.py --dry-run                             # Cost estimate
+python scripts/run_topologybench.py --tasks 5 --topologies sequential,avr --limit 3  # Smoke test
+python scripts/run_topologybench.py --tasks 200                           # Full run (~$28)
+
+# DistilBERT quality estimator training
+python scripts/train_quality_model.py --data data/quality_triples.jsonl   # Train + ONNX export
 ```
 
 ### End-to-End Proof
@@ -326,6 +347,11 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | Routing quality (30 GT) | 100% (30/30) | Self-consistency |
 | **Routing GT heuristic (50)** | 52% (26/50) | Non-circular, human-labeled |
 | **Routing GT kNN (50)** | **92%** (46/50) | kNN on arctic-embed-m (arXiv 2505.12601). LOO-CV: 80% |
+| **Routing GT Rust SystemRouter (50)** | **88%** (44/50) | Domain scoring from cards.toml. S1:80% S2:95% S3:85% |
+| **Routing GT Python AdaptiveRouter (50)** | 44% (22/50) | Structural features only, S1-biased (S3:0%) |
+| Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
+| **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
+| TopologyBench smoke (3 tasks) | 100% seq + 100% avr | Pipeline validated, full run pending |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
@@ -417,5 +443,5 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 
 ## Known Issues / Tech Debt
 - **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
-- **Shadow traces**: Need 1000+ traces for Phase 5 hard gate (<5% divergence) before Python shadow cleanup
+- **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence. Rust SystemRouter should be promoted as primary
 - **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes
