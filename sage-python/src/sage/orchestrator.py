@@ -15,6 +15,7 @@ from typing import Any
 from sage.execution_decision import ExecutionDecision
 from sage.providers.registry import ModelRegistry, ModelProfile
 from sage.providers.connector import PROVIDER_CONFIGS
+from sage.quality_estimator import QualityEstimator
 from sage.strategy.metacognition import ComplexityRouter
 from sage.agents.sequential import SequentialAgent
 from sage.agents.parallel import ParallelAgent
@@ -76,14 +77,20 @@ class ModelAgent:
     MAX_CASCADE_ATTEMPTS = 3
 
     def __init__(self, name: str, model: ModelProfile, system_prompt: str = "",
-                 registry: ModelRegistry | None = None):
+                 registry: ModelRegistry | None = None,
+                 quality_threshold: float | None = None):
         self.name = name
         self.model = model
         self._system_prompt = system_prompt or "You are a helpful AI assistant. Be precise and concise."
         self._registry = registry
+        self._quality_threshold = quality_threshold
 
     async def run(self, task: str) -> str:
-        """Call the LLM model with cascade fallback on failure."""
+        """Call the LLM model with quality-gated cascade.
+
+        Flow: try model → check quality → if quality < threshold, escalate.
+        Exception fallback still works as defense in depth.
+        """
         messages: list[Message] = []
         if self._system_prompt:
             messages.append(Message(role=Role.SYSTEM, content=self._system_prompt))
@@ -96,7 +103,25 @@ class ModelAgent:
         for attempt in range(self.MAX_CASCADE_ATTEMPTS):
             tried_ids.add(current_model.id)
             try:
-                return await self._call_provider(current_model, messages)
+                result = await self._call_provider(current_model, messages)
+
+                # Quality-gated cascade: check if response is good enough
+                if self._quality_threshold is not None and self._registry:
+                    quality = QualityEstimator.estimate(task, result)
+                    if quality < self._quality_threshold:
+                        log.info(
+                            "ModelAgent %s: quality %.2f < %.2f on %s, escalating",
+                            self.name, quality, self._quality_threshold, current_model.id,
+                        )
+                        fallback = self._pick_fallback(tried_ids)
+                        if fallback:
+                            current_model = fallback
+                            continue
+                        # No better model available — return what we have
+                        return result
+
+                return result
+
             except Exception as e:
                 last_error = e
                 log.warning(
@@ -251,7 +276,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s1-fast", model=model, registry=self.registry)
+            agent = ModelAgent(name="s1-fast", model=model, registry=self.registry, quality_threshold=0.4)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -273,7 +298,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s2-worker", model=model, registry=self.registry)
+            agent = ModelAgent(name="s2-worker", model=model, registry=self.registry, quality_threshold=0.6)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -291,7 +316,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s3-reasoner", model=model, registry=self.registry)
+            agent = ModelAgent(name="s3-reasoner", model=model, registry=self.registry, quality_threshold=0.8)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -319,6 +344,7 @@ class CognitiveOrchestrator:
                 model=model,
                 system_prompt=f"Focus on this specific subtask: {subtask.description}",
                 registry=self.registry,
+                quality_threshold=0.8,
             )
             agents.append(agent)
             log.info(
