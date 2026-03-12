@@ -42,6 +42,59 @@ YGN-SAGE is an Agent Development Kit built on 5 cognitive pillars (Topology, Too
 - **RouteLLM (ICLR 2025, 2406.18665)**: BERT 0.3B on Chatbot Arena preference data — alternative Stage 1
 - **Survey (arXiv 2603.04445)**: 6 routing paradigms — SAGE's AdaptiveRouter validated as SOTA architecture
 
+### Target Persona
+
+**Primary: "L'Architecte Agent" — Senior AI/ML Engineer, 5-10 ans XP**
+
+> *"Je construis des systèmes multi-agents en production. J'ai besoin de contrôler les coûts, de prouver la fiabilité, et de ne pas être verrouillé sur un seul provider."*
+
+| Dimension | Profil |
+|---|---|
+| **Rôle** | Senior ML Engineer / AI Platform Engineer dans une scale-up ou un labo R&D industriel (50-500 personnes) |
+| **Compétence technique** | Python expert, Rust lisible (pas contributeur), familier ONNX/PyTorch. Connaît LangChain/LangGraph mais en voit les limites |
+| **Douleur #1 — Coût** | Facture LLM >$5K/mois. Les agents naïfs envoient tout à GPT-4 quand GPT-3.5 suffit pour 70% des tâches. Aucun framework ne route intelligemment |
+| **Douleur #2 — Fiabilité** | Les agents hallucinent en production. Pas de vérification formelle, pas de guardrails structurés. Chaque incident = ticket Sev2 |
+| **Douleur #3 — Lock-in** | Prisonnier d'un seul provider (OpenAI ou Google). Veut du multi-provider avec failover automatique |
+| **Douleur #4 — Topologie figée** | Sequential ou ReAct partout. Pas de moyen de découvrir quelle architecture d'agents est optimale pour quel type de tâche |
+| **Ce qui le convainc** | Benchmarks chiffrés (pas du marketing), papiers de recherche cités, résultats reproductibles. Ne fait pas confiance aux "awesome lists" |
+| **Ce qui le bloque** | Setup complexe (>30 min), docs insuffisante, breaking changes fréquents |
+| **Parcours d'adoption** | 1. Découvre `sage-router` (pip install, 5 min) → 2. Voit le gain de coût → 3. Adopte SAGE complet pour topologies + mémoire + vérification |
+| **KPIs qu'il mesure** | $/task, pass@1, latency P95, incidents/semaine, provider uptime |
+| **Alternative actuelle** | LangGraph + bidouillage maison pour le routing. CrewAI pour du prototypage rapide. Rien pour la vérification formelle |
+
+**Secondaire: "Le Chercheur MAS" — Doctorant / Post-doc en Multi-Agent Systems**
+
+> *"Je publie sur les architectures multi-agents. J'ai besoin d'un framework qui me permette de tester des topologies et de mesurer leur impact — pas juste de les implémenter."*
+
+| Dimension | Profil |
+|---|---|
+| **Rôle** | PhD/Post-doc en IA, contributeur arXiv, reviewer NeurIPS/ICML |
+| **Douleur** | Aucun benchmark n'isole l'impact de la topologie. Chaque papier compare sa topologie custom vs Sequential baseline — impossible de reproduire |
+| **Ce qui le convainc** | TopologyBench (200 tasks × 10 topologies), MAP-Elites/MCTS pour la recherche d'architecture, résultats publiables |
+| **Parcours d'adoption** | 1. Lit le papier TopologyBench → 2. Clone le repo pour reproduire → 3. Utilise SAGE comme plateforme expérimentale |
+
+**Tertiaire: "L'Intégrateur DevTools" — Tech Lead d'une équipe plateforme**
+
+> *"Je veux juste le routing, pas tout le framework. Un `pip install` et c'est réglé."*
+
+| Dimension | Profil |
+|---|---|
+| **Rôle** | Tech Lead, équipe plateforme/infra IA |
+| **Douleur** | Besoin d'optimiser les coûts LLM sans réécrire le stack |
+| **Ce qui le convainc** | sage-router standalone, zero dépendance Rust, intégration en 10 lignes |
+| **Parcours d'adoption** | `pip install sage-router` → intègre dans le pipeline existant → ne touche jamais au reste de SAGE |
+
+**Anti-Persona: Qui n'est PAS la cible**
+
+- Le **développeur no-code** qui veut glisser-déposer des agents (→ Flowise, Langflow)
+- Le **data scientist junior** qui découvre les LLMs (→ LangChain tutorials, CrewAI quickstart)
+- L'**entreprise qui veut du SaaS clé-en-main** (→ AWS Bedrock Agents, Google Vertex AI Agent Builder)
+- Le **hobbyiste** qui veut un chatbot personnel (→ OpenAI API direct, Claude API)
+
+**Implication pour le design**: Chaque feature de SAGE doit répondre à au moins une douleur de l'Architecte Agent. Si ce n'est pas le cas, c'est du scope creep. Le Chercheur MAS et l'Intégrateur DevTools sont des bonus — ils valident la crédibilité (publications) et l'adoption (wedge product), mais ne dictent pas la roadmap.
+
+---
+
 ## Design
 
 ### Phase 1: Routing Dominance (~2 sprints)
