@@ -111,6 +111,8 @@ class AgentSystem:
     topology_engine: Any = None
     # Phase 6: Standalone ContextualBandit for model selection
     bandit: Any = None
+    # Rust ModelRegistry (None if sage_core not compiled or cards.toml not found)
+    _rust_registry: Any = None
 
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
@@ -275,10 +277,19 @@ class AgentSystem:
                     topology_result.topology.template_type
                     if topology_result else "sequential"
                 )
-                # Seed arms from known models (no-op if already registered)
-                for model_id in ["gemini-2.5-flash", "gemini-3-flash-preview",
-                                 "gemini-3.1-pro-preview", "gemini-2.5-flash-lite"]:
-                    self.bandit.register_arm(model_id, template_type)
+                # Seed arms from all registered models in Rust ModelRegistry.
+                # NOTE: self.registry is the Python providers.registry.ModelRegistry.
+                # The Rust registry is stored as _rust_registry during boot.
+                # The Rust method is list_ids() (NOT all_model_ids()).
+                if self._rust_registry:
+                    for model_id in self._rust_registry.list_ids():
+                        self.bandit.register_arm(model_id, template_type)
+                else:
+                    # Fallback: seed from Python registry's available models
+                    for profile in self.registry.list_available():
+                        self.bandit.register_arm(profile.id, template_type)
+                    if not self.registry.list_available():
+                        _log.debug("Bandit: no registry models available, skipping arm seeding")
 
                 bandit_decision = self.bandit.select(0.3)
                 _log.info(
@@ -836,4 +847,5 @@ def boot_agent_system(
         shadow_router=shadow_router,
         topology_engine=rust_topology_engine,
         bandit=rust_bandit,
+        _rust_registry=rust_registry,
     )
