@@ -9,7 +9,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `sage-python/` - Python SDK for building agents
 - `sage-discover/` - Knowledge Pipeline (arXiv/S2/HF -> ExoCortex)
 - `ui/` - Control Dashboard (FastAPI + WebSocket + single-file HTML)
-- `docs/plans/` - Architecture designs and implementation plans
+- `docs/plans/` - BACKLOG.md (unimplemented ideas), ARCHITECTURE-DECISIONS.md (design rationale)
 - `Researches/` - Research papers (AlphaEvolve, PSRO, etc.)
 - `.github/workflows/ci.yml` - CI pipeline (Rust + Python sage + Python discover)
 
