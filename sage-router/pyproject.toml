@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sage-router"
+version = "0.1.0"
+description = "Cost-aware S1/S2/S3 LLM routing with kNN, structural heuristics, and quality estimation"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+knn = ["numpy>=1.24"]
+dev = ["pytest>=7", "numpy>=1.24"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
