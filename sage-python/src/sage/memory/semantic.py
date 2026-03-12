@@ -6,6 +6,7 @@ multi-hop neighbourhood queries and task-context generation.
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 from collections import defaultdict, deque
 
@@ -127,8 +128,8 @@ class SemanticMemory:
         if not self._entities:
             return ""
 
-        # Find entities present in the task text
-        mentioned = [ent for ent in self._entities if ent in task]
+        # Find entities present in the task text (word-boundary match)
+        mentioned = [ent for ent in self._entities if re.search(r'\b' + re.escape(ent) + r'\b', task, re.IGNORECASE)]
         if not mentioned:
             return ""
 

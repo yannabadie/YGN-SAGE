@@ -277,11 +277,12 @@ impl TopologyExecutor {
         for edge_idx in inner.edge_indices() {
             if let Some((src, tgt)) = inner.edge_endpoints(edge_idx) {
                 if src.index() == from && tgt.index() == to {
-                    let edge = inner.edge_weight_mut(edge_idx).unwrap();
-                    if edge.typed_edge_type() == EdgeType::Control {
-                        debug!(from, to, "Opening gate on control edge");
-                        edge.set_gate(Gate::Open);
-                        return;
+                    if let Some(edge) = inner.edge_weight_mut(edge_idx) {
+                        if edge.typed_edge_type() == EdgeType::Control {
+                            debug!(from, to, "Opening gate on control edge");
+                            edge.set_gate(Gate::Open);
+                            return;
+                        }
                     }
                 }
             }
@@ -300,11 +301,12 @@ impl TopologyExecutor {
         for edge_idx in inner.edge_indices() {
             if let Some((src, tgt)) = inner.edge_endpoints(edge_idx) {
                 if src.index() == from && tgt.index() == to {
-                    let edge = inner.edge_weight_mut(edge_idx).unwrap();
-                    if edge.typed_edge_type() == EdgeType::Control {
-                        debug!(from, to, "Closing gate on control edge");
-                        edge.set_gate(Gate::Closed);
-                        return;
+                    if let Some(edge) = inner.edge_weight_mut(edge_idx) {
+                        if edge.typed_edge_type() == EdgeType::Control {
+                            debug!(from, to, "Closing gate on control edge");
+                            edge.set_gate(Gate::Closed);
+                            return;
+                        }
                     }
                 }
             }

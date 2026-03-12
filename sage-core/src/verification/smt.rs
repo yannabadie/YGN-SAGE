@@ -68,14 +68,17 @@ enum ArithOp {
 //   not_expr := "not" not_expr | cmp_expr
 //   cmp_expr := add_expr (CMP add_expr)?
 //   add_expr := mul_expr (("+"|"-") mul_expr)*
-//   mul_expr := unary ("*" unary)*
+//   mul_expr := unary ("*" unary)*          (no division — ArithOp has Add/Sub/Mul only)
 //   unary    := "-" unary | atom
 //   atom     := "(" expr ")" | integer | variable
 // ──────────────────────────────────────────────────────────────────────
 
+const MAX_PARSER_DEPTH: usize = 100;
+
 struct Parser<'a> {
     bytes: &'a [u8],
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -83,7 +86,21 @@ impl<'a> Parser<'a> {
         Self {
             bytes: input.as_bytes(),
             pos: 0,
+            depth: 0,
         }
+    }
+
+    fn enter(&mut self) -> Result<(), ()> {
+        self.depth += 1;
+        if self.depth > MAX_PARSER_DEPTH {
+            Err(())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn leave(&mut self) {
+        self.depth -= 1;
     }
 
     fn skip_ws(&mut self) {
@@ -132,30 +149,37 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_or(&mut self) -> Result<Expr, ()> {
+        self.enter()?;
         let mut left = self.parse_and()?;
         while self.try_consume("or") {
             let right = self.parse_and()?;
             left = Expr::Or(Box::new(left), Box::new(right));
         }
+        self.leave();
         Ok(left)
     }
 
     fn parse_and(&mut self) -> Result<Expr, ()> {
+        self.enter()?;
         let mut left = self.parse_not()?;
         while self.try_consume("and") {
             let right = self.parse_not()?;
             left = Expr::And(Box::new(left), Box::new(right));
         }
+        self.leave();
         Ok(left)
     }
 
     fn parse_not(&mut self) -> Result<Expr, ()> {
-        if self.try_consume("not") {
+        self.enter()?;
+        let result = if self.try_consume("not") {
             let inner = self.parse_not()?;
             Ok(Expr::Not(Box::new(inner)))
         } else {
             self.parse_cmp()
-        }
+        };
+        self.leave();
+        result
     }
 
     fn parse_cmp(&mut self) -> Result<Expr, ()> {
@@ -217,23 +241,27 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_unary(&mut self) -> Result<Expr, ()> {
+        self.enter()?;
         self.skip_ws();
-        if self.peek() == Some(b'-') {
+        let result = if self.peek() == Some(b'-') {
             // Peek ahead: if next is digit, parse as negative literal
             if self.pos + 1 < self.bytes.len() && self.bytes[self.pos + 1].is_ascii_digit() {
-                return self.parse_int_literal();
+                self.parse_int_literal()
+            } else {
+                // Otherwise: unary minus (0 - expr)
+                self.pos += 1;
+                let inner = self.parse_unary()?;
+                Ok(Expr::Arith(
+                    Box::new(Expr::Int(0)),
+                    ArithOp::Sub,
+                    Box::new(inner),
+                ))
             }
-            // Otherwise: unary minus (0 - expr)
-            self.pos += 1;
-            let inner = self.parse_unary()?;
-            Ok(Expr::Arith(
-                Box::new(Expr::Int(0)),
-                ArithOp::Sub,
-                Box::new(inner),
-            ))
         } else {
             self.parse_atom()
-        }
+        };
+        self.leave();
+        result
     }
 
     fn parse_int_literal(&mut self) -> Result<Expr, ()> {

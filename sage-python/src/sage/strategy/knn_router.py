@@ -110,7 +110,7 @@ class KnnRouter:
         emb = self._get_embedder()
         if emb is None:
             return "none"
-        return emb._backend
+        return getattr(emb, '_backend', 'unknown')
 
     def route(self, task: str) -> KnnRoutingResult | None:
         """Route a task using kNN on embeddings.

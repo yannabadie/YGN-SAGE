@@ -45,6 +45,8 @@ class GoogleProvider:
                 "GOOGLE_API_KEY not set. Set it via environment variable or pass api_key= to GoogleProvider."
             )
         client = genai.Client(api_key=self.api_key)
+        from sage.llm._ssl import patch_genai_ssl
+        patch_genai_ssl(client)
 
         # Default model
         model = "gemini-3.1-pro-preview"

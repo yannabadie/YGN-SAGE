@@ -93,6 +93,7 @@ class OutputGuardrail(Guardrail):
         context: dict | None = None,
     ) -> GuardrailResult:
         # Skip when there is no output to validate (e.g., during input phase)
+        # but still check if min_length is set (empty output should trigger that)
         if not output and not self.min_length:
             return GuardrailResult(passed=True)
 

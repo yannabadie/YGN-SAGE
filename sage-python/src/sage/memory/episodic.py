@@ -24,6 +24,8 @@ class EpisodicMemory:
         self._db_path = db_path
         # In-memory fallback
         self._entries: list[dict[str, Any]] = []
+        # Cached SQLite connection (lazy, see _get_connection)
+        self._conn = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -34,23 +36,21 @@ class EpisodicMemory:
         if self._db_path is None:
             return  # no-op for in-memory mode
 
-        import aiosqlite
-
-        async with aiosqlite.connect(self._db_path) as db:
-            await db.execute("PRAGMA journal_mode=WAL")
-            await db.execute("PRAGMA synchronous=NORMAL")
-            await db.execute("PRAGMA busy_timeout=5000")
-            await db.execute(
-                """
-                CREATE TABLE IF NOT EXISTS episodes (
-                    key        TEXT PRIMARY KEY,
-                    content    TEXT NOT NULL,
-                    metadata   TEXT NOT NULL DEFAULT '{}',
-                    created_at TEXT NOT NULL
-                )
-                """
+        db = await self._get_connection()
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA busy_timeout=5000")
+        await db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS episodes (
+                key        TEXT PRIMARY KEY,
+                content    TEXT NOT NULL,
+                metadata   TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL
             )
-            await db.commit()
+            """
+        )
+        await db.commit()
 
     # ------------------------------------------------------------------
     # CRUD
@@ -61,6 +61,19 @@ class EpisodicMemory:
         if self._db_path is not None and not hasattr(self, "_initialized"):
             await self.initialize()
             self._initialized = True
+
+    async def _get_connection(self):
+        """Return a cached aiosqlite connection, creating one if needed."""
+        if self._conn is None:
+            import aiosqlite
+            self._conn = await aiosqlite.connect(self._db_path)
+        return self._conn
+
+    async def close(self) -> None:
+        """Close the cached SQLite connection if open."""
+        if self._conn is not None:
+            await self._conn.close()
+            self._conn = None
 
     async def store(
         self,
@@ -73,18 +86,16 @@ class EpisodicMemory:
         meta = metadata or {}
 
         if self._db_path is not None:
-            import aiosqlite
-
             now = datetime.now(timezone.utc).isoformat()
-            async with aiosqlite.connect(self._db_path) as db:
-                await db.execute(
-                    """
-                    INSERT OR REPLACE INTO episodes (key, content, metadata, created_at)
-                    VALUES (?, ?, ?, ?)
-                    """,
-                    (key, content, json.dumps(meta), now),
-                )
-                await db.commit()
+            db = await self._get_connection()
+            await db.execute(
+                """
+                INSERT OR REPLACE INTO episodes (key, content, metadata, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (key, content, json.dumps(meta), now),
+            )
+            await db.commit()
         else:
             # In-memory: overwrite if key exists, else append
             for entry in self._entries:
@@ -161,12 +172,10 @@ class EpisodicMemory:
         """Return the total number of stored entries."""
         await self._ensure_initialized()
         if self._db_path is not None:
-            import aiosqlite
-
-            async with aiosqlite.connect(self._db_path) as db:
-                async with db.execute("SELECT COUNT(*) FROM episodes") as cur:
-                    row = await cur.fetchone()
-                    return row[0] if row else 0
+            db = await self._get_connection()
+            async with db.execute("SELECT COUNT(*) FROM episodes") as cur:
+                row = await cur.fetchone()
+                return row[0] if row else 0
 
         return len(self._entries)
 
@@ -175,22 +184,21 @@ class EpisodicMemory:
         await self._ensure_initialized()
         if self._db_path is not None:
             import aiosqlite
-
-            async with aiosqlite.connect(self._db_path) as db:
-                db.row_factory = aiosqlite.Row
-                async with db.execute(
-                    "SELECT key, content, metadata FROM episodes ORDER BY created_at DESC LIMIT ?",
-                    (limit,),
-                ) as cur:
-                    rows = await cur.fetchall()
-                    return [
-                        {
-                            "key": r["key"],
-                            "content": r["content"],
-                            "metadata": json.loads(r["metadata"]),
-                        }
-                        for r in rows
-                    ]
+            db = await self._get_connection()
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT key, content, metadata FROM episodes ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ) as cur:
+                rows = await cur.fetchall()
+                return [
+                    {
+                        "key": r["key"],
+                        "content": r["content"],
+                        "metadata": json.loads(r["metadata"]),
+                    }
+                    for r in rows
+                ]
 
         # In-memory: return most recently appended first
         return list(reversed(self._entries[-limit:]))
@@ -213,10 +221,10 @@ class EpisodicMemory:
         """Score-based search over SQLite rows using word matching."""
         import aiosqlite
 
-        async with aiosqlite.connect(self._db_path) as db:  # type: ignore[arg-type]
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT key, content, metadata FROM episodes") as cur:
-                rows = await cur.fetchall()
+        db = await self._get_connection()
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT key, content, metadata FROM episodes") as cur:
+            rows = await cur.fetchall()
 
         words = query.lower().split()
         scored: list[tuple[int, dict[str, Any]]] = []
@@ -243,38 +251,34 @@ class EpisodicMemory:
         content: str | None,
         metadata: dict[str, Any] | None,
     ) -> bool:
-        import aiosqlite
+        db = await self._get_connection()
+        # Check existence first
+        async with db.execute(
+            "SELECT key FROM episodes WHERE key = ?", (key,)
+        ) as cur:
+            if await cur.fetchone() is None:
+                return False
 
-        async with aiosqlite.connect(self._db_path) as db:  # type: ignore[arg-type]
-            # Check existence first
-            async with db.execute(
-                "SELECT key FROM episodes WHERE key = ?", (key,)
-            ) as cur:
-                if await cur.fetchone() is None:
-                    return False
+        parts: list[str] = []
+        params: list[Any] = []
+        if content is not None:
+            parts.append("content = ?")
+            params.append(content)
+        if metadata is not None:
+            parts.append("metadata = ?")
+            params.append(json.dumps(metadata))
 
-            parts: list[str] = []
-            params: list[Any] = []
-            if content is not None:
-                parts.append("content = ?")
-                params.append(content)
-            if metadata is not None:
-                parts.append("metadata = ?")
-                params.append(json.dumps(metadata))
-
-            if parts:
-                params.append(key)
-                await db.execute(
-                    f"UPDATE episodes SET {', '.join(parts)} WHERE key = ?",
-                    params,
-                )
-                await db.commit()
-            return True
+        if parts:
+            params.append(key)
+            await db.execute(
+                f"UPDATE episodes SET {', '.join(parts)} WHERE key = ?",
+                params,
+            )
+            await db.commit()
+        return True
 
     async def _sqlite_delete(self, key: str) -> bool:
-        import aiosqlite
-
-        async with aiosqlite.connect(self._db_path) as db:  # type: ignore[arg-type]
-            cursor = await db.execute("DELETE FROM episodes WHERE key = ?", (key,))
-            await db.commit()
-            return cursor.rowcount > 0
+        db = await self._get_connection()
+        cursor = await db.execute("DELETE FROM episodes WHERE key = ?", (key,))
+        await db.commit()
+        return cursor.rowcount > 0

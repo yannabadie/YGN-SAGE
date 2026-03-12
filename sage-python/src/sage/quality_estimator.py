@@ -5,6 +5,8 @@ estimator that produces a 0.0-1.0 quality score.
 """
 from __future__ import annotations
 
+import re
+
 
 class QualityEstimator:
     """Estimate result quality from multiple signals (0.0-1.0).
@@ -50,9 +52,9 @@ class QualityEstimator:
         elif not task_wants_code:
             score += 0.1
 
-        # Signal 4: No error indicators
-        error_phrases = ("error", "exception", "traceback", "failed", "cannot")
-        if not had_errors and not any(e in result.lower() for e in error_phrases):
+        # Signal 4: No error indicators (pattern-matched to reduce false positives)
+        error_patterns = (r"^error:", r"^traceback", r"^exception:", r"failed to", r"cannot ")
+        if not had_errors and not any(re.search(p, result.lower(), re.MULTILINE) for p in error_patterns):
             score += 0.15
 
         # Signal 5: AVR convergence

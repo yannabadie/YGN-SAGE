@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1654%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1503%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -22,7 +22,7 @@ YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive
 
 ## Features
 
-- **S1/S2/S3 cognitive routing** — adaptive 4-stage routing (structural → BERT ONNX → entropy → cascade) with Rust ContextualBandit + telemetry calibration
+- **S1/S2/S3 cognitive routing** — adaptive 5-stage routing (structural → kNN embeddings → BERT ONNX → entropy → cascade) with Rust ContextualBandit + telemetry calibration. kNN on arctic-embed-m (arXiv 2505.12601): 52% → 92% accuracy on 50 GT tasks, Rust-native SIMD dot product
 - **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
 - **Composable guardrails** — cost limits, output validation, schema validation, Z3 bounds checking at input/runtime/output
 - **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
@@ -55,7 +55,7 @@ cd .. && python ui/app.py
 User Task
     |
     v
-ComplexityRouter --- heuristic complexity + uncertainty assessment
+AdaptiveRouter --- 5-stage routing (structural → kNN → BERT → entropy → cascade)
     |
     +---> S1 (Simple)   --- fast model, no validation
     +---> S2 (Code)     --- mid-tier model, sandbox AVR loop
@@ -79,10 +79,11 @@ EventBus ---> Dashboard (WebSocket, real-time)
 |-----------|--------|-------|
 | **EvalPlus HumanEval+** (164 tasks) | **84.1%** pass@1 (138/164) | Official 80x harder tests |
 | **EvalPlus MBPP+** (378 tasks) | **75.1%** pass@1 (284/378) | Official 35x harder tests |
-| **Routing Self-Consistency** (30 tasks) | **100%** (30/30) | Heuristic determinism check |
+| **Routing GT kNN** (50 tasks) | **92%** (46/50) | kNN on arctic-embed-m (arXiv 2505.12601) |
+| **Routing GT heuristic** (50 tasks) | 52% (26/50) | Non-circular, human-labeled baseline |
 | **Ablation: full vs baseline** | **+15pp** (100% vs 85%) | Paired, same model (20 tasks) |
-| **Unit Tests** (Python) | **1170 passed** | 102 skipped (optional features) |
-| **Unit Tests** (Rust) | **432 passed** | lib + integration + smt + topology + routing |
+| **Unit Tests** (Python) | **1216 passed** | 115 skipped (optional features) |
+| **Unit Tests** (Rust) | **235+ passed** | baseline + SMT + cognitive + ONNX |
 
 > **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, **YGN-SAGE 84.1%** (budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
@@ -103,8 +104,8 @@ python tests/e2e_proof.py                                  # E2E proof (requires
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 1170 passed, 102 skipped
-cd sage-core && cargo test --no-default-features --features smt --lib  # 432+ tests
+cd sage-python && python -m pytest tests/ -v    # 1216 passed, 115 skipped
+cd sage-core && cargo test --no-default-features --features smt --lib  # 235+ tests
 cd sage-discover && python -m pytest tests/ -v   # 52 passed
 # Integration tests: sage-python/tests/integration/ (50 tests, no mocks)
 ```
@@ -191,10 +192,10 @@ pipeline = GuardrailPipeline([
 
 - **EvalPlus HumanEval+ 84.1%** pass@1 (138/164) with budget Gemini 2.5 Flash — official 80x harder tests
 - **Routing 100%** self-consistency on 30 deterministic tasks (heuristic, not learned)
-- **1170 tests passed** (Python) + 432 Rust + 52 Discover + 50 integration tests (no mocks)
+- **1216 tests passed** (Python) + 235+ Rust + 52 Discover + 50 integration tests (no mocks)
 - **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
-- **Cognitive Routing**: S1/S2/S3 heuristic routing (5-tier keyword analysis + formal/domain stacking)
+- **Cognitive Routing**: S1/S2/S3 adaptive 5-stage routing (structural → kNN embeddings on arctic-embed-m ONNX 768-dim → BERT ONNX → entropy → cascade). kNN routing: 92% accuracy (arXiv 2505.12601)
 - **Memory**: 4 tiers wired end-to-end — Tier 0 Working Memory (Rust Arrow + S-MMU), Tier 1 Episodic (SQLite), Tier 2 Semantic (deque + lazy eviction), Tier 3 ExoCortex (Google File Search)
 - **Embeddings**: RustEmbedder ONNX with auto-discovery, 3-tier fallback + hash fallback warning
 - **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds

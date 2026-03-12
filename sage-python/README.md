@@ -25,7 +25,7 @@ result = await system.run("Solve X")   # S1/S2/S3 routing + full agent loop
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # Unit tests (1170 passed, 102 skipped)
+python -m pytest tests/ -v             # Unit tests (1216 passed, 115 skipped)
 ruff check src/                        # Lint
 mypy src/                              # Type check
 python -m sage.bench --type routing    # Routing benchmark (no API key needed)
@@ -46,7 +46,7 @@ python -m sage.bench.eval_protocol --suite humaneval -v     # Official evaluatio
 | `sage/memory/` | 4-tier memory: working (Arrow), episodic (SQLite), semantic (graph), ExoCortex (RAG) |
 | `sage/llm/` | LLM providers: Google Gemini, OpenAI Codex CLI, model router |
 | `sage/providers/` | Provider discovery, capability matrix, OpenAI-compat adapter |
-| `sage/strategy/` | AdaptiveRouter (4-stage learned routing), ComplexityRouter (heuristic fallback), CGRS self-braking, training data export |
+| `sage/strategy/` | AdaptiveRouter (5-stage learned routing: structural → kNN embeddings → BERT ONNX → entropy → cascade), KnnRouter (arXiv 2505.12601, 92% accuracy on 50 GT tasks), ComplexityRouter (heuristic fallback), CGRS self-braking, training data export |
 | `sage/topology/` | MAP-Elites + CMA-ME + MCTS topology search, LLM synthesis, KG-RLVR process reward model |
 | `sage/evolution/` | Evolutionary engine, LLM-driven mutation |
 | `sage/tools/` | Tool registry, dynamic tool creation (Rust ToolExecutor first, Python fallback), memory tools, ExoCortex tools |

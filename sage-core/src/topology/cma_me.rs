@@ -43,19 +43,23 @@ impl CmaEmitter {
         &self.mean
     }
 
-    /// Sample `n` parameter vectors from `N(mean, sigma² * diag(cov_diag))`.
+    /// Sample `n` parameter vectors from `N(mean, sigma^2 * diag(cov_diag))`.
     ///
-    /// Uses a deterministic spread: for each sample `i`, compute an offset
-    /// proportional to `(i - n/2) / n * sigma`, scaled by `sqrt(cov_diag[j])`.
+    /// Uses Box-Muller transform to sample from a Gaussian distribution
+    /// centered on `mean` with variance `sigma^2 * cov_diag[j]`.
     /// All values are clamped to `[0.01, 10.0]`.
     pub fn ask(&self, n: usize) -> Vec<Vec<f64>> {
-        let half_n = n as f64 / 2.0;
+        use rand::Rng;
+        let mut rng = rand::rng();
         (0..n)
-            .map(|i| {
-                let offset = (i as f64 - half_n) / n as f64 * self.sigma;
+            .map(|_| {
                 (0..self.dim)
                     .map(|j| {
-                        let v = self.mean[j] + offset * self.cov_diag[j].sqrt();
+                        // Box-Muller Gaussian: N(mean[j], sigma^2 * cov_diag[j])
+                        let u1: f64 = rng.random::<f64>().max(1e-15); // avoid ln(0)
+                        let u2: f64 = rng.random::<f64>();
+                        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+                        let v = self.mean[j] + self.sigma * self.cov_diag[j].sqrt() * z;
                         v.clamp(0.01, 10.0)
                     })
                     .collect()

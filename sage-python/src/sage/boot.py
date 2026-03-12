@@ -214,6 +214,9 @@ class AgentSystem:
         else:
             self.agent_loop._current_topology = None
 
+        # Track whether integrated routing handled bandit
+        bandit_decision = None
+
         # Integrated routing: use route_integrated when bandit is wired into router
         if (self.rust_router and hasattr(self.rust_router, 'route_integrated')
                 and self.bandit):
@@ -243,8 +246,7 @@ class AgentSystem:
                 _log.debug("Integrated routing failed (%s), using separate paths", e)
 
         # Phase 6: Bandit model suggestion (Thompson sampling)
-        bandit_decision = None
-        if self.bandit:
+        if self.bandit and bandit_decision is None:
             try:
                 template_type = (
                     topology_result.topology.template_type
@@ -665,7 +667,13 @@ def boot_agent_system(
     if not use_mock_llm:
         from sage.orchestrator import CognitiveOrchestrator
 
-        # Auto-discover available models at boot
+        # Auto-discover available models at boot.
+        # NOTE: The ThreadPoolExecutor pattern below is intentional and safe.
+        # registry.refresh() only performs HTTP health-check calls (no shared
+        # state mutation).  When a running event loop already exists (e.g. in
+        # Jupyter or async test harnesses), we cannot call asyncio.run() on
+        # the same thread, so we delegate to a separate thread with its own
+        # event loop.  This avoids "cannot run nested event loop" errors.
         import asyncio
         try:
             try:
@@ -730,7 +738,7 @@ def boot_agent_system(
         semantic_memory.load()
     else:
         semantic_memory = SemanticMemory()
-    loop.memory_agent = memory_agent  # Already created above but never injected!
+    loop.memory_agent = memory_agent
     loop.semantic_memory = semantic_memory
 
     # Causal memory (persistent SQLite in real mode)

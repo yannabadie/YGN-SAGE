@@ -58,7 +58,7 @@ cargo clippy --no-default-features                        # Lint
 | Module | Description |
 |--------|-------------|
 | `memory/` | Arrow-backed working memory, S-MMU multi-view graph, FIFO+TTL RAG cache, ONNX embedder |
-| `routing/` | AdaptiveRouter: 4-stage learned S1/S2/S3 routing (structural features + BERT classifier ONNX), behind `onnx` feature |
+| `routing/` | AdaptiveRouter: 5-stage learned S1/S2/S3 routing (structural features + kNN on arctic-embed-m ONNX 768-dim with SIMD dot product + BERT classifier ONNX), behind `onnx` feature |
 | `sandbox/` | ToolExecutor (tree-sitter validator + subprocess + Wasm WASI sandbox), eBPF executor (disabled) |
 | `types.rs` | Core data types: AgentConfig, ToolSpec, MemoryScope, AgentStatus, TopologyRole |
 | `agent.rs` | AgentBridge -- Rust-side agent runtime representation |

@@ -199,7 +199,10 @@ pub fn remove_node(graph: TopologyGraph, node_index: usize) -> MutationResult {
     }
 
     // Rebuild graph.
-    let mut new_graph = TopologyGraph::try_new(&graph.template_type).unwrap();
+    let mut new_graph = match TopologyGraph::try_new(&graph.template_type) {
+        Ok(g) => g,
+        Err(e) => return MutationResult::Invalid(format!("Failed to create graph: {}", e)),
+    };
     for node in nodes {
         new_graph.add_node(node);
     }
@@ -407,7 +410,10 @@ pub fn split_node(
     }
 
     // Rebuild graph.
-    let mut new_graph = TopologyGraph::try_new(&graph.template_type).unwrap();
+    let mut new_graph = match TopologyGraph::try_new(&graph.template_type) {
+        Ok(g) => g,
+        Err(e) => return MutationResult::Invalid(format!("Failed to create graph: {}", e)),
+    };
     for node in nodes {
         new_graph.add_node(node);
     }
@@ -548,7 +554,10 @@ pub fn merge_nodes(
     }
 
     // Rebuild graph.
-    let mut new_graph = TopologyGraph::try_new(&graph.template_type).unwrap();
+    let mut new_graph = match TopologyGraph::try_new(&graph.template_type) {
+        Ok(g) => g,
+        Err(e) => return MutationResult::Invalid(format!("Failed to create graph: {}", e)),
+    };
     for node in nodes {
         new_graph.add_node(node);
     }

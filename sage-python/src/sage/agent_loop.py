@@ -126,7 +126,8 @@ def _is_code_task(task: str) -> bool:
 
 def _shell_quote(code: str) -> str:
     """Shell-quote a code string for subprocess execution."""
-    return "'" + code.replace("'", "'\\''") + "'"
+    import shlex
+    return shlex.quote(code)
 
 
 class LoopPhase(str, Enum):

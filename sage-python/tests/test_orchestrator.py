@@ -451,4 +451,5 @@ class TestOpenAICompatProvider:
             )
 
         call_kwargs = mock_client.chat.completions.create.call_args
-        assert call_kwargs.kwargs.get("model") or call_kwargs[1].get("model") == "override-m"
+        model = call_kwargs.kwargs.get("model") or call_kwargs[1].get("model")
+        assert model == "override-m"

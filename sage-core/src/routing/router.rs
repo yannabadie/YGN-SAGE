@@ -193,7 +193,7 @@ impl AdaptiveRouter {
     /// Dynamically discovers required model inputs from `session.inputs` so that
     /// models without `token_type_ids` (e.g., RoBERTa/XLM-RoBERTa) work correctly.
     fn route_stage1(&self, task: &str, features: &StructuralFeatures) -> Option<RoutingResult> {
-        let mut session_guard = self.classifier.lock().unwrap();
+        let mut session_guard = self.classifier.lock().unwrap_or_else(|e| e.into_inner());
         let session = session_guard.as_mut()?;
         let tokenizer = self.classifier_tokenizer.as_ref()?;
 
@@ -337,7 +337,10 @@ impl AdaptiveRouter {
                     crate::memory::embedder::resolve_ort_dylib_once(cp, sys_prefix.as_deref())
                 {
                     if std::env::var("ORT_DYLIB_PATH").is_err() {
-                        std::env::set_var("ORT_DYLIB_PATH", path);
+                        // SAFETY: OnceLock in resolve_ort_dylib_once guarantees this
+                        // runs at most once, and we are in single-threaded __init__.
+                        #[allow(unsafe_code)]
+                        unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
                     }
                 }
 
@@ -463,7 +466,7 @@ impl AdaptiveRouter {
         latency_ms: u64,
         cost_usd: f32,
     ) {
-        let mut fb = self.feedback.lock().unwrap();
+        let mut fb = self.feedback.lock().unwrap_or_else(|e| e.into_inner());
         if fb.len() >= FEEDBACK_MAX {
             fb.drain(..FEEDBACK_DRAIN);
         }
@@ -478,7 +481,7 @@ impl AdaptiveRouter {
 
     /// Number of feedback records currently buffered.
     pub fn feedback_count(&self) -> usize {
-        self.feedback.lock().unwrap().len()
+        self.feedback.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Load pre-computed exemplar embeddings for kNN routing.
@@ -555,7 +558,7 @@ impl AdaptiveRouter {
 
     /// Whether an ONNX classifier is loaded (Stage 1 available).
     pub fn has_classifier(&self) -> bool {
-        self.classifier.lock().unwrap().is_some()
+        self.classifier.lock().unwrap_or_else(|e| e.into_inner()).is_some()
     }
 
     /// Current Stage 0 confidence threshold.
@@ -572,13 +575,13 @@ impl AdaptiveRouter {
 
     /// Number of shadow traces currently buffered.
     pub fn shadow_trace_count(&self) -> usize {
-        self.shadow_traces.lock().unwrap().len()
+        self.shadow_traces.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Write buffered shadow traces as JSONL to `path`, clear the buffer,
     /// and return the number of traces written.
     pub fn flush_shadow_traces(&mut self, path: &str) -> PyResult<usize> {
-        let mut traces = self.shadow_traces.lock().unwrap();
+        let mut traces = self.shadow_traces.lock().unwrap_or_else(|e| e.into_inner());
         let count = traces.len();
         if count == 0 {
             return Ok(0);
@@ -628,7 +631,7 @@ impl AdaptiveRouter {
     /// - If structural over-routes to S3 (actual was S1/S2): raise c0_threshold
     /// Clamps to [0.5, 0.95]. Clears feedback after retraining.
     pub fn retrain_thresholds(&mut self) {
-        let mut fb = self.feedback.lock().unwrap();
+        let mut fb = self.feedback.lock().unwrap_or_else(|e| e.into_inner());
         if fb.is_empty() {
             return;
         }

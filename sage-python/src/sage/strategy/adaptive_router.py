@@ -43,7 +43,9 @@ class AdaptiveRoutingResult:
 
 
 class AdaptiveRouter:
-    """4-stage adaptive router, duck-type compatible with ComplexityRouter.
+    """5-stage adaptive router, duck-type compatible with ComplexityRouter.
+
+    Stages: structural -> kNN embeddings -> BERT ONNX -> entropy probe -> cascade.
 
     Implements: route(), assess_complexity(), assess_complexity_async(),
     record_output_entropy(), should_brake()
@@ -317,8 +319,10 @@ class AdaptiveRouter:
                 return None
             query_vec = emb.embed(task)
             result = self._rust.route_with_embedding(task, query_vec)
-            # Only accept if kNN was actually used (tier != structural fallback)
-            return result
+            # Accept if confidence exceeds OOD threshold (proxy for kNN contributing)
+            if result is not None and result.confidence > 0.3:
+                return result
+            return None
         except Exception as e:
             log.warning("Rust kNN route failed: %s", e)
             return None

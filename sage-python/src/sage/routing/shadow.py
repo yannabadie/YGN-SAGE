@@ -137,6 +137,9 @@ class ShadowRouter:
 
         return rust_decision
 
+    # Maximum trace file size before rotation (10 MB)
+    _MAX_TRACE_BYTES = 10 * 1024 * 1024
+
     def _write_trace(
         self,
         task: str,
@@ -158,6 +161,11 @@ class ShadowRouter:
         }
         try:
             self._trace_path.parent.mkdir(parents=True, exist_ok=True)
+            # Rotate if file exceeds max size
+            if self._trace_path.exists() and self._trace_path.stat().st_size > self._MAX_TRACE_BYTES:
+                bak = self._trace_path.with_suffix(".jsonl.bak")
+                self._trace_path.rename(bak)
+                _log.info("Shadow: rotated trace file to %s", bak)
             with open(self._trace_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record) + "\n")
         except Exception as exc:

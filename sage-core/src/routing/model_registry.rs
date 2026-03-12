@@ -34,8 +34,8 @@ impl TelemetryRecord {
         }
         let mut sorted: Vec<f32> = self.latencies.iter().copied().collect();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        let idx = ((sorted.len() as f64) * 0.95).ceil() as usize;
-        sorted[idx.min(sorted.len()) - 1]
+        let idx = ((sorted.len() - 1) as f64 * 0.95).floor() as usize;
+        sorted[idx.min(sorted.len() - 1)]
     }
 }
 
@@ -337,10 +337,13 @@ mod tests {
     #[test]
     fn telemetry_tracks_latency() {
         let mut reg = ModelRegistry::from_toml_str(test_toml()).unwrap();
-        reg.record_telemetry_full("fast-model", 0.8, 0.01, 150.0);
-        reg.record_telemetry_full("fast-model", 0.9, 0.02, 250.0);
+        // Need enough samples for P95 to be meaningful
+        for i in 0..20 {
+            reg.record_telemetry_full("fast-model", 0.8, 0.01, 100.0 + i as f32 * 10.0);
+        }
+        // 20 samples: 100..290, P95 idx = floor(19*0.95) = 18 → sorted[18] = 280
         let latency = reg.observed_latency_p95("fast-model");
-        assert!(latency > 200.0);
+        assert!(latency > 200.0, "P95 of 100..290 should be > 200, got {}", latency);
     }
 
     #[test]

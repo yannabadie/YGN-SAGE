@@ -67,12 +67,14 @@ class TopologyEvolver:
         op = random.choice(["add_node", "remove_node", "rewire", "change_pattern"])
 
         if op == "add_node" and len(nodes) < 8:
-            new_role = random.choice([r for r in ROLES if r not in nodes])
-            nodes.append(new_role)
-            # Connect to a random existing node
-            if nodes:
-                parent = random.choice(nodes[:-1]) if len(nodes) > 1 else nodes[0]
-                edges.append((parent, new_role))
+            available = [r for r in ROLES if r not in nodes]
+            if available:
+                new_role = random.choice(available)
+                nodes.append(new_role)
+                # Connect to a random existing node
+                if nodes:
+                    parent = random.choice(nodes[:-1]) if len(nodes) > 1 else nodes[0]
+                    edges.append((parent, new_role))
 
         elif op == "remove_node" and len(nodes) > 1:
             victim = random.choice(nodes[1:])  # Never remove first node
@@ -82,8 +84,10 @@ class TopologyEvolver:
         elif op == "rewire" and edges:
             idx = random.randrange(len(edges))
             src, _ = edges[idx]
-            tgt = random.choice([n for n in nodes if n != src])
-            edges[idx] = (src, tgt)
+            targets = [n for n in nodes if n != src]
+            if targets:
+                tgt = random.choice(targets)
+                edges[idx] = (src, tgt)
 
         elif op == "change_pattern":
             pattern = random.choice([p for p in PATTERNS if p != pattern])

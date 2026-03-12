@@ -121,7 +121,21 @@ impl TopologyEngine {
     }
 
     /// Store a topology in the cache by its id.
+    ///
+    /// Evicts random entries if the cache exceeds 500 topologies.
     pub fn cache_topology(&mut self, graph: TopologyGraph) {
+        if self.topology_cache.len() >= 500 {
+            // Evict ~half the cache to amortise eviction cost.
+            let keys_to_remove: Vec<String> = self
+                .topology_cache
+                .keys()
+                .take(self.topology_cache.len() - 250)
+                .cloned()
+                .collect();
+            for key in keys_to_remove {
+                self.topology_cache.remove(&key);
+            }
+        }
         self.topology_cache.insert(graph.id.clone(), graph);
     }
 
@@ -447,7 +461,16 @@ impl TopologyEngine {
                 (
                     graph.node_count() as u32,
                     desc.max_depth_bucket as u32,
-                    graph.node_count() as f32 / graph.node_count().max(1) as f32,
+                    {
+                        let inner = graph.inner_graph();
+                        let mut unique_models: Vec<&str> = inner
+                            .node_weights()
+                            .map(|n| n.model_id.as_str())
+                            .collect();
+                        unique_models.sort_unstable();
+                        unique_models.dedup();
+                        unique_models.len() as f32 / graph.node_count().max(1) as f32
+                    },
                     graph.template_type.clone(),
                 )
             } else {

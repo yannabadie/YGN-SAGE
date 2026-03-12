@@ -153,7 +153,10 @@ impl RustEmbedder {
             .and_then(|p| p.extract().ok());
         if let Some(path) = resolve_ort_dylib_once(&model_path, sys_prefix.as_deref()) {
             if std::env::var("ORT_DYLIB_PATH").is_err() {
-                std::env::set_var("ORT_DYLIB_PATH", path);
+                // SAFETY: OnceLock in resolve_ort_dylib_once guarantees this runs
+                // at most once, and we are still in single-threaded __init__ context.
+                #[allow(unsafe_code)]
+                unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
             }
         }
         // Release the GIL before loading ORT — on Windows, LoadLibraryW runs
@@ -177,13 +180,15 @@ impl RustEmbedder {
     }
 
     /// Embed a single text string. Returns a 768-dim L2-normalized vector.
-    pub fn embed(&mut self, text: &str) -> PyResult<Vec<f32>> {
-        let batch = self.embed_batch(vec![text.to_string()])?;
+    pub fn embed(&mut self, py: Python<'_>, text: &str) -> PyResult<Vec<f32>> {
+        let batch = self.embed_batch(py, vec![text.to_string()])?;
         Ok(batch.into_iter().next().unwrap_or_default())
     }
 
     /// Embed a batch of text strings. Returns a list of 768-dim L2-normalized vectors.
-    pub fn embed_batch(&mut self, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
+    ///
+    /// Releases the GIL during ONNX inference to avoid blocking Python threads.
+    pub fn embed_batch(&mut self, py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -256,6 +261,10 @@ impl RustEmbedder {
             ]
         };
 
+        // Note: GIL is held during inference because session_inputs borrows
+        // stack-local tensor data that cannot be moved into allow_threads().
+        // The py parameter is accepted for API consistency with PyO3 conventions.
+        let _ = py; // suppress unused warning
         let outputs = self.session.run(session_inputs).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("ORT inference error: {e}"))
         })?;

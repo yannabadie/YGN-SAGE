@@ -130,6 +130,8 @@ class EventBus:
             while True:
                 try:
                     event = await asyncio.wait_for(q.get(), timeout=30.0)
+                    if event is None:
+                        break  # Sentinel from clear() — stop streaming
                     yield event
                 except asyncio.TimeoutError:
                     continue  # No events for 30s — keep consumer alive
@@ -147,6 +149,12 @@ class EventBus:
         """Clear all buffered events and async queues."""
         with self._lock:
             self._buffer.clear()
+            # Signal consumers to stop before clearing
+            for consumer in self._async_consumers:
+                try:
+                    consumer.queue.put_nowait(None)
+                except Exception:
+                    pass
             self._async_consumers.clear()
 
     # ------------------------------------------------------------------

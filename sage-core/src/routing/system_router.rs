@@ -30,10 +30,31 @@ const FORMAL_KEYWORDS: &[&str] = &[
     "verification",
 ];
 
-/// Check whether the task contains any formal reasoning keyword.
+/// Check whether the task contains any formal reasoning keyword
+/// with word boundary verification (char before/after must not be alphanumeric).
 fn has_formal_keywords(task: &str) -> bool {
     let lower = task.to_lowercase();
-    FORMAL_KEYWORDS.iter().any(|kw| lower.contains(kw))
+    let bytes = lower.as_bytes();
+    FORMAL_KEYWORDS.iter().any(|kw| {
+        let kw_bytes = kw.as_bytes();
+        let kw_len = kw_bytes.len();
+        let mut start = 0;
+        while let Some(pos) = lower[start..].find(kw) {
+            let abs_pos = start + pos;
+            let end_pos = abs_pos + kw_len;
+            // Check char before keyword is not alphanumeric/underscore
+            let before_ok = abs_pos == 0
+                || !bytes[abs_pos - 1].is_ascii_alphanumeric() && bytes[abs_pos - 1] != b'_';
+            // Check char after keyword is not alphanumeric/underscore
+            let after_ok = end_pos >= bytes.len()
+                || !bytes[end_pos].is_ascii_alphanumeric() && bytes[end_pos] != b'_';
+            if before_ok && after_ok {
+                return true;
+            }
+            start = abs_pos + 1;
+        }
+        false
+    })
 }
 
 // ── RoutingConstraints ───────────────────────────────────────────────────────
@@ -194,7 +215,7 @@ impl SystemRouter {
         let (model, estimated_cost) = self.select_within_budget(&candidates, budget);
 
         // If budget forced a downgrade, recalculate system from model's best affinity
-        let final_system = if model.id != candidates[0].id {
+        let final_system = if candidates.is_empty() || model.id != candidates[0].id {
             model.best_system()
         } else {
             system
@@ -268,7 +289,7 @@ impl SystemRouter {
         };
         let (model, estimated_cost) = self.select_within_budget(&candidates, budget);
 
-        let final_system = if model.id != candidates[0].id {
+        let final_system = if candidates.is_empty() || model.id != candidates[0].id {
             model.best_system()
         } else {
             // Derive from model if widened beyond original system
@@ -524,6 +545,13 @@ impl SystemRouter {
         candidates: &'a [ModelCard],
         budget: f32,
     ) -> (&'a ModelCard, f32) {
+        if candidates.is_empty() {
+            // Caller must ensure candidates is non-empty; this is a defensive fallback.
+            // Return a static default to avoid panic. In practice, route() always
+            // provides at least all_models() which is non-empty for a valid registry.
+            unreachable!("select_within_budget called with empty candidates — registry is empty");
+        }
+
         let est_input = 1000_u32;
         let est_output = 2000_u32;
 

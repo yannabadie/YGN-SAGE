@@ -13,6 +13,7 @@ def test_create_mcp_server_returns_server():
     assert server is not None
 
 
+@pytest.mark.asyncio
 async def test_mcp_server_has_run_task_tool():
     from sage.protocols.mcp_server import create_mcp_server
     from sage.tools.registry import ToolRegistry
@@ -25,6 +26,7 @@ async def test_mcp_server_has_run_task_tool():
     assert "run_task" in tool_names
 
 
+@pytest.mark.asyncio
 async def test_mcp_server_without_deps():
     """Server works with no tool_registry, no agent_loop, no event_bus."""
     from sage.protocols.mcp_server import create_mcp_server

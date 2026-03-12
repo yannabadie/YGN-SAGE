@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, master]
   pull_request:
-    branches: [main]
+    branches: [main, master]
 
 jobs:
   rust:
@@ -25,8 +25,8 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy --no-default-features -- -D warnings
       - run: cargo test --no-default-features --lib
-      - name: Check ONNX feature compiles
-        run: cargo check --no-default-features --features onnx
+      - name: ONNX feature tests
+        run: cargo test --no-default-features --features onnx --lib
 
   rust-features:
     name: Rust (sandbox + ONNX + SMT + tool-executor)
@@ -47,8 +47,12 @@ jobs:
         run: cargo test --no-default-features --features smt --lib
       - name: Tool executor tests (tree-sitter validator)
         run: cargo test --no-default-features --features tool-executor --lib -- sandbox::validator
-      - name: ONNX compile check
-        run: cargo check --no-default-features --features onnx
+      - name: Cognitive persistence tests
+        run: cargo test --no-default-features --features cognitive --lib
+      - name: ONNX feature tests
+        run: cargo test --no-default-features --features onnx --lib
+      - name: Integration tests (baseline)
+        run: cargo test --no-default-features --test '*' || true
       - name: Integration tests (with Python)
         run: cargo test --no-default-features --features sandbox,cranelift --test '*'
 
@@ -65,7 +69,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[all,dev]"
       - run: ruff check src/
-      - run: python -m pytest tests/ -v --tb=short
+      - run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary || true
+      - run: python -m pytest tests/ -v --tb=short --cov=sage --cov-report=term-missing:skip-covered
 
   python-discover:
     name: Python Discovery (sage-discover)
@@ -98,10 +103,13 @@ jobs:
         run: pip install -e ".[all,dev]"
       - name: Run Python tests
         working-directory: sage-python
-        run: python -m pytest tests/ -v --tb=short -x
+        run: python -m pytest tests/ -v --tb=short
       - name: Rust check (no-default-features)
         working-directory: sage-core
         run: cargo check --no-default-features
+      - name: Rust unit tests
+        working-directory: sage-core
+        run: cargo test --no-default-features --lib
       - name: Rust check (ONNX feature)
         working-directory: sage-core
         run: cargo check --no-default-features --features onnx

@@ -205,7 +205,7 @@ class CognitiveOrchestrator:
         t0 = time.perf_counter()
 
         # 1. Assess complexity
-        profile = self.metacognition.assess_complexity(task)
+        profile = await self.metacognition.assess_complexity_async(task)
         decision = self.metacognition.route(profile)
 
         log.info(

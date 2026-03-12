@@ -89,7 +89,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
 - `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection, telemetry calibration (quality + latency P95 via VecDeque ring buffer), `select_best_for_domain(domain, budget)` for domain-aware model selection. PyO3 class.
 - `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → domain hint → bandit/budget selection). `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`).
-- `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature.
+- `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature. Audit fixes: Mutex safety (lock scope), empty candidates guard, bandit arm dedup.
 - `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval.
 - `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
 - `topology/templates.rs` - 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). PyTemplateStore PyO3 class.
@@ -403,5 +403,10 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - tree-sitter 0.26 + tree-sitter-python 0.25 (AST-based code validation, `tool-executor` feature)
 - process-wrap 9 (subprocess executor with tokio timeout + kill-on-drop, `tool-executor` feature)
 - DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
-- ort 2.0 (ONNX Runtime for Rust, `load-dynamic`, optional `onnx` feature) — native embeddings, works on Windows MSVC
+- ort 2.0.0-rc.12 (ONNX Runtime for Rust, `load-dynamic`, optional `onnx` feature) — native embeddings, works on Windows MSVC. **NOTE**: RC dependency, track for stable release
 - tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)
+
+## Known Issues / Tech Debt
+- **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
+- **Shadow traces**: Need 1000+ traces for Phase 5 hard gate (<5% divergence) before Python shadow cleanup
+- **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes

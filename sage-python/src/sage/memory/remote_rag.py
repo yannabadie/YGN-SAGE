@@ -34,8 +34,18 @@ class ExoCortex:
         self._store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
         self._model_id = model_id or os.environ.get("SAGE_EXOCORTEX_MODEL") or _DEFAULT_MODEL
         self._api_key = os.environ.get("GOOGLE_API_KEY", "")
+        self._client = None
 
     # -- KnowledgeStore protocol: store_name property --------------------------
+
+    def _get_client(self):
+        """Return a cached genai.Client, creating one if needed."""
+        if self._client is None:
+            from google import genai
+            self._client = genai.Client(api_key=self._api_key)
+            from sage.llm._ssl import patch_genai_ssl
+            patch_genai_ssl(self._client)
+        return self._client
 
     @property
     def store_name(self) -> str:
@@ -75,6 +85,8 @@ class ExoCortex:
 
         def _create():
             client = genai.Client(api_key=self._api_key)
+            from sage.llm._ssl import patch_genai_ssl
+            patch_genai_ssl(client)
             return client.file_search_stores.create(
                 config={"display_name": display_name}
             )
@@ -94,6 +106,8 @@ class ExoCortex:
         def _upload():
             import time
             client = genai.Client(api_key=self._api_key)
+            from sage.llm._ssl import patch_genai_ssl
+            patch_genai_ssl(client)
             operation = client.file_search_stores.upload_to_file_search_store(
                 file=file_path,
                 file_search_store_name=self.store_name,
@@ -117,6 +131,8 @@ class ExoCortex:
 
         def _delete():
             client = genai.Client(api_key=self._api_key)
+            from sage.llm._ssl import patch_genai_ssl
+            patch_genai_ssl(client)
             client.file_search_stores.delete(name=store_name)
 
         await asyncio.to_thread(_delete)
@@ -128,10 +144,9 @@ class ExoCortex:
         if not self.store_name or not self._api_key:
             return ""
         try:
-            from google import genai
             from google.genai import types
 
-            client = genai.Client(api_key=self._api_key)
+            client = self._get_client()
             tools = [types.Tool(
                 file_search=types.FileSearch(
                     file_search_store_names=[self.store_name]

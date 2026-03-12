@@ -195,6 +195,8 @@ class ComplexityRouter:
         from google.genai import types
 
         client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
+        from sage.llm._ssl import patch_genai_ssl
+        patch_genai_ssl(client)
         prompt = _ROUTING_PROMPT.format(task=task[:2000])  # Cap input length
 
         config = types.GenerateContentConfig(

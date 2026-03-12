@@ -70,14 +70,16 @@ impl BetaPosterior {
 
     /// Thompson sample: draw from Beta distribution.
     ///
-    /// Uses mean + scaled noise approximation (no rand_distr dependency).
+    /// Uses Box-Muller Gaussian approximation (no rand_distr dependency).
     fn sample(&self, rng: &mut impl Rng) -> f64 {
         let mean = self.mean();
         let variance = self.alpha * self.beta
             / ((self.alpha + self.beta).powi(2) * (self.alpha + self.beta + 1.0));
         let std = variance.sqrt();
-        let noise = rng.random::<f64>() * 2.0 - 1.0; // Uniform [-1, 1]
-        (mean + noise * std).clamp(0.0, 1.0)
+        let u1: f64 = rng.random::<f64>().max(1e-15); // avoid ln(0)
+        let u2: f64 = rng.random::<f64>();
+        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+        (mean + std * z).clamp(0.0, 1.0)
     }
 
     /// Update with observation. `quality` should be 0.0 to 1.0.
@@ -120,13 +122,15 @@ impl GammaPosterior {
         self.shape / self.rate
     }
 
-    /// Thompson sample (mean + scaled noise approximation).
+    /// Thompson sample (Box-Muller Gaussian approximation).
     fn sample(&self, rng: &mut impl Rng) -> f64 {
         let mean = self.mean();
         let variance = self.shape / self.rate.powi(2);
         let std = variance.sqrt();
-        let noise = rng.random::<f64>() * 2.0 - 1.0;
-        (mean + noise * std).max(0.001) // Never negative
+        let u1: f64 = rng.random::<f64>().max(1e-15); // avoid ln(0)
+        let u2: f64 = rng.random::<f64>();
+        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
+        (mean + std * z).max(0.001) // Never negative
     }
 
     /// Update with observation value (cost or latency).
@@ -331,6 +335,15 @@ impl ContextualBandit {
         let expected_cost = arm.cost.sample(&mut rng) as f32;
         let expected_latency = arm.latency.sample(&mut rng) as f32;
 
+        // Evict oldest pending entries if unbounded growth detected
+        if self.pending.len() > 10_000 {
+            let drain_count = self.pending.len() - 5_000;
+            let keys_to_remove: Vec<String> = self.pending.keys().take(drain_count).cloned().collect();
+            for key in keys_to_remove {
+                self.pending.remove(&key);
+            }
+        }
+
         // Store pending decision for deferred record()
         self.pending.insert(decision_id.clone(), chosen_key.clone());
 
@@ -381,10 +394,12 @@ impl ContextualBandit {
             .ok_or_else(|| BanditError::UnknownDecision(decision_id.to_string()))?;
 
         let decay = self.decay_factor;
-        let arm = self
-            .arms
-            .get_mut(&arm_key)
-            .expect("arm_key from pending must exist in arms");
+        let arm = match self.arms.get_mut(&arm_key) {
+            Some(a) => a,
+            None => return Err(BanditError::UnknownDecision(
+                format!("arm {:?} removed between choose() and record()", arm_key),
+            )),
+        };
 
         arm.update(quality as f64, cost as f64, latency_ms as f64, decay);
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import ast
 import re
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import Any
 
 # Try Rust OxiZ backend first (pure Rust, no C++ deps)
 try:
@@ -42,10 +42,19 @@ _SAFE_NODES = (
 def _safe_z3_eval(expr: str, namespace: dict) -> Any:
     """Evaluate a Z3 constraint string using restricted AST parsing.
 
+    .. deprecated::
+        Legacy function. Use Rust OxiZ via ``SmtVerifier`` instead.
+
     Only allows: comparisons, arithmetic, boolean ops, variable names,
     constants, and z3.* attribute access / function calls.
     Raises ValueError on any disallowed construct.
     """
+    import warnings
+    warnings.warn(
+        "_safe_z3_eval is deprecated, use Rust OxiZ via SmtVerifier",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     tree = ast.parse(expr, mode="eval")
     for node in ast.walk(tree):
         if not isinstance(node, _SAFE_NODES):
@@ -228,7 +237,7 @@ class ProcessRewardModel:
         self.kg = kg or FormalKnowledgeGraph()
         self.logger = logging.getLogger(__name__)
 
-    def extract_reasoning_steps(self, content: str) -> List[str]:
+    def extract_reasoning_steps(self, content: str) -> list[str]:
         """Extracts text inside <think>...</think> tags and splits into steps."""
         pattern = r"<think>(.*?)</think>"
         matches = re.findall(pattern, content, re.DOTALL)
@@ -240,7 +249,7 @@ class ProcessRewardModel:
             
         return steps
 
-    def calculate_r_path(self, content: str) -> Tuple[float, Dict[str, Any]]:
+    def calculate_r_path(self, content: str) -> tuple[float, dict[str, Any]]:
         """Calculate the R_path (Process Reward) for a given generation."""
         steps = self.extract_reasoning_steps(content)
         

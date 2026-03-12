@@ -96,7 +96,14 @@ impl WasmSandbox {
         args_json: String,
         env: HashMap<String, String>,
     ) -> PyResult<PyObject> {
-        let component_result = self.component_cache.entry(name.clone()).or_try_insert_with(
+        // Include content hash in cache key to detect stale entries.
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        compiled_bytes.hash(&mut hasher);
+        let cache_key = format!("{}_{:x}", name, hasher.finish());
+
+        let component_result = self.component_cache.entry(cache_key).or_try_insert_with(
             || -> PyResult<Component> {
                 // SAFETY: compiled_bytes must come from Component::serialize()
                 // produced by the same version of wasmtime with the same Engine config.
@@ -131,7 +138,14 @@ impl WasmSandbox {
         args_json: String,
         env: HashMap<String, String>,
     ) -> PyResult<PyObject> {
-        let component_result = self.component_cache.entry(name.clone()).or_try_insert_with(
+        // Include content hash in cache key to detect stale entries.
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        compiled_bytes.hash(&mut hasher);
+        let cache_key = format!("{}_{:x}", name, hasher.finish());
+
+        let component_result = self.component_cache.entry(cache_key).or_try_insert_with(
             || -> PyResult<Component> {
                 // SAFETY: compiled_bytes must come from Component::serialize()
                 // produced by the same version of wasmtime with the same Engine config.

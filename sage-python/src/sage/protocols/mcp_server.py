@@ -91,10 +91,14 @@ def _register_tool_as_mcp(server: FastMCP, name: str, tool: Any) -> None:
         @server.tool(name=name, description=description)
         async def _wrapper(**kwargs: Any) -> str:
             try:
+                import inspect
                 handler = tool.handler if hasattr(tool, "handler") else tool
-                result = handler(**kwargs)
-                if hasattr(result, "__await__"):
-                    result = await result
+                if inspect.iscoroutinefunction(handler):
+                    result = await handler(**kwargs)
+                else:
+                    result = handler(**kwargs)
+                    if inspect.isawaitable(result):
+                        result = await result
                 return str(result)
             except Exception as exc:
                 return f"Error in {name}: {exc}"

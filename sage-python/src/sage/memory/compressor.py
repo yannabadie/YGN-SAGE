@@ -102,7 +102,7 @@ DISCOVERIES:
             elif line.startswith("DISCOVERIES:"):
                 current_section = "discoveries"
             elif current_section == "discoveries" and line.strip().startswith("-"):
-                discoveries.append(line.strip().replace("-", "", 1).strip())
+                discoveries.append(line.strip().lstrip("- ").strip())
 
         # 3. Update Working Memory — compress_old_events keeps N recent + prepends summary
         working_memory.compress(self.keep_recent, summary or "No summary generated.")
