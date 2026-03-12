@@ -53,6 +53,12 @@ const BLOCKED_CALLS: &[&str] = &[
     "chr",
     "type",
     "hasattr",
+    // Dynamic module name construction bypass vectors (Audit P8):
+    "bytes",
+    "bytearray",
+    "memoryview",
+    "ord",
+    "ascii",
 ];
 
 /// Blocked dunder attributes — kills __class__.__mro__.__subclasses__ chains.
@@ -346,5 +352,20 @@ mod tests {
         // Normal attribute access like obj.name should be fine
         let r = validate_python_code("x = obj.name\ny = obj.value");
         assert!(r.valid, "errors: {:?}", r.errors);
+    }
+
+    #[test]
+    fn test_blocks_byte_construction_bypass() {
+        // Uses validate_python_code() free function (NOT PythonValidator struct).
+        // Result fields: .valid (bool) and .errors (Vec<String>).
+        let r = validate_python_code("x = bytes([111, 115])");
+        assert!(!r.valid, "bytes() should be blocked");
+        assert!(r.errors.iter().any(|e| e.contains("bytes")));
+
+        let r2 = validate_python_code("x = bytearray([111, 115])");
+        assert!(!r2.valid, "bytearray() should be blocked");
+
+        let r3 = validate_python_code("x = ord('a')");
+        assert!(!r3.valid, "ord() should be blocked");
     }
 }
