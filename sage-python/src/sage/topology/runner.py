@@ -28,6 +28,9 @@ EDGE_STATE = 2
 class TopologyRunner:
     """Execute a TopologyGraph as a real multi-agent system.
 
+    Single-use: each instance runs one topology execution. Do not call
+    ``run()`` more than once (``_node_outputs`` is not reset between runs).
+
     Parameters
     ----------
     graph : TopologyGraph or compatible stub
@@ -68,8 +71,17 @@ class TopologyRunner:
                 context_parts.append(f"[{role}]: {output}")
         return "\n\n".join(context_parts)
 
-    async def _execute_node(self, node_idx: int, task: str) -> str:
-        """Execute a single topology node as an LLM call."""
+    async def _execute_node(
+        self, node_idx: int, task: str, context_override: str | None = None,
+    ) -> str:
+        """Execute a single topology node as an LLM call.
+
+        Parameters
+        ----------
+        context_override : str, optional
+            Pre-captured context snapshot. Used by parallel batches to avoid
+            race conditions on ``_node_outputs`` during ``asyncio.gather``.
+        """
         node = self.graph.get_node(node_idx)
         role = getattr(node, "role", f"node-{node_idx}")
         caps = getattr(node, "required_capabilities", [])
@@ -82,7 +94,7 @@ class TopologyRunner:
             Message(role=Role.SYSTEM, content=system_prompt),
         ]
 
-        context = self._gather_completed_context()
+        context = context_override if context_override is not None else self._gather_completed_context()
         if context:
             messages.append(Message(
                 role=Role.SYSTEM,
@@ -106,7 +118,12 @@ class TopologyRunner:
         return output
 
     async def run(self, task: str) -> str:
-        """Execute the full topology, returning the final node's output."""
+        """Execute the full topology, returning the final node's output.
+
+        For parallel batches, ``last_output`` is the last node in executor
+        order. Topologies that need aggregation should include an explicit
+        aggregator node in a subsequent batch.
+        """
         last_output = ""
 
         while not self.executor.is_done():
@@ -118,7 +135,13 @@ class TopologyRunner:
                 last_output = await self._execute_node(ready[0], task)
                 self.executor.mark_completed(ready[0])
             else:
-                coros = [self._execute_node(idx, task) for idx in ready]
+                # Snapshot context before gather to prevent race:
+                # concurrent coroutines must not see each other's outputs.
+                ctx_snapshot = self._gather_completed_context()
+                coros = [
+                    self._execute_node(idx, task, context_override=ctx_snapshot)
+                    for idx in ready
+                ]
                 results = await asyncio.gather(*coros)
                 for idx, output in zip(ready, results):
                     self.executor.mark_completed(idx)
