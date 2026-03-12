@@ -403,12 +403,12 @@ result = await system.run("complex task", resume=True)
 
 | Rust Module | LOC | Python Port | Effort | Complexity |
 |---|---|---|---|---|
-| `TopologyGraph` (topology_graph.rs) | 420 | `networkx.DiGraph` wrapper with typed nodes/edges | 1 sprint | Medium — petgraph API → networkx translation |
+| `TopologyGraph` (topology_graph.rs) | 687 | `networkx.DiGraph` wrapper with typed nodes/edges + three-flow edge model | 1 sprint | Medium — petgraph API → networkx, typed nodes/edges |
 | `HybridVerifier` (verifier.rs) | 660 | 6 structural checks (Python graph traversal) + 4 semantic checks (string matching) | 0.5 sprint | Low — checks are simple graph algorithms, no SIMD |
 | `TopologyExecutor` (executor.rs) | 476 | Kahn's toposort (stdlib `graphlib.TopologicalSorter`) + gate-based readiness (Python dict + deque) | 0.5 sprint | Medium — dual-mode scheduling logic |
-| Templates (templates.rs) | 267 (subset) | 8 template constructors returning networkx graphs | 0.3 sprint | Low — pure graph construction |
+| Templates (templates.rs) | 661 | 8 template constructors returning networkx graphs | 0.5 sprint | Low-Medium — pure graph construction, but 8 templates × validation |
 
-**Total**: ~1823 LOC Rust → ~800-1000 LOC Python. **Revised effort: 2 sprints** (was 1.5 — accounting for test parity, LTL integration, and edge cases in dynamic executor mode). This is the largest single item in Phase 3.
+**Total**: 2484 LOC Rust → ~1000-1200 LOC Python (Rust is more verbose for graph code). **Revised effort: 2 sprints** (accounting for test parity, LTL integration, three-flow edge model, and edge cases in dynamic executor mode). This is the largest single item in Phase 3.
 
 **What stays Rust-only**:
 - Wasm WASI sandbox (wasmtime) — Python-only mode uses subprocess with timeout
@@ -459,3 +459,9 @@ pip install sage-python[rust,onnx]   # full performance + ONNX models
 | QualityEstimator training data too small | Synthetic augmentation; collect from community benchmark runs |
 | sage-router adoption low | Library still used internally; no wasted effort |
 | Python-only mode too slow for production | Clear docs: "development mode"; Rust recommended for production |
+| Ablation/TopologyBench task overlap | Run ablation independently — no parameter tuning between runs |
+
+## Implementation Notes
+
+- **New dependency**: `msgpack` must be added to `pyproject.toml` for checkpoint serialization (Phase 3.2)
+- **sage-router import migration**: Use transitional re-export (`sage.strategy.metacognition` re-exports from `sage_router.types`) so downstream code does not break during extraction
