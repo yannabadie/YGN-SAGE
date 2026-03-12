@@ -216,6 +216,9 @@ class AgentLoop:
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = S2_MAX_RETRIES_BEFORE_ESCALATION
         self._avr_error_history: list[str] = []
+        self._last_avr_iterations: int = 0
+        self._last_error: Exception | None = None
+        self._s3_degraded: bool = False
 
         # CRAG-style relevance gate for memory injection
         self._relevance_gate = RelevanceGate(threshold=0.3)
@@ -299,6 +302,95 @@ class AgentLoop:
         except Exception:
             return []
 
+    async def _run_topology(self, task: str) -> str | None:
+        """Execute multi-node topology via TopologyRunner.
+
+        Returns the result string if topology has >1 node, or None to fall
+        through to standard single-LLM execution.
+        """
+        if not self._current_topology:
+            return None
+
+        schedule = self._schedule_from_topology()
+        if len(schedule) <= 1:
+            return None  # Single node or empty — use standard path
+
+        try:
+            from sage.topology.runner import TopologyRunner
+            from sage_core import PyTopologyExecutor  # noqa: E402
+            executor = PyTopologyExecutor(self._current_topology)
+            runner = TopologyRunner(
+                graph=self._current_topology,
+                executor=executor,
+                llm_provider=self._llm,
+                llm_config=self.config.llm,
+            )
+            result = await runner.run(task)
+            self._emit(
+                LoopPhase.THINK,
+                topology_execution="multi_agent",
+                node_count=len(schedule),
+            )
+            return result
+        except Exception as e:
+            log.warning("TopologyRunner failed (%s), falling back to single-LLM", e)
+            return None
+
+    async def _cegar_repair(
+        self,
+        content: str,
+        prm_details: str,
+        invariant_feedback: list[str],
+    ) -> str | None:
+        """Attempt CEGAR repair of failed S3 verification.
+
+        Extracts failed clauses from PRM details and invariant feedback,
+        builds a targeted repair prompt, and makes a single LLM call.
+        Returns repaired content if PRM passes, or None if repair fails.
+        """
+        repair_prompt = (
+            "SYSTEM: Your formal verification FAILED. "
+            "Do NOT regenerate from scratch — fix the specific failures below.\n\n"
+            f"Verification error: {prm_details}\n"
+        )
+        if invariant_feedback:
+            repair_prompt += (
+                "\nFailed invariant clauses:\n"
+                + "\n".join(f"- {f}" for f in invariant_feedback)
+                + "\n"
+            )
+        repair_prompt += (
+            "\nFix your reasoning by adding the missing formal assertions. "
+            "Use <think> tags with Z3 assertions for each step."
+        )
+
+        messages = [
+            Message(role=Role.SYSTEM, content=self.config.system_prompt),
+            Message(role=Role.ASSISTANT, content=content),
+            Message(role=Role.USER, content=repair_prompt),
+        ]
+
+        try:
+            response = await self._llm.generate(
+                messages=messages,
+                config=self.config.llm,
+            )
+            repaired = response.content or ""
+            if not repaired:
+                return None
+
+            # Verify the repair
+            r_path, details = self.prm.calculate_r_path(repaired)
+            if r_path >= 0.0 or "error" not in details:
+                log.info("CEGAR repair succeeded: r_path=%.2f", r_path)
+                return repaired
+            else:
+                log.warning("CEGAR repair failed: %s", details)
+                return None
+        except Exception as e:
+            log.warning("CEGAR repair LLM call failed: %s", e)
+            return None
+
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
         tool = self._tools.get(tc.name)
@@ -322,6 +414,8 @@ class AgentLoop:
         self._s3_retries = 0
         self._s2_avr_retries = 0
         self._avr_error_history = []
+        self._s3_degraded = False
+        self._original_validation_level = self.config.validation_level
         self.step_count = 0
 
         # === PERCEIVE: Gather context ===
@@ -438,18 +532,17 @@ class AgentLoop:
                     messages = self._rebuild_messages(system_prompt)
 
             # === THINK: Call LLM ===
-            # Topology-aware execution context
-            if self.step_count == 1:  # Only inject on first iteration
-                topology_schedule = self._schedule_from_topology()
-                if len(topology_schedule) > 1:
-                    roles_desc = ", ".join(
-                        f"{n['role']}(S{n['system']})" for n in topology_schedule
-                    )
-                    topology_hint = (
-                        f"[Topology: {len(topology_schedule)} agents — {roles_desc}. "
-                        f"You are acting as: {topology_schedule[0]['role']}]"
-                    )
-                    messages.insert(0, Message(role=Role.SYSTEM, content=topology_hint))
+            # Topology-aware execution: delegate to TopologyRunner for multi-node
+            if self.step_count == 1:
+                topology_result = await self._run_topology(task)
+                if topology_result is not None:
+                    # Multi-agent topology executed — use its result directly
+                    content = topology_result
+                    result_text = content
+                    self.working_memory.add_event("ASSISTANT", content)
+                    # Skip to LEARN phase (topology handled THINK+ACT internally)
+                    # TODO(Phase 1): Apply output guardrails to topology result
+                    break
 
             model_name = self.config.llm.model
             self._emit(LoopPhase.THINK, model=model_name)
@@ -500,7 +593,7 @@ class AgentLoop:
                     f"[Step {self.step_count}] {content[:300]}"
                 )
 
-            # System 3 validation (Z3 PRM) -- max 2 retries then accept
+            # System 3 validation (Z3 PRM) -- hard gating with CEGAR repair
             if self.config.validation_level >= 3 and content:
                 r_path, details = self.prm.calculate_r_path(content)
                 self._emit(LoopPhase.THINK, r_path=r_path, details=details)
@@ -520,8 +613,29 @@ class AgentLoop:
                             ),
                         ))
                         continue
-                    # Max retries reached -- accept response as-is
-                    log.warning("S3 retry limit reached, accepting response without <think> tags.")
+
+                    # Max retries reached — attempt CEGAR repair
+                    inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
+                    repaired = await self._cegar_repair(content, details, inv_feedback)
+                    if repaired is not None:
+                        content = repaired
+                        self._s3_retries = 0
+                    else:
+                        # CEGAR failed — degrade to S2 (NOT accept unverified)
+                        log.warning(
+                            "S3 verification failed after CEGAR repair — "
+                            "degrading to S2 AVR."
+                        )
+                        self._emit(
+                            LoopPhase.THINK,
+                            s3_degradation=True,
+                            reason="CEGAR repair failed",
+                        )
+                        self.config.validation_level = 2
+                        self._s3_degraded = True  # Prevent S2→S3 re-escalation
+                        self._s3_retries = 0
+                        self._s2_avr_retries = 0
+                        continue  # Re-enter loop with S2 validation
                 else:
                     self._s3_retries = 0  # Reset on success
 
@@ -675,7 +789,7 @@ class AgentLoop:
                             continue
 
                 # S2 -> S3 escalation if max retries exhausted
-                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2:
+                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
                     log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
                     self.config.validation_level = 3
                     self._s3_retries = 0
@@ -789,6 +903,9 @@ class AgentLoop:
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 
+        # Expose state for QualityEstimator signals
+        self._last_avr_iterations = self._s2_avr_retries
+
         # Output guardrail check
         if self.guardrail_pipeline and result_text and not self._skip_guardrails:
             try:
@@ -815,6 +932,8 @@ class AgentLoop:
         if self.semantic_memory:
             final_meta["semantic_entities"] = self.semantic_memory.entity_count()
         self._emit(LoopPhase.LEARN, **final_meta)
+        # Restore validation_level if S3→S2 degradation occurred (multi-run safety)
+        self.config.validation_level = self._original_validation_level
         return result_text or f"Agent finished at step {self.step_count}"
 
     def _compute_aio(self) -> float:
