@@ -43,7 +43,7 @@ Rationalize the Rust/Python boundary so that:
 | HybridVerifier PyO3 | Remove instantiation in `boot.py:547`. Internal verifier inside `DynamicTopologyEngine` stays in Rust | `boot.py` |
 | Regex heuristics | Gut `_assess_heuristic()` body: replace 10 regex patterns with a simple keyword-count fallback (3 lines, no regex). Log a deprecation warning. Keeps last-resort fallback functional for fresh installs without ONNX model | `metacognition.py`, `adaptive_router.py` |
 
-### 1.2 Rust → Python Migration (5 modules, ~2712 LOC)
+### 1.2 Rust → Python Migration (3 modules, ~1,194 LOC)
 
 Bottom-up dependency order:
 
@@ -52,15 +52,12 @@ Bottom-up dependency order:
 | 1 | `features.rs` | 287 | `strategy/structural_features.py` | None |
 | 2 | `model_card.rs` | 469 | `llm/model_card.py` (dataclass + `tomllib`) | None |
 | 3 | `model_registry.rs` | 438 | `llm/model_registry.py` (dict + deque) | model_card |
-| 4 | `llm_synthesis.rs` | 629 | `topology/llm_synthesis.py` (Pydantic + JSON) | None |
-| 5 | `system_router.rs` | 889 | `strategy/system_router.py` | model_registry, features, Rust bandit (via PyO3) |
 
-**Removed from migration list:**
+**Removed from migration list (v3 — audit-driven):**
+- `system_router.rs` (889 LOC) — **stays Rust**: forms a cohesive unit with `bandit.rs`. Migrating creates a bad coupling boundary — the Python side would need to call Rust bandit on every routing decision, defeating the purpose. Audit2 correctly identified this.
+- `llm_synthesis.rs` (629 LOC) — **stays Rust**: uses `HybridVerifier` internally for topology validation (confirmed via audit C2). Extracting it would break the topology verification pipeline.
 - `templates.rs` (661 LOC) — **stays Rust**: `engine.rs`, `mcts.rs`, `map_elites.rs`, `pyo3_wrappers.rs` all `use super::templates`. Removing it breaks compilation of the entire topology block.
 - `mutations.rs` (808 LOC) — **stays Rust**: `engine.rs` and `mcts.rs` import `apply_random_mutation`. Same dependency chain as templates.
-
-**Cross-language coupling for system_router.py (item 5):**
-The Python `system_router.py` will call the Rust `ContextualBandit` via PyO3 (`from sage_core import ContextualBandit`). This is a single method call per routing decision (`bandit.sample(context)`) — negligible overhead. The Rust `bandit.rs` already exposes `sample()` and `update()` as PyO3 methods.
 
 **Migration protocol per module:**
 1. Write Python implementation with full tests (TDD)
@@ -72,7 +69,9 @@ The Python `system_router.py` will call the Rust `ContextualBandit` via PyO3 (`f
 ### 1.3 Unchanged in Phase 1
 
 - `router.rs` (ONNX BERT inference) — performance-critical
-- `bandit.rs` — called by Python system_router via PyO3
+- `system_router.rs` — cohesive unit with bandit.rs (audit-confirmed)
+- `bandit.rs` — Thompson sampling, called by system_router.rs directly
+- `llm_synthesis.rs` — uses HybridVerifier internally (audit-confirmed)
 - `templates.rs` — hard dependency from engine.rs, mcts.rs, map_elites.rs, pyo3_wrappers.rs
 - `mutations.rs` — hard dependency from engine.rs, mcts.rs
 - `engine.rs` — complex orchestrator, too many internal dependencies
@@ -197,11 +196,11 @@ Merging `semantic.db` + `causal.db` → `entity_graph.db` requires data migratio
 
 | Metric | Before | After Phase 3 |
 |--------|--------|---------------|
-| **Rust LOC** | 17,148 | ~15,300 (-11%) — Phase 1 removes ~2,712, Phase 2 adds ~400, Phase 3 adds ~500 |
-| **Python LOC** | 18,946 | ~18,700 (-1%) — gains ~1,500 from Rust migration, loses ~500 from Python→Rust |
+| **Rust LOC** | 17,148 | ~16,400 (-4.4%) — Phase 1 removes ~1,194, Phase 2 adds ~400, Phase 3 adds ~500 |
+| **Python LOC** | 18,946 | ~19,450 (+2.7%) — gains ~1,000 from Rust migration, loses ~500 from Python→Rust |
 | **Active PyO3 bridges** | 6 (+ 1 dead) | 10 (all active) |
 | **Dead code** | HybridVerifier, regex heuristics | 0 |
-| **Rust modules without perf justification** | 5 (was 7, but templates+mutations stay) | 0 |
+| **Rust modules without perf justification** | 3 (features, model_card, model_registry) | 0 |
 | **Python hot paths** | 4 (kNN, gate, quality, bus) | 0 |
 
 Rust becomes smaller but **100% performance-dense**: SIMD, ONNX, lock-free, SMT, sandbox, petgraph.
@@ -243,3 +242,9 @@ Rust becomes smaller but **100% performance-dense**: SIMD, ONNX, lock-free, SMT,
   - [Suggestion] Added EventBus benchmark prerequisite
   - [Suggestion] Added SQLite schema migration strategy for entity graph
   - [Suggestion] Updated LOC math with itemized breakdown
+- **v3** (2026-03-12): Audit-driven scope reduction (from audit-response-v3-design.md):
+  - [Critical] Cancelled `system_router.rs` migration — bad coupling boundary with bandit (Audit2 correct)
+  - [Critical] Cancelled `llm_synthesis.rs` migration — uses HybridVerifier internally (C2 confirmed)
+  - Phase 1 shrinks from 5 modules (2,712 LOC) to 3 modules (1,194 LOC)
+  - Updated Final State LOC projections accordingly
+  - Performance projections remain TBD pending baseline measurements (Audit2 recommendation)
