@@ -14,7 +14,8 @@ Three comprehensive audits revealed architectural imbalances in YGN-SAGE:
 2. **Routing audit**: Regex-based heuristics eliminated from production path but dead code remains in 2 files (~19 regex patterns)
 3. **Bidirectional migration audit**: ~4200 LOC Rust has no performance justification; ~1100 LOC Python sits on hot paths that would benefit from Rust
 
-Current state: sage-core 17,148 LOC Rust, sage-python 18,946 LOC Python.
+Current state (at spec time): sage-core 17,148 LOC Rust, sage-python 18,946 LOC Python.
+Post-Phase 1 (verified 2026-03-12): sage-core 17,169 LOC Rust, sage-python 19,503 LOC Python.
 
 ## Goal
 
@@ -194,14 +195,14 @@ Merging `semantic.db` + `causal.db` → `entity_graph.db` requires data migratio
 
 ## Final State
 
-| Metric | Before | After Phase 3 |
-|--------|--------|---------------|
-| **Rust LOC** | 17,148 | ~16,400 (-4.4%) — Phase 1 removes ~1,194, Phase 2 adds ~400, Phase 3 adds ~500 |
-| **Python LOC** | 18,946 | ~19,450 (+2.7%) — gains ~1,000 from Rust migration, loses ~500 from Python→Rust |
-| **Active PyO3 bridges** | 6 (+ 1 dead) | 10 (all active) |
-| **Dead code** | HybridVerifier, regex heuristics | 0 |
-| **Rust modules without perf justification** | 3 (features, model_card, model_registry) | 0 |
-| **Python hot paths** | 4 (kNN, gate, quality, bus) | 0 |
+| Metric | Before (spec time) | After Phase 1 (verified) | After Phase 3 (projected) |
+|--------|---------------------|--------------------------|---------------------------|
+| **Rust LOC** | 17,148 | 17,169 (shadow period: 3 Rust modules kept) | ~16,400 (-4.4%) |
+| **Python LOC** | 18,946 | 19,503 (+399 migration, -84 regex gut) | ~19,900 (+5%) |
+| **Active PyO3 bridges** | 6 (+ 1 dead) | 6 (HybridVerifier removed) | 10 (all active) |
+| **Dead code** | HybridVerifier, regex heuristics | 0 (both removed) | 0 |
+| **Rust modules without perf justification** | 3 (features, model_card, model_registry) | 0 (Python shadows active) | 0 |
+| **Python hot paths** | 4 (kNN, gate, quality, bus) | 4 (Phase 2 work) | 0 |
 
 Rust becomes smaller but **100% performance-dense**: SIMD, ONNX, lock-free, SMT, sandbox, petgraph.
 
