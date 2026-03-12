@@ -101,7 +101,7 @@ pub struct TopologySuggestion {
 /// - Has `inject_priors()` for bandit warm-start from similar tasks
 pub struct TopologySmmuBridge {
     /// chunk_id -> topology-specific metadata.
-    chunk_meta: HashMap<usize, OutcomeMeta>,
+    chunk_meta: HashMap<String, OutcomeMeta>,
 }
 
 impl Default for TopologySmmuBridge {
@@ -122,7 +122,7 @@ impl TopologySmmuBridge {
     /// Registers the task context as an S-MMU chunk and stores the topology
     /// outcome metadata (topology_id, template, quality, cost, latency, structural
     /// features) locally. Returns the S-MMU chunk ID.
-    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, outcome: TopologyOutcome) -> usize {
+    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, outcome: TopologyOutcome) -> String {
         let _span = info_span!(
             "topology_smmu.record",
             topology_id = %outcome.topology_id,
@@ -157,10 +157,10 @@ impl TopologySmmuBridge {
             model_diversity: outcome.model_diversity,
         };
 
-        self.chunk_meta.insert(chunk_id, meta);
+        self.chunk_meta.insert(chunk_id.clone(), meta);
 
         info!(
-            chunk_id = chunk_id,
+            chunk_id = %chunk_id,
             topology_id = %outcome.topology_id,
             template = %outcome.template,
             quality = outcome.quality,
@@ -180,12 +180,12 @@ impl TopologySmmuBridge {
     pub fn retrieve_similar(
         &self,
         smmu: &MultiViewMMU,
-        query_chunk_id: usize,
+        query_chunk_id: &str,
         max_results: usize,
     ) -> Vec<TopologySuggestion> {
         let _span = info_span!(
             "topology_smmu.retrieve",
-            query_chunk_id = query_chunk_id,
+            query_chunk_id = %query_chunk_id,
             max_results = max_results,
         )
         .entered();
@@ -258,8 +258,8 @@ impl TopologySmmuBridge {
     }
 
     /// Get the metadata for a specific chunk ID (test/debug use).
-    pub fn get_meta(&self, chunk_id: usize) -> Option<&OutcomeMeta> {
-        self.chunk_meta.get(&chunk_id)
+    pub fn get_meta(&self, chunk_id: &str) -> Option<&OutcomeMeta> {
+        self.chunk_meta.get(chunk_id)
     }
 }
 
@@ -316,7 +316,7 @@ mod tests {
     }
 
     #[test]
-    fn test_record_returns_valid_chunk_id() {
+    fn test_record_returns_valid_ulid() {
         let mut smmu = MultiViewMMU::new();
         let mut bridge = TopologySmmuBridge::new();
 
@@ -329,14 +329,15 @@ mod tests {
         );
         let id = bridge.record_outcome(&mut smmu, outcome);
 
-        // First chunk should be ID 0
-        assert_eq!(id, 0);
+        // Chunk ID should be a 26-char ULID string
+        assert_eq!(id.len(), 26);
     }
 
     #[test]
     fn test_multiple_records() {
         let mut smmu = MultiViewMMU::new();
         let mut bridge = TopologySmmuBridge::new();
+        let mut ids = Vec::new();
 
         for i in 0..5 {
             let outcome = make_outcome(
@@ -346,10 +347,11 @@ mod tests {
                 0.5 + i as f32 * 0.1,
                 None,
             );
-            let id = bridge.record_outcome(&mut smmu, outcome);
-            assert_eq!(id, i);
+            ids.push(bridge.record_outcome(&mut smmu, outcome));
         }
 
+        let unique: std::collections::HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
+        assert_eq!(unique.len(), 5);
         assert_eq!(bridge.chunk_count(), 5);
         assert_eq!(smmu.chunk_count(), 5);
     }
@@ -359,7 +361,7 @@ mod tests {
         let smmu = MultiViewMMU::new();
         let bridge = TopologySmmuBridge::new();
 
-        let results = bridge.retrieve_similar(&smmu, 0, 5);
+        let results = bridge.retrieve_similar(&smmu, "nonexistent", 5);
         assert!(results.is_empty());
     }
 
@@ -384,7 +386,7 @@ mod tests {
         let query_id =
             smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-        let results = bridge.retrieve_similar(&smmu, query_id, 5);
+        let results = bridge.retrieve_similar(&smmu, &query_id, 5);
         assert!(!results.is_empty(), "Should find the similar task");
         assert_eq!(results[0].template, "avr");
         assert_eq!(results[0].topology_id, "01JTEST0001");
@@ -412,7 +414,7 @@ mod tests {
         };
         let chunk_id = bridge.record_outcome(&mut smmu, outcome);
 
-        let meta = bridge.get_meta(chunk_id).expect("meta should exist");
+        let meta = bridge.get_meta(&chunk_id).expect("meta should exist");
         assert_eq!(meta.topology_id, "01JTEST_STRUCT");
         assert_eq!(meta.agent_count, 5);
         assert_eq!(meta.max_depth, 3);
@@ -520,7 +522,7 @@ mod tests {
         let query_id =
             smmu.register_chunk(0, 0, "Similar task", vec!["test".into()], Some(emb), None);
 
-        let suggestions = bridge.retrieve_similar(&smmu, query_id, 5);
+        let suggestions = bridge.retrieve_similar(&smmu, &query_id, 5);
         assert!(!suggestions.is_empty());
 
         let s = &suggestions[0];

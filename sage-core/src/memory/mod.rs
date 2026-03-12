@@ -92,21 +92,22 @@ impl WorkingMemory {
 
     /// ASI Feature: Compact active buffer into an immutable Arrow RecordBatch
     /// and register it in the S-MMU graph (backward-compatible, no metadata).
-    pub fn compact_to_arrow(&mut self) -> PyResult<usize> {
+    pub fn compact_to_arrow(&mut self) -> PyResult<String> {
         self.compact_to_arrow_with_meta(vec![], None, None, None)
     }
 
     /// Compact with full metadata: keywords, embedding, optional parent chunk, and summary.
+    /// Returns the ULID chunk ID assigned by the S-MMU.
     #[pyo3(signature = (keywords, embedding=None, parent_chunk_id=None, summary=None))]
     pub fn compact_to_arrow_with_meta(
         &mut self,
         keywords: Vec<String>,
         embedding: Option<Vec<f32>>,
-        parent_chunk_id: Option<usize>,
+        parent_chunk_id: Option<String>,
         summary: Option<String>,
-    ) -> PyResult<usize> {
+    ) -> PyResult<String> {
         if self.active_buffer.is_empty() {
-            return Ok(0);
+            return Ok(String::new());
         }
         let chunk_id = arrow_tier::compact_buffer_to_arrow(
             &self.agent_id,
@@ -131,10 +132,10 @@ impl WorkingMemory {
     #[pyo3(signature = (active_chunk_id, max_hops, weights=None))]
     pub fn retrieve_relevant_chunks(
         &self,
-        active_chunk_id: usize,
+        active_chunk_id: &str,
         max_hops: usize,
         weights: Option<[f32; 4]>,
-    ) -> Vec<(usize, f32)> {
+    ) -> Vec<(String, f32)> {
         let w = weights.unwrap_or([1.0, 1.0, 1.0, 1.0]);
         self.smmu.retrieve_relevant(active_chunk_id, max_hops, w)
     }
@@ -144,10 +145,10 @@ impl WorkingMemory {
     #[pyo3(signature = (active_chunk_id, max_hops, budget))]
     pub fn get_page_out_candidates(
         &self,
-        active_chunk_id: usize,
+        active_chunk_id: &str,
         max_hops: usize,
         budget: usize,
-    ) -> Vec<usize> {
+    ) -> Vec<String> {
         paging::page_out_candidates(&self.smmu, active_chunk_id, max_hops, budget)
     }
 
@@ -156,9 +157,14 @@ impl WorkingMemory {
         self.smmu.chunk_count()
     }
 
+    /// Return the ULID of the most recently registered S-MMU chunk, or None.
+    pub fn last_chunk_id(&self) -> Option<String> {
+        self.smmu.last_chunk_id().map(|s| s.to_string())
+    }
+
     /// Return the summary text for a given S-MMU chunk, or empty string if not found.
-    pub fn get_chunk_summary(&self, chunk_id: usize) -> String {
-        match self.smmu.chunk_map.get(&chunk_id) {
+    pub fn get_chunk_summary(&self, chunk_id: &str) -> String {
+        match self.smmu.chunk_map.get(chunk_id) {
             Some(&node_idx) => self.smmu.graph[node_idx].summary.clone(),
             None => String::new(),
         }

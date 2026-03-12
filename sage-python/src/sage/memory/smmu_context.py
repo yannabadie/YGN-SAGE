@@ -32,8 +32,8 @@ _DEFAULT_WEIGHTS: tuple[float, float, float, float] = (1.0, 2.0, 1.5, 1.0)
 
 
 def _filter_by_score(
-    hits: list[tuple[int, float]], min_score: float = 0.5
-) -> list[tuple[int, float]]:
+    hits: list[tuple[str, float]], min_score: float = 0.5
+) -> list[tuple[str, float]]:
     """Remove chunks below minimum relevance score."""
     return [(cid, s) for cid, s in hits if s >= min_score]
 
@@ -64,8 +64,10 @@ def retrieve_smmu_context(
         if chunk_count == 0:
             return ""
 
-        # Use the most recent chunk as the query anchor
-        active_chunk_id = chunk_count - 1
+        # Use the most recently registered chunk as the query anchor (ULID)
+        active_chunk_id = getattr(working_memory, "last_chunk_id", lambda: None)()
+        if not active_chunk_id:
+            return ""
         w = weights or _DEFAULT_WEIGHTS
 
         hits = working_memory.retrieve_relevant_chunks(

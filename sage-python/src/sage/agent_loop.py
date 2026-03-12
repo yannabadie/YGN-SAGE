@@ -18,6 +18,7 @@ from sage.memory.compressor import MemoryCompressor
 from sage.topology.kg_rlvr import ProcessRewardModel
 from sage.resilience import CircuitBreaker
 from sage.memory.relevance_gate import RelevanceGate
+from sage.monitoring.drift import DriftMonitor
 
 log = logging.getLogger(__name__)
 
@@ -227,6 +228,11 @@ class AgentLoop:
         self._cb_entity = CircuitBreaker("entity_extraction")
         self._cb_evo = CircuitBreaker("evolution_stats")
 
+        # Drift detection — monitors latency/error/cost trends
+        self._drift_monitor = DriftMonitor()
+        self._drift_events: list[AgentEvent] = []
+        self._drift_check_interval = 10  # Analyze every N events
+
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = AgentEvent(
             type=phase.value.upper(),
@@ -242,6 +248,24 @@ class AgentLoop:
             meta=data,
         )
         self._on_event(evt)
+
+        # Drift monitoring: accumulate events and check periodically
+        self._drift_events.append(evt)
+        if len(self._drift_events) >= self._drift_check_interval:
+            report = self._drift_monitor.analyze(self._drift_events)
+            if report.action != "CONTINUE":
+                log.warning("Drift detected: score=%.3f action=%s details=%s",
+                            report.drift_score, report.action, report.details)
+                self._on_event(AgentEvent(
+                    type="DRIFT",
+                    step=self.step_count,
+                    timestamp=time.time(),
+                    meta={"drift_score": report.drift_score,
+                          "drift_action": report.action,
+                          "drift_details": report.details},
+                ))
+            # Sliding window: keep last half for overlap
+            self._drift_events = self._drift_events[self._drift_check_interval // 2:]
 
     def _default_event_handler(self, event: AgentEvent) -> None:
         log.info(f"[{event.type}] step={event.step} model={event.model}")

@@ -2,6 +2,8 @@
 
 Consolidated from 45 planning documents (2026-03-02 to 2026-03-10). Items already implemented are omitted — see CLAUDE.md for current state. Last updated: 2026-03-12.
 
+Research verdicts added 2026-03-12 via Context7 + ExoCortex + web search.
+
 ---
 
 ## P0 — Operational Gates (blocking further progress)
@@ -10,11 +12,14 @@ Consolidated from 45 planning documents (2026-03-02 to 2026-03-10). Items alread
 - Run 1000+ dual Rust/Python routing traces via ShadowRouter
 - Soft gate: 500 traces, <10% divergence → enable Rust-primary routing
 - Hard gate: 1000 traces, <5% divergence → delete Python routing modules
+- **Status**: Batch runner script ready (`scripts/collect_shadow_traces.py`). Run `python scripts/collect_shadow_traces.py --rounds 20` for 1000 traces.
 - Source: `sage-adaptive-router.md`, `rust-cognitive-engine-design.md`
 
-### BigCodeBench Benchmark (1140 tasks)
-- Adapter for BigCodeBench real-world coding tasks
-- Validates framework value beyond HumanEval+/MBPP+
+### BigCodeBench + LiveCodeBench Benchmarks
+- **BigCodeBench** (ICLR '25, 1140 tasks): real-world coding, unsaturated (best ~62%), standard eval harness
+- **LiveCodeBench** (rolling, contamination-free): monthly new problems from competitive programming
+- **Verdict**: KEEP BOTH — HumanEval is saturated (99%+), these are the SOTA validation targets
+- SWE-bench Lite replaced by SWE-bench Pro (Feb 2026) — skip both until TaskNode IR proven
 - Source: `official-benchmarks.md` Task 5
 
 ### Full Memory Ablation Study
@@ -31,88 +36,80 @@ Consolidated from 45 planning documents (2026-03-02 to 2026-03-10). Items alread
 
 ## P1 — High Value, Designed but Unbuilt
 
-### Speculative S1+S2 Parallel Execution
-- When routing confidence is in indecisive zone (0.35-0.55), launch both S1 and S2 in parallel
-- Return S1 result if good enough (quality > threshold), else use S2
-- Saves latency on borderline tasks at cost of extra compute
-- Source: `wire-smmu-plan.md` Task 9
+### ModernBERT Classifier for Stage 1 Routing
+- **ModernBERT** (Dec 2024): 2-4x faster than DeBERTa, 8192-token context, ONNX-ready
+- Replaces NVIDIA DeBERTa-v3-base (P2 item) — strictly superior for our use case
+- ONNX infrastructure ready (ort 2.0, tokenizers), needs labeled training data
+- **Verdict**: MODIFY — use ModernBERT instead of DeBERTa. Collect 500+ labeled traces first.
+- Source: `sage-adaptive-router.md`, RouteLLM (ICLR 2025, 2406.18665)
 
-### Drift Monitor
-- Track agent behavioral degradation: weighted score = 40% latency + 40% errors + 20% cost
-- Alert when 7-day rolling average degrades beyond 1σ
-- Dashboard visualization of drift trends
-- Source: `phase3-domination.md` Task 19
+### Dynamic Agent Factory (via TopologyEngine)
+- **Verdict**: MODIFY — don't build a separate factory. Use existing `DynamicTopologyEngine.generate()` with LLM synthesis (Path 3). Already supports role assignment → structure → validation pipeline.
+- Add an agent registry for caching discovered specializations (HashMap<task_type, topology_id>)
+- Source: `phase3-domination.md` Task 18, MASFactory (2603.06007)
 
 ### SelfImprovementLoop
 - Autonomous cycle: benchmark → diagnose weak spots → evolve (mutation/retraining) → re-benchmark
 - Requires BigCodeBench + evolution engine + reliable quality estimation
+- **Verdict**: KEEP — blocked on BigCodeBench adapter. Quality estimation is the bottleneck (ETH-SRI, ICLR 2025).
 - Source: `phase3-domination.md` Task 24
-
-### Dynamic Agent Factory
-- Self-programming: LLM generates agent blueprint (role, tools, topology) from task description
-- Agent registry for reuse of discovered specializations
-- Source: `phase3-domination.md` Task 18
 
 ### A2A Agent Card Export/Import
 - Export SAGE ModelCards as A2A Agent Cards (external discovery)
 - Import remote A2A Agent Cards into ModelRegistry (federated agent mesh)
-- Map A2A skill tags as routing input in SystemRouter
-- A2A TaskState → perceive/think/act/learn phases
-- Auth: extend to OAuth2/mTLS for production
+- **Verdict**: KEEP — A2A v1.0 SDK stable, straightforward mapping
 - Source: `a2a-protocol-research.md`
-
-### Provider Smoke Tests at Boot
-- Validate each discovered provider can: generate text, call tools, respond within latency baseline
-- Disable providers that fail smoke test (currently relies on cascade fallback)
-- Source: `multi-provider-design.md`
-
-### S-MMU ANN Index (usearch)
-- Replace O(n²) brute-force similarity in S-MMU with approximate nearest neighbor
-- usearch or faiss for sub-ms retrieval at scale
-- Source: `audit-response-v2.md` Sprint 2
-
----
-
-## P2 — Medium Value, Research-Backed
-
-### BERT/DeBERTa Classifier for Stage 1 Routing
-- NVIDIA prompt-task-and-complexity-classifier (DeBERTa-v3-base): 98.1% multi-head classification
-- RouteLLM (ICLR 2025, 2406.18665): BERT 0.3B on Chatbot Arena preference data
-- Would replace/augment kNN Stage 0.5 with learned classifier
-- ONNX infrastructure ready (ort 2.0, tokenizers), needs training data
-- Source: `sage-adaptive-router.md`, memory notes
-
-### Full PSRO/DCH Strategy Engine
-- Replace contextual bandit with game-theoretic meta-solvers
-- Regret Matching, PRD, Softmax, SHOR-PSRO approaches researched
-- VAD-CFR: volatility-adaptive CFR with EWMA + dynamic annealing
-- Needs: sufficient routing data + compute for equilibrium computation
-- Source: `opensage-surpass-implementation.md`, `notebooklm_research_synthesis.md`
-
-### vqsort-rs Integration
-- Replace manual AVX-512 sorts with portable vqsort
-- Target: h96_quicksort, h96_quicksort_zerocopy, vectorized_partition_h96
-- New h96_argsort() for indexed sort in MCTS UCB
-- Source: `z3-simd-smmu-implementation.md`
 
 ### Coordination Performance Model
 - Data-driven analysis: when does topology > model capability?
 - AdaptOrch finding: topology structure explains up to 10% perf gap
-- Would inform when to invest in topology search vs model selection
-- Source: `phase3-domination.md` Task 23
+- **Verdict**: KEEP — collect data from TopologySmmuBridge outcomes, then fit model
+- Source: `phase3-domination.md` Task 23, AdaptOrch (2602.16873)
 
 ### ModelWatcher (New Model Detection)
 - Monitor provider APIs for new model releases
 - Auto-add to ModelRegistry with default capability estimates
-- Re-run smoke tests + routing benchmark on new models
+- **Verdict**: KEEP — low-effort, high operational value
 - Source: `phase3-domination.md` Task 22
+
+---
+
+## P2 — Medium Value, Deferred
 
 ### CPython WASI Component (Tool Executor Phase 2-3)
 - Full CPython interpreter running inside Wasm WASI sandbox
-- componentize-py for building .wasm components
-- Pre-compiled .cwasm for Windows
-- Would make Wasm primary execution path (subprocess = fallback only)
+- **Verdict**: DEFER to WASIp3 (mid-2026) — componentize-py still experimental, WASI p2 lacks stable socket/filesystem APIs needed for real Python code execution. Current subprocess fallback is adequate.
 - Source: `rust-tool-executor.md` Phase 2-3
+
+### S-MMU ANN Index
+- Replace O(K) brute-force scan with approximate nearest neighbor
+- **Verdict**: DEFER — at K=128 (MAX_SEMANTIC_NEIGHBORS), brute force is optimal. ANN overhead (index build, memory) only pays off at ~10K+ chunks. Revisit when S-MMU exceeds 1000 chunks in production.
+- Source: `audit-response-v2.md` Sprint 2
+
+---
+
+## Dropped Items (with rationale)
+
+### ~~Speculative S1+S2 Parallel Execution~~
+- **DROP**: No SOTA backing. ETH-SRI (ICLR 2025) shows quality estimation is the bottleneck, not routing speed. Speculative execution adds complexity for marginal latency gain on a narrow confidence band (0.35-0.55).
+
+### ~~Full PSRO/DCH Strategy Engine~~
+- **DROP**: Wrong abstraction for LLM routing. PSRO/Nash equilibria assume adversarial agents with fixed strategy sets — our problem is cooperative model selection with non-stationary rewards. Contextual bandit (LinUCB) is the correct framework per PILOT (2508.21141) and arXiv 2506.17670.
+
+### ~~vqsort-rs Integration~~
+- **DROP**: The `vqsort-rs` crate is dead (last update 2023, no SIMD backend). Rust stdlib sort is already O(n log n) with pattern-defeating quicksort. Manual AVX-512 sorts in sage-core are only for the 50-element kNN distance array — not a bottleneck.
+
+### ~~Provider Smoke Tests at Boot~~
+- **DROP**: FrugalGPT cascade already handles provider failures transparently. Adding boot-time smoke tests would increase startup latency and create false negatives (transient API errors during boot ≠ permanent provider failure).
+
+### ~~Neo4j/Qdrant Persistent Backends~~
+- **DROP**: sqlite-vec (by Alex Garcia, 2024) provides vector search inside SQLite — no external DB needed. Current S-MMU is in-memory with SQLite persistence for episodic/semantic. Adding Neo4j/Qdrant is overengineering for current scale (<1000 chunks).
+
+### ~~SWE-bench Lite~~
+- **DROP**: Replaced by SWE-bench Pro (Feb 2026). Both require reliable code generation + tool use, which depends on TaskNode IR maturity. Defer to P3.
+
+### ~~BERT/DeBERTa Classifier~~ (superseded)
+- **Superseded by ModernBERT** (P1 above). ModernBERT is 2-4x faster with 8192-token context vs DeBERTa's 512.
 
 ---
 
@@ -120,34 +117,18 @@ Consolidated from 45 planning documents (2026-03-02 to 2026-03-10). Items alread
 
 ### Hypothesis H7: YGN-SAGE 2.0 Architecture
 - Arrow-native memory with SIMD vectorization (AVX-512/ARM NEON)
-- ULID-based memory IDs (replace UUID strings, 6 bytes vs 36)
 - GPU-Direct memory access (VRAM-direct token injection)
 - CUDA/Triton fused kernels for game-theoretic meta-solvers
-- eBPF sandboxing (replace Docker/Wasm for Linux, 100,000x faster claim)
+- eBPF sandboxing (replace Docker/Wasm for Linux)
 - Firecracker microVMs (<5ms boot, alternative to Docker)
 - JIT-compiled agent topologies (Rust→Wasm hot-swap)
 - Liquid Neural Routing (dynamic topology rewiring per token)
 - Source: `ygn_sage_future_evaluation.md`
 
-### Neo4j/Qdrant Persistent Backends
-- Replace SQLite episodic/semantic with Neo4j graph DB + Qdrant vector DB
-- Cross-session semantic recall with native graph traversal
-- Source: `ygn-sage-architecture-design.md`
-
 ### Graph RAG Architecture
-- Hierarchical: working memory → long-term Neo4j → RAG sync
+- Hierarchical: working memory → long-term graph → RAG sync
 - Zettelkasten mapping: Notes=Arrow chunks, Links=multi-graph edges
-- Source: `notebooklm_research_synthesis.md`, `z3-simd-smmu-integration-design.md`
-
-### SWE-bench Lite
-- Real-world software engineering benchmark
-- Deferred until TaskNode IR proven + reliable code generation
-- Source: `v2-evidence-first-design.md`
-
-### Agents-as-Tools Pattern
-- Expose any agent as a callable tool for other agents
-- Recursive composition without explicit topology wiring
-- Source: `v2-convergence-design.md`
+- Source: `notebooklm_research_synthesis.md`
 
 ### gRPC IPC Layer
 - Replace HTTP/WebSocket with gRPC for inter-agent communication
@@ -158,6 +139,29 @@ Consolidated from 45 planning documents (2026-03-02 to 2026-03-10). Items alread
 - Production-grade container deployment
 - Multi-tier sandboxing (Wasm inside Docker)
 - Source: `ygn-sage-implementation.md`
+
+---
+
+## Recently Completed (2026-03-12)
+
+### ~~ULID Memory IDs~~
+- S-MMU chunk_id migrated from `usize` to ULID strings (Rust `ulid` crate)
+- Cross-session stable, globally unique, lexicographically sortable
+- All 6 Rust files updated, 249 tests passing
+
+### ~~Agents-as-Tools Pattern~~
+- `sage.tools.agent_tool.AgentTool`: wraps any `async run(task)->str` as a Tool
+- Universal pattern (OpenAI Agents SDK, Google ADK, CrewAI)
+- 4 tests passing
+
+### ~~DriftMonitor Wiring~~
+- Wired into `agent_loop.py._emit()` with sliding window analysis
+- Emits DRIFT events on EventBus when action != CONTINUE
+- 3-signal composite: latency (40%), errors (40%), cost (20%)
+
+### ~~Shadow Traces Batch Runner~~
+- `scripts/collect_shadow_traces.py --rounds N`
+- Runs GT tasks through ShadowRouter, reports Phase 5 gate status
 
 ---
 

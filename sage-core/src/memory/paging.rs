@@ -17,10 +17,10 @@ use super::smmu::MultiViewMMU;
 /// mutates the graph.
 pub fn page_out_candidates(
     smmu: &MultiViewMMU,
-    active_chunk_id: usize,
+    active_chunk_id: &str,
     max_hops: usize,
     budget: usize,
-) -> Vec<usize> {
+) -> Vec<String> {
     if smmu.chunk_count() == 0 || budget == 0 {
         return Vec::new();
     }
@@ -29,20 +29,19 @@ pub fn page_out_candidates(
     let relevant = smmu.retrieve_relevant(active_chunk_id, max_hops, [1.0, 1.0, 1.0, 1.0]);
 
     // All chunk IDs in the S-MMU except the active one.
-    let all_ids: Vec<usize> = smmu
+    let all_ids: Vec<String> = smmu
         .chunk_map
         .keys()
-        .copied()
         .filter(|&cid| cid != active_chunk_id)
+        .cloned()
         .collect();
 
     // Chunks NOT reachable within max_hops are prime eviction candidates.
-    let reachable_set: std::collections::HashSet<usize> =
-        relevant.iter().map(|&(cid, _)| cid).collect();
-    let mut unreachable: Vec<usize> = all_ids
-        .iter()
-        .copied()
-        .filter(|cid| !reachable_set.contains(cid))
+    let reachable_set: std::collections::HashSet<&str> =
+        relevant.iter().map(|(cid, _)| cid.as_str()).collect();
+    let mut unreachable: Vec<String> = all_ids
+        .into_iter()
+        .filter(|cid| !reachable_set.contains(cid.as_str()))
         .collect();
 
     // Start with unreachable, then append reachable in ascending relevance
@@ -51,7 +50,7 @@ pub fn page_out_candidates(
     candidates.append(&mut unreachable);
 
     // Append reachable chunks in reverse order (least relevant first).
-    for &(cid, _) in relevant.iter().rev() {
+    for (cid, _) in relevant.into_iter().rev() {
         candidates.push(cid);
     }
 

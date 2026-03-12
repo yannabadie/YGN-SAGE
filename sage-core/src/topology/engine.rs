@@ -257,7 +257,9 @@ impl TopologyEngine {
         // archive or mutation paths. The Python layer can call retrieve_similar() with a
         // properly registered query chunk before calling generate().
 
-        let suggestions = self.bridge.retrieve_similar(smmu, 0, 5);
+        // Use last registered chunk as query anchor; fall through if none registered
+        let anchor = smmu.last_chunk_id().unwrap_or_default().to_string();
+        let suggestions = self.bridge.retrieve_similar(smmu, &anchor, 5);
 
         // Find best suggestion with similarity > 0.7 AND quality > 0.5
         let best = suggestions

@@ -43,11 +43,11 @@ pub fn compact_buffer_to_arrow(
     smmu: &mut MultiViewMMU,
     keywords: Vec<String>,
     embedding: Option<Vec<f32>>,
-    parent_chunk_id: Option<usize>,
+    parent_chunk_id: Option<String>,
     summary: Option<String>,
-) -> PyResult<usize> {
+) -> PyResult<String> {
     if active_buffer.is_empty() {
-        return Ok(0);
+        return Ok(String::new());
     }
 
     let len = active_buffer.len();

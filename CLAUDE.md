@@ -15,7 +15,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 
 ### Key Python Modules (sage-python/src/sage/)
 - `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline + TopologyEngine + ContextualBandit into `AgentSystem`. Auto-discovers models via registry.refresh(), populates CapabilityMatrix, logs per-provider summary. Phase 6: topology generation on every task, outcome recording feeds S-MMU + MAP-Elites + bandit learning loop
-- `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema
+- `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema, DriftMonitor wired into _emit() with sliding-window analysis
 - `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
 - `agents/sequential.py` - SequentialAgent: chain agents in series
 - `agents/parallel.py` - ParallelAgent: run agents concurrently with aggregator
@@ -48,6 +48,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback. verify_invariant uses Rust verify_invariant_with_feedback() for clause-level diagnostic feedback stored in _last_invariant_feedback
 - `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
 - `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
+- `tools/agent_tool.py` - AgentTool: wraps any agent (async run(task)->str) as a Tool for Agents-as-Tools pattern. Factory: `AgentTool.from_agent(agent, name, description)`
+- `monitoring/drift.py` - DriftMonitor: 3-signal behavioral drift detection (latency 40%, errors 40%, cost 20%). Actions: CONTINUE (<0.4), SWITCH_MODEL (0.4-0.7), RESET_AGENT (>0.7)
 - `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
 - `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
 - `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase. Supports provider injection (no vendor lock-in), falls back to GoogleProvider if none injected
@@ -76,7 +78,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. 2-tier Phase 5 gate: soft (500 traces, <10% divergence), hard (1000 traces, <5% divergence)
 
 ### Key Rust Modules (sage-core/src/)
-- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase)
+- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase). ULID-based chunk IDs (cross-session stable, globally unique). `last_chunk_id()` returns most recent chunk.
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `WasmSandbox` PyClass + `WasiState` (deny-by-default). `execute_precompiled()` / `execute_precompiled_wasi()` for Windows (no cranelift), `execute()` with JIT on Linux CI. Standalone `execute_wasi_component()` / `execute_bare_component()` for ToolExecutor. Behind `sandbox` feature flag.
@@ -126,7 +128,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1216 passed, 115 skipped)
+python -m pytest tests/ -v     # Run tests (1220 passed, 114 skipped)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -174,7 +176,7 @@ python -m sage.protocols.serve --mcp --a2a               # Both
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --no-default-features --lib  # Run unit tests (~200 baseline)
+cargo test --no-default-features --lib  # Run unit tests (~211 baseline)
 cargo test --no-default-features --features smt --lib  # +25 SMT tests
 cargo test --no-default-features --features sandbox,cranelift --lib  # +sandbox tests (Linux)
 cargo clippy --no-default-features  # Lint Rust code
@@ -182,6 +184,13 @@ maturin develop                # Build + install Python bindings
 maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
 maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
 maturin develop --features sandbox,tool-executor  # Build with ToolExecutor + Wasm WASI sandbox
+```
+
+### Shadow Trace Collection (Phase 5 Gate)
+```bash
+cd sage-python
+python scripts/collect_shadow_traces.py             # 1 round = 50 traces
+python scripts/collect_shadow_traces.py --rounds 20  # 1000 traces for hard gate
 ```
 
 ### End-to-End Proof
@@ -267,7 +276,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 
 ## Memory System (4 Tiers)
 - **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
-- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. `register_chunk()` uses bounded recency scan (last 128 chunks, `MAX_SEMANTIC_NEIGHBORS = 128`). Read path: `retrieve_smmu_context()` queries the multi-view S-MMU graph during THINK phase and injects top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
+- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. `register_chunk()` returns ULID string chunk IDs (globally unique, cross-session stable), uses bounded recency scan (last 128 chunks, `MAX_SEMANTIC_NEIGHBORS = 128`). Read path: `retrieve_smmu_context()` uses `last_chunk_id()` as query anchor, queries the multi-view S-MMU graph during THINK phase and injects top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
 - **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: snowflake-arctic-embed-m (768-dim, 109M params). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`. Robust token_type_ids handling (auto-detects from model inputs).
 - **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
 - **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.

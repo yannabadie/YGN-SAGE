@@ -41,7 +41,7 @@ struct ChunkMeta {
 /// similar past tasks for informed routing decisions.
 pub struct TopologyBridge {
     /// chunk_id → topology metadata (S-MMU only stores summary/keywords/embedding).
-    chunk_meta: HashMap<usize, ChunkMeta>,
+    chunk_meta: HashMap<String, ChunkMeta>,
 }
 
 impl Default for TopologyBridge {
@@ -62,7 +62,7 @@ impl TopologyBridge {
     /// Registers the task context as an S-MMU chunk and stores the routing
     /// outcome metadata (template, model, quality, cost, latency) locally.
     /// Returns the S-MMU chunk ID.
-    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, chunk: TopologyChunk) -> usize {
+    pub fn record_outcome(&mut self, smmu: &mut MultiViewMMU, chunk: TopologyChunk) -> String {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -78,7 +78,7 @@ impl TopologyBridge {
         );
 
         self.chunk_meta.insert(
-            chunk_id,
+            chunk_id.clone(),
             ChunkMeta {
                 template: chunk.template,
                 model_id: chunk.model_id,
@@ -101,7 +101,7 @@ impl TopologyBridge {
     pub fn retrieve_similar(
         &self,
         smmu: &MultiViewMMU,
-        query_chunk_id: usize,
+        query_chunk_id: &str,
         max_results: usize,
     ) -> Vec<(String, String, f32, f32)> {
         // Semantic weight heavily for topology retrieval
@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn test_record_returns_valid_chunk_id() {
+    fn test_record_returns_valid_ulid() {
         let mut smmu = MultiViewMMU::new();
         let mut bridge = TopologyBridge::new();
 
@@ -188,14 +188,15 @@ mod tests {
             },
         );
 
-        // First chunk should be ID 0
-        assert_eq!(id, 0);
+        // Chunk ID should be a 26-char ULID string
+        assert_eq!(id.len(), 26);
     }
 
     #[test]
     fn test_multiple_records() {
         let mut smmu = MultiViewMMU::new();
         let mut bridge = TopologyBridge::new();
+        let mut ids = Vec::new();
 
         for i in 0..5 {
             let id = bridge.record_outcome(
@@ -215,9 +216,12 @@ mod tests {
                     latency_ms: 500.0,
                 },
             );
-            assert_eq!(id, i);
+            ids.push(id);
         }
 
+        // All IDs should be unique ULIDs
+        let unique: std::collections::HashSet<&str> = ids.iter().map(|s| s.as_str()).collect();
+        assert_eq!(unique.len(), 5);
         assert_eq!(bridge.chunk_count(), 5);
         assert_eq!(smmu.chunk_count(), 5);
     }
@@ -227,7 +231,7 @@ mod tests {
         let smmu = MultiViewMMU::new();
         let bridge = TopologyBridge::new();
 
-        let results = bridge.retrieve_similar(&smmu, 0, 5);
+        let results = bridge.retrieve_similar(&smmu, "nonexistent", 5);
         assert!(results.is_empty());
     }
 
@@ -258,7 +262,7 @@ mod tests {
         let query_id =
             smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-        let results = bridge.retrieve_similar(&smmu, query_id, 5);
+        let results = bridge.retrieve_similar(&smmu, &query_id, 5);
         // Should find the similar task via semantic edge
         assert!(!results.is_empty(), "Should find the similar task");
         assert_eq!(results[0].0, "avr"); // template
