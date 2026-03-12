@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 _KNOWN_CAPABILITIES: dict[str, dict[str, bool]] = {
@@ -85,8 +86,37 @@ class CapabilityMatrix:
             raise ValueError(f"No provider supports: {missing}")
         return compatible
 
-    def populate_from_providers(self, provider_names: list[str]) -> None:
-        """Auto-populate from a list of discovered provider names."""
+    def register_from_adapter(self, provider: str, caps_dict: dict[str, bool]) -> None:
+        """Register capabilities from a provider adapter's runtime report.
+
+        This is the preferred registration method — it uses actual runtime
+        capabilities instead of static claims from _KNOWN_CAPABILITIES.
+        """
+        self._providers[provider] = ProviderCapabilities(
+            provider=provider,
+            structured_output=caps_dict.get("structured_output", False),
+            tool_role=caps_dict.get("tool_role", False),
+            file_search=caps_dict.get("file_search", False),
+            grounding=caps_dict.get("grounding", False),
+            system_prompt=caps_dict.get("system_prompt", True),
+            streaming=caps_dict.get("streaming", False),
+        )
+
+    def populate_from_providers(
+        self, provider_names: list[str], adapters: dict[str, Any] | None = None,
+    ) -> None:
+        """Auto-populate from discovered providers.
+
+        If adapters dict is provided, uses each adapter's capabilities() method
+        (runtime truth). Falls back to static _KNOWN_CAPABILITIES only if no
+        adapter is available.
+        """
+        adapters = adapters or {}
         for name in provider_names:
-            if name not in self._providers:
+            if name in self._providers:
+                continue
+            adapter = adapters.get(name)
+            if adapter and hasattr(adapter, "capabilities"):
+                self.register_from_adapter(name, adapter.capabilities())
+            else:
                 self.register(ProviderCapabilities.for_provider(name))

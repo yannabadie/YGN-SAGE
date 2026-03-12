@@ -717,11 +717,28 @@ def boot_agent_system(
             registry=registry, metacognition=metacognition, event_bus=event_bus,
         )
 
-        # Auto-populate capability matrix from discovered providers
+        # Auto-populate capability matrix from discovered providers.
+        # Build runtime adapter instances so CapabilityMatrix trusts their
+        # capabilities() report over static _KNOWN_CAPABILITIES claims.
         from sage.providers.capabilities import CapabilityMatrix as _CapMatrix
+        from sage.providers.connector import PROVIDER_CONFIGS
+        from sage.providers.openai_compat import OpenAICompatProvider
         _cap_matrix = _CapMatrix()
         _discovered_providers = {p.provider for p in registry.list_available()}
-        _cap_matrix.populate_from_providers(list(_discovered_providers))
+        _runtime_adapters: dict[str, Any] = {}
+        for _cfg in PROVIDER_CONFIGS:
+            _pname = _cfg["provider"]
+            if _pname in _discovered_providers and _cfg.get("sdk") == "openai":
+                _api_key = os.environ.get(_cfg["api_key_env"], "")
+                if _api_key:
+                    _runtime_adapters[_pname] = OpenAICompatProvider(
+                        api_key=_api_key,
+                        base_url=_cfg.get("base_url"),
+                        provider_name=_pname,
+                    )
+        _cap_matrix.populate_from_providers(
+            list(_discovered_providers), adapters=_runtime_adapters,
+        )
 
     # Agent loop
     loop = AgentLoop(
