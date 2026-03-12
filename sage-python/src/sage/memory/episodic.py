@@ -18,10 +18,14 @@ class EpisodicMemory:
     Args:
         db_path: Path to a SQLite database file.  When *None* (default) the
             store lives entirely in memory — matching the pre-v2 behaviour.
+        agent_id: Optional agent identifier.  When set, all reads/writes are
+            scoped to this agent so multiple agents can share one database
+            without leaking memories across boundaries.
     """
 
-    def __init__(self, db_path: str | None = None) -> None:
+    def __init__(self, db_path: str | None = None, agent_id: str | None = None) -> None:
         self._db_path = db_path
+        self._agent_id = agent_id
         # In-memory fallback
         self._entries: list[dict[str, Any]] = []
         # Cached SQLite connection (lazy, see _get_connection)
@@ -43,13 +47,20 @@ class EpisodicMemory:
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS episodes (
-                key        TEXT PRIMARY KEY,
+                key        TEXT PRIMARY KEY NOT NULL,
                 content    TEXT NOT NULL,
                 metadata   TEXT NOT NULL DEFAULT '{}',
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                agent_id   TEXT DEFAULT NULL
             )
             """
         )
+        # Migrate pre-existing tables that don't have agent_id column yet
+        try:
+            await db.execute("ALTER TABLE episodes ADD COLUMN agent_id TEXT DEFAULT NULL")
+            await db.commit()
+        except Exception:
+            pass  # Column already exists
         await db.commit()
 
     # ------------------------------------------------------------------
@@ -90,20 +101,20 @@ class EpisodicMemory:
             db = await self._get_connection()
             await db.execute(
                 """
-                INSERT OR REPLACE INTO episodes (key, content, metadata, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT OR REPLACE INTO episodes (key, content, metadata, created_at, agent_id)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (key, content, json.dumps(meta), now),
+                (key, content, json.dumps(meta), now, self._agent_id),
             )
             await db.commit()
         else:
-            # In-memory: overwrite if key exists, else append
+            # In-memory: overwrite if key exists (scoped by agent_id), else append
             for entry in self._entries:
-                if entry["key"] == key:
+                if entry["key"] == key and entry.get("agent_id") == self._agent_id:
                     entry["content"] = content
                     entry["metadata"] = meta
                     return
-            self._entries.append({"key": key, "content": content, "metadata": meta})
+            self._entries.append({"key": key, "content": content, "metadata": meta, "agent_id": self._agent_id})
 
     async def search(self, query: str, top_k: int = 5) -> list[dict[str, Any]]:
         """Search episodic memory by keyword matching.
@@ -115,10 +126,13 @@ class EpisodicMemory:
         if self._db_path is not None:
             return await self._sqlite_search(query, top_k)
 
-        # --- In-memory keyword scoring (unchanged from v1) ---
+        # --- In-memory keyword scoring ---
         query_lower = query.lower()
         scored: list[tuple[int, dict[str, Any]]] = []
         for entry in self._entries:
+            # Scope by agent_id when set
+            if self._agent_id is not None and entry.get("agent_id") != self._agent_id:
+                continue
             content_lower = entry["content"].lower()
             key_lower = entry["key"].lower()
             score = sum(
@@ -173,10 +187,19 @@ class EpisodicMemory:
         await self._ensure_initialized()
         if self._db_path is not None:
             db = await self._get_connection()
-            async with db.execute("SELECT COUNT(*) FROM episodes") as cur:
-                row = await cur.fetchone()
-                return row[0] if row else 0
+            if self._agent_id is not None:
+                async with db.execute(
+                    "SELECT COUNT(*) FROM episodes WHERE agent_id = ?", (self._agent_id,)
+                ) as cur:
+                    row = await cur.fetchone()
+                    return row[0] if row else 0
+            else:
+                async with db.execute("SELECT COUNT(*) FROM episodes") as cur:
+                    row = await cur.fetchone()
+                    return row[0] if row else 0
 
+        if self._agent_id is not None:
+            return sum(1 for e in self._entries if e.get("agent_id") == self._agent_id)
         return len(self._entries)
 
     async def list_all(self, limit: int = 100) -> list[dict[str, Any]]:
@@ -186,22 +209,34 @@ class EpisodicMemory:
             import aiosqlite
             db = await self._get_connection()
             db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT key, content, metadata FROM episodes ORDER BY created_at DESC LIMIT ?",
-                (limit,),
-            ) as cur:
-                rows = await cur.fetchall()
-                return [
-                    {
-                        "key": r["key"],
-                        "content": r["content"],
-                        "metadata": json.loads(r["metadata"]),
-                    }
-                    for r in rows
-                ]
+            if self._agent_id is not None:
+                async with db.execute(
+                    "SELECT key, content, metadata FROM episodes WHERE agent_id = ?"
+                    " ORDER BY created_at DESC LIMIT ?",
+                    (self._agent_id, limit),
+                ) as cur:
+                    rows = await cur.fetchall()
+            else:
+                async with db.execute(
+                    "SELECT key, content, metadata FROM episodes ORDER BY created_at DESC LIMIT ?",
+                    (limit,),
+                ) as cur:
+                    rows = await cur.fetchall()
+            return [
+                {
+                    "key": r["key"],
+                    "content": r["content"],
+                    "metadata": json.loads(r["metadata"]),
+                }
+                for r in rows
+            ]
 
-        # In-memory: return most recently appended first
-        return list(reversed(self._entries[-limit:]))
+        # In-memory: return most recently appended first, scoped by agent_id
+        if self._agent_id is not None:
+            scoped = [e for e in self._entries if e.get("agent_id") == self._agent_id]
+        else:
+            scoped = self._entries
+        return list(reversed(scoped[-limit:]))
 
     # ------------------------------------------------------------------
     # Backward-compatibility helpers
@@ -223,8 +258,15 @@ class EpisodicMemory:
 
         db = await self._get_connection()
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT key, content, metadata FROM episodes") as cur:
-            rows = await cur.fetchall()
+        if self._agent_id is not None:
+            async with db.execute(
+                "SELECT key, content, metadata FROM episodes WHERE agent_id = ?",
+                (self._agent_id,),
+            ) as cur:
+                rows = await cur.fetchall()
+        else:
+            async with db.execute("SELECT key, content, metadata FROM episodes") as cur:
+                rows = await cur.fetchall()
 
         words = query.lower().split()
         scored: list[tuple[int, dict[str, Any]]] = []
@@ -252,12 +294,19 @@ class EpisodicMemory:
         metadata: dict[str, Any] | None,
     ) -> bool:
         db = await self._get_connection()
-        # Check existence first
-        async with db.execute(
-            "SELECT key FROM episodes WHERE key = ?", (key,)
-        ) as cur:
-            if await cur.fetchone() is None:
-                return False
+        # Check existence first (scoped by agent_id)
+        if self._agent_id is not None:
+            async with db.execute(
+                "SELECT key FROM episodes WHERE key = ? AND agent_id = ?", (key, self._agent_id)
+            ) as cur:
+                if await cur.fetchone() is None:
+                    return False
+        else:
+            async with db.execute(
+                "SELECT key FROM episodes WHERE key = ?", (key,)
+            ) as cur:
+                if await cur.fetchone() is None:
+                    return False
 
         parts: list[str] = []
         params: list[Any] = []
@@ -269,16 +318,28 @@ class EpisodicMemory:
             params.append(json.dumps(metadata))
 
         if parts:
-            params.append(key)
-            await db.execute(
-                f"UPDATE episodes SET {', '.join(parts)} WHERE key = ?",
-                params,
-            )
+            if self._agent_id is not None:
+                params.extend([key, self._agent_id])
+                await db.execute(
+                    f"UPDATE episodes SET {', '.join(parts)} WHERE key = ? AND agent_id = ?",
+                    params,
+                )
+            else:
+                params.append(key)
+                await db.execute(
+                    f"UPDATE episodes SET {', '.join(parts)} WHERE key = ?",
+                    params,
+                )
             await db.commit()
         return True
 
     async def _sqlite_delete(self, key: str) -> bool:
         db = await self._get_connection()
-        cursor = await db.execute("DELETE FROM episodes WHERE key = ?", (key,))
+        if self._agent_id is not None:
+            cursor = await db.execute(
+                "DELETE FROM episodes WHERE key = ? AND agent_id = ?", (key, self._agent_id)
+            )
+        else:
+            cursor = await db.execute("DELETE FROM episodes WHERE key = ?", (key,))
         await db.commit()
         return cursor.rowcount > 0

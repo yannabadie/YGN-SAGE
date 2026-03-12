@@ -59,3 +59,23 @@ class RelevanceGate:
             log.debug("RelevanceGate rejected (score=%.2f < threshold=%.2f)", s, self.threshold)
             return False
         return True
+
+
+# Rust acceleration (Phase 2 rationalization)
+try:
+    from sage_core import RustRelevanceGate as _RustGate
+    _HAS_RUST_GATE = True
+except ImportError:
+    _HAS_RUST_GATE = False
+
+
+def create_relevance_gate(threshold: float = 0.3) -> RelevanceGate:
+    """Factory: returns Rust gate when available, Python otherwise."""
+    if _HAS_RUST_GATE:
+        try:
+            gate = _RustGate(threshold=threshold)
+            log.info("RelevanceGate: using Rust acceleration")
+            return gate  # type: ignore[return-value]  # duck-type compatible
+        except Exception:
+            pass
+    return RelevanceGate(threshold=threshold)

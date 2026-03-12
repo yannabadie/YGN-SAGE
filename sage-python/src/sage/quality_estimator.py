@@ -67,3 +67,22 @@ class QualityEstimator:
                 score += 0.05
 
         return min(score, 1.0)
+
+
+# Rust acceleration (Phase 2 rationalization)
+try:
+    from sage_core import RustQualityEstimator as _RustQE
+    _HAS_RUST_QE = True
+except ImportError:
+    _HAS_RUST_QE = False
+
+
+def create_quality_estimator() -> QualityEstimator:
+    """Factory: returns Rust estimator when available, Python otherwise."""
+    if _HAS_RUST_QE:
+        try:
+            qe = _RustQE()
+            return qe  # type: ignore[return-value]  # duck-type compatible
+        except Exception:
+            pass
+    return QualityEstimator()
