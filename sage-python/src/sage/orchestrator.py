@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from sage.execution_decision import ExecutionDecision
 from sage.providers.registry import ModelRegistry, ModelProfile
 from sage.providers.connector import PROVIDER_CONFIGS
 from sage.strategy.metacognition import ComplexityRouter
@@ -200,18 +201,44 @@ class CognitiveOrchestrator:
         self.metacognition = metacognition or ComplexityRouter()
         self.event_bus = event_bus
 
-    async def run(self, task: str) -> str:
-        """Analyze task, select models, build topology, execute."""
+    async def run(self, task: str, decision: ExecutionDecision | None = None) -> str:
+        """Analyze task, select models, build topology, execute.
+
+        Parameters
+        ----------
+        task:
+            The task string to execute.
+        decision:
+            Optional authoritative :class:`ExecutionDecision` produced by
+            :class:`AgentSystem`.  When provided, re-routing is skipped —
+            this eliminates the split-brain problem where both AgentSystem
+            and CognitiveOrchestrator independently route the same task.
+            When absent, falls back to local assessment for backward compat.
+        """
         t0 = time.perf_counter()
 
-        # 1. Assess complexity
-        profile = await self.metacognition.assess_complexity_async(task)
-        decision = self.metacognition.route(profile)
-
-        log.info(
-            "Orchestrator: task routed to S%d (c=%.2f u=%.2f)",
-            decision.system, profile.complexity, profile.uncertainty,
-        )
+        if decision is not None:
+            # Use authoritative decision from AgentSystem — no re-routing.
+            profile = type("Profile", (), {
+                "complexity": 0.5, "uncertainty": 0.3,
+                "tool_required": False, "system": decision.system,
+            })()
+            log.info(
+                "Orchestrator: using ExecutionDecision S%d model=%s",
+                decision.system, decision.model_id,
+            )
+        else:
+            # Fallback: local assessment (backward compatibility)
+            profile = await self.metacognition.assess_complexity_async(task)
+            decision_local = self.metacognition.route(profile)
+            decision = ExecutionDecision(
+                system=decision_local.system,
+                model_id="unknown",
+            )
+            log.info(
+                "Orchestrator: task routed locally to S%d (c=%.2f u=%.2f)",
+                decision.system, profile.complexity, profile.uncertainty,
+            )
 
         # 2. S1: fast model for simple tasks (cost-sensitive)
         if decision.system == 1:

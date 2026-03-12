@@ -308,7 +308,14 @@ class AgentSystem:
         # 4. Try CognitiveOrchestrator as primary path (multi-provider)
         if self.orchestrator and self.registry and self.registry.list_available():
             try:
-                result = await self.orchestrator.run(task)
+                # Construct authoritative ExecutionDecision from routing result
+                from sage.execution_decision import ExecutionDecision
+                exec_decision = ExecutionDecision(
+                    system=getattr(self._last_decision, "system", 2),
+                    model_id=getattr(self._last_decision, "model_id", "unknown") or "unknown",
+                    topology_id=getattr(self._last_decision, "topology_id", None),
+                )
+                result = await self.orchestrator.run(task, decision=exec_decision)
                 await self._persist_memory()
                 self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
                 return result
