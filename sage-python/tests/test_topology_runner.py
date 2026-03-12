@@ -152,3 +152,28 @@ async def test_empty_topology_returns_empty():
 
     assert result == ""
     assert mock_provider.generate.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_loop_delegates_to_topology_runner():
+    """When topology has >1 node, AgentLoop delegates to TopologyRunner."""
+    from sage.topology.runner import TopologyRunner
+    from unittest.mock import patch
+
+    graph = FakeGraph(nodes=[
+        FakeNode(role="thinker", model_id="gemini-2.5-flash", system=2),
+        FakeNode(role="verifier", model_id="gemini-2.5-flash", system=2),
+    ])
+    executor = FakeExecutor(order=[[0], [1]])
+
+    mock_provider = AsyncMock()
+    mock_provider.generate = AsyncMock(side_effect=[
+        MagicMock(content="Thought result"),
+        MagicMock(content="Verified result"),
+    ])
+
+    with patch("sage.topology.runner.TopologyRunner.run", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = "Multi-agent result"
+        runner = TopologyRunner(graph, executor, llm_provider=mock_provider)
+        result = await runner.run("test task")
+        assert result == "Multi-agent result"

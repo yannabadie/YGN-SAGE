@@ -302,6 +302,40 @@ class AgentLoop:
         except Exception:
             return []
 
+    async def _run_topology(self, task: str) -> str | None:
+        """Execute multi-node topology via TopologyRunner.
+
+        Returns the result string if topology has >1 node, or None to fall
+        through to standard single-LLM execution.
+        """
+        if not self._current_topology:
+            return None
+
+        schedule = self._schedule_from_topology()
+        if len(schedule) <= 1:
+            return None  # Single node or empty — use standard path
+
+        try:
+            from sage.topology.runner import TopologyRunner
+            from sage_core import PyTopologyExecutor  # noqa: E402
+            executor = PyTopologyExecutor(self._current_topology)
+            runner = TopologyRunner(
+                graph=self._current_topology,
+                executor=executor,
+                llm_provider=self._llm,
+                llm_config=self.config.llm,
+            )
+            result = await runner.run(task)
+            self._emit(
+                LoopPhase.THINK,
+                topology_execution="multi_agent",
+                node_count=len(schedule),
+            )
+            return result
+        except Exception as e:
+            log.warning("TopologyRunner failed (%s), falling back to single-LLM", e)
+            return None
+
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
         tool = self._tools.get(tc.name)
@@ -441,18 +475,16 @@ class AgentLoop:
                     messages = self._rebuild_messages(system_prompt)
 
             # === THINK: Call LLM ===
-            # Topology-aware execution context
-            if self.step_count == 1:  # Only inject on first iteration
-                topology_schedule = self._schedule_from_topology()
-                if len(topology_schedule) > 1:
-                    roles_desc = ", ".join(
-                        f"{n['role']}(S{n['system']})" for n in topology_schedule
-                    )
-                    topology_hint = (
-                        f"[Topology: {len(topology_schedule)} agents — {roles_desc}. "
-                        f"You are acting as: {topology_schedule[0]['role']}]"
-                    )
-                    messages.insert(0, Message(role=Role.SYSTEM, content=topology_hint))
+            # Topology-aware execution: delegate to TopologyRunner for multi-node
+            if self.step_count == 1:
+                topology_result = await self._run_topology(task)
+                if topology_result is not None:
+                    # Multi-agent topology executed — use its result directly
+                    content = topology_result
+                    result_text = content
+                    self.working_memory.add_event("ASSISTANT", content)
+                    # Skip to LEARN phase (topology handled THINK+ACT internally)
+                    break
 
             model_name = self.config.llm.model
             self._emit(LoopPhase.THINK, model=model_name)
