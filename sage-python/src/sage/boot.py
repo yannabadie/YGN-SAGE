@@ -27,8 +27,6 @@ except ImportError:
 try:
     from sage_core import SystemRouter as RustSystemRouter
     from sage_core import ModelRegistry as RustModelRegistry
-    from sage_core import PyTemplateStore as RustTemplateStore  # Phase 2
-    from sage_core import PyHybridVerifier as RustHybridVerifier  # Phase 2
     from sage_core import TopologyEngine as RustTopologyEngine  # Phase 6
     from sage_core import ContextualBandit as RustBandit  # Phase 6
     _HAS_RUST_ROUTER = True
@@ -109,9 +107,6 @@ class AgentSystem:
     rust_router: Any = None
     # ShadowRouter: dual Rust/Python routing comparison (None if shadow mode inactive)
     shadow_router: ShadowRouter | None = None
-    # Phase 2: Topology templates + verifier (None if sage_core not compiled)
-    template_store: Any = None
-    verifier: Any = None
     # Phase 6: Rust TopologyEngine (5-path generate, MAP-Elites, bandit)
     topology_engine: Any = None
     # Phase 6: Standalone ContextualBandit for model selection
@@ -566,19 +561,9 @@ def boot_agent_system(
                 shadow_router.divergence_rate() * 100,
             )
 
-    # Phase 2: Topology templates + HybridVerifier (Rust)
-    template_store = None
-    verifier = None
-    if _HAS_RUST_ROUTER and rust_router:
-        try:
-            template_store = RustTemplateStore()
-            verifier = RustHybridVerifier()
-            _log.info(
-                "Boot: Phase 2 active — %d topology templates, HybridVerifier ready",
-                len(template_store.available()),
-            )
-        except Exception as e:
-            _log.warning("Boot: Phase 2 init failed (%s)", e)
+    # Phase 2: Topology templates + HybridVerifier are internal to
+    # DynamicTopologyEngine (Rust). No separate Python instantiation needed.
+    # (Removed: template_store + verifier were instantiated but never used — audit P10)
 
     # Phase 6: Rust TopologyEngine (5-path generation + learning loop)
     rust_topology_engine = None
@@ -825,8 +810,6 @@ def boot_agent_system(
         capability_matrix=_cap_matrix,
         rust_router=rust_router,
         shadow_router=shadow_router,
-        template_store=template_store,
-        verifier=verifier,
         topology_engine=rust_topology_engine,
         bandit=rust_bandit,
     )

@@ -2,24 +2,27 @@
 import pytest
 
 
-def test_boot_has_phase2_fields():
-    """AgentSystem should have template_store and verifier fields."""
+def test_boot_phase2_removed():
+    """AgentSystem must NOT have template_store/verifier (audit P10).
+
+    DynamicTopologyEngine owns its verifier internally.
+    """
     from sage.boot import boot_agent_system
-
     system = boot_agent_system(use_mock_llm=True)
-    assert hasattr(system, "template_store")
-    assert hasattr(system, "verifier")
+    assert not hasattr(system, "template_store")
+    assert not hasattr(system, "verifier")
 
 
-def test_phase2_none_in_mock_mode():
-    """In mock mode (no sage_core), Phase 2 fields may be None."""
-    from sage.boot import boot_agent_system
-
-    system = boot_agent_system(use_mock_llm=True)
-    # These are None unless sage_core is compiled with cognitive engine
-    # Just verify they exist as attributes
-    assert system.template_store is None or hasattr(system.template_store, "available")
-    assert system.verifier is None or hasattr(system.verifier, "verify")
+def test_phase2_sage_core_direct():
+    """PyTemplateStore and PyHybridVerifier are available directly from sage_core."""
+    try:
+        from sage_core import PyTemplateStore, PyHybridVerifier
+    except ImportError:
+        import pytest; pytest.skip("sage_core not compiled")
+    store = PyTemplateStore()
+    verifier = PyHybridVerifier()
+    assert store is not None
+    assert verifier is not None
 
 
 def test_template_store_create_sequential():

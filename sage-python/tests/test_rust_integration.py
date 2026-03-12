@@ -19,9 +19,9 @@ def test_full_system_has_all_phase6_components(system):
     assert hasattr(system, "topology_engine")
     assert hasattr(system, "bandit")
     assert hasattr(system.agent_loop, "topology_engine")
-    # Phase 2 components should also be present
-    assert hasattr(system, "template_store")
-    assert hasattr(system, "verifier")
+    # Phase 2 (template_store/verifier) removed — internal to DynamicTopologyEngine (audit P10)
+    assert not hasattr(system, "template_store")
+    assert not hasattr(system, "verifier")
 
 
 @pytest.mark.asyncio
