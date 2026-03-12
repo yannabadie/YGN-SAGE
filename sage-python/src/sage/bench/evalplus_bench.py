@@ -97,8 +97,14 @@ class EvalPlusBench:
         if limit is not None:
             task_ids = task_ids[:limit]
 
-        # Model ID captured lazily — _last_model is only set after first LLM call
-        model_id = "pending"
+        # Model ID captured from first routing decision (not lazily post-hoc)
+        model_id = "unknown"
+        if hasattr(self.system, "_last_decision") and self.system._last_decision:
+            model_id = getattr(self.system._last_decision, "model_id", "unknown")
+        elif hasattr(self.system, "agent_loop"):
+            llm = getattr(self.system.agent_loop, "_llm", None)
+            if llm:
+                model_id = getattr(llm, "model_id", "unknown")
 
         # Detect provider name from the system
         provider_name = ""
@@ -227,15 +233,8 @@ class EvalPlusBench:
                 flush=True,
             )
 
-        # Update model ID after tasks ran (_last_model set by first LLM call)
-        if hasattr(self.system, "agent_loop"):
-            model_id = (
-                getattr(self.system.agent_loop, "_last_model", "") or "unknown"
-            )
-        else:
-            model_id = "unknown"
         if self.baseline_mode:
-            model_id = f"baseline:{model_id}" if model_id else "baseline"
+            model_id = f"baseline:{model_id}" if model_id != "unknown" else "baseline"
         self.manifest.model = model_id
 
         return solutions
@@ -413,7 +412,10 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
         solutions = await self.generate_solutions(limit=limit)
 
         if not solutions:
-            return BenchReport.from_results(f"evalplus_{self.dataset}", [])
+            return BenchReport.from_results(
+                f"evalplus_{self.dataset}", [],
+                model_config={"model": self.manifest.model if self.manifest else "unknown"},
+            )
 
         # Load problems for evaluation
         problems = _load_dataset(self.dataset)
@@ -468,5 +470,6 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
         )
 
         return BenchReport.from_results(
-            f"evalplus_{self.dataset}", task_results
+            f"evalplus_{self.dataset}", task_results,
+            model_config={"model": self.manifest.model if self.manifest else "unknown"},
         )

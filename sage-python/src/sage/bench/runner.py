@@ -39,6 +39,7 @@ class BenchReport:
     routing_breakdown: dict[str, int]   # {"S1": n, "S2": n, "S3": n}
     results: list[TaskResult]
     model_config: dict[str, Any] = field(default_factory=dict)
+    model: str = "unknown"
     provider: str = ""
     git_sha: str = ""
     feature_flags: list[str] = field(default_factory=list)
@@ -65,6 +66,7 @@ class BenchReport:
                 routing_breakdown={"S1": 0, "S2": 0, "S3": 0},
                 results=[],
                 model_config=model_config or {},
+                model=model_config.get("model", "unknown") if model_config else "unknown",
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -93,6 +95,7 @@ class BenchReport:
             routing_breakdown=breakdown,
             results=results,
             model_config=model_config or {},
+            model=model_config.get("model", "unknown") if model_config else "unknown",
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 
