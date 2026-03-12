@@ -1,0 +1,6 @@
+# Training data and benchmark results (large, regenerable)
+*.jsonl
+*.json
+*.csv
+*.npz
+!.gitignore
