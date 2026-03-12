@@ -58,10 +58,17 @@ Triple investment in the proven differentiator.
 - Source: SAGE benchmark runs — HumanEval+ (164) + MBPP+ (378) produce (task, response) pairs with pass/fail labels
 - Augmentation: GPT generates task variations → target 2000+ triples
 - Label: continuous [0.0, 1.0] derived from pass/fail + partial credit signals
+- **Overfitting mitigation** (2000 triples is small for 66M params):
+  - 5-fold stratified cross-validation on all training runs
+  - Early stopping on validation loss (patience=3 epochs)
+  - Aggressive dropout (0.3) + weight decay (0.01)
+  - Freeze lower transformer layers (fine-tune only top 2 + classification head ≈ 3M trainable params)
+  - Data augmentation: paraphrase tasks via back-translation, swap response ordering
+  - **Honest scope**: With 2000 triples and partial fine-tuning, expect modest but measurable improvement over the 5-signal heuristic. The "+5-15%" claim from ETH-SRI is for models trained on 10K+ data points — at our data scale, realistic expectation is +3-8% on held-out quality correlation. Larger gains require community contribution of benchmark results.
 
 **Model selection**:
-- Primary: DistilBERT (66M params) — good accuracy/size tradeoff
-- Alternative: TinyBERT (14.5M) if latency budget is tight (<5ms)
+- Primary: DistilBERT (66M params, ~3M trainable with layer freezing) — good accuracy/size tradeoff
+- Alternative: TinyBERT (14.5M) if latency budget is tight (<5ms) — also reduces overfitting risk
 - Both exportable to ONNX for Rust inference via `ort`
 
 **Integration**:
@@ -76,7 +83,7 @@ Triple investment in the proven differentiator.
 - Exports ONNX model to `sage-core/models/quality_estimator.onnx`
 - Retraining triggered manually or on benchmark completion
 
-**Expected impact**: +5-15% routing accuracy improvement (ETH-SRI cascade paper).
+**Expected impact**: +3-8% quality estimation correlation at 2000 triples (honest scope); +5-15% achievable at 10K+ triples (ETH-SRI cascade paper scale).
 
 **Metrics**: measure on held-out HumanEval+ subset — quality score correlation with actual pass/fail.
 
@@ -86,9 +93,9 @@ Triple investment in the proven differentiator.
 
 **Solution** (2-step):
 
-1. **Zero-shot evaluation**: Download NVIDIA `prompt-task-and-complexity-classifier`, convert to ONNX, measure accuracy on SAGE's 50 GT tasks. If >95% → ship directly.
+1. **Zero-shot evaluation**: Download NVIDIA `prompt-task-and-complexity-classifier`, convert to ONNX, measure accuracy on SAGE's 50 GT tasks. **Statistical note**: 50 samples gives ±6% CI at 95% confidence (binomial). Ship criterion: bootstrap 95% CI lower bound ≥ 90% (not point estimate ≥ 95%). If the lower bound meets the threshold → ship. If the point estimate is >95% but CI is too wide → expand test set to 200 tasks (from Phase 2.3) before deciding.
 
-2. **Fine-tune** (if needed): Use NVIDIA model as initialization, fine-tune on SAGE GT tasks augmented to 500+ via synthetic generation.
+2. **Fine-tune** (if needed): Use NVIDIA model as initialization, fine-tune on SAGE GT tasks augmented to 500+ via synthetic generation. Evaluate on the 50 original GT tasks (held-out during fine-tuning) + the expanded set from Phase 2.3.
 
 **Architecture**:
 - DeBERTa-v3-base (86M params)
@@ -139,8 +146,13 @@ best_model = router.select_model(
 - `structural_features.py` — Stage 0 keyword extraction
 - `knn_router.py` — Stage 0.5 kNN on arctic-embed-m
 - `model_card.py` + `model_registry.py` — model catalog with telemetry
-- `adaptive_router.py` — 5-stage pipeline orchestrator
+- `adaptive_router.py` — 5-stage pipeline orchestrator (simplified: kNN → DeBERTa, no entropy probe or cascade stages)
 - DeBERTa ONNX model (optional, in `[onnx]` extra)
+
+**Dependency extraction** (sage-router must be self-contained):
+- `CognitiveProfile` + `RoutingDecision` dataclasses: **copy into sage-router** as `sage_router.types` (12 LOC each, no external deps). SAGE itself imports from sage-router (not the other way around).
+- `Embedder`: sage-router bundles a minimal embedder wrapper (`sage_router.embedder`) supporting `sentence-transformers` only (no Rust ONNX). The `[onnx]` extra adds `onnxruntime` for direct ONNX inference.
+- `ComplexityRouter`/`metacognition.py`: NOT included. sage-router exposes `CognitiveRouter` (new class) that wraps the pipeline without the CGRS self-braking or speculative zone logic (those are SAGE-specific orchestration concerns).
 
 **Zero Rust dependency**. Pure Python with optional ONNX acceleration.
 
@@ -202,6 +214,25 @@ Prove the Topology pillar's value with evidence no competitor can produce.
 - Uses existing `TopologyExecutor` + `BenchmarkRunner` infrastructure
 - Results: `docs/benchmarks/YYYY-MM-DD-topology-bench.json`
 
+**Cost estimate** (corrected — multi-agent topologies are NOT single-call):
+
+| Topology | Avg calls/task | Notes |
+|---|---|---|
+| Sequential | 1 | Single agent |
+| Parallel | 2-3 | Concurrent agents |
+| AVR | 3 | Act + Verify + Refine |
+| SelfMoA | 3-5 | Multiple experts + aggregator |
+| Hierarchical | 2-4 | Manager + workers |
+| Hub | 2-3 | Hub + spokes |
+| Debate | 4-6 | Proposer + opponent + judge (multi-round) |
+| Brainstorming | 3-5 | Multiple generators + synthesizer |
+| Evolved | 3-5 | Varies by evolved structure |
+| Oracle | 1-6 | Depends on category |
+
+**Total**: 200 tasks × ~4.5 avg calls/topology × 10 topologies = **~9000 LLM calls** (not 2000).
+Budget at $0.001/call (Gemini Flash): ~$9. At $0.01/call (Gemini Pro for S3): ~$90.
+**Mitigation**: Run S1 tasks on Flash only, S3 on Pro. Estimated blended cost: ~$30-50.
+
 **Publication potential**: First multi-agent topology benchmark. Publishable to arXiv + workshop (ICML/NeurIPS agent workshops).
 
 #### 2.2 Large-Scale Ablation (500+ tasks)
@@ -235,6 +266,20 @@ Prove the Topology pillar's value with evidence no competitor can produce.
 | Routing | -X pp | d=Y | p < 0.01 |
 | Guardrails | -X pp | d=Y | p < 0.05 |
 
+**Cost estimate** (corrected — configs with AVR/memory/routing add calls):
+
+| Config | Avg calls/task | Notes |
+|---|---|---|
+| full | 2.5 | Routing + AVR retries |
+| baseline | 1 | Raw LLM, single call |
+| no-memory | 2 | Routing + AVR but no memory injection |
+| no-avr | 1.5 | Routing but no verify/refine loop |
+| no-routing | 2 | Force S2 + AVR |
+| no-guardrails | 2.5 | All pillars except guardrails |
+
+**Total**: 500 tasks × 6 configs × ~2.0 avg calls = **~6000 LLM calls** (not 3000).
+Budget at blended $0.003/call: ~$18. Realistic total with retries/failures: **~$25-40**.
+
 **Implementation**: extend `sage-python/src/sage/bench/ablation.py` with bootstrap CI and McNemar tests. New `--scale full` flag for 500-task runs.
 
 #### 2.3 kNN Exemplar Expansion
@@ -243,9 +288,11 @@ Prove the Topology pillar's value with evidence no competitor can produce.
 
 **Solution**: Use TopologyBench results to label 200+ tasks empirically.
 
-- Each TopologyBench task receives an S1/S2/S3 label based on observed performance (not heuristic — empirical: if it passes with Sequential/S1 alone → S1, needs AVR → S2, needs formal verification → S3)
-- 200 labeled tasks → rebuild `config/routing_exemplars.npz`
-- kNN accuracy expected: 95%+ (vs 92% on 50)
+- Each TopologyBench task receives a **proposed** S1/S2/S3 label based on observed performance (empirical: if it passes with Sequential/S1 alone → S1, needs AVR → S2, needs formal verification → S3)
+- **Human review gate** (anti-circularity): Auto-labels are proposals, not ground truth. The labeling pipeline outputs a review CSV (`docs/benchmarks/proposed_labels.csv`) with columns: `task_id, task_text, auto_label, confidence, evidence`. Labels with confidence < 0.8 or ambiguous evidence are flagged for manual review. Only human-approved labels enter the exemplar set.
+- **Circularity risk**: If we label based on which topology succeeds, we're measuring system behavior, not task intrinsic difficulty. Mitigation: the 50 original human-labeled GT tasks serve as anchor — new auto-labels must not contradict them. Any task where auto-label disagrees with kNN prediction on the original 50 GT set is flagged for review.
+- 200 labeled tasks (after human review) → rebuild `config/routing_exemplars.npz`
+- kNN accuracy expected: 95%+ (vs 92% on 50) — evaluated on original 50 GT held-out
 - Also feeds DeBERTa fine-tuning data (Phase 1.2)
 
 ---
@@ -313,6 +360,24 @@ result = await system.run("complex task", resume=True)
 # Auto-detects incomplete task_id, resumes from last checkpoint
 ```
 
+**Checkpoint state boundaries** (what is serialized vs reconstructed):
+
+| State | Serialized? | Format | Notes |
+|---|---|---|---|
+| Task text + task_id | Yes | msgpack string | Immutable input |
+| Current phase (P/T/A/L) | Yes | msgpack enum | Resume point |
+| LLM response(s) so far | Yes | msgpack string list | THINK/ACT outputs |
+| AVR iteration count | Yes | msgpack int | Resume mid-AVR |
+| Routing decision | Yes | msgpack dict | S1/S2/S3 + model_id |
+| Memory injections | Yes | msgpack string list | Avoid re-querying S-MMU |
+| Guardrail results | Yes | msgpack dict | Skip re-evaluation |
+| Working Memory (Arrow) | **No — reconstructed** | — | Re-read from S-MMU on resume |
+| LLM provider handles | **No — reconstructed** | — | Re-initialized at boot |
+| EventBus subscriptions | **No — reconstructed** | — | Stateless, re-subscribe |
+| Sandbox state | **No — not preserved** | — | Tools re-execute from scratch |
+
+**Design choice**: Only serialize what's needed to skip completed phases. Anything that involves live connections or Rust FFI handles is reconstructed from boot.
+
 **Scope limitation**: Local single-process only. NOT distributed durable execution (LangGraph Cloud). The checkpoint is a safety net, not an orchestration feature.
 
 **Files**:
@@ -334,10 +399,16 @@ result = await system.run("complex task", resume=True)
 - Embedder → sentence-transformers or hash fallback ✓
 - `SmtVerifier` → z3-solver Python fallback ✓
 
-**Remaining gaps to cover**:
-- `TopologyGraph` → lightweight Python wrapper using `networkx` (replaces petgraph)
-- `HybridVerifier` → Python port of 6 structural + 4 semantic checks
-- `TopologyExecutor` → Python port of Kahn's + gate-based scheduling
+**Remaining gaps to cover** (1823 LOC Rust → Python):
+
+| Rust Module | LOC | Python Port | Effort | Complexity |
+|---|---|---|---|---|
+| `TopologyGraph` (topology_graph.rs) | 420 | `networkx.DiGraph` wrapper with typed nodes/edges | 1 sprint | Medium — petgraph API → networkx translation |
+| `HybridVerifier` (verifier.rs) | 660 | 6 structural checks (Python graph traversal) + 4 semantic checks (string matching) | 0.5 sprint | Low — checks are simple graph algorithms, no SIMD |
+| `TopologyExecutor` (executor.rs) | 476 | Kahn's toposort (stdlib `graphlib.TopologicalSorter`) + gate-based readiness (Python dict + deque) | 0.5 sprint | Medium — dual-mode scheduling logic |
+| Templates (templates.rs) | 267 (subset) | 8 template constructors returning networkx graphs | 0.3 sprint | Low — pure graph construction |
+
+**Total**: ~1823 LOC Rust → ~800-1000 LOC Python. **Revised effort: 2 sprints** (was 1.5 — accounting for test parity, LTL integration, and edge cases in dynamic executor mode). This is the largest single item in Phase 3.
 
 **What stays Rust-only**:
 - Wasm WASI sandbox (wasmtime) — Python-only mode uses subprocess with timeout
@@ -362,8 +433,8 @@ pip install sage-python[rust,onnx]   # full performance + ONNX models
 |---|---|---|---|---|
 | **1 — Routing Dominance** | Learned QualityEstimator, DeBERTa Stage 1, sage-router lib | ~2 sprints | Routing 92% → 96-98% | Surpasses RouteLLM, approaches NVIDIA 98.1% |
 | **2 — TopologyBench** | 200-task benchmark, 500-task ablation, kNN expansion | ~2 sprints | First topology benchmark published | Novel contribution, no competitor equivalent |
-| **3 — DX Parity** | Memory scoping, durable execution, Python-only mode | ~1.5 sprints | `pip install` → working in 5 min | Closes gap with LangGraph/CrewAI |
-| **Total** | 9 components | ~5.5 sprints | | |
+| **3 — DX Parity** | Memory scoping, durable execution, Python-only mode | ~2 sprints | `pip install` → working in 5 min | Closes gap with LangGraph/CrewAI |
+| **Total** | 9 components | ~6 sprints | | |
 
 ## Constraints
 
@@ -375,8 +446,8 @@ pip install sage-python[rust,onnx]   # full performance + ONNX models
 ## Dependencies
 
 - Phase 1.2 (DeBERTa) depends on NVIDIA model availability and ONNX export compatibility
-- Phase 2.1 (TopologyBench) requires API credits for 200 tasks × 10 topologies = 2000 LLM calls
-- Phase 2.2 (large ablation) requires API credits for 500 tasks × 6 configs = 3000 LLM calls
+- Phase 2.1 (TopologyBench) requires API credits for ~9000 LLM calls (multi-agent topologies, see cost estimate above), ~$30-50
+- Phase 2.2 (large ablation) requires API credits for ~6000 LLM calls (multi-step configs), ~$25-40
 - Phase 1.3 (sage-router) depends on Phases 1.1 + 1.2 for maximum value but can ship with kNN-only first
 
 ## Risk Mitigation
