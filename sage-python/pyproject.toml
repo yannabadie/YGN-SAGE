@@ -21,7 +21,7 @@ embeddings = ["sentence-transformers>=2.2"]
 ui = ["fastapi>=0.115", "uvicorn>=0.34"]
 bench = ["evalplus>=0.3.1"]
 mcp = ["mcp>=1.7"]
-a2a = ["a2a-sdk[http-server]>=1.0"]
+a2a = ["a2a-sdk[http-server]>=0.3"]
 protocols = ["ygn-sage[mcp,a2a]"]
 all = ["ygn-sage[google,openai,arrow,z3,embeddings,ui,bench,mcp,a2a]"]
 dev = [
