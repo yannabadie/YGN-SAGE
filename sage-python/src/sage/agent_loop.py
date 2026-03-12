@@ -216,6 +216,9 @@ class AgentLoop:
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = S2_MAX_RETRIES_BEFORE_ESCALATION
         self._avr_error_history: list[str] = []
+        self._last_avr_iterations: int = 0
+        self._last_error: Exception | None = None
+        self._s3_degraded: bool = False
 
         # CRAG-style relevance gate for memory injection
         self._relevance_gate = RelevanceGate(threshold=0.3)
@@ -675,7 +678,7 @@ class AgentLoop:
                             continue
 
                 # S2 -> S3 escalation if max retries exhausted
-                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2:
+                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
                     log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
                     self.config.validation_level = 3
                     self._s3_retries = 0
@@ -788,6 +791,9 @@ class AgentLoop:
                     self._cb_evo.record_failure(e)
 
             self._emit(LoopPhase.LEARN, **learn_meta)
+
+        # Expose state for QualityEstimator signals
+        self._last_avr_iterations = self._s2_avr_retries
 
         # Output guardrail check
         if self.guardrail_pipeline and result_text and not self._skip_guardrails:

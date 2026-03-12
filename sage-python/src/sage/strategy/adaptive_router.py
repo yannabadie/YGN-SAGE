@@ -4,7 +4,7 @@ Stage 0: Structural features (keyword complexity/uncertainty) -- Rust or Python.
 Stage 0.5: kNN on pre-computed embeddings (arXiv 2505.12601) -- Python/numpy.
 Stage 1: ONNX BERT classifier (routellm/bert) -- Rust only.
 Stage 2: Entropy probe (logprobs or token diversity) -- Python async.
-Stage 3: Reserved for cascade/online learning.
+Stage 3: Note: online learning stage not yet implemented.
 
 Duck-type compatible with ComplexityRouter for seamless drop-in integration.
 """
@@ -51,7 +51,7 @@ class AdaptiveRoutingResult:
 
     decision: RoutingDecision
     profile: CognitiveProfile
-    stage: int  # 0=structural, 1=BERT, 2=entropy, 3=cascade
+    stage: int  # 0=structural, 1=BERT, 2=entropy, 3=reserved
     confidence: float  # 0.0-1.0
     method: str  # "rust_s0", "rust_s1", "entropy_s2", "heuristic"
 
