@@ -1,4 +1,5 @@
 use sage_core::routing::model_card::{CognitiveSystem, ModelCard};
+use std::collections::HashMap;
 
 #[test]
 fn parse_model_card_from_toml_str() {
@@ -56,6 +57,8 @@ fn best_system_affinity() {
         supports_json_mode: false,
         supports_vision: false,
         context_window: 128000,
+        domain_scores: HashMap::new(),
+        safety_rating: 0.5,
     };
     assert_eq!(card.best_system(), CognitiveSystem::S2);
 }
@@ -89,6 +92,8 @@ fn estimate_cost_matches_per_million_pricing() {
         supports_json_mode: true,
         supports_vision: false,
         context_window: 128000,
+        domain_scores: HashMap::new(),
+        safety_rating: 0.5,
     };
     // 1M input tokens at $0.075 + 1M output tokens at $0.30 = $0.375
     let cost = card.estimate_cost(1_000_000, 1_000_000);
@@ -118,6 +123,8 @@ fn affinity_for_each_system() {
         supports_json_mode: false,
         supports_vision: false,
         context_window: 32000,
+        domain_scores: HashMap::new(),
+        safety_rating: 0.5,
     };
     assert!((card.affinity_for(CognitiveSystem::S1) - 0.1).abs() < 0.001);
     assert!((card.affinity_for(CognitiveSystem::S2) - 0.5).abs() < 0.001);

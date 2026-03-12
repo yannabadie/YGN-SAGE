@@ -52,7 +52,7 @@ jobs:
       - name: ONNX feature tests
         run: cargo test --no-default-features --features onnx --lib
       - name: Integration tests (baseline)
-        run: cargo test --no-default-features --test '*' || true
+        run: cargo test --no-default-features --test '*'
       - name: Integration tests (with Python)
         run: cargo test --no-default-features --features sandbox,cranelift --test '*'
 
@@ -69,7 +69,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[all,dev]"
       - run: ruff check src/
-      - run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary || true
+      - run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary
       - run: python -m pytest tests/ -v --tb=short --cov=sage --cov-report=term-missing:skip-covered
 
   python-discover:

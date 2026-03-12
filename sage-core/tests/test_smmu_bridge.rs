@@ -24,8 +24,9 @@ fn test_record_and_retrieve() {
         },
     );
 
-    // Valid chunk ID (first chunk is 0)
-    assert_eq!(chunk_id, 0);
+    // Valid chunk ID is a ULID string (26 chars, Crockford base32)
+    assert!(!chunk_id.is_empty(), "chunk_id should be a non-empty ULID");
+    assert_eq!(chunk_id.len(), 26, "chunk_id should be a 26-char ULID");
     assert_eq!(bridge.chunk_count(), 1);
     assert_eq!(smmu.chunk_count(), 1);
 }
@@ -58,7 +59,7 @@ fn test_retrieve_similar_tasks() {
     let query_id =
         smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-    let results = bridge.retrieve_similar(&smmu, query_id, 5);
+    let results = bridge.retrieve_similar(&smmu, &query_id, 5);
     // Should find the similar task via semantic edge
     assert!(
         !results.is_empty(),
@@ -80,7 +81,8 @@ fn test_empty_bridge() {
     assert_eq!(bridge.chunk_count(), 0);
 
     let smmu = MultiViewMMU::new();
-    let results = bridge.retrieve_similar(&smmu, 0, 5);
+    // Use an empty string query_id for an empty bridge — no results expected
+    let results = bridge.retrieve_similar(&smmu, "", 5);
     assert!(results.is_empty());
 }
 
@@ -92,7 +94,7 @@ fn test_multiple_chunks() {
     let mut bridge = TopologyBridge::new();
 
     for i in 0..5 {
-        bridge.record_outcome(
+        let id = bridge.record_outcome(
             &mut smmu,
             TopologyChunk {
                 task_summary: format!("Task {}", i),
@@ -109,6 +111,9 @@ fn test_multiple_chunks() {
                 latency_ms: 500.0,
             },
         );
+        // Each returned id is a ULID string
+        assert!(!id.is_empty(), "chunk id should be non-empty ULID");
+        assert_eq!(id.len(), 26, "chunk id should be 26-char ULID");
     }
 
     assert_eq!(bridge.chunk_count(), 5);
@@ -150,7 +155,7 @@ fn test_retrieve_max_results() {
         None,
     );
 
-    let results = bridge.retrieve_similar(&smmu, query_id, 3);
+    let results = bridge.retrieve_similar(&smmu, &query_id, 3);
     assert!(
         results.len() <= 3,
         "Should return at most 3 results, got {}",
@@ -227,8 +232,8 @@ fn test_retrieve_via_shared_keywords() {
     let mut smmu = MultiViewMMU::new();
     let mut bridge = TopologyBridge::new();
 
-    // Record a chunk with keywords
-    bridge.record_outcome(
+    // Record a chunk with keywords; capture its ULID
+    let bst_chunk_id = bridge.record_outcome(
         &mut smmu,
         TopologyChunk {
             task_summary: "Implement a binary search tree".into(),
@@ -254,10 +259,10 @@ fn test_retrieve_via_shared_keywords() {
 
     // Retrieve using entity weights
     let weights = [0.0, 0.0, 0.0, 1.0]; // entity-only
-    let raw_results = smmu.retrieve_relevant(query_id, 2, weights);
+    let raw_results = smmu.retrieve_relevant(&query_id, 2, weights);
 
-    // The first chunk (ID 0) should be reachable via shared keywords
-    let found = raw_results.iter().any(|(id, _)| *id == 0);
+    // The BST chunk should be reachable via shared keywords "tree" and "search"
+    let found = raw_results.iter().any(|(id, _)| *id == bst_chunk_id);
     assert!(
         found,
         "Should find the BST task via shared keywords 'tree' and 'search'"

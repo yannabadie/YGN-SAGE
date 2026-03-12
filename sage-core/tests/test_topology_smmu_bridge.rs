@@ -67,8 +67,9 @@ fn test_record_returns_valid_chunk_id() {
     );
     let id = bridge.record_outcome(&mut smmu, outcome);
 
-    // First chunk should be ID 0
-    assert_eq!(id, 0);
+    // Chunk id is a ULID string
+    assert!(!id.is_empty(), "chunk_id should be non-empty ULID");
+    assert_eq!(id.len(), 26, "chunk_id should be 26-char ULID");
 }
 
 // ── Test 4: Multiple records ────────────────────────────────────────────────
@@ -87,7 +88,9 @@ fn test_multiple_records() {
             None,
         );
         let id = bridge.record_outcome(&mut smmu, outcome);
-        assert_eq!(id, i);
+        // Each returned id is a ULID string
+        assert!(!id.is_empty(), "chunk id should be non-empty ULID");
+        assert_eq!(id.len(), 26, "chunk id should be 26-char ULID");
     }
 
     assert_eq!(bridge.chunk_count(), 5);
@@ -101,7 +104,8 @@ fn test_retrieve_on_empty_bridge() {
     let smmu = MultiViewMMU::new();
     let bridge = TopologySmmuBridge::new();
 
-    let results = bridge.retrieve_similar(&smmu, 0, 5);
+    // Use an empty string query_id for an empty bridge — no results expected
+    let results = bridge.retrieve_similar(&smmu, "", 5);
     assert!(results.is_empty());
 }
 
@@ -128,7 +132,7 @@ fn test_retrieve_with_similar_embeddings() {
     let query_id =
         smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-    let results = bridge.retrieve_similar(&smmu, query_id, 5);
+    let results = bridge.retrieve_similar(&smmu, &query_id, 5);
     assert!(!results.is_empty(), "Should find the similar task");
 
     let first = &results[0];
@@ -162,7 +166,7 @@ fn test_structural_features_stored() {
     };
     let chunk_id = bridge.record_outcome(&mut smmu, outcome);
 
-    let meta = bridge.get_meta(chunk_id).expect("meta should exist");
+    let meta = bridge.get_meta(&chunk_id).expect("meta should exist");
     assert_eq!(meta.topology_id, "01JTEST_STRUCT");
     assert_eq!(meta.template, "parallel");
     assert_eq!(meta.agent_count, 5);
@@ -285,7 +289,7 @@ fn test_end_to_end_flow() {
         None,
     );
 
-    let suggestions = bridge.retrieve_similar(&smmu, query_id, 5);
+    let suggestions = bridge.retrieve_similar(&smmu, &query_id, 5);
     assert!(!suggestions.is_empty(), "Should find similar task");
 
     // Verify suggestion fields
