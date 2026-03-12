@@ -52,6 +52,22 @@ from sage.tools.memory_tools import create_memory_tools  # noqa: E402
 from sage.events.bus import EventBus  # noqa: E402
 from sage.routing.shadow import ShadowRouter  # noqa: E402
 
+# ModelCard — prefer Python (migrated from Rust)
+from sage.llm.model_card import ModelCard, CognitiveSystem  # noqa: E402
+try:
+    from sage_core import ModelCard as RustModelCard, CognitiveSystem as RustCognitiveSystem  # noqa: F401
+    _HAS_RUST_MODEL_CARD = True
+except ImportError:
+    _HAS_RUST_MODEL_CARD = False
+
+# ModelRegistry — prefer Python (migrated from Rust)
+from sage.llm.model_registry import ModelRegistry as PyModelRegistry  # noqa: E402
+try:
+    from sage_core import ModelRegistry as RustModelRegistry  # noqa: F811
+    _HAS_RUST_MODEL_REGISTRY = True
+except ImportError:
+    _HAS_RUST_MODEL_REGISTRY = False
+
 
 def _check_sandbox_availability() -> bool:
     """Check if any code execution sandbox is available. Warns if not."""
