@@ -69,8 +69,8 @@ The verification IS wired (OxiZ → `kg_rlvr.py` → `verify_step()`), but the g
 | Capability | SAGE (actual, today) | SAGE (after Phase 0) | LangGraph | CrewAI | AutoGen |
 |---|---|---|---|---|---|
 | Cost-aware routing | kNN 92%, 3 tiers | kNN 92%+ quality-gated cascade | LLM structured output | None | None |
-| Multi-provider fallback | 7 providers, **exception-retry** | 7 providers, **quality-cascade** | Single model | Single model | Single model |
-| Topology execution | **Prompt hint only** (single LLM call) | **Real multi-agent dispatch** (TopologyExecutor → agents) | StateGraph (real) | Sequential/Hierarchical (real) | TypeSubscription (real) |
+| Multi-provider fallback | 7 providers, **exception-retry** | 7 providers, **quality-cascade** | No built-in cascade | No built-in cascade | No built-in cascade |
+| Topology execution | **Prompt hint only** (single LLM call) | **Real multi-agent dispatch** *(Phase 0 target)* | StateGraph (real) | Sequential/Hierarchical (real) | TypeSubscription (real) |
 | Topology evolution | MAP-Elites + CMA-ME + MCTS (generates graph, **not executed**) | MAP-Elites + CMA-ME + MCTS (generates **and executes**) | None | None | None |
 | Formal verification | OxiZ/Z3, 10 methods, **soft gating** | OxiZ/Z3, 10 methods, **hard gating + CEGAR repair** | None | None | None |
 | Memory | 4 tiers (all wired) | 4 tiers (unchanged) | State checkpointing | Scoped memory | Message history |
@@ -139,16 +139,15 @@ Final aggregation → return result
 
 **Key design decisions**:
 
-1. **One `AgentLoop` per topology node** (not one LLM call). Each node gets its own system prompt derived from `node.role` + `node.capabilities`. The node's `model_id` selects the LLM tier.
+1. **One LLM call per topology node** (not one total). Each node gets its own system prompt derived from `node.role` + `node.required_capabilities`. The node's `model_id` selects the LLM tier.
 
-2. **Message passing = dict per node**. When TopologyExecutor yields a ready node, the runner collects outputs from predecessor nodes (following Message-flow edges) and injects them into the node's prompt. This implements MASFactory's "aggregate inputs → execute → dispatch outputs" lifecycle without a framework rewrite.
+2. **Message passing = execution-order context injection**. TopologyExecutor handles readiness scheduling. When a node executes, ALL outputs from previously completed nodes are injected as context. This is slightly over-inclusive vs edge-level filtering, but correct and functional without new Rust PyO3 methods. (Note: `TopologyGraph` exposes `node_count()`, `get_node()`, `topological_sort()` to Python but NOT `get_edges()` — edge-level filtering requires a new PyO3 wrapper, deferred to Phase 1.)
 
-3. **Concurrency follows edge types**:
-   - **Control edges**: sequential execution order (TopologyExecutor already handles this)
-   - **Message edges**: content passes between nodes
-   - **State edges**: shared mutable state (Python dict, thread-safe via asyncio — single-threaded event loop)
+3. **Concurrency**: When `TopologyExecutor.next_ready()` returns multiple nodes, they execute concurrently via `asyncio.gather()`. Single-ready nodes execute directly.
 
 4. **Fallback**: If TopologyExecutor unavailable or topology has 1 node → current behavior (single LLM call). Zero breaking change.
+
+5. **Note on MASFactory alignment**: `topology/llm_synthesis.rs` (Path 3 of DynamicTopologyEngine) already implements MASFactory's "Vibe Graphing" (LLM → graph). Phase 0.1 adds the missing execution stage, completing the full MASFactory pipeline: LLM generates topology → topology is verified → topology is **executed as real multi-agent system**.
 
 **Changes**:
 - **New file**: `sage-python/src/sage/topology/runner.py` (~200 LOC)
@@ -156,10 +155,11 @@ Final aggregation → return result
   - `async run(task: str) -> str`: main execution loop
   - Per-node: creates temporary `AgentLoop` or `ModelAgent` with node-specific config
   - Aggregation: last node's output (Sequential) or synthesized (Parallel/Hub)
-- **Modify**: `sage-python/src/sage/agent_loop.py:442-452`
-  - Replace prompt-hint injection with `TopologyRunner.run()` delegation
-  - When topology has >1 node: delegate to `TopologyRunner`, return its result
-  - When topology has 1 node: current single-LLM behavior (unchanged)
+- **Modify**: `sage-python/src/sage/agent_loop.py` — `run()` method
+  - Add `_run_topology()` method that delegates to TopologyRunner BEFORE the main step loop
+  - When topology has >1 node: delegate to `TopologyRunner`, return its result (early return)
+  - When topology has 1 node: fall through to existing single-LLM loop (unchanged)
+  - Must preserve cost tracking, LEARN phase, and memory extraction for topology-executed results
 - **Test**: `sage-python/tests/test_topology_runner.py`
   - Test with 2-node Sequential topology
   - Test with 3-node Parallel topology (2 workers + aggregator)
@@ -238,12 +238,13 @@ PRM.calculate_r_path(content) → r_path < 0?
 **Implementation**:
 - **Modify**: `sage-python/src/sage/agent_loop.py:503-526`
   - Replace `log.warning("S3 retry limit reached, accepting response...")` with CEGAR repair
-  - Use existing `verify_invariant_with_feedback()` (already returns clause-level diagnostics)
+  - Extract clause-level feedback from `self.prm.kg._last_invariant_feedback` (already populated by `verify_invariant_with_feedback()`)
   - After CEGAR: if still failing → degrade to S2 AVR (retry without formal requirements)
+  - Add `_s3_degraded: bool` flag to prevent ping-pong: once degraded to S2, do NOT re-escalate to S3 (existing S2→S3 escalation at line 678 must check this flag)
   - Emit `GUARDRAIL_BLOCK` event when S3 degrades (observability for L'Architecte)
-- **New method**: `agent_loop._cegar_repair(content, details) -> str`
-  - Extract failed clauses from PRM details
-  - Build targeted repair prompt: "Your formal assertions failed: {clauses}. Fix specifically: {feedback}"
+- **New method**: `agent_loop._cegar_repair(content, prm_details, invariant_feedback) -> str | None`
+  - Takes invariant feedback from `self.prm.kg._last_invariant_feedback` (NOT from PRM details dict)
+  - Build targeted repair prompt with clause-level failure diagnostics
   - Single LLM call with repair context
   - Re-run PRM on repaired content
   - Return repaired content or None (triggers S2 degradation)
@@ -256,13 +257,16 @@ PRM.calculate_r_path(content) → r_path < 0?
 
 #### 0.4 Dead Code Cleanup
 
-Quick fixes, no architecture change:
+Quick fixes, no architecture change. **Must be completed before or atomically with Phase 0.2** (QualityEstimator Signals 4 and 5 depend on these attributes).
 
 | Item | Fix | LOC |
 |---|---|---|
-| `_last_avr_iterations` never set | Set in `agent_loop.py` after AVR loop | 1 line |
+| `_last_avr_iterations` never set | Set in `agent_loop.py` after AVR loop completes | 2 lines |
+| `_last_error` never set | Set in `agent_loop.py` on exception paths, clear on success | 3 lines |
 | `AdaptiveRouter` Stage 3 "Reserved" | Remove placeholder comment, document as "future: online learning" in docstring | 3 lines |
-| `boot.py:385` getattr for avr_iterations | Now works because 0.4 fixes the setter | 0 lines |
+| `boot.py:384-385` getattr calls | Now work because 0.4 fixes both setters | 0 lines |
+
+**Note**: `_last_error` (boot.py:384) has the same pattern as `_last_avr_iterations` (boot.py:385) — read via `getattr(..., None/0)` but never assigned. Both feed into `QualityEstimator.estimate()` which uses them for Signals 4 (error absence) and 5 (AVR convergence). Without this fix, the quality cascade (Phase 0.2) uses only 3 of 5 signals.
 
 ---
 

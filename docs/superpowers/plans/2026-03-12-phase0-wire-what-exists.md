@@ -37,7 +37,7 @@
 - Create: `sage-python/tests/test_topology_runner.py`
 
 **Context:**
-- `TopologyGraph` (Rust PyO3): has typed nodes (`role`, `model_id`, `system`, `capabilities`) and three-flow edges (Control=0, Message=1, State=2). PyO3 class methods: `node_count()`, `get_node(idx)`, `get_edges()`.
+- `TopologyGraph` (Rust PyO3): has typed nodes (`role`, `model_id`, `system`, `required_capabilities: list[str]`) and three-flow edges (Control=0, Message=1, State=2). PyO3 methods exposed to Python: `node_count()`, `get_node(idx)`, `edge_count()`, `is_acyclic()`, `node_ids()`, `topological_sort()`, `add_node()`, `add_edge()`. **NOTE: `get_edges()` is NOT exposed to Python** — edge-level predecessor tracking must use execution order instead.
 - `TopologyExecutor` (Rust PyO3): `next_ready(graph)` returns list of ready node indices. `mark_completed(idx)` marks done. `is_done()` checks completion. PyO3 class.
 - `SequentialAgent`: chains agents in series (`agents/sequential.py`). `async run(task) -> str`.
 - `ParallelAgent`: fans out + aggregates (`agents/parallel.py`). `async run(task) -> str`.
@@ -59,15 +59,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 class FakeNode:
     """Minimal node matching TopologyGraph.get_node() return type."""
-    def __init__(self, role: str, model_id: str, system: int, capabilities: str = ""):
+    def __init__(self, role: str, model_id: str, system: int, required_capabilities: list[str] | None = None):
         self.role = role
         self.model_id = model_id
         self.system = system
-        self.capabilities = capabilities
+        self.required_capabilities = required_capabilities or []
 
 
 class FakeGraph:
-    """Minimal TopologyGraph stub for testing without Rust."""
+    """Minimal TopologyGraph stub for testing without Rust.
+
+    Note: real TopologyGraph does NOT expose get_edges() to Python.
+    TopologyRunner uses execution-order context instead.
+    """
     def __init__(self, nodes: list[FakeNode], edges: list[tuple[int, int, int]] | None = None):
         self._nodes = nodes
         self._edges = edges or []
@@ -77,9 +81,6 @@ class FakeGraph:
 
     def get_node(self, idx: int) -> FakeNode:
         return self._nodes[idx]
-
-    def get_edges(self) -> list[tuple[int, int, int]]:
-        return self._edges
 
 
 class FakeExecutor:
@@ -150,16 +151,18 @@ Expected: FAIL with `ModuleNotFoundError: No module named 'sage.topology.runner'
 """TopologyRunner: execute TopologyGraph as real multi-agent system.
 
 Bridges the gap between topology IR (Rust petgraph) and agent execution
-(Python SequentialAgent/ParallelAgent). Uses TopologyExecutor for
-readiness-based scheduling and spawns per-node LLM calls.
+(Python). Uses TopologyExecutor for readiness-based scheduling and
+spawns per-node LLM calls.
 
 Architecture follows MASFactory (2603.06007):
-- Three-flow edges: Control (execution order), Message (data), State (shared)
 - Node lifecycle: aggregate predecessor outputs → build prompt → LLM call → store output
-- Readiness: node executes when all Control-edge predecessors are complete
+- Readiness: node executes when TopologyExecutor marks it ready
+- Context: all completed predecessor outputs are injected (execution-order tracking,
+  since TopologyGraph does not expose get_edges() to Python yet)
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -167,7 +170,7 @@ from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 
 log = logging.getLogger(__name__)
 
-# Edge types matching sage-core/src/topology/topology_graph.rs
+# Edge type constants (matching sage-core/src/topology/topology_graph.rs)
 EDGE_CONTROL = 0
 EDGE_MESSAGE = 1
 EDGE_STATE = 2
@@ -180,7 +183,7 @@ class TopologyRunner:
     ----------
     graph:
         TopologyGraph (Rust PyO3 or compatible stub). Must have
-        ``node_count()``, ``get_node(idx)``, ``get_edges()``.
+        ``node_count()``, ``get_node(idx)``.
     executor:
         TopologyExecutor (Rust PyO3 or compatible stub). Must have
         ``next_ready(graph)``, ``mark_completed(idx)``, ``is_done()``.
@@ -201,61 +204,53 @@ class TopologyRunner:
         self.executor = executor
         self._llm = llm_provider
         self._config = llm_config
+        # Execution-order context: stores output per completed node index
         self._node_outputs: dict[int, str] = {}
-        self._predecessors = self._build_predecessor_map()
 
-    def _build_predecessor_map(self) -> dict[int, list[tuple[int, int]]]:
-        """Build map: node_idx -> [(source_idx, edge_type), ...]."""
-        preds: dict[int, list[tuple[int, int]]] = {}
-        for src, dst, edge_type in self.graph.get_edges():
-            preds.setdefault(dst, []).append((src, edge_type))
-        return preds
+    def _gather_completed_context(self) -> str:
+        """Collect outputs from ALL previously completed nodes.
 
-    def _gather_predecessor_outputs(self, node_idx: int) -> str:
-        """Collect outputs from predecessor nodes (Message-flow edges).
-
-        Returns formatted context string from predecessor outputs.
-        Control edges determine execution order (handled by executor).
-        Message edges carry actual content between nodes.
-        State edges share mutable state (future use).
+        Uses execution-order tracking instead of edge-level queries
+        (TopologyGraph does not expose get_edges() to Python).
+        TopologyExecutor already ensures correct readiness ordering,
+        so all completed nodes are valid predecessors.
         """
         context_parts: list[str] = []
-        for src_idx, edge_type in self._predecessors.get(node_idx, []):
-            if edge_type in (EDGE_CONTROL, EDGE_MESSAGE):
-                output = self._node_outputs.get(src_idx)
-                if output:
-                    src_node = self.graph.get_node(src_idx)
-                    role = getattr(src_node, "role", f"node-{src_idx}")
-                    context_parts.append(f"[{role}]: {output}")
+        for idx in sorted(self._node_outputs.keys()):
+            output = self._node_outputs[idx]
+            if output:
+                node = self.graph.get_node(idx)
+                role = getattr(node, "role", f"node-{idx}")
+                context_parts.append(f"[{role}]: {output}")
         return "\n\n".join(context_parts)
 
     async def _execute_node(self, node_idx: int, task: str) -> str:
         """Execute a single topology node as an LLM call.
 
         Builds messages with:
-        1. System prompt from node role + capabilities
-        2. Predecessor outputs as context (if any)
+        1. System prompt from node role + required_capabilities
+        2. All completed predecessor outputs as context
         3. Original task as user message
         """
         node = self.graph.get_node(node_idx)
         role = getattr(node, "role", f"node-{node_idx}")
-        capabilities = getattr(node, "capabilities", "")
+        caps = getattr(node, "required_capabilities", [])
 
         # Build system prompt from node metadata
         system_prompt = f"You are acting as: {role}."
-        if capabilities:
-            system_prompt += f" Your capabilities: {capabilities}."
+        if caps:
+            system_prompt += f" Your capabilities: {', '.join(caps)}."
 
         messages: list[Message] = [
             Message(role=Role.SYSTEM, content=system_prompt),
         ]
 
-        # Inject predecessor outputs as context
-        predecessor_context = self._gather_predecessor_outputs(node_idx)
-        if predecessor_context:
+        # Inject all completed predecessor outputs as context
+        context = self._gather_completed_context()
+        if context:
             messages.append(Message(
                 role=Role.SYSTEM,
-                content=f"Context from previous agents:\n{predecessor_context}",
+                content=f"Context from previous agents:\n{context}",
             ))
 
         messages.append(Message(role=Role.USER, content=task))
@@ -276,7 +271,7 @@ class TopologyRunner:
         """Execute the full topology, returning the final node's output.
 
         Uses TopologyExecutor for readiness-based scheduling:
-        - Get batch of ready nodes → execute concurrently → mark completed → repeat
+        - Get batch of ready nodes → execute (gather if multiple) → mark completed → repeat
         - Returns output of the last completed node (typically the aggregator/final node)
         """
         last_output = ""
@@ -292,9 +287,8 @@ class TopologyRunner:
                 self.executor.mark_completed(ready[0])
             else:
                 # Multiple nodes ready — execute concurrently
-                import asyncio
-                tasks = [self._execute_node(idx, task) for idx in ready]
-                results = await asyncio.gather(*tasks)
+                coros = [self._execute_node(idx, task) for idx in ready]
+                results = await asyncio.gather(*coros)
                 for idx, output in zip(ready, results):
                     self.executor.mark_completed(idx)
                     last_output = output
@@ -929,34 +923,30 @@ class FakePRM:
         return 0.8, "ok"
 
 
-def test_s3_degrades_to_s2_after_failed_repair():
-    """When S3 PRM fails and CEGAR repair fails → degrade to S2, not accept."""
+def test_s3_cegar_repair_returns_none_when_prm_fails():
+    """CEGAR repair with always-failing PRM returns None (triggers S2 degradation)."""
     config = FakeConfig()
     mock_llm = AsyncMock()
-    # Response 1-3: initial + 2 S3 retries (all without <think> tags)
-    # Response 4: CEGAR repair attempt (still fails)
-    # Response 5: S2 fallback (no PRM validation)
     mock_llm.generate = AsyncMock(
-        side_effect=[
-            MagicMock(content="answer without think tags", usage={}, tool_calls=[]),
-            MagicMock(content="still no think tags", usage={}, tool_calls=[]),
-            MagicMock(content="still no think tags v2", usage={}, tool_calls=[]),
-            MagicMock(content="repair attempt also fails", usage={}, tool_calls=[]),
-            MagicMock(content="final S2 answer", usage={}, tool_calls=[]),
-        ]
+        return_value=MagicMock(
+            content="repaired but still no valid assertions",
+            usage={},
+        )
     )
 
     loop = AgentLoop(config=config, llm_provider=mock_llm)
     loop.prm = FakePRM(fail_count=999)  # Always fails
 
-    # Don't test full run (too complex) — test the specific method
-    # Instead, verify that the code path exists
-    assert hasattr(loop, '_cegar_repair') or True  # Will exist after implementation
+    result = asyncio.get_event_loop().run_until_complete(
+        loop._cegar_repair("bad content", "error: no assertions", ["clause X failed"])
+    )
+
+    assert result is None  # Repair failed — should return None
+    assert mock_llm.generate.call_count == 1  # Tried one repair call
 
 
-def test_s3_cegar_repair_succeeds():
-    """CEGAR repair produces valid content → use repaired result."""
-    # This tests that _cegar_repair exists and works
+def test_s3_cegar_repair_succeeds_when_prm_passes():
+    """CEGAR repair with passing PRM returns repaired content."""
     config = FakeConfig()
     mock_llm = AsyncMock()
     mock_llm.generate = AsyncMock(
@@ -967,15 +957,28 @@ def test_s3_cegar_repair_succeeds():
     )
 
     loop = AgentLoop(config=config, llm_provider=mock_llm)
-    prm = FakePRM(fail_count=0)  # Succeeds on second call (after repair)
-    loop.prm = prm
+    loop.prm = FakePRM(fail_count=0)  # Passes immediately (fail_count=0 means no failures)
 
-    # Test _cegar_repair method directly
     result = asyncio.get_event_loop().run_until_complete(
         loop._cegar_repair("bad content", "error: no assertions", [])
     )
-    # Should have called LLM and returned repaired content
-    assert result is not None or result is None  # Just verify method exists
+
+    assert result is not None
+    assert "<think>" in result
+    assert mock_llm.generate.call_count == 1
+
+
+def test_s3_degraded_flag_prevents_re_escalation():
+    """Once S3 degrades to S2, the _s3_degraded flag prevents ping-pong back to S3."""
+    config = FakeConfig()
+    config.validation_level = 3
+    mock_llm = AsyncMock()
+
+    loop = AgentLoop(config=config, llm_provider=mock_llm)
+
+    # Verify the flag exists and defaults to False
+    assert hasattr(loop, '_s3_degraded')
+    assert loop._s3_degraded is False
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -1088,6 +1091,7 @@ Modify `sage-python/src/sage/agent_loop.py`:
                             reason="CEGAR repair failed",
                         )
                         self.config.validation_level = 2
+                        self._s3_degraded = True  # Prevent S2→S3 re-escalation
                         self._s3_retries = 0
                         self._s2_avr_retries = 0
                         continue  # Re-enter loop with S2 validation
@@ -1123,79 +1127,106 @@ Fixes audit finding 3: S3 was soft gating, now hard with repair."
 
 ---
 
-### Task 7: Fix Dead Code
+### Task 7: Fix Dead Code (must complete before Task 4-5)
 
 **Files:**
-- Modify: `sage-python/src/sage/agent_loop.py:216-217` (set `_last_avr_iterations`)
+- Modify: `sage-python/src/sage/agent_loop.py:216-218` (add `_last_avr_iterations`, `_last_error`, `_s3_degraded`)
 - Modify: `sage-python/src/sage/strategy/adaptive_router.py` (remove Stage 3 placeholder)
 
 **Context:**
 - `agent_loop.py:216`: `self._s2_avr_retries = 0` — tracked but never exposed as `_last_avr_iterations`
+- `boot.py:384`: `had_errors=bool(getattr(self.agent_loop, '_last_error', None))` — reads attribute that's never set, always gets None (False)
 - `boot.py:385`: `avr_iterations=getattr(self.agent_loop, '_last_avr_iterations', 0)` — reads attribute that's never set, always gets 0
-- `QualityEstimator.estimate()` Signal 5: `if avr_iterations > 0` — never fires
+- `QualityEstimator.estimate()` Signal 4: `if not had_errors` — always True (dead)
+- `QualityEstimator.estimate()` Signal 5: `if avr_iterations > 0` — never fires (dead)
 - `adaptive_router.py`: Stage 3 "Reserved for cascade/online learning" comment with no implementation
+- `_s3_degraded` flag needed by Task 6 to prevent S2→S3 ping-pong
 
-- [ ] **Step 1: Write test for _last_avr_iterations**
+**NOTE**: This task must complete BEFORE Tasks 4-5 (quality cascade) because QualityEstimator Signals 4+5 depend on these attributes being set. Without this fix, the cascade uses only 3 of 5 signals.
+
+- [ ] **Step 1: Write test for dead code attributes**
 
 Add to `sage-python/tests/test_s3_hard_gate.py`:
 
 ```python
-def test_avr_iterations_exposed():
-    """After AVR loop, _last_avr_iterations is set for QualityEstimator Signal 5."""
+def test_dead_code_attributes_initialized():
+    """Verify _last_avr_iterations, _last_error, _s3_degraded exist after init."""
     config = FakeConfig()
-    config.validation_level = 2  # S2
+    config.validation_level = 2
     mock_llm = AsyncMock()
     loop = AgentLoop(config=config, llm_provider=mock_llm)
 
-    # Simulate AVR loop completing
-    loop._s2_avr_retries = 3
-
-    # The attribute should be readable (will be set at end of run)
-    # For now, verify the attribute path exists after initialization
-    assert not hasattr(loop, '_last_avr_iterations') or True  # Will exist after fix
+    # These must exist as instance attributes (not just getattr fallbacks)
+    assert hasattr(loop, '_last_avr_iterations')
+    assert loop._last_avr_iterations == 0
+    assert hasattr(loop, '_last_error')
+    assert loop._last_error is None
+    assert hasattr(loop, '_s3_degraded')
+    assert loop._s3_degraded is False
 ```
 
-- [ ] **Step 2: Fix `_last_avr_iterations`**
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `cd sage-python && python -m pytest tests/test_s3_hard_gate.py::test_dead_code_attributes_initialized -v`
+Expected: FAIL (attributes don't exist yet)
+
+- [ ] **Step 3: Fix dead code attributes**
 
 In `sage-python/src/sage/agent_loop.py`:
 
 1. Add to `__init__` (after line 218 `self._avr_error_history: list[str] = []`):
 ```python
         self._last_avr_iterations: int = 0
+        self._last_error: Exception | None = None
+        self._s3_degraded: bool = False
 ```
 
-2. At the end of the `run()` method (before the LEARN phase return), add:
+2. At the end of the `run()` method (before the final return around line 750+), add:
 ```python
-        # Expose AVR iteration count for QualityEstimator Signal 5
+        # Expose state for QualityEstimator signals
         self._last_avr_iterations = self._s2_avr_retries
 ```
 
-This goes just before the final return in `run()` — find the line where `result_text` is about to be returned (around line 750+) and add the setter there.
+3. In the `run()` method, at each `except Exception as e:` block that handles LLM/sandbox errors, add:
+```python
+        self._last_error = e
+```
+And on successful completion paths:
+```python
+        self._last_error = None
+```
 
-- [ ] **Step 3: Remove Stage 3 placeholder from AdaptiveRouter**
+4. In the S2→S3 escalation block (line 678), add guard:
+```python
+                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
+```
 
-In `sage-python/src/sage/strategy/adaptive_router.py`, find the "Reserved for cascade/online learning" comment and update the docstring to remove the false claim of a Stage 3:
+- [ ] **Step 4: Remove Stage 3 placeholder from AdaptiveRouter**
+
+In `sage-python/src/sage/strategy/adaptive_router.py`, find the "Reserved for cascade/online learning" comment and update the docstring:
 
 ```python
 # Find the Stage 3 placeholder comment and replace with:
 # Stage 3+ reserved for future online learning (not yet implemented)
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 5: Run tests**
 
 Run: `cd sage-python && python -m pytest tests/ -v -x --timeout=30 -k "not benchmark and not e2e and not eval_protocol"`
 Expected: ALL PASS
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd sage-python
 git add src/sage/agent_loop.py src/sage/strategy/adaptive_router.py
-git commit -m "fix: dead code cleanup — _last_avr_iterations now set, Stage 3 placeholder removed
+git commit -m "fix: dead code — _last_avr_iterations, _last_error now set, _s3_degraded flag, Stage 3 removed
 
-- Set _last_avr_iterations after AVR loop so QualityEstimator Signal 5 fires
+- Set _last_avr_iterations after AVR loop (QualityEstimator Signal 5)
+- Set _last_error on exception paths (QualityEstimator Signal 4)
+- Add _s3_degraded flag to prevent S2↔S3 ping-pong escalation
 - Remove misleading Stage 3 'Reserved' placeholder from AdaptiveRouter
-- Both items confirmed dead code by independent audit"
+- All confirmed dead code by independent audit + plan review"
 ```
 
 ---
@@ -1314,15 +1345,27 @@ git commit -m "test: Phase 0 integration tests — quality cascade, Signal 5, To
 
 ---
 
+## Execution Order
+
+**Critical dependency**: Task 7 (dead code) must complete BEFORE Tasks 4-5 (quality cascade), because QualityEstimator Signals 4+5 depend on `_last_error` and `_last_avr_iterations` being set.
+
+Recommended order: **7 → 1 → 2 → 3 → 4 → 5 → 6 → 8**
+
 ## Summary
 
 | Task | Audit Finding | What Changes | LOC (est) |
 |------|--------------|--------------|-----------|
+| 7 | Dead code | `_last_avr_iterations`, `_last_error`, `_s3_degraded`, Stage 3 | ~15 modified |
 | 1-3 | Topology = prompt hint | New `TopologyRunner`, wire into `AgentLoop` | ~200 new + ~20 modified |
 | 4-5 | FrugalGPT = exception retry | Quality-gated cascade in `ModelAgent` | ~30 modified |
 | 6 | S3 = accept anyway | CEGAR repair + S2 degradation | ~60 modified |
-| 7 | Dead code | `_last_avr_iterations` setter, Stage 3 cleanup | ~5 modified |
 | 8 | Integration | Verify all fixes work together | ~80 new (tests) |
-| **Total** | | | ~375 LOC |
+| **Total** | | | ~400 LOC |
 
 All changes are backward-compatible. No new dependencies. No breaking changes.
+
+## Known Limitations (to address post-Phase 0)
+
+1. **TopologyRunner uses execution-order context** (all predecessor outputs) instead of edge-level filtering. Requires new PyO3 `get_edges()` method on TopologyGraph for precise Message-flow routing. Functional but slightly over-inclusive.
+2. **TopologyRunner bypass may skip cost tracking** — the early return path in `_run_topology()` must ensure `total_cost_usd` and LEARN phase still execute. Implementation must handle this.
+3. **QualityEstimator in ModelAgent uses 4 of 5 signals** — `avr_iterations` is an AgentLoop concept, not available in ModelAgent context. This is acceptable; the 4 active signals provide sufficient quality discrimination.
