@@ -51,13 +51,21 @@ def create_routers():
     # Try Rust router (SystemRouter)
     try:
         from sage_core import SystemRouter, ModelRegistry
-        registry = ModelRegistry()
-        # Load models from TOML if available
-        models_toml = Path(__file__).parent.parent / "config" / "models.toml"
-        if models_toml.exists():
-            registry = ModelRegistry.from_toml(str(models_toml))
+        # cards.toml has full [[models]] entries for Rust ModelRegistry
+        cards_toml = None
+        for candidate in [
+            Path(__file__).parent.parent.parent / "sage-core" / "config" / "cards.toml",
+            Path(__file__).parent.parent / "config" / "cards.toml",
+            Path.home() / ".sage" / "cards.toml",
+        ]:
+            if candidate.exists():
+                cards_toml = str(candidate)
+                break
+        if not cards_toml:
+            raise FileNotFoundError("cards.toml not found in any search path")
+        registry = ModelRegistry.from_toml_file(cards_toml)
         rust_router = SystemRouter(registry)
-        log.info("Rust SystemRouter: available")
+        log.info("Rust SystemRouter: available (%s)", cards_toml)
     except ImportError:
         log.warning("sage_core not installed — Rust router unavailable")
     except Exception as e:
