@@ -219,7 +219,7 @@ python scripts/run_topologybench.py --tasks 164 --resume data/topologybench_resu
 ```
 
 ### ONNX Models (sage-python/models/)
-- `quality_estimator.onnx` — DistilBERT QualityEstimator (0.9 MB, opset 18). Inputs: input_ids + attention_mask. Output: quality_score [0,1]
+- `quality_estimator.onnx` — DistilBERT QualityEstimator (0.9 MB, opset 18). 600 training triples, r=0.3436 Pearson. Inputs: input_ids + attention_mask. Output: quality_score [0,1]
 - `tokenizer.json` — HuggingFace tokenizer for quality_estimator (distilbert-base-uncased)
 - `checkpoints/epoch_{1..5}.pt` — PyTorch training checkpoints
 
@@ -360,9 +360,11 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | **Routing GT Python AdaptiveRouter (50)** | 44% (22/50) | Structural features only, S1-biased (S3:0%) |
 | Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
 | **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
-| **DistilBERT QualityEstimator** | **SHIP** (+4.5pp Pearson) | 258 triples, r=0.0445 vs heuristic r=0.0. ONNX 0.9MB |
+| **DistilBERT QualityEstimator** | **Strong SHIP** (+34.4pp Pearson) | 600 triples, r=0.3436 vs heuristic r=0.0. ONNX 0.9MB |
 | **TopologyBench sequential (164)** | **92.7%** (152/164) | Full HumanEval+ run. 12 errors. Avg 12.4s/task |
-| TopologyBench parallel (164) | IN PROGRESS | Running, ~10s/task avg |
+| **TopologyBench parallel (164)** | **93.9%** (154/164) | Full HumanEval+ run. 10 errors. Avg 13.8s/task |
+| **TopologyBench AVR (164)** | **92.1%** (151/164) | Full HumanEval+ run. 13 errors. Avg 12.3s/task |
+| TopologyBench (remaining) | IN PROGRESS | selfmoa, hierarchical, hub, debate, brainstorming, evolved |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
