@@ -115,11 +115,16 @@ information about the repository. Your task is to write a patch (unified diff \
 format) that resolves the issue.
 
 Rules:
-- Output ONLY the patch in unified diff format (starting with --- and +++).
+- Output ONLY the patch in unified diff format.
+- Start each file change with `diff --git a/<path> b/<path>` followed by \
+`--- a/<path>` and `+++ b/<path>` lines.
+- Include correct `@@ -start,count +start,count @@` hunk headers.
+- Use the EXACT file paths from the repository (e.g., `astropy/io/ascii/qdp.py`).
+- Context lines (unchanged lines) must match the actual source EXACTLY.
 - The patch must apply cleanly with `git apply`.
 - Do NOT include any explanation, markdown fencing, or commentary.
 - Focus on the minimal change needed to fix the issue.
-- Preserve existing code style and conventions."""
+- End with a newline character."""
 
 _TASK_TEMPLATE = """\
 Repository: {repo}
@@ -157,15 +162,20 @@ def _extract_patch(response: str) -> str:
     - Raw diff (starts with diff --git or ---)
     - Markdown code blocks (```diff ... ```)
     - Mixed text with embedded diff
+
+    Always normalizes to Unix line endings and ensures trailing newline
+    (required by `git apply` in Linux Docker containers).
     """
     if not response:
         return ""
 
+    # Normalize line endings (Windows -> Unix) before processing
+    response = response.replace("\r\n", "\n").replace("\r", "\n")
     response = response.strip()
 
     # Case 1: Already a clean diff
     if response.startswith("diff --git") or response.startswith("---"):
-        return response
+        return response + "\n" if not response.endswith("\n") else response
 
     # Case 2: Markdown code block
     for marker in ["```diff", "```patch", "```"]:
@@ -176,7 +186,7 @@ def _extract_patch(response: str) -> str:
             if end > start:
                 candidate = response[start:end].strip()
                 if candidate and ("---" in candidate or "diff --git" in candidate):
-                    return candidate
+                    return candidate + "\n" if not candidate.endswith("\n") else candidate
 
     # Case 3: Find diff content anywhere in the response
     lines = response.split("\n")
@@ -194,10 +204,13 @@ def _extract_patch(response: str) -> str:
             break
 
     if diff_lines:
-        return "\n".join(diff_lines).strip()
+        patch = "\n".join(diff_lines).strip()
+        # Ensure trailing newline (required by git apply)
+        return patch + "\n" if not patch.endswith("\n") else patch
 
     # Fallback: return the entire response (swebench will reject if not a valid diff)
-    return response
+    # Ensure trailing newline
+    return response + "\n" if response and not response.endswith("\n") else response
 
 
 # ---------------------------------------------------------------------------
@@ -410,7 +423,7 @@ class SWEBenchBench:
         predictions_path: str | Path,
         dataset_name: str | None = None,
     ) -> dict[str, Any]:
-        """Run official swebench Docker evaluation.
+        """Run official swebench Docker evaluation (swebench >= 4.1.0).
 
         This builds Docker images for each repo/version, applies the patch,
         runs the test suite, and grades results.
@@ -422,15 +435,24 @@ class SWEBenchBench:
             resolved_rate: float
         """
         try:
-            from swebench.harness.run_evaluation import run_instances, get_dataset_from_preds
+            from swebench.harness.run_evaluation import (
+                run_instances,
+                get_dataset_from_preds,
+                build_env_images,
+                clean_images,
+                list_images,
+                load_swebench_dataset as swe_load_dataset,
+            )
             from swebench.harness.utils import get_predictions_from_file
-            from swebench.harness.reporting import make_run_report
+            from swebench.harness.run_evaluation import make_run_report
         except ImportError as e:
             return {
                 "error": f"swebench harness not available: {e}",
                 "resolved_ids": [],
                 "resolved_rate": 0.0,
             }
+
+        import docker
 
         predictions_path = str(predictions_path)
         hf_name = dataset_name or _DATASET_MAP[self.dataset]
@@ -441,8 +463,8 @@ class SWEBenchBench:
         )
         predictions_dict = {p[_KEY_INSTANCE_ID]: p for p in predictions}
 
-        # Get dataset instances that have predictions
-        dataset, remaining = get_dataset_from_preds(
+        # Get filtered dataset (excludes completed instances)
+        dataset = get_dataset_from_preds(
             dataset_name=hf_name,
             split="test",
             instance_ids=list(predictions_dict.keys()),
@@ -451,25 +473,41 @@ class SWEBenchBench:
             rewrite_reports=False,
         )
 
-        if not remaining:
-            log.info("All instances already evaluated (or no predictions)")
-        else:
-            log.info(
-                "Evaluating %d instances (%d already done)",
-                len(remaining), len(dataset) - len(remaining),
-            )
+        # Load full dataset for final report
+        full_dataset = swe_load_dataset(
+            hf_name, "test", list(predictions_dict.keys())
+        )
 
-        if remaining:
-            # Build images and run evaluation
-            print(f"\n  Building Docker images and evaluating {len(remaining)} instances...")
+        client = docker.from_env()
+
+        if not dataset:
+            log.info("No instances to run (all completed or no valid predictions)")
+        else:
+            log.info("Evaluating %d instances", len(dataset))
+
+            print(f"\n  Building Docker images and evaluating {len(dataset)} instances...")
             print(f"  Run ID: {self.run_id}")
             print(f"  Timeout per instance: {self.eval_timeout}s")
             print(f"  Max workers: {self.max_workers}")
             print()
 
+            existing_images = list_images(client)
+
+            # Build environment images first
+            build_env_images(
+                client,
+                dataset,
+                False,  # force_rebuild
+                self.max_workers,
+                None,  # namespace
+                "latest",  # instance_image_tag
+                "latest",  # env_image_tag
+            )
+
+            # Run evaluation
             run_instances(
                 predictions=predictions_dict,
-                instances=remaining,
+                instances=dataset,
                 cache_level="env",
                 clean=False,
                 force_rebuild=False,
@@ -478,12 +516,13 @@ class SWEBenchBench:
                 timeout=self.eval_timeout,
             )
 
+            # Clean up build-only images
+            clean_images(client, existing_images, "env", False)
+
         # Generate final report
-        import docker
-        client = docker.from_env()
         report_path = make_run_report(
             predictions=predictions_dict,
-            full_dataset=dataset,
+            full_dataset=full_dataset,
             run_id=self.run_id,
             client=client,
         )

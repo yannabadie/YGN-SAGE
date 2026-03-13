@@ -149,6 +149,10 @@ python -m sage.bench --type routing_gt                              # Non-circul
 python -m sage.bench --type memory_ablation                         # Memory tier ablation (4 configs)
 python -m sage.bench --type evolution_ablation                      # Evolution search ablation (3 configs)
 
+# SWE-Bench (requires Docker Desktop with Linux containers)
+python -m sage.bench --type swebench --dataset lite --generate-only --limit 20  # Generate only
+python -m sage.bench --type swebench --dataset lite --limit 20                  # Full Docker eval
+
 # Legacy benchmarks
 python -m sage.bench --type routing                    # Routing accuracy (instant, no API key)
 python -m sage.bench --type humaneval --limit 20       # Original HumanEval (custom tests)
@@ -379,6 +383,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | **TopologyBench HumanEval+ pilot (20)** | **90-100%** spread | 4 topologies, disjoint failures (Jaccard=0.00) |
 | **TopologyBench GSM8K (50)** | 96-98% all topologies | NULL: model ceiling. Cohen's d<0.12 |
 | **Evolution proof (5 runs x 10)** | **-10pp** (88% vs 98%) | NEGATIVE: evo hurts on budget model. Cohen d=-1.41 |
+| **SWE-Bench Lite (20, one-shot)** | **0/20 resolved (0.0%)** | NEGATIVE: one-shot without code access. 1/20 applied (broke tests). Pipeline validated |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 

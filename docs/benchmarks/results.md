@@ -186,6 +186,43 @@ The DistilBERT quality estimator replaces the `len > 10` heuristic with a 5-sign
 
 ---
 
+## SWE-Bench Lite (Honest Negative Result)
+
+20-instance pilot run. One-shot patch generation without code access, evaluated via official Docker harness.
+
+| Metric | Value |
+|--------|-------|
+| **Resolved** | **0/20 (0.0%)** |
+| Patches generated | 20/20 (100%) |
+| Patches applied | 1/20 (5%) |
+| Patch apply errors | 19/20 (95%) |
+| Generation time | 140s (7.0s/instance) |
+| Evaluation time | 18 min (Docker) |
+| Model | Gemini 2.5 Flash (budget) |
+
+### Failure Analysis
+
+| Failure Mode | Count | Example |
+|-------------|-------|---------|
+| Wrong file path | 6 | `django/db/models/fields.py` (should be `fields/__init__.py`) |
+| Wrong context lines | 10 | Correct file, wrong line numbers |
+| Malformed patch | 3 | Incomplete/broken hunk format |
+| Applied but wrong fix | 1 | `astropy-7746`: patch applied, broke other tests |
+
+!!! warning "Expected negative result"
+    One-shot patch generation without repository access is a known-hard setting. Successful SWE-Bench systems (SWE-agent: 40%, OpenSage: 59%) use **tool-calling agents** that can browse, search, and edit code. SAGE's one-shot approach generates patches from the issue description alone, leading to hallucinated file paths and incorrect context lines.
+
+!!! success "Pipeline validated"
+    The full SWE-Bench pipeline works end-to-end: dataset loading -> patch generation -> JSONL export -> Docker image build -> test execution -> grading. The bottleneck is patch quality, not infrastructure.
+
+### Next Steps
+
+- Implement tool-using mode: give the agent `read_file`, `search_code`, `edit_file` tools
+- Use AgentTool composition to chain exploration -> patch generation -> self-test
+- Target: SWE-Bench Verified (500 instances) with tool-using agent
+
+---
+
 ## Legacy Benchmarks
 
 | Benchmark | Score | Notes |
@@ -243,6 +280,21 @@ python -m sage.bench --type ablation --limit 20
 ```bash
 cd sage-python
 python -m sage.bench --type routing_gt
+```
+
+### SWE-Bench
+
+```bash
+cd sage-python
+
+# Generate patches only (no Docker needed)
+python -m sage.bench --type swebench --dataset lite --generate-only --limit 20
+
+# Full pipeline (requires Docker Desktop with Linux containers)
+python -m sage.bench --type swebench --dataset lite --limit 20
+
+# Evaluate pre-generated predictions
+python -m sage.bench --type swebench --eval-predictions data/swebench_lite_20_predictions.jsonl --dataset lite
 ```
 
 ### Official Evaluation Protocol

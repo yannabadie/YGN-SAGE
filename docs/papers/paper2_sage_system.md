@@ -14,7 +14,7 @@ Agent development kits face a fundamental tension: adding capabilities (memory, 
 2. **Ablation study** proving each pillar's contribution: +15pp total (AVR +10pp, memory +10pp, routing +5pp, guardrails +5pp)
 3. **kNN routing** achieving 92% accuracy on cognitive system classification (+40pp over heuristic)
 4. **Topology evaluation**: 4-topology HumanEval+ benchmark with multi-run variance analysis
-5. **Honest negative results**: evolution -10pp on simple tasks, GSM8K topology null result
+5. **Honest negative results**: evolution -10pp on simple tasks, GSM8K topology null result, SWE-Bench 0% without code access
 
 ## 2. Architecture
 
@@ -147,6 +147,19 @@ DistilBERT QualityEstimator trained on 600 quality triples:
 
 Replaces the `len > 10` heuristic with a 5-signal learned scorer (non-empty, length adequacy, code presence, error absence, AVR convergence).
 
+### 3.8 SWE-Bench Lite: Honest Negative Result
+
+20-instance pilot (one-shot patch generation, budget Gemini 2.5 Flash):
+
+| Metric | Value |
+|--------|-------|
+| Resolved | **0/20 (0.0%)** |
+| Patches generated | 20/20 (100%) |
+| Patches applied | 1/20 (5%) |
+| Generation time | 7.0s/instance |
+
+The one-shot approach (issue description -> unified diff, no code access) fails because the LLM hallucinates file paths (6/20), generates incorrect context lines (10/20), or produces malformed patches (3/20). The one instance where the patch applied correctly (`astropy-7746`) broke other tests. Successful SWE-Bench systems use tool-calling agents with code browsing capabilities. The pipeline infrastructure (Docker harness integration, swebench 4.1.0) is validated.
+
 ## 4. System Design Decisions
 
 Key architectural decisions and their rationale:
@@ -163,7 +176,7 @@ Key architectural decisions and their rationale:
 - **kNN ground truth** (50 tasks): LOO-CV gap (80% vs 92%) suggests moderate overfitting. Needs expansion.
 - **Evolution negative result**: Only tested on simple tasks with budget model. Multi-model heterogeneous scenarios untested.
 - **Single model family**: All benchmarks use Gemini 2.5 Flash/Flash-Lite. Cross-model generalization unknown.
-- **SWE-Bench**: Adapter created but not yet run (requires Docker Desktop).
+- **SWE-Bench**: One-shot approach yields 0% resolved. Tool-using agent mode needed for competitive results.
 
 ## 6. Reproducibility
 
