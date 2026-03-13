@@ -183,8 +183,17 @@ class AgentSystem:
         self._last_decision = decision  # Store for telemetry in _record_topology_outcome
 
         # 2. Topology generation (Rust engine, 5-path strategy)
+        #    If _current_topology is already set (externally forced by benchmark
+        #    scripts or TopologyBench), skip generation to preserve the forced topology.
         topology_result = None
-        if self.topology_engine:
+        _externally_forced = self.agent_loop._current_topology
+        if _externally_forced:
+            _log.info(
+                "Topology externally forced (%d nodes, template=%s), skipping generation",
+                _externally_forced.node_count(),
+                getattr(_externally_forced, 'template_type', 'unknown'),
+            )
+        elif self.topology_engine:
             try:
                 exploration_budget = 0.3 if system_num <= 2 else 0.5
                 topology_result = self.topology_engine.generate(
@@ -322,7 +331,28 @@ class AgentSystem:
             self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
             return result
 
-        # 4. Try CognitiveOrchestrator as primary path (multi-provider)
+        # 4a. Multi-node topology: use AgentLoop → TopologyRunner (direct LLM)
+        #     The CognitiveOrchestrator ignores topologies and creates its own
+        #     ModelAgents with quality cascades. When a multi-node topology is
+        #     active, we MUST bypass the orchestrator so TopologyRunner executes
+        #     the actual topology graph with per-node LLM calls.
+        if self.agent_loop._current_topology:
+            _node_count = 0
+            try:
+                _node_count = self.agent_loop._current_topology.node_count()
+            except Exception:
+                pass
+            if _node_count > 1:
+                _log.info(
+                    "Multi-node topology (%d nodes): bypassing orchestrator -> TopologyRunner",
+                    _node_count,
+                )
+                result = await self.agent_loop.run(task)
+                await self._persist_memory()
+                self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
+                return result
+
+        # 4b. Try CognitiveOrchestrator as primary path (multi-provider)
         if self.orchestrator and self.registry and self.registry.list_available():
             try:
                 # Construct authoritative ExecutionDecision from routing result

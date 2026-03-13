@@ -65,3 +65,5 @@ sage-python/src/sage/tools/generated_tools/
 
 # Worktrees
 .worktrees/
+site/
+certs/

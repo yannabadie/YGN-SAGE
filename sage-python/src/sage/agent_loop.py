@@ -282,7 +282,7 @@ class AgentLoop:
         if not self._current_topology:
             return []
         try:
-            from sage_core import PyTopologyExecutor  # noqa: E402
+            from sage_core import TopologyExecutor as PyTopologyExecutor  # noqa: E402
             executor = PyTopologyExecutor(self._current_topology)
             schedule: list[dict] = []
             while not executor.is_done():
@@ -317,7 +317,7 @@ class AgentLoop:
 
         try:
             from sage.topology.runner import TopologyRunner
-            from sage_core import PyTopologyExecutor  # noqa: E402
+            from sage_core import TopologyExecutor as PyTopologyExecutor  # noqa: E402
             executor = PyTopologyExecutor(self._current_topology)
             runner = TopologyRunner(
                 graph=self._current_topology,

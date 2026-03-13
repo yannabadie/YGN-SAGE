@@ -32,20 +32,27 @@ class QualityEstimator:
 
         score = 0.3  # Signal 1: non-empty
 
-        # Signal 2: Length adequacy
+        # Signal 2: Length adequacy (task-aware)
         task_words = len(task.split())
         result_words = len(result.split())
-        if task_words < 10:
-            score += min(result_words / 20, 1.0) * 0.2
-        else:
-            score += min(result_words / 50, 1.0) * 0.2
-
-        # Signal 3: Code task + code presence
-        code_keywords = {"def ", "class ", "function ", "import ", "```"}
         task_wants_code = any(
             kw in task.lower()
             for kw in ("write", "code", "implement", "function", "class", "fix", "debug")
         )
+        if task_wants_code:
+            # Code tasks: expect substantial output
+            if task_words < 10:
+                score += min(result_words / 20, 1.0) * 0.2
+            else:
+                score += min(result_words / 50, 1.0) * 0.2
+        else:
+            # Non-code tasks (math, Q&A): length is not a quality proxy.
+            # A correct math answer ("42") or factual answer is valid at any length.
+            if result_words >= 1:
+                score += 0.2
+
+        # Signal 3: Code task + code presence
+        code_keywords = {"def ", "class ", "function ", "import ", "```"}
         result_has_code = any(kw in result for kw in code_keywords)
         if task_wants_code and result_has_code:
             score += 0.2
