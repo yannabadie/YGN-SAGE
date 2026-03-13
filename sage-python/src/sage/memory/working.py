@@ -51,6 +51,7 @@ if not _has_rust:
             self.agent_id = agent_id
             self.parent_id = parent_id
             self._events: list = []
+            self._children: list[str] = []
             self._counter = 0
 
         @classmethod
@@ -79,8 +80,16 @@ if not _has_rust:
         def event_count(self):
             return len(self._events)
 
-        def add_child_agent(self, cid): pass
-        def child_agents(self): return []
+        def add_child_agent(self, cid):
+            children = getattr(self, "_children", None)
+            if children is None:
+                children = []
+                self._children = children
+                self.child_agents = lambda: list(self._children)
+            children.append(cid)
+
+        def child_agents(self):
+            return list(self._children)
         def compress_old_events(self, k, s): self._events = self._events[-k:]
 
         def compact_to_arrow(self):

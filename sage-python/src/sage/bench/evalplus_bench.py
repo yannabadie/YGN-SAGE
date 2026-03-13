@@ -67,6 +67,7 @@ class EvalPlusBench:
         dataset: str = "humaneval",
         baseline_mode: bool = False,
         official_mode: bool = False,
+        task_timeout: float = 60.0,
     ):
         if dataset not in _DATASET_LOADERS:
             raise ValueError(
@@ -78,6 +79,7 @@ class EvalPlusBench:
         self.dataset = dataset
         self.baseline_mode = baseline_mode
         self.official_mode = official_mode
+        self.task_timeout = task_timeout
         self.manifest: BenchmarkManifest | None = None
 
     async def generate_solutions(
@@ -147,7 +149,7 @@ class EvalPlusBench:
                         self.system.agent_loop._llm.generate(
                             [Message(role=Role.USER, content=task_prompt)]
                         ),
-                        timeout=60.0,
+                        timeout=self.task_timeout,
                     )
                     response = (
                         llm_response.content
@@ -158,7 +160,7 @@ class EvalPlusBench:
                 else:
                     response = await asyncio.wait_for(
                         self.system.run(task_prompt),
-                        timeout=60.0,
+                        timeout=self.task_timeout,
                     )
                     system_used = (
                         getattr(
@@ -171,8 +173,8 @@ class EvalPlusBench:
 
             except asyncio.TimeoutError:
                 completion = ""
-                error = "generation_timeout_60s"
-                log.warning(f"[{task_id}] Generation timed out after 60s")
+                error = f"generation_timeout_{self.task_timeout:.0f}s"
+                log.warning(f"[{task_id}] Generation timed out after {self.task_timeout:.0f}s")
             except Exception as e:
                 completion = ""
                 error = str(e)[:200]

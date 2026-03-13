@@ -13,6 +13,7 @@ We present YGN-SAGE, an agent development kit built on five cognitive pillars: T
 | Ablation: full vs bare | **+15pp** (100% vs 85%) | Paired, same model, 20 tasks |
 | Routing GT (kNN) | **92%** (46/50) | vs 52% heuristic baseline |
 | Routing GT (SystemRouter) | **88%** (44/50) | Rust, domain-aware |
+| TopologyBench (20 tasks) | **90-100%** (4 topologies) | Disjoint failures, Jaccard=0.00 |
 
 ## Architecture
 
@@ -48,10 +49,36 @@ python -m sage.bench --type ablation --limit 20           # 6-config ablation
 python tests/e2e_proof.py                                  # 25/25 E2E tests
 ```
 
+## Topology Significance Results
+
+TopologyBench on HumanEval+ with real multi-agent execution (20-task pilot):
+
+| Topology | pass@1 | Failures |
+|----------|--------|----------|
+| debate | **100.0%** (20/20) | 0 |
+| sequential | 95.0% (19/20) | HumanEval/14 |
+| parallel | 95.0% (19/20) | HumanEval/10 |
+| brainstorming | 90.0% (18/20) | HumanEval/0, /9 |
+
+**Key finding**: Zero failure overlap (Jaccard=0.00) across all 6 topology pairs. Each topology has unique blind spots, suggesting topology-aware routing can exceed any single topology's performance.
+
+## Evolution Statistical Proof
+
+5-run paired experiment (10 HumanEval+ tasks per run, budget model):
+
+| Config | Mean pass@1 | Runs |
+|--------|-------------|------|
+| No-evolution | **98.0%** | [100%, 100%, 100%, 90%, 100%] |
+| Full (evo ON) | 88.0% | [90%, 90%, 90%, 90%, 80%] |
+
+**Honest negative result**: Evolution hurts (-10pp) on simple tasks with a budget model. Cohen's d = -1.41 (large negative), Bootstrap 95% CI: [-16pp, -4pp]. The TopologyEngine adds multi-node overhead that introduces failure points without benefit when the base system already achieves ~98%.
+
+**Interpretation**: Evolution is designed for multi-model heterogeneous routing across complex tasks. On simple HumanEval+ tasks with a single budget model, the simpler orchestrator path outperforms. This is consistent with the "model ceiling" finding — when base accuracy is high, added complexity hurts.
+
 ## Limitations
 
-- TopologyBench results pending re-validation (previous results invalidated due to execution path bug)
+- TopologyBench HumanEval+ pilot is N=20 tasks; full 164-task confirmation in progress
 - GSM8K topology significance: null result (model ceiling too high at 96%)
-- Evolution statistical proof: in progress (N=10 Wilcoxon)
+- Evolution: negative result on budget model — may perform differently with multi-model routing
 - SWE-Bench evaluation: adapter created, not yet run (requires Docker)
 - kNN routing ground truth: 50 tasks (small, needs expansion)

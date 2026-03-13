@@ -56,10 +56,37 @@ Tests topology significance on grade-school math reasoning. Direct TopologyRunne
 !!! warning "Null result"
     All pairwise comparisons are **not statistically significant** (Wilcoxon p > 0.3, Cohen's d < 0.12). The model ceiling is too high — Gemini 2.5 Flash solves 96%+ of GSM8K regardless of topology. The same 2 tasks (GSM8K/2, GSM8K/12) fail across ALL topologies, indicating LLM blind spots rather than topology deficiencies.
 
-### HumanEval+ (164 tasks) -- INVALIDATED
+### HumanEval+ (164 tasks, Real Topology Execution)
 
-!!! danger "Results invalidated"
-    Previous HumanEval+ TopologyBench results (9 topologies, mean 94.0%, spread 4.3pp) were **invalidated** on 2026-03-13. A critical bug in `boot.py` caused `CognitiveOrchestrator` to bypass topology execution entirely — topologies were set but never used. The observed 4.3pp spread was pure LLM stochasticity. Re-run with fixed execution path pending.
+After fixing the topology execution path in `boot.py`, we ran TopologyBench with real multi-agent topology execution. **First statistically significant topology result:**
+
+| Topology | pass@1 | Failures |
+|----------|--------|----------|
+| **debate** | **95.1%** (156/164) | 8 |
+| sequential | 90.8% (149/164) | 15 |
+
+| Statistical Test | Value | Significance |
+|-----------------|-------|--------------|
+| McNemar chi-squared | 5.14 | **p = 0.023 < 0.05** |
+| Discordant pairs | b=7, c=0 | Debate strictly dominates |
+| Failure overlap | Jaccard=0.533 | 8 shared, 7 debate-only recoveries |
+
+!!! success "Topology is statistically significant for code generation"
+    Debate **strictly dominates** sequential: every task sequential passes, debate also passes. Debate additionally recovers 7 tasks (HumanEval/83, 84, 94, 95, 96, 97, 130). The shared 8 failures are "hard" tasks requiring model capability improvements.
+
+### HumanEval+ (20-task Pilot)
+
+| Topology | pass@1 | Failures |
+|----------|--------|----------|
+| debate | **100.0%** (20/20) | — |
+| sequential | 95.0% (19/20) | HumanEval/14 |
+| parallel | 95.0% (19/20) | HumanEval/10 |
+| brainstorming | 90.0% (18/20) | HumanEval/0, HumanEval/9 |
+
+Zero failure overlap on the pilot (Jaccard=0.00) — each topology has unique blind spots.
+
+!!! warning "Previous results invalidated"
+    Earlier results (9 topologies, mean 94.0%) were **invalidated** — `CognitiveOrchestrator` bypassed topology execution entirely.
 
 ---
 
@@ -126,6 +153,28 @@ The Rust SystemRouter is well-calibrated against ground truth. The Python Adapti
 | Status | **Strong SHIP** |
 
 The DistilBERT quality estimator replaces the `len > 10` heuristic with a 5-signal learned scorer. The +34.4pp Pearson improvement on held-out data confirms meaningful signal extraction.
+
+---
+
+## Evolution Statistical Proof
+
+5-run paired experiment (10 HumanEval+ tasks per run, budget Gemini 2.5 Flash-Lite):
+
+| Config | Mean pass@1 | Per-run rates |
+|--------|-------------|---------------|
+| No-evolution (evo OFF) | **98.0%** | 100%, 100%, 100%, 90%, 100% |
+| Full system (evo ON) | 88.0% | 90%, 90%, 90%, 90%, 80% |
+
+| Statistic | Value |
+|-----------|-------|
+| Delta | **-10.0pp** |
+| Cohen's d | -1.41 (large negative) |
+| Bootstrap 95% CI | [-16pp, -4pp] |
+| Wilcoxon p (one-sided H1: full > no-evo) | 1.0 |
+| McNemar p | 0.1306 |
+
+!!! warning "Honest negative result"
+    Evolution **hurts** on simple HumanEval+ tasks with a budget model. The TopologyEngine generates multi-node topologies that introduce failure points without benefit when the base system already achieves ~98% accuracy. Evolution is designed for complex, multi-model routing scenarios — on single-model simple tasks, the overhead degrades performance.
 
 ---
 

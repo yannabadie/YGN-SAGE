@@ -107,8 +107,15 @@ class StatResult:
 # ---------------------------------------------------------------------------
 # Core: boot system with/without evolution
 # ---------------------------------------------------------------------------
-def _boot_system(evolution_enabled: bool):
-    """Boot an AgentSystem with evolution ON or OFF."""
+def _boot_system(evolution_enabled: bool, llm_tier: str = "fast"):
+    """Boot an AgentSystem with evolution ON or OFF.
+
+    Args:
+        evolution_enabled: Whether to keep TopologyEngine + ContextualBandit.
+        llm_tier: LLM tier to use. "fast" (default) forces Google Gemini,
+                  bypassing Codex CLI which has 120s timeout issues.
+                  Use "auto" to let boot.py auto-detect.
+    """
     # Ensure CWD is the repo root so boot.py finds sage-core/config/cards.toml.
     # boot.py searches Path.cwd() / "sage-core" / "config" / "cards.toml".
     _repo_root = Path(__file__).resolve().parent.parent.parent
@@ -116,7 +123,7 @@ def _boot_system(evolution_enabled: bool):
     os.chdir(_repo_root)
 
     from sage.boot import boot_agent_system
-    system = boot_agent_system(use_mock_llm=False, llm_tier="auto")
+    system = boot_agent_system(use_mock_llm=False, llm_tier=llm_tier)
 
     os.chdir(_prev_cwd)
 
@@ -155,6 +162,7 @@ async def _run_once(
     limit: int,
     run_id: int,
     seed: int,
+    llm_tier: str = "fast",
 ) -> RunResult:
     """Execute one full benchmark run and return results."""
     # Set seeds for reproducibility
@@ -169,14 +177,18 @@ async def _run_once(
     t0 = time.perf_counter()
 
     # Boot a fresh system for each run (clean state)
-    system = _boot_system(evolution_enabled)
+    system = _boot_system(evolution_enabled, llm_tier=llm_tier)
 
     # Use EvalPlus bench to generate + evaluate
+    # Use production-realistic timeout (60s). Evolution-ON tasks that exceed
+    # this are counted as failures — which is the honest measurement: if
+    # evolution makes tasks too slow to finish, that's a real negative.
     from sage.bench.evalplus_bench import EvalPlusBench
     bench = EvalPlusBench(
         system=system,
         event_bus=system.event_bus,
         dataset="humaneval",
+        task_timeout=60.0,
     )
 
     report = await bench.run(limit=limit)
@@ -550,6 +562,7 @@ async def _main(args: argparse.Namespace) -> None:
             limit=args.limit,
             run_id=run_id,
             seed=seed,
+            llm_tier=args.llm_tier,
         )
         full_runs.append(full_result)
 
@@ -560,6 +573,7 @@ async def _main(args: argparse.Namespace) -> None:
             limit=args.limit,
             run_id=run_id,
             seed=seed,
+            llm_tier=args.llm_tier,
         )
         no_evo_runs.append(no_evo_result)
 
@@ -639,6 +653,14 @@ def main() -> None:
     parser.add_argument(
         "--output-dir", type=str, default="data",
         help="Output directory for report JSON (default: data/)",
+    )
+    parser.add_argument(
+        "--llm-tier", type=str, default="fast",
+        help=(
+            "LLM tier for boot_agent_system. 'fast' (default) uses Google "
+            "Gemini (gemini-2.5-flash), bypassing Codex CLI 120s timeout. "
+            "'auto' lets boot.py auto-detect. 'budget' uses cheapest Google tier."
+        ),
     )
 
     args = parser.parse_args()
