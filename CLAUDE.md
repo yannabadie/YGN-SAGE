@@ -216,6 +216,19 @@ PYTHONPATH=C:\\torch_lib python scripts/train_quality_model.py --data data/quali
 
 # TopologyBench resume (after partial run)
 python scripts/run_topologybench.py --tasks 164 --resume data/topologybench_results.json  # Resume from partial
+
+# TopologyBench-Reasoning (GSM8K — math reasoning)
+python scripts/run_topologybench_reasoning.py --limit 50 --topologies sequential,debate,brainstorming,parallel
+python scripts/run_topologybench_reasoning.py --limit 50 --model gemini-2.5-flash-lite  # Budget model
+python scripts/run_topologybench_reasoning.py --dry-run                                  # Cost estimate
+
+# Evolution statistical proof (Wilcoxon + Cohen's d)
+python scripts/evolution_statistical_proof.py --runs 10 --limit 20         # Full proof
+python scripts/evolution_statistical_proof.py --runs 5 --limit 10 --seed 42  # Quick test
+
+# ExoCortex ingestion
+python scripts/exocortex_ingest.py --manifest scripts/missing_papers.json  # Batch ingest
+python scripts/exocortex_ingest.py --list                                  # List all docs
 ```
 
 ### ONNX Models (sage-python/models/)
@@ -361,16 +374,8 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
 | **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
 | **DistilBERT QualityEstimator** | **Strong SHIP** (+34.4pp Pearson) | 600 triples, r=0.3436 vs heuristic r=0.0. ONNX 0.9MB |
-| **TopologyBench evolved (164)** | **96.3%** (158/164) | Best topology. 6 errors. Avg 11.7s/task |
-| **TopologyBench brainstorming (164)** | **95.7%** (157/164) | 7 errors. Avg 12.0s/task |
-| **TopologyBench hub (164)** | **94.5%** (155/164) | 9 errors. Avg 12.0s/task |
-| **TopologyBench selfmoa (164)** | **94.5%** (155/164) | 9 errors. Avg 12.1s/task |
-| **TopologyBench hierarchical (164)** | **93.9%** (154/164) | 10 errors. Avg 12.4s/task |
-| **TopologyBench parallel (164)** | **93.9%** (154/164) | 10 errors. Avg 13.8s/task |
-| **TopologyBench sequential (164)** | **92.7%** (152/164) | 12 errors. Avg 12.4s/task |
-| **TopologyBench avr (164)** | **92.1%** (151/164) | 13 errors. Avg 12.3s/task |
-| **TopologyBench debate (164)** | **92.1%** (151/164) | 13 errors. Avg 13.0s/task |
-| TopologyBench mean (9 topologies) | **94.0%** | Spread 4.3pp (92.1%-96.3%). CIs overlap — not statistically significant |
+| ~~TopologyBench HumanEval+ (9 topos)~~ | ~~94.0% mean~~ | **INVALIDATED** — topology was never executed (bug: orchestrator bypass). Re-run pending |
+| **TopologyBench-Reasoning GSM8K (50)** | 96-98% all topologies | NULL result: parallel 98% (49/50), others 96% (48/50). Cohen's d<0.12. Model ceiling too high |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
