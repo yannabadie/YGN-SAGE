@@ -211,8 +211,17 @@ python scripts/run_topologybench.py --tasks 5 --topologies sequential,avr --limi
 python scripts/run_topologybench.py --tasks 200                           # Full run (~$28)
 
 # DistilBERT quality estimator training
-python scripts/train_quality_model.py --data data/quality_triples.jsonl   # Train + ONNX export
+PYTHONPATH=C:\\torch_lib python scripts/train_quality_model.py --data data/quality_triples.jsonl  # Train + ONNX export
+# Output: models/quality_estimator.onnx (0.9MB), models/tokenizer.json, models/checkpoints/
+
+# TopologyBench resume (after partial run)
+python scripts/run_topologybench.py --tasks 164 --resume data/topologybench_results.json  # Resume from partial
 ```
+
+### ONNX Models (sage-python/models/)
+- `quality_estimator.onnx` — DistilBERT QualityEstimator (0.9 MB, opset 18). Inputs: input_ids + attention_mask. Output: quality_score [0,1]
+- `tokenizer.json` — HuggingFace tokenizer for quality_estimator (distilbert-base-uncased)
+- `checkpoints/epoch_{1..5}.pt` — PyTorch training checkpoints
 
 ### End-to-End Proof
 ```bash
@@ -336,7 +345,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **Downstream Quality**: DownstreamEvaluator tracks tier precision, escalation rate (<20% target), routing P50/P99 latency (<50ms target).
 - **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
 
-### Benchmark Results (March 10, 2026)
+### Benchmark Results (March 13, 2026)
 | Benchmark | Score | Notes |
 |-----------|-------|-------|
 | **EvalPlus HumanEval+ (164)** | **84.1%** pass@1 (138/164) | Official 80x harder tests. Base=90.9%, Plus=84.1% |
@@ -351,7 +360,9 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | **Routing GT Python AdaptiveRouter (50)** | 44% (22/50) | Structural features only, S1-biased (S3:0%) |
 | Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
 | **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
-| TopologyBench smoke (3 tasks) | 100% seq + 100% avr | Pipeline validated, full run pending |
+| **DistilBERT QualityEstimator** | **SHIP** (+4.5pp Pearson) | 258 triples, r=0.0445 vs heuristic r=0.0. ONNX 0.9MB |
+| **TopologyBench sequential (164)** | **92.7%** (152/164) | Full HumanEval+ run. 12 errors. Avg 12.4s/task |
+| TopologyBench parallel (164) | IN PROGRESS | Running, ~10s/task avg |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 

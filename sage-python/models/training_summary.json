@@ -1,0 +1,31 @@
+{
+  "model": "distilbert-base-uncased",
+  "n_train": 207,
+  "n_val": 51,
+  "n_total": 258,
+  "epochs": 5,
+  "batch_size": 16,
+  "lr": 2e-05,
+  "max_length": 512,
+  "best_epoch": 5,
+  "device": "cpu",
+  "total_time_s": 679.7,
+  "learned_pearson_r": 0.0445,
+  "learned_mae": 0.1916,
+  "learned_r2": -0.0198,
+  "heuristic_pearson_r": 0.0,
+  "heuristic_mae": 0.199,
+  "heuristic_r2": -0.0341,
+  "delta_pearson_pp": 4.5,
+  "verdict": "SHIP",
+  "onnx_exported": true,
+  "onnx_path": "models/quality_estimator.onnx",
+  "onnx_size_mb": 0.9,
+  "onnx_verification": "PASS (diff=0.000000)",
+  "tokenizer_path": "models/tokenizer.json",
+  "gt_distribution": {
+    "pass_1.0": 214,
+    "partial_0.5": 27,
+    "fail_0.0": 17
+  }
+}

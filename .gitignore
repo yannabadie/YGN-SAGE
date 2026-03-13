@@ -49,6 +49,13 @@ docs/plans/agent_stream.jsonl
 sage-core/models/*.onnx
 sage-core/models/tokenizer.json
 sage-core/models/*.dll
+
+# DistilBERT QualityEstimator (regenerate via scripts/train_quality_model.py)
+sage-python/models/*.onnx
+sage-python/models/*.onnx.data
+sage-python/models/tokenizer.json
+sage-python/models/checkpoints/
+
 humaneval_full.log
 
 # Certificates (do not commit)
