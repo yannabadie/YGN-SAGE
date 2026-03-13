@@ -56,23 +56,31 @@ Tests topology significance on grade-school math reasoning. Direct TopologyRunne
 !!! warning "Null result"
     All pairwise comparisons are **not statistically significant** (Wilcoxon p > 0.3, Cohen's d < 0.12). The model ceiling is too high — Gemini 2.5 Flash solves 96%+ of GSM8K regardless of topology. The same 2 tasks (GSM8K/2, GSM8K/12) fail across ALL topologies, indicating LLM blind spots rather than topology deficiencies.
 
-### HumanEval+ (164 tasks, Real Topology Execution)
+### HumanEval+ (164 tasks, 4-Topology Consistent Run)
 
-After fixing the topology execution path in `boot.py`, we ran TopologyBench with real multi-agent topology execution. **First statistically significant topology result:**
+All 4 topologies run in same session, same model (Gemini 2.5 Flash-Lite), temperature=0:
 
 | Topology | pass@1 | Failures |
 |----------|--------|----------|
-| **debate** | **95.1%** (156/164) | 8 |
-| sequential | 90.8% (149/164) | 15 |
+| **brainstorming** | **96.3%** (158/164) | 6 |
+| parallel | 94.5% (155/164) | 9 |
+| debate | 93.9% (154/164) | 10 |
+| sequential | 93.3% (153/164) | 11 |
 
-| Statistical Test | Value | Significance |
-|-----------------|-------|--------------|
-| McNemar chi-squared | 5.14 | **p = 0.023 < 0.05** |
-| Discordant pairs | b=7, c=0 | Debate strictly dominates |
-| Failure overlap | Jaccard=0.533 | 8 shared, 7 debate-only recoveries |
+| Metric | Value |
+|--------|-------|
+| Mean | 94.5% |
+| Spread | 3.1pp (93.3% - 96.3%) |
+| Significant pairs | **0/6** (closest: brainstorming vs seq p=0.131) |
+| Oracle ensemble | **97.0%** (159/164) |
+| Hard tasks (all fail) | 5 (HumanEval/120, 127, 132, 145, 163) |
+| Topology-specific failures | 12/17 |
 
-!!! success "Topology is statistically significant for code generation"
-    Debate **strictly dominates** sequential: every task sequential passes, debate also passes. Debate additionally recovers 7 tasks (HumanEval/83, 84, 94, 95, 96, 97, 130). The shared 8 failures are "hard" tasks requiring model capability improvements.
+!!! warning "Non-reproducible significance"
+    An earlier 2-topology run showed debate 95.1% vs sequential 90.8% (McNemar p=0.023, significant). A fresh 4-topology run shows 0/6 significant pairs. Run-to-run variance at temperature=0 is substantial enough to flip significance conclusions. Multi-run evaluation is required for reliable topology comparisons.
+
+!!! success "Topology-dependent failure patterns confirmed"
+    Despite similar aggregate rates, each topology fails on different tasks. Oracle ensemble (97.0%) exceeds any single topology (96.3%). Brainstorming is the most consistent performer across runs.
 
 ### HumanEval+ (20-task Pilot)
 

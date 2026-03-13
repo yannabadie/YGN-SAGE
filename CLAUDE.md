@@ -374,11 +374,11 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
 | **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
 | **DistilBERT QualityEstimator** | **Strong SHIP** (+34.4pp Pearson) | 600 triples, r=0.3436 vs heuristic r=0.0. ONNX 0.9MB |
-| ~~TopologyBench HumanEval+ (9 topos)~~ | ~~94.0% mean~~ | **INVALIDATED** — topology was never executed (bug: orchestrator bypass) |
-| **TopologyBench HumanEval+ REAL (164)** | **debate 95.1% vs seq 90.8%** | McNemar p=0.023 SIGNIFICANT. Debate strictly dominates sequential (7 recovered, 0 regressions). Jaccard=0.533 |
-| **TopologyBench HumanEval+ pilot (20)** | **90-100%** spread | debate 100%, sequential 95%, parallel 95%, brainstorming 90%. Disjoint failures (Jaccard=0.00) |
-| **TopologyBench-Reasoning GSM8K (50)** | 96-98% all topologies | NULL result: parallel 98% (49/50), others 96% (48/50). Cohen's d<0.12. Model ceiling too high |
-| **Evolution proof (5 runs x 10)** | **-10pp** (88% vs 98%) | NEGATIVE: evo hurts on budget model. Cohen d=-1.41 (large). CI [-16pp, -4pp] |
+| **TopologyBench HumanEval+ 4-topo (164)** | **93.3-96.3%** spread 3.1pp | brainstorming 96.3%, parallel 94.5%, debate 93.9%, seq 93.3%. 0/6 significant. Oracle 97.0% |
+| **TopologyBench HumanEval+ Run 1 (164)** | debate 95.1% vs seq 90.8% | McNemar p=0.023. NOT REPRODUCED in Run 2 (p=1.0). Run-to-run variance at temp=0 |
+| **TopologyBench HumanEval+ pilot (20)** | **90-100%** spread | 4 topologies, disjoint failures (Jaccard=0.00) |
+| **TopologyBench GSM8K (50)** | 96-98% all topologies | NULL: model ceiling. Cohen's d<0.12 |
+| **Evolution proof (5 runs x 10)** | **-10pp** (88% vs 98%) | NEGATIVE: evo hurts on budget model. Cohen d=-1.41 |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
