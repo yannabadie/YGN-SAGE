@@ -361,10 +361,16 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
 | **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
 | **DistilBERT QualityEstimator** | **Strong SHIP** (+34.4pp Pearson) | 600 triples, r=0.3436 vs heuristic r=0.0. ONNX 0.9MB |
-| **TopologyBench sequential (164)** | **92.7%** (152/164) | Full HumanEval+ run. 12 errors. Avg 12.4s/task |
-| **TopologyBench parallel (164)** | **93.9%** (154/164) | Full HumanEval+ run. 10 errors. Avg 13.8s/task |
-| **TopologyBench AVR (164)** | **92.1%** (151/164) | Full HumanEval+ run. 13 errors. Avg 12.3s/task |
-| TopologyBench (remaining) | IN PROGRESS | selfmoa, hierarchical, hub, debate, brainstorming, evolved |
+| **TopologyBench evolved (164)** | **96.3%** (158/164) | Best topology. 6 errors. Avg 11.7s/task |
+| **TopologyBench brainstorming (164)** | **95.7%** (157/164) | 7 errors. Avg 12.0s/task |
+| **TopologyBench hub (164)** | **94.5%** (155/164) | 9 errors. Avg 12.0s/task |
+| **TopologyBench selfmoa (164)** | **94.5%** (155/164) | 9 errors. Avg 12.1s/task |
+| **TopologyBench hierarchical (164)** | **93.9%** (154/164) | 10 errors. Avg 12.4s/task |
+| **TopologyBench parallel (164)** | **93.9%** (154/164) | 10 errors. Avg 13.8s/task |
+| **TopologyBench sequential (164)** | **92.7%** (152/164) | 12 errors. Avg 12.4s/task |
+| **TopologyBench avr (164)** | **92.1%** (151/164) | 13 errors. Avg 12.3s/task |
+| **TopologyBench debate (164)** | **92.1%** (151/164) | 13 errors. Avg 13.0s/task |
+| TopologyBench mean (9 topologies) | **94.0%** | Spread 4.3pp (92.1%-96.3%). CIs overlap — not statistically significant |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
 
