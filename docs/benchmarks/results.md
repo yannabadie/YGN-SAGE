@@ -42,23 +42,24 @@ All results as of March 13, 2026. Tests run using the YGN-SAGE framework with bu
 
 ## TopologyBench
 
-Full HumanEval+ (164 tasks) evaluated across all 9 topology templates to test the hypothesis that topology structure matters more than model capability (per AdaptOrch, arXiv 2602.16873).
+### GSM8K Reasoning (50 tasks, Gemini 2.5 Flash)
 
-| Topology | pass@1 | Errors | Avg Time |
-|----------|--------|--------|----------|
-| **evolved** | **96.3%** (158/164) | 6 | 11.7s |
-| brainstorming | 95.7% (157/164) | 7 | 12.0s |
-| hub | 94.5% (155/164) | 9 | 12.0s |
-| selfmoa | 94.5% (155/164) | 9 | 12.1s |
-| hierarchical | 93.9% (154/164) | 10 | 12.4s |
-| parallel | 93.9% (154/164) | 10 | 13.8s |
-| sequential | 92.7% (152/164) | 12 | 12.4s |
-| avr | 92.1% (151/164) | 13 | 12.3s |
-| debate | 92.1% (151/164) | 13 | 13.0s |
-| **Mean (9 topologies)** | **94.0%** | -- | -- |
+Tests topology significance on grade-school math reasoning. Direct TopologyRunner execution (no orchestrator overhead).
 
-!!! info "Statistical note"
-    The spread is 4.3 percentage points (92.1% -- 96.3%). Confidence intervals overlap across all topologies, so the differences are **not statistically significant** at this sample size. The evolved topology's lead is suggestive but not conclusive.
+| Topology | Accuracy | Avg Latency |
+|----------|----------|-------------|
+| parallel | **98.0%** (49/50) | 6977ms |
+| sequential | 96.0% (48/50) | 6486ms |
+| debate | 96.0% (48/50) | 4891ms |
+| brainstorming | 96.0% (48/50) | 7059ms |
+
+!!! warning "Null result"
+    All pairwise comparisons are **not statistically significant** (Wilcoxon p > 0.3, Cohen's d < 0.12). The model ceiling is too high — Gemini 2.5 Flash solves 96%+ of GSM8K regardless of topology. The same 2 tasks (GSM8K/2, GSM8K/12) fail across ALL topologies, indicating LLM blind spots rather than topology deficiencies.
+
+### HumanEval+ (164 tasks) -- INVALIDATED
+
+!!! danger "Results invalidated"
+    Previous HumanEval+ TopologyBench results (9 topologies, mean 94.0%, spread 4.3pp) were **invalidated** on 2026-03-13. A critical bug in `boot.py` caused `CognitiveOrchestrator` to bypass topology execution entirely — topologies were set but never used. The observed 4.3pp spread was pure LLM stochasticity. Re-run with fixed execution path pending.
 
 ---
 
