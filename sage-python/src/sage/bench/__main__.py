@@ -215,6 +215,74 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
     print(f"  Ablation report saved to: {out_path}")
 
 
+async def _run_swebench(args) -> None:
+    from sage.bench.swebench_bench import SWEBenchBench, evaluate_predictions, dataset_info
+
+    # Dataset selection: default to "lite" if humaneval/mbpp selected
+    swe_dataset = args.dataset if args.dataset in ("lite", "verified") else "lite"
+
+    # Info mode
+    if args.swebench_info:
+        info = dataset_info(swe_dataset)
+        print(f"\n{'=' * 60}")
+        print(f"  SWE-Bench Dataset: {info['hf_name']}")
+        print(f"{'=' * 60}")
+        print(f"  Total instances: {info['total_instances']}")
+        print(f"  Repositories: {info['repo_count']}")
+        if info.get("difficulties"):
+            print(f"  Difficulties: {info['difficulties']}")
+        print(f"\n  Top repos:")
+        for repo, count in list(info['repos'].items())[:15]:
+            print(f"    {repo}: {count}")
+        print()
+        return
+
+    # Evaluate pre-generated predictions
+    if args.eval_predictions:
+        print(f"\n  Evaluating pre-generated predictions: {args.eval_predictions}")
+        results = evaluate_predictions(
+            predictions_path=args.eval_predictions,
+            dataset=swe_dataset,
+            timeout=args.eval_timeout,
+            max_workers=args.max_workers,
+        )
+        print(f"\n{'=' * 60}")
+        print(f"  SWE-Bench Evaluation Results")
+        print(f"{'=' * 60}")
+        print(f"  Resolved: {results.get('resolved', 0)}/{results.get('total', 0)} "
+              f"({results.get('resolved_rate', 0):.1%})")
+        if results.get("error"):
+            print(f"  Error: {results['error']}")
+        if results.get("report_path"):
+            print(f"  Report: {results['report_path']}")
+        print()
+        return
+
+    # Full run requires API key
+    if not os.environ.get("GOOGLE_API_KEY"):
+        print("  ERROR: GOOGLE_API_KEY required for SWE-Bench benchmark")
+        return
+
+    system, bus = _boot_system()
+    bench = SWEBenchBench(
+        system=system,
+        event_bus=bus,
+        dataset=swe_dataset,
+        eval_timeout=args.eval_timeout,
+        max_workers=args.max_workers,
+    )
+
+    if args.generate_only:
+        # Generate patches only (no Docker evaluation)
+        preds_path = await bench.run_generate_only(limit=args.limit)
+        print(f"  Predictions saved to: {preds_path}")
+    else:
+        # Full pipeline: generate + evaluate
+        report = await bench.run(limit=args.limit)
+        _print_report(report)
+        _save_report(report, bench, args.output, f"swebench-{swe_dataset}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sage.bench",
@@ -222,7 +290,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -240,15 +308,45 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=["humaneval", "mbpp"],
+        choices=["humaneval", "mbpp", "lite", "verified"],
         default="humaneval",
-        help="Dataset for EvalPlus (default: humaneval)",
+        help="Dataset: humaneval/mbpp for EvalPlus, lite/verified for SWE-Bench",
     )
     parser.add_argument(
         "--official",
         action="store_true",
         default=False,
         help="Use official EvalPlus CLI evaluation (comparable to leaderboard)",
+    )
+    parser.add_argument(
+        "--generate-only",
+        action="store_true",
+        default=False,
+        help="SWE-Bench: generate patches only, skip Docker evaluation",
+    )
+    parser.add_argument(
+        "--eval-predictions",
+        type=str,
+        default=None,
+        help="SWE-Bench: evaluate a pre-generated predictions JSONL file",
+    )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        default=4,
+        help="SWE-Bench: parallel Docker evaluation workers (default: 4)",
+    )
+    parser.add_argument(
+        "--eval-timeout",
+        type=int,
+        default=300,
+        help="SWE-Bench: timeout per Docker evaluation in seconds (default: 300)",
+    )
+    parser.add_argument(
+        "--swebench-info",
+        action="store_true",
+        default=False,
+        help="SWE-Bench: print dataset info and exit",
     )
     args = parser.parse_args()
 
@@ -303,6 +401,9 @@ def main() -> None:
                 print("\n  kNN router: not available (no semantic embedder)")
         except Exception as e:
             print(f"\n  kNN router failed: {e}")
+
+    if args.type == "swebench":
+        asyncio.run(_run_swebench(args))
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")

@@ -18,13 +18,12 @@
   "evolution": {
     "generation": 0,
     "total_mutations": 0,
-    "z3_rejections": 0,
     "population_size": 0,
     "coverage": 0.0,
     "best_score": 0.0,
     "best_id": null,
     "is_warm_up": true,
-    "dgm_entropy": 1.6094379119341005
+    "sampo_entropy": 1.6094379119341005
   },
   "domain": "test",
   "goal": "test",

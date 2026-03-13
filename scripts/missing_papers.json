@@ -1,0 +1,54 @@
+[
+  {
+    "arxiv_id": "2602.16873",
+    "title": "AdaptOrch: Adaptive Orchestration for Multi-Agent Systems"
+  },
+  {
+    "arxiv_id": "2406.18665",
+    "title": "RouteLLM: Learning to Route LLMs with Preference Data"
+  },
+  {
+    "arxiv_id": "2508.21141",
+    "title": "PILOT: Contextual Bandit LLM Routing with Budget"
+  },
+  {
+    "arxiv_id": "2601.07206",
+    "title": "LLMRouterBench: Benchmarking LLM Routing Methods"
+  },
+  {
+    "arxiv_id": "2601.12996",
+    "title": "OFA-MAS: MoE Graph Generative for Universal MAS Topology"
+  },
+  {
+    "arxiv_id": "2505.12601",
+    "title": "kNN Routing for LLMs: Embedding-based Router Selection"
+  },
+  {
+    "arxiv_id": "2603.04445",
+    "title": "A Survey on LLM Routing: Paradigms and Methods"
+  },
+  {
+    "arxiv_id": "2505.22467",
+    "title": "Topology Structure Learning for Multi-Agent Systems"
+  },
+  {
+    "arxiv_id": "2410.10347",
+    "title": "A Unified Approach to Routing and Cascading for LLMs (ETH-SRI)"
+  },
+  {
+    "pdf": "Researches/MAS-FACTORY-2603.06007v1.pdf",
+    "title": "MASFactory: Graph-centric Framework for Orchestrating LLM-Based MAS with Vibe Graphing"
+  },
+  {
+    "pdf": "Researches/2603.08068v1.pdf",
+    "title": "In-Context Reinforcement Learning for Tool Use in Large Language Models"
+  },
+  {
+    "pdf": "Researches/2603.08647v1.pdf",
+    "title": "Grow Dont Overwrite: Fine-tuning Without Forgetting"
+  },
+  {
+    "pdf": "Researches/2602.16891v1.pdf",
+    "title": "OpenSage: Self-programming Agent Generation Engine"
+  }
+]

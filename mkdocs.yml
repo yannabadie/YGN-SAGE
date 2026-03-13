@@ -1,0 +1,77 @@
+site_name: YGN-SAGE
+site_description: "Yann's Generative Neural Self-Adaptive Generation Engine -- Agent Development Kit"
+site_url: https://yannabadie.github.io/YGN-SAGE/
+repo_url: https://github.com/yannabadie/YGN-SAGE
+repo_name: yannabadie/YGN-SAGE
+
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+    - scheme: default
+      primary: deep purple
+      accent: amber
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+  - Getting Started: quickstart.md
+  - Architecture:
+    - Overview: architecture/overview.md
+    - Five Pillars: architecture/pillars.md
+  - Benchmarks:
+    - Results: benchmarks/results.md
+    - Methodology: benchmarks/methodology.md
+  - Research: research/papers.md
+  - API Reference: api/core.md
+  - Protocols: protocols.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - tables
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/yannabadie/YGN-SAGE
