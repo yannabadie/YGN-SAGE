@@ -46,6 +46,8 @@ from typing import Any
 # --- SSL bypass for corporate proxy ---
 os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+# Prevent HuggingFace 401 errors (snowflake-arctic-embed-m download fails behind proxy)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 _src = Path(__file__).resolve().parent.parent / "src"
 if _src.exists() and str(_src) not in sys.path:
@@ -501,6 +503,7 @@ async def main() -> None:
     parser.add_argument("--output", type=str, default="data/topobench_reasoning.json")
     parser.add_argument("--resume", type=str, default=None, help="Resume from partial results")
     parser.add_argument("--dry-run", action="store_true", help="Estimate cost only")
+    parser.add_argument("--model", type=str, default=None, help="Override model ID (e.g. gemini-2.5-flash-lite)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     args = parser.parse_args()
 
@@ -551,7 +554,8 @@ async def main() -> None:
     if remaining:
         from sage.llm.google import GoogleProvider
         from sage.llm.base import LLMConfig
-        model_id = os.environ.get("SAGE_MODEL_FAST", "gemini-2.5-flash")
+        model_id = args.model or os.environ.get("SAGE_MODEL_FAST", "gemini-2.5-flash")
+        os.environ["_TOPOBENCH_MODEL_ID"] = model_id
         llm_provider = GoogleProvider()
         llm_config = LLMConfig(provider="google", model=model_id, temperature=0.3)
         log.info("LLM provider: Google %s (direct, no agent overhead)", model_id)
@@ -635,6 +639,7 @@ def _save_results(
         "task_count": len(tasks),
         "topology_count": len(reports),
         "partial": partial,
+        "model_id": os.environ.get("_TOPOBENCH_MODEL_ID", "unknown"),
         "topologies": {},
     }
 

@@ -42,6 +42,8 @@ from typing import Any
 # --- SSL bypass for corporate proxy (CLAUDE.md protocol) ---
 os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+# Prevent HuggingFace 401 errors (snowflake-arctic-embed-m download fails behind proxy)
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
 
 # Add sage-python/src to path if running from scripts/
 _src = Path(__file__).resolve().parent.parent / "src"
@@ -809,7 +811,9 @@ async def main_async(args: argparse.Namespace) -> None:
     # --- Boot SAGE system ---
     log.info("Booting SAGE agent system...")
     from sage.boot import boot_agent_system
-    system = boot_agent_system(llm_tier="auto")
+    # Use Google Gemini for benchmarks (Codex CLI has timeout issues for batch runs)
+    _llm_tier = os.environ.get("SAGE_BENCH_LLM_TIER", "fast")
+    system = boot_agent_system(llm_tier=_llm_tier)
     log.info("SAGE system booted successfully")
 
     # --- Load tasks ---
