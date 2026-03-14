@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  sage:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8002:8002"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - SAGE_DASHBOARD_TOKEN=${SAGE_DASHBOARD_TOKEN:-}
+      - PYTHONIOENCODING=utf-8
+    command: >
+      python -m sage.protocols.serve
+      --mcp --mcp-port 8001
+      --a2a --a2a-port 8002
+    volumes:
+      - sage-data:/root/.sage
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8000"
+    environment:
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - SAGE_DASHBOARD_TOKEN=${SAGE_DASHBOARD_TOKEN:-}
+    command: python ui/app.py
+    profiles:
+      - full
+
+volumes:
+  sage-data:
