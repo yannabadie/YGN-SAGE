@@ -115,6 +115,12 @@ app = FastAPI(title="YGN-SAGE v2 Control Dashboard")
 # ---------------------------------------------------------------------------
 DASHBOARD_TOKEN = os.environ.get("SAGE_DASHBOARD_TOKEN", "")
 
+if not DASHBOARD_TOKEN:
+    logger.warning(
+        "Dashboard running without authentication. "
+        "Set SAGE_DASHBOARD_TOKEN for production use."
+    )
+
 _security = HTTPBearer(auto_error=False)
 
 
@@ -251,6 +257,7 @@ async def get_state():
         "total_events": len(events),
         "agent_status": "running" if (_state.agent_task and not _state.agent_task.done()) else "idle",
         "queue_depth": _state.task_queue.qsize(),
+        "auth_enabled": bool(DASHBOARD_TOKEN),
     })
 
 

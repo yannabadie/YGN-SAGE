@@ -98,6 +98,14 @@
     </style>
 </head>
 <body class="bg-sage-900 text-white">
+<div id="auth-banner" style="display:none; background: #f59e0b; color: #000; text-align: center; padding: 8px; font-weight: 600;">
+  Warning: No authentication configured. Set SAGE_DASHBOARD_TOKEN for production use.
+</div>
+<script>
+  fetch('/api/state').then(r => r.json()).then(data => {
+    if (!data.auth_enabled) document.getElementById('auth-banner').style.display = 'block';
+  }).catch(() => {});
+</script>
 
 <!-- ============================================================ -->
 <!-- HEADER                                                        -->
