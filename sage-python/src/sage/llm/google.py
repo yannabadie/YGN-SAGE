@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import logging
+from collections.abc import AsyncIterator
 from sage.llm.base import LLMConfig, LLMResponse, Message, ToolDef
 
 logger = logging.getLogger(__name__)
@@ -104,7 +105,7 @@ class GoogleProvider:
             max_output_tokens=config.max_tokens if config else None,
             temperature=config.temperature if config else 0.1,
             system_instruction=system_instruction,
-            tools=gemini_tools if gemini_tools else None,
+            tools=gemini_tools if gemini_tools else None,  # type: ignore[arg-type]  # SDK variance
             response_mime_type=response_mime_type,
             response_schema=response_json_schema,
         )
@@ -148,3 +149,62 @@ class GoogleProvider:
             usage=usage_dict,
             model=model,
         )
+
+    async def generate_stream(
+        self,
+        messages: list[Message],
+        config: LLMConfig | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield response text chunks via Gemini streaming API.
+
+        This is the Phase 1 streaming path -- text-only, no tools.
+        """
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            raise ImportError("Install google-genai: pip install 'ygn-sage[google]'")
+
+        if not self.api_key:
+            raise ValueError(
+                "GOOGLE_API_KEY not set. Set it via environment variable "
+                "or pass api_key= to GoogleProvider."
+            )
+
+        client = genai.Client(api_key=self.api_key)
+        from sage.llm._ssl import patch_genai_ssl
+        patch_genai_ssl(client)
+
+        model = "gemini-3.1-pro-preview"
+        if config and config.model:
+            model = config.model
+
+        # Convert messages to Gemini format (same as generate())
+        contents = []
+        system_instruction = None
+        for msg in messages:
+            if msg.role.value == "system":
+                system_instruction = msg.content
+            else:
+                role = "model" if msg.role.value == "assistant" else "user"
+                contents.append(
+                    types.Content(
+                        role=role,
+                        parts=[types.Part.from_text(text=msg.content)],
+                    )
+                )
+
+        generate_config = types.GenerateContentConfig(
+            max_output_tokens=config.max_tokens if config else None,
+            temperature=config.temperature if config else 0.1,
+            system_instruction=system_instruction,
+        )
+
+        async for chunk in await client.aio.models.generate_content_stream(
+            model=model,
+            contents=contents,
+            config=generate_config,
+        ):
+            text = chunk.text
+            if text:
+                yield text

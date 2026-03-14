@@ -1,6 +1,7 @@
 """Base types for the LLM abstraction layer."""
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol, runtime_checkable
@@ -69,3 +70,24 @@ class LLMProvider(Protocol):
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
     ) -> LLMResponse: ...
+
+
+class StreamingLLMProvider(LLMProvider, Protocol):
+    """Extended protocol for providers that support token-level streaming.
+
+    Providers implement ``generate_stream`` to yield text chunks as they
+    arrive from the upstream API.  The base ``generate`` method is still
+    required for non-streaming callers.
+    """
+
+    async def generate_stream(
+        self,
+        messages: list[Message],
+        config: LLMConfig | None = None,
+    ) -> AsyncIterator[str]:
+        """Yield response text chunks as they arrive from the LLM.
+
+        Tools are intentionally excluded — streaming is for simple
+        text generation only (Phase 1).
+        """
+        ...  # pragma: no cover

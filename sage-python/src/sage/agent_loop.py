@@ -9,6 +9,7 @@ import time
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
+from collections.abc import AsyncIterator
 from typing import Any, Callable
 
 from sage.agent import AgentConfig
@@ -483,6 +484,91 @@ class AgentLoop:
 
         # === LEARN (final) ===
         return await learn_final(task, result_text, self)
+
+    async def stream(self, task: str) -> AsyncIterator[str]:
+        """Stream LLM response tokens for non-AVR tasks.
+
+        For code tasks (AVR path) or providers without streaming support,
+        falls back to ``run()`` and yields the full result as a single chunk.
+
+        Yields chunks of text as they arrive from the LLM.  This is the
+        Phase 1 implementation: streaming only applies to simple text
+        generation (non-code, non-AVR).  The perceive/act/learn phases
+        are not modified.
+        """
+        from sage.llm.base import StreamingLLMProvider
+
+        # Code tasks need AVR -- fall back to full run()
+        if _is_code_task(task):
+            log.debug("stream(): code task detected, falling back to run()")
+            result = await self.run(task)
+            yield result
+            return
+
+        # Provider must support streaming
+        if not isinstance(self._llm, StreamingLLMProvider):
+            log.debug("stream(): provider %s has no streaming, falling back to run()",
+                       getattr(self._llm, "name", type(self._llm).__name__))
+            result = await self.run(task)
+            yield result
+            return
+
+        # --- Lightweight perceive (build messages) ---
+        from sage.phases.perceive import perceive
+
+        self.start_time = time.perf_counter()
+        self.total_cost_usd = 0.0
+        self._s3_retries = 0
+        self._s2_avr_retries = 0
+        self._avr_error_history = []
+        self._s3_degraded = False
+        self._original_validation_level = self.config.validation_level
+        self.step_count = 0
+
+        p_result = await perceive(task, self)
+        if p_result.blocked_reason:
+            yield p_result.blocked_reason
+            return
+
+        messages = p_result.messages
+
+        self.step_count = 1
+        self._emit(LoopPhase.THINK, model=self.config.llm.model)
+
+        # --- Stream tokens from the provider ---
+        collected_chunks: list[str] = []
+        try:
+            async for chunk in self._llm.generate_stream(
+                messages=messages,
+                config=self.config.llm,
+            ):
+                collected_chunks.append(chunk)
+                yield chunk
+        except Exception as exc:
+            log.warning("stream(): streaming failed (%s), falling back to run()", exc)
+            # If we already yielded partial content, the caller has
+            # inconsistent output -- but this is best-effort Phase 1.
+            if not collected_chunks:
+                result = await self.run(task)
+                yield result
+            return
+
+        full_text = "".join(collected_chunks)
+
+        # Emit final THINK event with aggregated content
+        tokens = _estimate_tokens(full_text)
+        cost_per_k = _COST_PER_1K.get(self.config.llm.model, 0.001)
+        step_cost = (tokens / 1000) * cost_per_k
+        self.total_cost_usd += step_cost
+        self._emit(
+            LoopPhase.THINK,
+            model=self.config.llm.model,
+            content=full_text,
+            cost_usd=round(self.total_cost_usd, 4),
+        )
+
+        # Record in working memory
+        self.working_memory.add_event("ASSISTANT", full_text)
 
     async def _run_legacy(self, task: str) -> str:
         """Legacy run() — frozen copy for SAGE_AGENT_LOOP_LEGACY=1 fallback."""
