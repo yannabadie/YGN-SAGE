@@ -68,6 +68,7 @@ Add `verify_node(node, predecessors, budget_remaining)` as a `@staticmethod` on 
 - Info-flow: node.security_label >= max(pred.security_label for pred in predecessors)
 - Budget: node.max_cost_usd <= budget_remaining
 - Fan-in: len(predecessors) <= max_fan_in (default 5)
+- Fan-out: node.max_parallel_fanout check (future-proofing for fork/join topologies)
 
 Uses duck-typing on node attributes (works with both TopologyNode and TaskNode).
 
@@ -154,7 +155,11 @@ class TopologyController:
         ...
 
     def evaluate_and_decide(self, node_idx, result, task, topology, ctx) -> AdaptationDecision:
-        """Core decision logic — called after each node execution."""
+        """Core decision logic — called after each node execution.
+
+        Early exit: if self._reroute_count >= MAX_REROUTES (1), force CONTINUE
+        + emit EventBus PIPELINE:MAX_REROUTE_HIT for debug observability.
+        """
         ...
 
     def compute_consistency_score(self, outputs: list[str]) -> float:
@@ -162,7 +167,12 @@ class TopologyController:
         ...
 
     def compute_importance_score(self, node_idx, result, all_outputs) -> float:
-        """Ratio of unique content contributed by this node."""
+        """Semantic importance via RustEmbedder.batch_cosine_similarity.
+
+        Compares node output embedding vs all other outputs. High similarity
+        to existing outputs = low marginal value = low importance. Uses same
+        Rust SIMD path as ConsistencyScore for precision.
+        """
         ...
 ```
 
@@ -176,7 +186,7 @@ Modify `topology/runner.py` to accept `controller: TopologyController | None` an
 
 **TOPOLOGY RE-ROUTE:** Regenerate topology via engine with tighter constraints (coupling γ += 0.2). Re-assign models. Restart execution from scratch on new topology. Max 1 reroute per pipeline run. Counter tracked on `TopologyController._reroute_count` (instance variable, reset per `evaluate_and_decide` session). When limit hit → force CONTINUE with current results.
 
-**SUB-AGENT SPAWN:** Extract emergent sub-task from result. Run via direct LLM call (`llm_provider.generate()`) — NOT `agent_pool.run_single()` (does not exist). Alternatively use `AgentTool.from_agent()` from `tools/agent_tool.py` for richer agent wrapping. Inject sub-result into node outputs. Max 3 spawns per topology, tracked on `TopologyController._spawn_count`.
+**SUB-AGENT SPAWN:** Extract emergent sub-task from result. Preferred: `AgentTool.from_agent()` from `tools/agent_tool.py` — gives tools + memory for free (vs raw LLM call). Fallback: direct `llm_provider.generate()` if AgentTool unavailable. Inject sub-result into node outputs. Max 3 spawns per topology, tracked on `TopologyController._spawn_count`.
 
 ### 5. ConsistencyScore (`sage-python/src/sage/consistency.py`)
 
@@ -230,7 +240,7 @@ pipeline.controller = controller
 | Test File | Scope | Type |
 |-----------|-------|------|
 | `tests/test_topology_controller.py` | 4 actions + thresholds + quality blending + edge cases | Unit, mocks |
-| `tests/test_pipeline_adaptation.py` | Pipeline with node failure → upgrade → success | Integration |
+| `tests/test_pipeline_adaptation.py` | Pipeline with node failure → upgrade → success; budget exhausted graceful path; OxiZ verification fail but proceed | Integration |
 | `tests/test_oxiz_pipeline.py` | verify_provider_assignment + PolicyVerifier + PRM in learn | Unit |
 | `tests/test_consistency_score.py` | Cosine similarity: identical=1.0, orthogonal≈0.0, Rust/Python parity | Unit |
 
