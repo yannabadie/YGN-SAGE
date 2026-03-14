@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import logging
+from typing import Any
 
 log = logging.getLogger(__name__)
 
@@ -69,13 +70,17 @@ except ImportError:
     _HAS_RUST_GATE = False
 
 
-def create_relevance_gate(threshold: float = 0.3) -> RelevanceGate:
-    """Factory: returns Rust gate when available, Python otherwise."""
+def create_relevance_gate(threshold: float = 0.3) -> Any:
+    """Factory: returns Rust gate when available, Python otherwise.
+
+    Returns a ``RelevanceGate``-compatible object (duck-typed). The Rust
+    implementation conforms to the same interface but is not a Python subclass.
+    """
     if _HAS_RUST_GATE:
         try:
             gate = _RustGate(threshold=threshold)
             log.info("RelevanceGate: using Rust acceleration")
-            return gate  # type: ignore[return-value]  # duck-type compatible
+            return gate
         except Exception:
             pass
     return RelevanceGate(threshold=threshold)

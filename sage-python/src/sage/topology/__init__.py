@@ -1,12 +1,16 @@
 """Topology engine: dynamic agent orchestration patterns."""
+from typing import Any
+
 from sage.topology.engine import TopologyEngine, Topology, AgentNode
 from sage.topology.patterns import vertical, horizontal, mesh
 
+TopologyPlanner: Any
+StochasticDTS: Any
 try:
     from sage.topology.planner import TopologyPlanner, StochasticDTS
 except ImportError:
-    TopologyPlanner = None  # type: ignore[assignment,misc]
-    StochasticDTS = None  # type: ignore[assignment,misc]
+    TopologyPlanner = None
+    StochasticDTS = None
 
 from sage.topology.kg_rlvr import ProcessRewardModel, FormalKnowledgeGraph
 from sage.topology.topology_verifier import TopologyVerifier, TopologySpec, VerificationResult

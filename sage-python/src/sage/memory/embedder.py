@@ -23,7 +23,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import struct
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -170,9 +170,9 @@ class _SentenceTransformerEmbedder:
     _MODEL_NAME = "snowflake-arctic-embed-m"
 
     def __init__(self) -> None:
-        self._model = None  # lazy
+        self._model: Any = None  # lazy; SentenceTransformer once loaded
 
-    def _load_model(self):
+    def _load_model(self) -> None:
         from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
         self._model = SentenceTransformer(self._MODEL_NAME)
 
@@ -184,7 +184,7 @@ class _SentenceTransformerEmbedder:
         """Embed a single text with sentence-transformers."""
         if self._model is None:
             self._load_model()
-        vec = self._model.encode(text, normalize_embeddings=True)  # type: ignore[union-attr]
+        vec = self._model.encode(text, normalize_embeddings=True)
         return vec.tolist()
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
@@ -193,7 +193,7 @@ class _SentenceTransformerEmbedder:
             return []
         if self._model is None:
             self._load_model()
-        vecs = self._model.encode(texts, normalize_embeddings=True)  # type: ignore[union-attr]
+        vecs = self._model.encode(texts, normalize_embeddings=True)
         return [v.tolist() for v in vecs]
 
 
@@ -232,10 +232,10 @@ class Embedder:
     def _auto_select() -> tuple[EmbeddingProvider, str]:
         """Try RustEmbedder (ONNX), then sentence-transformers, then hash."""
         # Tier 1: Rust ONNX embedder (fastest, native SIMD)
-        rust = _try_rust_embedder()
+        rust: EmbeddingProvider | None = _try_rust_embedder()
         if rust is not None:
             logger.info("Embedder: using RustEmbedder (ONNX, native)")
-            return rust, "rust_onnx"  # type: ignore[return-value]
+            return rust, "rust_onnx"
 
         # Tier 2: sentence-transformers (Python ML)
         try:

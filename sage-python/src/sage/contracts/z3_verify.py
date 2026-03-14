@@ -12,7 +12,9 @@ Properties 1-3 are Python-native (no SMT needed).
 """
 from __future__ import annotations
 
+import types
 from dataclasses import dataclass, field
+from typing import Any
 
 # Try Rust OxiZ backend first
 try:
@@ -22,10 +24,11 @@ except ImportError:
     _RUST_SMT_AVAILABLE = False
 
 # Fallback: Python z3-solver
+_z3: types.ModuleType | None
 try:
-    import z3
+    import z3 as _z3
 except ImportError:
-    z3 = None  # type: ignore[assignment]
+    _z3 = None
 
 from sage.contracts.dag import TaskDAG
 
@@ -40,7 +43,7 @@ class ContractVerdict:
 
 
 def _require_smt() -> None:
-    if not _RUST_SMT_AVAILABLE and z3 is None:
+    if not _RUST_SMT_AVAILABLE and _z3 is None:
         raise ImportError("No SMT backend: install sage_core[smt] or z3-solver")
 
 
@@ -186,9 +189,10 @@ def _verify_provider_assignment_z3(
                 )
         return ContractVerdict(satisfied=True, property_name="provider_assignment")
 
-    solver = z3.Solver()
+    assert _z3 is not None  # guarded by _require_smt()
+    solver = _z3.Solver()
 
-    assignment_vars: dict[str, dict[str, z3.BoolRef]] = {}
+    assignment_vars: dict[str, dict[str, Any]] = {}
 
     for nid in dag.node_ids:
         node = dag.get_node(nid)
@@ -196,10 +200,10 @@ def _verify_provider_assignment_z3(
             continue
 
         required = set(node.capabilities_required)
-        node_vars: dict[str, z3.BoolRef] = {}
+        node_vars: dict[str, Any] = {}
 
         for prov in providers:
-            var = z3.Bool(f"assign_{nid}_{prov.name}")
+            var = _z3.Bool(f"assign_{nid}_{prov.name}")
             node_vars[prov.name] = var
 
             has_all_caps = required.issubset(prov.capabilities)
@@ -213,9 +217,9 @@ def _verify_provider_assignment_z3(
 
         if node_vars:
             assignment_vars[nid] = node_vars
-            solver.add(z3.PbEq([(v, 1) for v in node_vars.values()], 1))
+            solver.add(_z3.PbEq([(v, 1) for v in node_vars.values()], 1))
 
-    if solver.check() == z3.sat:
+    if solver.check() == _z3.sat:
         return ContractVerdict(satisfied=True, property_name="provider_assignment")
 
     unassignable = []

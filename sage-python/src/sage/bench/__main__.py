@@ -8,6 +8,7 @@ import dataclasses
 import json
 import os
 from datetime import datetime, timezone
+from typing import Any
 from pathlib import Path
 
 
@@ -290,7 +291,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -415,6 +416,17 @@ def main() -> None:
             report = asyncio.run(bench.run(limit=args.limit))
             _print_report(report)
             _save_report(report, bench, args.output, "heterogeneous")
+
+    if args.type == "gaia":
+        if not os.environ.get("GOOGLE_API_KEY"):
+            print("  ERROR: GOOGLE_API_KEY required for GAIA benchmark")
+        else:
+            from sage.bench.gaia_bench import GaiaBench
+            system, bus = _boot_system()
+            bench: Any = GaiaBench(system=system)
+            report = asyncio.run(bench.run(limit=args.limit))
+            _print_report(report)
+            _save_report(report, bench, args.output, "gaia")
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")

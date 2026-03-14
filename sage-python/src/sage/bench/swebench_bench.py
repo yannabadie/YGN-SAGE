@@ -47,9 +47,9 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 if platform.system() != "Linux" and "resource" not in sys.modules:
     _resource_stub = types.ModuleType("resource")
-    _resource_stub.RLIMIT_NOFILE = 7  # type: ignore[attr-defined]
-    _resource_stub.getrlimit = lambda _x: (1024, 1048576)  # type: ignore[attr-defined]
-    _resource_stub.setrlimit = lambda _x, _y: None  # type: ignore[attr-defined]
+    setattr(_resource_stub, "RLIMIT_NOFILE", 7)
+    setattr(_resource_stub, "getrlimit", lambda _x: (1024, 1048576))
+    setattr(_resource_stub, "setrlimit", lambda _x, _y: None)
     sys.modules["resource"] = _resource_stub
 
 # ---------------------------------------------------------------------------
@@ -74,7 +74,7 @@ _KEY_PREDICTION = "model_patch"
 def _ssl_bypass() -> None:
     """Disable SSL verification for corporate proxy environments."""
     import ssl
-    ssl._create_default_https_context = ssl._create_unverified_context
+    ssl._create_default_https_context = ssl._create_unverified_context  # type: ignore[assignment]
     os.environ.setdefault("CURL_CA_BUNDLE", "")
     os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
 
@@ -588,7 +588,7 @@ class SWEBenchBench:
             print()
 
             # Return generation-only results
-            task_results = self._predictions_to_task_results(predictions, {})
+            task_results = self._predictions_to_task_results(predictions, set())
             return BenchReport.from_results(
                 f"swebench_{self.dataset}", task_results,
                 model_config={"model": self.manifest.model if self.manifest else "unknown"},
@@ -725,12 +725,12 @@ def dataset_info(dataset: str = "lite") -> dict[str, Any]:
     """Print summary information about a SWE-Bench dataset."""
     instances = load_swebench_dataset(dataset)
 
-    repos = {}
+    repos: dict[str, int] = {}
     for inst in instances:
         repo = inst["repo"]
         repos[repo] = repos.get(repo, 0) + 1
 
-    difficulties = {}
+    difficulties: dict[str, int] = {}
     for inst in instances:
         diff = inst.get("difficulty", "unknown")
         difficulties[diff] = difficulties.get(diff, 0) + 1

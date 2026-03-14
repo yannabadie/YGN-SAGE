@@ -6,6 +6,7 @@ estimator that produces a 0.0-1.0 quality score.
 from __future__ import annotations
 
 import re
+from typing import Any
 
 
 class QualityEstimator:
@@ -84,12 +85,16 @@ except ImportError:
     _HAS_RUST_QE = False
 
 
-def create_quality_estimator() -> QualityEstimator:
-    """Factory: returns Rust estimator when available, Python otherwise."""
+def create_quality_estimator() -> Any:
+    """Factory: returns Rust estimator when available, Python otherwise.
+
+    Returns a ``QualityEstimator``-compatible object (duck-typed). The Rust
+    implementation conforms to the same interface but is not a Python subclass.
+    """
     if _HAS_RUST_QE:
         try:
             qe = _RustQE()
-            return qe  # type: ignore[return-value]  # duck-type compatible
+            return qe
         except Exception:
             pass
     return QualityEstimator()
