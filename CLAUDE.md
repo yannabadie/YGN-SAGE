@@ -490,8 +490,10 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
 - **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence. Rust SystemRouter should be promoted as primary
 - **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes
-- **Deprecated Rust modules**:
-  - `routing/router.rs` (AdaptiveRouter) — v0.3 removal target → `sage.strategy.adaptive_router.AdaptiveRouter`
-  - `routing/smmu_bridge.rs` (TopologyBridge) — v0.3 removal target → `routing/shadow.py` ShadowRouter
-  - `routing/system_router.rs` (SystemRouter) — removal deferred to v0.4 (still required by ModelAssigner + boot.py)
-  - `topology/engine.rs` (TopologyEngine) — removal deferred to v0.4 (still required by boot.py Phase 6)
+- **Rust module status**:
+  - `routing/system_router.rs` (SystemRouter) — **PRIMARY** (88% GT accuracy vs Python 44%). Used by boot.py, ShadowRouter, Pipeline
+  - `topology/engine.rs` (TopologyEngine) — **PRIMARY** (6-path generation). Used by boot.py Phase 6, Pipeline Stage 2
+  - `routing/model_assigner.rs` (ModelAssigner) — **PRIMARY** (per-node scoring). Used by Pipeline Stage 3
+  - `routing/model_registry.rs` (ModelRegistry) — **PRIMARY** (telemetry calibration). Used by SystemRouter + ModelAssigner
+  - `routing/router.rs` (AdaptiveRouter) — **DEPRECATED v0.3** (genuinely unused) → `sage.strategy.adaptive_router.AdaptiveRouter`
+  - `routing/smmu_bridge.rs` (TopologyBridge) — **DEPRECATED v0.3** (genuinely unused) → `routing/shadow.py` ShadowRouter
