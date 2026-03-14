@@ -2,7 +2,7 @@
 
 ## Abstract
 
-We present YGN-SAGE, an agent development kit built on five cognitive pillars: Topology, Tools, Memory, Evolution, and Strategy. The system achieves 84.1% pass@1 on HumanEval+ (164 problems, 80x harder tests) using budget-tier Gemini 2.5 Flash — competitive with flagship models (GPT-4o: ~87%, O1: ~89%). A 6-configuration ablation study shows the full framework adds +15pp over the bare LLM baseline, with each pillar contributing measurably: AVR self-refinement (+10pp), memory (+10pp), routing (+5pp), guardrails (+5pp). The Rust+Python hybrid architecture integrates formal verification (OxiZ pure-Rust SMT), 4-tier memory (Arrow STM -> SQLite episodic -> entity-relation semantic -> ExoCortex RAG), and evolutionary topology search (MAP-Elites + CMA-ME + MCTS). We report honest negative results alongside positive ones: evolution hurts on simple tasks (-10pp, Cohen's d=-1.41), and topology has no effect on math reasoning (GSM8K ceiling at 96%).
+We present YGN-SAGE, an agent development kit built on five cognitive pillars: Topology, Tools, Memory, Evolution, and Strategy. The system achieves 84.1% pass@1 on HumanEval+ (164 problems, 80x harder tests) using budget-tier Gemini 2.5 Flash — competitive with flagship models (GPT-4o: ~87%, O1: ~89%). A 6-configuration ablation study shows the full framework adds +15pp over the bare LLM baseline. On the 20-task code benchmark, routing shows +5pp isolated contribution; per-pillar attribution for memory, AVR, and guardrails requires evaluation at larger scale (N>=100). The Rust+Python hybrid architecture integrates formal verification (OxiZ pure-Rust SMT), 4-tier memory (Arrow STM -> SQLite episodic -> entity-relation semantic -> ExoCortex RAG), and evolutionary topology search (MAP-Elites + CMA-ME + MCTS). We report honest negative results alongside positive ones: evolution hurts on simple tasks (-10pp, Cohen's d=-1.41), and topology has no effect on math reasoning (GSM8K ceiling at 96%).
 
 ## 1. Introduction
 
@@ -11,7 +11,7 @@ Agent development kits face a fundamental tension: adding capabilities (memory, 
 ### Contributions
 
 1. **Five-pillar architecture** with Rust core (Arrow memory, SMT verification, topology execution) and Python SDK
-2. **Ablation study** proving each pillar's contribution: +15pp total (AVR +10pp, memory +10pp, routing +5pp, guardrails +5pp)
+2. **Ablation study** confirming +15pp total framework gain; routing shows +5pp isolated contribution on code tasks (N=20); per-pillar attribution for memory, AVR, and guardrails pending larger-scale evaluation
 3. **kNN routing** achieving 92% accuracy on cognitive system classification (+40pp over heuristic)
 4. **Topology evaluation**: 4-topology HumanEval+ benchmark with multi-run variance analysis
 5. **Honest negative results**: evolution -10pp on simple tasks, GSM8K topology null result, SWE-Bench 0% without code access
@@ -80,12 +80,12 @@ YGN-SAGE achieves 84.1% using a budget-tier model, competitive with systems usin
 |--------------|-------|-------|
 | **Full system** | **100%** | baseline |
 | No routing (random tier) | 95% | -5pp |
-| No guardrails | 95% | -5pp |
-| No AVR | 90% | -10pp |
-| No memory | 90% | -10pp |
+| No guardrails | 100% | 0pp |
+| No AVR | 100% | 0pp |
+| No memory | 100% | 0pp |
 | **Bare baseline** | **85%** | **-15pp** |
 
-Each pillar contributes measurably. AVR self-refinement and memory are the largest contributors (+10pp each), consistent with the agent loop's perceive-think-act-learn structure where verification and context injection provide the most value.
+The full framework adds +15pp over the bare LLM baseline, with routing showing a measurable +5pp isolated contribution on the 20-task code benchmark. Memory, AVR, and guardrails show no isolated delta on code generation tasks (N=20). The +15pp total framework contribution is confirmed, with routing as the measurable per-pillar contributor at this sample size. Per-pillar attribution for memory, AVR, and guardrails requires larger-scale evaluation (N>=100) and may emerge on non-code workloads.
 
 ### 3.4 Routing
 

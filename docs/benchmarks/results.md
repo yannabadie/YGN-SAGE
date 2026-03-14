@@ -36,7 +36,7 @@ All results as of March 13, 2026. Tests run using the YGN-SAGE framework with bu
 | Claude Sonnet 3.5 | ~82% | Anthropic |
 
 !!! note "Model context"
-    YGN-SAGE achieves 84.1% using Gemini 2.5 Flash (a budget-tier model), while competing systems use flagship models. The framework adds +15pp over the bare model baseline through routing, topology, memory, and AVR self-refinement.
+    YGN-SAGE achieves 84.1% using Gemini 2.5 Flash (a budget-tier model), while competing systems use flagship models. The framework adds +15pp over the bare model baseline (routing shows +5pp isolated contribution; per-pillar attribution for memory, AVR, and guardrails requires larger-scale re-run at N>=100).
 
 ---
 
@@ -100,18 +100,21 @@ Zero failure overlap on the pilot (Jaccard=0.00) — each topology has unique bl
 
 ## Ablation Study
 
-6-configuration ablation framework proving each pillar's contribution. A/B paired tests on the same model with 20 tasks.
+6-configuration ablation framework proving framework contribution over bare baseline. A/B paired tests on the same model with 20 tasks.
+
+!!! warning "Small sample (N=20)"
+    Per-pillar attribution requires confirmation at larger scale. Re-run at N>=100 pending.
 
 | Configuration | Score | Delta |
 |--------------|-------|-------|
 | **Full system** | **100%** | baseline |
 | No routing (random tier) | 95% | -5pp |
-| No guardrails | 95% | -5pp |
-| No AVR | 90% | -10pp |
-| No memory | 90% | -10pp |
+| No guardrails | 100% | 0pp |
+| No AVR | 100% | 0pp |
+| No memory | 100% | 0pp |
 | **Bare baseline** | **85%** | **-15pp** |
 
-The full framework adds **+15 percentage points** over the bare LLM baseline, with AVR self-refinement and memory each contributing ~10pp, and routing and guardrails each contributing ~5pp.
+Framework adds **+15 percentage points** over the bare LLM baseline. On the 20-task code benchmark, routing showed +5pp isolated contribution. Memory, AVR, and guardrails showed no isolated delta on code tasks — their value may emerge at larger scale or on non-code workloads. Re-run at N>=100 with statistical tests pending.
 
 ---
 
