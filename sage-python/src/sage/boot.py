@@ -60,7 +60,7 @@ from sage.routing.shadow import ShadowRouter  # noqa: E402
 # Rust versions still exist as internal deps of system_router.rs but are no longer
 # exported to Python callers.
 from sage.llm.model_card import ModelCard, CognitiveSystem  # noqa: E402
-from sage.llm.model_registry import ModelRegistry as PyModelRegistry  # noqa: E402
+from sage.llm.model_registry import ModelCardCatalog as PyModelCardCatalog  # noqa: E402
 
 
 def _check_sandbox_availability() -> bool:
@@ -599,7 +599,7 @@ def boot_agent_system(
     # Python ModelRegistry fallback — used when Rust is unavailable
     if rust_registry is None and _cards_toml:
         try:
-            py_model_registry = PyModelRegistry.from_toml_file(_cards_toml)
+            py_model_registry = PyModelCardCatalog.from_toml_file(_cards_toml)
             _log.info(
                 "Boot: Python ModelRegistry active (%d models from %s)",
                 len(py_model_registry), _cards_toml,

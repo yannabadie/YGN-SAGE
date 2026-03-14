@@ -1,7 +1,10 @@
-"""Test Python ModelRegistry (migrated from Rust model_registry.rs)."""
+"""Test Python ModelCardCatalog (migrated from Rust model_registry.rs)."""
 import pytest
 from sage.llm.model_card import ModelCard, CognitiveSystem
-from sage.llm.model_registry import ModelRegistry, TelemetryRecord
+from sage.llm.model_registry import ModelCardCatalog, TelemetryRecord
+
+# backward-compat alias still works
+ModelRegistry = ModelCardCatalog
 
 
 class TestTelemetryRecord:
@@ -36,7 +39,7 @@ class TestTelemetryRecord:
         assert len(tr._latencies) <= 100
 
 
-class TestModelRegistry:
+class TestModelCardCatalog:
     def _make_card(self, id="m1", **kw):
         defaults = dict(provider="test", family="test")
         defaults.update(kw)

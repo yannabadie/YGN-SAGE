@@ -1,8 +1,8 @@
-"""ModelRegistry — manages ModelCards with telemetry calibration.
+"""ModelCardCatalog — manages ModelCards with telemetry calibration.
 
 Python reimplementation of sage-core/src/routing/model_registry.rs (438 LOC).
 
-NOTE: This is sage.llm.model_registry.ModelRegistry (TOML-based catalog with
+NOTE: This is sage.llm.model_registry.ModelCardCatalog (TOML-based catalog with
 telemetry). NOT sage.providers.registry.ModelRegistry (runtime API discovery).
 """
 from __future__ import annotations
@@ -46,7 +46,7 @@ class TelemetryRecord:
         return sorted_lats[min(idx, len(sorted_lats) - 1)]
 
 
-class ModelRegistry:
+class ModelCardCatalog:
     def __init__(self) -> None:
         self._cards: dict[str, ModelCard] = {}
         self._telemetry: dict[str, TelemetryRecord] = {}
@@ -133,12 +133,23 @@ class ModelRegistry:
         return (1.0 - w) * card_affinity + w * observed
 
     @classmethod
-    def from_toml_file(cls, path: str) -> ModelRegistry:
+    def from_toml_file(cls, path: str) -> "ModelCardCatalog":
         cards = ModelCard.load_from_file(path)
         reg = cls()
         for card in cards:
             reg.register(card)
         return reg
 
+    @classmethod
+    def from_toml_str(cls, toml_str: str) -> "ModelCardCatalog":
+        cards = ModelCard.parse_toml(toml_str)
+        reg = cls()
+        for card in cards:
+            reg.register(card)
+        return reg
+
     def __repr__(self) -> str:
-        return f"ModelRegistry(models={len(self._cards)})"
+        return f"ModelCardCatalog(models={len(self._cards)})"
+
+
+ModelRegistry = ModelCardCatalog  # deprecated alias
