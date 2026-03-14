@@ -26,6 +26,18 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from sage.constants import (
+    DRIFT_WEIGHT_LATENCY,
+    DRIFT_WEIGHT_ERRORS,
+    DRIFT_WEIGHT_COST,
+    DRIFT_ACTION_CONTINUE,
+    DRIFT_ACTION_SWITCH,
+    DRIFT_CATASTROPHIC_FACTOR,
+    DRIFT_LATENCY_RATIO_SCALE,
+    DRIFT_COST_RATIO_SCALE,
+    DRIFT_MIN_EVENTS_FOR_TREND,
+)
+
 log = logging.getLogger(__name__)
 
 
@@ -73,15 +85,17 @@ class DriftMonitor:
         error_rate = self._error_rate(events)
         cost_drift = self._cost_trend(events)
 
-        weighted = latency_drift * 0.4 + error_rate * 0.4 + cost_drift * 0.2
+        weighted = (latency_drift * DRIFT_WEIGHT_LATENCY
+                    + error_rate * DRIFT_WEIGHT_ERRORS
+                    + cost_drift * DRIFT_WEIGHT_COST)
         # Ensure a single catastrophic signal is never masked:
         max_signal = max(latency_drift, error_rate, cost_drift)
-        drift = max(weighted, max_signal * 0.85)
+        drift = max(weighted, max_signal * DRIFT_CATASTROPHIC_FACTOR)
         drift = min(1.0, max(0.0, drift))
 
-        if drift > 0.7:
+        if drift > DRIFT_ACTION_SWITCH:
             action = "RESET_AGENT"
-        elif drift > 0.4:
+        elif drift > DRIFT_ACTION_CONTINUE:
             action = "SWITCH_MODEL"
         else:
             action = "CONTINUE"
@@ -109,7 +123,7 @@ class DriftMonitor:
         A 3x increase maps to 1.0 (via ``(ratio - 1) / 2``).
         """
         latencies = [e.latency_ms for e in events if e.latency_ms and e.latency_ms > 0]
-        if len(latencies) < 3:
+        if len(latencies) < DRIFT_MIN_EVENTS_FOR_TREND:
             return 0.0
         mid = len(latencies) // 2
         first_half = sum(latencies[:mid]) / max(mid, 1)
@@ -117,7 +131,7 @@ class DriftMonitor:
         if first_half <= 0:
             return 0.0
         ratio = second_half / first_half
-        return min(1.0, max(0.0, (ratio - 1.0) / 2.0))
+        return min(1.0, max(0.0, (ratio - 1.0) / DRIFT_LATENCY_RATIO_SCALE))
 
     @staticmethod
     def _error_rate(events: list[Any]) -> float:
@@ -132,7 +146,7 @@ class DriftMonitor:
         A 6x increase maps to 1.0 (via ``(ratio - 1) / 5``).
         """
         costs = [e.cost_usd for e in events if e.cost_usd and e.cost_usd > 0]
-        if len(costs) < 3:
+        if len(costs) < DRIFT_MIN_EVENTS_FOR_TREND:
             return 0.0
         mid = len(costs) // 2
         first_half = sum(costs[:mid]) / max(mid, 1)
@@ -140,4 +154,4 @@ class DriftMonitor:
         if first_half <= 0:
             return 0.0
         ratio = second_half / first_half
-        return min(1.0, max(0.0, (ratio - 1.0) / 5.0))
+        return min(1.0, max(0.0, (ratio - 1.0) / DRIFT_COST_RATIO_SCALE))

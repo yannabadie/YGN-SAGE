@@ -11,6 +11,8 @@ import re
 import logging
 from typing import Any
 
+from sage.constants import RELEVANCE_GATE_THRESHOLD
+
 log = logging.getLogger(__name__)
 
 
@@ -22,7 +24,7 @@ class RelevanceGate:
                    Default 0.3 calibrated against Sprint 3 benchmarks.
     """
 
-    def __init__(self, threshold: float = 0.3) -> None:
+    def __init__(self, threshold: float = RELEVANCE_GATE_THRESHOLD) -> None:
         self.threshold = threshold
         self._stop_words = frozenset({
             "the", "a", "an", "is", "are", "was", "were", "be", "been",
@@ -70,7 +72,7 @@ except ImportError:
     _HAS_RUST_GATE = False
 
 
-def create_relevance_gate(threshold: float = 0.3) -> Any:
+def create_relevance_gate(threshold: float = RELEVANCE_GATE_THRESHOLD) -> Any:
     """Factory: returns Rust gate when available, Python otherwise.
 
     Returns a ``RelevanceGate``-compatible object (duck-typed). The Rust

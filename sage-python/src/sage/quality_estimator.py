@@ -8,6 +8,19 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from sage.constants import (
+    QUALITY_BASELINE,
+    QUALITY_LENGTH_WEIGHT,
+    QUALITY_CODE_WEIGHT,
+    QUALITY_ERROR_WEIGHT,
+    QUALITY_AVR_FAST,
+    QUALITY_AVR_MEDIUM,
+    QUALITY_AVR_SLOW,
+    QUALITY_NONCODE_BASELINE,
+    QUALITY_LENGTH_DENOM_SHORT,
+    QUALITY_LENGTH_DENOM_LONG,
+)
+
 
 class QualityEstimator:
     """Estimate result quality from multiple signals (0.0-1.0).
@@ -31,7 +44,7 @@ class QualityEstimator:
         if not result or not result.strip():
             return 0.0
 
-        score = 0.3  # Signal 1: non-empty
+        score = QUALITY_BASELINE  # Signal 1: non-empty
 
         # Signal 2: Length adequacy (task-aware)
         task_words = len(task.split())
@@ -43,36 +56,36 @@ class QualityEstimator:
         if task_wants_code:
             # Code tasks: expect substantial output
             if task_words < 10:
-                score += min(result_words / 20, 1.0) * 0.2
+                score += min(result_words / QUALITY_LENGTH_DENOM_SHORT, 1.0) * QUALITY_LENGTH_WEIGHT
             else:
-                score += min(result_words / 50, 1.0) * 0.2
+                score += min(result_words / QUALITY_LENGTH_DENOM_LONG, 1.0) * QUALITY_LENGTH_WEIGHT
         else:
             # Non-code tasks (math, Q&A): length is not a quality proxy.
             # A correct math answer ("42") or factual answer is valid at any length.
             if result_words >= 1:
-                score += 0.2
+                score += QUALITY_LENGTH_WEIGHT
 
         # Signal 3: Code task + code presence
         code_keywords = {"def ", "class ", "function ", "import ", "```"}
         result_has_code = any(kw in result for kw in code_keywords)
         if task_wants_code and result_has_code:
-            score += 0.2
+            score += QUALITY_CODE_WEIGHT
         elif not task_wants_code:
-            score += 0.1
+            score += QUALITY_NONCODE_BASELINE
 
         # Signal 4: No error indicators (pattern-matched to reduce false positives)
         error_patterns = (r"^error:", r"^traceback", r"^exception:", r"failed to", r"cannot ")
         if not had_errors and not any(re.search(p, result.lower(), re.MULTILINE) for p in error_patterns):
-            score += 0.15
+            score += QUALITY_ERROR_WEIGHT
 
         # Signal 5: AVR convergence
         if avr_iterations > 0:
             if avr_iterations <= 2:
-                score += 0.15
+                score += QUALITY_AVR_FAST
             elif avr_iterations <= 4:
-                score += 0.10
+                score += QUALITY_AVR_MEDIUM
             else:
-                score += 0.05
+                score += QUALITY_AVR_SLOW
 
         return min(score, 1.0)
 

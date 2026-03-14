@@ -17,6 +17,38 @@ from dataclasses import dataclass
 from typing import Any
 
 from sage.strategy.metacognition import CognitiveProfile, RoutingDecision
+from sage.constants import (
+    S1_COMPLEXITY_CEIL,
+    S1_UNCERTAINTY_CEIL,
+    S3_COMPLEXITY_FLOOR,
+    S3_UNCERTAINTY_FLOOR,
+    S2_REASONER_COMPLEXITY_FLOOR,
+    S3_CODEX_COMPLEXITY_FLOOR,
+    BRAKE_WINDOW,
+    BRAKE_ENTROPY_THRESHOLD,
+    BRAKE_HISTORY_MAXLEN,
+    ADAPTIVE_C0_THRESHOLD,
+    ADAPTIVE_C1_THRESHOLD,
+    HEURISTIC_COMPLEXITY_DENOM,
+    HEURISTIC_QUESTION_UNCERTAINTY,
+    HEURISTIC_DEFAULT_UNCERTAINTY,
+    HEURISTIC_FALLBACK_CONFIDENCE,
+    KNN_S1_COMPLEXITY,
+    KNN_S1_UNCERTAINTY,
+    KNN_S2_COMPLEXITY,
+    KNN_S2_UNCERTAINTY,
+    KNN_S3_COMPLEXITY,
+    KNN_S3_UNCERTAINTY,
+    KNN_DISTANCE_THRESHOLD,
+    MAX_TOKENS_S1,
+    MAX_TOKENS_S2,
+    MAX_TOKENS_S3,
+    ENTROPY_LOW_THRESHOLD,
+    ENTROPY_HIGH_THRESHOLD,
+    ENTROPY_LOW_CONFIDENCE,
+    ENTROPY_HIGH_CONFIDENCE,
+    ENTROPY_MID_CONFIDENCE,
+)
 
 log = logging.getLogger(__name__)
 
@@ -59,15 +91,15 @@ class AdaptiveRouter:
 
     def __init__(
         self,
-        s1_complexity_ceil: float = 0.50,
-        s1_uncertainty_ceil: float = 0.3,
-        s3_complexity_floor: float = 0.65,
-        s3_uncertainty_floor: float = 0.6,
-        brake_window: int = 3,
-        brake_entropy_threshold: float = 0.15,
+        s1_complexity_ceil: float = S1_COMPLEXITY_CEIL,
+        s1_uncertainty_ceil: float = S1_UNCERTAINTY_CEIL,
+        s3_complexity_floor: float = S3_COMPLEXITY_FLOOR,
+        s3_uncertainty_floor: float = S3_UNCERTAINTY_FLOOR,
+        brake_window: int = BRAKE_WINDOW,
+        brake_entropy_threshold: float = BRAKE_ENTROPY_THRESHOLD,
         llm_provider: Any = None,
-        c0_threshold: float = 0.85,
-        c1_threshold: float = 0.70,
+        c0_threshold: float = ADAPTIVE_C0_THRESHOLD,
+        c1_threshold: float = ADAPTIVE_C1_THRESHOLD,
         classifier_path: str | None = None,
         tokenizer_path: str | None = None,
         enable_entropy_probe: bool = False,
@@ -79,7 +111,7 @@ class AdaptiveRouter:
         # CGRS self-braking (same as ComplexityRouter)
         self.brake_window = brake_window
         self.brake_entropy_threshold = brake_entropy_threshold
-        self._entropy_history: deque[float] = deque(maxlen=10)
+        self._entropy_history: deque[float] = deque(maxlen=BRAKE_HISTORY_MAXLEN)
 
         # ComplexityRouter thresholds (used by heuristic fallback)
         self.s1_complexity_ceil = s1_complexity_ceil
@@ -221,7 +253,7 @@ class AdaptiveRouter:
             decision=decision,
             profile=profile,
             stage=0,
-            confidence=0.5,
+            confidence=HEURISTIC_FALLBACK_CONFIDENCE,
             method="heuristic",
         )
 
@@ -233,7 +265,7 @@ class AdaptiveRouter:
         if (
             self._enable_entropy
             and self._llm_provider is not None
-            and result.confidence < 0.85
+            and result.confidence < ADAPTIVE_C0_THRESHOLD
         ):
             try:
                 entropy_result = await self._entropy_probe(task, result)
@@ -280,11 +312,11 @@ class AdaptiveRouter:
         c, u = profile.complexity, profile.uncertainty
 
         if c > self.s3_complexity_floor or u > self.s3_uncertainty_floor:
-            tier = "codex" if c > 0.8 else "reasoner"
+            tier = "codex" if c > S3_CODEX_COMPLEXITY_FLOOR else "reasoner"
             return RoutingDecision(
                 system=3,
                 llm_tier=tier,
-                max_tokens=8192,
+                max_tokens=MAX_TOKENS_S3,
                 use_z3=True,
                 validation_level=3,
             )
@@ -297,16 +329,16 @@ class AdaptiveRouter:
             return RoutingDecision(
                 system=1,
                 llm_tier="fast",
-                max_tokens=2048,
+                max_tokens=MAX_TOKENS_S1,
                 use_z3=False,
                 validation_level=1,
             )
 
-        tier = "reasoner" if c > 0.55 else "mutator"
+        tier = "reasoner" if c > S2_REASONER_COMPLEXITY_FLOOR else "mutator"
         return RoutingDecision(
             system=2,
             llm_tier=tier,
-            max_tokens=4096,
+            max_tokens=MAX_TOKENS_S2,
             use_z3=False,
             validation_level=2,
         )
@@ -339,7 +371,7 @@ class AdaptiveRouter:
             query_vec = emb.embed(task)
             result = self._rust.route_with_embedding(task, query_vec)
             # Accept if confidence exceeds OOD threshold (proxy for kNN contributing)
-            if result is not None and result.confidence > 0.3:
+            if result is not None and result.confidence > KNN_DISTANCE_THRESHOLD:
                 return result
             return None
         except Exception as e:
@@ -363,17 +395,17 @@ class AdaptiveRouter:
         """Convert kNN tier to CognitiveProfile for _route_from_profile."""
         if tier == 1:
             return CognitiveProfile(
-                complexity=0.2, uncertainty=0.1,
+                complexity=KNN_S1_COMPLEXITY, uncertainty=KNN_S1_UNCERTAINTY,
                 tool_required=False, reasoning="knn_s1",
             )
         elif tier == 3:
             return CognitiveProfile(
-                complexity=0.8, uncertainty=0.7,
+                complexity=KNN_S3_COMPLEXITY, uncertainty=KNN_S3_UNCERTAINTY,
                 tool_required=False, reasoning="knn_s3",
             )
         else:  # S2
             return CognitiveProfile(
-                complexity=0.5, uncertainty=0.4,
+                complexity=KNN_S2_COMPLEXITY, uncertainty=KNN_S2_UNCERTAINTY,
                 tool_required=False, reasoning="knn_s2",
             )
 
@@ -396,8 +428,8 @@ class AdaptiveRouter:
                       "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
         hits = sum(1 for w in words if w in complex_kw)
         return CognitiveProfile(
-            complexity=min(hits / 3.0, 1.0),
-            uncertainty=0.3 if "?" in task else 0.2,
+            complexity=min(hits / HEURISTIC_COMPLEXITY_DENOM, 1.0),
+            uncertainty=HEURISTIC_QUESTION_UNCERTAINTY if "?" in task else HEURISTIC_DEFAULT_UNCERTAINTY,
             tool_required=False,
             reasoning="degraded_heuristic",
         )
@@ -449,12 +481,12 @@ class AdaptiveRouter:
                 entropy = unique_ratio  # rough proxy
 
             # Map entropy to routing adjustment
-            if entropy < 0.3:
-                conf = 0.75
-            elif entropy > 0.7:
-                conf = 0.65
+            if entropy < ENTROPY_LOW_THRESHOLD:
+                conf = ENTROPY_LOW_CONFIDENCE
+            elif entropy > ENTROPY_HIGH_THRESHOLD:
+                conf = ENTROPY_HIGH_CONFIDENCE
             else:
-                conf = 0.60
+                conf = ENTROPY_MID_CONFIDENCE
 
             profile = current.profile
             decision = self._route_from_profile(

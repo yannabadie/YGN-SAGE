@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 import numpy as np
 
+from sage.constants import KNN_K, KNN_DISTANCE_THRESHOLD
+
 _log = logging.getLogger(__name__)
 
 # Rust kNN hot-path acceleration
@@ -79,8 +81,8 @@ class KnnRouter:
         self,
         exemplar_path: Path | None = None,
         embedder: Embedder | None = None,
-        k: int = 5,
-        distance_threshold: float = 0.3,
+        k: int = KNN_K,
+        distance_threshold: float = KNN_DISTANCE_THRESHOLD,
     ):
         self._k = k
         self._distance_threshold = distance_threshold

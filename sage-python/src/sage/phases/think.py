@@ -82,7 +82,8 @@ async def think(
     usage = getattr(response, "usage", None) or {}
     actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
     tokens = _estimate_tokens(content, actual_count=actual_total)
-    cost_per_k = _COST_PER_1K.get(model_name, 0.001)
+    from sage.constants import DEFAULT_COST_PER_1K
+    cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
     step_cost = (tokens / 1000) * cost_per_k
     loop.total_cost_usd += step_cost
 

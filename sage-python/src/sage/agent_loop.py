@@ -21,6 +21,16 @@ from sage.topology.kg_rlvr import ProcessRewardModel
 from sage.resilience import CircuitBreaker
 from sage.memory.relevance_gate import RelevanceGate
 from sage.monitoring.drift import DriftMonitor
+from sage.constants import (
+    S2_AVR_MAX_ITERATIONS as _S2_AVR_MAX_ITERATIONS,
+    S2_MAX_RETRIES_BEFORE_ESCALATION as _S2_MAX_RETRIES_BEFORE_ESCALATION,
+    MAX_AGENT_MESSAGES,
+    STAGNATION_WINDOW,
+    DRIFT_CHECK_INTERVAL,
+    RELEVANCE_GATE_THRESHOLD,
+    S3_MAX_RETRIES,
+    DEFAULT_COST_PER_1K,
+)
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +106,7 @@ def _validate_code_syntax(code: str) -> tuple[bool, str]:
         return False, f"SyntaxError{line_info}: {e.msg}"
 
 
-def _is_stagnating(error_history: list[str], window: int = 3) -> bool:
+def _is_stagnating(error_history: list[str], window: int = STAGNATION_WINDOW) -> bool:
     """Detect stagnation: True if the last `window` errors are identical.
 
     This means the LLM is producing the same broken code repeatedly
@@ -108,9 +118,9 @@ def _is_stagnating(error_history: list[str], window: int = 3) -> bool:
     return all(e == recent[0] for e in recent)
 
 
-S2_MAX_RETRIES_BEFORE_ESCALATION = 2
-S2_AVR_MAX_ITERATIONS = 3  # Max Act-Verify-Refine iterations per code block
-MAX_MESSAGES = 40  # Keep system + user + last N exchanges
+S2_MAX_RETRIES_BEFORE_ESCALATION = _S2_MAX_RETRIES_BEFORE_ESCALATION
+S2_AVR_MAX_ITERATIONS = _S2_AVR_MAX_ITERATIONS  # Max Act-Verify-Refine iterations per code block
+MAX_MESSAGES = MAX_AGENT_MESSAGES  # Keep system + user + last N exchanges
 
 
 def _is_code_task(task: str) -> bool:
@@ -211,7 +221,7 @@ class AgentLoop:
         self.total_cost_usd = 0.0
         self.start_time = 0.0
         self._s3_retries = 0
-        self._max_s3_retries = 2
+        self._max_s3_retries = S3_MAX_RETRIES
         self._s2_avr_retries = 0
         self._max_s2_avr_retries = S2_MAX_RETRIES_BEFORE_ESCALATION
         self._avr_error_history: list[str] = []
@@ -220,7 +230,7 @@ class AgentLoop:
         self._s3_degraded: bool = False
 
         # CRAG-style relevance gate for memory injection
-        self._relevance_gate = RelevanceGate(threshold=0.3)
+        self._relevance_gate = RelevanceGate(threshold=RELEVANCE_GATE_THRESHOLD)
 
         # Circuit breakers for best-effort subsystems
         self._cb_semantic = CircuitBreaker("semantic_memory")
@@ -233,7 +243,7 @@ class AgentLoop:
         # Drift detection — monitors latency/error/cost trends
         self._drift_monitor = DriftMonitor()
         self._drift_events: list[AgentEvent] = []
-        self._drift_check_interval = 10  # Analyze every N events
+        self._drift_check_interval = DRIFT_CHECK_INTERVAL  # Analyze every N events
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = AgentEvent(
@@ -557,7 +567,7 @@ class AgentLoop:
 
         # Emit final THINK event with aggregated content
         tokens = _estimate_tokens(full_text)
-        cost_per_k = _COST_PER_1K.get(self.config.llm.model, 0.001)
+        cost_per_k = _COST_PER_1K.get(self.config.llm.model, DEFAULT_COST_PER_1K)
         step_cost = (tokens / 1000) * cost_per_k
         self.total_cost_usd += step_cost
         self._emit(
@@ -720,7 +730,7 @@ class AgentLoop:
             usage = getattr(response, "usage", None) or {}
             actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
             tokens = _estimate_tokens(content, actual_count=actual_total)
-            cost_per_k = _COST_PER_1K.get(model_name, 0.001)
+            cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
             step_cost = (tokens / 1000) * cost_per_k
             self.total_cost_usd += step_cost
 

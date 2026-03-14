@@ -20,6 +20,13 @@ from sage.strategy.metacognition import ComplexityRouter
 from sage.agents.sequential import SequentialAgent
 from sage.agents.parallel import ParallelAgent
 from sage.llm.base import LLMConfig, Message, Role
+from sage.constants import (
+    ORCHESTRATOR_S1_QUALITY,
+    ORCHESTRATOR_S2_QUALITY,
+    ORCHESTRATOR_S3_QUALITY,
+    MAX_CASCADE_ATTEMPTS as _MAX_CASCADE_ATTEMPTS,
+    MAX_TOPOLOGY_AGENTS,
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,7 +81,7 @@ class ModelAgent:
     models from the registry (FrugalGPT pattern, max 3 attempts).
     """
 
-    MAX_CASCADE_ATTEMPTS = 3
+    MAX_CASCADE_ATTEMPTS = _MAX_CASCADE_ATTEMPTS
 
     def __init__(self, name: str, model: ModelProfile, system_prompt: str = "",
                  registry: ModelRegistry | None = None,
@@ -276,7 +283,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s1-fast", model=model, registry=self.registry, quality_threshold=0.4)
+            agent = ModelAgent(name="s1-fast", model=model, registry=self.registry, quality_threshold=ORCHESTRATOR_S1_QUALITY)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -298,7 +305,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s2-worker", model=model, registry=self.registry, quality_threshold=0.6)
+            agent = ModelAgent(name="s2-worker", model=model, registry=self.registry, quality_threshold=ORCHESTRATOR_S2_QUALITY)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -316,7 +323,7 @@ class CognitiveOrchestrator:
                 model = self._any_available_model()
             if not model:
                 return "No models available."
-            agent = ModelAgent(name="s3-reasoner", model=model, registry=self.registry, quality_threshold=0.8)
+            agent = ModelAgent(name="s3-reasoner", model=model, registry=self.registry, quality_threshold=ORCHESTRATOR_S3_QUALITY)
             result = await agent.run(task)
             self._emit_event("ORCHESTRATOR", decision.system, model.id, time.perf_counter() - t0)
             return result
@@ -344,7 +351,7 @@ class CognitiveOrchestrator:
                 model=model,
                 system_prompt=f"Focus on this specific subtask: {subtask.description}",
                 registry=self.registry,
-                quality_threshold=0.8,
+                quality_threshold=ORCHESTRATOR_S3_QUALITY,
             )
             agents.append(agent)
             log.info(
@@ -435,7 +442,7 @@ class CognitiveOrchestrator:
                     needs_code=needs_code,
                     needs_reasoning=needs_reasoning,
                 ))
-        return subtasks[:4]  # Max 4 subtasks
+        return subtasks[:MAX_TOPOLOGY_AGENTS]  # Max subtasks
 
     # ── Helpers ──────────────────────────────────────────────────────────
 

@@ -55,6 +55,20 @@ from sage.memory.remote_rag import ExoCortex  # noqa: E402
 from sage.tools.memory_tools import create_memory_tools  # noqa: E402
 from sage.events.bus import EventBus  # noqa: E402
 from sage.routing.shadow import ShadowRouter  # noqa: E402
+from sage.constants import (  # noqa: E402
+    DEFAULT_BUDGET_USD,
+    EXPLORATION_BUDGET_LOW,
+    EXPLORATION_BUDGET_HIGH,
+    MAX_TOPOLOGY_AGENTS,
+    LLM_SYNTHESIS_MIN_SYSTEM,
+    MEMORY_COMPRESSION_THRESHOLD,
+    MEMORY_KEEP_RECENT,
+    COST_GUARDRAIL_MAX_USD,
+    OUTPUT_GUARDRAIL_MIN_LENGTH,
+    MAX_AGENT_STEPS,
+    SPECULATIVE_ZONE_MIN,
+    SPECULATIVE_ZONE_MAX,
+)
 
 # ModelCard + ModelRegistry — Python implementations (migrated from Rust in Phase 1)
 # Rust versions still exist as internal deps of system_router.rs but are no longer
@@ -149,7 +163,7 @@ class AgentSystem:
         # Try CognitiveOrchestrationPipeline first (if wired)
         if self.pipeline:
             try:
-                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else 5.0
+                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD / 2
                 return await self.pipeline.run(task, budget_usd=_budget)
             except Exception as exc:
                 _log.warning("Pipeline failed, falling back to legacy: %s", exc)
@@ -158,7 +172,7 @@ class AgentSystem:
         self._last_decision = None  # Routing decision for telemetry feedback
 
         # 1. Route task to cognitive system
-        budget = 10.0  # Default budget (USD)
+        budget = DEFAULT_BUDGET_USD
         if hasattr(self, '_guardrail_budget'):
             budget = self._guardrail_budget
 
@@ -179,7 +193,7 @@ class AgentSystem:
                 model_id = None
                 # Speculative zone detection (Python-only path via ShadowRouter)
                 profile = await self.metacognition.assess_complexity_async(task)
-                if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+                if SPECULATIVE_ZONE_MIN <= profile.complexity <= SPECULATIVE_ZONE_MAX and decision.system <= 2:
                     _log.info(
                         "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
                         profile.complexity, decision.system,
@@ -201,7 +215,7 @@ class AgentSystem:
             system_num = decision.system
             model_id = None  # Python path uses llm_tier, not model_id
             # Speculative execution detection
-            if 0.35 <= profile.complexity <= 0.55 and decision.system <= 2:
+            if SPECULATIVE_ZONE_MIN <= profile.complexity <= SPECULATIVE_ZONE_MAX and decision.system <= 2:
                 _log.info(
                     "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
                     profile.complexity, decision.system,
@@ -222,7 +236,7 @@ class AgentSystem:
             )
         elif self.topology_engine:
             try:
-                exploration_budget = 0.3 if system_num <= 2 else 0.5
+                exploration_budget = EXPLORATION_BUDGET_LOW if system_num <= 2 else EXPLORATION_BUDGET_HIGH
                 topology_result = self.topology_engine.generate(
                     task,
                     None,  # embedding (populated after first run)
@@ -241,14 +255,14 @@ class AgentSystem:
                 # Path 3 hook: if engine returned template_fallback AND
                 # system >= 2 AND not mock, try LLM synthesis
                 if (topology_result.source == "template_fallback"
-                        and system_num >= 2
+                        and system_num >= LLM_SYNTHESIS_MIN_SYSTEM
                         and self.agent_loop.config.llm.provider != "mock"):
                     try:
                         from sage.topology.llm_caller import synthesize_topology
                         llm_graph = await synthesize_topology(
                             self.agent_loop._llm,
                             task,
-                            max_agents=4,
+                            max_agents=MAX_TOPOLOGY_AGENTS,
                             available_models=["gemini-2.5-flash", "gemini-3-flash-preview"],
                         )
                         if llm_graph and llm_graph.node_count() > 0:
@@ -291,7 +305,7 @@ class AgentSystem:
                 from sage_core import RoutingConstraints  # noqa: E402
                 constraints = RoutingConstraints(
                     max_cost_usd=budget,
-                    exploration_budget=0.3 if system_num <= 2 else 0.5,
+                    exploration_budget=EXPLORATION_BUDGET_LOW if system_num <= 2 else EXPLORATION_BUDGET_HIGH,
                 )
                 topology_id_str = (
                     topology_result.topology.id if topology_result else ""
@@ -333,7 +347,7 @@ class AgentSystem:
                     if not self.registry.list_available():
                         _log.debug("Bandit: no registry models available, skipping arm seeding")
 
-                bandit_decision = self.bandit.select(0.3)
+                bandit_decision = self.bandit.select(EXPLORATION_BUDGET_LOW)
                 _log.info(
                     "Bandit suggestion: model=%s, template=%s, quality=%.3f, explore=%s",
                     bandit_decision.model_id, bandit_decision.template,
@@ -709,8 +723,8 @@ def boot_agent_system(
     # Memory compressor (fires on pressure — MEM1 pattern)
     memory_compressor = MemoryCompressor(
         llm=provider,
-        compression_threshold=20,
-        keep_recent=5,
+        compression_threshold=MEMORY_COMPRESSION_THRESHOLD,
+        keep_recent=MEMORY_KEEP_RECENT,
     )
 
     # Embedder for S-MMU semantic edges
@@ -759,7 +773,7 @@ def boot_agent_system(
             "You are YGN-SAGE, a precise AI assistant. "
             "Think step-by-step. Be concise. Answer the user task directly."
         ),
-        max_steps=20,
+        max_steps=MAX_AGENT_STEPS,
         validation_level=1,  # Default S1 — routing promotes to S2 only for code tasks
     )
 
@@ -897,8 +911,8 @@ def boot_agent_system(
     from sage.guardrails.base import GuardrailPipeline
     from sage.guardrails.builtin import CostGuardrail, OutputGuardrail
     loop.guardrail_pipeline = GuardrailPipeline([
-        CostGuardrail(max_usd=10.0),  # Default budget limit
-        OutputGuardrail(min_length=1),  # Free-text output validation
+        CostGuardrail(max_usd=COST_GUARDRAIL_MAX_USD),
+        OutputGuardrail(min_length=OUTPUT_GUARDRAIL_MIN_LENGTH),
     ])
 
     # Sandbox availability check — warn loudly if neither Wasm nor Docker present

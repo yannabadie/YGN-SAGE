@@ -13,6 +13,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sage.constants import (
+    SHADOW_SOFT_TRACES,
+    SHADOW_SOFT_DIVERGENCE,
+    SHADOW_HARD_TRACES,
+    SHADOW_HARD_DIVERGENCE,
+    SHADOW_MAX_TRACE_BYTES,
+    DEFAULT_BUDGET_USD,
+)
+
 _log = logging.getLogger("sage.routing.shadow")
 
 # Default trace file location
@@ -57,7 +66,7 @@ class ShadowRouter:
         """True when both routers are present (shadow comparison enabled)."""
         return self._rust_router is not None and self._python_metacognition is not None
 
-    async def route(self, task: str, budget: float = 10.0) -> Any:
+    async def route(self, task: str, budget: float = DEFAULT_BUDGET_USD) -> Any:
         """Route a task, running both routers in shadow mode when available.
 
         Returns the primary decision:
@@ -137,8 +146,8 @@ class ShadowRouter:
 
         return rust_decision
 
-    # Maximum trace file size before rotation (10 MB)
-    _MAX_TRACE_BYTES = 10 * 1024 * 1024
+    # Maximum trace file size before rotation
+    _MAX_TRACE_BYTES = SHADOW_MAX_TRACE_BYTES
 
     def _write_trace(
         self,
@@ -188,11 +197,11 @@ class ShadowRouter:
 
     def is_phase5_soft_ready(self) -> bool:
         """Soft gate: 500 traces, <10% divergence. Can start preferring Rust router."""
-        return self.total >= 500 and self.divergence_rate() < 0.10
+        return self.total >= SHADOW_SOFT_TRACES and self.divergence_rate() < SHADOW_SOFT_DIVERGENCE
 
     def is_phase5_hard_ready(self) -> bool:
         """Hard gate: 1000 traces, <5% divergence. Safe to delete Python router."""
-        return self.total >= 1000 and self.divergence_rate() < 0.05
+        return self.total >= SHADOW_HARD_TRACES and self.divergence_rate() < SHADOW_HARD_DIVERGENCE
 
     def load_existing_traces(self) -> None:
         """Load trace counts from existing JSONL file for cross-session gate continuity."""
