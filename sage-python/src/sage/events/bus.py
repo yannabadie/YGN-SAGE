@@ -27,7 +27,7 @@ DEFAULT_MAX_BUFFER = 5000
 class _AsyncConsumer:
     """Async stream consumer state bound to an owning event loop."""
 
-    queue: asyncio.Queue[AgentEvent]
+    queue: asyncio.Queue[AgentEvent | None]
     loop: asyncio.AbstractEventLoop
 
 
@@ -152,7 +152,7 @@ class EventBus:
             # Signal consumers to stop before clearing
             for consumer in self._async_consumers:
                 try:
-                    consumer.queue.put_nowait(None)
+                    consumer.queue.put_nowait(None)  # sentinel to stop consumer
                 except Exception:
                     pass
             self._async_consumers.clear()

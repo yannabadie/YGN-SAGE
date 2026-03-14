@@ -26,7 +26,8 @@ except ImportError:
 # Fallback: Python z3-solver
 _z3: types.ModuleType | None
 try:
-    import z3 as _z3
+    import z3 as _z3_imported
+    _z3 = _z3_imported
 except ImportError:
     _z3 = None
 
