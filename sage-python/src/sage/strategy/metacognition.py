@@ -16,24 +16,6 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any
 
-from sage.constants import (
-    S1_COMPLEXITY_CEIL,
-    S1_UNCERTAINTY_CEIL,
-    S3_COMPLEXITY_FLOOR,
-    S3_UNCERTAINTY_FLOOR,
-    S2_REASONER_COMPLEXITY_FLOOR,
-    S3_CODEX_COMPLEXITY_FLOOR,
-    BRAKE_WINDOW,
-    BRAKE_ENTROPY_THRESHOLD,
-    BRAKE_HISTORY_MAXLEN,
-    HEURISTIC_COMPLEXITY_DENOM,
-    HEURISTIC_QUESTION_UNCERTAINTY,
-    HEURISTIC_DEFAULT_UNCERTAINTY,
-    MAX_TOKENS_S1,
-    MAX_TOKENS_S2,
-    MAX_TOKENS_S3,
-)
-
 log = logging.getLogger(__name__)
 
 
@@ -102,12 +84,12 @@ class ComplexityRouter:
 
     def __init__(
         self,
-        s1_complexity_ceil: float = S1_COMPLEXITY_CEIL,
-        s1_uncertainty_ceil: float = S1_UNCERTAINTY_CEIL,
-        s3_complexity_floor: float = S3_COMPLEXITY_FLOOR,
-        s3_uncertainty_floor: float = S3_UNCERTAINTY_FLOOR,
-        brake_window: int = BRAKE_WINDOW,
-        brake_entropy_threshold: float = BRAKE_ENTROPY_THRESHOLD,
+        s1_complexity_ceil: float = 0.50,
+        s1_uncertainty_ceil: float = 0.3,
+        s3_complexity_floor: float = 0.65,
+        s3_uncertainty_floor: float = 0.6,
+        brake_window: int = 3,
+        brake_entropy_threshold: float = 0.15,
         llm_provider: Any = None,
     ):
         self.s1_complexity_ceil = s1_complexity_ceil
@@ -116,7 +98,7 @@ class ComplexityRouter:
         self.s3_uncertainty_floor = s3_uncertainty_floor
         self.brake_window = brake_window
         self.brake_entropy_threshold = brake_entropy_threshold
-        self._entropy_history: deque[float] = deque(maxlen=BRAKE_HISTORY_MAXLEN)
+        self._entropy_history: deque[float] = deque(maxlen=10)
         self._llm_available: bool | None = None
         self._llm_provider = llm_provider
 
@@ -126,10 +108,10 @@ class ComplexityRouter:
 
         # System 3: high complexity OR high uncertainty
         if c > self.s3_complexity_floor or u > self.s3_uncertainty_floor:
-            tier = "codex" if c > S3_CODEX_COMPLEXITY_FLOOR else "reasoner"
+            tier = "codex" if c > 0.8 else "reasoner"
             return RoutingDecision(
                 system=3, llm_tier=tier,
-                max_tokens=MAX_TOKENS_S3, use_z3=True, validation_level=3,
+                max_tokens=8192, use_z3=True, validation_level=3,
             )
 
         # System 1: low complexity AND low uncertainty AND no tools
@@ -138,14 +120,14 @@ class ComplexityRouter:
                 and not profile.tool_required):
             return RoutingDecision(
                 system=1, llm_tier="fast",
-                max_tokens=MAX_TOKENS_S1, use_z3=False, validation_level=1,
+                max_tokens=2048, use_z3=False, validation_level=1,
             )
 
         # System 2: everything in between
-        tier = "reasoner" if c > S2_REASONER_COMPLEXITY_FLOOR else "mutator"
+        tier = "reasoner" if c > 0.55 else "mutator"
         return RoutingDecision(
             system=2, llm_tier=tier,
-            max_tokens=MAX_TOKENS_S2, use_z3=False, validation_level=2,
+            max_tokens=4096, use_z3=False, validation_level=2,
         )
 
     def record_output_entropy(self, entropy: float) -> None:
@@ -250,20 +232,28 @@ class ComplexityRouter:
         """
         import warnings
         warnings.warn(
-            "Using degraded keyword-count heuristic (52% accuracy). "
+            "Using degraded keyword-count heuristic. "
             "Install sage_core[onnx] or build kNN exemplars for accurate routing.",
-            UserWarning,
             stacklevel=2,
         )
         words = task.lower().split()
-        complex_kw = {"implement", "feature", "module", "component", "service",
-                      "algorithm", "optimize", "distributed", "concurrent",
+        complex_kw = {"implement", "algorithm", "optimize", "distributed", "concurrent",
                       "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
+        code_kw = {"function", "class", "code", "program", "script", "module",
+                   "refactor", "test", "api", "endpoint", "database", "query",
+                   "memoization", "recursion", "sorting", "binary", "parser"}
         hits = sum(1 for w in words if w in complex_kw)
+        code_hits = sum(1 for w in words if w in code_kw)
+        # Code keywords contribute 1/3 weight (enough to push code tasks to S2,
+        # but not so much that they overshoot into S3)
+        effective = hits + code_hits * 0.34
+        # tool_required only when both complex and code signals present
+        # (prevents simple "write a function" from escalating)
+        needs_tool = hits > 0 and code_hits > 0
         return CognitiveProfile(
-            complexity=min(hits / HEURISTIC_COMPLEXITY_DENOM, 1.0),
-            uncertainty=HEURISTIC_QUESTION_UNCERTAINTY if "?" in task else HEURISTIC_DEFAULT_UNCERTAINTY,
-            tool_required=False,
+            complexity=min(effective / 3.0, 1.0),
+            uncertainty=0.3 if "?" in task else 0.2,
+            tool_required=needs_tool,
             reasoning="degraded_heuristic",
         )
 

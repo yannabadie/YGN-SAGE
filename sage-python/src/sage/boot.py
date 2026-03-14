@@ -170,6 +170,10 @@ class AgentSystem:
 
         _run_start = time.perf_counter()
         self._last_decision = None  # Routing decision for telemetry feedback
+        # Reset topology so each run generates a fresh one.
+        # Externally-forced topologies (TopologyBench) are re-set by the caller
+        # before each run() call, so this is safe.
+        self.agent_loop._current_topology = None
 
         # 1. Route task to cognitive system
         budget = DEFAULT_BUDGET_USD

@@ -39,9 +39,9 @@ def test_working_memory_arrow_compaction():
     # Active buffer has 5
     assert len(mem.recent_events(5)) == 5
 
-    # Compact to Arrow (returns chunk_id >= 0)
+    # Compact to Arrow (returns chunk_id as string after ULID migration)
     chunk_id = mem.compact_to_arrow()
-    assert chunk_id >= 0
+    assert isinstance(chunk_id, str)
 
 
 @pytest.mark.asyncio

@@ -94,11 +94,11 @@ if not _has_rust:
 
         def compact_to_arrow(self):
             self._warn_once("compact_to_arrow")
-            return 0
+            return "0"
 
         def compact_to_arrow_with_meta(self, kw, emb=None, parent=None, summary=None):
             self._warn_once("compact_to_arrow_with_meta")
-            return 0
+            return "0"
 
         def retrieve_relevant_chunks(self, cid, hops, w=None):
             self._warn_once("retrieve_relevant_chunks")

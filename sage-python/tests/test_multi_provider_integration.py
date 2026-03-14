@@ -122,9 +122,9 @@ class TestS1CheapestModelSelection:
 
         original_init = ModelAgent.__init__
 
-        def tracking_init(self_agent, name, model, system_prompt="", registry=None):
+        def tracking_init(self_agent, name, model, system_prompt="", registry=None, **kwargs):
             selected_model_ids.append(model.id)
-            original_init(self_agent, name, model, system_prompt, registry)
+            original_init(self_agent, name, model, system_prompt, registry, **kwargs)
 
         with patch.object(ModelAgent, "__init__", tracking_init), \
              patch.object(ModelAgent, "run", new_callable=AsyncMock) as mock_run:
@@ -161,13 +161,16 @@ class TestS2CodeModelSelection:
 
         reg = _mock_registry(coder, generalist)
         orch = CognitiveOrchestrator(registry=reg)
+        # Force heuristic routing (LLM routing via Gemini may assess differently
+        # when GOOGLE_API_KEY is loaded from .env at boot time)
+        orch.metacognition._llm_available = False
 
         selected_model_ids = []
         original_init = ModelAgent.__init__
 
-        def tracking_init(self_agent, name, model, system_prompt="", registry=None):
+        def tracking_init(self_agent, name, model, system_prompt="", registry=None, **kwargs):
             selected_model_ids.append(model.id)
-            original_init(self_agent, name, model, system_prompt, registry)
+            original_init(self_agent, name, model, system_prompt, registry, **kwargs)
 
         with patch.object(ModelAgent, "__init__", tracking_init), \
              patch.object(ModelAgent, "run", new_callable=AsyncMock) as mock_run:
