@@ -152,9 +152,51 @@ async def synthesize_topology(
     """
     from sage.llm.base import Message, Role, LLMConfig
 
-    config = LLMConfig(provider="google", model="gemini-2.5-flash")
+    # Stage 1: Role assignment — constrained to JSON schema
+    roles_schema: dict = {
+        "type": "object",
+        "properties": {
+            "roles": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "model": {"type": "string"},
+                        "system": {"type": "integer"},
+                        "capabilities": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["name", "model", "system", "capabilities"],
+                },
+            }
+        },
+        "required": ["roles"],
+    }
 
-    # Stage 1: Role assignment
+    # Stage 2: Structure design — constrained to JSON schema
+    structure_schema: dict = {
+        "type": "object",
+        "properties": {
+            "adjacency": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "integer"}},
+            },
+            "edge_types": {
+                "type": "array",
+                "items": {"type": "array", "items": {"type": "string"}},
+            },
+            "template": {"type": "string"},
+        },
+        "required": ["adjacency", "edge_types", "template"],
+    }
+
+    config_stage1 = LLMConfig(
+        provider="google", model="gemini-2.5-flash", json_schema=roles_schema
+    )
+    config_stage2 = LLMConfig(
+        provider="google", model="gemini-2.5-flash", json_schema=structure_schema
+    )
+
     role_prompt = build_role_prompt(task, max_agents, available_models)
     try:
         response1 = await llm_provider.generate(
@@ -162,7 +204,7 @@ async def synthesize_topology(
                 Message(role=Role.SYSTEM, content="You are a JSON-only topology designer."),
                 Message(role=Role.USER, content=role_prompt),
             ],
-            config=config,
+            config=config_stage1,
         )
         roles_json = _extract_json(response1.content or "")
         json.loads(roles_json)  # validate parses
@@ -178,7 +220,7 @@ async def synthesize_topology(
                 Message(role=Role.SYSTEM, content="You are a JSON-only topology designer."),
                 Message(role=Role.USER, content=structure_prompt),
             ],
-            config=config,
+            config=config_stage2,
         )
         structure_json = _extract_json(response2.content or "")
         json.loads(structure_json)  # validate parses

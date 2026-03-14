@@ -149,6 +149,18 @@ class OpenAICompatProvider:
             "max_tokens": config.max_tokens if config and config.max_tokens else 4096,
             "temperature": config.temperature if config else 0.3,
         }
+
+        # Constrained decoding: JSON schema output (OpenAI Structured Outputs)
+        if config and config.json_schema is not None:
+            schema = config.json_schema
+            # If it's a Pydantic model class, extract its JSON schema
+            if isinstance(schema, type) and hasattr(schema, "model_json_schema"):
+                schema = schema.model_json_schema()
+            params["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "response", "schema": schema, "strict": True},
+            }
+
         params = self._apply_quirks(params)
 
         try:
