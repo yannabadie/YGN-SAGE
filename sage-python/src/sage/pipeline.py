@@ -81,6 +81,7 @@ class CognitiveOrchestrationPipeline:
         event_bus: Any = None,
         llm_provider: Any = None,
         llm_config: Any = None,
+        prm: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -91,6 +92,7 @@ class CognitiveOrchestrationPipeline:
         self.event_bus = event_bus
         self.llm_provider = llm_provider
         self.llm_config = llm_config
+        self.prm = prm
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available."""
@@ -227,6 +229,7 @@ class CognitiveOrchestrationPipeline:
                     ctx.topology = result.topology
                 elif result:
                     ctx.topology = result
+                self._check_topology_budget(ctx)
                 return ctx
             except Exception as exc:
                 log.warning(
@@ -245,7 +248,21 @@ class CognitiveOrchestrationPipeline:
             log.debug("sage_core unavailable, topology=None (single-agent mode)")
             ctx.topology = None
 
+        self._check_topology_budget(ctx)
         return ctx
+
+    def _check_topology_budget(self, ctx: PipelineContext) -> None:
+        """Pre-validate budget feasibility (Phase C)."""
+        if ctx.topology and hasattr(ctx.topology, 'node_count'):
+            total_node_cost = 0.0
+            nc = ctx.topology.node_count()
+            for i in range(nc):
+                node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
+                if node:
+                    total_node_cost += getattr(node, 'max_cost_usd', 0.0)
+            if total_node_cost > ctx.budget:
+                log.warning("Topology budget %.2f > pipeline budget %.2f", total_node_cost, ctx.budget)
+                self._emit("TOPOLOGY_BUDGET_WARNING", {"total_cost": total_node_cost, "budget": ctx.budget})
 
     # ── Stage 3: Assign Models ──────────────────────────────────────────────
 
@@ -489,14 +506,28 @@ class CognitiveOrchestrationPipeline:
 
     def _stage_learn(self, ctx: PipelineContext) -> None:
         """Stage 5: Record outcome for learning."""
+        import re
+
         quality = 0.5
         if self.quality_estimator and ctx.result:
             try:
                 quality = self.quality_estimator.estimate(
-                    ctx.task, ctx.result, ctx.latency_ms / 1000.0
+                    ctx.task, ctx.result, ctx.latency_ms
                 )
             except Exception:
                 pass
+
+        # PRM lightweight scoring (Phase C) — 6th formal signal
+        # Guard: only call PRM on structured content (<think>, assert, code)
+        _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
+        if self.prm and ctx.result and _STRUCTURED.search(ctx.result):
+            try:
+                r_path, _ = self.prm.calculate_r_path(ctx.result)
+                if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
+                    quality = 0.8 * quality + 0.2 * r_path
+                    log.debug("PRM blended quality: %.2f (heuristic + PRM)", quality)
+            except Exception as exc:
+                log.warning("PRM scoring failed in LEARN: %s", exc)
 
         if self.bandit and hasattr(self.bandit, "record"):
             try:
