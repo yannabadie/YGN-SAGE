@@ -17,6 +17,7 @@ dist/
 build/
 .venv/
 venv/
+.hypothesis/
 
 # IDE
 .idea/
