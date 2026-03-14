@@ -1,7 +1,6 @@
 """Tests for bugs discovered during deep code review (March 7, 2026).
 
 Each test verifies a specific bug fix:
-BF-1: DynamicRouter empty scored list guard
 BF-2: DAGExecutor non-dict output handling
 BF-3: RepairLoop non-dict output handling
 BF-4: WriteGate bounded dedup (no unbounded growth)
@@ -18,32 +17,6 @@ from sage.contracts.repair import RepairLoop
 from sage.contracts.cost_tracker import CostTracker
 from sage.memory.write_gate import WriteGate
 from sage.memory.causal import CausalMemory
-from sage.routing.dynamic import DynamicRouter
-from sage.providers.capabilities import CapabilityMatrix, ProviderCapabilities
-
-
-# ===========================================================================
-# BF-1: DynamicRouter empty scored list
-# ===========================================================================
-
-def test_bf1_router_raises_on_no_providers():
-    """Router should raise ValueError, not IndexError, when no provider matches."""
-    matrix = CapabilityMatrix()
-    matrix.register(ProviderCapabilities(
-        provider="limited", structured_output=False, file_search=False,
-    ))
-    router = DynamicRouter(
-        capability_matrix=matrix,
-        provider_costs={"limited": 1.0},
-        provider_quality={"limited": 0.5},
-    )
-    node = TaskNode(
-        node_id="task",
-        description="Needs file search",
-        capabilities_required=["file_search"],
-    )
-    with pytest.raises(ValueError, match="No provider"):
-        router.route(node)
 
 
 # ===========================================================================

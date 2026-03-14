@@ -54,7 +54,7 @@ python -m sage.bench.eval_protocol --suite humaneval -v     # Official evaluatio
 | `sage/guardrails/` | 3-layer guardrails: input, runtime, output |
 | `sage/bench/` | EvalPlus HumanEval+/MBPP+, routing accuracy, routing quality, ablation, evaluation protocol with error logging |
 | `sage/sandbox/` | Sandbox manager (host execution disabled by default) |
-| `sage/routing/` | DynamicRouter (capability-constrained), ShadowRouter (dual Rust/Python traces) |
+| `sage/routing/` | ShadowRouter (dual Rust/Python traces) |
 
 ## Environment Variables
 

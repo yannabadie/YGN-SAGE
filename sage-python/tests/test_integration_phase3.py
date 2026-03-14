@@ -18,7 +18,6 @@ from sage.contracts.z3_verify import (
     verify_budget_feasibility,
     verify_type_compatibility,
 )
-from sage.routing.dynamic import DynamicRouter, RoutingDecision
 from sage.providers.capabilities import CapabilityMatrix, ProviderCapabilities
 from sage.memory.causal import CausalMemory
 from sage.memory.write_gate import WriteGate
@@ -47,19 +46,11 @@ def capability_matrix():
     return m
 
 
-@pytest.fixture
-def router(capability_matrix):
-    return DynamicRouter(
-        capability_matrix=capability_matrix,
-        provider_costs={"google": 0.5, "openai": 2.0, "budget": 0.1},
-        provider_quality={"google": 0.8, "openai": 0.95, "budget": 0.6},
-    )
-
-
 # ---------------------------------------------------------------------------
 # E2E: Plan -> Verify -> Route -> Execute
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="DynamicRouter removed — superseded by CognitiveOrchestrator")
 @pytest.mark.asyncio
 async def test_e2e_plan_verify_route_execute(router, capability_matrix):
     """Full pipeline: plan static DAG, verify contracts, route, execute."""
@@ -233,6 +224,7 @@ def test_e2e_z3_budget_check():
 # E2E routing adapts after failure feedback
 # ---------------------------------------------------------------------------
 
+@pytest.mark.skip(reason="DynamicRouter removed — superseded by CognitiveOrchestrator")
 def test_e2e_routing_feedback(router):
     """Router adapts after reporting failures."""
     node = TaskNode(node_id="task", description="Some task")

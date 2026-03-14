@@ -29,6 +29,6 @@ Root package for the YGN-SAGE Python SDK. Exports the top-level API: `Agent`, `A
 | `guardrails/` | GuardrailPipeline, CostGuardrail, SchemaGuardrail |
 | `bench/` | BenchmarkRunner, HumanEval, routing accuracy |
 | `sandbox/` | SandboxManager (host execution disabled by default) |
-| `routing/` | DynamicRouter with capability constraints and feedback |
+| `routing/` | ShadowRouter (dual Rust/Python traces) |
 | `analytics/` | Scaling analysis utilities |
 | `monitoring/` | Drift detection |
