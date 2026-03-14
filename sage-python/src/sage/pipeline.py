@@ -17,6 +17,15 @@ from sage.pipeline_stages import (
     DAGFeatures,
 )
 
+# OxiZ formal verification — imported lazily to allow graceful fallback
+try:
+    from sage.contracts.z3_verify import verify_provider_assignment, ProviderSpec
+    _Z3_VERIFY_AVAILABLE = True
+except ImportError:
+    _Z3_VERIFY_AVAILABLE = False
+    verify_provider_assignment = None  # type: ignore[assignment]
+    ProviderSpec = None  # type: ignore[assignment,misc]
+
 log = logging.getLogger(__name__)
 
 
@@ -273,7 +282,157 @@ class CognitiveOrchestrationPipeline:
         except Exception as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
+        # Formal verification (non-blocking): prove every node has a valid provider
+        try:
+            self._verify_assignment_formal(ctx)
+        except Exception as exc:
+            log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
+
         return ctx
+
+    def _verify_assignment_formal(self, ctx: PipelineContext) -> None:
+        """Formally verify provider assignment via OxiZ / Z3 (NON-BLOCKING).
+
+        Builds a lightweight adapter that bridges TopologyGraph nodes into the
+        interface expected by ``verify_provider_assignment`` without requiring
+        a full TaskDAG conversion.
+
+        Skips silently when:
+        - No SMT backend is available (ImportError from z3_verify)
+        - topology is None
+        - No nodes with capability requirements are present
+        """
+        if not _Z3_VERIFY_AVAILABLE or ctx.topology is None:
+            return
+
+        node_count = (
+            ctx.topology.node_count()
+            if hasattr(ctx.topology, "node_count")
+            else 0
+        )
+        if node_count == 0:
+            return
+
+        # ── Build minimal adapter objects ──────────────────────────────────
+
+        # Collect (node_index, capabilities) from topology
+        topo_nodes: list[tuple[str, list[str]]] = []
+        for i in range(node_count):
+            node = (
+                ctx.topology.get_node(i)
+                if hasattr(ctx.topology, "get_node")
+                else None
+            )
+            if node is None:
+                continue
+            # Capabilities: TopologyNode may expose .capabilities or .capabilities_required
+            caps: list[str] = []
+            for attr in ("capabilities", "capabilities_required"):
+                raw = getattr(node, attr, None)
+                if raw:
+                    caps = list(raw)
+                    break
+            topo_nodes.append((str(i), caps))
+
+        # Only verify if at least one node has capability requirements
+        if not any(caps for _, caps in topo_nodes):
+            return
+
+        # ── DAG adapter ────────────────────────────────────────────────────
+
+        class _NodeAdapter:
+            """Minimal shim that looks like TaskNode to z3_verify."""
+
+            def __init__(self, nid: str, capabilities: list[str]) -> None:
+                self._nid = nid
+                self.capabilities_required = capabilities
+
+        class _DagAdapter:
+            """Minimal shim that looks like TaskDAG to z3_verify."""
+
+            def __init__(self, nodes: list[tuple[str, list[str]]]) -> None:
+                self._nodes = {nid: _NodeAdapter(nid, caps) for nid, caps in nodes}
+
+            @property
+            def node_ids(self) -> list[str]:
+                return list(self._nodes.keys())
+
+            def get_node(self, nid: str) -> _NodeAdapter | None:
+                return self._nodes.get(nid)
+
+        dag_adapter = _DagAdapter(topo_nodes)
+
+        # ── ProviderSpec list: one entry per distinct assigned model_id ────
+
+        # Build providers from assigned model_ids.
+        # Priority: ctx.assignments (set by assigner) > topology node model_id attribute.
+        # Each model is treated as a provider that offers the capabilities
+        # of the node it was assigned to (optimistic: if a model was chosen
+        # for a node, it can serve that node's capabilities).
+        model_caps: dict[str, set[str]] = {}
+
+        # Try ctx.assignments first (populated by _stage_assign_models assigner)
+        for i, model_id in ctx.assignments.items():
+            if not model_id:
+                continue
+            nid = str(i)
+            node = dag_adapter.get_node(nid)
+            caps = set(node.capabilities_required) if node else set()
+            if model_id not in model_caps:
+                model_caps[model_id] = set()
+            model_caps[model_id].update(caps)
+
+        # Fallback: read model_id directly from topology nodes
+        if not model_caps:
+            for nid, caps in topo_nodes:
+                node_obj = (
+                    ctx.topology.get_node(int(nid))
+                    if hasattr(ctx.topology, "get_node")
+                    else None
+                )
+                model_id = getattr(node_obj, "model_id", "") if node_obj else ""
+                if not model_id:
+                    continue
+                if model_id not in model_caps:
+                    model_caps[model_id] = set()
+                model_caps[model_id].update(caps)
+
+        if not model_caps:
+            log.debug(
+                "Stage 3 formal verify: no model_ids found in topology, skipping SAT check"
+            )
+            return
+
+        providers = [
+            ProviderSpec(name=model_id, capabilities=caps)
+            for model_id, caps in model_caps.items()
+        ]
+
+        # ── Run SAT check ──────────────────────────────────────────────────
+
+        try:
+            verdict = verify_provider_assignment(dag_adapter, providers)  # type: ignore[arg-type]
+        except ImportError as exc:
+            log.debug("Stage 3 formal verify skipped (no SMT backend): %s", exc)
+            return
+        except Exception as exc:
+            log.warning("Stage 3 formal verify raised unexpected error: %s", exc)
+            return
+
+        if not verdict.satisfied:
+            log.warning(
+                "Stage 3 formal provider assignment verification FAILED "
+                "(non-blocking): %s",
+                verdict.counterexample,
+            )
+            self._emit(
+                "ASSIGN_MODELS_VERIFY_FAIL",
+                {"counterexample": verdict.counterexample or "UNSAT"},
+            )
+        else:
+            log.debug(
+                "Stage 3 formal provider assignment verification PASSED"
+            )
 
     # ── Stage 4: Execute ────────────────────────────────────────────────────
 
