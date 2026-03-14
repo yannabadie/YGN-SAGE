@@ -43,7 +43,6 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
 - `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → kNN embeddings → BERT ONNX → entropy probe; stage 3 online learning reserved). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
 - `strategy/knn_router.py` - KnnRouter: kNN-based S1/S2/S3 routing using pre-computed exemplar embeddings (arXiv 2505.12601). 92% accuracy on 50 GT tasks (vs 52% heuristic). Auto-builds from ground truth at boot if .npz missing. Refuses hash embeddings.
-- `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
 - `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback. verify_invariant uses Rust verify_invariant_with_feedback() for clause-level diagnostic feedback stored in _last_invariant_feedback
 - `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
@@ -85,20 +84,17 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase). ULID-based chunk IDs (cross-session stable, globally unique). `last_chunk_id()` returns most recent chunk.
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
-- `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `WasmSandbox` PyClass + `WasiState` (deny-by-default). `execute_precompiled()` / `execute_precompiled_wasi()` for Windows (no cranelift), `execute()` with JIT on Linux CI. Standalone `execute_wasi_component()` / `execute_bare_component()` for ToolExecutor. Behind `sandbox` feature flag.
 - `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules, 21 blocked calls, 20 blocked dunders. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`, `batch_cosine_similarity(texts)` (SIMD pairwise cosine for ConsistencyScore). Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
 - `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
-- `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support. Rust-native shadow trace collection (JSONL), `retrain_thresholds()` logistic regression on feedback, `flush_shadow_traces(path)` PyO3 method. **DEPRECATED since v0.2.0** — use Python `sage.strategy.adaptive_router.AdaptiveRouter`.
 - `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
 - `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection, telemetry calibration (quality + latency P95 via VecDeque ring buffer), `select_best_for_domain(domain, budget)` for domain-aware model selection. PyO3 class.
 - `routing/model_assigner.rs` - ModelAssigner: per-node model assignment using ModelCard scoring (affinity 0.4 + domain 0.4 + cost 0.2). Filters by capabilities (tools, json) and budget. PyO3 class with `assign_models()` and `assign_single_node()`.
-- `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → domain hint → bandit/budget selection). `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`). **DEPRECATED since v0.2.0** — use Python `sage.strategy.metacognition.ComplexityRouter`.
+- `routing/system_router.rs` - SystemRouter: **PRIMARY** cognitive system decision engine (88% GT accuracy). Hard constraints → structural scoring → domain hint → bandit/budget selection. `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`). Used by boot.py, ShadowRouter, Pipeline.
 - `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature. Audit fixes: Mutex safety (lock scope), empty candidates guard, bandit arm dedup.
-- `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval. **DEPRECATED since v0.2.0** — use Python `routing/shadow.py` ShadowRouter for routing-S-MMU integration.
 - `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
 - `topology/templates.rs` - 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). PyTemplateStore PyO3 class.
 - `topology/verifier.rs` - HybridVerifier: 6 structural + 4 semantic checks + LTL integration (safety→errors, liveness→warnings), all O(V+E). PyO3 class.
@@ -109,7 +105,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `topology/llm_synthesis.rs` - TopologySynthesizer: 3-stage LLM pipeline (Role Assignment → Structure Design → Validation). Rate-limited.
 - `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
 - `topology/mcts.rs` - MctsSearcher: Monte Carlo Tree Search for topology space exploration. UCB1 selection, random mutation expansion, HybridVerifier-based rollout heuristic. Budget: 50 simulations or 100ms. 6th path in DynamicTopologyEngine.generate().
-- `topology/engine.rs` - DynamicTopologyEngine: 6-path generate strategy (S-MMU → archive → LLM → mutation → MCTS → template fallback). Evolution loop via MAP-Elites + CMA-ME refinement. **DEPRECATED since v0.2.0** — use Python `boot.py` Phase 6 topology wiring.
+- `topology/engine.rs` - DynamicTopologyEngine: **PRIMARY** 6-path generate strategy (S-MMU → archive → LLM → mutation → MCTS → template fallback). Evolution loop via MAP-Elites + CMA-ME refinement. Used by boot.py Phase 6 and Pipeline Stage 2.
 - `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult (with opaque topology_id for lazy-load).
 - `verification/mod.rs` - Module hub: re-exports `smt` (behind `smt` feature) and `ltl` (always compiled).
 - `verification/smt.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA with `set_logic("QF_LIA")` for branch-and-bound integer solving). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one boolean encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 10 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_invariant_with_feedback, synthesize_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. `#[instrument]` tracing on all public methods. Behind `smt` feature flag. ALL Python callers fully wired to Rust — zero Z3-only code paths remain.
@@ -142,7 +138,7 @@ Rust (`sage-core`) is a progressive enhancement, not a core dependency. All subs
 ```bash
 cd sage-python
 pip install -e ".[all,dev]"    # Install in dev mode with all providers
-python -m pytest tests/ -v     # Run tests (1307 passed, 107 skipped)
+python -m pytest tests/ -v     # Run tests (1426 passed, 111 skipped, 7 pre-existing failures)
 ruff check src/                 # Lint
 mypy src/                       # Type check
 ```
@@ -194,7 +190,7 @@ python -m sage.protocols.serve --mcp --a2a               # Both
 ```bash
 cd sage-core
 cargo build                    # Build Rust core
-cargo test --no-default-features --lib  # Run unit tests (~211 baseline)
+cargo test --no-default-features --lib  # Run unit tests (243 passed)
 cargo test --no-default-features --features smt --lib  # +25 SMT tests
 cargo test --no-default-features --features sandbox,cranelift --lib  # +sandbox tests (Linux)
 cargo clippy --no-default-features  # Lint Rust code
@@ -481,7 +477,7 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 ```
 
 ## Tech Stack
-- Rust 1.90+ (orchestrator, via PyO3) -- SnapBPF, RagCache, Arrow memory, eBPF
+- Rust 1.90+ (orchestrator, via PyO3) -- RagCache, Arrow memory, SIMD embeddings, SMT verification
 - Python 3.12+ (SDK, agents)
 - OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
 - Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
@@ -499,12 +495,20 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 
 ## Known Issues / Tech Debt
 - **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
-- **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence. Rust SystemRouter should be promoted as primary
+- **7 pre-existing test failures**:
+  - ULID mock mismatch (tests expect integer chunk IDs, code returns ULID strings)
+  - S-MMU persistence (outcome recording wired but chunks not persisting in mock mode)
+  - mypy type: ignore ceiling (currently 20, ceiling is 15 — needs cleanup)
+  - Routing heuristic fragility (keyword matching breaks on edge cases; kNN is the real router)
+  - multi_provider test (flaky due to provider availability)
+- **Type ignore count**: 20 actual vs ceiling of 15. Needs reduction.
+- **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence
 - **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes
+- **S-MMU outcome recording**: Wired in boot.py Phase 6 but chunks not persisting in mock mode (chunk count stays 0)
+- **Routing heuristic**: ComplexityRouter keyword matching is fragile (52% GT accuracy). kNN router (92%) is the real router; heuristic is fallback only
+- **Removed in cleanup (March 2026)**: `routing/router.rs` (Rust AdaptiveRouter), `routing/smmu_bridge.rs` (TopologyBridge), `routing/dynamic.py` (DynamicRouter), `strategy/training.py`, `evidence.py`, `analytics/scaling.py`, `sandbox/ebpf.rs` — all dead code, replaced by active modules
 - **Rust module status**:
   - `routing/system_router.rs` (SystemRouter) — **PRIMARY** (88% GT accuracy vs Python 44%). Used by boot.py, ShadowRouter, Pipeline
   - `topology/engine.rs` (TopologyEngine) — **PRIMARY** (6-path generation). Used by boot.py Phase 6, Pipeline Stage 2
   - `routing/model_assigner.rs` (ModelAssigner) — **PRIMARY** (per-node scoring). Used by Pipeline Stage 3
   - `routing/model_registry.rs` (ModelRegistry) — **PRIMARY** (telemetry calibration). Used by SystemRouter + ModelAssigner
-  - `routing/router.rs` (AdaptiveRouter) — **DEPRECATED v0.3** (genuinely unused) → `sage.strategy.adaptive_router.AdaptiveRouter`
-  - `routing/smmu_bridge.rs` (TopologyBridge) — **DEPRECATED v0.3** (genuinely unused) → `routing/shadow.py` ShadowRouter

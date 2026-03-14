@@ -10,7 +10,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1503%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1426%20passed%20%7C%207%20failing-yellow?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -106,8 +106,8 @@ Routing contributes +5pp. Memory, AVR, and guardrails show no isolated delta on 
 
 | Suite | Result |
 |-------|--------|
-| Python unit tests | **1216 passed** (115 skipped) |
-| Rust unit tests | **235+ passed** |
+| Python unit tests | **1426 passed**, 111 skipped, 7 pre-existing failures |
+| Rust unit tests | **243 passed** (--no-default-features) |
 
 ```bash
 # Run benchmarks
@@ -126,8 +126,8 @@ python tests/e2e_proof.py                                  # E2E proof (requires
 ## Run Tests
 
 ```bash
-cd sage-python && python -m pytest tests/ -v    # 1216 passed, 115 skipped
-cd sage-core && cargo test --no-default-features --features smt --lib  # 235+ tests
+cd sage-python && python -m pytest tests/ -v    # 1426 passed, 111 skipped, 7 pre-existing failures
+cd sage-core && cargo test --no-default-features --lib  # 243 tests
 cd sage-discover && python -m pytest tests/ -v   # 52 passed
 # Integration tests: sage-python/tests/integration/ (50 tests, no mocks)
 ```
@@ -214,7 +214,7 @@ pipeline = GuardrailPipeline([
 
 - **EvalPlus HumanEval+ 84.1%** pass@1 (138/164) with budget Gemini 2.5 Flash — official 80x harder tests
 - **Routing 100%** self-consistency on 30 deterministic tasks (heuristic, not learned)
-- **1216 tests passed** (Python) + 235+ Rust + 52 Discover + 50 integration tests (no mocks)
+- **1426 tests passed** (Python, 7 pre-existing failures) + 243 Rust + 52 Discover + 50 integration tests (no mocks)
 - **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
 - **Cognitive Routing**: S1/S2/S3 adaptive 4-stage routing (structural → kNN embeddings on arctic-embed-m ONNX 768-dim → BERT ONNX → entropy probe; cascade fallback). kNN routing: 92% accuracy (arXiv 2505.12601)

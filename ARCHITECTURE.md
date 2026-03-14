@@ -140,7 +140,6 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | DAGExecutor | `contracts/executor.py` | 7 unit tests |
 | TaskPlanner (Plan-and-Act) | `contracts/planner.py` | 10 unit tests |
 | RepairLoop (CEGAR) | `contracts/repair.py` | 8 unit tests |
-| DynamicRouter (DyTopo) | `routing/dynamic.py` | 9 unit tests |
 | CausalMemory | `memory/causal.py` | 10 unit tests |
 | WriteGate | `memory/write_gate.py` | 9 unit tests |
 | Synthetic Failure Lab | `tests/test_failure_modes.py` | 10 tests (MAST taxonomy) |
@@ -153,14 +152,12 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 - **Z3 SMT proofs:** Provider assignment uses genuine Z3 SAT (`z3.PbEq` for exactly-one constraint). Capability coverage, budget feasibility, and type compatibility use Python-native checks (~2000x faster than Z3 for these trivial set/arithmetic operations) — all checked at plan time
 - **Info-flow enforcement:** No HIGH→LOW data flow (lattice-based security labels)
 - **CEGAR repair:** Counterexample-guided retry → escalate → abort with hard fences
-- **DyTopo routing:** Capability-constrained model selection with adaptive feedback
 - **Causal memory:** Directed causal edges with BFS chain traversal + ancestor queries
 - **Write gating:** Confidence-based abstention ("better to forget than to store noise")
 - **Cost tracking:** Cumulative per-node cost accounting with mid-loop budget halt
 
 **Known limitations:**
 - Z3 verifies structural properties, not semantic correctness of LLM outputs
-- DynamicRouter uses static quality scores, not live profiling
 - CausalMemory now has SQLite persistence (`save()`/`load()`, optional `db_path`). Bounded via `max_entities` + `max_context_lines`
 - Planner only supports static plan specs (no LLM-driven planning yet)
 
@@ -199,7 +196,7 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 **Known limitations:**
 - **Not validated**: no evidence that evolution improves outcomes vs. random search or manual tuning
 - **No ablation study**: unclear which components (DGM, SAMPO, MAP-Elites) contribute value
-- Depends on eBPF/Wasm for sandboxed evaluation (optional features)
+- Depends on Wasm for sandboxed evaluation (optional feature)
 
 ### 9. Rust Core (sage-core)
 
@@ -216,13 +213,12 @@ In pure-Python mock mode (no Rust), the write path runs but S-MMU chunk count st
 | **tree-sitter validator** | **Implemented** (23 blocked modules + 11 blocked calls, error-tolerant). Behind `tool-executor` feature |
 | **Subprocess executor** | **Implemented** (tokio timeout + kill-on-drop). Behind `tool-executor` feature |
 | Wasm sandbox | Implemented (wasmtime v36 LTS, Component Model + WASI p2 deny-by-default). `cranelift` excluded on Windows MSVC. `execute_precompiled()` / `execute_precompiled_wasi()` for Windows |
-| eBPF sandbox | Implemented (solana_rbpf), but optional feature. `snap_bpf.c` is a stub (printk only) |
+| eBPF sandbox | **REMOVED** (`sandbox/ebpf.rs` deleted in cleanup). `snap_bpf.c` remains as stub |
 | Z3 bindings | Implemented |
 
 **Known limitations:**
-- eBPF and Wasm are behind `sandbox` feature flag (not built by default, not tested in CI)
-- eBPF compiles for BPF target requiring `core` stdlib — not available on all platforms
-- `snap_bpf.c` is a stub (printk only) — real SnapBPF is Rust userspace CoW in `ebpf.rs`
+- Wasm is behind `sandbox` feature flag (not built by default, not tested in CI)
+- `sandbox/ebpf.rs` was removed in cleanup (March 2026). `snap_bpf.c` remains as a non-functional stub
 - Python falls back silently to mock when Rust extension unavailable
 
 ### 9b. ToolExecutor (Rust Security Pipeline)
@@ -313,7 +309,7 @@ Audit response (March 2026) fixed: sandbox blocks host by default, working memor
 ## Audit Response (March 2026)
 
 Three independent audits (Opus 4.6, GPT-5.4 Pro, GPT-5.4 Codex) identified 20 confirmed findings.
-16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Two additional sprints addressed the cross-verification findings. Current test count: **846 passed, 1 skipped**.
+16 tasks organized in 4 phases (A-D) were executed, followed by a cross-verification audit (5 audits, 78 assertions) that confirmed 15 problems requiring further fixes. Two additional sprints addressed the cross-verification findings. Current test count: **1426 passed, 111 skipped, 7 pre-existing failures** (Python); **243 passed** (Rust).
 
 ### Phase A — Kill Unsafe Defaults (Tasks 1-5)
 | Task | Finding | Fix |

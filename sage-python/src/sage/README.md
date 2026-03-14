@@ -10,7 +10,10 @@ Root package for the YGN-SAGE Python SDK. Exports the top-level API: `Agent`, `A
 - **`agent_pool.py`** -- `SubAgentSpec` and `AgentPool`. Dynamic sub-agent lifecycle management: register, deregister, list, mark running, store results, collect for ensemble.
 - **`orchestrator.py`** -- `CognitiveOrchestrator`. Legacy capability-based multi-provider routing using `ModelRegistry`.
 - **`resilience.py`** -- `CircuitBreaker`. Per-subsystem failure tracking (default `max_failures=3`). After 3 consecutive failures, the circuit opens and calls are skipped with a WARNING log. `record_success()` resets the counter.
-- **`evidence.py`** -- `EvidenceLevel` enum (HEURISTIC through EMPIRICALLY_VALIDATED) and `EvidenceRecord` dataclass. Tracks proof strength, coverage, and assumptions for every claim.
+- **`pipeline.py`** -- `CognitiveOrchestrationPipeline`: 5-stage orchestration (Classify → Decompose → Select Topology → Assign Models → Execute). Driven by ModelCards. EventBus observability at each stage.
+- **`pipeline_stages.py`** -- Pure stage functions: `_infer_domain`, `compute_dag_features` (ω,δ,γ from AdaptOrch), `select_macro_topology`.
+- **`topology_controller.py`** -- `TopologyController`: runtime adaptation for Pipeline Stage 4. 4 actions: model upgrade, agent pruning, topology re-route, sub-agent spawn.
+- **`consistency.py`** -- `ConsistencyScore`: mean pairwise cosine similarity for parallel output comparison. Rust SIMD `batch_cosine_similarity` when available.
 
 ## Subpackages
 
@@ -21,14 +24,13 @@ Root package for the YGN-SAGE Python SDK. Exports the top-level API: `Agent`, `A
 | `memory/` | 4-tier memory system (working, episodic, semantic, ExoCortex) |
 | `llm/` | LLM provider abstraction and model routing |
 | `providers/` | Provider discovery, capability matrix, OpenAI-compat |
-| `strategy/` | ComplexityRouter (S1/S2/S3), resource allocation |
+| `strategy/` | AdaptiveRouter (4-stage learned routing), KnnRouter (92% accuracy), ComplexityRouter (heuristic fallback) |
 | `topology/` | MAP-Elites topology evolution, KG-RLVR process reward |
 | `evolution/` | Evolutionary engine, LLM mutation, population management |
 | `tools/` | Tool registry, built-in tools, memory tools, ExoCortex tools |
 | `events/` | EventBus (emit/subscribe/stream/query) |
 | `guardrails/` | GuardrailPipeline, CostGuardrail, SchemaGuardrail |
-| `bench/` | BenchmarkRunner, HumanEval, routing accuracy |
+| `bench/` | EvalPlus HumanEval+/MBPP+, routing accuracy/quality, ablation, evaluation protocol |
 | `sandbox/` | SandboxManager (host execution disabled by default) |
 | `routing/` | ShadowRouter (dual Rust/Python traces) |
-| `analytics/` | Scaling analysis utilities |
 | `monitoring/` | Drift detection |

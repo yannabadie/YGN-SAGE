@@ -1,1 +1,1 @@
-"""Dynamic routing: capability-constrained model selection."""
+"""Routing: ShadowRouter for dual Rust/Python routing with JSONL divergence traces."""
