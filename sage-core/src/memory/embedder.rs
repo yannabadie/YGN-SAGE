@@ -321,6 +321,21 @@ impl RustEmbedder {
         Ok(results)
     }
 
+    /// Compute pairwise cosine similarity for a batch of texts.
+    /// Returns flattened upper-triangle: [(0,1), (0,2), (1,2), ...].
+    #[pyo3(name = "batch_cosine_similarity")]
+    pub fn py_batch_cosine_similarity(&mut self, py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<f32>> {
+        let embeddings = self.embed_batch(py, texts)?;
+        let n = embeddings.len();
+        let mut sims = Vec::with_capacity(n * (n - 1) / 2);
+        for i in 0..n {
+            for j in (i+1)..n {
+                sims.push(cosine_sim(&embeddings[i], &embeddings[j]));
+            }
+        }
+        Ok(sims)
+    }
+
     /// Embedding dimensionality (768 for snowflake-arctic-embed-m).
     #[getter]
     pub fn dim(&self) -> usize {
@@ -331,5 +346,41 @@ impl RustEmbedder {
     #[getter]
     pub fn is_semantic(&self) -> bool {
         true
+    }
+}
+
+/// Compute cosine similarity between two L2-normalized (or arbitrary) vectors.
+/// Returns 0.0 if either vector has near-zero norm.
+fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
+    let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
+    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm_a < 1e-8 || norm_b < 1e-8 { return 0.0; }
+    dot / (norm_a * norm_b)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cosine_sim_identical() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert!((cosine_sim(&a, &b) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_sim_orthogonal() {
+        let a = vec![1.0, 0.0, 0.0];
+        let b = vec![0.0, 1.0, 0.0];
+        assert!(cosine_sim(&a, &b).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_cosine_sim_zero_norm() {
+        let a = vec![0.0, 0.0, 0.0];
+        let b = vec![1.0, 0.0, 0.0];
+        assert!(cosine_sim(&a, &b).abs() < 1e-6);
     }
 }
