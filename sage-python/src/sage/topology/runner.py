@@ -41,6 +41,11 @@ class TopologyRunner:
         The LLM provider for generating responses per node.
     llm_config : LLMConfig, optional
         Optional LLMConfig override.
+    controller : TopologyController, optional
+        Runtime adaptation controller (Phase C). If None, behaves as Phase B
+        (no adaptation). When provided, ``evaluate_and_decide()`` is called
+        after each node to trigger upgrade_model, spawn_subagent, reroute or
+        prune actions.
     """
 
     def __init__(
@@ -51,12 +56,14 @@ class TopologyRunner:
         llm_config: LLMConfig | None = None,
         *,
         provider_pool: Any | None = None,
+        controller: Any | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
         self._llm = llm_provider
         self._config = llm_config
         self._provider_pool = provider_pool
+        self._controller = controller
         self._node_outputs: dict[int, str] = {}
 
     def _gather_completed_context(self) -> str:
@@ -127,12 +134,54 @@ class TopologyRunner:
         )
         return output
 
+    async def _retry_with_upgrade(self, node_idx: int, decision: Any, task: str) -> str:
+        """Model upgrade: re-resolve provider via ProviderPool and retry node.
+
+        The controller already called assign_single_node on the topology to
+        update the node's model_id. Re-executing the node picks up the new
+        model automatically via ProviderPool.resolve().
+        """
+        if decision.new_model_id and self._provider_pool:
+            # Controller already updated the node's model_id; ProviderPool will
+            # resolve it on the next _execute_node call.
+            pass
+        return await self._execute_node(node_idx, task)
+
+    async def _spawn_sub(self, node_idx: int, decision: Any, task: str) -> None:
+        """Sub-agent spawn: run emergent sub-task and inject result into node output."""
+        sub_task = decision.reason
+        if not sub_task:
+            return
+        try:
+            from sage.llm.base import Message, Role  # local re-import for clarity
+            provider = self._llm
+            config = self._config
+            if self._provider_pool:
+                node = self.graph.get_node(node_idx) if hasattr(self.graph, "get_node") else None
+                model_id = getattr(node, "model_id", "") if node else ""
+                if model_id:
+                    provider, config = self._provider_pool.resolve(model_id)
+            response = await provider.generate(
+                messages=[Message(role=Role.USER, content=sub_task)],
+                config=config,
+            )
+            sub_result = response.content or ""
+            # Inject into node outputs
+            existing = self._node_outputs.get(node_idx, "")
+            self._node_outputs[node_idx] = f"{existing}\n[Sub-agent]: {sub_result}"
+        except Exception as exc:
+            log.warning("Sub-agent spawn failed: %s", exc)
+
     async def run(self, task: str) -> str:
         """Execute the full topology, returning the final node's output.
 
         For parallel batches, ``last_output`` is the last node in executor
         order. Topologies that need aggregation should include an explicit
         aggregator node in a subsequent batch.
+
+        If a controller is attached and decides ``reroute_topology``, this
+        method returns the special sentinel ``"__REROUTE__"`` so the caller
+        (Pipeline Stage 4) can handle the reroute.
         """
         last_output = ""
 
@@ -142,8 +191,26 @@ class TopologyRunner:
                 break
 
             if len(ready) == 1:
-                last_output = await self._execute_node(ready[0], task)
-                self.executor.mark_completed(ready[0])
+                node_idx = ready[0]
+                result = await self._execute_node(node_idx, task)
+
+                # Phase C: runtime adaptation (single-node path)
+                if self._controller:
+                    decision = self._controller.evaluate_and_decide(
+                        node_idx, result, task, self.graph, None,
+                        parallel_outputs=None,
+                    )
+                    if decision.action == "upgrade_model":
+                        result = await self._retry_with_upgrade(node_idx, decision, task)
+                        self._node_outputs[node_idx] = result
+                    elif decision.action == "spawn_subagent":
+                        await self._spawn_sub(node_idx, decision, task)
+                    elif decision.action == "reroute_topology":
+                        return "__REROUTE__"
+                    # prune_node and continue: no special handling needed
+
+                self.executor.mark_completed(node_idx)
+                last_output = self._node_outputs.get(node_idx, result)
             else:
                 # Snapshot context before gather to prevent race:
                 # concurrent coroutines must not see each other's outputs.
@@ -153,8 +220,26 @@ class TopologyRunner:
                     for idx in ready
                 ]
                 results = await asyncio.gather(*coros)
+
+                # Phase C: runtime adaptation (parallel path)
+                if self._controller:
+                    parallel_outputs = list(results)
+                    for idx, result in zip(ready, results):
+                        decision = self._controller.evaluate_and_decide(
+                            idx, result, task, self.graph, None,
+                            parallel_outputs=parallel_outputs,
+                        )
+                        if decision.action == "upgrade_model":
+                            upgraded = await self._retry_with_upgrade(idx, decision, task)
+                            self._node_outputs[idx] = upgraded
+                        elif decision.action == "spawn_subagent":
+                            await self._spawn_sub(idx, decision, task)
+                        elif decision.action == "reroute_topology":
+                            return "__REROUTE__"
+                        # prune_node and continue: no special handling needed
+
                 for idx, output in zip(ready, results):
                     self.executor.mark_completed(idx)
-                    last_output = output
+                    last_output = self._node_outputs.get(idx, output)
 
         return last_output
