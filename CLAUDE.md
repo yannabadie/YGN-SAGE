@@ -74,8 +74,11 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
 - `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
 - `contracts/cost_tracker.py` - CostTracker: cumulative per-node cost accounting with budget cap
-- `routing/dynamic.py` - DynamicRouter: capability-constrained model selection with feedback
 - `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. 2-tier Phase 5 gate: soft (500 traces, <10% divergence), hard (1000 traces, <5% divergence)
+- `pipeline.py` - CognitiveOrchestrationPipeline: 5-stage orchestration (Classify → Decompose → Select Topology → Assign Models → Execute). Driven by ModelCards. EventBus observability at each stage.
+- `pipeline_stages.py` - Pure stage functions: _infer_domain, compute_dag_features (ω,δ,γ from AdaptOrch), select_macro_topology
+- `llm/provider_pool.py` - ProviderPool: resolves model_id → LLMProvider at topology execution time with cache + fallback
+- `llm/model_assigner.py` - Python ModelAssigner fallback: per-node model assignment using ModelCardCatalog (same algorithm as Rust)
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase). ULID-based chunk IDs (cross-session stable, globally unique). `last_chunk_id()` returns most recent chunk.
@@ -90,6 +93,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support. Rust-native shadow trace collection (JSONL), `retrain_thresholds()` logistic regression on feedback, `flush_shadow_traces(path)` PyO3 method. **DEPRECATED since v0.2.0** — use Python `sage.strategy.adaptive_router.AdaptiveRouter`.
 - `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
 - `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection, telemetry calibration (quality + latency P95 via VecDeque ring buffer), `select_best_for_domain(domain, budget)` for domain-aware model selection. PyO3 class.
+- `routing/model_assigner.rs` - ModelAssigner: per-node model assignment using ModelCard scoring (affinity 0.4 + domain 0.4 + cost 0.2). Filters by capabilities (tools, json) and budget. PyO3 class with `assign_models()` and `assign_single_node()`.
 - `routing/system_router.rs` - SystemRouter: cognitive system decision engine (hard constraints → structural scoring → domain hint → bandit/budget selection). `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`). **DEPRECATED since v0.2.0** — use Python `sage.strategy.metacognition.ComplexityRouter`.
 - `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature. Audit fixes: Mutex safety (lock scope), empty candidates guard, bandit arm dedup.
 - `routing/smmu_bridge.rs` - S-MMU bridge for routing: stores routing decisions as S-MMU chunks for similarity retrieval. **DEPRECATED since v0.2.0** — use Python `routing/shadow.py` ShadowRouter for routing-S-MMU integration.
@@ -486,8 +490,8 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
 - **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
 - **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence. Rust SystemRouter should be promoted as primary
 - **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes
-- **Deprecated Rust modules (v0.3 removal target)**: The following Rust modules are deprecated since v0.2.0 and will be removed in v0.3. Use the Python equivalents instead:
-  - `routing/router.rs` (AdaptiveRouter) → `sage.strategy.adaptive_router.AdaptiveRouter`
-  - `routing/system_router.rs` (SystemRouter) → `sage.strategy.metacognition.ComplexityRouter`
-  - `routing/smmu_bridge.rs` (TopologyBridge) → `routing/shadow.py` ShadowRouter
-  - `topology/engine.rs` (TopologyEngine) → `boot.py` Phase 6 topology wiring
+- **Deprecated Rust modules**:
+  - `routing/router.rs` (AdaptiveRouter) — v0.3 removal target → `sage.strategy.adaptive_router.AdaptiveRouter`
+  - `routing/smmu_bridge.rs` (TopologyBridge) — v0.3 removal target → `routing/shadow.py` ShadowRouter
+  - `routing/system_router.rs` (SystemRouter) — removal deferred to v0.4 (still required by ModelAssigner + boot.py)
+  - `topology/engine.rs` (TopologyEngine) — removal deferred to v0.4 (still required by boot.py Phase 6)
