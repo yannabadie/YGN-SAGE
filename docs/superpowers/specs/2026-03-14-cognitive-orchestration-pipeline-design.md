@@ -59,9 +59,11 @@ TASK INPUT
                        │
 ┌──────────────────────▼──────────────────────────────────┐
 │  Stage 1: DECOMPOSE (S2/S3 only, skip for S1)          │
-│  TaskPlanner.plan_auto() → TaskDAG                      │
+│  TaskPlanner.plan_auto(task, provider) → TaskDAG        │
+│  New: plan_auto() on TaskPlanner (~100 LOC, LLM call)   │
 │  New: compute_dag_features(dag) → ω, δ, γ (~30 LOC)    │
-│  Reuses: ContractPlanner (existing, never wired)        │
+│  Reuses: TaskPlanner.plan_static() (existing)           │
+│  Fallback: single-node DAG if decomposition fails       │
 └──────────────────────┬──────────────────────────────────┘
                        │
 ┌──────────────────────▼──────────────────────────────────┐
@@ -102,21 +104,33 @@ TASK INPUT
 ### 1. Cleanup (prerequisite)
 
 **Delete:**
-- `sage-python/src/sage/routing/dynamic.py` — DynamicRouter (178 LOC, never instantiated in production, superseded by CognitiveOrchestrator)
+- `sage-python/src/sage/routing/dynamic.py` — DynamicRouter (178 LOC, never instantiated in production)
+- `sage-python/tests/test_dynamic_router.py` — DynamicRouter tests (full file)
 - `sage-python/src/sage/topology/planner.py` — TopologyPlanner/StochasticDTS (~80 LOC, superseded by Rust DynamicTopologyEngine)
-- Associated dead test imports
+- `sage-python/tests/test_topology_planner.py` — TopologyPlanner tests (full file)
+
+**Update after deletions:**
+- `sage-python/tests/test_bugfixes.py` — remove DynamicRouter import and BF-1 test
+- `sage-python/tests/test_integration_phase3.py` — remove DynamicRouter import, replace with CognitiveOrchestrator or mark tests as obsolete
+- `sage-python/src/sage/routing/README.md` — remove DynamicRouter section
+- `sage-python/src/sage/README.md` — update routing description
+- `sage-python/README.md` — remove DynamicRouter mention
+- `sage-python/src/sage/topology/__init__.py` — remove TopologyPlanner/StochasticDTS from exports and `__all__`
+- `sage-discover/src/discover/workflow.py` — remove `from sage.topology.planner import TopologyPlanner` and replace with DynamicTopologyEngine or remove unused topology_planner usage
 
 **Rename:**
 - `sage.llm.model_registry.ModelRegistry` → `ModelCardCatalog`
 - Update all imports in boot.py, tests, and any other callers
 
 **Fix deprecated tags:**
-- **Remove** `#[deprecated]` from `SystemRouter` (system_router.rs) and `TopologyEngine` (engine.rs) — both actively used in production
+- **Update** `#[deprecated]` on `SystemRouter` (system_router.rs): change note to "Deprecated for direct Python use; still required as internal dependency of ModelAssigner and boot.py routing. Removal deferred to v0.4"
+- **Update** `#[deprecated]` on `TopologyEngine` (engine.rs): change note to "Deprecated for direct Python use; still required as internal dependency of boot.py Phase 6. Removal deferred to v0.4"
 - **Keep** `#[deprecated]` on Rust `AdaptiveRouter` (router.rs) and `TopologyBridge` (smmu_bridge.rs) — genuinely unused
-- Update CLAUDE.md deprecated section
+- Update CLAUDE.md deprecated section with rationale for deferral
 
-**Add setter:**
+**Add setter + Python mutation method:**
 - `TopologyNode.model_id`: change from `#[pyo3(get)]` to `#[pyo3(get, set)]`
+- Add `TopologyGraph.set_node_model_id(idx: usize, model_id: &str)` PyO3 method — required for the Python fallback ModelAssigner (Rust assigner uses `inner_graph_mut().node_weight_mut()` directly)
 
 ### 2. Rust ModelAssigner (`sage-core/src/routing/model_assigner.rs`)
 
@@ -167,6 +181,10 @@ For each node in TopologyGraph (topological order):
            + WEIGHT_DOMAIN   * domain_score(task_domain)
            + WEIGHT_COST     * (1.0 - cost_normalized)
      Constants: WEIGHT_AFFINITY=0.4, WEIGHT_DOMAIN=0.4, WEIGHT_COST=0.2
+     NOTE: These differ from ModelRegistry.domain_routing_score() (0.6/0.3/0.1).
+     Rationale: per-node assignment needs higher affinity weight because node.system
+     is a strong signal (coder node = S2, reviewer = S3), whereas domain_routing_score
+     is for general "best model for this domain" without topology context.
   4. Select highest scorer → set node.model_id via graph.node_weight_mut()
   5. Deduct estimated cost from remaining_budget
 ```
@@ -175,19 +193,39 @@ For each node in TopologyGraph (topological order):
 
 **Edge case:** If no candidate passes filters (all too expensive or missing capabilities), keep the node's existing model_id unchanged and log a warning.
 
-### 3. Python ModelAssigner fallback (`sage-python/src/sage/llm/model_assigner.py`)
+### 3. TaskPlanner.plan_auto() (`sage-python/src/sage/contracts/planner.py`)
+
+New method on existing `TaskPlanner` class. ~100 LOC added.
+
+The existing `plan_static(steps)` takes explicit step dicts. The new `plan_auto(task, provider)` uses an LLM to decompose a task string into steps, then delegates to `plan_static()`.
+
+```python
+async def plan_auto(self, task: str, provider: LLMProvider) -> PlanResult:
+    """LLM-driven task decomposition into verified TaskDAG.
+
+    Prompts provider to output JSON: [{"id": "a", "description": "...", "depends_on": [...]}]
+    Parses, validates, then calls plan_static().
+    Falls back to single-node DAG on any failure (parse error, cycle, LLM refusal).
+    """
+```
+
+**Error handling:** If `plan_auto()` fails for any reason (LLM parse error, cycle in DAG, timeout), create a single-node TaskDAG containing the entire task as one node and proceed to Stage 2. This ensures the pipeline never blocks on decomposition failure. The fallback is logged as a warning on EventBus.
+
+**Complexity note for `compute_dag_features`:** Maximum antichain size (ω) is computed via Dilworth's theorem — minimum path cover = maximum antichain. For DAGs, this is solvable in O(V*E) via maximum bipartite matching. For the expected DAG sizes (< 20 nodes), this is instant. The ~30 LOC estimate uses a simplified longest-chain-subtraction approach sufficient for small DAGs.
+
+### 4. Python ModelAssigner fallback (`sage-python/src/sage/llm/model_assigner.py`)
 
 ~60 LOC. Same algorithm using `ModelCardCatalog` (the renamed Python ModelRegistry). Used when `sage_core` is not compiled. Field-for-field compatible with Rust version.
 
-### 4. ProviderPool (`sage-python/src/sage/llm/provider_pool.py`)
+### 5. ProviderPool (`sage-python/src/sage/llm/provider_pool.py`)
 
 ~80 LOC. Resolves `model_id` → `(LLMProvider, LLMConfig)` at execution time.
 
 ```python
 class ProviderPool:
-    def __init__(self, default_provider: LLMProvider, registry: ModelProfileRegistry):
+    def __init__(self, default_provider: LLMProvider, registry: "sage.providers.registry.ModelRegistry"):
         self._default = default_provider
-        self._registry = registry  # sage.providers.registry (runtime discovery)
+        self._registry = registry  # sage.providers.registry.ModelRegistry (runtime discovery)
         self._cache: dict[str, tuple[LLMProvider, LLMConfig]] = {}
 
     def resolve(self, model_id: str) -> tuple[LLMProvider, LLMConfig]:
@@ -199,7 +237,7 @@ Uses `sage.providers.registry.ModelRegistry` (the runtime discovery registry tha
 
 Cache keyed by model_id to avoid repeated lookups. Cache invalidation: none needed (provider availability doesn't change within a session).
 
-### 5. TopologyRunner modification
+### 6. TopologyRunner modification
 
 ~15 LOC changed in `sage-python/src/sage/topology/runner.py`.
 
@@ -220,7 +258,7 @@ response = await provider.generate(messages=messages, config=config)
 
 Backward compatible: without `provider_pool`, behavior is identical to today.
 
-### 6. Pipeline stages (`sage-python/src/sage/pipeline_stages.py`)
+### 7. Pipeline stages (`sage-python/src/sage/pipeline_stages.py`)
 
 ~150 LOC. Pure functions, one per stage.
 
@@ -233,7 +271,7 @@ Backward compatible: without `provider_pool`, behavior is identical to today.
 
 **`select_macro_topology(features)`** (~25 LOC): AdaptOrch routing heuristic with thresholds θ_ω=0.5, θ_γ=0.6, θ_δ=5. Returns topology template hint (sequential/parallel/hierarchical/hybrid).
 
-### 7. CognitiveOrchestrationPipeline (`sage-python/src/sage/pipeline.py`)
+### 8. CognitiveOrchestrationPipeline (`sage-python/src/sage/pipeline.py`)
 
 ~250 LOC. Chains the 5 stages.
 
@@ -266,7 +304,7 @@ class CognitiveOrchestrationPipeline:
         return ctx.result
 ```
 
-### 8. Boot wiring (`sage-python/src/sage/boot.py`)
+### 9. Boot wiring (`sage-python/src/sage/boot.py`)
 
 ~50 LOC modified. After existing instantiations:
 
@@ -280,7 +318,7 @@ except ImportError:
     model_assigner = PyModelAssigner(py_model_card_catalog)
 
 # ProviderPool
-provider_pool = ProviderPool(default_provider=llm_provider, registry=model_profile_registry)
+provider_pool = ProviderPool(default_provider=llm_provider, registry=registry)
 
 # Pipeline
 pipeline = CognitiveOrchestrationPipeline(
@@ -314,18 +352,28 @@ Four adaptation points in `stage_execute`, after each node completion:
 | CREATE | `sage-python/src/sage/pipeline_stages.py` | ~150 |
 | CREATE | `sage-python/src/sage/llm/provider_pool.py` | ~80 |
 | CREATE | `sage-python/src/sage/llm/model_assigner.py` | ~60 |
-| MODIFY | `sage-core/src/topology/topology_graph.rs` | ~5 |
+| MODIFY | `sage-core/src/topology/topology_graph.rs` | ~15 (set model_id + set_node_model_id method) |
 | MODIFY | `sage-core/src/lib.rs` | ~3 |
-| MODIFY | `sage-core/src/routing/system_router.rs` | ~1 (remove deprecated) |
-| MODIFY | `sage-core/src/topology/engine.rs` | ~1 (remove deprecated) |
+| MODIFY | `sage-core/src/routing/system_router.rs` | ~3 (update deprecated note) |
+| MODIFY | `sage-core/src/topology/engine.rs` | ~3 (update deprecated note) |
+| MODIFY | `sage-python/src/sage/contracts/planner.py` | ~100 (add plan_auto) |
 | MODIFY | `sage-python/src/sage/topology/runner.py` | ~15 |
-| MODIFY | `sage-python/src/sage/boot.py` | ~50 |
-| MODIFY | `sage-python/src/sage/llm/model_registry.py` | ~10 (rename) |
+| MODIFY | `sage-python/src/sage/boot.py` | ~80 |
+| MODIFY | `sage-python/src/sage/llm/model_registry.py` | ~10 (rename to ModelCardCatalog) |
+| MODIFY | `sage-python/src/sage/topology/__init__.py` | ~5 (remove planner exports) |
+| MODIFY | `sage-discover/src/discover/workflow.py` | ~5 (remove planner import) |
+| MODIFY | `sage-python/tests/test_bugfixes.py` | ~10 (remove DynamicRouter test) |
+| MODIFY | `sage-python/tests/test_integration_phase3.py` | ~15 (remove DynamicRouter) |
+| MODIFY | `sage-python/src/sage/routing/README.md` | ~5 |
+| MODIFY | `sage-python/src/sage/README.md` | ~3 |
+| MODIFY | `sage-python/README.md` | ~3 |
 | MODIFY | `CLAUDE.md` | ~30 |
 | DELETE | `sage-python/src/sage/routing/dynamic.py` | -178 |
 | DELETE | `sage-python/src/sage/topology/planner.py` | -80 |
-| TESTS | 7 test files | ~400 |
-| **Net** | | **~+950, -258** |
+| DELETE | `sage-python/tests/test_dynamic_router.py` | -140 |
+| DELETE | `sage-python/tests/test_topology_planner.py` | -40 |
+| TESTS | 8 test files (including parity test) | ~450 |
+| **Net** | | **~+1100, -438** |
 
 ## Testing Strategy
 
@@ -337,6 +385,7 @@ Four adaptation points in `stage_execute`, after each node completion:
 | `tests/test_pipeline_stages.py` | Each stage function in isolation | Unit |
 | `tests/test_dag_features.py` | ω, δ, γ computation on known DAGs | Unit, deterministic |
 | `tests/test_cleanup.py` | ModelCardCatalog rename, DynamicRouter removed | Regression |
+| `tests/test_assigner_parity.py` | Python fallback produces identical assignments to Rust for same inputs | Parity |
 | `sage-core: model_assigner tests` | Rust assignment: filtering, scoring, budget | cargo test |
 
 No real LLM calls in tests. Existing E2E proof (`tests/e2e_proof.py`) validates full integration.
