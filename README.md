@@ -73,19 +73,41 @@ AgentLoop: perceive -> think -> act -> learn
 EventBus ---> Dashboard (WebSocket, real-time)
 ```
 
-## Benchmarks (March 11, 2026)
+## Benchmark Results
 
-| Benchmark | Result | Notes |
-|-----------|--------|-------|
-| **EvalPlus HumanEval+** (164 tasks) | **84.1%** pass@1 (138/164) | Official 80x harder tests |
-| **EvalPlus MBPP+** (378 tasks) | **75.1%** pass@1 (284/378) | Official 35x harder tests |
-| **Routing GT kNN** (50 tasks) | **92%** (46/50) | kNN on arctic-embed-m (arXiv 2505.12601) |
-| **Routing GT heuristic** (50 tasks) | 52% (26/50) | Non-circular, human-labeled baseline |
-| **Ablation: full vs baseline** | **+15pp** (100% vs 85%) | Paired, same model (20 tasks) |
-| **Unit Tests** (Python) | **1216 passed** | 115 skipped (optional features) |
-| **Unit Tests** (Rust) | **235+ passed** | baseline + SMT + cognitive + ONNX |
+### Framework Value (Ablation Study)
 
-> **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, **YGN-SAGE 84.1%** (budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
+YGN-SAGE adds **+15 percentage points** over a bare LLM baseline on coding tasks (N=20, paired A/B test):
+
+| Configuration | pass@1 | Delta |
+|--------------|--------|-------|
+| Full framework | 100% | — |
+| Bare LLM (no framework) | 85% | -15pp |
+
+Routing contributes +5pp. Memory, AVR, and guardrails show no isolated delta on single-turn code tasks — re-run at N=100 with statistical tests pending. Non-code evaluation (reasoning, multi-turn, research) in progress.
+
+### Code Generation (EvalPlus)
+
+| Benchmark | Score | Model |
+|-----------|-------|-------|
+| HumanEval+ pass@1 | **84.1%** (138/164) | Gemini 2.5 Flash |
+| MBPP+ pass@1 | **75.1%** (284/378) | Gemini 2.5 Flash |
+
+> **Note:** These are absolute scores using a budget-tier model. Cross-model comparisons (e.g., vs GPT-4o, O1) are not meaningful — different model tiers, different cost profiles. The framework's value is the +15pp delta over the same model without it.
+
+### Routing
+
+| Method | Accuracy (50 GT tasks) | Notes |
+|--------|----------------------|-------|
+| kNN on arctic-embed-m (arXiv 2505.12601) | **92%** (46/50) | Replaces keyword heuristic |
+| Keyword heuristic baseline | 52% (26/50) | Non-circular, human-labeled |
+
+### Tests
+
+| Suite | Result |
+|-------|--------|
+| Python unit tests | **1216 passed** (115 skipped) |
+| Rust unit tests | **235+ passed** |
 
 ```bash
 # Run benchmarks
