@@ -79,6 +79,8 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `pipeline_stages.py` - Pure stage functions: _infer_domain, compute_dag_features (ω,δ,γ from AdaptOrch), select_macro_topology
 - `llm/provider_pool.py` - ProviderPool: resolves model_id → LLMProvider at topology execution time with cache + fallback
 - `llm/model_assigner.py` - Python ModelAssigner fallback: per-node model assignment using ModelCardCatalog (same algorithm as Rust)
+- `topology_controller.py` - TopologyController: runtime adaptation for Pipeline Stage 4. 4 actions: model upgrade, agent pruning, topology re-route, sub-agent spawn. Quality blending: 80% QualityEstimator + 20% PRM (structured content only). Research: AgentDropout, AdaptOrch, OpenSage
+- `consistency.py` - ConsistencyScore: mean pairwise cosine similarity for parallel output comparison. Rust SIMD batch_cosine_similarity when available, sentence-transformers fallback
 
 ### Key Rust Modules (sage-core/src/)
 - `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase). ULID-based chunk IDs (cross-session stable, globally unique). `last_chunk_id()` returns most recent chunk.
@@ -88,7 +90,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules, 21 blocked calls, 20 blocked dunders. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
-- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
+- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`, `batch_cosine_similarity(texts)` (SIMD pairwise cosine for ConsistencyScore). Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
 - `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
 - `routing/router.rs` - AdaptiveRouter PyO3 class: Stage 0 (structural) + Stage 1 (BERT ONNX classifier). Behind `onnx` feature. Dynamic input discovery, 512-token truncation, binary/multi-class support. Rust-native shadow trace collection (JSONL), `retrain_thresholds()` logistic regression on feedback, `flush_shadow_traces(path)` PyO3 method. **DEPRECATED since v0.2.0** — use Python `sage.strategy.adaptive_router.AdaptiveRouter`.
 - `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
@@ -404,6 +406,15 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - Rich traceback feedback (LLMLOOP/Review-then-fix pattern): full stderr + stdout in AVR retry messages
 - Improved syntax error formatting with fenced code blocks
 - 60s per-task timeout prevents AVR hangs
+
+## Runtime Adaptation (Phase C)
+- **TopologyController**: Evaluates node output quality post-execution. 4 adaptation actions:
+  - Model upgrade (quality < 0.3): assign_single_node + retry with better model
+  - Agent pruning (importance < 0.2): skip redundant nodes (AgentDropout, ACL 2025)
+  - Topology re-route (consistency < 0.5): regenerate topology with tighter constraints (AdaptOrch)
+  - Sub-agent spawn: detect emergent sub-tasks, run via AgentTool.from_agent()
+- **OxiZ wiring**: verify_provider_assignment in Stage 3, PolicyVerifier.verify_node pre-execution, PRM lightweight in Stage 5
+- **ConsistencyScore**: Rust SIMD batch_cosine_similarity for parallel output comparison
 
 ## Evolution System
 - **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Context injected into LLM mutation prompt.
