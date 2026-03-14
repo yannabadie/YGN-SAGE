@@ -35,7 +35,6 @@ from sage.evolution.ebpf_evaluator import EbpfEvaluator
 from sage.strategy.engine import StrategyEngine
 from sage.evolution.population import Individual
 from sage.topology.engine import TopologyEngine
-from sage.topology.planner import TopologyPlanner
 from sage.topology.kg_rlvr import ProcessRewardModel
 
 
@@ -100,9 +99,8 @@ class DiscoverWorkflow:
             sandbox_manager=self.sandbox
         )
         
-        # OpenSAGE Topology Planner
+        # Topology engine (TopologyPlanner removed — superseded by Rust DynamicTopologyEngine)
         self.topology_engine = TopologyEngine()
-        self.topology_planner = TopologyPlanner(self.topology_engine, self.llm)
 
     @property
     def phase(self) -> str:
@@ -119,11 +117,6 @@ class DiscoverWorkflow:
     async def run_exploration(self) -> list[str]:
         self._phase = "exploring"
         self.main_agent.config.llm = ModelRouter.get_config("fast")
-        
-        # OpenSAGE: Dynamically generate topology for this exploration task
-        topo_id = await self.topology_planner.generate_topology(f"Explore the domain of {self.config.domain} for {self.config.goal}", max_nodes=3)
-        topo = self.topology_engine.get_topology(topo_id)
-        print(f"🕸️ Generated Topology [{topo.type.name}]: {topo.node_count()} agents")
 
         if self._bridge.is_active:
             insights = await self._bridge.get_sota_insights(self.config.domain)
