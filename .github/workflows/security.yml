@@ -1,0 +1,39 @@
+name: Security
+
+on:
+  push:
+    branches: [master]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6am UTC
+
+jobs:
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    strategy:
+      matrix:
+        language: [python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+      - uses: github/codeql-action/analyze@v3
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install cyclonedx-bom
+      - run: |
+          cd sage-python
+          pip install -e ".[all]"
+          cyclonedx-py environment -o ../sbom.json --output-format json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
