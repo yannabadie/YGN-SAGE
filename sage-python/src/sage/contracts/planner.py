@@ -6,10 +6,14 @@ outputs a DAG, the DAGExecutor runs it.
 
 Supports:
 - Static planning: from explicit step specs (plan_static)
+- Auto planning: LLM-driven decomposition (plan_auto)
 - Validation: cycle detection, IO compatibility warnings
 """
 from __future__ import annotations
 
+import json
+import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -20,6 +24,8 @@ from sage.contracts.task_node import (
     SecurityLabel,
 )
 from sage.contracts.dag import TaskDAG, CycleError
+
+MAX_DECOMPOSITION_STEPS = 6
 
 
 _SECURITY_MAP = {
@@ -104,3 +110,71 @@ class TaskPlanner:
         warnings = dag.validate_io_compatibility()
 
         return PlanResult(dag=dag, warnings=warnings)
+
+    async def plan_auto(self, task: str, provider: Any) -> PlanResult:
+        """LLM-driven task decomposition into verified TaskDAG.
+
+        Prompts provider to output JSON array of step objects:
+        [{"id": "step1", "description": "...", "depends_on": ["step0"]}]
+
+        Hard-cap: MAX_DECOMPOSITION_STEPS = 6. Truncates beyond that.
+        Falls back to single-node DAG on any failure.
+        """
+        from sage.llm.base import Message, Role, LLMConfig
+
+        log = logging.getLogger(__name__)
+
+        prompt = (
+            "Decompose the following task into 2-6 sequential or parallel subtasks. "
+            "Output ONLY a JSON array. Each element: "
+            '{"id": "unique_id", "description": "what to do", "depends_on": ["ids of prerequisites"]}. '
+            "Keep it minimal — prefer fewer steps. "
+            f"Task: {task}"
+        )
+
+        try:
+            config = LLMConfig(provider="google", model="gemini-2.5-flash")
+            response = await provider.generate(
+                messages=[
+                    Message(role=Role.SYSTEM, content="You are a task decomposition assistant. Output only valid JSON."),
+                    Message(role=Role.USER, content=prompt),
+                ],
+                config=config,
+            )
+            content = response.content or ""
+
+            # Extract JSON from response (may have markdown fences)
+            json_match = re.search(r'\[.*\]', content, re.DOTALL)
+            if not json_match:
+                raise ValueError("No JSON array found in LLM response")
+
+            steps = json.loads(json_match.group())
+            if not isinstance(steps, list):
+                raise ValueError("Expected JSON array")
+
+            # Hard cap
+            steps = steps[:MAX_DECOMPOSITION_STEPS]
+
+            # Normalize step format for plan_static
+            normalized = []
+            for step in steps:
+                if not isinstance(step, dict) or "id" not in step:
+                    continue
+                entry: dict[str, Any] = {
+                    "id": str(step["id"]),
+                    "description": str(step.get("description", step["id"])),
+                }
+                deps = step.get("depends_on", [])
+                if deps:
+                    entry["depends_on"] = [str(d) for d in deps]
+                normalized.append(entry)
+
+            if not normalized:
+                raise ValueError("No valid steps after normalization")
+
+            return self.plan_static(normalized)
+
+        except Exception as exc:
+            log.warning("plan_auto fallback to single-node DAG: %s", exc)
+            # Fallback: single-node DAG with the entire task
+            return self.plan_static([{"id": "main", "description": task}])
