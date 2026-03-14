@@ -1,7 +1,19 @@
 [project]
 name = "ygn-sage"
 version = "0.1.0"
-description = "YGN-SAGE: Self-Adaptive Generation Engine"
+description = "Agent Development Kit with 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Yann Abadie" }]
+keywords = ["agents", "llm", "routing", "topology", "multi-agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.28",
@@ -34,6 +46,14 @@ dev = [
     "pyarrow>=18",
     "hypothesis>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yannabadie/YGN-SAGE"
+Repository = "https://github.com/yannabadie/YGN-SAGE"
+Documentation = "https://github.com/yannabadie/YGN-SAGE/tree/master/docs"
+
+[project.scripts]
+sage = "sage.protocols.serve:main"
 
 [build-system]
 requires = ["hatchling"]
