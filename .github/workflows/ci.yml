@@ -113,3 +113,23 @@ jobs:
       - name: Rust check (ONNX feature)
         working-directory: sage-core
         run: cargo check --no-default-features --features onnx
+
+  integration-smoke:
+    name: Integration Smoke (real API, master only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: [python-sage]
+    continue-on-error: true
+    env:
+      GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+      REQUESTS_CA_BUNDLE: ""
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e ".[all,dev]"
+        working-directory: sage-python
+      - run: python -m pytest -m e2e --limit 5 -x -v
+        working-directory: sage-python
+        timeout-minutes: 10
