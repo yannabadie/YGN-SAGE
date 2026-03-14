@@ -1,0 +1,26 @@
+[package]
+name = "sage-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.sage-core]
+path = ".."
+default-features = false
+features = ["smt"]
+
+[dependencies.pyo3]
+version = "0.25"
+features = ["auto-initialize"]
+
+[[bin]]
+name = "fuzz_smt_parser"
+path = "fuzz_targets/fuzz_smt_parser.rs"
+test = false
+doc = false
