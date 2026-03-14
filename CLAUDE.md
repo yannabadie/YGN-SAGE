@@ -122,6 +122,14 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `protocols/a2a_server.py` - A2A agent: AgentLoop → AgentExecutor, AgentCard with 3 skills (general, code, research). Uses a2a-sdk >= 1.0
 - `protocols/serve.py` - Unified CLI: `python -m sage.protocols.serve --mcp --a2a`
 
+### Progressive Enhancement (Rust/Python Duality)
+
+Rust (`sage-core`) is a progressive enhancement, not a core dependency. All subsystems have Python fallbacks. Running without `maturin develop` gives a pure-Python system with reduced performance.
+
+**Rust provides:** native SIMD embeddings (10x faster), sub-0.1ms SMT verification (OxiZ), zero-copy Arrow memory, compiled topology graph operations, tree-sitter AST validation, Wasm WASI sandbox.
+
+**Python fallback for everything:** hash embeddings, z3-solver, in-memory dicts, Python graph traversal, regex validation, subprocess sandbox.
+
 ## Development Commands
 
 ### Python SDK
