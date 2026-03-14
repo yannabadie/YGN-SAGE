@@ -217,5 +217,8 @@
       "complexity": 0.81,
       "correct": true
     }
-  ]
+  ],
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

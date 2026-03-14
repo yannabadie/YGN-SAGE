@@ -137,5 +137,8 @@
     "failed": 2,
     "total": 20,
     "duration_ms": 52556.081399990944
-  }
+  },
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

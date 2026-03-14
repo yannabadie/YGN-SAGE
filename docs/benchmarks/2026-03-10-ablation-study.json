@@ -82,5 +82,8 @@
     "total": 20,
     "avg_latency_ms": 4356.27,
     "avg_cost_usd": 0.0
-  }
+  },
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

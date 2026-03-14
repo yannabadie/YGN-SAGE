@@ -5,7 +5,33 @@ from sage.boot import AgentSystem
 
 def test_agent_system_model_info():
     """AgentSystem.model_info returns resolved model metadata."""
-    # Tested after Step 4 adds the property — see Step 7 verification
+    from unittest.mock import MagicMock
+
+    system = AgentSystem.__new__(AgentSystem)
+
+    # Minimal mock: agent_loop with a fake _llm, and a metacognition stub
+    mock_llm = MagicMock()
+    mock_llm.model_id = "gemini-2.5-flash"
+    type(mock_llm).__name__ = "GoogleProvider"
+
+    mock_loop = MagicMock()
+    mock_loop._llm = mock_llm
+
+    system.agent_loop = mock_loop  # type: ignore[attr-defined]
+
+    mock_meta = MagicMock()
+    mock_meta._current_tier = "budget"
+    system.metacognition = mock_meta  # type: ignore[attr-defined]
+
+    info = system.model_info
+
+    assert isinstance(info, dict), "model_info must return a dict"
+    assert "model" in info, "model_info must contain 'model' key"
+    assert "provider" in info, "model_info must contain 'provider' key"
+    assert "tier" in info, "model_info must contain 'tier' key"
+    assert info["model"] == "gemini-2.5-flash"
+    assert info["provider"] == "GoogleProvider"
+    assert info["tier"] == "budget"
 
 
 def test_bench_report_temperature_field():

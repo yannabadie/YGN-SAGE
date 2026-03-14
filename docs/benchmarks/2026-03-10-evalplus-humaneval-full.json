@@ -2147,5 +2147,8 @@
     }
   ],
   "model_config": {},
-  "timestamp": "2026-03-10T01:28:37.064546+00:00"
+  "timestamp": "2026-03-10T01:28:37.064546+00:00",
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

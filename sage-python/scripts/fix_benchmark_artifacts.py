@@ -13,7 +13,7 @@ MODEL_INFO = {
 def patch_file(path: str) -> bool:
     with open(path) as f:
         data = json.load(f)
-    if isinstance(data, dict) and data.get("model") == "unknown":
+    if isinstance(data, dict) and data.get("model", "unknown") == "unknown":
         data.update(MODEL_INFO)
         with open(path, "w") as f:
             json.dump(data, f, indent=2)

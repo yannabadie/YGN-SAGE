@@ -774,5 +774,8 @@
       "error": ""
     }
   ],
-  "verdict": "Router: 29/30 (97%) at $0.0392. All-S1: 30/30 (100%) at $0.0009. Cost ratio: 42.1x"
+  "verdict": "Router: 29/30 (97%) at $0.0392. All-S1: 30/30 (100%) at $0.0009. Cost ratio: 42.1x",
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

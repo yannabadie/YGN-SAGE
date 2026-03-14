@@ -280,5 +280,8 @@
       "detail": "has_attr=True, has_method=True, empty_schedule=True",
       "skipped": false
     }
-  ]
+  ],
+  "model": "gemini-2.5-flash",
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }
