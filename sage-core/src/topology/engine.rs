@@ -79,7 +79,7 @@ pub struct GenerateResult {
 
 /// Central engine that orchestrates S-MMU retrieval, archive lookup, mutation,
 /// LLM synthesis, and evolution for task-adaptive custom DAG generation.
-#[deprecated(since = "0.2.0", note = "Use Python boot.py Phase 6 topology wiring")]
+#[deprecated(since = "0.2.0", note = "Deprecated for direct Python use; still required as internal dependency of boot.py Phase 6. Removal deferred to v0.4.")]
 pub struct TopologyEngine {
     bridge: TopologySmmuBridge,
     archive: MapElitesArchive,

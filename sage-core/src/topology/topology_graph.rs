@@ -129,7 +129,7 @@ pub struct TopologyNode {
     #[pyo3(get)]
     pub role: String,
     /// Model identifier: "gemini-2.5-flash", etc.
-    #[pyo3(get)]
+    #[pyo3(get, set)]
     pub model_id: String,
     /// Cognitive system tier: 1=S1, 2=S2, 3=S3.
     #[pyo3(get)]
@@ -450,6 +450,20 @@ impl TopologyGraph {
     pub fn py_get_node(&self, index: usize) -> PyResult<TopologyNode> {
         self.try_get_node(index)
             .map_err(pyo3::exceptions::PyIndexError::new_err)
+    }
+
+    /// Set the model_id for a specific node (for Python fallback ModelAssigner).
+    pub fn set_node_model_id(&mut self, idx: usize, model_id: &str) -> PyResult<()> {
+        let node_idx = petgraph::graph::NodeIndex::new(idx);
+        match self.graph.node_weight_mut(node_idx) {
+            Some(node) => {
+                node.model_id = model_id.to_string();
+                Ok(())
+            }
+            None => Err(pyo3::exceptions::PyIndexError::new_err(
+                format!("Node index {} out of range", idx)
+            )),
+        }
     }
 
     /// Get topological ordering of nodes.
