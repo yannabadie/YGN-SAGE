@@ -117,26 +117,39 @@ class AdaptiveRouter:
         return self._route_from_profile(profile)
 
     def assess_complexity(self, task: str) -> CognitiveProfile:
-        """Synchronous assessment: Rust kNN > Python kNN > Rust structural > heuristic."""
-        # Best path: Rust kNN (embed in Python, kNN search in Rust)
+        """Synchronous assessment: kNN (primary, 92% acc) > Rust structural > heuristic (52% acc, degraded).
+
+        kNN is the real primary router. Heuristic only activates when both kNN paths
+        are unavailable (no embedder, no exemplars). Per user mandate: no arbitrary
+        heuristics when a learned model is available.
+        """
+        # PRIMARY PATH: Rust kNN (embed in Python, kNN search in Rust SIMD)
         if self._rust is not None and self._rust.has_knn():
             knn_profile = self._try_rust_knn_profile(task)
             if knn_profile is not None:
+                log.debug("assess_complexity: Rust kNN → %s", knn_profile.reasoning)
                 return knn_profile
 
-        # Fallback: Python kNN
+        # PRIMARY PATH (Python fallback): Python kNN on pre-computed exemplars
         knn_profile = self._try_knn_profile(task)
         if knn_profile is not None:
+            log.debug("assess_complexity: Python kNN → %s", knn_profile.reasoning)
             return knn_profile
 
+        # DEGRADED PATH: Rust structural features (no embeddings needed)
         if self._rust is not None:
             result = self._rust.route(task)
+            log.debug("assess_complexity: Rust structural (stage %d) → complexity=%.2f",
+                      result.stage, result.features.keyword_complexity)
             return CognitiveProfile(
                 complexity=result.features.keyword_complexity,
                 uncertainty=result.features.keyword_uncertainty,
                 tool_required=result.features.tool_required,
                 reasoning=f"adaptive_stage{result.stage}",
             )
+
+        # LAST RESORT: keyword-count heuristic (52% accuracy — issues a UserWarning)
+        log.warning("assess_complexity: falling back to keyword heuristic (kNN unavailable)")
         return self._assess_heuristic(task)
 
     async def assess_complexity_async(self, task: str) -> CognitiveProfile:
@@ -365,19 +378,21 @@ class AdaptiveRouter:
             )
 
     def _assess_heuristic(self, task: str) -> CognitiveProfile:
-        """Degraded keyword-count fallback (no regex).
+        """Degraded keyword-count fallback (52% accuracy, no regex).
 
-        Used only when ONNX model and kNN are both unavailable.
-        Delegates to ComplexityRouter._assess_heuristic for consistency.
+        LAST RESORT only — runs when kNN (primary, 92% accuracy) is unavailable.
+        Issues a UserWarning to surface the degradation to callers and logs.
         """
         import warnings
         warnings.warn(
-            "Using degraded keyword-count heuristic. "
+            "Using degraded keyword-count heuristic (52% accuracy). "
             "Install sage_core[onnx] or build kNN exemplars for accurate routing.",
+            UserWarning,
             stacklevel=2,
         )
         words = task.lower().split()
-        complex_kw = {"implement", "algorithm", "optimize", "distributed", "concurrent",
+        complex_kw = {"implement", "feature", "module", "component", "service",
+                      "algorithm", "optimize", "distributed", "concurrent",
                       "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
         hits = sum(1 for w in words if w in complex_kw)
         return CognitiveProfile(

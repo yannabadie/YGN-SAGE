@@ -232,12 +232,14 @@ class ComplexityRouter:
         """
         import warnings
         warnings.warn(
-            "Using degraded keyword-count heuristic. "
+            "Using degraded keyword-count heuristic (52% accuracy). "
             "Install sage_core[onnx] or build kNN exemplars for accurate routing.",
+            UserWarning,
             stacklevel=2,
         )
         words = task.lower().split()
-        complex_kw = {"implement", "algorithm", "optimize", "distributed", "concurrent",
+        complex_kw = {"implement", "feature", "module", "component", "service",
+                      "algorithm", "optimize", "distributed", "concurrent",
                       "debug", "fix", "race", "deadlock", "proof", "verify", "formal"}
         hits = sum(1 for w in words if w in complex_kw)
         return CognitiveProfile(
