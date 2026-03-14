@@ -81,7 +81,7 @@ The agent framework layer that wires pillars together and provides the developer
 | `boot.py` | System wiring: all pillars + EventBus + GuardrailPipeline + TopologyEngine |
 | `agent_loop.py` | PERCEIVE -> THINK -> ACT -> LEARN runtime with AVR self-refinement |
 | `orchestrator.py` | CognitiveOrchestrator with FrugalGPT cascade fallback |
-| `strategy/` | ComplexityRouter (heuristic), AdaptiveRouter (5-stage learned), KnnRouter |
+| `strategy/` | ComplexityRouter (heuristic), AdaptiveRouter (4-stage learned), KnnRouter |
 | `memory/` | 4-tier memory, MemoryAgent, S-MMU context, CRAG relevance gate |
 | `guardrails/` | 3-layer pipeline (input, runtime, output) |
 | `agents/` | SequentialAgent, ParallelAgent, LoopAgent, Handoff |
@@ -161,7 +161,7 @@ The TopologyEngine generates a multi-agent graph (6-path strategy: S-MMU recall,
 
 ## Routing Pipeline
 
-The 5-stage adaptive routing pipeline:
+The 4-stage adaptive routing pipeline (stage 3 online learning reserved for future work):
 
 ```mermaid
 flowchart TB
@@ -170,7 +170,7 @@ flowchart TB
     S05["Stage 0.5: kNN Embeddings<br/>(arctic-embed-m, 92% accuracy)"]
     S1["Stage 1: BERT ONNX<br/>(DistilBERT classifier)"]
     S2["Stage 2: Entropy Probe<br/>(confidence check)"]
-    S3["Stage 3: Cascade Fallback"]
+    S3["Cascade Fallback<br/>(heuristic ComplexityRouter)"]
     Decision["S1 / S2 / S3 Decision"]
 
     Input --> S0 --> S05 --> S1 --> S2 --> S3 --> Decision

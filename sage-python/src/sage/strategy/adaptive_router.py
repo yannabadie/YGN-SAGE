@@ -1,10 +1,10 @@
-"""Adaptive Router -- 5-stage learned routing pipeline.
+"""Adaptive Router -- 4-stage learned routing pipeline.
 
 Stage 0: Structural features (keyword complexity/uncertainty) -- Rust or Python.
 Stage 0.5: kNN on pre-computed embeddings (arXiv 2505.12601) -- Python/numpy.
 Stage 1: ONNX BERT classifier (routellm/bert) -- Rust only.
 Stage 2: Entropy probe (logprobs or token diversity) -- Python async.
-Stage 3: Note: online learning stage not yet implemented.
+Stage 3: Reserved for future online learning (not yet implemented).
 
 Duck-type compatible with ComplexityRouter for seamless drop-in integration.
 """
@@ -48,9 +48,10 @@ class AdaptiveRoutingResult:
 
 
 class AdaptiveRouter:
-    """5-stage adaptive router, duck-type compatible with ComplexityRouter.
+    """4-stage adaptive router, duck-type compatible with ComplexityRouter.
 
-    Stages: structural -> kNN embeddings -> BERT ONNX -> entropy probe -> cascade.
+    Stages: structural -> kNN embeddings -> BERT ONNX -> entropy probe.
+    Stage 3 (online learning) reserved for future work. Falls back to cascade.
 
     Implements: route(), assess_complexity(), assess_complexity_async(),
     record_output_entropy(), should_brake()

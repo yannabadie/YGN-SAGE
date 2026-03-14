@@ -85,7 +85,7 @@ system = router.classify("Write a sorting algorithm")  # Returns "S2"
 
 ## AdaptiveRouter
 
-5-stage learned routing with duck-type compatibility with ComplexityRouter.
+4-stage learned routing with duck-type compatibility with ComplexityRouter. Stage 3 (online learning) is reserved for future work.
 
 ```python
 from sage.strategy.adaptive_router import AdaptiveRouter

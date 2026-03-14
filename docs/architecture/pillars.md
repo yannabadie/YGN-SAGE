@@ -80,9 +80,9 @@ The Strategy pillar classifies tasks into cognitive systems and selects appropri
 | **S2** | Analytical, deliberate | Code generation, multi-step reasoning, essay writing |
 | **S3** | Formal verification | Prove memory safety, verify invariants, SAT solving |
 
-### 5-Stage Adaptive Routing
+### 4-Stage Adaptive Routing
 
-The `AdaptiveRouter` implements a 5-stage learned routing pipeline:
+The `AdaptiveRouter` implements a 4-stage learned routing pipeline (stage 3 online learning is reserved for future work):
 
 **Stage 0 -- Structural Features** (Rust, `StructuralFeatures`): Zero-cost keyword and structural feature extraction. Always compiled, no model dependencies.
 
@@ -92,7 +92,7 @@ The `AdaptiveRouter` implements a 5-stage learned routing pipeline:
 
 **Stage 2 -- Entropy Probe**: Confidence calibration check on the classifier output.
 
-**Stage 3 -- Cascade Fallback**: Falls back to the heuristic `ComplexityRouter` if confidence remains low.
+**Cascade Fallback**: Falls back to the heuristic `ComplexityRouter` if confidence remains low. Stage 3 (online learning / active feedback) is reserved for future work.
 
 ### Contextual Bandit
 

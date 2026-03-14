@@ -34,7 +34,7 @@ CRAG-style relevance gate (keyword overlap, threshold=0.3) prevents irrelevant m
 
 **Pillar 4: Evolution.** DGM context injection with SAMPO solver (5 strategic actions). Self-modifying hyperparameters: actions 2/3/4 modify mutations_per_generation, clip_epsilon, filter_threshold. SnapBPF (Rust CoW memory snapshots) for mutation rollback.
 
-**Pillar 5: Strategy.** S1/S2/S3 cognitive routing (Kahneman dual-process theory extended). 5-stage cascade: structural features -> kNN embeddings (92% accuracy) -> ONNX BERT -> entropy probe -> quality cascade. Contextual bandit (Thompson sampling, Pareto front) for model selection within each system.
+**Pillar 5: Strategy.** S1/S2/S3 cognitive routing (Kahneman dual-process theory extended). 4-stage pipeline: structural features -> kNN embeddings (92% accuracy) -> ONNX BERT -> entropy probe (cascade fallback to heuristic; stage 3 online learning reserved). Contextual bandit (Thompson sampling, Pareto front) for model selection within each system.
 
 ### 2.2 Formal Verification
 

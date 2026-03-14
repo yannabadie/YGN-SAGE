@@ -45,7 +45,7 @@ Distance-weighted k=5 majority vote. k was auto-tuned via leave-one-out cross-va
 
 ### 3.4 Integration
 
-kNN is wired as Stage 0.5 in the 5-stage AdaptiveRouter cascade:
+kNN is wired as Stage 0.5 in the 4-stage AdaptiveRouter pipeline:
 
 | Stage | Method | Accuracy | Latency |
 |-------|--------|----------|---------|
@@ -53,7 +53,8 @@ kNN is wired as Stage 0.5 in the 5-stage AdaptiveRouter cascade:
 | **0.5** | **kNN on embeddings** | **92%** | **<5ms** |
 | 1 | ONNX BERT classifier | — | ~10ms |
 | 2 | Entropy probe (active learning) | — | ~20ms |
-| 3 | Quality cascade (model selection) | — | variable |
+| 3 | Online learning (reserved, not yet implemented) | — | — |
+| — | Cascade fallback (heuristic ComplexityRouter) | — | variable |
 
 In production, kNN resolves 92% of decisions at Stage 0.5. The remaining 8% escalate to BERT or entropy probe.
 

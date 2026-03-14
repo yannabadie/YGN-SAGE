@@ -22,11 +22,11 @@ YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive
 
 ## Features
 
-- **S1/S2/S3 cognitive routing** — adaptive 5-stage routing (structural → kNN embeddings → BERT ONNX → entropy → cascade) with Rust ContextualBandit + telemetry calibration. kNN on arctic-embed-m (arXiv 2505.12601): 52% → 92% accuracy on 50 GT tasks, Rust-native SIMD dot product
+- **S1/S2/S3 cognitive routing** — adaptive 4-stage routing (structural → kNN embeddings → BERT ONNX → entropy probe; cascade fallback) with Rust ContextualBandit + telemetry calibration. kNN on arctic-embed-m (arXiv 2505.12601): 52% → 92% accuracy on 50 GT tasks, Rust-native SIMD dot product
 - **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
 - **Composable guardrails** — cost limits, output validation, schema validation, Z3 bounds checking at input/runtime/output
 - **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
-- **Tool Security** — Rust ToolExecutor: tree-sitter AST validation (23 blocked modules + 11 blocked calls) + Wasm WASI sandbox (deny-by-default) + subprocess fallback with timeout
+- **Tool Security** — Rust ToolExecutor: tree-sitter AST validation (23 blocked modules, 21 blocked calls, 20 blocked dunders) + Wasm WASI sandbox (deny-by-default) + subprocess fallback with timeout
 - **Sandbox** — Wasm (wasmtime v36 LTS) Component Model sandbox with WASI deny-by-default capabilities
 - **Dashboard** — built-in FastAPI + WebSocket real-time event viewer with task queue
 - **Benchmarks** — EvalPlus HumanEval+ (164), MBPP+ (378), ablation study, routing quality, official evaluation protocol with error logging
@@ -55,7 +55,7 @@ cd .. && python ui/app.py
 User Task
     |
     v
-AdaptiveRouter --- 5-stage routing (structural → kNN → BERT → entropy → cascade)
+AdaptiveRouter --- 4-stage routing (structural → kNN → BERT → entropy; cascade fallback)
     |
     +---> S1 (Simple)   --- fast model, no validation
     +---> S2 (Code)     --- mid-tier model, sandbox AVR loop
@@ -217,7 +217,7 @@ pipeline = GuardrailPipeline([
 - **1216 tests passed** (Python) + 235+ Rust + 52 Discover + 50 integration tests (no mocks)
 - **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
 - **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
-- **Cognitive Routing**: S1/S2/S3 adaptive 5-stage routing (structural → kNN embeddings on arctic-embed-m ONNX 768-dim → BERT ONNX → entropy → cascade). kNN routing: 92% accuracy (arXiv 2505.12601)
+- **Cognitive Routing**: S1/S2/S3 adaptive 4-stage routing (structural → kNN embeddings on arctic-embed-m ONNX 768-dim → BERT ONNX → entropy probe; cascade fallback). kNN routing: 92% accuracy (arXiv 2505.12601)
 - **Memory**: 4 tiers wired end-to-end — Tier 0 Working Memory (Rust Arrow + S-MMU), Tier 1 Episodic (SQLite), Tier 2 Semantic (deque + lazy eviction), Tier 3 ExoCortex (Google File Search)
 - **Embeddings**: RustEmbedder ONNX with auto-discovery, 3-tier fallback + hash fallback warning
 - **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds

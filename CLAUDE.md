@@ -41,7 +41,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `providers/openai_compat.py` - OpenAI-compatible provider with per-provider quirk dispatch (DeepSeek, Kimi, Grok, MiniMax, OpenAI)
 - `providers/capabilities.py` - Provider capability registry: auto-populated at boot from discovered providers, 7 known provider capability sets
 - `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
-- `strategy/adaptive_router.py` - AdaptiveRouter: 5-stage learned routing (structural → kNN embeddings → BERT ONNX → entropy probe → cascade). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
+- `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → kNN embeddings → BERT ONNX → entropy probe; stage 3 online learning reserved). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
 - `strategy/knn_router.py` - KnnRouter: kNN-based S1/S2/S3 routing using pre-computed exemplar embeddings (arXiv 2505.12601). 92% accuracy on 50 GT tasks (vs 52% heuristic). Auto-builds from ground truth at boot if .npz missing. Refuses hash embeddings.
 - `strategy/training.py` - Training data export (JSONL) for BERT classifier retraining
 - `topology/evo_topology.py` - MAP-Elites evolutionary topology search
@@ -82,7 +82,7 @@ built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
 - `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
 - `sandbox/ebpf.rs` - eBPF executor (solana_rbpf) + SnapBPF (CoW memory snapshots)
 - `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `WasmSandbox` PyClass + `WasiState` (deny-by-default). `execute_precompiled()` / `execute_precompiled_wasi()` for Windows (no cranelift), `execute()` with JIT on Linux CI. Standalone `execute_wasi_component()` / `execute_bare_component()` for ToolExecutor. Behind `sandbox` feature flag.
-- `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules + 11 blocked calls. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
+- `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules, 21 blocked calls, 20 blocked dunders. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
 - `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
 - `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
 - `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`. Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
@@ -308,7 +308,7 @@ sandbox = Sandbox(allow_local=True)  # Required — default is False
 ```
 
 **ToolExecutor security pipeline** (when `sage_core` compiled with `tool-executor` + `sandbox`):
-1. **tree-sitter AST validation** — blocks 23 dangerous modules (os, sys, subprocess, etc.) + 11 dangerous calls (exec, eval, open, etc.)
+1. **tree-sitter AST validation** — blocks 23 dangerous modules (os, sys, subprocess, etc.) + 21 dangerous calls (exec, eval, open, etc.) + 20 blocked dunders
 2. **Wasm WASI sandbox** (if component loaded) — deny-by-default: NO filesystem, NO env vars, NO network, NO subprocess. Only stdout/stderr inherited
 3. **Subprocess fallback** — timeout + kill-on-drop isolation
 

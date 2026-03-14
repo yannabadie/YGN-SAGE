@@ -22,7 +22,7 @@ The system is organized around **five cognitive pillars**:
 
 **Evolutionary topology search.** Unlike frameworks that use fixed agent pipelines, SAGE evolves multi-agent topologies using MAP-Elites quality-diversity search, CMA-ME directional optimization, and Monte Carlo Tree Search. The `DynamicTopologyEngine` tries six paths before falling back to templates.
 
-**Cognitive routing, not keyword matching.** Tasks are classified into S1 (fast/intuitive), S2 (analytical), or S3 (formal verification) cognitive systems using a 5-stage learned pipeline: structural features, kNN embeddings, BERT ONNX classifier, entropy probing, and cascade fallback. The kNN router achieves 92% accuracy on human-labeled ground truth versus 52% for keyword heuristics.
+**Cognitive routing, not keyword matching.** Tasks are classified into S1 (fast/intuitive), S2 (analytical), or S3 (formal verification) cognitive systems using a 4-stage learned pipeline: structural features, kNN embeddings, BERT ONNX classifier, and entropy probing (with cascade fallback to heuristic). The kNN router achieves 92% accuracy on human-labeled ground truth versus 52% for keyword heuristics.
 
 **SMT formal verification.** S3 tasks get genuine satisfiability checking via OxiZ (pure-Rust SMT solver) with Z3 fallback. This includes memory safety proofs, loop bound verification, CEGAR invariant synthesis, and LTL temporal model checking on topology graphs.
 

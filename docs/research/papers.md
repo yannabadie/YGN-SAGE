@@ -16,7 +16,7 @@ YGN-SAGE draws on and extends research from multi-agent systems, LLM routing, ev
 ### LLMRouterBench
 **arXiv 2601.07206** -- Comprehensive benchmark of LLM routing methods. Key finding: embedding backbone impact is limited, and many routing methods converge to similar performance.
 
-**SAGE takeaway**: Validated that the choice of routing *algorithm* matters less than having a robust multi-stage fallback pipeline. SAGE's 5-stage cascade ensures graceful degradation.
+**SAGE takeaway**: Validated that the choice of routing *algorithm* matters less than having a robust multi-stage fallback pipeline. SAGE's 4-stage pipeline with cascade fallback ensures graceful degradation.
 
 ---
 
@@ -150,7 +150,7 @@ SAGE introduces several approaches not found in the referenced literature:
 
 1. **6-path topology generation**: Combining S-MMU recall, archive lookup, LLM synthesis, mutation, MCTS, and template fallback in a single prioritized pipeline
 
-2. **5-stage adaptive routing**: Structural features -> kNN embeddings -> BERT ONNX -> entropy probe -> cascade -- with each stage able to short-circuit
+2. **4-stage adaptive routing**: Structural features -> kNN embeddings -> BERT ONNX -> entropy probe (cascade fallback; stage 3 online learning reserved) -- with each stage able to short-circuit
 
 3. **Three-flow topology IR**: Extending MASFactory's concept with a petgraph-backed unified IR that serves both as topology graph and contract verification target
 
