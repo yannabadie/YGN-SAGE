@@ -120,7 +120,7 @@ if not _has_rust:
             return None
 
     sage_core = _types.ModuleType("sage_core")
-    sage_core.WorkingMemory = _PyWorkingMemory
+    setattr(sage_core, "WorkingMemory", _PyWorkingMemory)
 
 class WorkingMemory:
     """In-memory working memory for a single agent execution."""
@@ -207,10 +207,10 @@ class WorkingMemory:
 
     def retrieve_relevant_chunks(
         self,
-        active_chunk_id: int,
+        active_chunk_id: str,
         max_hops: int,
         weights: tuple[float, float, float, float] | None = None,
-    ) -> list[tuple[int, float]]:
+    ) -> list[tuple[str, float]]:
         """Retrieve relevant chunks by walking the multi-view S-MMU graph.
 
         Args:
