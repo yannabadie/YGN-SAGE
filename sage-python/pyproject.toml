@@ -47,6 +47,7 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests requiring a real LLM (GOOGLE_API_KEY)",
+    "integration: integration tests requiring optional protocol dependencies",
 ]
 
 [tool.ruff]
