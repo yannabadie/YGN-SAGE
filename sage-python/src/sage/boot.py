@@ -839,10 +839,6 @@ def boot_agent_system(
     loop.sandbox_manager = sandbox_manager
     loop.exocortex = exocortex
 
-    # Evolution disabled by default — Sprint 3 evidence shows marginal value
-    # (0.50 best score vs 0.33 random mutation). Still available for explicit use.
-    loop._auto_evolve = False
-
     # Semantic memory + MemoryAgent wiring (persistent SQLite in real mode)
     from sage.memory.semantic import SemanticMemory
     if not use_mock_llm:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ast
 import math
+import os
 import re
 import time
 import logging
@@ -200,11 +201,6 @@ class AgentLoop:
         self._skip_avr: bool = False
         self._skip_routing: bool = False
         self._skip_guardrails: bool = False
-
-        # Evolution gating — disabled by default per Sprint 3 evidence:
-        # full evolution engine scored 0.50 vs 0.33 for random mutation (67% efficiency).
-        # SAMPO adds minimal value. Set to True for explicit use.
-        self._auto_evolve: bool = False
 
         # Stats
         self.step_count = 0
@@ -409,6 +405,8 @@ class AgentLoop:
 
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle."""
+        if os.environ.get("SAGE_AGENT_LOOP_LEGACY") == "1":
+            return await self._run_legacy(task)
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
         self._s3_retries = 0
@@ -885,21 +883,6 @@ class AgentLoop:
             # Semantic memory stats (if wired)
             if self.semantic_memory:
                 learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
-
-            # Evolution grid snapshot (only when auto-evolve is enabled)
-            if self._auto_evolve and self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
-                try:
-                    cells = []
-                    best_fitness = 0.0
-                    for (x, y), (genome, score) in self.topology_population._grid.items():
-                        cells.append({"x": x, "y": y, "fitness": round(score, 2)})
-                        best_fitness = max(best_fitness, score)
-                    learn_meta["evo_cells"] = cells
-                    learn_meta["evo_best"] = round(best_fitness, 2)
-                    learn_meta["evo_grid_size"] = len(cells)
-                    self._cb_evo.record_success()
-                except Exception as e:
-                    self._cb_evo.record_failure(e)
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 

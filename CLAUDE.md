@@ -405,6 +405,7 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 - **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Context injected into LLM mutation prompt.
 - **Self-modification**: Actions 2/3/4 modify engine hyperparameters (mutations_per_generation, clip_epsilon, filter_threshold)
 - **SnapBPF**: Rust CoW memory snapshots for mutation rollback
+- Evolution is an offline development tool. Use `python -m sage.evolution` to optimize topologies and prompts against a training set.
 
 ## SMT Formal Verification (S3)
 - **Backend**: Rust OxiZ (sage_core.SmtVerifier, `smt` feature) preferred; Python z3-solver as fallback
