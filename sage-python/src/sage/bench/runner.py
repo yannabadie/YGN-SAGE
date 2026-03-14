@@ -44,6 +44,7 @@ class BenchReport:
     git_sha: str = ""
     feature_flags: list[str] = field(default_factory=list)
     timestamp: str = ""
+    temperature: float = 0.0
 
     @staticmethod
     def from_results(
@@ -67,6 +68,7 @@ class BenchReport:
                 results=[],
                 model_config=model_config or {},
                 model=model_config.get("model", "unknown") if model_config else "unknown",
+                provider=model_config.get("provider", "") if model_config else "",
                 timestamp=datetime.now(timezone.utc).isoformat(),
             )
 
@@ -96,6 +98,7 @@ class BenchReport:
             results=results,
             model_config=model_config or {},
             model=model_config.get("model", "unknown") if model_config else "unknown",
+            provider=model_config.get("provider", "") if model_config else "",
             timestamp=datetime.now(timezone.utc).isoformat(),
         )
 

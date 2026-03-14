@@ -1,9 +1,11 @@
 {
   "benchmark": "humaneval",
-  "model": "unknown",
+  "model": "gemini-2.5-flash",
   "git_sha": "cb54852ffae4",
   "total": 20,
   "passed": 15,
   "pass_rate": 0.75,
-  "avg_latency_ms": 14628.8
+  "avg_latency_ms": 14628.8,
+  "provider": "GoogleProvider",
+  "tier": "budget"
 }

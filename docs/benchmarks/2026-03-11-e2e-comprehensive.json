@@ -1,0 +1,284 @@
+{
+  "timestamp": "2026-03-11T13:18:27.994107+00:00",
+  "platform": "win32",
+  "python_version": "3.13.12 (tags/v3.13.12:1cbe481, Feb  3 2026, 18:22:25) [MSC v.1944 64 bit (AMD64)]",
+  "elapsed_s": 0.84,
+  "summary": {
+    "total": 45,
+    "passed": 34,
+    "failed": 0,
+    "skipped": 11
+  },
+  "results": [
+    {
+      "name": "smt_memory_safety",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "smt_arithmetic",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "smt_expr_parser",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "smt_invariant",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "smt_invariant_feedback",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "smt_loop_bound",
+      "passed": true,
+      "detail": "smt feature not compiled",
+      "skipped": true
+    },
+    {
+      "name": "hybrid_verifier_init",
+      "passed": true,
+      "detail": "PyHybridVerifier created",
+      "skipped": false
+    },
+    {
+      "name": "topology_engine_generate",
+      "passed": true,
+      "detail": "topology_id=avr:n3:01KKEGRX",
+      "skipped": false
+    },
+    {
+      "name": "bandit_thompson",
+      "passed": true,
+      "detail": "selected model=arm_1",
+      "skipped": false
+    },
+    {
+      "name": "model_registry_init",
+      "passed": true,
+      "detail": "ModelRegistry class available",
+      "skipped": false
+    },
+    {
+      "name": "template_store_8",
+      "passed": true,
+      "detail": "8 templates: sequential, parallel, avr, selfmoa...",
+      "skipped": false
+    },
+    {
+      "name": "rust_blocks_dunder_chain",
+      "passed": true,
+      "detail": "tool-executor not compiled",
+      "skipped": true
+    },
+    {
+      "name": "rust_blocks_getattr",
+      "passed": true,
+      "detail": "tool-executor not compiled",
+      "skipped": true
+    },
+    {
+      "name": "rust_blocks_import_os",
+      "passed": true,
+      "detail": "tool-executor not compiled",
+      "skipped": true
+    },
+    {
+      "name": "rust_allows_safe_code",
+      "passed": true,
+      "detail": "tool-executor not compiled",
+      "skipped": true
+    },
+    {
+      "name": "python_blocks_dunder",
+      "passed": true,
+      "detail": "2 errors: Blocked dunder access: '__mro__' (line 1)",
+      "skipped": false
+    },
+    {
+      "name": "python_blocks_getattr",
+      "passed": true,
+      "detail": "1 errors",
+      "skipped": false
+    },
+    {
+      "name": "python_allows_safe",
+      "passed": true,
+      "detail": "0 errors",
+      "skipped": false
+    },
+    {
+      "name": "python_blocks_full_exploit",
+      "passed": true,
+      "detail": "5 errors",
+      "skipped": false
+    },
+    {
+      "name": "rust_blocks_full_exploit",
+      "passed": true,
+      "detail": "tool-executor not compiled",
+      "skipped": true
+    },
+    {
+      "name": "readme_badge_reasonable",
+      "passed": true,
+      "detail": "badge=1494",
+      "skipped": false
+    },
+    {
+      "name": "readme_no_inflated_claim",
+      "passed": true,
+      "detail": "no 95% HumanEval claim",
+      "skipped": false
+    },
+    {
+      "name": "readme_routing_honest",
+      "passed": true,
+      "detail": "routing labeled as self-consistency",
+      "skipped": false
+    },
+    {
+      "name": "manifest_has_provenance",
+      "passed": true,
+      "detail": "provider=True flags=True cost=True",
+      "skipped": false
+    },
+    {
+      "name": "benchreport_has_provenance",
+      "passed": true,
+      "detail": "provider/git_sha/feature_flags exist",
+      "skipped": false
+    },
+    {
+      "name": "circuit_breaker_basic",
+      "passed": true,
+      "detail": "CLOSED->OPEN after 2 failures",
+      "skipped": false
+    },
+    {
+      "name": "circuit_breaker_halfopen",
+      "passed": true,
+      "detail": "OPEN->HALF_OPEN->CLOSED",
+      "skipped": false
+    },
+    {
+      "name": "circuit_breaker_reopen",
+      "passed": true,
+      "detail": "HALF_OPEN->OPEN on failed probe",
+      "skipped": false
+    },
+    {
+      "name": "complexity_router_ordering",
+      "passed": true,
+      "detail": "c1=0.20 <= c2=0.55 <= c3=1.00",
+      "skipped": false
+    },
+    {
+      "name": "episodic_memory_crud",
+      "passed": true,
+      "detail": "found 1 results",
+      "skipped": false
+    },
+    {
+      "name": "semantic_memory_init",
+      "passed": true,
+      "detail": "initialized, context_len=0",
+      "skipped": false
+    },
+    {
+      "name": "causal_memory",
+      "passed": true,
+      "detail": "causal edges: 2",
+      "skipped": false
+    },
+    {
+      "name": "guardrail_pipeline",
+      "passed": true,
+      "detail": "all passed: True",
+      "skipped": false
+    },
+    {
+      "name": "eventbus_pubsub",
+      "passed": true,
+      "detail": "received 1 events",
+      "skipped": false
+    },
+    {
+      "name": "relevance_gate_crag",
+      "passed": true,
+      "detail": "score=0.500",
+      "skipped": false
+    },
+    {
+      "name": "routing_bench_offline",
+      "passed": true,
+      "detail": "pass_rate=76.7% (23/30)",
+      "skipped": false
+    },
+    {
+      "name": "write_gate",
+      "passed": true,
+      "detail": "confidence=0.8 -> allowed=True, reason=Allowed",
+      "skipped": false
+    },
+    {
+      "name": "routing_decision_topology_id",
+      "passed": true,
+      "detail": "topology_id=''",
+      "skipped": false
+    },
+    {
+      "name": "bandit_set_decay_factor",
+      "passed": true,
+      "detail": "set_decay_factor works, clamping verified",
+      "skipped": false
+    },
+    {
+      "name": "bandit_warm_start",
+      "passed": true,
+      "detail": "arm_count=4 after warm start with 2x2=4 (model,template) pairs",
+      "skipped": false
+    },
+    {
+      "name": "registry_telemetry",
+      "passed": true,
+      "detail": "base_affinity=0.450, after_2obs=0.467",
+      "skipped": false
+    },
+    {
+      "name": "router_route_integrated",
+      "passed": true,
+      "detail": "system=S3, model=gpt-5.2, topo_id=test-topo-id",
+      "skipped": false
+    },
+    {
+      "name": "router_record_outcome",
+      "passed": true,
+      "detail": "record_outcome succeeded",
+      "skipped": false
+    },
+    {
+      "name": "quality_estimator",
+      "passed": true,
+      "detail": "empty=0.00, code=0.69, short=0.56, avr_fast=0.83>avr_slow=0.73",
+      "skipped": false
+    },
+    {
+      "name": "topology_executor_wiring",
+      "passed": true,
+      "detail": "has_attr=True, has_method=True, empty_schedule=True",
+      "skipped": false
+    }
+  ]
+}

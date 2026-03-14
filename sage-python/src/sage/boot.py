@@ -120,6 +120,18 @@ class AgentSystem:
     # Rust ModelRegistry (None if sage_core not compiled or cards.toml not found)
     _rust_registry: Any = None
 
+    @property
+    def model_info(self) -> dict[str, str]:
+        """Return resolved model metadata for benchmark artifacts."""
+        info: dict[str, str] = {"model": "unknown", "provider": "", "tier": ""}
+        loop = self.agent_loop
+        if hasattr(loop, "_llm") and loop._llm:
+            info["model"] = getattr(loop._llm, "model_id", "unknown")
+            info["provider"] = type(loop._llm).__name__
+        if hasattr(self, "metacognition") and self.metacognition:
+            info["tier"] = getattr(self.metacognition, "_current_tier", "")
+        return info
+
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
 
