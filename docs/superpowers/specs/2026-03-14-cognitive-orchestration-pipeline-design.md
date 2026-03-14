@@ -2,7 +2,9 @@
 
 **Date:** 2026-03-14
 **Author:** Yann Abadie + Claude Opus 4.6
-**Status:** Draft
+**Status:** Approved
+
+**Implementation note:** Cleanup (dead code deletion, rename, deprecated tag fixes) is committed as a separate PR before the feature work, to keep git history clean.
 **Scope:** Phase B (static pipeline) — Phase C (runtime adaptation) deferred
 
 ## Problem Statement
@@ -187,6 +189,8 @@ For each node in TopologyGraph (topological order):
      is for general "best model for this domain" without topology context.
   4. Select highest scorer → set node.model_id via graph.node_weight_mut()
   5. Deduct estimated cost from remaining_budget
+  6. If remaining_budget < 0.01 { break } — emit EventBus warning
+     "PIPELINE:budget_exhausted_node_{idx}" with remaining node count
 ```
 
 `calibrated_affinity` blends card prior with telemetry observations: `w = min(count/50, 0.8); (1-w)*card_affinity + w*observed_quality`. Already implemented in `model_registry.rs`.
@@ -204,6 +208,7 @@ async def plan_auto(self, task: str, provider: LLMProvider) -> PlanResult:
     """LLM-driven task decomposition into verified TaskDAG.
 
     Prompts provider to output JSON: [{"id": "a", "description": "...", "depends_on": [...]}]
+    Hard-cap: MAX_DECOMPOSITION_STEPS = 6. Truncates LLM output beyond 6 steps.
     Parses, validates, then calls plan_static().
     Falls back to single-node DAG on any failure (parse error, cycle, LLM refusal).
     """
@@ -385,7 +390,7 @@ Four adaptation points in `stage_execute`, after each node completion:
 | `tests/test_pipeline_stages.py` | Each stage function in isolation | Unit |
 | `tests/test_dag_features.py` | ω, δ, γ computation on known DAGs | Unit, deterministic |
 | `tests/test_cleanup.py` | ModelCardCatalog rename, DynamicRouter removed | Regression |
-| `tests/test_assigner_parity.py` | Python fallback produces identical assignments to Rust for same inputs | Parity |
+| `tests/test_assigner_parity.py` | Python fallback produces identical assignments to Rust for same inputs; includes tight-budget edge case (budget < cheapest model) and missing-capabilities edge case (no model has tools+json → keep existing model_id) | Parity |
 | `sage-core: model_assigner tests` | Rust assignment: filtering, scoring, budget | cargo test |
 
 No real LLM calls in tests. Existing E2E proof (`tests/e2e_proof.py`) validates full integration.
