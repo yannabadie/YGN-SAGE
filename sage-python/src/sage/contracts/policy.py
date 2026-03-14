@@ -10,6 +10,7 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sage.contracts.dag import TaskDAG
 
@@ -116,6 +117,42 @@ class PolicyVerifier:
                     ))
 
         return violations
+
+    # -- Node-scoped (no DAG required) -------------------------------------
+
+    @staticmethod
+    def verify_node(
+        node: Any,
+        predecessors: list[Any],
+        budget_remaining: float,
+        max_fan_in: int = 5,
+    ) -> bool:
+        """Node-scoped policy check. Duck-typed for TopologyNode/TaskNode.
+
+        Checks:
+        - Info-flow: node.security_label >= max(predecessor security_labels)
+        - Budget: node.max_cost_usd <= budget_remaining
+        - Fan-in: len(predecessors) <= max_fan_in
+
+        Returns True if all checks pass, False otherwise.
+        """
+        label = getattr(node, 'security_label', 0)
+        cost = getattr(node, 'max_cost_usd', 0.0)
+
+        # Info-flow check
+        pred_labels = [getattr(p, 'security_label', 0) for p in predecessors]
+        if pred_labels and label < max(pred_labels):
+            return False
+
+        # Budget check
+        if cost > budget_remaining > 0:
+            return False
+
+        # Fan-in check
+        if len(predecessors) > max_fan_in:
+            return False
+
+        return True
 
     # -- Combined -----------------------------------------------------------
 
