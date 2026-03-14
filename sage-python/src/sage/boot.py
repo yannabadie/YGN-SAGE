@@ -31,6 +31,10 @@ try:
     from sage_core import ContextualBandit as RustBandit  # Phase 6
     _HAS_RUST_ROUTER = True
 except ImportError:
+    _log.info(
+        "sage_core not available — SystemRouter, ModelRegistry, TopologyEngine, "
+        "ContextualBandit using Python fallbacks"
+    )
     _HAS_RUST_ROUTER = False
 
 from sage.agent import AgentConfig  # noqa: E402

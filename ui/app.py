@@ -32,6 +32,7 @@ except ImportError:
 
 # Mock sage_core (Rust extension) if not compiled -- pure-Python fallback
 import types as _types
+_sage_core_mocked = False
 if "sage_core" not in sys.modules:
     _mock = _types.ModuleType("sage_core")
 
@@ -77,6 +78,7 @@ if "sage_core" not in sys.modules:
 
     _mock.WorkingMemory = _WM
     sys.modules["sage_core"] = _mock
+    _sage_core_mocked = True
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException, Security
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -89,6 +91,9 @@ from sage.events.bus import EventBus
 from sage.agent_loop import AgentEvent
 
 logger = logging.getLogger("ygn-sage.dashboard")
+
+if _sage_core_mocked:
+    logger.warning("sage_core not available — dashboard using mock components")
 
 # ---------------------------------------------------------------------------
 # Global state — wrapped in a class to avoid bare module-level mutables
