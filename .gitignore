@@ -19,6 +19,9 @@ build/
 venv/
 .hypothesis/
 
+# SWE-Bench evaluation logs (reproductible via python -m sage.bench --type swebench)
+sage-python/logs/
+
 # IDE
 .idea/
 .vscode/
