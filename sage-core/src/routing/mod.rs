@@ -7,6 +7,7 @@
 pub mod bandit;
 pub mod features;
 pub mod knn;
+pub mod model_assigner;
 pub mod model_card;
 pub mod model_registry;
 pub mod quality;

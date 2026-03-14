@@ -43,6 +43,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<routing::features::StructuralFeatures>()?;
     m.add_class::<routing::knn::RustKnnRouter>()?;
     m.add_class::<routing::quality::RustQualityEstimator>()?;
+    m.add_class::<routing::model_assigner::ModelAssigner>()?;
     m.add_class::<routing::model_card::ModelCard>()?;
     m.add_class::<routing::model_card::CognitiveSystem>()?;
     m.add_class::<routing::model_registry::ModelRegistry>()?;
