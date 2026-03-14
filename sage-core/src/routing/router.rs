@@ -87,6 +87,7 @@ const FEEDBACK_DRAIN: usize = 5_000;
 /// requirement) to produce a tier with a confidence score. If confidence
 /// exceeds `c0_threshold`, we return immediately. Otherwise, Stage 1
 /// (ONNX classifier) is attempted.
+#[deprecated(since = "0.2.0", note = "Use Python sage.strategy.adaptive_router.AdaptiveRouter")]
 #[pyclass]
 pub struct AdaptiveRouter {
     #[allow(dead_code)]

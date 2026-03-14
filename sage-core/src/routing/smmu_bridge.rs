@@ -39,6 +39,7 @@ struct ChunkMeta {
 /// Maps S-MMU chunk IDs to topology-specific metadata (template, model, quality,
 /// cost, latency). Provides methods to record routing outcomes and retrieve
 /// similar past tasks for informed routing decisions.
+#[deprecated(since = "0.2.0", note = "Use Python routing/shadow.py ShadowRouter for routing-S-MMU integration")]
 pub struct TopologyBridge {
     /// chunk_id → topology metadata (S-MMU only stores summary/keywords/embedding).
     chunk_meta: HashMap<String, ChunkMeta>,
