@@ -82,6 +82,7 @@ class CognitiveOrchestrationPipeline:
         llm_provider: Any = None,
         llm_config: Any = None,
         prm: Any = None,
+        controller: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -93,6 +94,7 @@ class CognitiveOrchestrationPipeline:
         self.llm_provider = llm_provider
         self.llm_config = llm_config
         self.prm = prm
+        self.controller = controller
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available."""
@@ -494,8 +496,22 @@ class CognitiveOrchestrationPipeline:
                 llm_provider=self.llm_provider,
                 llm_config=self.llm_config,
                 provider_pool=self.provider_pool,
+                controller=self.controller,  # Phase C
             )
-            ctx.result = await runner.run(ctx.task)
+            result = await runner.run(ctx.task)
+            if result == "__REROUTE__" and self.engine:
+                log.info("Topology reroute triggered — regenerating")
+                ctx = self._stage_select_topology(ctx)  # new topology
+                ctx = self._stage_assign_models(ctx)    # re-assign models
+                # Re-execute with new topology (no controller to avoid infinite loop)
+                runner2 = TopologyRunner(
+                    graph=ctx.topology, executor=executor,
+                    llm_provider=self.llm_provider, llm_config=self.llm_config,
+                    provider_pool=self.provider_pool,
+                    controller=None,  # no controller on retry to prevent loop
+                )
+                result = await runner2.run(ctx.task)
+            ctx.result = result
         except Exception as exc:
             log.error("Stage 4 multi-agent execution failed: %s", exc)
             ctx.result = f"Error: {exc}"

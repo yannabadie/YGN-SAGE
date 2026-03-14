@@ -954,6 +954,42 @@ def boot_agent_system(
         except Exception as exc:
             _log.warning("Pipeline init failed: %s — using legacy path", exc)
 
+    # TopologyController (Phase C — runtime adaptation)
+    _controller = None
+    if model_assigner:
+        try:
+            from sage.topology_controller import TopologyController
+            _pv = None
+            try:
+                from sage.contracts.policy import PolicyVerifier
+                _pv = PolicyVerifier
+            except ImportError:
+                pass
+            # QualityEstimator: instantiate for controller quality scoring
+            _qe = None
+            try:
+                from sage.quality_estimator import QualityEstimator
+                _qe = QualityEstimator()
+            except Exception:
+                pass
+            # PRM: from agent_loop if available
+            _prm = getattr(loop, 'prm', None)
+            _controller = TopologyController(
+                assigner=model_assigner,
+                quality_estimator=_qe,
+                prm=_prm,
+                policy_verifier=_pv,
+                embedder=memory_compressor.embedder,
+                event_bus=event_bus,
+            )
+            _log.info("TopologyController initialized (Phase C)")
+        except Exception as exc:
+            _log.warning("TopologyController init failed: %s", exc)
+
+    # Pass controller to pipeline
+    if _pipeline and _controller:
+        _pipeline.controller = _controller
+
     return AgentSystem(
         agent_loop=loop,
         agent_pool=agent_pool,
