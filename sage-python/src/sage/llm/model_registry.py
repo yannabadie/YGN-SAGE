@@ -142,6 +142,7 @@ class ModelCardCatalog:
 
     @classmethod
     def from_toml_str(cls, toml_str: str) -> "ModelCardCatalog":
+        """Build a ModelCardCatalog from a TOML string with [[models]] array."""
         cards = ModelCard.parse_toml(toml_str)
         reg = cls()
         for card in cards:
