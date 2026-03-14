@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 __version__ = "0.1.0"
 
 from sage.agent import Agent, AgentConfig
 from sage.llm import LLMConfig
 from sage.tools import Tool, ToolRegistry, ToolResult
+
+if TYPE_CHECKING:
+    from sage.boot import AgentSystem
 
 
 async def create(
@@ -15,7 +20,7 @@ async def create(
     tier: str = "auto",
     name: str = "sage-agent",
     tools: list[Tool] | None = None,
-) -> "AgentSystem":
+) -> AgentSystem:
     """Create a ready-to-use AgentSystem.
 
     Args:
