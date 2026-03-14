@@ -1,3 +1,8 @@
+//! RESERVED FOR PHASE C: RustEntityGraph — native entity-relation graph for Tier 2 Semantic Memory.
+//! Currently exported to Python but not wired. To be integrated in Phase C for fast BFS/neighborhood
+//! queries in the adaptation runtime controller.
+//! See: docs/superpowers/specs/2026-03-14-cognitive-orchestration-pipeline-design.md
+//!
 //! Unified entity graph merging semantic and causal memory.
 //!
 //! Replaces the Python `semantic.py` (entity-relation graph) and `causal.py`

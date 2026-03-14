@@ -1,3 +1,5 @@
+# RESERVED FOR PHASE C: PolicyVerifier — info-flow labels, budget caps, fan-in/fan-out.
+# To be integrated into Pipeline Stage 3/4 for security and budget constraint enforcement.
 """PolicyVerifier — checks info-flow, budget, and structural constraints on a TaskDAG.
 
 Rules:

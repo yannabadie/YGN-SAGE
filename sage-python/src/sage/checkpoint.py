@@ -1,3 +1,5 @@
+# RESERVED FOR PHASE C: Checkpoint — SQLite-based agent loop resumption.
+# To be integrated with TopologyExecutor for long-running multi-agent topologies.
 """Durable execution: checkpoint agent loop state at phase boundaries."""
 from __future__ import annotations
 

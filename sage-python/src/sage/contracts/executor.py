@@ -1,3 +1,6 @@
+# RESERVED FOR PHASE C: DAGExecutor — topo execution with VF pre/post checks + policy gate.
+# To be integrated into Pipeline Stage 4 (_check_adaptation) for verified retry.
+# See: docs/superpowers/specs/2026-03-14-cognitive-orchestration-pipeline-design.md
 """DAGExecutor — contract-driven execution of a TaskDAG.
 
 Executes nodes in topological order, running pre/post VFs at each step.

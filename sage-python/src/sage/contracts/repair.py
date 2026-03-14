@@ -1,3 +1,5 @@
+# RESERVED FOR PHASE C: RepairLoop — CEGAR retry with hard fences.
+# To be integrated into Pipeline Stage 4 for counterexample-guided adaptation.
 """Counterexample-guided repair with hard fences.
 
 When a VF fails, the RepairLoop:

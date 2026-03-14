@@ -64,8 +64,6 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;
-        m.add_class::<routing::AdaptiveRouter>()?;
-        m.add_class::<routing::RoutingResult>()?;
     }
     // LTL model checking (always available)
     m.add_class::<verification::ltl::LtlResult>()?;
