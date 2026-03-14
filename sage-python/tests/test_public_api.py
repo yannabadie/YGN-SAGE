@@ -33,3 +33,11 @@ async def test_create_with_tools():
     # Verify tool was registered
     tool_names = [t.spec.name for t in system.tool_registry._tools.values()]
     assert "greet" in tool_names
+
+
+def test_composition_imports():
+    """Agent composition primitives importable from sage.agents."""
+    from sage.agents import SequentialAgent, ParallelAgent, LoopAgent, Handoff
+    from sage.tools.agent_tool import AgentTool
+    assert callable(SequentialAgent)
+    assert callable(AgentTool.from_agent)
