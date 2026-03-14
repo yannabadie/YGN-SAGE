@@ -1,102 +1,8 @@
 # YGN-SAGE Model Cards
 # S1/S2/S3 affinity for cognitive system routing.
-# Migrated from sage-python/config/model_profiles.toml with derived fields.
-# Last updated: 2026-03-10
+# Last updated: 2026-03-14 — verified models from API discovery
 
-# --- Google models ---
-
-[[models]]
-id = "gemini-3.1-pro-preview"
-provider = "google"
-family = "gemini-3.1"
-code_score = 0.81
-reasoning_score = 0.92
-tool_use_score = 0.85
-math_score = 0.83
-formal_z3_strength = 0.64
-cost_input_per_m = 1.25
-cost_output_per_m = 10.0
-latency_ttft_ms = 3000.0
-tokens_per_sec = 150.0
-s1_affinity = 0.10
-s2_affinity = 0.90
-s3_affinity = 0.90
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 1048576
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.83
-code = 0.81
-reasoning = 0.92
-tool_use = 0.85
-formal = 0.64
-creative = 0.71
-factual = 0.34
-
-[[models]]
-id = "gemini-3.1-flash-lite-preview"
-provider = "google"
-family = "gemini-3.1"
-code_score = 0.65
-reasoning_score = 0.78
-tool_use_score = 0.70
-math_score = 0.70
-formal_z3_strength = 0.55
-cost_input_per_m = 0.025
-cost_output_per_m = 1.50
-latency_ttft_ms = 1000.0
-tokens_per_sec = 379.0
-s1_affinity = 0.90
-s2_affinity = 0.45
-s3_affinity = 0.45
-recommended_topologies = ["sequential"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 1048576
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.70
-code = 0.65
-reasoning = 0.78
-tool_use = 0.70
-formal = 0.55
-creative = 0.64
-factual = 0.77
-
-[[models]]
-id = "gemini-3-flash-preview"
-provider = "google"
-family = "gemini-3"
-code_score = 0.72
-reasoning_score = 0.85
-tool_use_score = 0.80
-math_score = 0.77
-formal_z3_strength = 0.59
-cost_input_per_m = 0.15
-cost_output_per_m = 3.50
-latency_ttft_ms = 1500.0
-tokens_per_sec = 250.0
-s1_affinity = 0.45
-s2_affinity = 0.85
-s3_affinity = 0.45
-recommended_topologies = ["avr", "self-moa"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 1048576
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.77
-code = 0.72
-reasoning = 0.85
-tool_use = 0.80
-formal = 0.59
-creative = 0.68
-factual = 0.53
+# --- Google models (available when GOOGLE_API_KEY works) ---
 
 [[models]]
 id = "gemini-2.5-flash"
@@ -129,176 +35,209 @@ formal = 0.50
 creative = 0.61
 factual = 0.79
 
-# --- OpenAI models ---
-
 [[models]]
-id = "gpt-5.4"
-provider = "openai"
-family = "gpt-5.4"
-code_score = 0.86
-reasoning_score = 0.95
-tool_use_score = 0.92
-math_score = 0.85
-formal_z3_strength = 0.66
-cost_input_per_m = 2.50
-cost_output_per_m = 15.0
-latency_ttft_ms = 2500.0
-tokens_per_sec = 120.0
-s1_affinity = 0.10
-s2_affinity = 0.90
-s3_affinity = 0.92
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = true
-context_window = 1100000
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.85
-code = 0.86
-reasoning = 0.95
-tool_use = 0.92
-formal = 0.66
-creative = 0.73
-factual = 0.35
-
-[[models]]
-id = "gpt-5.4-pro"
-provider = "openai"
-family = "gpt-5.4"
-code_score = 0.90
-reasoning_score = 0.97
-tool_use_score = 0.93
-math_score = 0.87
-formal_z3_strength = 0.68
-cost_input_per_m = 15.0
-cost_output_per_m = 120.0
-latency_ttft_ms = 8000.0
-tokens_per_sec = 50.0
-s1_affinity = 0.05
-s2_affinity = 0.92
-s3_affinity = 0.95
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = true
-context_window = 1100000
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.87
-code = 0.90
-reasoning = 0.97
-tool_use = 0.93
-formal = 0.68
-creative = 0.74
-factual = 0.32
-
-[[models]]
-id = "gpt-5.2"
-provider = "openai"
-family = "gpt-5.2"
-code_score = 0.80
-reasoning_score = 0.93
-tool_use_score = 0.88
-math_score = 0.84
-formal_z3_strength = 0.65
-cost_input_per_m = 1.75
-cost_output_per_m = 14.0
-latency_ttft_ms = 3000.0
-tokens_per_sec = 100.0
-s1_affinity = 0.10
-s2_affinity = 0.88
-s3_affinity = 0.90
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 1000000
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.84
-code = 0.80
-reasoning = 0.93
-tool_use = 0.88
-formal = 0.65
-creative = 0.72
-factual = 0.34
-
-[[models]]
-id = "gpt-5-mini"
-provider = "openai"
-family = "gpt-5"
-code_score = 0.60
-reasoning_score = 0.70
-tool_use_score = 0.65
-math_score = 0.63
-formal_z3_strength = 0.49
-cost_input_per_m = 0.25
-cost_output_per_m = 2.0
-latency_ttft_ms = 1500.0
-tokens_per_sec = 200.0
-s1_affinity = 0.50
-s2_affinity = 0.40
-s3_affinity = 0.40
+id = "gemini-2.5-flash-lite"
+provider = "google"
+family = "gemini-2.5"
+code_score = 0.50
+reasoning_score = 0.60
+tool_use_score = 0.55
+math_score = 0.55
+formal_z3_strength = 0.40
+cost_input_per_m = 0.008
+cost_output_per_m = 0.30
+latency_ttft_ms = 500.0
+tokens_per_sec = 400.0
+s1_affinity = 0.95
+s2_affinity = 0.30
+s3_affinity = 0.30
 recommended_topologies = ["sequential"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 1000000
+context_window = 1048576
 safety_rating = 0.80
 [models.domain_scores]
-math = 0.63
-code = 0.60
-reasoning = 0.70
-tool_use = 0.65
-formal = 0.49
-creative = 0.60
-factual = 0.51
+math = 0.55
+code = 0.50
+reasoning = 0.60
+tool_use = 0.55
+formal = 0.40
+creative = 0.55
+factual = 0.75
 
 [[models]]
-id = "gpt-5-nano"
+id = "gemini-2.5-pro"
+provider = "google"
+family = "gemini-2.5"
+code_score = 0.78
+reasoning_score = 0.88
+tool_use_score = 0.82
+math_score = 0.80
+formal_z3_strength = 0.62
+cost_input_per_m = 1.25
+cost_output_per_m = 10.0
+latency_ttft_ms = 3000.0
+tokens_per_sec = 150.0
+s1_affinity = 0.10
+s2_affinity = 0.90
+s3_affinity = 0.88
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 1048576
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.80
+code = 0.78
+reasoning = 0.88
+tool_use = 0.82
+formal = 0.62
+creative = 0.70
+factual = 0.75
+
+# --- OpenAI models (verified 2026-03-14) ---
+
+[[models]]
+id = "gpt-4.1"
 provider = "openai"
-family = "gpt-5"
-code_score = 0.45
-reasoning_score = 0.50
-tool_use_score = 0.40
-math_score = 0.45
+family = "gpt-4.1"
+code_score = 0.82
+reasoning_score = 0.88
+tool_use_score = 0.90
+math_score = 0.80
+formal_z3_strength = 0.60
+cost_input_per_m = 2.00
+cost_output_per_m = 8.00
+latency_ttft_ms = 2000.0
+tokens_per_sec = 130.0
+s1_affinity = 0.15
+s2_affinity = 0.90
+s3_affinity = 0.85
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 1047576
+safety_rating = 0.85
+[models.domain_scores]
+math = 0.80
+code = 0.82
+reasoning = 0.88
+tool_use = 0.90
+formal = 0.60
+creative = 0.72
+factual = 0.80
+
+[[models]]
+id = "gpt-4.1-mini"
+provider = "openai"
+family = "gpt-4.1"
+code_score = 0.70
+reasoning_score = 0.76
+tool_use_score = 0.78
+math_score = 0.68
+formal_z3_strength = 0.50
+cost_input_per_m = 0.40
+cost_output_per_m = 1.60
+latency_ttft_ms = 1200.0
+tokens_per_sec = 200.0
+s1_affinity = 0.60
+s2_affinity = 0.70
+s3_affinity = 0.50
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 1047576
+safety_rating = 0.85
+[models.domain_scores]
+math = 0.68
+code = 0.70
+reasoning = 0.76
+tool_use = 0.78
+formal = 0.50
+creative = 0.65
+factual = 0.75
+
+[[models]]
+id = "gpt-4.1-nano"
+provider = "openai"
+family = "gpt-4.1"
+code_score = 0.55
+reasoning_score = 0.58
+tool_use_score = 0.55
+math_score = 0.50
 formal_z3_strength = 0.35
-cost_input_per_m = 0.05
+cost_input_per_m = 0.10
 cost_output_per_m = 0.40
 latency_ttft_ms = 500.0
 tokens_per_sec = 400.0
 s1_affinity = 0.92
-s2_affinity = 0.20
+s2_affinity = 0.30
 s3_affinity = 0.20
 recommended_topologies = ["sequential"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 128000
-safety_rating = 0.80
+context_window = 1047576
+safety_rating = 0.85
 [models.domain_scores]
-math = 0.45
-code = 0.45
-reasoning = 0.50
-tool_use = 0.40
+math = 0.50
+code = 0.55
+reasoning = 0.58
+tool_use = 0.55
 formal = 0.35
 creative = 0.50
 factual = 0.70
 
 [[models]]
-id = "gpt-5.3-codex"
+id = "gpt-4o"
 provider = "openai"
-family = "gpt-5.3"
-code_score = 0.85
-reasoning_score = 0.93
-tool_use_score = 0.90
-math_score = 0.84
-formal_z3_strength = 0.65
-cost_input_per_m = 1.75
-cost_output_per_m = 14.0
-latency_ttft_ms = 4000.0
-tokens_per_sec = 100.0
+family = "gpt-4o"
+code_score = 0.75
+reasoning_score = 0.80
+tool_use_score = 0.85
+math_score = 0.73
+formal_z3_strength = 0.55
+cost_input_per_m = 2.50
+cost_output_per_m = 10.00
+latency_ttft_ms = 1800.0
+tokens_per_sec = 120.0
+s1_affinity = 0.20
+s2_affinity = 0.85
+s3_affinity = 0.75
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 128000
+safety_rating = 0.85
+[models.domain_scores]
+math = 0.73
+code = 0.75
+reasoning = 0.80
+tool_use = 0.85
+formal = 0.55
+creative = 0.78
+factual = 0.80
+
+# --- xAI models (verified 2026-03-14) ---
+
+[[models]]
+id = "grok-4.20-beta"
+provider = "xai"
+family = "grok-4"
+code_score = 0.80
+reasoning_score = 0.90
+tool_use_score = 0.82
+math_score = 0.82
+formal_z3_strength = 0.62
+cost_input_per_m = 3.00
+cost_output_per_m = 15.00
+latency_ttft_ms = 3000.0
+tokens_per_sec = 80.0
 s1_affinity = 0.10
 s2_affinity = 0.90
 s3_affinity = 0.90
@@ -306,18 +245,16 @@ recommended_topologies = ["avr", "loop"]
 supports_tools = true
 supports_json_mode = true
 supports_vision = false
-context_window = 1000000
-safety_rating = 0.80
+context_window = 131072
+safety_rating = 0.75
 [models.domain_scores]
-math = 0.84
-code = 0.85
-reasoning = 0.93
-tool_use = 0.90
-formal = 0.65
-creative = 0.72
-factual = 0.34
-
-# --- xAI models ---
+math = 0.82
+code = 0.80
+reasoning = 0.90
+tool_use = 0.82
+formal = 0.62
+creative = 0.70
+factual = 0.55
 
 [[models]]
 id = "grok-4-1-fast-reasoning"
@@ -476,24 +413,24 @@ formal = 0.63
 creative = 0.70
 factual = 0.54
 
-# --- MiniMax models ---
+# --- MiniMax models (verified 2026-03-14, endpoint: api.minimax.io/v1) ---
 
 [[models]]
-id = "MiniMax-M2.5"
+id = "MiniMax-Text-01"
 provider = "minimax"
-family = "minimax-m2.5"
-code_score = 0.80
-reasoning_score = 0.85
-tool_use_score = 0.80
-math_score = 0.77
-formal_z3_strength = 0.59
+family = "minimax-text"
+code_score = 0.72
+reasoning_score = 0.78
+tool_use_score = 0.70
+math_score = 0.70
+formal_z3_strength = 0.52
 cost_input_per_m = 0.30
 cost_output_per_m = 1.20
 latency_ttft_ms = 2000.0
 tokens_per_sec = 50.0
-s1_affinity = 0.45
-s2_affinity = 0.88
-s3_affinity = 0.45
+s1_affinity = 0.50
+s2_affinity = 0.80
+s3_affinity = 0.40
 recommended_topologies = ["avr", "self-moa"]
 supports_tools = true
 supports_json_mode = true
@@ -501,44 +438,13 @@ supports_vision = false
 context_window = 1000000
 safety_rating = 0.70
 [models.domain_scores]
-math = 0.77
-code = 0.80
-reasoning = 0.85
-tool_use = 0.80
-formal = 0.59
+math = 0.70
+code = 0.72
+reasoning = 0.78
+tool_use = 0.70
+formal = 0.52
 creative = 0.68
 factual = 0.53
-
-[[models]]
-id = "MiniMax-M2.5-highspeed"
-provider = "minimax"
-family = "minimax-m2.5"
-code_score = 0.80
-reasoning_score = 0.85
-tool_use_score = 0.80
-math_score = 0.77
-formal_z3_strength = 0.59
-cost_input_per_m = 0.30
-cost_output_per_m = 2.40
-latency_ttft_ms = 1000.0
-tokens_per_sec = 100.0
-s1_affinity = 0.50
-s2_affinity = 0.88
-s3_affinity = 0.45
-recommended_topologies = ["avr", "self-moa"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 200000
-safety_rating = 0.70
-[models.domain_scores]
-math = 0.77
-code = 0.80
-reasoning = 0.85
-tool_use = 0.80
-formal = 0.59
-creative = 0.68
-factual = 0.56
 
 # --- Kimi models ---
 
@@ -572,3 +478,67 @@ tool_use = 0.80
 formal = 0.62
 creative = 0.69
 factual = 0.32
+
+# --- GLM/Zhipu models (verified 2026-03-14) ---
+
+[[models]]
+id = "glm-4.7"
+provider = "glm"
+family = "glm-4"
+code_score = 0.72
+reasoning_score = 0.80
+tool_use_score = 0.72
+math_score = 0.72
+formal_z3_strength = 0.52
+cost_input_per_m = 0.40
+cost_output_per_m = 1.60
+latency_ttft_ms = 2000.0
+tokens_per_sec = 100.0
+s1_affinity = 0.40
+s2_affinity = 0.82
+s3_affinity = 0.55
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 128000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.72
+code = 0.72
+reasoning = 0.80
+tool_use = 0.72
+formal = 0.52
+creative = 0.65
+factual = 0.55
+
+[[models]]
+id = "glm-5"
+provider = "glm"
+family = "glm-5"
+code_score = 0.78
+reasoning_score = 0.85
+tool_use_score = 0.78
+math_score = 0.78
+formal_z3_strength = 0.58
+cost_input_per_m = 0.80
+cost_output_per_m = 3.20
+latency_ttft_ms = 2500.0
+tokens_per_sec = 80.0
+s1_affinity = 0.20
+s2_affinity = 0.88
+s3_affinity = 0.70
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 128000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.78
+code = 0.78
+reasoning = 0.85
+tool_use = 0.78
+formal = 0.58
+creative = 0.70
+factual = 0.60

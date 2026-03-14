@@ -32,7 +32,7 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
     },
     {
         "provider": "xai",
-        "api_key_env": "GROK_API_KEY",
+        "api_key_env": "XAI_API_KEY",
         "base_url": "https://api.x.ai/v1",
         "sdk": "openai",
     },
@@ -45,14 +45,20 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
     {
         "provider": "minimax",
         "api_key_env": "MINIMAX_API_KEY",
-        "base_url": "https://api.minimaxi.chat/v1",
+        "base_url": "https://api.minimax.io/v1",
         "sdk": "openai",
-        "hardcoded_models": ["MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1"],
+        "hardcoded_models": ["MiniMax-Text-01"],
     },
     {
         "provider": "kimi",
-        "api_key_env": "KIMI_API_KEY",
+        "api_key_env": "MOONSHOT_API_KEY",
         "base_url": "https://api.moonshot.ai/v1",
+        "sdk": "openai",
+    },
+    {
+        "provider": "glm",
+        "api_key_env": "GLM_API_KEY",
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "sdk": "openai",
     },
 ]

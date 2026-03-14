@@ -20,7 +20,7 @@ DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 
 # Default model for ExoCortex queries.
 # Resolution order: explicit param > SAGE_EXOCORTEX_MODEL env var > _DEFAULT_MODEL.
-_DEFAULT_MODEL = "gemini-3.1-flash-lite-preview"
+_DEFAULT_MODEL = "gemini-2.5-flash"
 
 
 class ExoCortex:

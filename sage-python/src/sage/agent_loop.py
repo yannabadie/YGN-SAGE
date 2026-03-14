@@ -36,14 +36,32 @@ log = logging.getLogger(__name__)
 
 
 # Approximate cost per 1K tokens (USD) for dashboard estimation
+# Updated 2026-03-14 — real models verified via API discovery
 _COST_PER_1K = {
-    "gpt-5.3-codex": 0.03,
-    "gpt-5.2": 0.06,
-    "gemini-3.1-pro-preview": 0.007,
-    "gemini-3-flash-preview": 0.0015,
-    "gemini-3.1-flash-lite-preview": 0.0005,
-    "gemini-2.5-flash-lite": 0.0003,
-    "gemini-2.5-flash": 0.001,
+    # OpenAI (gpt-4.1 family)
+    "gpt-4.1": 0.005,
+    "gpt-4.1-mini": 0.001,
+    "gpt-4.1-nano": 0.00025,
+    "gpt-4o": 0.00625,
+    # xAI (Grok family)
+    "grok-4.20-beta": 0.009,
+    "grok-4-1-fast-reasoning": 0.00035,
+    "grok-code-fast-1": 0.00035,
+    "grok-3": 0.009,
+    # MiniMax
+    "MiniMax-Text-01": 0.00075,
+    # Google (available when API key works)
+    "gemini-2.5-flash": 0.0003,
+    "gemini-2.5-flash-lite": 0.00015,
+    "gemini-2.5-pro": 0.00565,
+    # GLM/Zhipu
+    "glm-4.7": 0.001,
+    "glm-5": 0.002,
+    # DeepSeek
+    "deepseek-chat": 0.00035,
+    "deepseek-reasoner": 0.00035,
+    # Kimi
+    "kimi-k2.5": 0.00155,
 }
 
 
