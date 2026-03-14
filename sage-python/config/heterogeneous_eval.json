@@ -1,0 +1,464 @@
+{
+  "version": "1.0",
+  "description": "Heterogeneous evaluation set — 50 tasks across 4 categories to measure framework value beyond code benchmarks",
+  "labeling_method": "human_expert",
+  "labeling_date": "2026-03-14",
+  "categories": {
+    "code": 15,
+    "reasoning": 15,
+    "multi_turn": 10,
+    "research": 10
+  },
+  "tasks": [
+    {
+      "id": "code_001",
+      "category": "code",
+      "prompt": "Write a Python function `fibonacci(n)` that returns the nth Fibonacci number using dynamic programming (bottom-up), with O(n) time and O(1) space.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_002",
+      "category": "code",
+      "prompt": "Implement a Python function `merge_sort(arr)` that sorts a list in-place using the merge sort algorithm. Include proper handling of empty lists and single-element lists.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_003",
+      "category": "code",
+      "prompt": "Write a Python function `is_anagram(s1, s2)` that returns True if two strings are anagrams of each other. Ignore case and whitespace. Example: is_anagram('Listen', 'Silent') -> True.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_004",
+      "category": "code",
+      "prompt": "Implement a Python class `LRUCache` with `get(key)` and `put(key, value)` methods. The cache should evict the least recently used entry when capacity is exceeded. Use O(1) time for both operations.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_005",
+      "category": "code",
+      "prompt": "Write a Python function `find_duplicates(lst)` that returns a list of all elements that appear more than once in the input list. The result should be sorted and deduplicated.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_006",
+      "category": "code",
+      "prompt": "Implement a Python function `flatten(nested)` that recursively flattens a nested list of arbitrary depth. For example: flatten([1, [2, [3, 4]], 5]) -> [1, 2, 3, 4, 5].",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_007",
+      "category": "code",
+      "prompt": "Write a Python context manager `timer()` using the `contextlib.contextmanager` decorator that measures and prints the elapsed time of the code block in milliseconds.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_008",
+      "category": "code",
+      "prompt": "Implement a Python generator function `chunk(iterable, size)` that yields successive non-overlapping chunks of a given size from an iterable. The last chunk may be smaller than `size`.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_009",
+      "category": "code",
+      "prompt": "Write a Python function `group_by(lst, key_fn)` that groups elements of a list by the result of `key_fn`. Return a dict mapping each key to a list of elements with that key. Preserve insertion order.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_010",
+      "category": "code",
+      "prompt": "Implement a Python function `binary_search(arr, target)` that returns the index of `target` in a sorted list `arr`, or -1 if not found. Handle edge cases: empty list, single element, duplicates.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_011",
+      "category": "code",
+      "prompt": "Write a Python async function `fetch_all(urls, session)` using `asyncio` and `aiohttp` that fetches all URLs concurrently and returns a list of (url, status_code, body) tuples. Handle individual request failures gracefully.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_012",
+      "category": "code",
+      "prompt": "Implement a Python decorator `retry(max_attempts, exceptions, delay_s)` that retries a function on specified exceptions with a fixed delay between attempts. Raise the last exception if all attempts fail.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_013",
+      "category": "code",
+      "prompt": "Write a Python function `word_frequency(text)` that tokenizes a string (split on whitespace, lowercase, strip punctuation) and returns a Counter of word frequencies sorted by count descending.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_014",
+      "category": "code",
+      "prompt": "Implement a Python class `Trie` (prefix tree) with `insert(word)`, `search(word)`, and `starts_with(prefix)` methods. All methods should run in O(len(key)) time.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "code_015",
+      "category": "code",
+      "prompt": "Write a Python function `parse_csv_to_dicts(csv_string)` that parses a CSV string (first row is header) and returns a list of dicts. Handle quoted fields containing commas and newlines. Do not use the `csv` module.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": true, "guardrails": false},
+      "evaluation": "functional_correctness",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_001",
+      "category": "reasoning",
+      "prompt": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning step by step.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "$0.05"
+    },
+    {
+      "id": "reasoning_002",
+      "category": "reasoning",
+      "prompt": "If all Bloops are Razzles, and all Razzles are Lazzles, are all Bloops definitely Lazzles? Explain your logical reasoning.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "yes"
+    },
+    {
+      "id": "reasoning_003",
+      "category": "reasoning",
+      "prompt": "A farmer has 17 sheep. All but 9 die. How many sheep are left? Explain your answer.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "9"
+    },
+    {
+      "id": "reasoning_004",
+      "category": "reasoning",
+      "prompt": "You have a 3-gallon jug and a 5-gallon jug with no markings. How do you measure exactly 4 gallons of water? Describe each step.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_005",
+      "category": "reasoning",
+      "prompt": "Three boxes are labeled 'Apples', 'Oranges', and 'Mixed'. All labels are wrong. You can draw one fruit from one box without looking. Which box should you pick from to determine all labels? Explain.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "mixed"
+    },
+    {
+      "id": "reasoning_006",
+      "category": "reasoning",
+      "prompt": "If it takes 5 machines 5 minutes to make 5 widgets, how long would it take 100 machines to make 100 widgets? Explain the logic.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "5 minutes"
+    },
+    {
+      "id": "reasoning_007",
+      "category": "reasoning",
+      "prompt": "A lily pad doubles in size every day. After 48 days it covers the entire lake. How many days does it take to cover half the lake?",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "47"
+    },
+    {
+      "id": "reasoning_008",
+      "category": "reasoning",
+      "prompt": "You are in a room with two doors. One leads to freedom, one to death. Two guards stand by each door — one always lies, one always tells the truth. You may ask one guard one question. What do you ask to guarantee the door to freedom?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_009",
+      "category": "reasoning",
+      "prompt": "What is the next number in the sequence: 2, 6, 12, 20, 30, 42, ? Explain the pattern.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "56"
+    },
+    {
+      "id": "reasoning_010",
+      "category": "reasoning",
+      "prompt": "A snail is at the bottom of a 10-foot well. Each day it climbs 3 feet, but slips back 2 feet each night. How many days does it take to reach the top?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "8"
+    },
+    {
+      "id": "reasoning_011",
+      "category": "reasoning",
+      "prompt": "You have 12 balls identical in appearance. One is heavier or lighter than the others. Using a balance scale exactly 3 times, find the odd ball and whether it is heavier or lighter. Describe the strategy.",
+      "expected_system": "S3",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_012",
+      "category": "reasoning",
+      "prompt": "Five houses in a row are painted five different colors. Their owners have different nationalities, drink different beverages, smoke different brands, and own different pets. Use Einstein's riddle clues to determine who owns the fish. (Provide the full clue set and solution.)",
+      "expected_system": "S3",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_013",
+      "category": "reasoning",
+      "prompt": "A store sells apples for $0.40 each and oranges for $0.60 each. A customer buys 10 fruits and spends exactly $5.00. How many of each fruit did they buy?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "reasoning_014",
+      "category": "reasoning",
+      "prompt": "Four people need to cross a bridge at night with one torch. The bridge holds only two at a time. They walk at speeds: 1, 2, 5, and 10 minutes. When two cross together, they go at the slower pace. What is the minimum time to get everyone across?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "exact_match",
+      "reference_answer": "17"
+    },
+    {
+      "id": "reasoning_015",
+      "category": "reasoning",
+      "prompt": "Given that: (1) All A are B. (2) Some B are C. (3) No C are D. What can we definitely conclude about the relationship between A and D? Justify each inference.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": false, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_001",
+      "category": "multi_turn",
+      "prompt": "I'm designing a REST API for a library system. First, what are the main entities I should model? (After you answer, I will ask about endpoints.)",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_002",
+      "category": "multi_turn",
+      "prompt": "Earlier we discussed that Book, Member, and Loan are the main entities. Now design the REST endpoints for the Loan entity, using the entities we agreed on.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_003",
+      "category": "multi_turn",
+      "prompt": "I want to learn Python. I already know JavaScript. What are the top 5 differences I should know? (This starts a tutoring session — remember my background for follow-up questions.)",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_004",
+      "category": "multi_turn",
+      "prompt": "Given I know JavaScript and the Python differences we just discussed, explain Python list comprehensions with examples adapted to a JS developer's mental model.",
+      "expected_system": "S1",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_005",
+      "category": "multi_turn",
+      "prompt": "I'm debugging a performance issue in my web app. The homepage takes 8 seconds to load. Walk me through a systematic diagnosis process, starting with the first step.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_006",
+      "category": "multi_turn",
+      "prompt": "Following your diagnosis framework, I've identified the database is the bottleneck — queries take 6 seconds. Given this new information, what's the next diagnostic step and what tools would you recommend?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_007",
+      "category": "multi_turn",
+      "prompt": "Let's plan a software project. I want to build a personal finance tracker. What should I define first — requirements, architecture, or tech stack? Walk me through your recommended project initiation approach.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_008",
+      "category": "multi_turn",
+      "prompt": "For the personal finance tracker we're planning: I want to use FastAPI + React + PostgreSQL. Given the tech stack choice, what are the top 3 architectural decisions I need to make right now?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_009",
+      "category": "multi_turn",
+      "prompt": "I'm interviewing for a senior software engineer role. Help me prepare. First, what are the most common system design interview topics I should know?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "multi_turn_010",
+      "category": "multi_turn",
+      "prompt": "Given the system design topics we just listed, let's do a mock interview. The question is: 'Design a URL shortener like bit.ly.' Pretend you're the interviewer and guide me through the expected approach.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": false, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_001",
+      "category": "research",
+      "prompt": "Explain the key differences between RLHF (Reinforcement Learning from Human Feedback) and RLAIF (Reinforcement Learning from AI Feedback). What are the practical trade-offs for LLM alignment?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_002",
+      "category": "research",
+      "prompt": "What is the difference between RAG (Retrieval-Augmented Generation) and fine-tuning for adapting LLMs to new domains? When should each approach be preferred?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_003",
+      "category": "research",
+      "prompt": "Explain the concept of 'chain-of-thought prompting' in LLMs. What does the original Wei et al. (2022) paper demonstrate, and what are the key conditions for CoT to be effective?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_004",
+      "category": "research",
+      "prompt": "What is the MAP-Elites algorithm in quality-diversity optimization? Describe how it differs from standard evolutionary algorithms and give an example use case.",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_005",
+      "category": "research",
+      "prompt": "Explain the concept of 'mixture of experts' (MoE) in neural networks. How does sparse MoE (as used in models like Mixtral) differ from dense transformers in terms of compute and parameter scaling?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_006",
+      "category": "research",
+      "prompt": "What is the 'lost in the middle' problem in long-context LLMs (Liu et al., 2023)? What architectural or prompting solutions have been proposed to address it?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_007",
+      "category": "research",
+      "prompt": "Describe the FrugalGPT approach (Chen et al., 2023) for LLM cascade routing. What is the key insight and what empirical results did it demonstrate on cost reduction?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_008",
+      "category": "research",
+      "prompt": "What is the difference between in-context learning (ICL) and parameter-efficient fine-tuning (PEFT) methods like LoRA? When is each approach more sample-efficient?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_009",
+      "category": "research",
+      "prompt": "Explain the key components of the Transformer architecture (Vaswani et al., 2017): self-attention, multi-head attention, and positional encoding. Why is the attention mechanism considered the critical innovation?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    },
+    {
+      "id": "research_010",
+      "category": "research",
+      "prompt": "What is the Constitutional AI (CAI) approach from Anthropic? How does it use a set of principles to improve model alignment without relying on human labelers for harmful outputs?",
+      "expected_system": "S2",
+      "expected_pillar_benefit": {"routing": true, "memory": true, "avr": false, "guardrails": false},
+      "evaluation": "non_empty",
+      "reference_answer": null
+    }
+  ]
+}

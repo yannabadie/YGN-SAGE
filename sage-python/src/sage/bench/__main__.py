@@ -290,7 +290,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -404,6 +404,17 @@ def main() -> None:
 
     if args.type == "swebench":
         asyncio.run(_run_swebench(args))
+
+    if args.type == "heterogeneous":
+        if not os.environ.get("GOOGLE_API_KEY"):
+            print("  ERROR: GOOGLE_API_KEY required for heterogeneous benchmark")
+        else:
+            from sage.bench.heterogeneous_bench import HeterogeneousBench
+            system, bus = _boot_system()
+            bench = HeterogeneousBench(system=system)
+            report = asyncio.run(bench.run(limit=args.limit))
+            _print_report(report)
+            _save_report(report, bench, args.output, "heterogeneous")
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
