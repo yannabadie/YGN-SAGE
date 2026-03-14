@@ -49,11 +49,14 @@ class TopologyRunner:
         executor: Any,
         llm_provider: LLMProvider,
         llm_config: LLMConfig | None = None,
+        *,
+        provider_pool: Any | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
         self._llm = llm_provider
         self._config = llm_config
+        self._provider_pool = provider_pool
         self._node_outputs: dict[int, str] = {}
 
     def _gather_completed_context(self) -> str:
@@ -103,9 +106,16 @@ class TopologyRunner:
 
         messages.append(Message(role=Role.USER, content=task))
 
-        response = await self._llm.generate(
+        # Resolve per-node model if ProviderPool available
+        node_model_id = getattr(node, "model_id", "")
+        if node_model_id and self._provider_pool:
+            provider, config = self._provider_pool.resolve(node_model_id)
+        else:
+            provider, config = self._llm, self._config
+
+        response = await provider.generate(
             messages=messages,
-            config=self._config,
+            config=config,
         )
         output = response.content or ""
         self._node_outputs[node_idx] = output
