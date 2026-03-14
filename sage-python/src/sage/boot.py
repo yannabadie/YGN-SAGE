@@ -123,6 +123,8 @@ class AgentSystem:
     bandit: Any = None
     # Rust ModelRegistry (None if sage_core not compiled or cards.toml not found)
     _rust_registry: Any = None
+    # CognitiveOrchestrationPipeline (5-stage: classify->decompose->topology->assign->execute)
+    pipeline: Any = None
 
     @property
     def model_info(self) -> dict[str, str]:
@@ -139,10 +141,19 @@ class AgentSystem:
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
 
-        Primary path: CognitiveOrchestrator (multi-provider, score-based).
+        Primary path: CognitiveOrchestrationPipeline (5-stage).
+        Secondary path: CognitiveOrchestrator (multi-provider, score-based).
         Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
         Mock mode: direct AgentLoop (no orchestrator).
         """
+        # Try CognitiveOrchestrationPipeline first (if wired)
+        if self.pipeline:
+            try:
+                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else 5.0
+                return await self.pipeline.run(task, budget_usd=_budget)
+            except Exception as exc:
+                _log.warning("Pipeline failed, falling back to legacy: %s", exc)
+
         _run_start = time.perf_counter()
         self._last_decision = None  # Routing decision for telemetry feedback
 
@@ -893,6 +904,56 @@ def boot_agent_system(
     # Sandbox availability check — warn loudly if neither Wasm nor Docker present
     _check_sandbox_availability()
 
+    # --- Cognitive Orchestration Pipeline (Task 11/12) ---
+    # Model assigner: Rust-first with Python fallback
+    model_assigner = None
+    try:
+        from sage_core import ModelAssigner as RustModelAssigner  # type: ignore[import-not-found]
+        if rust_registry:
+            model_assigner = RustModelAssigner(rust_registry)
+    except ImportError:
+        pass
+    if model_assigner is None:
+        try:
+            from sage.llm.model_assigner import ModelAssigner as PyModelAssigner
+            if py_model_registry:
+                model_assigner = PyModelAssigner(py_model_registry)
+        except Exception:
+            pass
+
+    # Provider pool: wraps default provider + registry for per-node resolution
+    _provider_pool = None
+    if provider and registry:
+        try:
+            from sage.llm.provider_pool import ProviderPool
+            _provider_pool = ProviderPool(
+                default_provider=provider,
+                registry=registry,
+                default_config=llm_config,
+            )
+        except Exception as exc:
+            _log.warning("ProviderPool init failed: %s", exc)
+
+    # Pipeline: 5-stage orchestration (optional — None if deps missing)
+    _pipeline = None
+    if model_assigner and _provider_pool:
+        try:
+            from sage.pipeline import CognitiveOrchestrationPipeline
+            _pipeline = CognitiveOrchestrationPipeline(
+                router=metacognition,
+                engine=rust_topology_engine,
+                assigner=model_assigner,
+                provider_pool=_provider_pool,
+                bandit=rust_bandit,
+                quality_estimator=None,  # Populated dynamically if available
+                event_bus=event_bus,
+                llm_provider=provider,
+                llm_config=llm_config,
+            )
+            _log.info("CognitiveOrchestrationPipeline initialized")
+        except Exception as exc:
+            _log.warning("Pipeline init failed: %s — using legacy path", exc)
+
     return AgentSystem(
         agent_loop=loop,
         agent_pool=agent_pool,
@@ -910,4 +971,5 @@ def boot_agent_system(
         topology_engine=rust_topology_engine,
         bandit=rust_bandit,
         _rust_registry=rust_registry or py_model_registry,
+        pipeline=_pipeline,
     )
