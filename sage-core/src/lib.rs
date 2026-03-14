@@ -7,7 +7,7 @@ pub mod pool;
 pub mod routing;
 #[cfg(any(feature = "sandbox", feature = "tool-executor"))]
 pub mod sandbox;
-pub mod simd_sort;
+pub mod sort_utils;
 pub mod topology;
 pub mod types;
 pub mod verification;
@@ -76,11 +76,11 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<verification::SmtVerificationResult>()?;
     }
 
-    // Add SIMD functions
-    m.add_function(wrap_pyfunction!(simd_sort::vectorized_partition_h96, m)?)?;
-    m.add_function(wrap_pyfunction!(simd_sort::h96_quicksort, m)?)?;
-    m.add_function(wrap_pyfunction!(simd_sort::h96_quicksort_zerocopy, m)?)?;
-    m.add_function(wrap_pyfunction!(simd_sort::h96_argsort, m)?)?;
+    // Add sort utility functions
+    m.add_function(wrap_pyfunction!(sort_utils::vectorized_partition_h96, m)?)?;
+    m.add_function(wrap_pyfunction!(sort_utils::h96_quicksort, m)?)?;
+    m.add_function(wrap_pyfunction!(sort_utils::h96_quicksort_zerocopy, m)?)?;
+    m.add_function(wrap_pyfunction!(sort_utils::h96_argsort, m)?)?;
 
     Ok(())
 }

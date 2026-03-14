@@ -1,3 +1,6 @@
+//! Sorting utilities — stdlib pdqsort wrapper.
+//! No SIMD (vqsort-rs does not yet support Windows).
+
 use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 
