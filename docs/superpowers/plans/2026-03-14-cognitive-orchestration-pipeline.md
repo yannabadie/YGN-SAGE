@@ -358,9 +358,9 @@ mod tests {
         assert_eq!(n, 2);
 
         // Coder (S2, needs tools) → expensive-smart (only one with tools)
-        assert_eq!(graph.get_node(0).unwrap().model_id, "expensive-smart");
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "expensive-smart");
         // Reviewer (S3, no special caps) → expensive-smart (highest S3 affinity)
-        assert_eq!(graph.get_node(1).unwrap().model_id, "expensive-smart");
+        assert_eq!(graph.try_get_node(1).unwrap().model_id, "expensive-smart");
     }
 
     #[test]
@@ -372,8 +372,8 @@ mod tests {
         // Very tight budget — should assign cheap-fast to reviewer (no tools needed)
         let n = assigner.assign_models_inner(&mut graph, "code", 0.005);
         // At least one node should get cheap-fast due to budget
-        let model0 = &graph.get_node(0).unwrap().model_id;
-        let model1 = &graph.get_node(1).unwrap().model_id;
+        let model0 = &graph.try_get_node(0).unwrap().model_id;
+        let model1 = &graph.try_get_node(1).unwrap().model_id;
         assert!(model0 == "cheap-fast" || model1 == "cheap-fast" || n < 2);
     }
 
@@ -393,7 +393,7 @@ mod tests {
 
         let n = assigner.assign_models_inner(&mut g, "code", 0.001);
         // No candidate passes → keep original
-        assert_eq!(g.get_node(0).unwrap().model_id, "original-model");
+        assert_eq!(g.try_get_node(0).unwrap().model_id, "original-model");
         assert_eq!(n, 0);
     }
 
@@ -416,7 +416,7 @@ mod tests {
 
         let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0);
         assert!(model_id.is_some());
-        assert_eq!(graph.get_node(1).unwrap().model_id, model_id.unwrap());
+        assert_eq!(graph.try_get_node(1).unwrap().model_id, model_id.unwrap());
     }
 }
 ```
@@ -866,7 +866,7 @@ class ModelAssigner:
             if remaining < BUDGET_EPSILON:
                 log.warning("budget_exhausted_node_%d: %d nodes remaining", idx, node_count - idx)
                 break
-            node = graph.get_node(idx)
+            node = graph.try_get_node(idx).ok()
             if node is None:
                 continue
             caps = getattr(node, "required_capabilities", [])
@@ -976,9 +976,9 @@ def test_resolve_known_model():
     # sage.providers.registry.ModelRegistry.select() returns ModelProfile or None
     mock_profile = MagicMock()
     mock_profile.provider = "google"
-    mock_profile.model_id = "gemini-2.5-flash"
+    mock_profile.id = "gemini-2.5-flash"
     mock_registry.select.return_value = mock_profile
-    mock_registry.get_connector.return_value = MagicMock()  # LLMProvider
+    # ProviderPool internally maps profile.provider → LLMProvider via registry internals
     default = MagicMock()
 
     pool = ProviderPool(default_provider=default, registry=mock_registry)
@@ -1003,9 +1003,9 @@ def test_resolve_caches():
     mock_registry = MagicMock()
     mock_profile = MagicMock()
     mock_profile.provider = "test"
-    mock_profile.model_id = "model-a"
+    mock_profile.id = "model-a"
     mock_registry.select.return_value = mock_profile
-    mock_registry.get_connector.return_value = MagicMock()
+    # ProviderPool maps profile.provider → LLMProvider internally
     default = MagicMock()
 
     pool = ProviderPool(default_provider=default, registry=mock_registry)
