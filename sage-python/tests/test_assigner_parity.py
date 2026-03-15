@@ -61,8 +61,17 @@ math = 0.95
 
 def _make_rust_pair():
     """Create Rust ModelRegistry + ModelAssigner."""
+    import tempfile, os
     from sage_core import ModelRegistry, ModelAssigner, TopologyGraph, TopologyNode, TopologyEdge
-    registry = ModelRegistry.from_toml_str(CARDS_TOML)
+    # Rust ModelRegistry only exposes from_toml_file, not from_toml_str
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".toml", delete=False) as f:
+        f.write(CARDS_TOML)
+        f.flush()
+        tmp_path = f.name
+    try:
+        registry = ModelRegistry.from_toml_file(tmp_path)
+    finally:
+        os.unlink(tmp_path)
     assigner = ModelAssigner(registry)
     return assigner, TopologyGraph, TopologyNode, TopologyEdge
 

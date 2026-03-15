@@ -44,7 +44,7 @@ def test_complexity_router_route_is_total(complexity, uncertainty, tool_required
 @given(code=st.text(min_size=0, max_size=500))
 @settings(max_examples=200)
 def test_sandbox_validator_never_crashes(code):
-    """ToolExecutor.validate() must return a bool for any code string."""
+    """ToolExecutor.validate() must return a ValidationResult for any code string."""
     try:
         from sage_core import ToolExecutor
     except ImportError:
@@ -52,7 +52,9 @@ def test_sandbox_validator_never_crashes(code):
 
     executor = ToolExecutor()
     result = executor.validate(code)
-    assert isinstance(result, bool)
+    # validate() returns a ValidationResult with .valid bool and .errors list
+    assert hasattr(result, "valid")
+    assert isinstance(result.valid, bool)
 
 
 @given(

@@ -12,6 +12,9 @@ from sage.strategy.metacognition import CognitiveProfile
 async def test_speculative_zone_logged(caplog):
     """When complexity is indecisive (0.35-0.55), a log message is emitted."""
     system = boot_agent_system(use_mock_llm=True)
+    # Disable Rust router so Python speculative zone detection is exercised
+    system.rust_router = None
+    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.45, uncertainty=0.5, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 
@@ -26,6 +29,9 @@ async def test_speculative_zone_logged(caplog):
 async def test_speculative_zone_boundary_low(caplog):
     """Complexity exactly at 0.35 (lower boundary) triggers speculative log."""
     system = boot_agent_system(use_mock_llm=True)
+    # Disable Rust router so Python speculative zone detection is exercised
+    system.rust_router = None
+    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.35, uncertainty=0.2, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 
@@ -42,6 +48,9 @@ async def test_speculative_zone_boundary_low(caplog):
 async def test_speculative_zone_boundary_high(caplog):
     """Complexity exactly at 0.55 (upper boundary) triggers speculative log."""
     system = boot_agent_system(use_mock_llm=True)
+    # Disable Rust router so Python speculative zone detection is exercised
+    system.rust_router = None
+    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.55, uncertainty=0.3, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 

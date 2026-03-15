@@ -160,8 +160,10 @@ class AgentSystem:
         Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
         Mock mode: direct AgentLoop (no orchestrator).
         """
-        # Try CognitiveOrchestrationPipeline first (if wired)
-        if self.pipeline:
+        # Try CognitiveOrchestrationPipeline first (if wired and not mock)
+        # Mock mode bypasses the pipeline so agent_loop phases (PERCEIVE/THINK/ACT/LEARN)
+        # are exercised — important for testing phase events and guardrail wiring.
+        if self.pipeline and self.agent_loop.config.llm.provider != "mock":
             try:
                 _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD / 2
                 return await self.pipeline.run(task, budget_usd=_budget)
@@ -451,10 +453,12 @@ class AgentSystem:
             cost = self.agent_loop.total_cost_usd
             latency_ms = (time.perf_counter() - run_start) * 1000
 
-            # Only record when quality is known (not None)
+            # When quality is unknown (None), use 0.5 as neutral recording.
+            # The bandit needs observations to learn, even imprecise ones.
+            # Only truly empty results (quality=0.0) are definitively bad.
             if quality is None:
-                _log.info("Topology outcome: quality=None (abstain), skipping recording")
-                return
+                quality = 0.5
+                _log.info("Topology outcome: quality=None -> 0.5 (neutral recording)")
 
             # Extract keywords from task
             keywords = list(set(

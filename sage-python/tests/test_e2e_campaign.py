@@ -213,29 +213,32 @@ class TestC4OxizVerification:
         verifier = SmtVerifier()
         timings: dict[str, float] = {}
 
-        # 1. Memory safety: value within bounds
+        # 1. Memory safety: addr=50 within limit=100 -> safe (True)
+        # API: prove_memory_safety(addr, limit) -> bool
         t0 = time.perf_counter()
-        result_safe = verifier.prove_memory_safety(0, 100, 50)
+        result_safe = verifier.prove_memory_safety(50, 100)
         timings["memory_safety"] = (time.perf_counter() - t0) * 1000
-        assert result_safe.is_safe, "50 in [0, 100] should be safe"
+        assert result_safe, "50 < 100 should be safe"
 
-        # 2. Memory safety: value out of bounds
+        # 2. Memory safety: addr=200 exceeds limit=100 -> unsafe (False)
         t0 = time.perf_counter()
-        result_unsafe = verifier.prove_memory_safety(0, 100, 200)
+        result_unsafe = verifier.prove_memory_safety(200, 100)
         timings["memory_unsafe"] = (time.perf_counter() - t0) * 1000
-        assert not result_unsafe.is_safe, "200 in [0, 100] should be unsafe"
+        assert not result_unsafe, "200 >= 100 should be unsafe"
 
-        # 3. Arithmetic verification
+        # 3. Arithmetic verification: actual=7, expected=7, tolerance=0
+        # API: verify_arithmetic(actual, expected, tolerance) -> bool
         t0 = time.perf_counter()
-        result_arith = verifier.verify_arithmetic(3, 4, 7, "add")
+        result_arith = verifier.verify_arithmetic(7, 7, 0)
         timings["arithmetic"] = (time.perf_counter() - t0) * 1000
-        assert result_arith.is_valid, "3 + 4 = 7 should be valid"
+        assert result_arith, "7 == 7 (tolerance 0) should be valid"
 
-        # 4. Invariant verification
+        # 4. Invariant verification: pre => post (both "x > 0")
+        # API: verify_invariant(pre, post) -> bool
         t0 = time.perf_counter()
         result_inv = verifier.verify_invariant("x > 0", "x > 0")
         timings["invariant"] = (time.perf_counter() - t0) * 1000
-        assert result_inv.holds, "x > 0 => x > 0 should hold"
+        assert result_inv, "x > 0 => x > 0 should hold"
 
         # All operations should be sub-10ms
         for name, ms in timings.items():
