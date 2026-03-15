@@ -159,6 +159,12 @@ python -m sage.bench --type routing_gt                              # Non-circul
 python -m sage.bench --type memory_ablation                         # Memory tier ablation (4 configs)
 python -m sage.bench --type evolution_ablation                      # Evolution search ablation (3 configs)
 
+# BigCodeBench (ICLR '25, 1140 tasks, non-saturated ~62% SOTA)
+python -m sage.bench --type bigcodebench --subset hard --limit 20    # Hard subset smoke
+python -m sage.bench --type bigcodebench --subset full --limit 50    # Full subset sample
+python -m sage.bench --type bigcodebench --subset hard --split instruct  # NL instructions (default)
+python -m sage.bench --type bigcodebench --subset hard --split complete  # Docstring completion
+
 # SWE-Bench (requires Docker Desktop with Linux containers)
 python -m sage.bench --type swebench --dataset lite --generate-only --limit 20  # Generate only
 python -m sage.bench --type swebench --dataset lite --limit 20                  # Full Docker eval
@@ -281,6 +287,11 @@ python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
 ### Required Environment Variables
 ```bash
 export GOOGLE_API_KEY="..."                  # Required for Gemini models
+export OPENAI_API_KEY="..."                  # Optional: OpenAI GPT-5.x models
+export DEEPSEEK_API_KEY="..."               # Optional: DeepSeek models
+export GROK_API_KEY="..."                    # Optional: xAI Grok models
+export KIMI_API_KEY="..."                    # Optional: Moonshot Kimi models
+export MINIMAX_API_KEY="..."                # Optional: MiniMax models
 export SAGE_MODEL_FAST="gemini-2.5-flash"    # Optional: override any tier model ID
 export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no token = open dev mode)
 # Codex CLI uses ChatGPT Pro account (codex login)
@@ -512,3 +523,5 @@ python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM
   - `topology/engine.rs` (TopologyEngine) — **PRIMARY** (6-path generation). Used by boot.py Phase 6, Pipeline Stage 2
   - `routing/model_assigner.rs` (ModelAssigner) — **PRIMARY** (per-node scoring). Used by Pipeline Stage 3
   - `routing/model_registry.rs` (ModelRegistry) — **PRIMARY** (telemetry calibration). Used by SystemRouter + ModelAssigner
+- **Multi-provider wiring**: FIXED (2026-03-15) — ProviderPool now receives all discovered providers at boot. Previously only default provider was used.
+- **DEEPSEEK_API_KEY**: Primary env var changed from DEEP_SEEK_API_KEY to DEEPSEEK_API_KEY. Legacy spelling still accepted as fallback.
