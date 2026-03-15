@@ -59,6 +59,13 @@ def run_routing_gt(router, gt_path: Path | None = None, verbose: bool = False) -
                 profile = router.assess_complexity(task_text)
                 decision = router.route(profile)
                 actual = int(decision.system)
+            elif hasattr(router, "exemplar_count"):
+                # KnnRouter: route(task) → KnnRoutingResult | None
+                decision = router.route(task_text)
+                if decision is not None:
+                    actual = int(decision.system)
+                else:
+                    actual = -1  # OOD rejection or not ready
             elif hasattr(router, "route"):
                 # Rust SystemRouter: route(task, budget) → RoutingDecision
                 decision = router.route(task_text, 10.0)

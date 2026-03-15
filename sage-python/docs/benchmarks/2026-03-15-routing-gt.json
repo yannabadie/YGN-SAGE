@@ -1,0 +1,381 @@
+{
+  "benchmark": "routing_ground_truth",
+  "timestamp": "2026-03-15T18:26:16.060040+00:00",
+  "ground_truth_tasks": 50,
+  "routers": {
+    "knn": {
+      "total": 50,
+      "correct": 46,
+      "accuracy": 0.92,
+      "per_system": {
+        "1": {
+          "total": 10,
+          "correct": 7
+        },
+        "2": {
+          "total": 20,
+          "correct": 19
+        },
+        "3": {
+          "total": 20,
+          "correct": 20
+        }
+      },
+      "elapsed_ms": 834.1874000034295,
+      "misroutes": [
+        {
+          "id": 3,
+          "task": "What is the time complexity of binary search?",
+          "expected": 1,
+          "actual": 2,
+          "domain": "factual"
+        },
+        {
+          "id": 9,
+          "task": "Explain the difference between a stack and a queue",
+          "expected": 1,
+          "actual": 3,
+          "domain": "factual"
+        },
+        {
+          "id": 10,
+          "task": "What are the SOLID principles in software engineering?",
+          "expected": 1,
+          "actual": 2,
+          "domain": "factual"
+        },
+        {
+          "id": 27,
+          "task": "Design an eventually-consistent distributed counter that handles network partiti",
+          "expected": 2,
+          "actual": 3,
+          "domain": "code"
+        }
+      ]
+    },
+    "heuristic": {
+      "total": 50,
+      "correct": 17,
+      "accuracy": 0.34,
+      "per_system": {
+        "1": {
+          "total": 10,
+          "correct": 10
+        },
+        "2": {
+          "total": 20,
+          "correct": 2
+        },
+        "3": {
+          "total": 20,
+          "correct": 5
+        }
+      },
+      "elapsed_ms": 1.330200000666082,
+      "misroutes": [
+        {
+          "id": 11,
+          "task": "Write a Python function that checks if a string is a palindrome",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 13,
+          "task": "Debug this code: def fib(n): return fib(n-1) + fib(n-2). It gives RecursionError",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 14,
+          "task": "Create a REST API endpoint with FastAPI that returns paginated search results fr",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 15,
+          "task": "Refactor this 200-line function into smaller, testable units",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 16,
+          "task": "Write unit tests for a shopping cart class with add, remove, and calculate_total",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 18,
+          "task": "Build a concurrent web scraper in Python using asyncio that respects rate limits",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 19,
+          "task": "Design a caching strategy for an API that serves 10K requests/second with 95% ca",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 20,
+          "task": "Write a Python decorator that retries a function up to 3 times with exponential ",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 21,
+          "task": "Analyze this crash log and identify the root cause: segfault in worker thread du",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 22,
+          "task": "Implement a Bloom filter in Rust with configurable false positive rate",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 23,
+          "task": "Create a GitHub Actions CI pipeline that builds, tests, and deploys a Python pac",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 24,
+          "task": "Write a migration script that converts a MongoDB schema to PostgreSQL while pres",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 25,
+          "task": "Implement a simple neural network from scratch in Python (no frameworks) for XOR",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 26,
+          "task": "Given a graph with N nodes and weighted edges, find all pairs of nodes where the",
+          "expected": 2,
+          "actual": 1,
+          "domain": "math"
+        },
+        {
+          "id": 27,
+          "task": "Design an eventually-consistent distributed counter that handles network partiti",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 28,
+          "task": "Solve this dynamic programming problem: given coins [1,5,10,25], find the minimu",
+          "expected": 2,
+          "actual": 1,
+          "domain": "math"
+        },
+        {
+          "id": 29,
+          "task": "Parse and evaluate arithmetic expressions with parentheses using a recursive des",
+          "expected": 2,
+          "actual": 1,
+          "domain": "code"
+        },
+        {
+          "id": 30,
+          "task": "Write a comprehensive comparison of React, Vue, and Svelte for building a real-t",
+          "expected": 2,
+          "actual": 1,
+          "domain": "reasoning"
+        },
+        {
+          "id": 31,
+          "task": "Prove that the sum of the first n odd numbers equals n^2 by mathematical inducti",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 32,
+          "task": "Prove that sqrt(2) is irrational using proof by contradiction",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 34,
+          "task": "Prove that Dijkstra's algorithm correctly finds shortest paths in a graph with n",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 35,
+          "task": "Prove that the halting problem is undecidable using diagonalization",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 37,
+          "task": "Prove that in any group of 6 people, there must be either 3 mutual friends or 3 ",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 39,
+          "task": "Prove that for all n >= 1, the Fibonacci sequence satisfies F(n) < 2^n",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 40,
+          "task": "Show that the Peterson's mutual exclusion algorithm satisfies safety (mutual exc",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 41,
+          "task": "Prove that quicksort has O(n log n) average-case time complexity using recurrenc",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 43,
+          "task": "Given the constraint system: x + y <= 10, x >= 0, y >= 0, x - y >= 2, find all i",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 44,
+          "task": "Prove the correctness of the Raft consensus algorithm's leader election phase",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 45,
+          "task": "Verify that this type system is sound: if Gamma |- e : T and e ->* v, then Gamma",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 46,
+          "task": "Is it possible to tile a standard 8x8 chessboard with 2x1 dominoes if two opposi",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 47,
+          "task": "Prove that every continuous function on [a,b] is Riemann integrable",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 48,
+          "task": "Prove the Cantor-Bernstein-Schroeder theorem: if |A| <= |B| and |B| <= |A|, then",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        },
+        {
+          "id": 50,
+          "task": "Prove that the lambda calculus is Turing-complete by encoding a universal Turing",
+          "expected": 3,
+          "actual": 1,
+          "domain": "formal"
+        }
+      ]
+    },
+    "rust_system_router": {
+      "total": 50,
+      "correct": 43,
+      "accuracy": 0.86,
+      "per_system": {
+        "1": {
+          "total": 10,
+          "correct": 8
+        },
+        "2": {
+          "total": 20,
+          "correct": 19
+        },
+        "3": {
+          "total": 20,
+          "correct": 16
+        }
+      },
+      "elapsed_ms": 2.6922000106424093,
+      "misroutes": [
+        {
+          "id": 3,
+          "task": "What is the time complexity of binary search?",
+          "expected": 1,
+          "actual": 2,
+          "domain": "factual"
+        },
+        {
+          "id": 8,
+          "task": "Write a haiku about autumn",
+          "expected": 1,
+          "actual": 2,
+          "domain": "creative"
+        },
+        {
+          "id": 28,
+          "task": "Solve this dynamic programming problem: given coins [1,5,10,25], find the minimu",
+          "expected": 2,
+          "actual": 1,
+          "domain": "math"
+        },
+        {
+          "id": 40,
+          "task": "Show that the Peterson's mutual exclusion algorithm satisfies safety (mutual exc",
+          "expected": 3,
+          "actual": 2,
+          "domain": "formal"
+        },
+        {
+          "id": 42,
+          "task": "Verify that this concurrent producer-consumer queue is deadlock-free using LTL t",
+          "expected": 3,
+          "actual": 2,
+          "domain": "formal"
+        },
+        {
+          "id": 45,
+          "task": "Verify that this type system is sound: if Gamma |- e : T and e ->* v, then Gamma",
+          "expected": 3,
+          "actual": 2,
+          "domain": "formal"
+        },
+        {
+          "id": 49,
+          "task": "Implement and formally verify a lock-free stack using compare-and-swap, proving ",
+          "expected": 3,
+          "actual": 2,
+          "domain": "formal"
+        }
+      ]
+    }
+  }
+}
