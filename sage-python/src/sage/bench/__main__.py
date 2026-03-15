@@ -284,6 +284,20 @@ async def _run_swebench(args) -> None:
         _save_report(report, bench, args.output, f"swebench-{swe_dataset}")
 
 
+async def _run_bigcodebench(output: str | None, limit: int | None, subset: str, split: str) -> None:
+    from sage.bench.bigcodebench_bench import BigCodeBenchBench
+
+    if os.environ.get("GOOGLE_API_KEY"):
+        system, bus = _boot_system()
+        bench = BigCodeBenchBench(system=system, event_bus=bus, subset=subset, split=split)
+    else:
+        bench = BigCodeBenchBench(subset=subset, split=split)
+
+    report = await bench.run(limit=limit)
+    _print_report(report)
+    _save_report(report, bench, output, f"bigcodebench-{subset}-{split}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sage.bench",
@@ -291,7 +305,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "bigcodebench", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -348,6 +362,18 @@ def main() -> None:
         action="store_true",
         default=False,
         help="SWE-Bench: print dataset info and exit",
+    )
+    parser.add_argument(
+        "--subset",
+        choices=["full", "hard"],
+        default="full",
+        help="BigCodeBench subset: full (1140) or hard (~150)",
+    )
+    parser.add_argument(
+        "--split",
+        choices=["instruct", "complete"],
+        default="instruct",
+        help="BigCodeBench split: instruct (NL) or complete (docstring)",
     )
     args = parser.parse_args()
 
@@ -427,6 +453,9 @@ def main() -> None:
             report = asyncio.run(bench.run(limit=args.limit))
             _print_report(report)
             _save_report(report, bench, args.output, "gaia")
+
+    if args.type == "bigcodebench":
+        asyncio.run(_run_bigcodebench(args.output, args.limit, args.subset, args.split))
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
