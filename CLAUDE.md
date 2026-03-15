@@ -298,28 +298,11 @@ export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no toke
 # ExoCortex auto-configured (DEFAULT_STORE hardcoded, no env var needed)
 ```
 
-### SSL / Corporate Proxy
-This dev machine sits behind a corporate proxy that injects a self-signed certificate.
-All outbound HTTPS calls (Google GenAI, pip, etc.) will fail with `CERTIFICATE_VERIFY_FAILED` unless SSL verification is bypassed.
-
-**Protocol for any Python call to external APIs:**
-```python
-import httpx
-from google import genai
-from google.genai import types
-
-client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"],
-                      http_options={"api_version": "v1beta"})
-# REQUIRED on this machine — corporate proxy self-signed cert
-client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
-```
-
-**For CLI / env-level bypass:**
+### SSL / Network Configuration
+Standard HTTPS — no proxy required. If running behind a corporate proxy, set:
 ```bash
-set -a && source .env && set +a          # Load API keys
-export PYTHONIOENCODING=utf-8            # Fix Windows console encoding
-export REQUESTS_CA_BUNDLE=""             # Disable cert bundle for requests
-export NODE_TLS_REJECT_UNAUTHORIZED=0    # For Node.js tools
+export SAGE_SSL_VERIFY=false             # Bypass SSL verification in SAGE providers
+export REQUESTS_CA_BUNDLE=""             # Disable cert bundle for requests library
 ```
 
 ### Sandbox & Tool Security
@@ -403,10 +386,12 @@ TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
 | **TopologyBench HumanEval+ Run 1 (164)** | debate 95.1% vs seq 90.8% | McNemar p=0.023. NOT REPRODUCED in Run 2 (p=1.0). Run-to-run variance at temp=0 |
 | **TopologyBench HumanEval+ pilot (20)** | **90-100%** spread | 4 topologies, disjoint failures (Jaccard=0.00) |
 | **TopologyBench GSM8K (50)** | 96-98% all topologies | NULL: model ceiling. Cohen's d<0.12 |
-| **Evolution proof (5 runs x 10)** | **-10pp** (88% vs 98%) | NEGATIVE: evo hurts on budget model. Cohen d=-1.41 |
+| **Evolution proof (10 runs x 10)** | **-1pp** (99% vs 100%) | INCONCLUSIVE: no significant effect. Cohen d=-0.32, Wilcoxon p=1.0 |
 | **SWE-Bench Lite (20, one-shot)** | **0/20 resolved (0.0%)** | NEGATIVE: one-shot without code access. 1/20 applied (broke tests). Pipeline validated |
 
 **SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
+
+> **Note:** HumanEval+ 84.1% and MBPP+ 75.1% were measured on 2026-03-10 with routing layer only (pre-pipeline). The full 5-stage Cognitive Orchestration Pipeline (merged 2026-03-14) has not been benchmarked yet.
 
 **AVR (Act-Verify-Refine) improvements** (v2, March 10):
 - Edge case prompt injection for S2 code tasks (empty inputs, negatives, boolean-is-int, float precision)
@@ -460,13 +445,12 @@ exo = ExoCortex()  # Works automatically when GOOGLE_API_KEY is set
 
 **Direct query protocol** (for scripts / Claude Code):
 ```python
-import httpx, os
+import os
 from google import genai
 from google.genai import types
 
 client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"],
                       http_options={"api_version": "v1beta"})
-client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
 
 store_id = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 tools = [types.Tool(file_search=types.FileSearch(file_search_store_names=[store_id]))]
