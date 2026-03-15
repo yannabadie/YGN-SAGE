@@ -75,10 +75,21 @@ class BigCodeBenchBench:
             task = problems[task_id]
             prompt_key = "instruct_prompt" if self.split == "instruct" else "complete_prompt"
             prompt = task.get(prompt_key, task.get("instruct_prompt", ""))
+            # Inject code_prompt (imports + function signature) as context
+            code_prompt = task.get("code_prompt", "")
+            if code_prompt:
+                prompt = (
+                    f"Use this function signature and imports:\n"
+                    f"```python\n{code_prompt}\n```\n\n{prompt}"
+                )
+
+            entry = task["entry_point"]
+            tid = task_id
 
             t0 = time.time()
             solution = ""
             error = ""
+            eval_stderr = ""
 
             if self.system:
                 try:
@@ -86,7 +97,7 @@ class BigCodeBenchBench:
                         self.system.run(prompt),
                         timeout=self.task_timeout,
                     )
-                    solution = extract_code(raw, task["entry_point"])
+                    solution = extract_code(raw, entry)
                 except asyncio.TimeoutError:
                     error = "TIMEOUT"
                 except Exception as exc:
@@ -95,13 +106,43 @@ class BigCodeBenchBench:
             latency_ms = (time.time() - t0) * 1000
 
             if solution and not error:
-                task_passed = self._evaluate_solution(
+                task_passed, eval_stderr = self._evaluate_solution_with_stderr(
                     solution=solution,
                     test_code=task["test"],
-                    entry_point=task["entry_point"],
-                    task_id=task_id,
+                    entry_point=entry,
+                    task_id=tid,
                     timeout=self.eval_timeout,
                 )
+
+                # AVR retry: send error back to LLM for self-correction
+                avr_retries = 2
+                for avr_attempt in range(avr_retries):
+                    if task_passed or not eval_stderr:
+                        break
+                    retry_prompt = (
+                        f"Your previous code for this task failed with this error:\n"
+                        f"```\n{eval_stderr[-500:]}\n```\n\n"
+                        f"Original task:\n{prompt}\n\n"
+                        f"Please fix the code. Return ONLY the corrected Python code."
+                    )
+                    try:
+                        raw = await asyncio.wait_for(
+                            self.system.run(retry_prompt),
+                            timeout=self.task_timeout,
+                        )
+                        code = extract_code(raw, entry)
+                        if code.strip():
+                            task_passed, eval_stderr = self._evaluate_solution_with_stderr(
+                                solution=code,
+                                test_code=task["test"],
+                                entry_point=entry,
+                                task_id=tid,
+                                timeout=self.eval_timeout,
+                            )
+                            if task_passed:
+                                log.info("  AVR retry %d succeeded for %s", avr_attempt + 1, tid)
+                    except Exception:
+                        break
             else:
                 task_passed = False
                 if not error:
@@ -143,6 +184,24 @@ class BigCodeBenchBench:
         timeout: float = 30.0,
     ) -> bool:
         """Evaluate by running unittest test cases in subprocess."""
+        passed, _ = BigCodeBenchBench._evaluate_solution_with_stderr(
+            solution=solution,
+            test_code=test_code,
+            entry_point=entry_point,
+            task_id=task_id,
+            timeout=timeout,
+        )
+        return passed
+
+    @staticmethod
+    def _evaluate_solution_with_stderr(
+        solution: str,
+        test_code: str,
+        entry_point: str,
+        task_id: str,
+        timeout: float = 30.0,
+    ) -> tuple[bool, str]:
+        """Evaluate solution and return (passed, stderr) for AVR retry."""
         script = f"""{solution}
 
 {test_code}
@@ -166,14 +225,15 @@ if __name__ == "__main__":
                 text=True,
                 timeout=timeout,
             )
-            return result.returncode == 0
+            stderr = result.stderr or ""
+            return result.returncode == 0, stderr
 
         except subprocess.TimeoutExpired:
             log.debug("Eval timeout for %s", task_id)
-            return False
+            return False, "TIMEOUT: evaluation exceeded time limit"
         except Exception as exc:
             log.debug("Eval error for %s: %s", task_id, exc)
-            return False
+            return False, str(exc)[:500]
         finally:
             try:
                 Path(tmp_path).unlink(missing_ok=True)
