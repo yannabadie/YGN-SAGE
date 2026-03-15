@@ -589,3 +589,99 @@ class TestTopologySelection:
 
     def test_sequential_moderate_depth(self):
         assert select_macro_topology(DAGFeatures(omega=1, delta=2, gamma=0.1)) == "sequential"
+
+
+# ── Budget degradation tests ────────────────────────────────────────────────
+
+
+class _OverBudgetTopology:
+    """Topology whose nodes exceed the pipeline budget."""
+
+    def __init__(self, n_nodes: int = 3, cost_per_node: float = 2.0) -> None:
+        self._n = n_nodes
+        self._cost = cost_per_node
+        self._nodes = [
+            MagicMock(model_id=f"model-{i}", max_cost_usd=cost_per_node)
+            for i in range(n_nodes)
+        ]
+
+    def node_count(self) -> int:
+        return self._n
+
+    def get_node(self, idx: int) -> Any:
+        return self._nodes[idx] if idx < len(self._nodes) else None
+
+
+def test_check_topology_budget_degrades_when_over():
+    """When topology cost > budget, _check_topology_budget replaces with single-node."""
+    pipeline = CognitiveOrchestrationPipeline(
+        router=None,
+        engine=None,
+        assigner=None,
+        provider_pool=None,
+    )
+
+    # 3 nodes x $2.00 = $6.00 total, budget = $5.00
+    over_topo = _OverBudgetTopology(n_nodes=3, cost_per_node=2.0)
+    ctx = PipelineContext(task="test", budget=5.0, system=2, topology=over_topo)
+
+    pipeline._check_topology_budget(ctx)
+
+    # Topology should have been replaced (not the original 3-node topology)
+    # Without sage_core, fallback is None (single-agent mode)
+    # With sage_core, it would be a 1-node TopologyGraph
+    if ctx.topology is not None:
+        assert ctx.topology.node_count() == 1
+    else:
+        # sage_core not available — degraded to None (single-agent)
+        assert ctx.topology is None
+
+
+def test_check_topology_budget_no_degrade_when_under():
+    """When topology cost <= budget, topology is kept as-is."""
+    pipeline = CognitiveOrchestrationPipeline(
+        router=None,
+        engine=None,
+        assigner=None,
+        provider_pool=None,
+    )
+
+    # 3 nodes x $1.00 = $3.00 total, budget = $5.00 — within budget
+    under_topo = _OverBudgetTopology(n_nodes=3, cost_per_node=1.0)
+    ctx = PipelineContext(task="test", budget=5.0, system=2, topology=under_topo)
+
+    pipeline._check_topology_budget(ctx)
+
+    # Topology unchanged — still the original 3-node topology
+    assert ctx.topology is under_topo
+    assert ctx.topology.node_count() == 3
+
+
+@pytest.mark.asyncio
+async def test_pipeline_budget_degrade_emits_event():
+    """Budget degradation emits TOPOLOGY_BUDGET_WARNING event."""
+    events_captured: list[Any] = []
+
+    class _CapturingBus:
+        def emit(self, event: Any) -> None:
+            events_captured.append(event)
+
+    over_topo = _OverBudgetTopology(n_nodes=3, cost_per_node=2.0)
+
+    class _OverBudgetEngine:
+        def generate(self, task: str, hint: Any, system: int, budget: float) -> Any:
+            return MagicMock(topology=over_topo)
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=2),
+        engine=_OverBudgetEngine(),
+        assigner=None,
+        provider_pool=MagicMock(),
+        event_bus=_CapturingBus(),
+        llm_provider=_MockLLMProvider(),
+    )
+
+    await pipeline.run("test task", budget_usd=5.0)
+
+    stages = [e.meta.get("stage") for e in events_captured if hasattr(e, "meta")]
+    assert "TOPOLOGY_BUDGET_WARNING" in stages
