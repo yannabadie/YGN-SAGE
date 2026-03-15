@@ -795,6 +795,7 @@ def boot_agent_system(
     registry = ModelRegistry()
     orchestrator = None
     _cap_matrix = None
+    _runtime_adapters: dict[str, Any] = {}
 
     if not use_mock_llm:
         from sage.orchestrator import CognitiveOrchestrator

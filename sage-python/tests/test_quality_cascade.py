@@ -25,7 +25,7 @@ class FakeRegistry:
 
 @pytest.mark.asyncio
 async def test_quality_cascade_escalates_on_low_quality():
-    """Low quality response from cheap model → escalate to better model."""
+    """Empty response scores 0.0 → escalate to better model."""
     from sage.orchestrator import ModelAgent
 
     cheap = FakeModel("gemini-flash-lite", cost_input=0.0003)
@@ -39,12 +39,13 @@ async def test_quality_cascade_escalates_on_low_quality():
         quality_threshold=0.6,
     )
 
+    # Empty response scores 0.0 (definitively bad) → triggers escalation
     with patch.object(agent, "_call_provider", new_callable=AsyncMock) as mock_call:
-        mock_call.side_effect = ["ok", "Here is a detailed, correct implementation..."]
+        mock_call.side_effect = ["", "Here is a detailed, correct implementation..."]
         result = await agent.run("implement sort")
 
     assert "detailed" in result
-    assert mock_call.call_count == 2  # cheap tried first, then escalated
+    assert mock_call.call_count == 2  # empty tried first, then escalated
 
 
 @pytest.mark.asyncio
