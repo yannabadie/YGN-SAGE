@@ -120,11 +120,43 @@ class TopologyRunner:
         else:
             provider, config = self._llm, self._config
 
-        response = await provider.generate(
-            messages=messages,
-            config=config,
-        )
-        output = response.content or ""
+        # Per-node resilience: retry with fallback provider on failure
+        output = ""
+        try:
+            response = await provider.generate(
+                messages=messages,
+                config=config,
+            )
+            output = response.content or ""
+        except Exception as exc:
+            provider_name = getattr(config, "provider", "unknown")
+            log.warning(
+                "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
+                node_idx, role, provider_name, str(exc)[:150],
+            )
+            # Fallback to default provider
+            if provider is not self._llm:
+                try:
+                    fallback_config = self._config or LLMConfig(provider="default", model="default")
+                    response = await self._llm.generate(
+                        messages=messages,
+                        config=fallback_config,
+                    )
+                    output = response.content or ""
+                    log.info(
+                        "[TopologyRunner] node %d (%s) succeeded with fallback provider",
+                        node_idx, role,
+                    )
+                except Exception as fallback_exc:
+                    log.error(
+                        "[TopologyRunner] node %d (%s) fallback also failed: %s",
+                        node_idx, role, str(fallback_exc)[:150],
+                    )
+            else:
+                log.error(
+                    "[TopologyRunner] node %d (%s) default provider failed, no fallback: %s",
+                    node_idx, role, str(exc)[:150],
+                )
         self._node_outputs[node_idx] = output
         log.info(
             "[TopologyRunner] node %d (%s) completed, output %d chars",

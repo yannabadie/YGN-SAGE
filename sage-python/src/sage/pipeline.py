@@ -513,8 +513,22 @@ class CognitiveOrchestrationPipeline:
                 result = await runner2.run(ctx.task)
             ctx.result = result
         except Exception as exc:
-            log.error("Stage 4 multi-agent execution failed: %s", exc)
-            ctx.result = f"Error: {exc}"
+            log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
+            # Fallback: run task directly with default provider
+            if self.llm_provider:
+                try:
+                    from sage.llm.base import Message, Role
+                    response = await self.llm_provider.generate(
+                        messages=[Message(role=Role.USER, content=ctx.task)],
+                        config=self.llm_config,
+                    )
+                    ctx.result = response.content or ""
+                    log.info("Stage 4 fallback single-agent succeeded (%d chars)", len(ctx.result))
+                except Exception as fallback_exc:
+                    log.error("Stage 4 fallback also failed: %s", fallback_exc)
+                    ctx.result = ""
+            else:
+                ctx.result = ""
 
         return ctx
 
