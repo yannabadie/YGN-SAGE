@@ -75,6 +75,12 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<verification::SmtVerificationResult>()?;
     }
 
+    #[cfg(all(feature = "smt", feature = "tool-executor"))]
+    {
+        m.add_class::<verification::quality_labeler::QualityLabeler>()?;
+        m.add_class::<verification::quality_labeler::QualityLabel>()?;
+    }
+
     // Add sort utility functions
     m.add_function(wrap_pyfunction!(sort_utils::vectorized_partition_h96, m)?)?;
     m.add_function(wrap_pyfunction!(sort_utils::h96_quicksort, m)?)?;

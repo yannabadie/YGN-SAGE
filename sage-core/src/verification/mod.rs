@@ -12,3 +12,7 @@ mod smt;
 
 #[cfg(feature = "smt")]
 pub use smt::*;
+
+// Quality labeler — requires both SMT (OxiZ) and tool-executor (tree-sitter)
+#[cfg(all(feature = "smt", feature = "tool-executor"))]
+pub mod quality_labeler;
