@@ -1027,6 +1027,18 @@ def boot_agent_system(
     if _pipeline and _controller:
         _pipeline.controller = _controller
 
+    # Wire QualityEstimator into pipeline Stage 5 LEARN for bandit feedback
+    # (ETH-SRI ICLR '25, PILOT 2508.21141: bandit must learn from actual quality)
+    _pipeline_qe = locals().get("_qe")  # defined inside TopologyController block
+    if not _pipeline_qe:
+        try:
+            from sage.quality_estimator import QualityEstimator
+            _pipeline_qe = QualityEstimator()
+        except Exception:
+            pass
+    if _pipeline and _pipeline_qe:
+        _pipeline.quality_estimator = _pipeline_qe
+
     return AgentSystem(
         agent_loop=loop,
         agent_pool=agent_pool,

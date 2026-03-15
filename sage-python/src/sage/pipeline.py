@@ -254,7 +254,7 @@ class CognitiveOrchestrationPipeline:
         return ctx
 
     def _check_topology_budget(self, ctx: PipelineContext) -> None:
-        """Pre-validate budget feasibility (Phase C)."""
+        """Pre-validate budget feasibility — degrade to single-node if over budget."""
         if ctx.topology and hasattr(ctx.topology, 'node_count'):
             total_node_cost = 0.0
             nc = ctx.topology.node_count()
@@ -263,8 +263,26 @@ class CognitiveOrchestrationPipeline:
                 if node:
                     total_node_cost += getattr(node, 'max_cost_usd', 0.0)
             if total_node_cost > ctx.budget:
-                log.warning("Topology budget %.2f > pipeline budget %.2f", total_node_cost, ctx.budget)
+                log.warning(
+                    "Topology budget %.2f > pipeline budget %.2f — degrading to single-node",
+                    total_node_cost, ctx.budget,
+                )
                 self._emit("TOPOLOGY_BUDGET_WARNING", {"total_cost": total_node_cost, "budget": ctx.budget})
+                # Degrade: replace with single-node template topology
+                ctx.topology = self._make_single_node_topology(ctx)
+
+    def _make_single_node_topology(self, ctx: PipelineContext) -> Any:
+        """Create a minimal single-node topology as budget-safe fallback."""
+        try:
+            from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+
+            topo = TopologyGraph("sequential")
+            node = TopologyNode(role="agent", model_id="", system=ctx.system)
+            topo.add_node(node)
+            return topo
+        except ImportError:
+            log.debug("sage_core unavailable, topology=None (single-agent mode)")
+            return None
 
     # ── Stage 3: Assign Models ──────────────────────────────────────────────
 
@@ -300,6 +318,26 @@ class CognitiveOrchestrationPipeline:
                     ctx.assignments[i] = getattr(node, "model_id", "")
         except Exception as exc:
             log.warning("Stage 3 assign failed: %s", exc)
+
+        # Filter out models assigned to unavailable providers (circuit breaker open)
+        if self.provider_pool and hasattr(self.provider_pool, 'is_available'):
+            for node_idx, model_id in list(ctx.assignments.items()):
+                profile = (
+                    self.provider_pool._registry.get(model_id)
+                    if self.provider_pool._registry else None
+                )
+                provider_name = getattr(profile, 'provider', '') if profile else ''
+                if provider_name and not self.provider_pool.is_available(provider_name):
+                    default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
+                    if default_model:
+                        log.info(
+                            "Stage 3: %s provider unavailable (circuit open), "
+                            "node %d reassigned %s -> %s",
+                            provider_name, node_idx, model_id, default_model,
+                        )
+                        ctx.assignments[node_idx] = default_model
+                        if hasattr(ctx.topology, 'set_node_model_id'):
+                            ctx.topology.set_node_model_id(node_idx, default_model)
 
         # Formal verification (non-blocking): prove every node has a valid provider
         try:
@@ -535,17 +573,27 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 5: Learn ──────────────────────────────────────────────────────
 
     def _stage_learn(self, ctx: PipelineContext) -> None:
-        """Stage 5: Record outcome for learning."""
+        """Stage 5: Record outcome for learning.
+
+        Quality signal for bandit feedback (ETH-SRI ICLR '25, PILOT 2508.21141):
+        - Empty result: quality = 0.0 (task failed)
+        - QualityEstimator available: multi-signal score (0.0-1.0)
+        - Fallback: quality = 0.5 (generated something, unknown quality)
+        """
         import re
 
-        quality = 0.5
-        if self.quality_estimator and ctx.result:
+        # Empty result => total failure, bandit must learn from it
+        if not ctx.result or not ctx.result.strip():
+            quality = 0.0
+        elif self.quality_estimator:
             try:
                 quality = self.quality_estimator.estimate(
                     ctx.task, ctx.result, ctx.latency_ms
                 )
             except Exception:
-                pass
+                quality = 0.5  # fallback: generated something
+        else:
+            quality = 0.5  # no estimator: generated something
 
         # PRM lightweight scoring (Phase C) — 6th formal signal
         # Guard: only call PRM on structured content (<think>, assert, code)

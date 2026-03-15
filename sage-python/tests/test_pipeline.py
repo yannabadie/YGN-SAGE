@@ -63,6 +63,10 @@ class _MockTopology:
     def get_node(self, idx: int) -> Any:
         return self._nodes[idx] if idx < len(self._nodes) else None
 
+    def set_node_model_id(self, idx: int, model_id: str) -> None:
+        if idx < len(self._nodes):
+            self._nodes[idx].model_id = model_id
+
 
 class _MockGenerateResult:
     """Mock result from TopologyEngine.generate()."""
@@ -345,6 +349,51 @@ async def test_pipeline_quality_estimator_used_in_learn():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_empty_result_records_zero_quality():
+    """Stage 5 records quality=0.0 when result is empty (bandit learns from failure)."""
+    bandit = _MockBandit()
+    qe = _MockQualityEstimator()
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=1),
+        engine=None,
+        assigner=None,
+        provider_pool=MagicMock(),
+        bandit=bandit,
+        quality_estimator=qe,
+        llm_provider=None,  # No provider => empty result
+    )
+
+    result = await pipeline.run("This will fail")
+
+    assert result == ""
+    assert len(bandit.recorded) == 1
+    # Empty result => quality must be 0.0, not 0.5
+    assert bandit.recorded[0][1] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_pipeline_no_estimator_defaults_to_half():
+    """Stage 5 defaults to quality=0.5 when no QualityEstimator and result is non-empty."""
+    bandit = _MockBandit()
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=1),
+        engine=None,
+        assigner=None,
+        provider_pool=MagicMock(),
+        bandit=bandit,
+        quality_estimator=None,  # No estimator
+        llm_provider=_MockLLMProvider(),
+    )
+
+    await pipeline.run("Quick task")
+
+    assert len(bandit.recorded) == 1
+    assert bandit.recorded[0][1] == 0.5
+
+
+@pytest.mark.asyncio
 async def test_pipeline_context_preserves_budget():
     """Budget parameter flows through the context."""
     pipeline = CognitiveOrchestrationPipeline(
@@ -405,6 +454,127 @@ class TestDAGFeatures:
         mock_dag.node_ids = []
         f = compute_dag_features(mock_dag)
         assert f.omega == 0  # empty DAG
+
+
+class _MockProviderPool:
+    """Mock ProviderPool with circuit breaker support."""
+
+    def __init__(
+        self, unavailable_providers: set[str] | None = None, registry: Any = None
+    ) -> None:
+        self._unavailable = unavailable_providers or set()
+        self._registry = registry
+
+    def is_available(self, provider_name: str) -> bool:
+        return provider_name not in self._unavailable
+
+
+class _MockModelProfile:
+    """Minimal ModelProfile for registry.get()."""
+
+    def __init__(self, model_id: str, provider: str) -> None:
+        self.id = model_id
+        self.provider = provider
+
+
+class _MockRegistry:
+    """Minimal ModelRegistry for ProviderPool._registry."""
+
+    def __init__(self, profiles: dict[str, _MockModelProfile] | None = None) -> None:
+        self._profiles = profiles or {}
+
+    def get(self, model_id: str) -> _MockModelProfile | None:
+        return self._profiles.get(model_id)
+
+
+class TestCircuitBreakerFiltering:
+    """Stage 3 should reassign models whose provider has an open circuit breaker."""
+
+    def test_unavailable_provider_reassigned(self):
+        """Models from unavailable providers get reassigned to default model."""
+        topo = _MockTopology(n_nodes=2)
+        # Node 0 -> openai-model (openai provider, circuit OPEN)
+        # Node 1 -> google-model (google provider, circuit CLOSED)
+        registry = _MockRegistry({
+            "openai-model": _MockModelProfile("openai-model", "openai"),
+            "google-model": _MockModelProfile("google-model", "google"),
+        })
+        pool = _MockProviderPool(
+            unavailable_providers={"openai"},
+            registry=registry,
+        )
+
+        class _AssignerThatSetsModels:
+            def assign_models(self, topology: Any, domain: str, budget: float) -> int:
+                topology._nodes[0].model_id = "openai-model"
+                topology._nodes[1].model_id = "google-model"
+                return 2
+
+        # Provide llm_config with a default model
+        llm_config = MagicMock()
+        llm_config.model = "gemini-2.5-flash"
+
+        pipeline = CognitiveOrchestrationPipeline(
+            router=_MockRouter(system=2),
+            engine=None,
+            assigner=_AssignerThatSetsModels(),
+            provider_pool=pool,
+            llm_provider=_MockLLMProvider(),
+            llm_config=llm_config,
+        )
+
+        ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
+        ctx = pipeline._stage_assign_models(ctx)
+
+        # Node 0 should be reassigned to the default model
+        assert ctx.assignments[0] == "gemini-2.5-flash"
+        # Node 1 stays on google-model (provider is available)
+        assert ctx.assignments[1] == "google-model"
+
+    def test_all_providers_available_no_change(self):
+        """When all providers are available, no reassignment happens."""
+        topo = _MockTopology(n_nodes=2)
+        registry = _MockRegistry({
+            "model-a": _MockModelProfile("model-a", "google"),
+            "model-b": _MockModelProfile("model-b", "google"),
+        })
+        pool = _MockProviderPool(
+            unavailable_providers=set(),
+            registry=registry,
+        )
+
+        pipeline = CognitiveOrchestrationPipeline(
+            router=_MockRouter(system=2),
+            engine=None,
+            assigner=_MockAssigner(),
+            provider_pool=pool,
+            llm_provider=_MockLLMProvider(),
+            llm_config=MagicMock(model="default-model"),
+        )
+
+        ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
+        ctx = pipeline._stage_assign_models(ctx)
+
+        # Original assignments preserved (model-0, model-1 from _MockTopology)
+        assert ctx.assignments[0] == "model-0"
+        assert ctx.assignments[1] == "model-1"
+
+    def test_no_provider_pool_skips_filtering(self):
+        """Without a provider_pool, filtering is skipped gracefully."""
+        topo = _MockTopology(n_nodes=1)
+
+        pipeline = CognitiveOrchestrationPipeline(
+            router=_MockRouter(system=2),
+            engine=None,
+            assigner=_MockAssigner(),
+            provider_pool=None,
+            llm_provider=_MockLLMProvider(),
+        )
+
+        ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
+        ctx = pipeline._stage_assign_models(ctx)
+
+        assert ctx.assignments[0] == "model-0"
 
 
 class TestTopologySelection:
