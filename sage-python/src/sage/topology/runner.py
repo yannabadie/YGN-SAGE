@@ -128,8 +128,15 @@ class TopologyRunner:
                 config=config,
             )
             output = response.content or ""
+            # Record success in circuit breaker
+            provider_name = getattr(config, "provider", "unknown")
+            if self._provider_pool and hasattr(self._provider_pool, "record_success"):
+                self._provider_pool.record_success(provider_name)
         except Exception as exc:
             provider_name = getattr(config, "provider", "unknown")
+            # Record failure in circuit breaker
+            if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
+                self._provider_pool.record_failure(provider_name, exc)
             log.warning(
                 "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
                 node_idx, role, provider_name, str(exc)[:150],
