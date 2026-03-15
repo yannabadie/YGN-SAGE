@@ -1040,6 +1040,18 @@ class AgentLoop:
                 except Exception as e:
                     self._cb_evo.record_failure(e)
 
+            # SA-3: Online Evolution — report Rust TopologyEngine archive stats
+            if self._auto_evolve and self.topology_engine and not self._cb_evo.should_skip():
+                try:
+                    if hasattr(self.topology_engine, 'archive_cell_count'):
+                        learn_meta["evo_archive_cells"] = self.topology_engine.archive_cell_count()
+                        learn_meta["evo_archive_coverage"] = round(
+                            self.topology_engine.archive_coverage(), 3
+                        )
+                    self._cb_evo.record_success()
+                except Exception as e:
+                    self._cb_evo.record_failure(e)
+
             self._emit(LoopPhase.LEARN, **learn_meta)
 
         self._last_avr_iterations = self._s2_avr_retries

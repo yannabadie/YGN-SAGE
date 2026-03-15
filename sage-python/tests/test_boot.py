@@ -12,12 +12,15 @@ def test_default_validation_level_is_s1():
     assert system.agent_loop.config.validation_level == 1
 
 
-def test_evolution_disabled_by_default():
-    """Evolution should be disabled by default per Sprint 3 evidence."""
+def test_evolution_enabled_when_topology_engine_available():
+    """Evolution should be enabled when Rust TopologyEngine is available (SA-3)."""
     from sage.boot import boot_agent_system
 
     system = boot_agent_system(use_mock_llm=True)
-    assert not getattr(system.agent_loop, '_auto_evolve', True)
+    has_engine = system.agent_loop.topology_engine is not None
+    auto_evolve = getattr(system.agent_loop, '_auto_evolve', False)
+    # _auto_evolve matches topology_engine availability
+    assert auto_evolve == has_engine
 
 
 @pytest.mark.asyncio

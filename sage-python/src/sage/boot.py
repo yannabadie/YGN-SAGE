@@ -928,6 +928,13 @@ def boot_agent_system(
     loop.tool_executor = tool_executor
     loop.topology_engine = rust_topology_engine
 
+    # Enable online evolution when Rust TopologyEngine is available
+    # The engine records outcomes into MAP-Elites + CMA-ME archive,
+    # improving future topology selection (SA-3: Online Evolution)
+    if rust_topology_engine is not None:
+        loop._auto_evolve = True
+        _log.info("Online evolution enabled (Rust TopologyEngine available)")
+
     # AgeMem: 7 memory tools (3 STM + 4 LTM)
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
         tool_registry.register(tool)

@@ -40,6 +40,7 @@ class PipelineContext:
     task_dag: Any = None
     dag_features: DAGFeatures | None = None
     topology: Any = None
+    topology_id: str = ""
     assignments: dict[int, str] = field(default_factory=dict)
     result: str = ""
     latency_ms: float = 0.0
@@ -229,6 +230,10 @@ class CognitiveOrchestrationPipeline:
                 result = self.engine.generate(ctx.task, None, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):
                     ctx.topology = result.topology
+                    if hasattr(result, "topology_id"):
+                        ctx.topology_id = result.topology_id()
+                    elif hasattr(ctx.topology, "id"):
+                        ctx.topology_id = ctx.topology.id
                 elif result:
                     ctx.topology = result
                 self._check_topology_budget(ctx)
@@ -615,3 +620,28 @@ class CognitiveOrchestrationPipeline:
                 self.bandit.record("pipeline", quality, 0.0, ctx.latency_ms)
             except Exception:
                 pass
+
+        # Evolution feedback: record outcome in TopologyEngine archive
+        # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
+        if self.engine and quality is not None and ctx.topology is not None:
+            try:
+                topology_id = ctx.topology_id or getattr(ctx.topology, 'id', '')
+                if topology_id and hasattr(self.engine, 'record_outcome'):
+                    keywords = list(set(
+                        w.lower() for w in re.findall(r'\b\w{4,}\b', ctx.task)
+                    ))[:10]
+                    self.engine.record_outcome(
+                        topology_id,
+                        ctx.task[:200],
+                        keywords,
+                        None,  # embedding (future: compute at learn time)
+                        quality,
+                        0.0,  # cost (not tracked at pipeline level yet)
+                        ctx.latency_ms,
+                    )
+                    log.debug(
+                        "Evolution: recorded outcome for topology %s (quality=%.2f)",
+                        topology_id[:8], quality,
+                    )
+            except Exception as exc:
+                log.debug("Evolution feedback failed: %s", exc)
