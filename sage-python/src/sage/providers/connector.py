@@ -38,7 +38,7 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
     },
     {
         "provider": "deepseek",
-        "api_key_env": "DEEP_SEEK_API_KEY",
+        "api_key_env": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com",
         "sdk": "openai",
     },
@@ -93,6 +93,9 @@ class ProviderConnector:
         for cfg in self.configs:
             provider = cfg["provider"]
             api_key = os.environ.get(cfg["api_key_env"], "")
+            # Fallback: also check legacy DEEP_SEEK_API_KEY spelling
+            if not api_key and cfg["provider"] == "deepseek":
+                api_key = os.environ.get("DEEP_SEEK_API_KEY", "")
 
             if not api_key:
                 logger.debug("Skipping %s: %s not set", provider, cfg["api_key_env"])
