@@ -841,14 +841,23 @@ def boot_agent_system(
         _runtime_adapters: dict[str, Any] = {}
         for _cfg in PROVIDER_CONFIGS:
             _pname = _cfg["provider"]
-            if _pname in _discovered_providers and _cfg.get("sdk") == "openai":
-                _api_key = os.environ.get(_cfg["api_key_env"], "")
-                if _api_key:
-                    _runtime_adapters[_pname] = OpenAICompatProvider(
-                        api_key=_api_key,
-                        base_url=_cfg.get("base_url"),
-                        provider_name=_pname,
-                    )
+            if _pname not in _discovered_providers:
+                continue
+            _api_key = os.environ.get(_cfg["api_key_env"], "")
+            # Fallback for legacy env var spelling
+            if not _api_key and _pname == "deepseek":
+                _api_key = os.environ.get("DEEP_SEEK_API_KEY", "")
+            if not _api_key:
+                continue
+            if _cfg.get("sdk") == "google-genai":
+                from sage.llm.google import GoogleProvider
+                _runtime_adapters[_pname] = GoogleProvider(api_key=_api_key)
+            else:
+                _runtime_adapters[_pname] = OpenAICompatProvider(
+                    api_key=_api_key,
+                    base_url=_cfg.get("base_url"),
+                    provider_name=_pname,
+                )
         _cap_matrix.populate_from_providers(
             list(_discovered_providers), adapters=_runtime_adapters,
         )
@@ -948,7 +957,9 @@ def boot_agent_system(
                 default_provider=provider,
                 registry=registry,
                 default_config=llm_config,
+                providers=_runtime_adapters,
             )
+            _log.info("ProviderPool: %d live providers — %s", len(_runtime_adapters), list(_runtime_adapters.keys()))
         except Exception as exc:
             _log.warning("ProviderPool init failed: %s", exc)
 
