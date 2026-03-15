@@ -202,7 +202,13 @@ class BigCodeBenchBench:
         timeout: float = 30.0,
     ) -> tuple[bool, str]:
         """Evaluate solution and return (passed, stderr) for AVR retry."""
-        script = f"""{solution}
+        # Force headless matplotlib to prevent GUI popups during eval
+        script = f"""import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+plt.switch_backend('Agg')
+
+{solution}
 
 {test_code}
 
