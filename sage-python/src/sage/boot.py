@@ -809,9 +809,15 @@ def boot_agent_system(
             if _running_loop and _running_loop.is_running():
                 import concurrent.futures
                 with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    pool.submit(lambda: asyncio.run(registry.refresh())).result(timeout=15)
+                    pool.submit(lambda: asyncio.run(registry.refresh())).result(timeout=30)
             else:
-                asyncio.run(registry.refresh())
+                # Wrap in timeout to prevent hanging on slow provider discovery
+                async def _refresh_with_timeout():
+                    try:
+                        await asyncio.wait_for(registry.refresh(), timeout=30)
+                    except asyncio.TimeoutError:
+                        _log.warning("Provider discovery timed out (30s) — using cached/TOML models only")
+                asyncio.run(_refresh_with_timeout())
             # Log per-provider summary
             from collections import Counter
             available = registry.list_available()

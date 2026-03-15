@@ -107,7 +107,22 @@ class ProviderConnector:
                 elif cfg["sdk"] == "google-genai":
                     models = await self._discover_google(api_key)
                 else:
-                    models = self._discover_openai_compat(cfg, api_key)
+                    # Wrap sync discovery in thread with timeout to prevent hanging
+                    import asyncio
+                    import concurrent.futures
+                    loop = asyncio.get_event_loop()
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        try:
+                            models = await asyncio.wait_for(
+                                loop.run_in_executor(
+                                    executor,
+                                    self._discover_openai_compat, cfg, api_key,
+                                ),
+                                timeout=15.0,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("Provider %s discovery timed out (15s)", provider)
+                            continue
 
                 all_models.extend(models)
                 logger.info("Discovered %d models from %s", len(models), provider)
@@ -139,7 +154,10 @@ class ProviderConnector:
             logger.debug("google-genai not installed, skipping Google discovery")
             return []
 
+        import httpx
         client = genai.Client(api_key=api_key)
+        # Corporate proxy SSL bypass
+        client._api_client._httpx_client = httpx.Client(verify=False, timeout=30)
         models: list[DiscoveredModel] = []
 
         for m in client.models.list():
@@ -184,7 +202,13 @@ class ProviderConnector:
             logger.debug("openai package not installed, skipping %s", cfg["provider"])
             return []
 
-        client = openai.OpenAI(api_key=api_key, base_url=cfg.get("base_url"))
+        import httpx
+        http_client = httpx.Client(verify=False, timeout=15)
+        client = openai.OpenAI(
+            api_key=api_key,
+            base_url=cfg.get("base_url"),
+            http_client=http_client,
+        )
         response = client.models.list()
         models: list[DiscoveredModel] = []
 
