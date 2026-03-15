@@ -13,6 +13,45 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# ── Discovery cache (24h TTL, ~/.sage/discovery_cache/) ──────────────────────
+import json as _json
+import time as _time
+from pathlib import Path as _Path
+
+_CACHE_DIR = _Path.home() / ".sage" / "discovery_cache"
+_CACHE_TTL_SECONDS = 24 * 3600  # 24 hours
+
+
+def _cache_path(provider: str, cache_dir: _Path | None = None) -> _Path:
+    return (cache_dir or _CACHE_DIR) / f"{provider}_models.json"
+
+
+def _read_cache(
+    provider: str, cache_dir: _Path | None = None, ttl: int = _CACHE_TTL_SECONDS
+) -> list[dict[str, Any]] | None:
+    path = _cache_path(provider, cache_dir)
+    if not path.exists():
+        return None
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+        if _time.time() - data.get("timestamp", 0) > ttl:
+            return None
+        return data.get("models", [])
+    except (ValueError, OSError):
+        return None
+
+
+def _write_cache(
+    provider: str, models: list[dict[str, Any]], cache_dir: _Path | None = None
+) -> None:
+    d = cache_dir or _CACHE_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    payload = {"timestamp": _time.time(), "models": models}
+    _cache_path(provider, d).write_text(
+        _json.dumps(payload, indent=2), encoding="utf-8"
+    )
+
+
 # ── Provider configuration table ──────────────────────────────────────────────
 # sdk: "google-genai" uses the google.genai client; "openai" uses openai.OpenAI.
 # hardcoded_models: skip API discovery and use these model IDs instead.
@@ -148,6 +187,11 @@ class ProviderConnector:
 
     async def _discover_google(self, api_key: str) -> list[DiscoveredModel]:
         """Discover models via google-genai SDK."""
+        cached = _read_cache("google")
+        if cached is not None:
+            logger.info("Using cached Google model list (%d models)", len(cached))
+            return [DiscoveredModel(**m) for m in cached]
+
         try:
             from google import genai
         except ImportError:
@@ -155,9 +199,9 @@ class ProviderConnector:
             return []
 
         import httpx
+        from sage.llm._ssl import ssl_verify
         client = genai.Client(api_key=api_key)
-        # Corporate proxy SSL bypass
-        client._api_client._httpx_client = httpx.Client(verify=False, timeout=30)
+        client._api_client._httpx_client = httpx.Client(verify=ssl_verify(), timeout=30)
         models: list[DiscoveredModel] = []
 
         for m in client.models.list():
@@ -190,12 +234,25 @@ class ProviderConnector:
                 raw_meta={"input_token_limit": ctx, "output_token_limit": out},
             ))
 
+        _write_cache("google", [
+            {"id": m.id, "provider": m.provider,
+             "context_window": m.context_window,
+             "max_output_tokens": m.max_output_tokens,
+             "supports_thinking": m.supports_thinking}
+            for m in models
+        ])
         return models
 
     def _discover_openai_compat(
         self, cfg: dict[str, Any], api_key: str
     ) -> list[DiscoveredModel]:
         """Discover models via OpenAI-compatible models.list() endpoint."""
+        provider_name = cfg["provider"]
+        cached = _read_cache(provider_name)
+        if cached is not None:
+            logger.info("Using cached %s model list (%d models)", provider_name, len(cached))
+            return [DiscoveredModel(**m) for m in cached]
+
         try:
             import openai
         except ImportError:
@@ -203,7 +260,8 @@ class ProviderConnector:
             return []
 
         import httpx
-        http_client = httpx.Client(verify=False, timeout=15)
+        from sage.llm._ssl import ssl_verify
+        http_client = httpx.Client(verify=ssl_verify(), timeout=15)
         client = openai.OpenAI(
             api_key=api_key,
             base_url=cfg.get("base_url"),
@@ -226,6 +284,9 @@ class ProviderConnector:
                 provider=cfg["provider"],
             ))
 
+        _write_cache(provider_name, [
+            {"id": m.id, "provider": m.provider} for m in models
+        ])
         return models
 
     def _hardcoded(

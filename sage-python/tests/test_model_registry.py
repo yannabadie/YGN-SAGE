@@ -164,6 +164,7 @@ class TestProviderConnector:
     @pytest.mark.asyncio
     async def test_discover_openai_compat(self, monkeypatch):
         """OpenAI-compatible discovery returns model IDs."""
+        monkeypatch.setattr("sage.providers.connector._read_cache", lambda *a, **kw: None)
         monkeypatch.setenv("TEST_KEY", "fake-key")
         monkeypatch.setattr("shutil.which", lambda _: None)
 
@@ -192,6 +193,7 @@ class TestProviderConnector:
     @pytest.mark.asyncio
     async def test_discover_google(self, monkeypatch):
         """Google discovery strips 'models/' prefix and extracts metadata."""
+        monkeypatch.setattr("sage.providers.connector._read_cache", lambda *a, **kw: None)
         monkeypatch.setenv("GOOGLE_API_KEY", "fake-key")
         monkeypatch.setattr("shutil.which", lambda _: None)
 
