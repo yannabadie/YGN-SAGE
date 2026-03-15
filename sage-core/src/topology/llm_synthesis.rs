@@ -99,6 +99,9 @@ pub struct RoleAssignment {
     pub system: u8,
     #[serde(default)]
     pub capabilities: Vec<String>,
+    /// Custom system prompt for this agent. Empty = use role-based default.
+    #[serde(default)]
+    pub prompt: String,
 }
 
 /// The structure design parsed from Stage 2 JSON.
@@ -257,7 +260,7 @@ impl TopologySynthesizer {
 
         // Add nodes from role assignments
         for role in roles {
-            let node = TopologyNode::new(
+            let mut node = TopologyNode::new(
                 role.name.clone(),
                 role.model.clone(),
                 role.system,
@@ -266,6 +269,10 @@ impl TopologySynthesizer {
                 1.0,
                 60.0,
             );
+            // Propagate LLM-generated system prompt if present
+            if !role.prompt.is_empty() {
+                node.prompt = role.prompt.clone();
+            }
             graph.add_node(node);
         }
 
@@ -515,18 +522,21 @@ mod tests {
                 model: "m".into(),
                 system: 1,
                 capabilities: vec![],
+                prompt: String::new(),
             },
             RoleAssignment {
                 name: "b".into(),
                 model: "m".into(),
                 system: 2,
                 capabilities: vec!["code".into()],
+                prompt: String::new(),
             },
             RoleAssignment {
                 name: "c".into(),
                 model: "m".into(),
                 system: 1,
                 capabilities: vec![],
+                prompt: String::new(),
             },
         ];
         let structure = StructureDesign {
@@ -550,12 +560,14 @@ mod tests {
                 model: "m".into(),
                 system: 1,
                 capabilities: vec![],
+                prompt: String::new(),
             },
             RoleAssignment {
                 name: "b".into(),
                 model: "m".into(),
                 system: 1,
                 capabilities: vec![],
+                prompt: String::new(),
             },
         ];
         let structure = StructureDesign {
@@ -609,6 +621,68 @@ mod tests {
         let graph = TopologySynthesizer::build_graph(&roles, &structure).unwrap();
         assert_eq!(graph.node_count(), 0);
         assert_eq!(graph.edge_count(), 0);
+    }
+
+    #[test]
+    fn test_parse_roles_with_prompt() {
+        let json = r#"{
+            "roles": [
+                {
+                    "name": "coder",
+                    "model": "gemini-2.5-flash",
+                    "system": 2,
+                    "capabilities": ["code_generation"],
+                    "prompt": "You are an expert Python developer. Write clean, well-tested code."
+                },
+                {
+                    "name": "reviewer",
+                    "model": "gemini-3.1-pro",
+                    "system": 2,
+                    "capabilities": ["code_review"]
+                }
+            ]
+        }"#;
+        let roles = TopologySynthesizer::parse_roles(json).unwrap();
+        assert_eq!(roles.len(), 2);
+        assert_eq!(
+            roles[0].prompt,
+            "You are an expert Python developer. Write clean, well-tested code."
+        );
+        // Missing prompt field defaults to empty string
+        assert_eq!(roles[1].prompt, "");
+    }
+
+    #[test]
+    fn test_build_graph_propagates_prompts() {
+        let roles = vec![
+            RoleAssignment {
+                name: "planner".into(),
+                model: "m".into(),
+                system: 2,
+                capabilities: vec![],
+                prompt: "You are a task decomposition specialist.".into(),
+            },
+            RoleAssignment {
+                name: "executor".into(),
+                model: "m".into(),
+                system: 1,
+                capabilities: vec![],
+                prompt: "".into(), // empty = use role-based default
+            },
+        ];
+        let structure = StructureDesign {
+            adjacency: vec![vec![0, 1], vec![0, 0]],
+            edge_types: vec![
+                vec!["".into(), "control".into()],
+                vec!["".into(), "".into()],
+            ],
+            template: "sequential".into(),
+        };
+        let graph = TopologySynthesizer::build_graph(&roles, &structure).unwrap();
+        let node0 = graph.try_get_node(0).unwrap();
+        let node1 = graph.try_get_node(1).unwrap();
+        assert_eq!(node0.prompt, "You are a task decomposition specialist.");
+        assert!(node1.prompt.is_empty(), "Empty prompt should stay empty");
     }
 
     #[test]

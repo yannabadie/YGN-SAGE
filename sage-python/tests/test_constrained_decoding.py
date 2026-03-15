@@ -256,8 +256,8 @@ def test_llm_caller_config_carries_schema():
         def add_edge(self, i, j, e): pass
 
     fake_sage_core.TopologyGraph = lambda t: FakeGraph()
-    fake_sage_core.TopologyNode = lambda *a: object()
-    fake_sage_core.TopologyEdge = lambda *a: object()
+    fake_sage_core.TopologyNode = lambda *a, **kw: object()
+    fake_sage_core.TopologyEdge = lambda *a, **kw: object()
     sys.modules["sage_core"] = fake_sage_core  # type: ignore[assignment]
 
     orig_caller = sys.modules.pop("sage.topology.llm_caller", None)

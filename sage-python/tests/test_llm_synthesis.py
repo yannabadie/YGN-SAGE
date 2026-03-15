@@ -71,6 +71,99 @@ def test_parse_and_build_topology():
     assert graph.edge_count() == 1
 
 
+def test_build_role_prompt_requests_system_prompts():
+    """Role prompt should ask LLM to generate per-agent system prompts."""
+    from sage.topology.llm_caller import build_role_prompt
+    prompt = build_role_prompt(task="Analyze a dataset", max_agents=3)
+    # The prompt should instruct the LLM to include a 'prompt' field
+    assert "prompt" in prompt.lower()
+    assert "system prompt" in prompt.lower() or "system message" in prompt.lower()
+
+
+def test_parse_and_build_topology_with_prompts():
+    """LLM-synthesized nodes should carry per-agent system prompts."""
+    try:
+        from sage_core import TopologyGraph
+    except ImportError:
+        pytest.skip("sage_core not compiled")
+
+    from sage.topology.llm_caller import parse_and_build_topology
+
+    roles_json = json.dumps({
+        "roles": [
+            {
+                "name": "planner",
+                "model": "gemini-2.5-flash",
+                "system": 2,
+                "capabilities": ["planning"],
+                "prompt": "You are a task decomposition specialist. Break complex tasks into atomic sub-tasks.",
+            },
+            {
+                "name": "coder",
+                "model": "gemini-2.5-flash",
+                "system": 2,
+                "capabilities": ["code_generation"],
+                "prompt": "You are an expert Python developer. Write clean, efficient, well-tested code.",
+            },
+        ]
+    })
+    structure_json = json.dumps({
+        "adjacency": [[0, 1], [0, 0]],
+        "edge_types": [["", "control"], ["", ""]],
+        "template": "sequential",
+    })
+
+    graph = parse_and_build_topology(roles_json, structure_json)
+    assert graph is not None
+    assert graph.node_count() == 2
+
+    node0 = graph.get_node(0)
+    node1 = graph.get_node(1)
+    assert node0.prompt == "You are a task decomposition specialist. Break complex tasks into atomic sub-tasks."
+    assert node1.prompt == "You are an expert Python developer. Write clean, efficient, well-tested code."
+
+
+def test_parse_and_build_topology_missing_prompt_defaults_empty():
+    """When prompt field is absent from role JSON, node.prompt should be empty."""
+    try:
+        from sage_core import TopologyGraph
+    except ImportError:
+        pytest.skip("sage_core not compiled")
+
+    from sage.topology.llm_caller import parse_and_build_topology
+
+    roles_json = json.dumps({
+        "roles": [
+            {"name": "agent", "model": "gemini-2.5-flash", "system": 1, "capabilities": []},
+        ]
+    })
+    structure_json = json.dumps({
+        "adjacency": [[0]],
+        "edge_types": [[""]],
+        "template": "sequential",
+    })
+
+    graph = parse_and_build_topology(roles_json, structure_json)
+    assert graph is not None
+    node = graph.get_node(0)
+    assert node.prompt == "", "Missing prompt should default to empty string"
+
+
+def test_template_fallback_has_empty_prompts():
+    """Template-generated nodes should have empty prompts (runner uses role-based fallback)."""
+    try:
+        from sage_core import TopologyGraph, TopologyNode
+    except ImportError:
+        pytest.skip("sage_core not compiled")
+
+    # Template path: nodes are created without custom prompts
+    graph = TopologyGraph("sequential")
+    node = TopologyNode("worker", "gemini-2.5-flash", 1, [], 0, 1.0, 60.0)
+    graph.add_node(node)
+    retrieved = graph.get_node(0)
+    assert retrieved.prompt == "", "Template nodes should have empty prompt (role-based fallback)"
+
+
 def test_parse_dimension_mismatch():
     """Dimension mismatch should return None."""
     try:

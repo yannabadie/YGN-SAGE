@@ -26,7 +26,7 @@ def build_role_prompt(
     max_agents: int = 4,
     available_models: list[str] | None = None,
 ) -> str:
-    """Build the Stage 1 prompt: role assignment."""
+    """Build the Stage 1 prompt: role assignment with per-agent system prompts."""
     models_str = ", ".join(available_models or ["gemini-2.5-flash"])
     return (
         "You are a multi-agent topology designer. Given a task, assign roles to agents.\n\n"
@@ -34,10 +34,23 @@ def build_role_prompt(
         f"CONSTRAINTS:\n"
         f"- Maximum {max_agents} agents\n"
         f"- Available models: {models_str}\n"
-        "- Each agent needs: name, model, system tier (1=fast, 2=deliberate, 3=formal), capabilities list\n\n"
+        "- Each agent needs:\n"
+        "  1. name: short role name (e.g. 'coder', 'reviewer', 'planner')\n"
+        "  2. model: model ID from the available list\n"
+        "  3. system: cognitive tier (1=fast/reflexive, 2=deliberate/analytical, 3=formal/verification)\n"
+        "  4. capabilities: list of required capabilities (e.g. 'code_generation', 'code_review')\n"
+        "  5. prompt: detailed system prompt for this agent — specific instructions, expertise, "
+        "constraints, and output format expectations. This prompt will be injected as the agent's "
+        "system message. Make it task-specific and actionable (2-5 sentences).\n\n"
         "Respond with ONLY valid JSON (no markdown, no explanation):\n"
         '{\n  "roles": [\n'
-        '    {"name": "agent_name", "model": "model_id", "system": 2, "capabilities": ["cap1"]}\n'
+        '    {\n'
+        '      "name": "agent_name",\n'
+        '      "model": "model_id",\n'
+        '      "system": 2,\n'
+        '      "capabilities": ["cap1"],\n'
+        '      "prompt": "You are an expert ... Your task is to ..."\n'
+        '    }\n'
         "  ]\n}"
     )
 
@@ -105,7 +118,7 @@ def parse_and_build_topology(
 
     for role in roles:
         # TopologyNode(role, model_id, system, required_capabilities,
-        #              security_label, max_cost_usd, max_wall_time_s)
+        #              security_label, max_cost_usd, max_wall_time_s, prompt)
         node = TopologyNode(
             role.get("name", "agent"),
             role.get("model", "gemini-2.5-flash"),
@@ -114,6 +127,7 @@ def parse_and_build_topology(
             0,     # security_label
             1.0,   # max_cost_usd
             60.0,  # max_wall_time_s
+            prompt=role.get("prompt", ""),
         )
         graph.add_node(node)
 
@@ -165,8 +179,9 @@ async def synthesize_topology(
                         "model": {"type": "string"},
                         "system": {"type": "integer"},
                         "capabilities": {"type": "array", "items": {"type": "string"}},
+                        "prompt": {"type": "string"},
                     },
-                    "required": ["name", "model", "system", "capabilities"],
+                    "required": ["name", "model", "system", "capabilities", "prompt"],
                 },
             }
         },
