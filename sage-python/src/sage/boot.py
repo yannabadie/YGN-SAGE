@@ -602,8 +602,10 @@ def boot_agent_system(
     _cards_toml = None
     for _cards_dir in [
         Path.cwd() / "sage-core" / "config" / "cards.toml",
-        Path(__file__).parent.parent.parent.parent.parent / "sage-core" / "config" / "cards.toml",
+        Path.cwd().parent / "sage-core" / "config" / "cards.toml",
+        Path(__file__).resolve().parent.parent.parent.parent / "sage-core" / "config" / "cards.toml",
         Path.home() / ".sage" / "cards.toml",
+        Path.cwd() / "config" / "cards.toml",
     ]:
         if _cards_dir.exists():
             _cards_toml = str(_cards_dir)
