@@ -484,7 +484,7 @@ class CognitiveOrchestrationPipeline:
             try:
                 from sage_core import TopologyExecutor  # type: ignore[import-not-found]
 
-                executor = TopologyExecutor()
+                executor = TopologyExecutor(ctx.topology)
             except ImportError:
                 log.warning("sage_core TopologyExecutor unavailable, falling back")
                 ctx.result = "Error: TopologyExecutor unavailable"
