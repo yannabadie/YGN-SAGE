@@ -96,9 +96,14 @@ class TopologyRunner:
         role = getattr(node, "role", f"node-{node_idx}")
         caps = getattr(node, "required_capabilities", [])
 
-        system_prompt = f"You are acting as: {role}."
-        if caps:
-            system_prompt += f" Your capabilities: {', '.join(caps)}."
+        # Use custom prompt if available, otherwise generate from role
+        custom_prompt = getattr(node, "prompt", "")
+        if custom_prompt:
+            system_prompt = custom_prompt
+        else:
+            system_prompt = f"You are acting as: {role}."
+            if caps:
+                system_prompt += f" Your capabilities: {', '.join(caps)}."
 
         messages: list[Message] = [
             Message(role=Role.SYSTEM, content=system_prompt),

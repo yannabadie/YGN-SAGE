@@ -146,12 +146,15 @@ pub struct TopologyNode {
     /// Maximum wall-clock time in seconds for this node.
     #[pyo3(get)]
     pub max_wall_time_s: f32,
+    /// Custom system prompt for this node. Empty = use role-based default.
+    #[pyo3(get, set)]
+    pub prompt: String,
 }
 
 #[pymethods]
 impl TopologyNode {
     #[new]
-    #[pyo3(signature = (role, model_id, system=1, required_capabilities=vec![], security_label=0, max_cost_usd=1.0, max_wall_time_s=60.0))]
+    #[pyo3(signature = (role, model_id, system=1, required_capabilities=vec![], security_label=0, max_cost_usd=1.0, max_wall_time_s=60.0, prompt=String::new()))]
     pub fn py_new(
         role: String,
         model_id: String,
@@ -160,8 +163,9 @@ impl TopologyNode {
         security_label: u8,
         max_cost_usd: f32,
         max_wall_time_s: f32,
+        prompt: String,
     ) -> Self {
-        Self::new(
+        let mut node = Self::new(
             role,
             model_id,
             system,
@@ -169,7 +173,9 @@ impl TopologyNode {
             security_label,
             max_cost_usd,
             max_wall_time_s,
-        )
+        );
+        node.prompt = prompt;
+        node
     }
 
     fn __repr__(&self) -> String {
@@ -212,6 +218,7 @@ impl TopologyNode {
             security_label,
             max_cost_usd,
             max_wall_time_s,
+            prompt: String::new(),
         }
     }
 
@@ -226,6 +233,7 @@ impl TopologyNode {
             security_label: 0,
             max_cost_usd: 1.0,
             max_wall_time_s: 60.0,
+            prompt: String::new(),
         }
     }
 }
