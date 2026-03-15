@@ -226,7 +226,7 @@ class CognitiveOrchestrationPipeline:
         # Try DynamicTopologyEngine
         if self.engine:
             try:
-                result = self.engine.generate(ctx.task, ctx.system, ctx.budget)
+                result = self.engine.generate(ctx.task, None, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):
                     ctx.topology = result.topology
                 elif result:
