@@ -11,6 +11,11 @@ services:
       - "8002:8002"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - SAGE_DASHBOARD_TOKEN=${SAGE_DASHBOARD_TOKEN:-}
       - PYTHONIOENCODING=utf-8
     command: >
@@ -29,7 +34,13 @@ services:
       - "8080:8000"
     environment:
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - GROK_API_KEY=${GROK_API_KEY:-}
+      - KIMI_API_KEY=${KIMI_API_KEY:-}
+      - MINIMAX_API_KEY=${MINIMAX_API_KEY:-}
       - SAGE_DASHBOARD_TOKEN=${SAGE_DASHBOARD_TOKEN:-}
+      - PYTHONIOENCODING=utf-8
     command: python ui/app.py
     profiles:
       - full
