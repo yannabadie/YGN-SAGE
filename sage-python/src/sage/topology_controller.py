@@ -157,24 +157,28 @@ class TopologyController:
 
     def _compute_quality(self, node_idx: int, result: str, task: str, ctx: Any) -> float:
         """80% QualityEstimator + 20% PRM (if structured content detected)."""
-        heuristic = 0.5
+        base_score: float | None = None
         if self._qe:
             try:
                 latency = getattr(ctx, 'latency_ms', 0.0)
-                heuristic = self._qe.estimate(task, result, latency)
+                base_score = self._qe.estimate(task, result, latency)
             except Exception:
                 pass
+
+        # If estimator abstained (None), default to 0.5 for controller decisions
+        # (controller must always produce a float to make adaptation decisions)
+        quality = base_score if base_score is not None else 0.5
 
         # PRM only for structured content (guard: -1.0 on plain text)
         if self._prm and _STRUCTURED_CONTENT.search(result):
             try:
                 r_path, _ = self._prm.calculate_r_path(result)
                 if r_path >= 0.0:  # valid PRM score
-                    return 0.8 * heuristic + 0.2 * r_path
+                    return 0.8 * quality + 0.2 * r_path
             except Exception as exc:
                 log.debug("PRM scoring failed: %s", exc)
 
-        return heuristic
+        return quality
 
     def compute_consistency_score(self, outputs: list[str]) -> float:
         """Mean pairwise cosine similarity of parallel outputs."""

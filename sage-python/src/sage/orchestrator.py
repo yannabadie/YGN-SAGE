@@ -16,6 +16,9 @@ from sage.execution_decision import ExecutionDecision
 from sage.providers.registry import ModelRegistry, ModelProfile
 from sage.providers.connector import PROVIDER_CONFIGS
 from sage.quality_estimator import QualityEstimator
+
+# Module-level singleton for static-like usage in ModelAgent cascade
+_quality_estimator = QualityEstimator()
 from sage.strategy.metacognition import ComplexityRouter
 from sage.agents.sequential import SequentialAgent
 from sage.agents.parallel import ParallelAgent
@@ -114,8 +117,8 @@ class ModelAgent:
 
                 # Quality-gated cascade: check if response is good enough
                 if self._quality_threshold is not None and self._registry:
-                    quality = QualityEstimator.estimate(task, result)
-                    if quality < self._quality_threshold:
+                    quality = _quality_estimator.estimate(task, result)
+                    if quality is not None and quality < self._quality_threshold:
                         log.info(
                             "ModelAgent %s: quality %.2f < %.2f on %s, escalating",
                             self.name, quality, self._quality_threshold, current_model.id,

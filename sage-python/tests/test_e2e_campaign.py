@@ -166,7 +166,7 @@ class TestC3TopologyControllerAdaptation:
         from sage.pipeline import PipelineContext
 
         controller = TopologyController(
-            quality_estimator=QualityEstimator,
+            quality_estimator=QualityEstimator(),
         )
 
         task = "Write a Python function to compute factorial"

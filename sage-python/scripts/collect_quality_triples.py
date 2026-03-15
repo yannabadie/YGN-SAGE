@@ -178,14 +178,15 @@ async def collect_triples(
 
             latency_ms = (time.perf_counter() - t0) * 1000
 
-            # --- Step B: Heuristic quality score ---
-            heuristic_score = QualityEstimator.estimate(
+            # --- Step B: Quality score (formal/learned, or None if no backend) ---
+            _qe = QualityEstimator()
+            heuristic_score = _qe.estimate(
                 task=task_prompt,
                 result=response,
                 latency_ms=latency_ms,
-                had_errors=had_errors,
-                avr_iterations=avr_iterations,
             )
+            if heuristic_score is None:
+                heuristic_score = 0.5  # training data needs a float; use neutral
 
             # --- Step C: Ground-truth evaluation via EvalPlus ---
             base_passed = False

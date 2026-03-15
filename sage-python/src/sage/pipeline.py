@@ -576,11 +576,14 @@ class CognitiveOrchestrationPipeline:
         """Stage 5: Record outcome for learning.
 
         Quality signal for bandit feedback (ETH-SRI ICLR '25, PILOT 2508.21141):
-        - Empty result: quality = 0.0 (task failed)
-        - QualityEstimator available: multi-signal score (0.0-1.0)
-        - Fallback: quality = 0.5 (generated something, unknown quality)
+        - Empty result: quality = 0.0 (definitively bad, bandit learns from it)
+        - QualityEstimator returns float: use it
+        - QualityEstimator returns None: abstain — bandit does NOT record
+        - No estimator: abstain — bandit does NOT record
         """
         import re
+
+        quality: float | None = None
 
         # Empty result => total failure, bandit must learn from it
         if not ctx.result or not ctx.result.strip():
@@ -591,23 +594,23 @@ class CognitiveOrchestrationPipeline:
                     ctx.task, ctx.result, ctx.latency_ms
                 )
             except Exception:
-                quality = 0.5  # fallback: generated something
-        else:
-            quality = 0.5  # no estimator: generated something
+                quality = None  # cannot assess — abstain
 
         # PRM lightweight scoring (Phase C) — 6th formal signal
         # Guard: only call PRM on structured content (<think>, assert, code)
+        # Only blend when quality is known (not None)
         _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
-        if self.prm and ctx.result and _STRUCTURED.search(ctx.result):
+        if self.prm and quality is not None and ctx.result and _STRUCTURED.search(ctx.result):
             try:
                 r_path, _ = self.prm.calculate_r_path(ctx.result)
                 if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
                     quality = 0.8 * quality + 0.2 * r_path
-                    log.debug("PRM blended quality: %.2f (heuristic + PRM)", quality)
+                    log.debug("PRM blended quality: %.2f (estimator + PRM)", quality)
             except Exception as exc:
                 log.warning("PRM scoring failed in LEARN: %s", exc)
 
-        if self.bandit and hasattr(self.bandit, "record"):
+        # Only record to bandit when quality is known — never guess
+        if quality is not None and self.bandit and hasattr(self.bandit, "record"):
             try:
                 self.bandit.record("pipeline", quality, 0.0, ctx.latency_ms)
             except Exception:

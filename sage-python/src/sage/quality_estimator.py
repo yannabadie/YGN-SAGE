@@ -1,113 +1,79 @@
-"""Multi-signal quality estimation for topology learning feedback.
+"""Quality estimation via formal verification (Z3) or learned model (ONNX).
 
-Replaces the rudimentary `len(result) > 10` heuristic with a 5-signal
-estimator that produces a 0.0-1.0 quality score.
+Zero heuristics. Quality is either formally verified, model-predicted,
+or unknown (None — bandit abstains from recording).
 """
 from __future__ import annotations
 
-import re
-from typing import Any
+import logging
 
-from sage.constants import (
-    QUALITY_BASELINE,
-    QUALITY_LENGTH_WEIGHT,
-    QUALITY_CODE_WEIGHT,
-    QUALITY_ERROR_WEIGHT,
-    QUALITY_AVR_FAST,
-    QUALITY_AVR_MEDIUM,
-    QUALITY_AVR_SLOW,
-    QUALITY_NONCODE_BASELINE,
-    QUALITY_LENGTH_DENOM_SHORT,
-    QUALITY_LENGTH_DENOM_LONG,
-)
+log = logging.getLogger(__name__)
 
 
 class QualityEstimator:
-    """Estimate result quality from multiple signals (0.0-1.0).
+    """Estimate result quality without heuristics.
 
-    Signals:
-    1. Non-empty response (baseline 0.3)
-    2. Length adequacy relative to task complexity (0.0-0.2)
-    3. Code presence when task requests code (0.0-0.2)
-    4. Absence of error indicators (0.0-0.15)
-    5. AVR convergence speed (0.0-0.15)
+    Uses Rust QualityLabeler (Z3 formal verification) or Rust ONNX model.
+    Returns None when quality cannot be assessed — never guesses.
     """
 
+    def __init__(self) -> None:
+        self._learned = self._try_load_onnx()
+        self._labeler = self._try_load_labeler()
+
+        if self._learned:
+            log.info("QualityEstimator: ONNX learned model loaded")
+        elif self._labeler:
+            log.info("QualityEstimator: Z3 formal labeler active")
+        else:
+            log.warning("QualityEstimator: no backend available — will abstain")
+
     @staticmethod
+    def _try_load_onnx():  # type: ignore[return]
+        try:
+            from sage_core import RustLearnedQualityEstimator
+            from pathlib import Path
+            model_path = Path(__file__).parent.parent.parent / "models" / "quality_estimator_v2.onnx"
+            tok_path = Path(__file__).parent.parent.parent / "models" / "tokenizer.json"
+            if model_path.exists() and tok_path.exists():
+                return RustLearnedQualityEstimator(str(model_path), str(tok_path))
+        except (ImportError, Exception) as exc:
+            log.debug("ONNX quality model not available: %s", exc)
+        return None
+
+    @staticmethod
+    def _try_load_labeler():  # type: ignore[return]
+        try:
+            from sage_core import QualityLabeler
+            return QualityLabeler()
+        except ImportError:
+            log.debug("QualityLabeler not available (sage_core not built with smt+tool-executor)")
+        return None
+
     def estimate(
+        self,
         task: str,
         result: str,
         latency_ms: float = 0.0,
-        had_errors: bool = False,
-        avr_iterations: int = 0,
-    ) -> float:
+        **kwargs,
+    ) -> float | None:
+        """Estimate quality. Returns float 0.0-1.0 or None (abstain)."""
         if not result or not result.strip():
             return 0.0
 
-        score = QUALITY_BASELINE  # Signal 1: non-empty
+        if self._learned:
+            try:
+                return float(self._learned.estimate(task, result))
+            except Exception as exc:
+                log.debug("ONNX estimate failed: %s", exc)
 
-        # Signal 2: Length adequacy (task-aware)
-        task_words = len(task.split())
-        result_words = len(result.split())
-        task_wants_code = any(
-            kw in task.lower()
-            for kw in ("write", "code", "implement", "function", "class", "fix", "debug")
-        )
-        if task_wants_code:
-            # Code tasks: expect substantial output
-            if task_words < 10:
-                score += min(result_words / QUALITY_LENGTH_DENOM_SHORT, 1.0) * QUALITY_LENGTH_WEIGHT
-            else:
-                score += min(result_words / QUALITY_LENGTH_DENOM_LONG, 1.0) * QUALITY_LENGTH_WEIGHT
-        else:
-            # Non-code tasks (math, Q&A): length is not a quality proxy.
-            # A correct math answer ("42") or factual answer is valid at any length.
-            if result_words >= 1:
-                score += QUALITY_LENGTH_WEIGHT
+        if self._labeler:
+            try:
+                label = self._labeler.label(task, result)
+                if label is not None and label.assessable:
+                    return float(label.score)
+                return None
+            except Exception as exc:
+                log.debug("Z3 labeler failed: %s", exc)
 
-        # Signal 3: Code task + code presence
-        code_keywords = {"def ", "class ", "function ", "import ", "```"}
-        result_has_code = any(kw in result for kw in code_keywords)
-        if task_wants_code and result_has_code:
-            score += QUALITY_CODE_WEIGHT
-        elif not task_wants_code:
-            score += QUALITY_NONCODE_BASELINE
-
-        # Signal 4: No error indicators (pattern-matched to reduce false positives)
-        error_patterns = (r"^error:", r"^traceback", r"^exception:", r"failed to", r"cannot ")
-        if not had_errors and not any(re.search(p, result.lower(), re.MULTILINE) for p in error_patterns):
-            score += QUALITY_ERROR_WEIGHT
-
-        # Signal 5: AVR convergence
-        if avr_iterations > 0:
-            if avr_iterations <= 2:
-                score += QUALITY_AVR_FAST
-            elif avr_iterations <= 4:
-                score += QUALITY_AVR_MEDIUM
-            else:
-                score += QUALITY_AVR_SLOW
-
-        return min(score, 1.0)
-
-
-# Rust acceleration (Phase 2 rationalization)
-try:
-    from sage_core import RustQualityEstimator as _RustQE
-    _HAS_RUST_QE = True
-except ImportError:
-    _HAS_RUST_QE = False
-
-
-def create_quality_estimator() -> Any:
-    """Factory: returns Rust estimator when available, Python otherwise.
-
-    Returns a ``QualityEstimator``-compatible object (duck-typed). The Rust
-    implementation conforms to the same interface but is not a Python subclass.
-    """
-    if _HAS_RUST_QE:
-        try:
-            qe = _RustQE()
-            return qe
-        except Exception:
-            pass
-    return QualityEstimator()
+        return None

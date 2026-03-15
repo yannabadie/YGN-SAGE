@@ -59,23 +59,21 @@ def test_sandbox_validator_never_crashes(code):
     task=st.text(min_size=0, max_size=500),
     result=st.text(min_size=0, max_size=500),
     latency_ms=st.floats(min_value=0.0, max_value=1e6, allow_nan=False, allow_infinity=False),
-    had_errors=st.booleans(),
-    avr_iterations=st.integers(min_value=0, max_value=20),
 )
 @settings(max_examples=200)
-def test_quality_estimator_score_in_range(task, result, latency_ms, had_errors, avr_iterations):
-    """QualityEstimator.estimate() must always return a score in [0.0, 1.0]."""
+def test_quality_estimator_score_in_range(task, result, latency_ms):
+    """QualityEstimator.estimate() must return float in [0.0, 1.0] or None (abstain)."""
     from sage.quality_estimator import QualityEstimator
 
-    score = QualityEstimator.estimate(
+    qe = QualityEstimator()
+    score = qe.estimate(
         task=task,
         result=result,
         latency_ms=latency_ms,
-        had_errors=had_errors,
-        avr_iterations=avr_iterations,
     )
-    assert isinstance(score, float)
-    assert 0.0 <= score <= 1.0
+    assert score is None or isinstance(score, float)
+    if score is not None:
+        assert 0.0 <= score <= 1.0
 
 
 @given(

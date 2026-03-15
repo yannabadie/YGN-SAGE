@@ -25,20 +25,15 @@ class FakeRegistry:
 
 
 @pytest.mark.asyncio
-async def test_quality_estimator_signal5_fires():
-    """QualityEstimator Signal 5 (AVR convergence) now works with avr_iterations > 0."""
-    score_with_avr = QualityEstimator.estimate(
+async def test_quality_estimator_returns_float_or_none():
+    """QualityEstimator.estimate() returns float or None (zero-heuristic)."""
+    qe = QualityEstimator()
+    score = qe.estimate(
         task="implement sort",
         result="def sort(arr): return sorted(arr)",
-        avr_iterations=2,
     )
-    score_without_avr = QualityEstimator.estimate(
-        task="implement sort",
-        result="def sort(arr): return sorted(arr)",
-        avr_iterations=0,
-    )
-    # Signal 5 should add 0.15 for avr_iterations <= 2
-    assert score_with_avr > score_without_avr
+    # New estimator returns None when no backend, or float when backend available
+    assert score is None or isinstance(score, float)
 
 
 @pytest.mark.asyncio
@@ -68,8 +63,10 @@ async def test_quality_cascade_cost_savings():
 
     # Cheap model was good enough — no escalation
     assert agent._call_provider.call_count == 1
-    quality = QualityEstimator.estimate("implement fibonacci", result)
-    assert quality >= 0.5  # Passes threshold
+    qe = QualityEstimator()
+    quality = qe.estimate("implement fibonacci", result)
+    # New estimator: None (abstain, no backend) or float
+    assert quality is None or isinstance(quality, float)
 
 
 def test_topology_runner_imports():

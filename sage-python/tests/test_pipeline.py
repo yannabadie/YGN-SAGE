@@ -373,8 +373,8 @@ async def test_pipeline_empty_result_records_zero_quality():
 
 
 @pytest.mark.asyncio
-async def test_pipeline_no_estimator_defaults_to_half():
-    """Stage 5 defaults to quality=0.5 when no QualityEstimator and result is non-empty."""
+async def test_pipeline_no_estimator_abstains():
+    """Stage 5 abstains from bandit recording when no QualityEstimator (quality=None)."""
     bandit = _MockBandit()
 
     pipeline = CognitiveOrchestrationPipeline(
@@ -389,8 +389,8 @@ async def test_pipeline_no_estimator_defaults_to_half():
 
     await pipeline.run("Quick task")
 
-    assert len(bandit.recorded) == 1
-    assert bandit.recorded[0][1] == 0.5
+    # No estimator => quality=None => bandit does NOT record
+    assert len(bandit.recorded) == 0
 
 
 @pytest.mark.asyncio

@@ -784,7 +784,9 @@ if first_failure:
         """Estimate result quality using the QualityEstimator."""
         try:
             from sage.quality_estimator import QualityEstimator
-            return QualityEstimator.estimate(task, result or "")
+            qe = QualityEstimator()
+            score = qe.estimate(task, result or "")
+            return score if score is not None else 0.0
         except Exception:
             return 0.0
 

@@ -442,15 +442,19 @@ class AgentSystem:
         if not self.topology_engine or topology_result is None:
             return
         try:
-            # Estimate quality from result (multi-signal, 0.0-1.0)
+            # Estimate quality from result — returns float or None (abstain)
             from sage.quality_estimator import QualityEstimator  # noqa: E402
-            quality = QualityEstimator.estimate(
+            _qe = QualityEstimator()
+            quality = _qe.estimate(
                 task, result, latency_ms=(time.perf_counter() - run_start) * 1000,
-                had_errors=bool(getattr(self.agent_loop, '_last_error', None)),
-                avr_iterations=getattr(self.agent_loop, '_last_avr_iterations', 0),
             )
             cost = self.agent_loop.total_cost_usd
             latency_ms = (time.perf_counter() - run_start) * 1000
+
+            # Only record when quality is known (not None)
+            if quality is None:
+                _log.info("Topology outcome: quality=None (abstain), skipping recording")
+                return
 
             # Extract keywords from task
             keywords = list(set(
