@@ -135,11 +135,11 @@ class OpenAICompatProvider:
 
         if self._client is None:
             import httpx
+            from sage.llm._ssl import ssl_verify
             client_kwargs: dict[str, Any] = {"api_key": self.api_key}
             if self.base_url:
                 client_kwargs["base_url"] = self.base_url
-            # Corporate proxy SSL bypass
-            client_kwargs["http_client"] = httpx.AsyncClient(verify=False, timeout=60)
+            client_kwargs["http_client"] = httpx.AsyncClient(verify=ssl_verify(), timeout=60)
             self._client = AsyncOpenAI(**client_kwargs)
 
         client = self._client
