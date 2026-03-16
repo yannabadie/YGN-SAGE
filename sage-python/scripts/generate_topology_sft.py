@@ -14,25 +14,19 @@ from __future__ import annotations
 import os
 import ssl
 
-# Auto-detect corporate proxy and patch SSL globally BEFORE any imports
-try:
-    import socket
-    _ctx = ssl.create_default_context()
-    with socket.create_connection(("www.google.com", 443), timeout=5) as _sock:
-        with _ctx.wrap_socket(_sock, server_hostname="www.google.com"):
-            pass
-except ssl.SSLCertVerificationError:
-    os.environ["CURL_CA_BUNDLE"] = ""
-    os.environ["REQUESTS_CA_BUNDLE"] = ""
-    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+# Configure SSL with corporate CA bundle if available
+_CA_BUNDLE = "C:/Code/certs/ca-bundle.pem"
+if os.path.exists(_CA_BUNDLE):
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", _CA_BUNDLE)
+    os.environ.setdefault("SSL_CERT_FILE", _CA_BUNDLE)
+    os.environ.setdefault("CURL_CA_BUNDLE", _CA_BUNDLE)
+    # Patch httpx to use the CA bundle (HuggingFace Hub uses httpx)
     import httpx as _hx
     _hx_orig = _hx.Client.__init__
     def _hx_patched(self, *a, **kw):
-        kw["verify"] = False
+        kw.setdefault("verify", _CA_BUNDLE)
         _hx_orig(self, *a, **kw)
     _hx.Client.__init__ = _hx_patched
-except Exception:
-    pass
 
 import argparse
 import asyncio
@@ -103,9 +97,20 @@ Rules:
 
 
 def _load_tasks(dataset: str, subset: str, limit: int | None):
-    """Load task prompts from BigCodeBench or APPS."""
+    """Load task prompts from BigCodeBench, APPS, or GSM8K."""
     tasks = []
-    if dataset == "bigcodebench":
+    if dataset == "gsm8k":
+        try:
+            from datasets import load_dataset
+            ds = load_dataset("openai/gsm8k", "main", split="test")
+            for i, row in enumerate(ds):
+                if limit and i >= limit:
+                    break
+                tasks.append((f"GSM8K/{i}", row.get("question", "")))
+        except Exception as exc:
+            log.error("GSM8K load failed: %s", exc)
+            sys.exit(1)
+    elif dataset == "bigcodebench":
         try:
             from bigcodebench.data import get_bigcodebench
             problems = get_bigcodebench(subset=subset)
