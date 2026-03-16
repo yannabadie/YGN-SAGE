@@ -201,7 +201,8 @@ def _generate_one_sync(client, model, task_id, prompt):
                 },
             },
             temperature=0.7,
-            max_tokens=2000,
+            max_completion_tokens=2000,
+            reasoning_effort="high",
         )
         content = response.choices[0].message.content
         topology = json.loads(content)
