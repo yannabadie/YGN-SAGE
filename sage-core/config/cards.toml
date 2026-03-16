@@ -288,7 +288,7 @@ factual = 0.70
 
 [[models]]
 id = "gpt-5.3-codex"
-provider = "openai"
+provider = "codex"
 family = "gpt-5.3"
 code_score = 0.85
 reasoning_score = 0.93
