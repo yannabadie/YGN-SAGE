@@ -117,7 +117,7 @@ def _load_tasks(dataset: str, subset: str, limit: int | None):
     elif dataset == "apps":
         try:
             from datasets import load_dataset
-            ds = load_dataset("codeparrot/apps", split="test")
+            ds = load_dataset("codeparrot/apps", split="test", trust_remote_code=True)
             for i, row in enumerate(ds):
                 if limit and i >= limit:
                     break
