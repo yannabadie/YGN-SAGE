@@ -35,16 +35,32 @@ from sage.constants import (
 log = logging.getLogger(__name__)
 
 
-# Approximate cost per 1K tokens (USD) for dashboard estimation
-_COST_PER_1K = {
-    "gpt-5.3-codex": 0.03,
-    "gpt-5.2": 0.06,
-    "gemini-3.1-pro-preview": 0.007,
-    "gemini-3-flash-preview": 0.0015,
-    "gemini-3.1-flash-lite-preview": 0.0005,
-    "gemini-2.5-flash-lite": 0.0003,
-    "gemini-2.5-flash": 0.001,
-}
+# Cost per 1K tokens (USD) — derived from cards.toml at boot, not hardcoded.
+_COST_PER_1K: dict[str, float] = {}
+
+
+def _load_cost_table() -> None:
+    """Populate _COST_PER_1K from ModelCard catalog (cards.toml)."""
+    global _COST_PER_1K
+    if _COST_PER_1K:
+        return  # already loaded
+    try:
+        from sage_core import ModelRegistry  # type: ignore[import-not-found]
+        from pathlib import Path
+        for p in [
+            Path.cwd() / "sage-core" / "config" / "cards.toml",
+            Path.cwd().parent / "sage-core" / "config" / "cards.toml",
+            Path.cwd() / "config" / "cards.toml",
+        ]:
+            if p.exists():
+                reg = ModelRegistry.from_toml_file(str(p))
+                for card in reg.all_models():
+                    # Average of input + output cost per 1M, converted to per 1K
+                    avg_per_m = (card.cost_input_per_m + card.cost_output_per_m) / 2
+                    _COST_PER_1K[card.id] = avg_per_m / 1000
+                break
+    except Exception:
+        pass  # Rust unavailable — DEFAULT_COST_PER_1K used as fallback
 
 
 def _estimate_tokens(text: str, actual_count: int | None = None) -> int:
@@ -567,6 +583,7 @@ class AgentLoop:
 
         # Emit final THINK event with aggregated content
         tokens = _estimate_tokens(full_text)
+        _load_cost_table()
         cost_per_k = _COST_PER_1K.get(self.config.llm.model, DEFAULT_COST_PER_1K)
         step_cost = (tokens / 1000) * cost_per_k
         self.total_cost_usd += step_cost
@@ -730,6 +747,7 @@ class AgentLoop:
             usage = getattr(response, "usage", None) or {}
             actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
             tokens = _estimate_tokens(content, actual_count=actual_total)
+            _load_cost_table()
             cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
             step_cost = (tokens / 1000) * cost_per_k
             self.total_cost_usd += step_cost
