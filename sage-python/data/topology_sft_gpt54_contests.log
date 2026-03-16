@@ -1,0 +1,293 @@
+2026-03-16 17:12:35,874 gen_sft: OpenAI client ready (model=gpt-5.4)
+2026-03-16 17:36:07,780 gen_sft: Loaded 165 tasks from code_contests/hard
+2026-03-16 17:36:07,782 gen_sft: Using 8 concurrent workers
+2026-03-16 17:36:35,258 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:36:48,985 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:36:53,266 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:36:58,965 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:02,607 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:03,471 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:04,046 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:07,169 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:25,067 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:27,463 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:27,480 gen_sft: Progress: 10/165 done, 10 valid (8 tasks/min, est. 21min remaining)
+2026-03-16 17:37:28,921 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:34,636 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:45,535 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:54,100 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:37:54,457 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:10,553 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:11,200 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:15,611 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:21,895 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:34,555 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:34,576 gen_sft: Progress: 20/165 done, 20 valid (8 tasks/min, est. 18min remaining)
+2026-03-16 17:38:41,165 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:47,106 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:38:56,181 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:10,472 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:11,942 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:19,224 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:21,743 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:28,573 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:39:50,801 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:04,642 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:04,662 gen_sft: Progress: 30/165 done, 30 valid (8 tasks/min, est. 18min remaining)
+2026-03-16 17:40:08,876 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:18,667 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:20,272 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:24,901 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:34,775 openai._base_client: Retrying request to /responses in 0.405007 seconds
+2026-03-16 17:40:37,498 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:39,940 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:40:59,192 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:01,794 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:07,529 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:10,655 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:10,673 gen_sft: Progress: 40/165 done, 40 valid (8 tasks/min, est. 16min remaining)
+2026-03-16 17:41:11,146 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:15,822 openai._base_client: Retrying request to /responses in 0.397580 seconds
+2026-03-16 17:41:17,336 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:24,789 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:26,731 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:35,259 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:51,113 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:56,497 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:41:58,995 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:06,210 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:22,250 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:22,263 gen_sft: Progress: 50/165 done, 50 valid (8 tasks/min, est. 14min remaining)
+2026-03-16 17:42:22,828 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:39,144 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:53,023 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:57,192 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:42:59,214 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:02,304 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:06,767 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:07,852 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:09,237 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:20,611 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:20,631 gen_sft: Progress: 60/165 done, 60 valid (8 tasks/min, est. 13min remaining)
+2026-03-16 17:43:30,918 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:32,235 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:32,382 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:39,511 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:39,997 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:43:49,738 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:00,791 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:12,581 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:16,311 openai._base_client: Retrying request to /responses in 0.818184 seconds
+2026-03-16 17:44:28,263 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:30,690 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:30,712 gen_sft: Progress: 70/165 done, 70 valid (8 tasks/min, est. 11min remaining)
+2026-03-16 17:44:37,604 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:48,085 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:44:51,680 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:08,167 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:16,579 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:25,107 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:33,416 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:40,508 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:54,842 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:57,346 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:45:57,364 gen_sft: Progress: 80/165 done, 80 valid (8 tasks/min, est. 10min remaining)
+2026-03-16 17:45:59,413 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:46:00,860 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:46:12,251 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:46:25,607 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:46:38,570 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:00,376 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:01,637 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:10,618 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:15,835 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:16,442 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:16,468 gen_sft: Progress: 90/165 done, 90 valid (8 tasks/min, est. 9min remaining)
+2026-03-16 17:47:17,398 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:28,606 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:32,619 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:40,076 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:42,755 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:47:59,746 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:17,305 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:21,096 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:24,271 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:28,911 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:28,936 gen_sft: Progress: 100/165 done, 100 valid (8 tasks/min, est. 8min remaining)
+2026-03-16 17:48:41,174 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:44,166 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:46,331 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:51,215 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:53,424 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:48:53,763 httpx: HTTP Request: POST https://api.ope2026-03-16 17:49:07,159 httpx: HTTP Requ2026-03-16 17:49:07,635 httpx: HTTP Request: POST https://api.ope2026-03-16 17:50:04,900 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:51:34,590 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:51:34,608 gen_sft: Progress: 90/165 done, 78 valid (1 tasks/min, est. 79min remaining)
+2026-03-16 17:53:21,455 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:54:27,591 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:54:47,545 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:55:24,552 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:55:56,070 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:57:00,901 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:58:42,386 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 17:59:40,581 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:00:02,723 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:00:33,582 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:00:33,585 gen_sft: Progress: 100/165 done, 88 valid (1 tasks/min, est. 67min remaining)
+2026-03-16 18:01:16,838 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:01:58,915 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:02:43,190 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:03:37,405 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:04:16,157 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:04:57,814 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:05:28,193 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:06:02,360 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:06:46,288 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:07:45,974 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:07:45,980 gen_sft: Progress: 110/165 done, 98 valid (1 tasks/min, est. 55min remaining)
+2026-03-16 18:09:06,455 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:09:51,891 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:10:45,883 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:11:09,845 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:11:42,823 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:12:25,193 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:13:09,100 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:13:40,535 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:15:23,313 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:15:41,630 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:15:41,632 gen_sft: Progress: 120/165 done, 108 valid (1 tasks/min, est. 45min remaining)
+2026-03-16 18:16:29,518 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:17:35,722 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:18:30,221 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:19:39,428 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:20:15,471 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:21:22,837 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:21:57,843 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:22:47,052 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:23:56,932 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:24:44,221 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:24:44,226 gen_sft: Progress: 130/165 done, 118 valid (1 tasks/min, est. 34min remaining)
+2026-03-16 18:25:32,062 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:27:55,846 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:28:41,856 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:29:02,944 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:29:57,036 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:31:01,059 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:31:41,868 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:32:01,854 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:33:13,268 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:33:22,141 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:33:22,143 gen_sft: Progress: 140/165 done, 128 valid (1 tasks/min, est. 24min remaining)
+2026-03-16 18:33:38,326 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:34:05,690 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:35:07,096 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:35:28,535 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:36:24,567 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:37:19,989 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:37:20,436 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:20,447 openai._base_client: Retrying request to /responses in 0.445056 seconds
+2026-03-16 18:37:21,150 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:21,151 openai._base_client: Retrying request to /responses in 0.988112 seconds
+2026-03-16 18:37:22,704 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:22,791 gen_sft: [CodeContests/146] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:37:23,058 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:23,060 openai._base_client: Retrying request to /responses in 0.473593 seconds
+2026-03-16 18:37:24,069 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:24,071 openai._base_client: Retrying request to /responses in 0.964076 seconds
+2026-03-16 18:37:25,392 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:25,395 gen_sft: [CodeContests/147] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:37:25,729 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:25,732 openai._base_client: Retrying request to /responses in 0.437143 seconds
+2026-03-16 18:37:26,479 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:26,483 openai._base_client: Retrying request to /responses in 0.913955 seconds
+2026-03-16 18:37:27,688 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:27,690 gen_sft: [CodeContests/148] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:37:27,956 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:27,959 openai._base_client: Retrying request to /responses in 0.455000 seconds
+2026-03-16 18:37:30,368 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:30,370 openai._base_client: Retrying request to /responses in 0.887635 seconds
+2026-03-16 18:37:31,527 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:31,529 gen_sft: [CodeContests/149] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:37:31,529 gen_sft: Progress: 150/165 done, 134 valid (1 tasks/min, est. 14min remaining)
+2026-03-16 18:37:31,923 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:31,925 openai._base_client: Retrying request to /responses in 0.439625 seconds
+2026-03-16 18:37:32,633 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:37:32,635 openai._base_client: Retrying request to /responses in 0.943736 seconds
+2026-03-16 18:38:45,435 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:38:45,769 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:45,771 openai._base_client: Retrying request to /responses in 0.436572 seconds
+2026-03-16 18:38:46,660 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:46,662 openai._base_client: Retrying request to /responses in 0.775105 seconds
+2026-03-16 18:38:47,824 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:47,826 gen_sft: [CodeContests/151] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:38:48,132 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:48,134 openai._base_client: Retrying request to /responses in 0.452226 seconds
+2026-03-16 18:38:48,830 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:48,835 openai._base_client: Retrying request to /responses in 0.996435 seconds
+2026-03-16 18:38:50,110 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:50,115 gen_sft: [CodeContests/152] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:38:50,402 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:50,404 openai._base_client: Retrying request to /responses in 0.460639 seconds
+2026-03-16 18:38:51,112 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:51,114 openai._base_client: Retrying request to /responses in 0.802531 seconds
+2026-03-16 18:38:52,218 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:52,221 gen_sft: [CodeContests/153] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:38:52,589 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:38:52,590 openai._base_client: Retrying request to /responses in 0.486756 seconds
+2026-03-16 18:39:36,066 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:39:36,412 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:36,413 openai._base_client: Retrying request to /responses in 0.404256 seconds
+2026-03-16 18:39:37,103 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:37,105 openai._base_client: Retrying request to /responses in 0.919268 seconds
+2026-03-16 18:39:38,336 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:38,339 gen_sft: [CodeContests/155] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:39:38,648 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:38,649 openai._base_client: Retrying request to /responses in 0.446070 seconds
+2026-03-16 18:39:39,439 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:39,440 openai._base_client: Retrying request to /responses in 0.993017 seconds
+2026-03-16 18:39:40,743 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:39:40,745 gen_sft: [CodeContests/156] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:40:52,868 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 200 OK"
+2026-03-16 18:40:53,179 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:53,181 openai._base_client: Retrying request to /responses in 0.383853 seconds
+2026-03-16 18:40:53,881 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:53,884 openai._base_client: Retrying request to /responses in 0.823754 seconds
+2026-03-16 18:40:55,066 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:55,068 gen_sft: [CodeContests/158] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:40:55,351 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:55,356 openai._base_client: Retrying request to /responses in 0.447505 seconds
+2026-03-16 18:40:56,172 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:56,175 openai._base_client: Retrying request to /responses in 0.923179 seconds
+2026-03-16 18:40:57,449 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:57,451 gen_sft: [CodeContests/159] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:40:57,452 gen_sft: Progress: 160/165 done, 137 valid (1 tasks/min, est. 4min remaining)
+2026-03-16 18:40:57,821 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:57,822 openai._base_client: Retrying request to /responses in 0.393169 seconds
+2026-03-16 18:40:58,603 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:58,605 openai._base_client: Retrying request to /responses in 0.991311 seconds
+2026-03-16 18:40:59,939 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:40:59,944 gen_sft: [CodeContests/160] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:41:00,223 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:00,225 openai._base_client: Retrying request to /responses in 0.444153 seconds
+2026-03-16 18:41:00,963 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:00,965 openai._base_client: Retrying request to /responses in 0.928670 seconds
+2026-03-16 18:41:02,252 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:02,254 gen_sft: [CodeContests/161] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:41:02,673 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:02,675 openai._base_client: Retrying request to /responses in 0.471482 seconds
+2026-03-16 18:41:03,513 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:03,515 openai._base_client: Retrying request to /responses in 0.868110 seconds
+2026-03-16 18:41:04,882 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:04,883 gen_sft: [CodeContests/162] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:41:05,301 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:05,302 openai._base_client: Retrying request to /responses in 0.485102 seconds
+2026-03-16 18:41:06,080 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:06,083 openai._base_client: Retrying request to /responses in 0.838919 seconds
+2026-03-16 18:41:07,171 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:07,176 gen_sft: [CodeContests/163] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:41:07,529 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:07,530 openai._base_client: Retrying request to /responses in 0.451914 seconds
+2026-03-16 18:41:08,241 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:08,243 openai._base_client: Retrying request to /responses in 0.962318 seconds
+2026-03-16 18:41:09,504 httpx: HTTP Request: POST https://api.openai.com/v1/responses "HTTP/1.1 429 Too Many Requests"
+2026-03-16 18:41:09,506 gen_sft: [CodeContests/164] Failed: Error code: 429 - {'error': {'message': 'You exceeded your current quota, please check your plan and
+2026-03-16 18:41:09,511 gen_sft: Done: 137 valid topologies from 165 tasks in 8648s (1.1 tasks/min), saved to data\topology_sft_gpt54_contests.jsonl

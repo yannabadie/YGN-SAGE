@@ -1,0 +1,29 @@
+Downloading microsoft/Phi-4-mini-instruct...
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+This model config has set a `rope_parameters['original_max_position_embeddings']` field, to be used together with `max_position_embeddings` to determine a scaling factor. Please set the `factor` field of `rope_parameters`with this ratio instead -- we recommend the use of this field over `original_max_position_embeddings`, as it is compatible with most model architectures.
+Tokenizer: 200019 vocab
+`torch_dtype` is deprecated! Use `dtype` instead!
+A new version of the following files was downloaded from https://huggingface.co/microsoft/Phi-4-mini-instruct:
+- modeling_phi3.py
+. Make sure to double-check they do not contain any added malicious code. To avoid downloading new versions of the code file, you can pin a revision.
+Traceback (most recent call last):
+  File "<string>", line 21, in <module>
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\models\auto\auto_factory.py", line 356, in from_pretrained
+    model_class = get_class_from_dynamic_module(
+        class_ref, pretrained_model_name_or_path, code_revision=code_revision, **hub_kwargs, **kwargs
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\dynamic_module_utils.py", line 583, in get_class_from_dynamic_module
+    return get_class_in_module(class_name, final_module, force_reload=force_download)
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\dynamic_module_utils.py", line 309, in get_class_in_module
+    module_spec.loader.exec_module(module)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^
+  File "<frozen importlib._bootstrap_external>", line 1023, in exec_module
+  File "<frozen importlib._bootstrap>", line 488, in _call_with_frames_removed
+  File "C:\Users\yann.abadie\.cache\huggingface\modules\transformers_modules\microsoft\Phi_hyphen_4_hyphen_mini_hyphen_instruct\cfbefacb99257ffa30c83adab238a50856ac3083\modeling_phi3.py", line 24, in <module>
+    from transformers.cache_utils import Cache, DynamicCache, SlidingWindowCache, StaticCache
+ImportError: cannot import name 'SlidingWindowCache' from 'transformers.cache_utils' (C:\ProgramData\miniforge3\Lib\site-packages\transformers\cache_utils.py)

@@ -1,0 +1,12 @@
+{
+  "add_prefix_space": false,
+  "backend": "tokenizers",
+  "bos_token": "<|endoftext|>",
+  "clean_up_tokenization_spaces": false,
+  "eos_token": "<|endoftext|>",
+  "is_local": false,
+  "model_max_length": 131072,
+  "pad_token": "<|endoftext|>",
+  "tokenizer_class": "TokenizersBackend",
+  "unk_token": "<|endoftext|>"
+}

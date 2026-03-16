@@ -1,0 +1,525 @@
+# YGN-SAGE - CLAUDE.md
+
+## Project Overview
+YGN-SAGE (Yann's Generative Neural Self-Adaptive Generation Engine) is an Agent Development Kit
+built on 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy.
+
+## Architecture
+- `sage-core/` - Rust orchestrator (PyO3 bindings to Python)
+- `sage-python/` - Python SDK for building agents
+- `sage-discover/` - Knowledge Pipeline (arXiv/S2/HF -> ExoCortex)
+- `ui/` - Control Dashboard (FastAPI + WebSocket + single-file HTML)
+- `docs/plans/` - BACKLOG.md (unimplemented ideas), ARCHITECTURE-DECISIONS.md (design rationale)
+- `Researches/` - Research papers (AlphaEvolve, PSRO, etc.)
+- `.github/workflows/ci.yml` - CI pipeline (Rust + Python sage + Python discover)
+
+### Key Python Modules (sage-python/src/sage/)
+- `boot.py` - Boot sequence, wires all pillars + EventBus + GuardrailPipeline + TopologyEngine + ContextualBandit into `AgentSystem`. Auto-discovers models via registry.refresh(), populates CapabilityMatrix, logs per-provider summary. Phase 6: topology generation on every task, outcome recording feeds S-MMU + MAP-Elites + bandit learning loop
+- `agent_loop.py` - Structured perceive->think->act->learn runtime with SLF-based S2 AVR (syntax-first + stagnation detection), Z3 S3 prompts, guardrails (input/runtime/output), CRAG-gated memory injection, code-task detection, AgentEvent schema, DriftMonitor wired into _emit() with sliding-window analysis
+- `agent_pool.py` - Dynamic sub-agent pool (create/run/ensemble)
+- `agents/sequential.py` - SequentialAgent: chain agents in series
+- `agents/parallel.py` - ParallelAgent: run agents concurrently with aggregator
+- `agents/loop_agent.py` - LoopAgent: iterate until exit condition
+- `agents/handoff.py` - Handoff: transfer control to specialist agent
+- `events/bus.py` - EventBus: in-proc event system (emit/subscribe/stream/query)
+- `guardrails/base.py` - GuardrailResult, Guardrail, GuardrailPipeline
+- `guardrails/builtin.py` - CostGuardrail, OutputGuardrail (default for text), SchemaGuardrail (for JSON mode)
+- `quality_estimator.py` - QualityEstimator: Z3 formal verification (syntax + arithmetic + bounds + structural) + ONNX learned model, zero heuristics. Returns float|None (abstain when uncertain). Rust QualityLabeler backend when sage_core[smt,tool-executor] available
+- `bench/runner.py` - BenchmarkRunner, BenchReport, TaskResult
+- `bench/humaneval.py` - HumanEval benchmark (164 problems, pass@1)
+- `bench/routing.py` - Routing accuracy benchmark (30 labeled tasks)
+- `bench/routing_quality.py` - Routing quality benchmark (45 labeled tasks) for ComplexityRouter and AdaptiveRouter ground truth evaluation
+- `bench/routing_downstream.py` - DownstreamEvaluator: tier precision, escalation rate, routing P50/P99 latency, quality tracking
+- `bench/evalplus_bench.py` - EvalPlus HumanEval+/MBPP+ adapter: 80x harder tests, subprocess evaluator (Windows-compatible)
+- `bench/ablation.py` - 6-config ablation framework: full, baseline, no-memory, no-avr, no-routing, no-guardrails
+- `bench/eval_protocol.py` - Official evaluation protocol: real-condition benchmarks with full error logging (traceback, phase, model, routing), JSONL error logs, JSON reports, post-mortem replay
+- `llm/router.py` - Model Router with 7 tiers, data-driven lookup from TOML + env vars
+- `llm/config_loader.py` - TOML config loader + env var resolution (SAGE_MODEL_<TIER>)
+- `llm/google.py` - Google Gemini provider + File Search grounding (google_search/file_search mutually exclusive)
+- `llm/codex.py` - OpenAI Codex CLI provider (+ Google fallback)
+- `orchestrator.py` - CognitiveOrchestrator: primary routing engine with cascade fallback (FrugalGPT: 3 attempts across providers), ModelAgent class
+- `providers/openai_compat.py` - OpenAI-compatible provider with per-provider quirk dispatch (DeepSeek, Kimi, Grok, MiniMax, OpenAI)
+- `providers/capabilities.py` - Provider capability registry: auto-populated at boot from discovered providers, 7 known provider capability sets
+- `strategy/metacognition.py` - ComplexityRouter (ex-MetacognitiveController): S1/S2/S3 tripartite routing via word-boundary regex (`\b`) heuristic + CGRS self-braking + speculative zone detection (0.35-0.55). Supports provider injection for LLM assessment (no vendor lock-in)
+- `strategy/adaptive_router.py` - AdaptiveRouter: 4-stage learned routing (structural → kNN embeddings → BERT ONNX → entropy probe; stage 3 online learning reserved). Duck-type compat with ComplexityRouter. Falls back to heuristic if sage_core[onnx] unavailable
+- `strategy/knn_router.py` - KnnRouter: kNN-based S1/S2/S3 routing using pre-computed exemplar embeddings (arXiv 2505.12601). 92% accuracy on 50 GT tasks (vs 52% heuristic). Auto-builds from ground truth at boot if .npz missing. Refuses hash embeddings.
+- `topology/evo_topology.py` - MAP-Elites evolutionary topology search
+- `topology/kg_rlvr.py` - Process Reward Model (Z3 DSL, safe AST evaluator — no eval()). All SMT paths (verify_invariant, verify_arithmetic, prove_memory_safety, check_loop_bound, score_with_z3) use Rust OxiZ first with z3-solver fallback. verify_invariant uses Rust verify_invariant_with_feedback() for clause-level diagnostic feedback stored in _last_invariant_feedback
+- `topology/llm_caller.py` - LLM topology synthesis (Path 3): role prompt → structure prompt → Rust TopologySynthesizer. Completes the 5-path strategy in DynamicTopologyEngine
+- `resilience.py` - CircuitBreaker: per-subsystem failure tracking (max_failures=3, opens with WARNING)
+- `tools/agent_tool.py` - AgentTool: wraps any agent (async run(task)->str) as a Tool for Agents-as-Tools pattern. Factory: `AgentTool.from_agent(agent, name, description)`
+- `monitoring/drift.py` - DriftMonitor: 3-signal behavioral drift detection (latency 40%, errors 40%, cost 20%). Actions: CONTINUE (<0.4), SWITCH_MODEL (0.4-0.7), RESET_AGENT (>0.7)
+- `evolution/engine.py` - Evolution engine with DGM context injection (5 SAMPO actions)
+- `evolution/llm_mutator.py` - LLM-driven code mutation with DGM Directive prompt section
+- `memory/memory_agent.py` - Autonomous entity extraction (heuristic or LLM), wired to LEARN phase. Supports provider injection (no vendor lock-in), falls back to GoogleProvider if none injected
+- `memory/compressor.py` - MEM1 per-step internal state + pressure-triggered compression + S-MMU write (compact_to_arrow_with_meta with keywords/embedding/summary)
+- `memory/embedder.py` - Embedder adapter: 3-tier fallback (RustEmbedder ONNX > sentence-transformers > hash, 768-dim) for S-MMU semantic edges. `_ensure_ort_dylib_path()` auto-discovers onnxruntime DLL from pip package.
+- `memory/smmu_context.py` - S-MMU context retrieval: queries multi-view graph (BFS, configurable weights), returns formatted context for THINK phase injection
+- `memory/episodic.py` - SQLite-backed episodic store (cross-session persistence) with in-memory fallback
+- `memory/semantic.py` - Entity-relation graph built by MemoryAgent, with SQLite persistence (`~/.sage/semantic.db`)
+- `memory/remote_rag.py` - ExoCortex (Google GenAI File Search API), implements `KnowledgeStore` protocol, auto-configured with DEFAULT_STORE. Configurable model via SAGE_EXOCORTEX_MODEL env var
+- `memory/relevance_gate.py` - CRAG-style keyword overlap gate: scores context vs task, threshold=0.3, blocks irrelevant memory injection
+- `memory/rag_backend.py` - `KnowledgeStore` protocol: pluggable RAG backend interface (search/ingest/store_name)
+- `memory/causal.py` - CausalMemory: entity-relation graph with directed causal edges + temporal ordering + SQLite persistence (optional `db_path`)
+- `memory/write_gate.py` - WriteGate: confidence-based write gating with abstention tracking
+- `tools/memory_tools.py` - 7 AgeMem tools (3 STM + 4 LTM) exposed to agent
+- `tools/exocortex_tools.py` - `search_exocortex` + `refresh_knowledge` agent tools
+- `contracts/task_node.py` - TaskNode IR: typed I/O schemas, capabilities, security labels, budgets
+- `contracts/verification.py` - VFResult, pre_check, post_check, run_verification
+- `contracts/dag.py` - TaskDAG: Kahn's topo sort, cycle detection, IO validation, ready_nodes
+- `contracts/z3_verify.py` - Z3 SMT: provider assignment via genuine Z3 SAT (`z3.PbEq` exactly-one). capability_coverage, budget_feasibility, type_compatibility are Python-native (~2000x faster)
+- `contracts/policy.py` - PolicyVerifier: info-flow labels, budget, fan-in/fan-out limits
+- `contracts/executor.py` - DAGExecutor: topo execution with VF pre/post checks + policy gate
+- `contracts/planner.py` - TaskPlanner: Plan-and-Act decomposition into verified TaskDAG
+- `contracts/repair.py` - RepairLoop: counterexample-guided retry with hard fences (CEGAR)
+- `contracts/cost_tracker.py` - CostTracker: cumulative per-node cost accounting with budget cap
+- `routing/shadow.py` - ShadowRouter: dual Rust/Python routing with JSONL divergence traces. 2-tier Phase 5 gate: soft (500 traces, <10% divergence), hard (1000 traces, <5% divergence)
+- `pipeline.py` - CognitiveOrchestrationPipeline: 5-stage orchestration (Classify → Decompose → Select Topology → Assign Models → Execute). Driven by ModelCards. EventBus observability at each stage.
+- `pipeline_stages.py` - Pure stage functions: _infer_domain, compute_dag_features (ω,δ,γ from AdaptOrch), select_macro_topology
+- `llm/provider_pool.py` - ProviderPool: resolves model_id → LLMProvider at topology execution time with cache + fallback
+- `llm/model_assigner.py` - Python ModelAssigner fallback: per-node model assignment using ModelCardCatalog (same algorithm as Rust)
+- `topology_controller.py` - TopologyController: runtime adaptation for Pipeline Stage 4. 4 actions: model upgrade, agent pruning, topology re-route, sub-agent spawn. Quality blending: 80% QualityEstimator + 20% PRM (structured content only). Research: AgentDropout, AdaptOrch, OpenSage
+- `consistency.py` - ConsistencyScore: mean pairwise cosine similarity for parallel output comparison. Rust SIMD batch_cosine_similarity when available, sentence-transformers fallback
+
+### Key Rust Modules (sage-core/src/)
+- `memory/mod.rs` - Arrow-backed working memory (SIMD/AVX-512) + S-MMU paging (wired: write via compressor, read via THINK phase). ULID-based chunk IDs (cross-session stable, globally unique). `last_chunk_id()` returns most recent chunk.
+- `memory/rag_cache.rs` - FIFO+TTL cache for File Search results (DashMap + atomic counters)
+- `sandbox/wasm.rs` - Wasm sandbox (wasmtime v36 LTS). `WasmSandbox` PyClass + `WasiState` (deny-by-default). `execute_precompiled()` / `execute_precompiled_wasi()` for Windows (no cranelift), `execute()` with JIT on Linux CI. Standalone `execute_wasi_component()` / `execute_bare_component()` for ToolExecutor. Behind `sandbox` feature flag.
+- `sandbox/validator.rs` — tree-sitter-python AST validation: 23 blocked modules, 21 blocked calls, 20 blocked dunders. Error-tolerant (partial trees on broken code). Behind `tool-executor` feature flag.
+- `sandbox/subprocess.rs` — Subprocess executor with tokio timeout + kill_on_drop. Writes code to temp file, feeds args via stdin. Behind `tool-executor` feature flag.
+- `sandbox/tool_executor.rs` — `ToolExecutor` PyO3 class: combines validator + Wasm WASI sandbox + subprocess fallback. `validate()`, `validate_and_execute()`, `execute_raw()`, `load_precompiled_component()`, `load_component()`, `has_wasm()`, `has_wasi()`. Execution priority: Wasm WASI → bare Wasm → subprocess. Releases GIL via `py.allow_threads()`. Behind `tool-executor` feature flag; Wasm paths behind `sandbox` feature.
+- `memory/embedder.rs` - RustEmbedder: ONNX Runtime embedder (snowflake-arctic-embed-m, 768-dim, L2-normalized) via `ort` crate (`load-dynamic` feature). Behind `onnx` feature flag. PyO3 class: `embed(text)`, `embed_batch(texts)`, `batch_cosine_similarity(texts)` (SIMD pairwise cosine for ConsistencyScore). Auto-discovers `onnxruntime.dll` from pip package or `ORT_DYLIB_PATH` env var. Robust token_type_ids handling (auto-detects from model inputs).
+- `routing/features.rs` - StructuralFeatures: zero-cost keyword/structural feature extraction for Stage 0 pre-routing. Always compiled.
+- `routing/model_card.rs` - ModelCard + CognitiveSystem (S1/S2/S3) + domain_scores (HashMap<String, f32>) + safety_rating + TOML parsing with `[models.domain_scores]` sub-tables. PyO3 class with `domain_score(domain)` method.
+- `routing/model_registry.rs` - ModelRegistry: TOML-loaded model catalog with system-based selection, telemetry calibration (quality + latency P95 via VecDeque ring buffer), `select_best_for_domain(domain, budget)` for domain-aware model selection. PyO3 class.
+- `routing/model_assigner.rs` - ModelAssigner: per-node model assignment using ModelCard scoring (affinity 0.4 + domain 0.4 + cost 0.2). Filters by capabilities (tools, json) and budget. PyO3 class with `assign_models()` and `assign_single_node()`.
+- `routing/system_router.rs` - SystemRouter: **PRIMARY** cognitive system decision engine (88% GT accuracy). Hard constraints → structural scoring → domain hint → bandit/budget selection. `record_outcome()` updates both bandit AND registry telemetry via decision→model mapping. PyO3 class with RoutingDecision + RoutingConstraints (includes `domain_hint`). Used by boot.py, ShadowRouter, Pipeline.
+- `routing/bandit.rs` - ContextualBandit: per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. PyO3 class. SQLite persistence behind `cognitive` feature. Audit fixes: Mutex safety (lock scope), empty candidates guard, bandit arm dedup.
+- `topology/topology_graph.rs` - TopologyGraph: unified IR wrapping petgraph::DiGraph with typed nodes (roles, capabilities, budgets) and three-flow edges (Control, Message, State). PyO3 class.
+- `topology/templates.rs` - 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). PyTemplateStore PyO3 class.
+- `topology/verifier.rs` - HybridVerifier: 6 structural + 4 semantic checks + LTL integration (safety→errors, liveness→warnings), all O(V+E). PyO3 class.
+- `topology/smmu_bridge.rs` - TopologySmmuBridge: stores topology outcomes in S-MMU, retrieves similar topologies, injects bandit priors.
+- `topology/map_elites.rs` - MapElitesArchive: quality-diversity archive with 4-dim BehaviorDescriptor (108 cells), Pareto dominance. SQLite persistence behind `cognitive` feature.
+- `topology/cma_me.rs` - CmaEmitter: CMA-ME (Covariance Matrix Adaptation MAP-Elites) for directional search on continuous topology parameters. Diagonal covariance, elite-weighted mean/variance update. Integrated into DynamicTopologyEngine.evolve() (50% random / 50% CMA-sampled mutations).
+- `topology/mutations.rs` - 7 mutation operators (add_node, remove_node, swap_model, rewire_edge, split_node, merge_nodes, mutate_prompt). Validation via HybridVerifier.
+- `topology/llm_synthesis.rs` - TopologySynthesizer: 3-stage LLM pipeline (Role Assignment → Structure Design → Validation). Rate-limited.
+- `topology/executor.rs` - TopologyExecutor: dual-mode scheduling — Static (Kahn's toposort) for acyclic, Dynamic (gate-based readiness) for cyclic topologies. PyO3 class.
+- `topology/mcts.rs` - MctsSearcher: Monte Carlo Tree Search for topology space exploration. UCB1 selection, random mutation expansion, HybridVerifier-based rollout heuristic. Budget: 50 simulations or 100ms. 6th path in DynamicTopologyEngine.generate().
+- `topology/engine.rs` - DynamicTopologyEngine: **PRIMARY** 6-path generate strategy (S-MMU → archive → LLM → mutation → MCTS → template fallback). Evolution loop via MAP-Elites + CMA-ME refinement. Used by boot.py Phase 6 and Pipeline Stage 2.
+- `topology/pyo3_wrappers.rs` - PyO3 thin wrappers: PyTopologyEngine (owns internal S-MMU), PyTopologyExecutor, PyGenerateResult (with opaque topology_id for lazy-load).
+- `verification/mod.rs` - Module hub: re-exports `smt` (behind `smt` feature) and `ltl` (always compiled).
+- `verification/smt.rs` - SmtVerifier + SmtVerificationResult: OxiZ pure-Rust SMT verifier (QF_LIA with `set_logic("QF_LIA")` for branch-and-bound integer solving). Memory safety, loop bounds, arithmetic, invariant verification (expression parser), provider assignment (exactly-one boolean encoding). Recursive descent parser for constraint strings ("x > 0 and x < 100"). 10 PyO3 methods: prove_memory_safety, check_loop_bound, verify_arithmetic, verify_arithmetic_expr, verify_invariant, verify_invariant_with_feedback, synthesize_invariant, verify_array_bounds, validate_mutation, verify_provider_assignment. `#[instrument]` tracing on all public methods. Behind `smt` feature flag. ALL Python callers fully wired to Rust — zero Z3-only code paths remain.
+- `verification/quality_labeler.rs` - QualityLabeler: Z3 formal quality scoring (tree-sitter syntax + OxiZ arithmetic + OxiZ bounds + structural completeness). PyO3 class. Behind `smt` + `tool-executor` feature flags. 16 unit tests.
+- `verification/ltl.rs` - LtlVerifier: temporal property verification on TopologyGraph via petgraph. 4 checks: check_reachability (BFS), check_safety (no HIGH→LOW paths), check_liveness (all entries reach exits), check_bounded_liveness (depth ≤ K). LtlResult PyO3 class. Wired into HybridVerifier (safety→errors, liveness→warnings). Always compiled (no feature flag).
+
+### Dashboard (ui/)
+- `ui/app.py` - FastAPI backend: EventBus WebSocket push + REST API (HTTPBearer auth via `SAGE_DASHBOARD_TOKEN`)
+- `ui/static/index.html` - Single-file dark-theme dashboard (Tailwind + Chart.js)
+- WebSocket `/ws` pushes all AgentEvents in real-time. Uses First-Message auth pattern: client sends `{action:"auth", token:"..."}` as first message.
+- Task queue: `asyncio.Queue(maxsize=10)` replaces single-task slot. New `/api/tasks` endpoint for queue status.
+- Sections: Routing S1/S2/S3, Response, Memory 4-tier, Guardrails, Events, Benchmarks
+
+### Protocols (MCP + A2A)
+- `protocols/__init__.py` - Feature detection (HAS_MCP, HAS_A2A)
+- `protocols/mcp_server.py` - MCP server: ToolRegistry → MCP tools, `run_task` meta-tool, EventBus resource
+- `protocols/a2a_server.py` - A2A agent: AgentLoop → AgentExecutor, AgentCard with 3 skills (general, code, research). Uses a2a-sdk >= 1.0
+- `protocols/serve.py` - Unified CLI: `python -m sage.protocols.serve --mcp --a2a`
+
+### Progressive Enhancement (Rust/Python Duality)
+
+Rust (`sage-core`) is a progressive enhancement, not a core dependency. All subsystems have Python fallbacks. Running without `maturin develop` gives a pure-Python system with reduced performance.
+
+**Rust provides:** native SIMD embeddings (10x faster), sub-0.1ms SMT verification (OxiZ), zero-copy Arrow memory, compiled topology graph operations, tree-sitter AST validation, Wasm WASI sandbox.
+
+**Python fallback for everything:** hash embeddings, z3-solver, in-memory dicts, Python graph traversal, regex validation, subprocess sandbox.
+
+## Development Commands
+
+### Python SDK
+```bash
+cd sage-python
+pip install -e ".[all,dev]"    # Install in dev mode with all providers
+python -m pytest tests/ -v     # Run tests (1559 passed, 20 skipped, 0 failures)
+ruff check src/                 # Lint
+mypy src/                       # Type check
+```
+
+### Benchmarks
+```bash
+cd sage-python
+# Official benchmarks (EvalPlus — 80x more tests than HumanEval)
+python -m sage.bench --type evalplus --dataset humaneval          # HumanEval+ (164 problems)
+python -m sage.bench --type evalplus --dataset humaneval --limit 20  # Quick smoke test
+python -m sage.bench --type evalplus --dataset mbpp               # MBPP+ (378 problems)
+
+# Ablation study (proves each pillar's value vs bare LLM)
+python -m sage.bench --type ablation --limit 20                   # 6 configs x 20 tasks
+
+# Evidence collection benchmarks (non-circular ground truth)
+python -m sage.bench --type routing_gt                              # Non-circular routing ground truth (50 human-labeled tasks)
+python -m sage.bench --type memory_ablation                         # Memory tier ablation (4 configs)
+python -m sage.bench --type evolution_ablation                      # Evolution search ablation (3 configs)
+
+# BigCodeBench (ICLR '25, 1140 tasks, non-saturated ~62% SOTA)
+python -m sage.bench --type bigcodebench --subset hard --limit 20    # Hard subset smoke
+python -m sage.bench --type bigcodebench --subset full --limit 50    # Full subset sample
+python -m sage.bench --type bigcodebench --subset hard --split instruct  # NL instructions (default)
+python -m sage.bench --type bigcodebench --subset hard --split complete  # Docstring completion
+
+# SWE-Bench (requires Docker Desktop with Linux containers)
+python -m sage.bench --type swebench --dataset lite --generate-only --limit 20  # Generate only
+python -m sage.bench --type swebench --dataset lite --limit 20                  # Full Docker eval
+
+# Legacy benchmarks
+python -m sage.bench --type routing                    # Routing accuracy (instant, no API key)
+python -m sage.bench --type humaneval --limit 20       # Original HumanEval (custom tests)
+
+# Official evaluation protocol (full error logging for debugging)
+python -m sage.bench.eval_protocol --suite humaneval --limit 20 -v  # HumanEval+ with error capture
+python -m sage.bench.eval_protocol --suite mbpp --limit 20 -v      # MBPP+ with error capture
+python -m sage.bench.eval_protocol --replay docs/benchmarks/errors.jsonl  # Post-mortem error analysis
+```
+
+### Dashboard
+```bash
+python ui/app.py                # Start dashboard on http://localhost:8000
+```
+
+### Protocol Servers
+```bash
+pip install ygn-sage[protocols]                           # Install MCP + A2A deps
+python -m sage.protocols.serve --mcp --mcp-port 8001     # MCP server
+python -m sage.protocols.serve --a2a --a2a-port 8002     # A2A agent
+python -m sage.protocols.serve --mcp --a2a               # Both
+```
+
+### Rust Core
+```bash
+cd sage-core
+cargo build                    # Build Rust core
+cargo test --no-default-features --lib  # Run unit tests (259 passed)
+cargo test --no-default-features --features smt --lib  # +25 SMT tests
+cargo test --no-default-features --features sandbox,cranelift --lib  # +sandbox tests (Linux)
+cargo clippy --no-default-features  # Lint Rust code
+maturin develop                # Build + install Python bindings
+maturin develop --features onnx  # Build with ONNX embedder support (auto-discovers DLL)
+maturin develop --features tool-executor  # Build with ToolExecutor (tree-sitter + subprocess)
+maturin develop --features sandbox,tool-executor  # Build with ToolExecutor + Wasm WASI sandbox
+```
+
+### Shadow Trace Collection (Phase 5 Gate)
+```bash
+cd sage-python
+python scripts/collect_shadow_traces.py             # 1 round = 50 traces
+python scripts/collect_shadow_traces.py --rounds 20  # 1000 traces for hard gate
+```
+
+### SOTA Benchmark Scripts
+```bash
+cd sage-python
+# Quality triples collection (DistilBERT training data)
+python scripts/collect_quality_triples.py --dataset humaneval          # HumanEval+ (164 tasks)
+python scripts/collect_quality_triples.py --dataset mbpp               # MBPP+ (378 tasks)
+python scripts/collect_quality_triples.py --dataset humaneval --limit 5 # Quick smoke test
+
+# DeBERTa zero-shot routing evaluation (NVIDIA classifier on 50 GT tasks)
+python scripts/eval_deberta_zeroshot.py              # Real model (needs torch + HF access)
+python scripts/eval_deberta_zeroshot.py --offline     # Mock classifier (pipeline test)
+
+# TopologyBench (topology > model hypothesis)
+python scripts/run_topologybench.py --dry-run                             # Cost estimate
+python scripts/run_topologybench.py --tasks 5 --topologies sequential,avr --limit 3  # Smoke test
+python scripts/run_topologybench.py --tasks 200                           # Full run (~$28)
+
+# DistilBERT quality estimator training
+PYTHONPATH=C:\\torch_lib python scripts/train_quality_model.py --data data/quality_triples.jsonl  # Train + ONNX export
+# Output: models/quality_estimator.onnx (0.9MB), models/tokenizer.json, models/checkpoints/
+
+# TopologyBench resume (after partial run)
+python scripts/run_topologybench.py --tasks 164 --resume data/topologybench_results.json  # Resume from partial
+
+# TopologyBench-Reasoning (GSM8K — math reasoning)
+python scripts/run_topologybench_reasoning.py --limit 50 --topologies sequential,debate,brainstorming,parallel
+python scripts/run_topologybench_reasoning.py --limit 50 --model gemini-2.5-flash-lite  # Budget model
+python scripts/run_topologybench_reasoning.py --dry-run                                  # Cost estimate
+
+# Evolution statistical proof (Wilcoxon + Cohen's d)
+python scripts/evolution_statistical_proof.py --runs 10 --limit 20         # Full proof
+python scripts/evolution_statistical_proof.py --runs 5 --limit 10 --seed 42  # Quick test
+
+# ExoCortex ingestion
+python scripts/exocortex_ingest.py --manifest scripts/missing_papers.json  # Batch ingest
+python scripts/exocortex_ingest.py --list                                  # List all docs
+```
+
+### ONNX Models (sage-python/models/)
+- `quality_estimator.onnx` — DistilBERT QualityEstimator (0.9 MB, opset 18). 600 training triples, r=0.3436 Pearson. Inputs: input_ids + attention_mask. Output: quality_score [0,1]
+- `tokenizer.json` — HuggingFace tokenizer for quality_estimator (distilbert-base-uncased)
+- `checkpoints/epoch_{1..5}.pt` — PyTorch training checkpoints
+
+### End-to-End Proof
+```bash
+python tests/e2e_proof.py      # Full-stack E2E: 25/25 tests, ~35s, real LLM, no mocks
+                               # Tests: Rust core + Python components + Gemini LLM + benchmarks
+                               # Report: docs/benchmarks/YYYY-MM-DD-e2e-proof.json
+```
+
+### Discovery Pipeline
+```bash
+cd sage-discover
+pip install -e .               # Install sage-discover
+python -m pytest tests/ -v     # Run tests (52 passed)
+python -m discover.pipeline --mode nightly -v  # Run nightly pipeline
+```
+
+## LLM Configuration
+
+### Active Models (March 2026, verified working)
+| Tier | Model ID | Provider | Notes |
+|------|----------|----------|-------|
+| codex | `gpt-5.3-codex` | Codex CLI | Default, SOTA coding |
+| codex_max | `gpt-5.2` | Codex CLI | Most powerful reasoning |
+| reasoner | `gemini-3.1-pro-preview` | Google API | Complex evaluation |
+| mutator | `gemini-3-flash-preview` | Google API | Code mutation |
+| fast | `gemini-3.1-flash-lite-preview` | Google API | Low-latency |
+| budget | `gemini-2.5-flash-lite` | Google API | Cheapest |
+| fallback | `gemini-2.5-flash` | Google API | If 3.x unavailable |
+
+### Required Environment Variables
+```bash
+export GOOGLE_API_KEY="..."                  # Required for Gemini models
+export OPENAI_API_KEY="..."                  # Optional: OpenAI GPT-5.x models
+export DEEPSEEK_API_KEY="..."               # Optional: DeepSeek models
+export GROK_API_KEY="..."                    # Optional: xAI Grok models
+export KIMI_API_KEY="..."                    # Optional: Moonshot Kimi models
+export MINIMAX_API_KEY="..."                # Optional: MiniMax models
+export SAGE_MODEL_FAST="gemini-2.5-flash"    # Optional: override any tier model ID
+export SAGE_DASHBOARD_TOKEN="..."            # Optional: dashboard auth (no token = open dev mode)
+# Codex CLI uses ChatGPT Pro account (codex login)
+# ExoCortex auto-configured (DEFAULT_STORE hardcoded, no env var needed)
+```
+
+### SSL / Network Configuration
+Standard HTTPS — no proxy required. If running behind a corporate proxy, set:
+```bash
+export SAGE_SSL_VERIFY=false             # Bypass SSL verification in SAGE providers
+export REQUESTS_CA_BUNDLE=""             # Disable cert bundle for requests library
+```
+
+### Sandbox & Tool Security
+The sandbox blocks host code execution by default. To allow local execution (e.g., for development):
+```python
+sandbox = Sandbox(allow_local=True)  # Required — default is False
+```
+
+**ToolExecutor security pipeline** (when `sage_core` compiled with `tool-executor` + `sandbox`):
+1. **tree-sitter AST validation** — blocks 23 dangerous modules (os, sys, subprocess, etc.) + 21 dangerous calls (exec, eval, open, etc.) + 20 blocked dunders
+2. **Wasm WASI sandbox** (if component loaded) — deny-by-default: NO filesystem, NO env vars, NO network, NO subprocess. Only stdout/stderr inherited
+3. **Subprocess fallback** — timeout + kill-on-drop isolation
+
+Python `create_python_tool` tries Rust ToolExecutor first, falls back to Python `sandbox_executor.py`.
+
+**6 Phoenix Security Vectors blocked:**
+- Filesystem read/write, env var access, network access, subprocess spawn, dangerous module import
+
+### Model Config Resolution
+Model IDs resolved in order: env var `SAGE_MODEL_<TIER>` > `config/models.toml` > hardcoded defaults.
+TOML searched in: `cwd/config/`, `sage-python/config/` (package), `~/.sage/`.
+
+## Memory System (4 Tiers)
+- **Tier 0 — Working Memory (STM)**: Rust Arrow buffer. MEM1 internal state every step. Pressure-triggered compression. Falls back to Python mock with warning if `sage_core` not installed.
+- **S-MMU (wired)**: Write path: compressor calls `compact_to_arrow_with_meta()` with keywords + embedding (via `Embedder`) + dynamic summary. `register_chunk()` returns ULID string chunk IDs (globally unique, cross-session stable), uses bounded recency scan (last 128 chunks, `MAX_SEMANTIC_NEIGHBORS = 128`). Read path: `retrieve_smmu_context()` uses `last_chunk_id()` as query anchor, queries the multi-view S-MMU graph during THINK phase and injects top-k chunk summaries (via `get_chunk_summary()`) as a SYSTEM message. In mock mode, write runs but chunk count stays 0 so read returns "".
+- **Embedder (3-tier fallback)**: RustEmbedder (ONNX via ort `load-dynamic`, native SIMD) > sentence-transformers (Python, in `[embeddings]` extra) > SHA-256 hash. Auto-detected at init. All 3 tiers work on Windows MSVC. Model: snowflake-arctic-embed-m (768-dim, 109M params). Download: `python sage-core/models/download_model.py` + `pip install onnxruntime`. Robust token_type_ids handling (auto-detects from model inputs).
+- **Tier 1 — Episodic Memory**: SQLite-backed (`~/.sage/episodic.db`), cross-session persistent. CRUD + keyword search. Defaults to SQLite (was in-memory before audit fix).
+- **Tier 2 — Semantic Memory**: In-memory entity-relation graph. MemoryAgent extracts entities in LEARN phase. `get_context_for(task)` injected before LLM calls.
+- **Tier 3 — ExoCortex (Persistent RAG)**: Google GenAI File Search API. Auto-configured with `DEFAULT_STORE`. 500+ research sources. Active `search_exocortex` tool only (passive grounding removed — Sprint 3 evidence showed it adds latency without benefit for code tasks).
+- **9 Agent Tools**: 7 AgeMem (3 STM + 4 LTM) + `search_exocortex` + `refresh_knowledge`
+
+## Guardrails (3-layer)
+- **Input** (PERCEIVE): checks task before LLM call. Blocks if severity="block".
+- **Runtime** (ACT): checks code before sandbox execution. Best-effort.
+- **Output** (LEARN): checks result before return. Cost + output validation (empty/too-long/refusal).
+- Default pipeline uses `OutputGuardrail` for text output. `SchemaGuardrail` available for JSON mode.
+- Wired via `GuardrailPipeline` in boot.py. Events emitted on EventBus.
+
+## Agent Composition
+- **SequentialAgent**: chain agents in series (output feeds next input)
+- **ParallelAgent**: run agents concurrently via asyncio.gather, pluggable aggregator
+- **LoopAgent**: iterate until exit condition or max_iterations
+- **Handoff**: transfer control to specialist with input_filter and on_handoff callback
+
+## EventBus (Observability)
+- Central in-proc event bus (`events/bus.py`). All components emit AgentEvents.
+- `emit()`, `subscribe()`, `stream()` (async iterator for WebSocket), `query(phase, last_n)`
+- Dashboard consumes via WebSocket `/ws`. JSONL export is optional subscriber.
+- Event types: PERCEIVE, THINK, ACT, LEARN, ROUTING, GUARDRAIL_CHECK, GUARDRAIL_BLOCK, BENCH_RESULT, etc.
+
+## Benchmarks
+- **EvalPlus HumanEval+** (official): 164 problems with 80x more tests (up to 999 plus_inputs per task). pass@1 with subprocess sandbox. Windows-compatible custom evaluator. CLI: `python -m sage.bench --type evalplus --dataset humaneval`
+- **EvalPlus MBPP+** (official): 378 Python problems with 35x more tests. CLI: `python -m sage.bench --type evalplus --dataset mbpp`
+- **Ablation Study**: 6-config framework value proof (full, baseline, no-memory, no-avr, no-routing, no-guardrails). Quantifies each pillar's contribution vs bare LLM. CLI: `python -m sage.bench --type ablation --limit 20`
+- **HumanEval** (legacy): 164 problems bundled as JSON. pass@1 with subprocess sandbox. CLI: `python -m sage.bench --type humaneval`
+- **Routing Ground Truth**: 50 human-labeled tasks (10 S1 + 20 S2 + 20 S3). Non-circular: labels by domain expertise, NOT reverse-engineered from heuristic. CLI: `python -m sage.bench --type routing_gt`
+- **Memory Ablation**: 4-config measurement (none, tier0, tier01, full). Proves memory tier value. CLI: `python -m sage.bench --type memory_ablation`
+- **Evolution Ablation**: 3-config measurement (none, random, full). Proves evolutionary search value. CLI: `python -m sage.bench --type evolution_ablation`
+- **Routing Accuracy** (legacy): 30 labeled tasks (10 S1 + 10 S2 + 10 S3). Measures ComplexityRouter precision.
+- **Routing Quality**: 45 labeled tasks. Measures both ComplexityRouter and AdaptiveRouter against human-labeled ground truth.
+- **Downstream Quality**: DownstreamEvaluator tracks tier precision, escalation rate (<20% target), routing P50/P99 latency (<50ms target).
+- **Metrics per task**: pass_rate, avg_latency_ms, avg_cost_usd, routing_breakdown S1/S2/S3
+
+### Benchmark Results (March 15, 2026)
+| Benchmark | Score | Notes |
+|-----------|-------|-------|
+| **EvalPlus HumanEval+ (164)** | **84.1%** pass@1 (138/164) | Official 80x harder tests. Base=90.9%, Plus=84.1% |
+| **EvalPlus MBPP+ (378)** | **75.1%** pass@1 (284/378) | Official 35x harder tests. Base=88.9%, Plus=75.1% |
+| **EvalPlus MBPP+ (20 smoke)** | **80.0%** pass@1 (16/20) | Quick validation subset |
+| Ablation: full vs baseline | **+15pp** (100% vs 85%) | A/B paired, same model (20 tasks) |
+| Ablation: routing contribution | **+5pp** (100% vs 95%) | Isolated delta (20 tasks) |
+| Routing quality (30 GT) | 100% (30/30) | Self-consistency |
+| **Routing GT heuristic (50)** | 52% (26/50) | Non-circular, human-labeled |
+| **Routing GT kNN (50)** | **92%** (46/50) | kNN on arctic-embed-m (arXiv 2505.12601). LOO-CV: 80% |
+| **Routing GT Rust SystemRouter (50)** | **88%** (44/50) | Domain scoring from cards.toml. S1:80% S2:95% S3:85% |
+| **Routing GT Python AdaptiveRouter (50)** | 44% (22/50) | Structural features only, S1-biased (S3:0%) |
+| Shadow traces (1090) | 49.6% divergence | Rust well-calibrated (20%/47%/33%), Python S1-biased (59%/41%/<1%) |
+| **DeBERTa zero-shot (50)** | 52% (26/50) | NVIDIA classifier, S3=0%. CI [38%,66%]. FINE-TUNING REQUIRED |
+| **DistilBERT QualityEstimator** | **Strong SHIP** (+34.4pp Pearson) | 600 triples, r=0.3436 vs heuristic r=0.0. ONNX 0.9MB |
+| **TopologyBench HumanEval+ 4-topo (164)** | **93.3-96.3%** spread 3.1pp | brainstorming 96.3%, parallel 94.5%, debate 93.9%, seq 93.3%. 0/6 significant. Oracle 97.0% |
+| **TopologyBench HumanEval+ Run 1 (164)** | debate 95.1% vs seq 90.8% | McNemar p=0.023. NOT REPRODUCED in Run 2 (p=1.0). Run-to-run variance at temp=0 |
+| **TopologyBench HumanEval+ pilot (20)** | **90-100%** spread | 4 topologies, disjoint failures (Jaccard=0.00) |
+| **TopologyBench GSM8K (50)** | 96-98% all topologies | NULL: model ceiling. Cohen's d<0.12 |
+| **Evolution proof (10 runs x 10)** | **-1pp** (99% vs 100%) | INCONCLUSIVE: no significant effect. Cohen d=-0.32, Wilcoxon p=1.0 |
+| **SWE-Bench Lite (20, one-shot)** | **0/20 resolved (0.0%)** | NEGATIVE: one-shot without code access. 1/20 applied (broke tests). Pipeline validated |
+| **BigCodeBench hard v4 (148)** | **10.8%** pass@1 (16/148) | Baseline: no AVR, no deps. 59% ModuleNotFound, 34% logic errors |
+| **BigCodeBench hard v5 (39 partial)** | **43.6%** pass@1 (17/39) | +AVR retry, +deps, +code_prompt. 4x improvement over v4 |
+| **BigCodeBench hard v6 (running)** | ~46% (partial) | +Z3 QualityLabeler, +CircuitBreaker, +budget degrade |
+
+**SOTA context** (HumanEval+ pass@1): O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%
+
+> **Note:** HumanEval+ 84.1% and MBPP+ 75.1% were measured on 2026-03-10 with routing layer only (pre-pipeline). The full 5-stage Cognitive Orchestration Pipeline (merged 2026-03-14) has not been benchmarked yet.
+
+**AVR (Act-Verify-Refine) improvements** (v2, March 10):
+- Edge case prompt injection for S2 code tasks (empty inputs, negatives, boolean-is-int, float precision)
+- Rich traceback feedback (LLMLOOP/Review-then-fix pattern): full stderr + stdout in AVR retry messages
+- Improved syntax error formatting with fenced code blocks
+- 60s per-task timeout prevents AVR hangs
+
+## Runtime Adaptation (Phase C)
+- **TopologyController**: Evaluates node output quality post-execution. 4 adaptation actions:
+  - Model upgrade (quality < 0.3): assign_single_node + retry with better model
+  - Agent pruning (importance < 0.2): skip redundant nodes (AgentDropout, ACL 2025)
+  - Topology re-route (consistency < 0.5): regenerate topology with tighter constraints (AdaptOrch)
+  - Sub-agent spawn: detect emergent sub-tasks, run via AgentTool.from_agent()
+- **OxiZ wiring**: verify_provider_assignment in Stage 3, PolicyVerifier.verify_node pre-execution, PRM lightweight in Stage 5
+- **ConsistencyScore**: Rust SIMD batch_cosine_similarity for parallel output comparison
+
+## Evolution System
+- **DGM Context**: SAMPO solver chooses 1 of 5 strategic actions. Context injected into LLM mutation prompt.
+- **Self-modification**: Actions 2/3/4 modify engine hyperparameters (mutations_per_generation, clip_epsilon, filter_threshold)
+- **SnapBPF**: Rust CoW memory snapshots for mutation rollback
+- Evolution is an offline development tool. Use `python -m sage.evolution` to optimize topologies and prompts against a training set.
+
+## Self-Adaptive Engine (SA -- In Progress)
+- **SA-1 (Runtime Agent Factory)**: Phase 1 complete -- custom prompts per TopologyNode. Phase 2 (LLM-generated agent specs) in progress.
+- **SA-3 (Online Evolution)**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to MAP-Elites archive. Topology selection improves over time.
+- **SA-4 (Z3 Quality Pipeline)**: QualityLabeler (Rust Z3 formal verification) replaces 5-signal heuristic. Zero heuristics in quality scoring. Label collection script ready for DistilBERT training.
+
+## SMT Formal Verification (S3)
+- **Backend**: Rust OxiZ (sage_core.SmtVerifier, `smt` feature) preferred; Python z3-solver as fallback
+- **Zero Z3-only paths**: ALL Python SMT callers fully wired to Rust OxiZ backend (verify_invariant, verify_arithmetic_expr, prove_memory_safety, check_loop_bound, verify_array_bounds, validate_mutation, verify_provider_assignment)
+- **QF_LIA integer sort**: `solver.set_logic("QF_LIA")` enables OxiZ 0.1.3 branch-and-bound for proper integer domain reasoning (e.g. x > 0 → x >= 1)
+- **Expression parser**: Recursive descent parser in Rust for constraint strings ("x > 0", "x >= -1 and x < 100", "2 + 2 * 3"). Supports variables, integer literals, comparisons (>, <, >=, <=, ==, !=), arithmetic (+, -, *, /), boolean connectives (and, or, not), parentheses
+- **CEGAR invariant synthesis**: `synthesize_invariant(pre, post_candidates, max_rounds)` iteratively weakens/strengthens post-conditions over max 5 rounds. `verify_invariant_with_feedback()` returns clause-level diagnostic violations. Python `kg_rlvr.py` wires feedback into S3 escalation prompt via `_last_invariant_feedback`
+- **LTL model checking**: `LtlVerifier` checks temporal properties on TopologyGraph — reachability (BFS), safety (no HIGH→LOW paths), liveness (all entries reach exits), bounded liveness (depth ≤ K). Wired into HybridVerifier
+- S3 system prompt teaches Z3 DSL: `assert bounds/loop/arithmetic/invariant`
+- S2->S3 escalation when AVR budget exhausted (now includes clause-level invariant feedback)
+- `kg_rlvr.py` parses `<think>` blocks, scores each step via safe AST evaluator (no `eval()`) + OxiZ/Z3
+- `z3_verify.py`: 3 of 4 checks are Python-native. `verify_provider_assignment()` uses Rust OxiZ SAT (exactly-one encoding) or Z3 `PbEq` fallback
+- `z3_validator.py`: Z3Validator auto-delegates to Rust SmtVerifier (sub-0.1ms) with z3-solver fallback
+
+## Resilience
+- **CircuitBreaker** (`resilience.py`): per-subsystem failure tracking (max_failures=3)
+- 6 breakers in agent_loop: semantic_memory, smmu_context, runtime_guardrails, episodic_store, entity_extraction, evolution_stats
+- After 3 consecutive failures, circuit opens and skips calls with WARNING log
+- `record_success()` resets the counter
+
+## ExoCortex
+Auto-configured with `DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"`.
+Resolution: explicit param > env var `SAGE_EXOCORTEX_STORE` > DEFAULT_STORE.
+
+```python
+# Via SAGE SDK
+from sage.memory.remote_rag import ExoCortex
+exo = ExoCortex()  # Works automatically when GOOGLE_API_KEY is set
+```
+
+**Direct query protocol** (for scripts / Claude Code):
+```python
+import os
+from google import genai
+from google.genai import types
+
+client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"],
+                      http_options={"api_version": "v1beta"})
+
+store_id = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
+tools = [types.Tool(file_search=types.FileSearch(file_search_store_names=[store_id]))]
+
+result = client.models.generate_content(
+    model="gemini-2.5-flash",
+    contents="<your query>",
+    config=types.GenerateContentConfig(tools=tools, temperature=0.1),
+)
+print(result.text)
+```
+**API note:** Use `types.FileSearch(file_search_store_names=[...])` — NOT `types.FileSearchTool` (does not exist in google-genai SDK).
+
+### Knowledge Pipeline (sage-discover)
+```bash
+python -m discover.pipeline --mode nightly           # Papers from yesterday
+python -m discover.pipeline --mode on-demand --query "PSRO"  # Targeted search
+python -m discover.pipeline --mode migrate           # Bootstrap from NotebookLM exports
+```
+
+## Tech Stack
+- Rust 1.90+ (orchestrator, via PyO3) -- RagCache, Arrow memory, SIMD embeddings, SMT verification
+- Python 3.12+ (SDK, agents)
+- OpenAI Codex CLI + gpt-5.3-codex (primary LLM)
+- Google Gemini 3.x via `google-genai` SDK (secondary LLM, fallback, File Search)
+- 7 LLM providers: Google, OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi, Codex CLI — auto-discovered at boot, cascade fallback (FrugalGPT)
+- FastAPI + WebSocket + EventBus (dashboard)
+- OxiZ 0.1 (pure Rust SMT solver, S3 formal verification) + Z3 Solver 4.16 (fallback)
+- aiosqlite (episodic + semantic memory persistence)
+- Apache Arrow / PyArrow (zero-copy memory compaction)
+- Wasm (wasmtime v36 LTS, Component Model, WASI p2 deny-by-default) + Docker (multi-tier sandboxing)
+- tree-sitter 0.26 + tree-sitter-python 0.25 (AST-based code validation, `tool-executor` feature)
+- process-wrap 9 (subprocess executor with tokio timeout + kill-on-drop, `tool-executor` feature)
+- DashMap (Rust) -- lock-free FIFO+TTL RAG cache + CoW snapshots
+- ort 2.0.0-rc.12 (ONNX Runtime for Rust, `load-dynamic`, optional `onnx` feature) — native embeddings, works on Windows MSVC. **NOTE**: RC dependency, track for stable release
+- tokenizers 0.21 (HuggingFace tokenizer, optional `onnx` feature)
+
+## Known Issues / Tech Debt
+- **`ort 2.0.0-rc.12`**: Release candidate dependency — track for stable 2.0 release and upgrade when available
+- **0 pre-existing test failures** (was 7, all fixed 2026-03-15):
+  - ULID mock mismatch: fixed
+  - S-MMU persistence: fixed
+  - mypy ceiling: fixed
+  - Routing heuristic: fixed
+  - multi_provider: fixed (6 providers functional with CircuitBreaker per-provider)
+- **Type ignore count**: 20 actual vs ceiling of 15. Needs reduction.
+- **Shadow traces**: 1090 traces collected, 49.6% divergence — BUT divergence is because Python is wrong, not Rust. Rust 88% vs Python 44% accuracy. Phase 5 gate criterion revised to accuracy-based evidence
+- **kNN routing exemplars**: Pre-computed at `config/routing_exemplars.npz` — must be rebuilt if ground truth changes
+- **S-MMU outcome recording**: Wired in boot.py Phase 6 but chunks not persisting in mock mode (chunk count stays 0)
+- **Routing heuristic**: ComplexityRouter keyword matching is fragile (52% GT accuracy). kNN router (92%) is the real router; heuristic is fallback only
+- **Removed in cleanup (March 2026)**: `routing/router.rs` (Rust AdaptiveRouter), `routing/smmu_bridge.rs` (TopologyBridge), `routing/dynamic.py` (DynamicRouter), `strategy/training.py`, `evidence.py`, `analytics/scaling.py`, `sandbox/ebpf.rs` — all dead code, replaced by active modules
+- **Rust module status**:
+  - `routing/system_router.rs` (SystemRouter) — **PRIMARY** (88% GT accuracy vs Python 44%). Used by boot.py, ShadowRouter, Pipeline
+  - `topology/engine.rs` (TopologyEngine) — **PRIMARY** (6-path generation). Used by boot.py Phase 6, Pipeline Stage 2
+  - `routing/model_assigner.rs` (ModelAssigner) — **PRIMARY** (per-node scoring). Used by Pipeline Stage 3
+  - `routing/model_registry.rs` (ModelRegistry) — **PRIMARY** (telemetry calibration). Used by SystemRouter + ModelAssigner
+- **Multi-provider wiring**: FIXED (2026-03-15) — ProviderPool now receives all discovered providers at boot. 6 providers functional with CircuitBreaker per-provider (auto-skip after 3 failures).
+- **DEEPSEEK_API_KEY**: Primary env var changed from DEEP_SEEK_API_KEY to DEEPSEEK_API_KEY. Legacy spelling still accepted as fallback.
+- **Discovery cache**: 24h TTL at boot, reduces startup from ~5s to 1.8s on warm cache.
+- **QualityEstimator**: Rewritten with zero heuristics (was 5-signal heuristic). Z3 formal verification + ONNX learned model. Returns float|None (abstain when uncertain).
+- **Online evolution**: `_auto_evolve=True` when TopologyEngine available. Pipeline Stage 5 records outcomes to MAP-Elites archive.
+- **TopologyNode custom prompts**: SA-1 Phase 1 -- `prompt` field on TopologyNode for specialized agent behavior.
+- **Pipeline bugs fixed (2026-03-15)**: TopologyEngine args (3-arg not 2), TopologyExecutor constructor (schedule_static not run), Stage 4 fallback (graceful degrade when no Rust).

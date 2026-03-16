@@ -1,0 +1,38 @@
+{
+  "campaign": "e2e-validation",
+  "date": "2026-03-14",
+  "timestamp": "2026-03-14T17:56:49.089310",
+  "python_version": "3.13.12 | packaged by conda-forge | (main, Feb  5 2026, 05:41:12) [MSC v.1944 64 bit (AMD64)]",
+  "results": {
+    "c1": {
+      "status": "PASS",
+      "result_len": 364,
+      "event_count": 8,
+      "event_types": [
+        "LEARN",
+        "PERCEIVE",
+        "THINK",
+        "TOPOLOGY"
+      ]
+    },
+    "c3": {
+      "status": "PASS",
+      "quality_empty": 0.0,
+      "quality_good": 0.79,
+      "delta": 0.79
+    },
+    "c6": {
+      "status": "PASS",
+      "episodic_session1_results": 1,
+      "episodic_session2_python": 1,
+      "episodic_session2_rust": 1,
+      "semantic_entities": 2,
+      "semantic_context_preview": "Guido van Rossum --[created]--> Python"
+    }
+  },
+  "summary": {
+    "total_tests": 7,
+    "passed": 3,
+    "claims_validated": 3
+  }
+}

@@ -1,0 +1,517 @@
+2026-03-13 21:34:19,997 INFO     topologybench: Booting SAGE agent system...
+2026-03-13 21:34:20,320 INFO     sage.strategy.knn_router: kNN: loaded 50 exemplars from C:\Code\YGN-SAGE\sage-python\config\routing_exemplars.npz
+2026-03-13 21:34:20,324 INFO     sage.strategy.knn_router: kNN: Rust acceleration active (50 exemplars)
+C:\ProgramData\miniforge3\Lib\site-packages\requests\__init__.py:113: RequestsDependencyWarning: urllib3 (2.6.3) or chardet (7.1.0)/charset_normalizer (3.4.4) doesn't match a supported version!
+  warnings.warn(
+2026-03-13 21:34:28,483 INFO     sage.memory.embedder: Embedder: using sentence-transformers backend
+2026-03-13 21:34:28,486 INFO     sage.boot: Boot: kNN router loaded (50 exemplars, sentence_transformers)
+2026-03-13 21:34:28,486 INFO     sage.strategy.adaptive_router: AdaptiveRouter: Python heuristic fallback
+2026-03-13 21:34:28,486 INFO     sage.boot: Boot: cards.toml not found, using Python AdaptiveRouter
+2026-03-13 21:34:28,486 INFO     sage.boot: Boot: Phase 6 active — TopologyEngine + ContextualBandit ready
+2026-03-13 21:34:28,486 INFO     sage.memory.embedder: Embedder: using sentence-transformers backend
+2026-03-13 21:34:28,496 INFO     sage.providers.registry: Loaded model profiles from C:\Code\YGN-SAGE\sage-python\config\model_profiles.toml (18 entries)
+2026-03-13 21:34:29,571 INFO     httpx: HTTP Request: GET https://generativelanguage.googleapis.com/v1beta/models "HTTP/1.1 200 OK"
+2026-03-13 21:34:29,576 INFO     sage.providers.connector: Discovered 21 models from google
+2026-03-13 21:34:30,705 INFO     httpx: HTTP Request: GET https://api.openai.com/v1/models "HTTP/1.1 200 OK"
+2026-03-13 21:34:30,837 INFO     sage.providers.connector: Discovered 71 models from openai
+2026-03-13 21:34:31,029 INFO     httpx: HTTP Request: GET https://api.x.ai/v1/models "HTTP/1.1 200 OK"
+2026-03-13 21:34:31,031 INFO     sage.providers.connector: Discovered 11 models from xai
+2026-03-13 21:34:31,031 INFO     sage.providers.connector: Discovered 3 models from minimax
+2026-03-13 21:34:31,418 INFO     httpx: HTTP Request: GET https://api.moonshot.ai/v1/models "HTTP/1.1 200 OK"
+2026-03-13 21:34:31,420 INFO     sage.providers.connector: Discovered 13 models from kimi
+2026-03-13 21:34:31,426 INFO     sage.providers.connector: Codex CLI detected on PATH
+2026-03-13 21:34:31,426 INFO     sage.providers.registry: New model discovered: gemini-2.5-pro (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.0-flash (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.0-flash-001 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.0-flash-lite-001 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.0-flash-lite (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-flash-latest (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-flash-lite-latest (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-pro-latest (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.5-flash-lite (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.5-flash-lite-preview-09-2025 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-3-pro-preview (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-3.1-pro-preview-customtools (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-robotics-er-1.5-preview (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-2.5-computer-use-preview-10-2025 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: deep-research-pro-preview-12-2025 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-embedding-001 (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gemini-embedding-2-preview (google) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gpt-4-0613 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,427 INFO     sage.providers.registry: New model discovered: gpt-4 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-5.3-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-5.4-2026-03-05 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-5.4-pro-2026-03-05 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: davinci-002 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: babbage-002 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo-instruct (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo-instruct-0914 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4-1106-preview (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo-1106 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4-0125-preview (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4-turbo-preview (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo-0125 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4-turbo (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4-turbo-2024-04-09 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4o (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4o-2024-05-13 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4o-mini-2024-07-18 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4o-mini (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: gpt-4o-2024-08-06 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: o1-2024-12-17 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,428 INFO     sage.providers.registry: New model discovered: o1 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-mini (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-mini-2025-01-31 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4o-2024-11-20 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o1-pro-2025-03-19 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o1-pro (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-2025-04-16 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o4-mini-2025-04-16 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o4-mini (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1-mini-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1-mini (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1-nano-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-4.1-nano (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-pro (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-pro-2025-06-10 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o4-mini-deep-research (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-deep-research (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o3-deep-research-2025-06-26 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: o4-mini-deep-research-2025-06-26 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-5-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,429 INFO     sage.providers.registry: New model discovered: gpt-5-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5-mini-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5-nano-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5-codex (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5-pro-2025-10-06 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5-pro (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1-2025-11-13 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1-codex (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1-codex-mini (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.1-codex-max (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.2-2025-12-11 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.2-pro-2025-12-11 (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.2-pro (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.2-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-5.2-codex (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: gpt-3.5-turbo-16k (openai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,430 INFO     sage.providers.registry: New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: grok-4.20-beta-0309-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: grok-4.20-beta-0309-reasoning (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: grok-4.20-multi-agent-beta-0309 (xai) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: MiniMax-M2.1 (minimax) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: New model discovered: codex-cli (codex) -- no TOML profile, using defaults
+2026-03-13 21:34:31,431 INFO     sage.providers.registry: ModelRegistry: 122 total profiles, 120 available
+2026-03-13 21:34:31,439 INFO     sage.boot: Boot: discovered 122 models (120 available) — codex: 1, google: 21, kimi: 13, minimax: 3, openai: 71, xai: 11
+2026-03-13 21:34:31,447 INFO     sage.boot: ToolExecutor (Rust) not available — S2 AVR uses Python sandbox
+2026-03-13 21:34:31,451 INFO     topologybench: SAGE system booted successfully
+2026-03-13 21:34:31,451 INFO     topologybench: Loading HumanEval+ tasks (limit=20)...
+2026-03-13 21:34:31,597 INFO     topologybench: Loaded 20 tasks
+
+============================================================
+[1/1] Running topology: parallel
+============================================================
+2026-03-13 21:34:31,598 INFO     topologybench: Topology parallel: 5 nodes, 6 edges
+2026-03-13 21:34:31,600 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,600 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,607 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,607 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:31,609 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,609 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,609 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,610 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+C:\Code\YGN-SAGE\sage-python\src\sage\strategy\adaptive_router.py:139: UserWarning: Using degraded keyword-count heuristic. Install sage_core[onnx] or build kNN exemplars for accurate routing.
+  return self._assess_heuristic(task)
+2026-03-13 21:34:31,612 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,612 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,612 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,612 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:31,614 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,614 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,614 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,614 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:31,615 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:31,615 INFO     sage.boot: Bandit suggestion: model=gpt-5.1-2025-11-13, template=sequential, quality=0.342, explore=False
+2026-03-13 21:34:31,615 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:31,616 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,617 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,617 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,617 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:31,619 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:31,619 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:31,619 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:31,619 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:31,646 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:31,646 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:32,874 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 550 chars
+2026-03-13 21:34:32,897 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:32,898 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:32,920 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:32,920 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:32,942 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:32,943 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:34,182 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 550 chars
+2026-03-13 21:34:34,352 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 550 chars
+2026-03-13 21:34:34,644 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 550 chars
+2026-03-13 21:34:34,666 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:34,667 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:35,898 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 550 chars
+  [parallel][1/20] HumanEval/0: PASS (4458ms)
+2026-03-13 21:34:36,057 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,058 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,058 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,059 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,060 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,060 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,060 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,061 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,063 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,063 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,063 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,063 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,065 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,065 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,065 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,066 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,066 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:36,066 INFO     sage.boot: Bandit suggestion: model=davinci-002, template=sequential, quality=0.826, explore=False
+2026-03-13 21:34:36,066 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:36,068 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,068 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,068 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,068 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,070 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:36,070 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:36,070 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:36,071 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:36,094 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:36,094 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:38,098 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 940 chars
+2026-03-13 21:34:38,121 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:38,121 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:38,146 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:38,147 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:38,170 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:38,170 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:39,470 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 940 chars
+2026-03-13 21:34:39,754 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 940 chars
+2026-03-13 21:34:39,759 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 940 chars
+2026-03-13 21:34:39,781 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:39,781 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:41,319 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 940 chars
+  [parallel][2/20] HumanEval/1: PASS (5405ms)
+2026-03-13 21:34:41,463 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,463 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,463 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,464 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,465 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,465 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,466 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,466 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,467 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,468 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,468 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,468 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,470 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,470 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,470 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,471 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,471 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:41,471 INFO     sage.boot: Bandit suggestion: model=gpt-4.1-2025-04-14, template=sequential, quality=0.382, explore=False
+2026-03-13 21:34:41,471 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:41,473 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,473 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,473 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,474 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,475 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:41,475 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:41,475 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:41,476 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:41,499 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:41,499 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:42,647 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 374 chars
+2026-03-13 21:34:42,672 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:42,672 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:42,695 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:42,695 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:42,721 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:42,722 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:43,675 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 374 chars
+2026-03-13 21:34:43,898 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 374 chars
+2026-03-13 21:34:44,008 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 374 chars
+2026-03-13 21:34:44,052 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:44,052 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:45,016 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 374 chars
+  [parallel][3/20] HumanEval/2: PASS (3736ms)
+2026-03-13 21:34:45,199 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,199 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,199 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,200 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,201 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,201 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,202 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,202 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,203 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,203 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,204 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,204 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,206 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,206 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,206 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,206 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,206 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:45,207 INFO     sage.boot: Bandit suggestion: model=gpt-4.1, template=sequential, quality=0.826, explore=False
+2026-03-13 21:34:45,207 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:45,209 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,209 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,209 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,209 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,211 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:45,211 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:45,211 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:45,212 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:45,234 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:45,234 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:46,626 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 590 chars
+2026-03-13 21:34:46,654 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:46,655 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:46,678 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:46,678 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:46,699 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:46,699 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:47,823 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 590 chars
+2026-03-13 21:34:48,567 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 590 chars
+2026-03-13 21:34:48,728 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 590 chars
+2026-03-13 21:34:48,754 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:48,755 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:49,812 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 590 chars
+  [parallel][4/20] HumanEval/3: PASS (4755ms)
+2026-03-13 21:34:49,954 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,954 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,954 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,955 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,956 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,956 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,957 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,957 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,959 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,959 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,959 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,959 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,961 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,961 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,961 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,962 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,962 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:49,962 INFO     sage.boot: Bandit suggestion: model=grok-4.20-beta-0309-reasoning, template=sequential, quality=0.094, explore=True
+2026-03-13 21:34:49,962 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:49,964 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,964 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,964 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,964 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,966 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:49,966 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:49,966 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:49,967 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:49,989 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:49,989 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:51,196 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 583 chars
+2026-03-13 21:34:51,224 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:51,224 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:51,246 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:51,246 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:51,268 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:51,268 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:52,395 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 583 chars
+2026-03-13 21:34:52,510 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 583 chars
+2026-03-13 21:34:52,736 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 583 chars
+2026-03-13 21:34:52,768 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:52,768 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:53,962 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 583 chars
+  [parallel][5/20] HumanEval/4: PASS (4157ms)
+2026-03-13 21:34:54,112 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,113 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,113 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,114 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,117 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,117 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,118 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,118 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,120 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,120 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,121 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,121 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,123 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,123 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,123 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,124 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,124 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:54,124 INFO     sage.boot: Bandit suggestion: model=kimi-k2-thinking-turbo, template=sequential, quality=0.052, explore=False
+2026-03-13 21:34:54,124 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:54,126 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,126 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,127 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,127 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,128 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:54,128 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:54,129 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:54,129 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:54,151 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:54,152 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:56,157 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 518 chars
+2026-03-13 21:34:56,179 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:56,180 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:56,202 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:56,203 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:56,226 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:56,226 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:57,359 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 518 chars
+2026-03-13 21:34:57,415 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 518 chars
+2026-03-13 21:34:57,473 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 518 chars
+2026-03-13 21:34:57,497 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:57,497 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:34:58,899 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 518 chars
+  [parallel][6/20] HumanEval/5: PASS (4964ms)
+2026-03-13 21:34:59,075 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,075 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,075 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,076 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,077 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,077 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,078 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,078 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,079 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,080 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,080 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,080 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,082 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,082 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,082 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,082 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,083 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:34:59,083 INFO     sage.boot: Bandit suggestion: model=o3-deep-research, template=sequential, quality=0.879, explore=True
+2026-03-13 21:34:59,083 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:34:59,084 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,084 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,085 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,085 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,086 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:34:59,086 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:34:59,087 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:34:59,087 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:34:59,110 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:34:59,110 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:35:00,412 INFO     sage.topology.runner: [TopologyRunner] node 0 (source) completed, output 873 chars
+2026-03-13 21:35:00,435 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:35:00,435 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:35:00,457 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:35:00,457 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:35:00,479 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:35:00,479 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:35:01,739 INFO     sage.topology.runner: [TopologyRunner] node 2 (worker_1) completed, output 873 chars
+2026-03-13 21:35:01,862 INFO     sage.topology.runner: [TopologyRunner] node 1 (worker_0) completed, output 873 chars
+2026-03-13 21:35:01,864 INFO     sage.topology.runner: [TopologyRunner] node 3 (worker_2) completed, output 873 chars
+2026-03-13 21:35:01,889 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:35:01,890 INFO     google_genai.models: AFC is enabled with max remote calls: 10.
+2026-03-13 21:35:03,294 INFO     sage.topology.runner: [TopologyRunner] node 4 (aggregator) completed, output 873 chars
+  [parallel][7/20] HumanEval/6: PASS (4382ms)
+2026-03-13 21:35:03,457 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,457 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,457 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,458 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,459 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,459 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,459 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,460 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,461 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,461 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,462 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,462 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,463 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,463 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,464 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,464 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,464 INFO     sage.boot: Topology externally forced (5 nodes, template=parallel), skipping generation
+2026-03-13 21:35:03,465 INFO     sage.boot: Bandit suggestion: model=gpt-5.2-2025-12-11, template=sequential, quality=0.907, explore=False
+2026-03-13 21:35:03,465 INFO     sage.boot: Multi-node topology (5 nodes): bypassing orchestrator -> TopologyRunner
+2026-03-13 21:35:03,466 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,466 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,467 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,467 WARNING  sage.strategy.knn_router: kNN: Rust route failed, falling back to Python: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,468 INFO     sentence_transformers.SentenceTransformer: Use pytorch device_name: cpu
+2026-03-13 21:35:03,468 INFO     sentence_transformers.SentenceTransformer: Load pretrained SentenceTransformer: snowflake-arctic-embed-m
+2026-03-13 21:35:03,469 WARNING  sentence_transformers.SentenceTransformer: No sentence-transformers model found with name sentence-transformers/snowflake-arctic-embed-m. Creating a new one with mean pooling.
+2026-03-13 21:35:03,469 WARNING  sage.strategy.knn_router: kNN embed failed: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+2026-03-13 21:35:03,491 INFO     sage.llm.google: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-13 21:35:03,491 INFO     google_genai.models: AFC is enabled with max remote calls: 10.

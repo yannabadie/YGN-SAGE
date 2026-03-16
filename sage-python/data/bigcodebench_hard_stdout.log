@@ -1,0 +1,313 @@
+2026-03-15 19:43:47,734 sage.strategy.knn_router:INFO: kNN: loaded 50 exemplars from C:\Code\YGN-SAGE\sage-python\config\routing_exemplars.npz
+2026-03-15 19:43:47,739 sage.strategy.knn_router:INFO: kNN: Rust acceleration active (50 exemplars)
+2026-03-15 19:43:48,595 sage.memory.embedder:INFO: Embedder: using RustEmbedder (ONNX, native)
+2026-03-15 19:43:48,596 sage.boot:INFO: Boot: kNN router loaded (50 exemplars, rust_onnx)
+2026-03-15 19:43:48,596 sage.strategy.adaptive_router:INFO: AdaptiveRouter: Python heuristic fallback
+2026-03-15 19:43:48,602 sage.boot:INFO: Boot: Rust SystemRouter active (18 models from C:\Code\YGN-SAGE\sage-core\config\cards.toml)
+2026-03-15 19:43:48,605 sage.boot:INFO: Boot: ShadowRouter active (dual Rust/Python comparison, traces -> C:\Users\yann.abadie\.sage\shadow_traces.jsonl)
+2026-03-15 19:43:48,610 sage.routing.shadow:INFO: Shadow: loaded 1697 existing traces (66.5% divergence)
+2026-03-15 19:43:48,610 sage.boot:INFO: Shadow Phase 5: 1697/1000 traces collected (divergence=66.5%)
+2026-03-15 19:43:48,611 sage.boot:INFO: Boot: Bandit wired into SystemRouter for integrated routing
+2026-03-15 19:43:48,611 sage.boot:INFO: Boot: Bandit warm-started with 18 models x 4 templates (72 arms)
+2026-03-15 19:43:48,611 sage.boot:INFO: Boot: Phase 6 active — TopologyEngine + ContextualBandit ready
+2026-03-15 19:43:49,242 sage.memory.embedder:INFO: Embedder: using RustEmbedder (ONNX, native)
+2026-03-15 19:43:49,251 sage.providers.registry:INFO: Loaded model profiles from C:\Code\YGN-SAGE\sage-python\config\model_profiles.toml (18 entries)
+2026-03-15 19:43:49,251 sage.providers.connector:INFO: Using cached Google model list (21 models)
+2026-03-15 19:43:49,251 sage.providers.connector:INFO: Discovered 21 models from google
+2026-03-15 19:43:49,254 sage.providers.connector:INFO: Using cached openai model list (71 models)
+2026-03-15 19:43:49,255 sage.providers.connector:INFO: Discovered 71 models from openai
+2026-03-15 19:43:49,256 sage.providers.connector:INFO: Using cached xai model list (11 models)
+2026-03-15 19:43:49,257 sage.providers.connector:INFO: Discovered 11 models from xai
+2026-03-15 19:43:49,257 sage.providers.connector:INFO: Using cached deepseek model list (2 models)
+2026-03-15 19:43:49,258 sage.providers.connector:INFO: Discovered 2 models from deepseek
+2026-03-15 19:43:49,258 sage.providers.connector:INFO: Discovered 3 models from minimax
+2026-03-15 19:43:49,259 sage.providers.connector:INFO: Using cached kimi model list (13 models)
+2026-03-15 19:43:49,260 sage.providers.connector:INFO: Discovered 13 models from kimi
+2026-03-15 19:43:49,263 sage.providers.connector:INFO: Codex CLI detected on PATH
+2026-03-15 19:43:49,263 sage.providers.registry:INFO: New model discovered: gemini-2.5-pro (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.0-flash (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.0-flash-001 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.0-flash-lite-001 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.0-flash-lite (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-flash-latest (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-flash-lite-latest (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-pro-latest (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.5-flash-lite (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-2.5-flash-lite-preview-09-2025 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-3-pro-preview (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,264 sage.providers.registry:INFO: New model discovered: gemini-3.1-pro-preview-customtools (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gemini-robotics-er-1.5-preview (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gemini-2.5-computer-use-preview-10-2025 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: deep-research-pro-preview-12-2025 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gemini-embedding-001 (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gemini-embedding-2-preview (google) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-4-0613 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-4 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-5.3-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-5.4-2026-03-05 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: gpt-5.4-pro-2026-03-05 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,265 sage.providers.registry:INFO: New model discovered: davinci-002 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: babbage-002 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo-instruct (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo-instruct-0914 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4-1106-preview (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo-1106 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4-0125-preview (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4-turbo-preview (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo-0125 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4-turbo (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4-turbo-2024-04-09 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4o (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4o-2024-05-13 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,266 sage.providers.registry:INFO: New model discovered: gpt-4o-mini-2024-07-18 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: gpt-4o-mini (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: gpt-4o-2024-08-06 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o1-2024-12-17 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o1 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o3-mini (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o3-mini-2025-01-31 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: gpt-4o-2024-11-20 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o1-pro-2025-03-19 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o1-pro (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o3-2025-04-16 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o4-mini-2025-04-16 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,267 sage.providers.registry:INFO: New model discovered: o3 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o4-mini (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1-mini-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1-mini (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1-nano-2025-04-14 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: gpt-4.1-nano (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o3-pro (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o3-pro-2025-06-10 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o4-mini-deep-research (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o3-deep-research (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,268 sage.providers.registry:INFO: New model discovered: o3-deep-research-2025-06-26 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: o4-mini-deep-research-2025-06-26 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-mini-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-nano-2025-08-07 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-codex (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-pro-2025-10-06 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5-pro (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5.1-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5.1-2025-11-13 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5.1 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,269 sage.providers.registry:INFO: New model discovered: gpt-5.1-codex (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.1-codex-mini (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.1-codex-max (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.2-2025-12-11 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.2-pro-2025-12-11 (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.2-pro (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.2-chat-latest (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-5.2-codex (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: gpt-3.5-turbo-16k (openai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,270 sage.providers.registry:INFO: New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: grok-4.20-beta-0309-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: grok-4.20-beta-0309-reasoning (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: grok-4.20-multi-agent-beta-0309 (xai) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: MiniMax-M2.1 (minimax) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,271 sage.providers.registry:INFO: New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: New model discovered: codex-cli (codex) -- no TOML profile, using defaults
+2026-03-15 19:43:49,272 sage.providers.registry:INFO: ModelRegistry: 122 total profiles, 122 available
+2026-03-15 19:43:49,273 sage.boot:INFO: Boot: discovered 122 models (122 available) — codex: 1, deepseek: 2, google: 21, kimi: 13, minimax: 3, openai: 71, xai: 11
+2026-03-15 19:43:49,280 sage.boot:INFO: ToolExecutor (Rust) not available — S2 AVR uses Python sandbox
+2026-03-15 19:43:49,285 sage.boot:INFO: ProviderPool: 6 live providers — ['google', 'openai', 'xai', 'deepseek', 'minimax', 'kimi']
+2026-03-15 19:43:49,291 sage.boot:INFO: CognitiveOrchestrationPipeline initialized
+2026-03-15 19:43:49,293 sage.boot:INFO: TopologyController initialized (Phase C)
+2026-03-15 19:43:50,494 httpx:INFO: HTTP Request: HEAD https://huggingface.co/datasets/bigcode/bigcodebench-hard/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-03-15 19:43:50,514 httpx:INFO: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/bigcode/bigcodebench-hard/298d2cc7b96612e15e47313c3603ee124cee0c1f/README.md "HTTP/1.1 200 OK"
+2026-03-15 19:43:50,630 httpx:INFO: HTTP Request: HEAD https://huggingface.co/datasets/bigcode/bigcodebench-hard/resolve/298d2cc7b96612e15e47313c3603ee124cee0c1f/bigcodebench-hard.py "HTTP/1.1 404 Not Found"
+2026-03-15 19:43:51,016 httpx:INFO: HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/bigcode/bigcodebench-hard/bigcode/bigcodebench-hard.py "HTTP/1.1 404 Not Found"
+2026-03-15 19:43:51,132 httpx:INFO: HTTP Request: GET https://huggingface.co/api/datasets/bigcode/bigcodebench-hard/revision/298d2cc7b96612e15e47313c3603ee124cee0c1f "HTTP/1.1 200 OK"
+2026-03-15 19:43:51,244 httpx:INFO: HTTP Request: HEAD https://huggingface.co/datasets/bigcode/bigcodebench-hard/resolve/298d2cc7b96612e15e47313c3603ee124cee0c1f/.huggingface.yaml "HTTP/1.1 404 Not Found"
+2026-03-15 19:43:51,514 httpx:INFO: HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=bigcode/bigcodebench-hard "HTTP/1.1 200 OK"
+2026-03-15 19:43:51,677 httpx:INFO: HTTP Request: GET https://huggingface.co/api/datasets/bigcode/bigcodebench-hard/tree/298d2cc7b96612e15e47313c3603ee124cee0c1f/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+2026-03-15 19:43:51,801 httpx:INFO: HTTP Request: GET https://huggingface.co/api/datasets/bigcode/bigcodebench-hard/tree/298d2cc7b96612e15e47313c3603ee124cee0c1f?recursive=false&expand=false "HTTP/1.1 200 OK"
+2026-03-15 19:43:51,935 httpx:INFO: HTTP Request: HEAD https://huggingface.co/datasets/bigcode/bigcodebench-hard/resolve/298d2cc7b96612e15e47313c3603ee124cee0c1f/dataset_infos.json "HTTP/1.1 404 Not Found"
+2026-03-15 19:43:53,046 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:43:53,047 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:43:58,137 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:43:58,137 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:43:58,160 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:43:58,160 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:01,006 sage.bench.bigcodebench_bench:INFO: [1/148] FAIL BigCodeBench/13 (8725ms)
+2026-03-15 19:44:01,076 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:01,076 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:05,252 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:05,252 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:05,276 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:05,276 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:08,955 sage.bench.bigcodebench_bench:INFO: [2/148] FAIL BigCodeBench/15 (7403ms)
+2026-03-15 19:44:09,013 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:09,013 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:11,932 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:11,933 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:11,956 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:11,956 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:13,873 sage.bench.bigcodebench_bench:INFO: [3/148] FAIL BigCodeBench/17 (4757ms)
+2026-03-15 19:44:13,931 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:13,931 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:20,264 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:20,264 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:20,285 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:20,286 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:21,966 sage.bench.bigcodebench_bench:INFO: [4/148] PASS BigCodeBench/19 (7965ms)
+2026-03-15 19:44:22,024 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:22,024 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:25,058 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:25,058 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:25,079 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:25,079 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:26,867 sage.bench.bigcodebench_bench:INFO: [5/148] FAIL BigCodeBench/34 (4805ms)
+2026-03-15 19:44:26,943 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:26,944 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:30,262 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:30,262 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:30,284 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:30,284 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:34,218 sage.bench.bigcodebench_bench:INFO: [6/148] FAIL BigCodeBench/37 (5777ms)
+2026-03-15 19:44:34,316 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:34,317 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:41,679 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:41,680 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:41,702 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:41,702 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:45,025 sage.bench.bigcodebench_bench:INFO: [7/148] FAIL BigCodeBench/82 (10722ms)
+2026-03-15 19:44:45,121 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:45,122 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:49,766 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:49,767 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:49,788 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:49,788 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:52,149 sage.bench.bigcodebench_bench:INFO: [8/148] FAIL BigCodeBench/89 (6956ms)
+2026-03-15 19:44:52,220 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:52,221 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:54,997 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:44:54,998 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:44:55,018 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:44:55,019 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:44:58,922 sage.bench.bigcodebench_bench:INFO: [9/148] FAIL BigCodeBench/92 (6192ms)
+2026-03-15 19:44:58,998 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:44:58,999 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:02,126 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:02,127 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:02,149 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:02,149 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:05,367 sage.bench.bigcodebench_bench:INFO: [10/148] FAIL BigCodeBench/93 (5874ms)
+2026-03-15 19:45:05,453 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:05,454 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:08,128 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:08,129 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:08,150 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:08,151 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:10,283 sage.bench.bigcodebench_bench:INFO: [11/148] FAIL BigCodeBench/99 (4822ms)
+2026-03-15 19:45:10,358 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:10,358 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:16,732 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:16,733 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:16,757 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:16,758 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:18,762 sage.bench.bigcodebench_bench:INFO: [12/148] FAIL BigCodeBench/100 (8392ms)
+2026-03-15 19:45:18,851 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:18,851 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:23,555 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:23,556 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:23,576 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:23,576 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:27,372 sage.bench.bigcodebench_bench:INFO: [13/148] FAIL BigCodeBench/101 (8522ms)
+2026-03-15 19:45:27,454 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:27,455 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:37,914 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:37,915 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:37,941 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:37,942 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:40,982 sage.bench.bigcodebench_bench:INFO: [14/148] FAIL BigCodeBench/108 (13040ms)
+2026-03-15 19:45:41,075 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:41,076 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:44,954 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:44,955 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:44,979 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:44,979 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:47,379 sage.bench.bigcodebench_bench:INFO: [15/148] FAIL BigCodeBench/120 (5759ms)
+2026-03-15 19:45:47,453 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:47,453 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:51,482 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:51,483 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:51,504 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:51,504 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:54,337 sage.bench.bigcodebench_bench:INFO: [16/148] PASS BigCodeBench/123 (6336ms)
+2026-03-15 19:45:54,438 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:45:54,439 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:45:58,285 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:45:58,286 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:45:58,313 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:45:58,313 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:00,819 sage.bench.bigcodebench_bench:INFO: [17/148] FAIL BigCodeBench/124 (6420ms)
+2026-03-15 19:46:00,917 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:00,917 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:04,502 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:04,502 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:04,523 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:04,523 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:07,973 sage.bench.bigcodebench_bench:INFO: [18/148] FAIL BigCodeBench/129 (6416ms)
+2026-03-15 19:46:08,042 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:08,042 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:11,789 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:11,790 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:11,813 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:11,813 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:14,049 sage.bench.bigcodebench_bench:INFO: [19/148] FAIL BigCodeBench/139 (5512ms)
+2026-03-15 19:46:14,111 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:14,112 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:18,577 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:18,578 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:18,597 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:18,597 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:22,874 sage.bench.bigcodebench_bench:INFO: [20/148] FAIL BigCodeBench/147 (7620ms)
+2026-03-15 19:46:22,946 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:22,947 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:27,297 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:27,298 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:27,320 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:27,320 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:30,577 sage.bench.bigcodebench_bench:INFO: [21/148] PASS BigCodeBench/161 (7038ms)
+2026-03-15 19:46:30,640 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:30,641 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:33,847 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:33,847 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:33,869 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:33,869 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:37,530 sage.bench.bigcodebench_bench:INFO: [22/148] FAIL BigCodeBench/162 (6872ms)
+2026-03-15 19:46:37,593 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:37,594 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:40,485 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:40,485 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:40,503 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:40,504 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:42,780 sage.bench.bigcodebench_bench:INFO: [23/148] FAIL BigCodeBench/177 (5162ms)
+2026-03-15 19:46:42,937 sage.llm.google:INFO: Using Google Gemini model: gemini-2.5-flash
+2026-03-15 19:46:42,938 google_genai.models:INFO: AFC is enabled with max remote calls: 10.
+2026-03-15 19:46:45,984 sage.pipeline:WARNING: Stage 2 topology engine failed: argument 'task_embedding': 'int' object cannot be converted to 'Sequence', using template
+2026-03-15 19:46:45,985 sage.pipeline:INFO: Assigned models to 1 nodes (domain=code, budget=5.00)
+2026-03-15 19:46:46,005 sage.llm.google:INFO: Using Google Gemini model: gemini-3.1-flash-lite-preview
+2026-03-15 19:46:46,005 google_genai.models:INFO: AFC is enabled with max remote calls: 10.

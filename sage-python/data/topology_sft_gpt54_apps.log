@@ -1,0 +1,35 @@
+2026-03-16 15:25:52,259 sage.llm._ssl: SSL auto-detect: self-signed certificate detected, bypassing verification
+2026-03-16 15:25:52,299 gen_sft: OpenAI client ready (model=gpt-5.4)
+`trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'codeparrot/apps' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+2026-03-16 15:25:54,951 datasets.load: `trust_remote_code` is not supported anymore.
+Please check that the Hugging Face dataset 'codeparrot/apps' isn't based on a loading script and remove `trust_remote_code`.
+If the dataset is based on a loading script, please ask the dataset author to remove it and convert it to a standard format like Parquet.
+2026-03-16 15:25:55,215 httpx: HTTP Request: HEAD https://huggingface.co/datasets/codeparrot/apps/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+2026-03-16 15:25:55,267 httpx: HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/codeparrot/apps/21e74ddf8de1a21436da12e3e653065c5213e9d1/README.md "HTTP/1.1 200 OK"
+Traceback (most recent call last):
+  File "C:\Code\YGN-SAGE\sage-python\scripts\generate_topology_sft.py", line 352, in <module>
+    main()
+    ~~~~^^
+  File "C:\Code\YGN-SAGE\sage-python\scripts\generate_topology_sft.py", line 308, in main
+    tasks = _load_tasks(args.dataset, args.subset, args.limit)
+  File "C:\Code\YGN-SAGE\sage-python\scripts\generate_topology_sft.py", line 120, in _load_tasks
+    ds = load_dataset("codeparrot/apps", split="test", trust_remote_code=True)
+  File "C:\ProgramData\miniforge3\Lib\site-packages\datasets\load.py", line 1485, in load_dataset
+    builder_instance = load_dataset_builder(
+        path=path,
+    ...<10 lines>...
+        **config_kwargs,
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\datasets\load.py", line 1130, in load_dataset_builder
+    dataset_module = dataset_module_factory(
+        path,
+    ...<5 lines>...
+        cache_dir=cache_dir,
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\datasets\load.py", line 1029, in dataset_module_factory
+    raise e1 from None
+  File "C:\ProgramData\miniforge3\Lib\site-packages\datasets\load.py", line 989, in dataset_module_factory
+    raise RuntimeError(f"Dataset scripts are no longer supported, but found {filename}")
+RuntimeError: Dataset scripts are no longer supported, but found apps.py
