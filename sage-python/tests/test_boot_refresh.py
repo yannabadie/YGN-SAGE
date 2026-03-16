@@ -149,7 +149,6 @@ def test_boot_refresh_failure_does_not_crash(monkeypatch):
     # Should not raise — just warn and continue
     system = boot_agent_system(use_mock_llm=False, llm_tier="fast")
     assert system.registry is not None
-    assert system.orchestrator is not None
 
 
 def test_boot_logs_discovery_summary(monkeypatch, caplog):
@@ -199,15 +198,15 @@ async def test_agent_system_mock_mode_bypasses_orchestrator():
 
 
 @pytest.mark.asyncio
-async def test_agent_system_falls_back_on_orchestrator_failure():
-    """If orchestrator.run() raises, fall back to AgentLoop.run()."""
+async def test_agent_system_falls_back_on_pipeline_failure():
+    """If pipeline.run() raises, fall back to AgentLoop.run()."""
     from sage.boot import boot_agent_system
     system = boot_agent_system(use_mock_llm=True)
 
     # This test verifies the fallback path exists in the code,
-    # but in mock mode the orchestrator is bypassed entirely.
+    # but in mock mode the pipeline is bypassed entirely.
     # We verify by checking the method has the try/except pattern.
     import inspect
     source = inspect.getsource(system.run)
-    assert "orchestrator" in source.lower()
+    assert "pipeline" in source.lower()
     assert "fallback" in source.lower() or "legacy" in source.lower()

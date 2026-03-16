@@ -116,14 +116,9 @@ class AgentSystem:
     memory_agent: MemoryAgent
     tool_registry: ToolRegistry
     event_bus: EventBus
-    # CognitiveOrchestrator (capability-based multi-provider routing)
+    # Legacy field — kept for backward compat, always None.
     orchestrator: Any = None
     # ModelRegistry (live model discovery + TOML knowledge base)
-    # Note: ModelRegistry is the capability-based selection system used by
-    # CognitiveOrchestrator. ModelRouter (sage.llm.router) is the legacy
-    # tier->config mapping used directly by AgentLoop. Both coexist:
-    # the orchestrator tries ModelRegistry first, falling back to the
-    # legacy ModelRouter path if no models are discovered.
     registry: Any = None
     # CapabilityMatrix: semantic capability lookup for discovered providers
     capability_matrix: Any = None
@@ -158,7 +153,7 @@ class AgentSystem:
         Primary path: CognitiveOrchestrationPipeline (5-stage).
         Secondary path: CognitiveOrchestrator (multi-provider, score-based).
         Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
-        Mock mode: direct AgentLoop (no orchestrator).
+        Mock mode: direct AgentLoop.
         """
         # Try CognitiveOrchestrationPipeline first (if wired and not mock)
         # Mock mode bypasses the pipeline so agent_loop phases (PERCEIVE/THINK/ACT/LEARN)
@@ -372,17 +367,13 @@ class AgentSystem:
 
         current_provider = self.agent_loop.config.llm.provider
 
-        # Mock mode: skip orchestrator, use AgentLoop directly
+        # Mock mode: use AgentLoop directly
         if current_provider == "mock":
             result = await self.agent_loop.run(task)
             self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
             return result
 
         # 4a. Multi-node topology: use AgentLoop → TopologyRunner (direct LLM)
-        #     The CognitiveOrchestrator ignores topologies and creates its own
-        #     ModelAgents with quality cascades. When a multi-node topology is
-        #     active, we MUST bypass the orchestrator so TopologyRunner executes
-        #     the actual topology graph with per-node LLM calls.
         if self.agent_loop._current_topology:
             _node_count = 0
             try:
@@ -391,32 +382,13 @@ class AgentSystem:
                 pass
             if _node_count > 1:
                 _log.info(
-                    "Multi-node topology (%d nodes): bypassing orchestrator -> TopologyRunner",
+                    "Multi-node topology (%d nodes): using TopologyRunner",
                     _node_count,
                 )
                 result = await self.agent_loop.run(task)
                 await self._persist_memory()
                 self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
                 return result
-
-        # 4b. Try CognitiveOrchestrator as primary path (multi-provider)
-        if self.orchestrator and self.registry and self.registry.list_available():
-            try:
-                # Construct authoritative ExecutionDecision from routing result
-                from sage.execution_decision import ExecutionDecision
-                exec_decision = ExecutionDecision(
-                    system=getattr(self._last_decision, "system", 2),
-                    model_id=getattr(self._last_decision, "model_id", "unknown") or "unknown",
-                    topology_id=getattr(self._last_decision, "topology_id", None),
-                )
-                result = await self.orchestrator.run(task, decision=exec_decision)
-                await self._persist_memory()
-                self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
-                return result
-            except Exception as e:
-                _log.warning(
-                    "Orchestrator failed (%s), falling back to legacy routing", e
-                )
 
         # 5. Fallback: legacy ModelRouter path (only used with Python router)
         if not self.rust_router:
@@ -797,13 +769,10 @@ def boot_agent_system(
     # ModelRegistry: always created (even in mock mode) so callers can inspect it
     from sage.providers.registry import ModelRegistry
     registry = ModelRegistry()
-    orchestrator = None
     _cap_matrix = None
     _runtime_adapters: dict[str, Any] = {}
 
     if not use_mock_llm:
-        from sage.orchestrator import CognitiveOrchestrator
-
         # Auto-discover available models at boot.
         # NOTE: The ThreadPoolExecutor pattern below is intentional and safe.
         # registry.refresh() only performs HTTP health-check calls (no shared
@@ -842,10 +811,6 @@ def boot_agent_system(
             )
         except Exception as e:
             _log.warning("Boot: model discovery failed (%s), continuing with legacy routing", e)
-
-        orchestrator = CognitiveOrchestrator(
-            registry=registry, metacognition=metacognition, event_bus=event_bus,
-        )
 
         # Auto-populate capability matrix from discovered providers.
         # Build runtime adapter instances so CapabilityMatrix trusts their
@@ -1073,7 +1038,7 @@ def boot_agent_system(
         memory_agent=memory_agent,
         tool_registry=tool_registry,
         event_bus=event_bus,
-        orchestrator=orchestrator,
+        orchestrator=None,  # Legacy field, kept for backward compat
         registry=registry,
         capability_matrix=_cap_matrix,
         rust_router=rust_router,

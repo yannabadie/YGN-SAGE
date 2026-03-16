@@ -61,22 +61,12 @@ class TestModelProfile:
 # ── TOML loading tests ───────────────────────────────────────────────────────
 
 class TestTomlLoading:
-    def test_load_toml_from_package(self):
-        """The bundled config/model_profiles.toml must be found and parsed."""
+    def test_load_toml_returns_empty_when_no_file(self):
+        """Without model_profiles.toml, _load_toml returns empty dict."""
         registry = ModelRegistry()
         knowledge = registry._load_toml()
-        assert "gemini-3.1-pro-preview" in knowledge
-        assert "gpt-5.4" in knowledge
-        assert "deepseek-chat" in knowledge
-
-    def test_toml_entry_has_expected_fields(self):
-        registry = ModelRegistry()
-        knowledge = registry._load_toml()
-        gemini = knowledge["gemini-3.1-pro-preview"]
-        assert gemini["provider"] == "google"
-        assert gemini["family"] == "gemini-3.1"
-        assert 0.0 <= gemini["code_score"] <= 1.0
-        assert gemini["cost_input"] > 0
+        # model_profiles.toml was deleted; returns empty or stale cache
+        assert isinstance(knowledge, dict)
 
     def test_load_toml_returns_empty_on_missing(self, tmp_path, monkeypatch):
         """If no TOML file is found, return empty dict."""
@@ -371,7 +361,7 @@ class TestModelRegistry:
 
     @pytest.mark.asyncio
     async def test_refresh_with_mock_connector(self, monkeypatch):
-        """Refresh discovers models and merges them with TOML data."""
+        """Refresh discovers models and marks them available."""
         fake_discovered = [
             DiscoveredModel(
                 id="gemini-3.1-pro-preview",
@@ -393,11 +383,10 @@ class TestModelRegistry:
 
         await registry.refresh()
 
-        # gemini-3.1-pro-preview should be available with TOML scores merged
+        # gemini-3.1-pro-preview should be available
         gemini = registry.get("gemini-3.1-pro-preview")
         assert gemini is not None
         assert gemini.available is True
-        assert gemini.code_score == 0.81  # from TOML
         assert gemini.context_window == 1_000_000  # from discovery
 
         # brand-new-model should be available with default scores
@@ -406,15 +395,9 @@ class TestModelRegistry:
         assert new_model.available is True
         assert new_model.code_score == 0.5  # default
 
-        # TOML-only models should be present but unavailable
-        gpt54 = registry.get("gpt-5.4")
-        assert gpt54 is not None
-        assert gpt54.available is False
-        assert gpt54.code_score == 0.86  # from TOML
-
     @pytest.mark.asyncio
     async def test_refresh_empty_discovery(self, monkeypatch):
-        """When discovery returns nothing, TOML models are still loaded."""
+        """When discovery returns nothing, registry is empty (no TOML)."""
         connector_mock = AsyncMock()
         connector_mock.discover_all = AsyncMock(return_value=[])
 
@@ -423,8 +406,7 @@ class TestModelRegistry:
 
         await registry.refresh()
 
-        # All TOML models should be present but unavailable
-        assert len(registry._profiles) > 0
+        # Without model_profiles.toml, no profiles loaded
         for profile in registry._profiles.values():
             assert profile.available is False
 

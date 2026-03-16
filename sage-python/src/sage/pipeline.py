@@ -554,6 +554,35 @@ class CognitiveOrchestrationPipeline:
                     controller=None,  # no controller on retry to prevent loop
                 )
                 result = await runner2.run(ctx.task)
+
+            # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
+            if result and result != "__REROUTE__" and self.quality_estimator:
+                quality = self.quality_estimator.estimate(ctx.task, result)
+                if quality is not None and quality < 0.3 and self.assigner:
+                    log.info("Stage 4: quality=%.2f < 0.3, triggering FrugalGPT cascade retry", quality)
+                    # Reassign with higher budget models
+                    try:
+                        if hasattr(ctx.topology, 'node_count'):
+                            for i in range(ctx.topology.node_count()):
+                                if self.assigner and hasattr(self.assigner, 'assign_single_node'):
+                                    self.assigner.assign_single_node(
+                                        ctx.topology, i, ctx.domain, ctx.budget
+                                    )
+                        # Re-execute with upgraded models
+                        from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
+                        executor2 = _TE(ctx.topology)
+                        runner3 = TopologyRunner(
+                            graph=ctx.topology, executor=executor2,
+                            llm_provider=self.llm_provider, llm_config=self.llm_config,
+                            provider_pool=self.provider_pool,
+                        )
+                        retry_result = await runner3.run(ctx.task)
+                        if retry_result:
+                            result = retry_result
+                            log.info("Stage 4: FrugalGPT cascade succeeded on retry")
+                    except Exception as exc:
+                        log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
+
             ctx.result = result
         except Exception as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)

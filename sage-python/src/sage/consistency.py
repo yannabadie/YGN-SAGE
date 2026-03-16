@@ -47,8 +47,8 @@ def consistency_score(texts: list[str], embedder: Any = None) -> float:
             for j in range(i + 1, n):
                 sims.append(float(np.dot(embeddings[i], embeddings[j])))
         return sum(sims) / len(sims) if sims else 1.0
-    except ImportError:
-        pass
+    except (ImportError, Exception) as exc:
+        log.debug("sentence-transformers fallback failed: %s", exc)
 
     # Hash embeddings = meaningless cosine → return 1.0 to avoid spurious reroutes
     log.debug("No semantic embedder available, returning 1.0 (skip consistency check)")

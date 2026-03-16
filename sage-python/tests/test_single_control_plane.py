@@ -6,13 +6,13 @@ import pytest
 from sage.boot import boot_agent_system
 
 
-def test_orchestrator_primary_with_fallback():
-    """AgentSystem.run should use orchestrator as primary, ModelRouter as fallback."""
+def test_pipeline_primary_with_fallback():
+    """AgentSystem.run should use Pipeline as primary, ModelRouter as fallback."""
     system = boot_agent_system(use_mock_llm=True)
     source = inspect.getsource(type(system).run)
-    # Orchestrator is the primary path (wired in Task 2)
-    assert "orchestrator.run" in source, (
-        "run() should call orchestrator.run as primary routing path"
+    # Pipeline is the primary path (orchestrator removed in cleanup)
+    assert "pipeline" in source.lower(), (
+        "run() should reference pipeline as primary routing path"
     )
     # Legacy ModelRouter fallback is retained
     assert "ModelRouter.get_config" in source, (
