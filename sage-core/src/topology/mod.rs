@@ -12,6 +12,7 @@ pub mod map_elites;
 pub mod mcts;
 pub mod mutations;
 pub mod pyo3_wrappers;
+pub mod reward;
 pub mod smmu_bridge;
 pub mod templates;
 pub mod topology_graph;
