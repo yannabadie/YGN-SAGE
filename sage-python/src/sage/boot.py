@@ -875,6 +875,15 @@ def boot_agent_system(
                     base_url=_cfg.get("base_url"),
                     provider_name=_pname,
                 )
+        # Codex CLI provider (uses subprocess, not API key)
+        if "codex" in _discovered_providers:
+            try:
+                from sage.llm.codex import CodexProvider
+                _runtime_adapters["codex"] = CodexProvider()
+                _log.info("Boot: Codex CLI provider added to runtime adapters")
+            except Exception as e:
+                _log.warning("Boot: Codex provider init failed (%s)", e)
+
         _cap_matrix.populate_from_providers(
             list(_discovered_providers), adapters=_runtime_adapters,
         )

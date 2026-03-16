@@ -21,7 +21,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let n1 = TopologyNode::new(
@@ -30,7 +30,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         2,
         vec!["reasoning".into()],
         0,
-        2.0,
+        1.0,
         120.0,
     );
     let n2 = TopologyNode::new(
@@ -39,7 +39,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
 
@@ -70,7 +70,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let si = g.add_node(source);
@@ -83,7 +83,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
             2,
             vec!["reasoning".into()],
             0,
-            2.0,
+            1.0,
             120.0,
         );
         worker_indices.push(g.add_node(w));
@@ -95,7 +95,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
         1,
         vec!["aggregation".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let ai = g.add_node(agg);
@@ -132,7 +132,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
         2,
         vec!["code_generation".into()],
         0,
-        3.0,
+        1.5,
         120.0,
     );
     let verifier = TopologyNode::new(
@@ -141,7 +141,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
         2,
         vec!["code_review".into()],
         0,
-        2.0,
+        1.0,
         60.0,
     );
     let output = TopologyNode::new(
@@ -150,7 +150,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
 
@@ -192,7 +192,7 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let di = g.add_node(dispatcher);
@@ -205,7 +205,7 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
             2,
             vec!["reasoning".into()],
             0,
-            2.0,
+            1.0,
             120.0,
         );
         agent_indices.push(g.add_node(agent));
@@ -217,7 +217,7 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
         2,
         vec!["aggregation".into()],
         0,
-        2.0,
+        0.5,
         60.0,
     );
     let mi = g.add_node(mixer);
@@ -250,7 +250,7 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         2,
         vec!["planning".into()],
         1,
-        3.0,
+        1.5,
         120.0,
     );
     let child1 = TopologyNode::new(
@@ -259,7 +259,7 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         1,
         vec!["reasoning".into()],
         1, // same label as parent (children inherit parent's security context)
-        2.0,
+        1.0,
         60.0,
     );
     let child2 = TopologyNode::new(
@@ -268,7 +268,7 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         1,
         vec!["reasoning".into()],
         1, // same label as parent
-        2.0,
+        1.0,
         60.0,
     );
 
@@ -304,7 +304,7 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
         2,
         vec!["planning".into(), "delegation".into()],
         1,
-        3.0,
+        1.0,
         120.0,
     );
     let ci = g.add_node(coordinator);
@@ -316,7 +316,7 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
             1,
             vec!["reasoning".into()],
             1, // same label as coordinator (spokes inherit hub's security context)
-            2.0,
+            1.0,
             60.0,
         );
         let si = g.add_node(spoke);
@@ -358,7 +358,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let debater_a = TopologyNode::new(
@@ -367,7 +367,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         2,
         vec!["reasoning".into()],
         0,
-        2.0,
+        1.0,
         120.0,
     );
     let debater_b = TopologyNode::new(
@@ -376,7 +376,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         2,
         vec!["reasoning".into()],
         0,
-        2.0,
+        1.0,
         120.0,
     );
     let judge = TopologyNode::new(
@@ -385,7 +385,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         2,
         vec!["evaluation".into()],
         0,
-        2.0,
+        1.0,
         60.0,
     );
 
@@ -428,7 +428,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
         1,
         vec!["text_processing".into()],
         0,
-        1.0,
+        0.5,
         60.0,
     );
     let pi = g.add_node(prompt);
@@ -441,7 +441,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
             2,
             vec!["reasoning".into(), "creativity".into()],
             0,
-            2.0,
+            1.0,
             120.0,
         );
         thinker_indices.push(g.add_node(thinker));
@@ -453,7 +453,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
         2,
         vec!["aggregation".into(), "synthesis".into()],
         0,
-        2.0,
+        0.5,
         60.0,
     );
     let si = g.add_node(synthesizer);
