@@ -110,6 +110,28 @@ def _load_tasks(dataset: str, subset: str, limit: int | None):
         except Exception as exc:
             log.error("GSM8K load failed: %s", exc)
             sys.exit(1)
+    elif dataset == "code_contests":
+        try:
+            import pandas as pd
+            from pathlib import Path
+            parquet_path = Path("data/code_contests_test.parquet")
+            if not parquet_path.exists():
+                log.info("Downloading code_contests parquet...")
+                import httpx
+                client = httpx.Client(verify=False, timeout=120)
+                r = client.get("https://huggingface.co/api/datasets/deepmind/code_contests/parquet/default/test")
+                url = r.json()[0]
+                r2 = client.get(url, follow_redirects=True)
+                parquet_path.parent.mkdir(parents=True, exist_ok=True)
+                parquet_path.write_bytes(r2.content)
+            df = pd.read_parquet(str(parquet_path))
+            for i, row in df.iterrows():
+                if limit and len(tasks) >= limit:
+                    break
+                tasks.append((f"CodeContests/{i}", str(row.get("description", ""))))
+        except Exception as exc:
+            log.error("code_contests load failed: %s", exc)
+            sys.exit(1)
     elif dataset == "bigcodebench":
         try:
             from bigcodebench.data import get_bigcodebench
@@ -262,7 +284,7 @@ def _generate_one_sync(client, model, task_id, prompt):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate topology SFT data via GPT-5.4")
-    parser.add_argument("--dataset", choices=["bigcodebench", "apps", "gsm8k"], default="bigcodebench")
+    parser.add_argument("--dataset", choices=["bigcodebench", "apps", "gsm8k", "code_contests"], default="bigcodebench")
     parser.add_argument("--subset", choices=["full", "hard"], default="hard")
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--model", type=str, default="gpt-5.4-pro")
