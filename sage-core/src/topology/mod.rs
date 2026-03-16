@@ -4,6 +4,7 @@
 //! and three-flow edges (Control, Message, State).
 
 pub mod cma_me;
+pub mod density;
 pub mod engine;
 pub mod executor;
 pub mod llm_synthesis;

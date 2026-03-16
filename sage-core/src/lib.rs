@@ -61,6 +61,8 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<topology::pyo3_wrappers::PyTopologyEngine>()?;
     m.add_class::<topology::pyo3_wrappers::PyGenerateResult>()?;
     m.add_class::<topology::pyo3_wrappers::PyTopologyExecutor>()?;
+    m.add_class::<topology::density::TopologyDensity>()?;
+    m.add_class::<topology::density::DensityScore>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;
