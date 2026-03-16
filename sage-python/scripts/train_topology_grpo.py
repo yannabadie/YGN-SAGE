@@ -43,12 +43,12 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         sys.exit(1)
 
     log.info("Loading base model: %s", BASE_MODEL)
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=True, torch_dtype="auto",
+        BASE_MODEL, trust_remote_code=False, dtype="auto",
     )
 
     # Load SFT data
@@ -122,12 +122,12 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         sys.exit(1)
 
     log.info("Loading SFT checkpoint: %s", sft_checkpoint)
-    tokenizer = AutoTokenizer.from_pretrained(sft_checkpoint, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(sft_checkpoint, trust_remote_code=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=True, torch_dtype="auto",
+        BASE_MODEL, trust_remote_code=False, dtype="auto",
     )
     model = PeftModel.from_pretrained(model, sft_checkpoint)
 
@@ -251,7 +251,7 @@ def run_export(checkpoint: str, output_path: str):
             task="text-generation",
             opset=18,
             fp16=False,
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         log.info("ONNX export complete: %s", output_path)
     except ImportError:
