@@ -11,6 +11,12 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+# Ensure SSL verification follows SAGE_SSL_VERIFY env var
+if os.environ.get("SAGE_SSL_VERIFY", "").lower() == "false":
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+    os.environ.setdefault("CURL_CA_BUNDLE", "")
+
 import argparse
 import asyncio
 import json
@@ -135,7 +141,7 @@ def main():
 
                 # Generate topology from template
                 try:
-                    graph = template_store.create(template_name, "gemini-2.5-flash")
+                    graph = template_store.create(template_name, "gemini-3-flash-preview")
                 except Exception as exc:
                     log.debug("Template %s failed: %s", template_name, exc)
                     continue
