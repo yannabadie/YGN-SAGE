@@ -1,0 +1,43 @@
+---
+paths:
+  - "sage-core/**"
+  - "sage-python/**"
+---
+
+# Architecture Quick Reference
+
+## Project Structure
+- `sage-core/` — Rust orchestrator (PyO3). 259 tests.
+- `sage-python/` — Python SDK. 1559 tests.
+- `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
+- `ui/` — Dashboard (FastAPI + WebSocket).
+- `Researches/` — 25+ research papers backing architecture decisions.
+
+## 5 Cognitive Pillars
+1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True).
+2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
+3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU paging with ULID chunks.
+4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5.
+5. **Strategy** — S1/S2/S3 cognitive routing (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling.
+
+## Pipeline (5-stage)
+```
+CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (TopologyEngine)
+→ ASSIGN MODELS (Rust ModelAssigner: affinity 0.4 + domain 0.4 + cost 0.2)
+→ EXECUTE (TopologyRunner with per-node ProviderPool resolution)
+→ LEARN (QualityEstimator Z3 → Bandit + MAP-Elites archive)
+```
+
+## Self-Adaptive Engine (In Progress)
+- **SA-1**: Runtime Agent Factory — custom TopologyNode prompts, LLM-generated agent specs
+- **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive
+- **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics
+
+## Key Competitors
+- **OpenSage** (ICML '26): AI-created agents+tools+memory at runtime. 59% SWE-Bench Pro.
+- **AgentConductor** (arXiv 2602.17100): RL topology evolution, 97.5% HumanEval with 3B model.
+
+## Benchmarks
+- BigCodeBench Hard Instruct: SAGE 37.8% (budget model) vs leaderboard 33.1% (o3-mini, stale)
+- Leaderboard is frozen since April 2025. Frontier 2026 models (GPT-5.4, Opus 4.6) not submitted.
+- The VALUE of SAGE is the framework delta, not absolute score.
