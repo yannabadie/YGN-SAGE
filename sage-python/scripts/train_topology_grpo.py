@@ -93,7 +93,7 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         logging_steps=10,
         save_strategy="epoch",
         bf16=True,
-        max_seq_length=2048,
+        max_length=2048,
     )
 
     trainer = SFTTrainer(
