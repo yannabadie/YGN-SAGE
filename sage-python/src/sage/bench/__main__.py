@@ -298,6 +298,37 @@ async def _run_bigcodebench(output: str | None, limit: int | None, subset: str, 
     _save_report(report, bench, output, f"bigcodebench-{subset}-{split}")
 
 
+async def _run_apps(
+    output: str | None, limit: int | None, difficulty: str | None,
+) -> None:
+    from sage.bench.apps_bench import APPSBench
+
+    if os.environ.get("GOOGLE_API_KEY"):
+        system, bus = _boot_system()
+        bench = APPSBench(system=system, event_bus=bus, difficulty=difficulty)
+    else:
+        bench = APPSBench(difficulty=difficulty)
+
+    report = await bench.run(limit=limit)
+    _print_report(report)
+    diff_label = difficulty or "all"
+    _save_report(report, bench, output, f"apps-{diff_label}")
+
+
+async def _run_livecodebench(output: str | None, limit: int | None) -> None:
+    from sage.bench.livecodebench_bench import LiveCodeBenchBench
+
+    if os.environ.get("GOOGLE_API_KEY"):
+        system, bus = _boot_system()
+        bench = LiveCodeBenchBench(system=system, event_bus=bus)
+    else:
+        bench = LiveCodeBenchBench()
+
+    report = await bench.run(limit=limit)
+    _print_report(report)
+    _save_report(report, bench, output, "livecodebench")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="sage.bench",
@@ -305,7 +336,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "bigcodebench", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "bigcodebench", "apps", "livecodebench", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -374,6 +405,12 @@ def main() -> None:
         choices=["instruct", "complete"],
         default="instruct",
         help="BigCodeBench split: instruct (NL) or complete (docstring)",
+    )
+    parser.add_argument(
+        "--difficulty",
+        choices=["introductory", "interview", "competition"],
+        default=None,
+        help="APPS difficulty filter (default: all levels)",
     )
     args = parser.parse_args()
 
@@ -456,6 +493,12 @@ def main() -> None:
 
     if args.type == "bigcodebench":
         asyncio.run(_run_bigcodebench(args.output, args.limit, args.subset, args.split))
+
+    if args.type == "apps":
+        asyncio.run(_run_apps(args.output, args.limit, args.difficulty))
+
+    if args.type == "livecodebench":
+        asyncio.run(_run_livecodebench(args.output, args.limit))
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
