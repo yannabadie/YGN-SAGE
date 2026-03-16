@@ -135,7 +135,7 @@ def main():
 
                 # Generate topology from template
                 try:
-                    graph = template_store.create(template_name)
+                    graph = template_store.create(template_name, "gemini-2.5-flash")
                 except Exception as exc:
                     log.debug("Template %s failed: %s", template_name, exc)
                     continue
