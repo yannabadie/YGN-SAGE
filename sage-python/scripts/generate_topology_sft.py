@@ -124,7 +124,7 @@ async def _generate_one(client, model: str, task_id: str, prompt: str) -> dict |
                 },
             },
             temperature=0.7,  # Diversity in topologies
-            max_tokens=2000,
+            max_completion_tokens=2000,
             reasoning_effort="high",  # Maximum quality for SFT training data
         )
         content = response.choices[0].message.content
