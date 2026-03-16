@@ -141,7 +141,7 @@ supports_tools = true
 structured_output_tools_compatible = true
 
 [models."gpt-5.3-codex"]
-provider = "openai"
+provider = "codex"
 family = "gpt-5.3"
 code_score = 0.85
 reasoning_score = 0.93
