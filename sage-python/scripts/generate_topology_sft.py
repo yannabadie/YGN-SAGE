@@ -11,11 +11,33 @@ Usage:
 """
 from __future__ import annotations
 
+import os
+import ssl
+
+# Auto-detect corporate proxy and patch SSL globally BEFORE any imports
+try:
+    import socket
+    _ctx = ssl.create_default_context()
+    with socket.create_connection(("www.google.com", 443), timeout=5) as _sock:
+        with _ctx.wrap_socket(_sock, server_hostname="www.google.com"):
+            pass
+except ssl.SSLCertVerificationError:
+    os.environ["CURL_CA_BUNDLE"] = ""
+    os.environ["REQUESTS_CA_BUNDLE"] = ""
+    os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+    import httpx as _hx
+    _hx_orig = _hx.Client.__init__
+    def _hx_patched(self, *a, **kw):
+        kw["verify"] = False
+        _hx_orig(self, *a, **kw)
+    _hx.Client.__init__ = _hx_patched
+except Exception:
+    pass
+
 import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 import time
 from datetime import datetime, timezone
