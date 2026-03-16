@@ -184,27 +184,24 @@ async def _generate_batch(client, model: str, tasks: list, workers: int) -> list
 
 
 def _generate_one_sync(client, model, task_id, prompt):
-    """Sync wrapper for _generate_one."""
+    """Generate one topology using the Responses API (for GPT-5.x Pro models)."""
     try:
-        response = client.chat.completions.create(
+        # Use Responses API (v1/responses) — required for gpt-5.x-pro models
+        response = client.responses.create(
             model=model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": f"Design an optimal agent topology for this task:\n\n{prompt[:2000]}"},
-            ],
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
+            instructions=SYSTEM_PROMPT,
+            input=f"Design an optimal agent topology for this task:\n\n{prompt[:2000]}",
+            text={
+                "format": {
+                    "type": "json_schema",
                     "name": "topology",
                     "strict": True,
                     "schema": TOPOLOGY_SCHEMA,
                 },
             },
-            temperature=0.7,
-            max_completion_tokens=2000,
-            reasoning_effort="high",
+            reasoning={"effort": "high"},
         )
-        content = response.choices[0].message.content
+        content = response.output_text
         topology = json.loads(content)
 
         if not topology.get("nodes") or len(topology["nodes"]) == 0:
@@ -235,7 +232,7 @@ def main():
     parser.add_argument("--dataset", choices=["bigcodebench", "apps"], default="bigcodebench")
     parser.add_argument("--subset", choices=["full", "hard"], default="hard")
     parser.add_argument("--limit", type=int, default=500)
-    parser.add_argument("--model", type=str, default="gpt-5.4")
+    parser.add_argument("--model", type=str, default="gpt-5.4-pro")
     parser.add_argument("--output", type=str, default="data/topology_sft_gpt54.jsonl")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--list", action="store_true")
