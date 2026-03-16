@@ -222,6 +222,12 @@ def _generate_one_sync(client, model, task_id, prompt):
             "model": model,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+    except RuntimeError as exc:
+        if "closed" in str(exc):
+            log.warning("[%s] Client closed, will retry with fresh client", task_id)
+        else:
+            log.warning("[%s] RuntimeError: %s", task_id, str(exc)[:100])
+        return "RETRY"
     except Exception as exc:
         log.warning("[%s] Failed: %s", task_id, str(exc)[:100])
         return None
@@ -291,7 +297,15 @@ def main():
                 continue
 
             result = _generate_one_sync(client, args.model, tid, prompt)
-            if result:
+            # Retry with fresh client if connection closed
+            if result == "RETRY":
+                client = openai.OpenAI(
+                    api_key=api_key,
+                    http_client=httpx.Client(verify=ssl_verify(), timeout=180),
+                )
+                log.info("Recreated OpenAI client, retrying %s", tid)
+                result = _generate_one_sync(client, args.model, tid, prompt)
+            if result and result != "RETRY":
                 f.write(json.dumps(result, default=str) + "\n")
                 f.flush()
                 count += 1
