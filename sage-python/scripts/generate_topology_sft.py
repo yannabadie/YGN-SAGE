@@ -262,7 +262,7 @@ def _generate_one_sync(client, model, task_id, prompt):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate topology SFT data via GPT-5.4")
-    parser.add_argument("--dataset", choices=["bigcodebench", "apps"], default="bigcodebench")
+    parser.add_argument("--dataset", choices=["bigcodebench", "apps", "gsm8k"], default="bigcodebench")
     parser.add_argument("--subset", choices=["full", "hard"], default="hard")
     parser.add_argument("--limit", type=int, default=500)
     parser.add_argument("--model", type=str, default="gpt-5.4-pro")
