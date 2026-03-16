@@ -1,26 +1,67 @@
-"""SSL verification helper — controlled by SAGE_SSL_VERIFY env var."""
+"""SSL verification — auto-detects corporate proxy certificates.
+
+Tries standard SSL first. If self-signed certificate errors occur,
+automatically falls back to verify=False. No manual configuration needed.
+"""
 from __future__ import annotations
 
 import logging
 import os
+import ssl
 
 _log = logging.getLogger(__name__)
+_SSL_VERIFIED: bool | None = None  # None = not yet tested
 
 
 def ssl_verify() -> bool:
-    """Return False only if SAGE_SSL_VERIFY=false is explicitly set."""
-    return os.environ.get("SAGE_SSL_VERIFY", "true").lower() != "false"
+    """Return whether SSL verification should be enabled.
+
+    Auto-detects: tries a real connection on first call.
+    If corporate proxy with self-signed cert is detected, returns False permanently.
+    Override: SAGE_SSL_VERIFY=false forces bypass, SAGE_SSL_VERIFY=true forces verify.
+    """
+    global _SSL_VERIFIED
+
+    # Explicit override
+    env = os.environ.get("SAGE_SSL_VERIFY", "").lower()
+    if env == "false":
+        return False
+    if env == "true":
+        return True
+
+    # Auto-detect on first call
+    if _SSL_VERIFIED is None:
+        _SSL_VERIFIED = _probe_ssl()
+        if not _SSL_VERIFIED:
+            _log.info("SSL auto-detect: self-signed certificate detected, bypassing verification")
+
+    return _SSL_VERIFIED
+
+
+def _probe_ssl() -> bool:
+    """Probe if SSL verification works with a known good host."""
+    try:
+        import socket
+        ctx = ssl.create_default_context()
+        with socket.create_connection(("www.google.com", 443), timeout=5) as sock:
+            with ctx.wrap_socket(sock, server_hostname="www.google.com") as ssock:
+                _ = ssock.version()
+        return True
+    except (ssl.SSLCertVerificationError, ssl.SSLError):
+        return False
+    except Exception:
+        return True  # Network error, not SSL — keep verify=True
 
 
 def patch_genai_ssl(client) -> None:
-    """Patch a ``genai.Client`` to use the configured SSL verification setting.
-
-    When ``ssl_verify()`` returns True (default), this is a no-op.
-    When ``SAGE_SSL_VERIFY=false``, patches the client to skip verification.
-    """
-    if not ssl_verify():
-        try:
-            import httpx
-            client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
-        except Exception:
-            _log.debug("Failed to patch genai client for SSL bypass", exc_info=True)
+    """Patch a genai.Client for SSL bypass (sync + async)."""
+    if ssl_verify():
+        return
+    try:
+        import httpx
+        client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
+        # Also patch async client if it exists
+        if hasattr(client._api_client, '_async_httpx_client'):
+            client._api_client._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
+    except Exception:
+        _log.debug("Failed to patch genai client for SSL bypass", exc_info=True)
