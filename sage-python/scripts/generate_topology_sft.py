@@ -272,7 +272,7 @@ def main():
     import openai
     client = openai.OpenAI(
         api_key=api_key,
-        http_client=httpx.Client(verify=ssl_verify(), timeout=60),
+        http_client=httpx.Client(verify=ssl_verify(), timeout=180),
     )
     log.info("OpenAI client ready (model=%s)", args.model)
 
