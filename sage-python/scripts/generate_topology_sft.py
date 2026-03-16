@@ -335,38 +335,57 @@ def main():
     tasks = _load_tasks(args.dataset, args.subset, args.limit)
     log.info("Loaded %d tasks from %s/%s", len(tasks), args.dataset, args.subset)
 
-    # Generate topologies
+    # Generate topologies with concurrent workers
     output_path.parent.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     count = 0
+    workers = args.workers
+    log.info("Using %d concurrent workers", workers)
+
+    import threading
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    file_lock = threading.Lock()
+
+    def _process_task(tid_prompt):
+        tid, prompt = tid_prompt
+        if not prompt:
+            return None
+        # Each thread gets its own client (thread-safe)
+        thread_client = openai.OpenAI(
+            api_key=api_key,
+            http_client=httpx.Client(verify=ssl_verify(), timeout=180),
+        )
+        result = _generate_one_sync(thread_client, args.model, tid, prompt)
+        if result == "RETRY":
+            thread_client = openai.OpenAI(
+                api_key=api_key,
+                http_client=httpx.Client(verify=ssl_verify(), timeout=180),
+            )
+            result = _generate_one_sync(thread_client, args.model, tid, prompt)
+        return result
 
     with open(output_path, "a", encoding="utf-8") as f:
-        for i, (tid, prompt) in enumerate(tasks):
-            if not prompt:
-                continue
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(_process_task, t): i for i, t in enumerate(tasks)}
+            done_count = 0
+            for future in as_completed(futures):
+                done_count += 1
+                result = future.result()
+                if result and result != "RETRY":
+                    with file_lock:
+                        f.write(json.dumps(result, default=str) + "\n")
+                        f.flush()
+                        count += 1
 
-            result = _generate_one_sync(client, args.model, tid, prompt)
-            # Retry with fresh client if connection closed
-            if result == "RETRY":
-                client = openai.OpenAI(
-                    api_key=api_key,
-                    http_client=httpx.Client(verify=ssl_verify(), timeout=180),
-                )
-                log.info("Recreated OpenAI client, retrying %s", tid)
-                result = _generate_one_sync(client, args.model, tid, prompt)
-            if result and result != "RETRY":
-                f.write(json.dumps(result, default=str) + "\n")
-                f.flush()
-                count += 1
-
-            if (i + 1) % 10 == 0:
-                elapsed = time.time() - t0
-                rate = (i + 1) / elapsed * 60
-                log.info(
-                    "Progress: %d/%d done, %d valid (%.0f tasks/min, est. %.0fmin remaining)",
-                    i + 1, len(tasks), count, rate,
-                    (len(tasks) - i - 1) / max(rate, 0.1),
-                )
+                if done_count % 10 == 0:
+                    elapsed = time.time() - t0
+                    rate = done_count / elapsed * 60
+                    log.info(
+                        "Progress: %d/%d done, %d valid (%.0f tasks/min, est. %.0fmin remaining)",
+                        done_count, len(tasks), count, rate,
+                        (len(tasks) - done_count) / max(rate, 0.1),
+                    )
 
     elapsed = time.time() - t0
     log.info(
