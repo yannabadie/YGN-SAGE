@@ -1,0 +1,17 @@
+{
+  "benchmark": "evalplus_humaneval",
+  "model": "unknown",
+  "provider": "GoogleProvider",
+  "git_sha": "7af188467cea",
+  "feature_flags": [
+    "sage_core",
+    "smt",
+    "tool-executor",
+    "onnx"
+  ],
+  "total": 164,
+  "passed": 147,
+  "pass_rate": 0.8963,
+  "avg_latency_ms": 10724.3,
+  "total_cost_usd": 0.0
+}

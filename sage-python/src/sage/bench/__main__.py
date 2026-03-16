@@ -88,12 +88,15 @@ def _print_report(report) -> None:
     print()
 
 
-def _boot_system():
+_BOOT_TIER = "fast"  # Set by main() from --tier flag
+
+
+def _boot_system(tier: str | None = None):
     """Boot AgentSystem with real LLM (requires GOOGLE_API_KEY)."""
     from sage.boot import boot_agent_system
     from sage.events.bus import EventBus
     bus = EventBus()
-    system = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus)
+    system = boot_agent_system(use_mock_llm=False, llm_tier=tier or _BOOT_TIER, event_bus=bus)
     return system, bus
 
 
@@ -412,9 +415,19 @@ def main() -> None:
         default=None,
         help="APPS difficulty filter (default: all levels)",
     )
+    parser.add_argument(
+        "--tier",
+        choices=["fast", "mutator", "reasoner", "codex", "codex_max", "budget", "fallback", "auto"],
+        default="fast",
+        help="LLM tier for default provider (default: fast). 'reasoner' uses gemini-3.1-pro-preview.",
+    )
     args = parser.parse_args()
 
     _load_env()
+
+    # Set boot tier for all benchmark runs
+    global _BOOT_TIER
+    _BOOT_TIER = args.tier
 
     if args.type in ("routing", "all"):
         asyncio.run(_run_routing(args.output))

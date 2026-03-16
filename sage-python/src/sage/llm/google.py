@@ -32,7 +32,7 @@ class GoogleProvider:
         messages: list[Message],
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
-        use_google_search: bool = True,
+        use_google_search: bool = False,
         file_search_store_names: list[str] | None = None,
     ) -> LLMResponse:
         try:
