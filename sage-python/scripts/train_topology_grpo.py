@@ -89,7 +89,7 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
-        warmup_ratio=0.1,
+        warmup_steps=50,
         logging_steps=10,
         save_strategy="epoch",
         bf16=True,
@@ -101,7 +101,7 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         args=training_args,
         train_dataset=dataset,
         peft_config=peft_config,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     log.info("Starting SFT training (%d epochs)...", epochs)
