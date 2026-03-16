@@ -35,6 +35,7 @@ ONNX_MODEL = "microsoft/Phi-4-mini-instruct-onnx"
 def run_sft(data_path: str, output_dir: str, epochs: int):
     """Stage 1: Supervised Fine-Tuning on collected topology data."""
     try:
+        import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments
         from trl import SFTTrainer, SFTConfig
         from peft import LoraConfig
@@ -47,8 +48,17 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    from transformers import BitsAndBytesConfig
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=False, dtype="auto",
+        BASE_MODEL, trust_remote_code=False,
+        quantization_config=bnb_config,
+        device_map="auto",
     )
 
     # Load SFT data
@@ -86,14 +96,15 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
     training_args = SFTConfig(
         output_dir=output_dir,
         num_train_epochs=epochs,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=8,
         learning_rate=2e-4,
         warmup_steps=50,
         logging_steps=10,
         save_strategy="epoch",
         bf16=True,
-        max_length=2048,
+        max_length=1024,
+        gradient_checkpointing=True,
     )
 
     trainer = SFTTrainer(
