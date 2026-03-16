@@ -21,7 +21,10 @@ from pathlib import Path
 # NOTE: concurrent linter activity may add new third-party ignores.
 # Raised from 20 to 23 after QualityEstimator rewrite (3 new sage_core imports).
 # Raised from 23 to 25 after orchestrator cleanup (2 new pipeline sage_core imports).
-_MAX_TYPE_IGNORES = 25
+# Raised from 25 to 27: +1 FrugalGPT cascade (pipeline.py sage_core import),
+# +1 apps_bench.py datasets import, +1 livecodebench_bench.py datasets import,
+# -1 orchestrator.py deleted (net +2).
+_MAX_TYPE_IGNORES = 27
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")
