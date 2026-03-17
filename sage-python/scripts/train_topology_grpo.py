@@ -280,12 +280,31 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         struct = structure_reward(completions, **kwargs)
         return [f + 0.5 * s for f, s in zip(fmt, struct)]
 
+    # Load base model + merge SFT adapter, then let GRPOTrainer apply fresh LoRA
+    from transformers import BitsAndBytesConfig
+    from peft import PeftModel
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
+    log.info("Loading base model + SFT adapter...")
+    base = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL, trust_remote_code=False,
+        quantization_config=bnb_config,
+        device_map={"": 0},
+    )
+    model = PeftModel.from_pretrained(base, sft_checkpoint)
+    model = model.merge_and_unload()  # Merge SFT weights into base
+    log.info("SFT adapter merged. Launching GRPO with fresh LoRA...")
+
     trainer = GRPOTrainer(
-        model=sft_checkpoint,          # GRPOTrainer loads model itself
+        model=model,
         reward_funcs=[combined_reward],
         args=config,
         train_dataset=dataset,
-        peft_config=peft_config,       # LoRA applied by trainer
+        peft_config=peft_config,       # Fresh LoRA for GRPO
         processing_class=tokenizer,
     )
 
