@@ -252,6 +252,7 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         output_dir=output_dir,
         # GRPO core (research-backed March 2026)
         num_generations=16,            # K=16 for diversity (DAPO standard, fills VRAM)
+        generation_batch_size=16,      # Must be divisible by num_generations
         max_completion_length=256,     # Topologies fit in ~200 tokens
         loss_type="dr_grpo",           # No std division — zero-variance safe (Dr. GRPO)
         scale_rewards=False,           # No per-group std scaling
