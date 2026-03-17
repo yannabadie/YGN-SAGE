@@ -254,3 +254,41 @@ async def synthesize_topology(
         task[:60], graph.node_count(), graph.edge_count(),
     )
     return graph
+
+
+# ---------------------------------------------------------------------------
+# SFT Policy Model (Path 6 in TopologyEngine)
+# ---------------------------------------------------------------------------
+
+HF_POLICY_REPO = "yannabadie/sage-topology-policy"
+_POLICY_CACHE_DIR = None  # Populated by download_policy_model()
+
+
+def download_policy_model(cache_dir: str | None = None) -> str | None:
+    """Download the SFT topology policy from HuggingFace Hub.
+
+    Returns the local path to the adapter directory, or None if unavailable.
+    Falls back gracefully — the system uses templates if the policy is missing.
+    """
+    global _POLICY_CACHE_DIR
+    if _POLICY_CACHE_DIR is not None:
+        return _POLICY_CACHE_DIR
+
+    try:
+        from huggingface_hub import snapshot_download
+
+        local_dir = snapshot_download(
+            repo_id=HF_POLICY_REPO,
+            cache_dir=cache_dir,
+            ignore_patterns=["*.md"],
+        )
+        _POLICY_CACHE_DIR = local_dir
+        _log.info("Topology policy downloaded: %s", local_dir)
+        return local_dir
+    except ImportError:
+        _log.debug("huggingface_hub not installed — topology policy unavailable")
+    except Exception as exc:
+        _log.info(
+            "Topology policy download failed (using templates): %s", str(exc)[:100]
+        )
+    return None
