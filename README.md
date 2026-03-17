@@ -44,8 +44,8 @@ SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
    └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
                              ├─ MCTS search            └─ ProviderPool (7 providers)
                              ├─ LLM synthesis               ├─ CircuitBreaker
-                             ├─ Template fallback (x8)       └─ FrugalGPT cascade
-                             └─ [Path 6: RL policy]
+                             ├─ Path 6: learned policy (Phi-4-mini SFT, 70%)
+                             └─ Template fallback (x8)       └─ FrugalGPT cascade
 ```
 
 ## 5 Cognitive Pillars
@@ -80,7 +80,8 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 - **MAP-Elites + CMA-ME**: quality-diversity search over topology space
 - **Online evolution**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to archive
 - **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
-- **RLVR-Topology** (in progress): RL topology policy with verified dense rewards
+- **Path 6: Learned topology policy** — SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. Auto-downloads from [yannabadie/sage-topology-policy](https://huggingface.co/yannabadie/sage-topology-policy). Enable with `SAGE_ENABLE_PATH6=1`.
+- **RLVR-Topology** (next): GRPO with TopologyReward Rust (execution-based, not format-only)
 
 ### 5. Strategy (Rust)
 - **S1/S2/S3 cognitive routing** (Kahneman dual-process): kNN (92% GT), SystemRouter (86% GT)
@@ -104,7 +105,8 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 | **SA-1** | Runtime Agent Factory: custom TopologyNode prompts, LLM-generated agent specs | Phase 1+2 done |
 | **SA-3** | Online Evolution: `_auto_evolve=True`, pipeline records to MAP-Elites | Done |
 | **SA-4** | Z3 Quality Pipeline: QualityLabeler replaces heuristic, zero false signals | Done |
-| **RLVR-Topology** | RL topology policy (Phi-4-mini-instruct SFT + GRPO with verified rewards) | SFT training |
+| **Path 6** | Learned topology policy: Phi-4-mini SFT, 70% YAML valid, auto-download from HuggingFace | Done (opt-in) |
+| **RLVR-Topology** | GRPO v2 with TopologyReward Rust (execution-based reward, not format-only) | Next |
 
 ## Benchmark Results
 
@@ -119,7 +121,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 
 | Suite | Result |
 |-------|--------|
-| Python | **1518 passed**, 0 failures, 22 skipped |
+| Python | **1516 passed**, 0 failures, 22 skipped |
 | Rust | **270+ passed** (with smt, tool-executor, onnx features) |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 

@@ -39,13 +39,16 @@ python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 ```
 
-## Current State (March 16, 2026)
+## Current State (March 17, 2026)
 
-- **Tests**: Python 1559 passed / Rust 259 passed / 0 failures
+- **Tests**: Python 1516 passed / Rust 270+ passed / 0 failures
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA 33.1% (stale, April 2025)
+- **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%
 - **Providers**: 7 functional (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, Codex)
-- **Self-Adaptive**: SA-1 (Agent Factory), SA-3 (Online Evolution), SA-4 (Z3 Quality) implemented
+- **Self-Adaptive**: SA-1, SA-3, SA-4 implemented + **Path 6 learned topology policy** (70% YAML valid)
+- **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
+- **HuggingFace**: `yannabadie/sage-topology-policy` — SFT Phi-4-mini-instruct
 
 ## Detailed rules in .claude/rules/
 

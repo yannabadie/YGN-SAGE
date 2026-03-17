@@ -42,6 +42,20 @@ python -m sage.bench --type ablation --limit 50
 python scripts/collect_quality_labels.py --dataset bigcodebench --subset hard --limit 50
 ```
 
+## Path 6 (Learned Topology Policy)
+```bash
+# Enable Path 6 in pipeline (loads 3.8B model on GPU)
+export SAGE_ENABLE_PATH6=1
+python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
+
+# Train topology policy
+python scripts/train_topology_grpo.py --mode sft --data data/topology_sft_clean.jsonl --epochs 5
+python scripts/upload_hf.py  # publish to yannabadie/sage-topology-policy
+
+# Generate SFT data (requires OPENAI_API_KEY for GPT-5.4)
+python scripts/generate_topology_sft.py --dataset bigcodebench --limit 100 --model gpt-5.4
+```
+
 ## Lint
 ```bash
 cd sage-python && ruff check src/ && mypy src/ --ignore-missing-imports

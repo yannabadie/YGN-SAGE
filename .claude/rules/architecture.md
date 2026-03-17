@@ -14,7 +14,7 @@ paths:
 - `Researches/` — 25+ research papers backing architecture decisions.
 
 ## 5 Cognitive Pillars
-1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True).
+1. **Topology** — Rust TopologyEngine: 7-path generation (S-MMU → archive → LLM → mutation → MCTS → **Path 6: learned policy** → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 uses SFT Phi-4-mini-instruct (70% YAML valid, opt-in via `SAGE_ENABLE_PATH6=1`).
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU paging with ULID chunks.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5.
@@ -28,10 +28,12 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (Top
 → LEARN (QualityEstimator Z3 → Bandit + MAP-Elites archive)
 ```
 
-## Self-Adaptive Engine (In Progress)
-- **SA-1**: Runtime Agent Factory — custom TopologyNode prompts, LLM-generated agent specs
-- **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive
-- **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics
+## Self-Adaptive Engine
+- **SA-1**: Runtime Agent Factory — custom TopologyNode prompts, LLM-generated agent specs. Done.
+- **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive. Done.
+- **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics. Done.
+- **Path 6**: Learned topology policy (Phi-4-mini-instruct SFT, 70% YAML valid). Opt-in via `SAGE_ENABLE_PATH6=1`. Auto-downloads from `yannabadie/sage-topology-policy` on HuggingFace. Lazy-loaded on first call (no boot impact). Falls back to templates on invalid output.
+- **GRPO v2** (next): TopologyReward Rust with real execution as reward signal (not format-only).
 
 ## Key Competitors
 - **OpenSage** (ICML '26): AI-created agents+tools+memory at runtime. 59% SWE-Bench Pro.
