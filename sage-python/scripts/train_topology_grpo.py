@@ -274,10 +274,15 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         mask_truncated_completions=True,
     )
 
+    # Combined reward (TRL 0.29 doesn't support reward_weights)
+    def combined_reward(completions: list[str], **kwargs) -> list[float]:
+        fmt = format_reward(completions, **kwargs)
+        struct = structure_reward(completions, **kwargs)
+        return [f + 0.5 * s for f, s in zip(fmt, struct)]
+
     trainer = GRPOTrainer(
         model=sft_checkpoint,          # GRPOTrainer loads model itself
-        reward_funcs=[format_reward, structure_reward],
-        reward_weights=[1.0, 0.5],
+        reward_funcs=[combined_reward],
         args=config,
         train_dataset=dataset,
         peft_config=peft_config,       # LoRA applied by trainer
