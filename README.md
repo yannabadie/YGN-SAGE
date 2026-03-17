@@ -9,14 +9,20 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1518%20passed%20%7C%200%20failing-brightgreen?style=flat-square" alt="Tests">
+  <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
+  <img src="https://img.shields.io/badge/tests-1518%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
 ---
+
+**YGN-SAGE learns which multi-agent topology to use for each task, adding +5.5pp over bare LLM calls on coding benchmarks.**
+
+```bash
+pip install ygn-sage
+```
 
 YGN-SAGE is a Self-Adaptive Agent Development Kit built on **5 cognitive pillars**: Topology, Tools, Memory, Evolution, Strategy. Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
