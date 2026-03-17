@@ -130,146 +130,157 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
 
 
 def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
-    """Stage 2: GRPO with SAGE's verified dense rewards."""
+    """Stage 2: GRPO with graduated format rewards (AgentConductor pattern).
+
+    Key fixes from research (March 2026):
+    - beta=0.0: no reference model (saves ~2GB VRAM, DAPO/Dr.GRPO validated)
+    - loss_type="dr_grpo": removes std normalization (handles zero-variance groups)
+    - num_generations=8: more diversity for reward variance
+    - Graduated rewards: -2.0 to +1.0 (not binary -1/+1)
+    - peft_config passed to GRPOTrainer (not pre-wrapped PeftModel)
+    """
     try:
+        import torch
         from transformers import AutoTokenizer, AutoModelForCausalLM
         from trl import GRPOTrainer, GRPOConfig
-        from peft import PeftModel
+        from peft import LoraConfig
     except ImportError:
         log.error("Missing deps: pip install trl transformers torch peft")
         sys.exit(1)
 
     log.info("Loading SFT checkpoint: %s", sft_checkpoint)
-    tokenizer = AutoTokenizer.from_pretrained(sft_checkpoint, trust_remote_code=False)
+    tokenizer = AutoTokenizer.from_pretrained(sft_checkpoint, trust_remote_code=False,
+                                              local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    import torch
-    from transformers import BitsAndBytesConfig
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
+    # LoRA config for GRPO (applied by GRPOTrainer, not pre-loaded)
+    peft_config = LoraConfig(
+        r=16, lora_alpha=32, lora_dropout=0.05,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        task_type="CAUSAL_LM",
     )
-    model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=False,
-        quantization_config=bnb_config,
-        device_map={"": 0},
-    )
-    model = PeftModel.from_pretrained(model, sft_checkpoint)
 
-    # SAGE verified reward function
-    try:
-        from sage_core import TopologyReward, TopologyDensity, TopologyGraph, TopologyNode
-        from sage_core import PyHybridVerifier
-        reward_scorer = TopologyReward()
-        density_scorer = TopologyDensity()
-        verifier = PyHybridVerifier()
-        log.info("SAGE reward infrastructure loaded (Rust)")
-    except ImportError:
-        log.error("sage_core not built. Run: cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor")
-        sys.exit(1)
-
-    def reward_fn(completions: list[str], **kwargs) -> list[float]:
-        """RLVR reward: verified dense rewards from SAGE infrastructure."""
+    # --- Graduated format reward (AgentConductor pattern) ---
+    def format_reward(completions: list[str], **kwargs) -> list[float]:
+        """Graduated YAML format reward. Ensures within-group variance."""
         import yaml
         rewards = []
         for completion in completions:
+            text = completion[0]["content"] if isinstance(completion, list) else completion
             try:
-                # Parse YAML topology (model was SFT'd on YAML format)
-                topo_data = yaml.safe_load(completion)
-                if not topo_data or not isinstance(topo_data, dict):
-                    rewards.append(-2.0)  # NO_YAML_FOUND
+                data = yaml.safe_load(text)
+                if not isinstance(data, dict):
+                    rewards.append(-1.5)  # Parsed but not a mapping
                     continue
-                if "nodes" not in topo_data:
-                    rewards.append(-1.0)  # YAML_SCHEMA_INVALID
+                if "nodes" not in data:
+                    rewards.append(-0.5)  # Valid YAML, missing nodes key
                     continue
-
-                # Build TopologyGraph
-                graph = TopologyGraph("generated")
-                for node_data in topo_data["nodes"]:
-                    node = TopologyNode(
-                        role=node_data.get("role", "agent"),
-                        model_id=node_data.get("model_id", ""),
-                        system=node_data.get("system", 2),
-                    )
-                    graph.add_node(node)
-
-                # Compute verified reward signals
-                density = density_scorer.compute(graph, 2)
-                verification = verifier.verify(graph)
-                structural_score = 1.0 if verification.passed else 0.5
-
-                # Dense reward (no execution in GRPO loop — too expensive)
-                # Use structural + density as proxy
-                reward = reward_scorer.compute(
-                    execution_passed=True,  # Assume execution for structural reward
-                    structural_score=structural_score,
-                    density_score=density.s_complex,
-                    temporal_score=None,
-                )
-                # Penalty for over-budget topologies
-                if density.over_budget:
-                    reward_val = reward.total * 0.5
-                else:
-                    reward_val = reward.total
-
-                rewards.append(float(reward_val))
-
+                nodes = data["nodes"]
+                if not isinstance(nodes, list) or len(nodes) == 0:
+                    rewards.append(-0.25)  # Has nodes key but empty
+                    continue
+                # Valid topology structure
+                rewards.append(0.5)
+            except yaml.YAMLError:
+                rewards.append(-2.0)  # Not valid YAML
             except Exception:
-                rewards.append(-1.0)  # Parse failure penalty
-
+                rewards.append(-2.0)
         return rewards
 
-    # Prepare prompts from SFT data
+    # --- Structural quality reward ---
+    def structure_reward(completions: list[str], **kwargs) -> list[float]:
+        """Reward structural quality of valid topologies."""
+        import yaml
+        rewards = []
+        for completion in completions:
+            text = completion[0]["content"] if isinstance(completion, list) else completion
+            try:
+                data = yaml.safe_load(text)
+                if not isinstance(data, dict) or "nodes" not in data:
+                    rewards.append(0.0)
+                    continue
+                nodes = data.get("nodes", [])
+                if not isinstance(nodes, list):
+                    rewards.append(0.0)
+                    continue
+                score = 0.0
+                if 1 <= len(nodes) <= 10:
+                    score += 0.3
+                if data.get("edges"):
+                    score += 0.2
+                if all(isinstance(n, dict) and "role" in n for n in nodes):
+                    score += 0.3
+                if data.get("reasoning"):
+                    score += 0.2
+                rewards.append(score)
+            except Exception:
+                rewards.append(0.0)
+        return rewards
+
+    # --- Prepare prompts from SFT data ---
     prompts = []
-    # Search for SFT data in multiple locations
     sft_data = None
     for candidate in [
         Path("data/topology_sft_clean.jsonl"),
         Path("data/topology_sft_combined.jsonl"),
-        Path(sft_checkpoint).parent / "topology_sft.jsonl",
     ]:
         if candidate.exists():
             sft_data = candidate
             break
-    if sft_data and sft_data.exists():
+    if sft_data:
         with open(sft_data, "r", encoding="utf-8") as f:
             for line in f:
                 entry = json.loads(line)
-                prompts.append(
-                    f"<|system|>You are a multi-agent topology designer.<|end|>\n"
-                    f"<|user|>{entry.get('prompt', '')}<|end|>\n"
-                    f"<|assistant|>"
-                )
+                p = entry.get("prompt", "")
+                if p:
+                    prompts.append(
+                        f"<|system|>You are a multi-agent topology designer. "
+                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
+                        f"<|user|>{p}<|end|>\n"
+                        f"<|assistant|>"
+                    )
+        log.info("Loaded %d prompts from %s", len(prompts), sft_data)
     else:
-        log.warning("No SFT data found at %s, using dummy prompts", sft_data)
-        prompts = ["<|user|>Write a function to sort a list<|end|>\n<|assistant|>"] * 100
+        log.error("No SFT data found")
+        sys.exit(1)
 
     from datasets import Dataset
     dataset = Dataset.from_dict({"prompt": prompts})
 
     config = GRPOConfig(
         output_dir=output_dir,
-        num_generations=4,  # K=4 sampled topologies per query (VRAM limited)
-        max_completion_length=512,
+        # GRPO core (research-backed March 2026)
+        num_generations=8,             # K=8 for diversity (DAPO uses 16)
+        max_completion_length=256,     # Topologies fit in ~200 tokens
+        loss_type="dr_grpo",           # No std division — zero-variance safe (Dr. GRPO)
+        scale_rewards=False,           # No per-group std scaling
+        beta=0.0,                      # NO reference model (saves ~2GB, DAPO validated)
+        # Training
         num_train_epochs=1,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=4,
-        learning_rate=5e-6,
-        beta=0.04,  # KL penalty coefficient
-        logging_steps=5,
-        save_strategy="epoch",
+        gradient_accumulation_steps=8,
+        learning_rate=1e-5,            # TRL recommended for LoRA GRPO
+        warmup_ratio=0.1,
+        # Memory (12GB VRAM)
         bf16=True,
         gradient_checkpointing=True,
+        optim="paged_adamw_8bit",      # 8-bit optimizer
+        # Logging
+        logging_steps=5,
+        save_strategy="steps",
+        save_steps=200,
+        log_completions=True,          # See what model generates
+        mask_truncated_completions=True,
     )
 
     trainer = GRPOTrainer(
-        model=model,
-        reward_funcs=[reward_fn],
+        model=sft_checkpoint,          # GRPOTrainer loads model itself
+        reward_funcs=[format_reward, structure_reward],
+        reward_weights=[1.0, 0.5],
         args=config,
         train_dataset=dataset,
+        peft_config=peft_config,       # LoRA applied by trainer
         processing_class=tokenizer,
     )
 
