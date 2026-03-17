@@ -292,3 +292,93 @@ def download_policy_model(cache_dir: str | None = None) -> str | None:
             "Topology policy download failed (using templates): %s", str(exc)[:100]
         )
     return None
+
+
+# Lazy-loaded model + tokenizer (never loaded at boot)
+_POLICY_MODEL = None
+_POLICY_TOKENIZER = None
+
+
+def generate_topology_from_policy(task: str) -> dict | None:
+    """Generate a topology using the learned SFT policy (Path 6).
+
+    Lazy-loads the model on first call. Returns None if:
+    - Model not available (no GPU, no download)
+    - YAML/JSON parsing fails (fallback to templates)
+    """
+    global _POLICY_MODEL, _POLICY_TOKENIZER
+
+    # Lazy load on first call only
+    if _POLICY_MODEL is None:
+        adapter_path = download_policy_model()
+        if adapter_path is None:
+            return None
+        try:
+            import torch
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from peft import PeftModel
+
+            if not torch.cuda.is_available():
+                _log.debug("Path 6: no CUDA — skipping learned policy")
+                return None
+
+            _log.info("Path 6: loading topology policy (first call)...")
+            tok = AutoTokenizer.from_pretrained(
+                adapter_path, trust_remote_code=False, local_files_only=True,
+            )
+            base = AutoModelForCausalLM.from_pretrained(
+                "microsoft/Phi-4-mini-instruct",
+                trust_remote_code=False,
+                dtype=torch.float16,
+                device_map="cpu",
+                low_cpu_mem_usage=True,
+            )
+            model = PeftModel.from_pretrained(base, adapter_path)
+            model = model.to("cuda:0")
+            model.eval()
+            _POLICY_MODEL = model
+            _POLICY_TOKENIZER = tok
+            _log.info("Path 6: topology policy loaded on %s", next(model.parameters()).device)
+        except Exception as exc:
+            _log.info("Path 6: model load failed (using templates): %s", str(exc)[:100])
+            return None
+
+    # Generate
+    import torch
+
+    prompt = (
+        "<|system|>You are a multi-agent topology designer. "
+        "Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
+        f"<|user|>{task[:500]}<|end|>\n"
+        "<|assistant|>"
+    )
+    inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
+
+    try:
+        with torch.no_grad():
+            out = _POLICY_MODEL.generate(
+                **inputs,
+                max_new_tokens=256,
+                temperature=0.7,
+                do_sample=True,
+                pad_token_id=_POLICY_TOKENIZER.eos_token_id,
+            )
+        raw = _POLICY_TOKENIZER.decode(
+            out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True,
+        )
+    except Exception as exc:
+        _log.debug("Path 6: generation failed: %s", str(exc)[:100])
+        return None
+
+    # Parse YAML (superset of JSON — handles both)
+    try:
+        import yaml
+        data = yaml.safe_load(raw)
+        if isinstance(data, dict) and "nodes" in data and len(data.get("nodes", [])) > 0:
+            _log.info("Path 6 (learned policy): %d nodes generated", len(data["nodes"]))
+            return data
+        _log.debug("Path 6: parsed but no valid nodes")
+    except Exception:
+        _log.debug("Path 6: YAML parse failed — fallback to template")
+
+    return None

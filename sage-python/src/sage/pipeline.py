@@ -243,6 +243,30 @@ class CognitiveOrchestrationPipeline:
                     "Stage 2 topology engine failed: %s, using template", exc
                 )
 
+        # Path 6: Learned topology policy (SFT Phi-4-mini-instruct)
+        try:
+            from sage.topology.llm_caller import generate_topology_from_policy
+
+            policy_result = generate_topology_from_policy(ctx.task)
+            if policy_result and "nodes" in policy_result:
+                from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+
+                topo = TopologyGraph("learned_policy")
+                for node_data in policy_result["nodes"]:
+                    node = TopologyNode(
+                        role=node_data.get("role", "agent"),
+                        model_id="",
+                        system=ctx.system,
+                        prompt=node_data.get("prompt", ""),
+                    )
+                    topo.add_node(node)
+                ctx.topology = topo
+                log.info("Stage 2 Path 6 (learned policy): %d nodes", topo.node_count())
+                self._check_topology_budget(ctx)
+                return ctx
+        except Exception as exc:
+            log.debug("Path 6 failed: %s", str(exc)[:100])
+
         # Fallback: create topology from template
         try:
             from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
@@ -251,6 +275,7 @@ class CognitiveOrchestrationPipeline:
             node = TopologyNode(role="agent", model_id="", system=ctx.system)
             topo.add_node(node)
             ctx.topology = topo
+            log.debug("Stage 2 fallback to template: %s", hint)
         except ImportError:
             log.debug("sage_core unavailable, topology=None (single-agent mode)")
             ctx.topology = None
