@@ -44,7 +44,11 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         sys.exit(1)
 
     log.info("Loading base model: %s", BASE_MODEL)
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=False)
+    # Use local tokenizer if available (avoids HF download issues)
+    from pathlib import Path
+    local_tok = Path("models/topology_sft/tokenizer.json")
+    tok_path = str(local_tok.parent) if local_tok.exists() else BASE_MODEL
+    tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
@@ -140,8 +144,18 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    import torch
+    from transformers import BitsAndBytesConfig
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_use_double_quant=True,
+    )
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=False, dtype="auto",
+        BASE_MODEL, trust_remote_code=False,
+        quantization_config=bnb_config,
+        device_map={"": 0},
     )
     model = PeftModel.from_pretrained(model, sft_checkpoint)
 
@@ -209,8 +223,17 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
 
     # Prepare prompts from SFT data
     prompts = []
-    sft_data = Path(sft_checkpoint).parent / "topology_sft.jsonl"
-    if sft_data.exists():
+    # Search for SFT data in multiple locations
+    sft_data = None
+    for candidate in [
+        Path("data/topology_sft_clean.jsonl"),
+        Path("data/topology_sft_combined.jsonl"),
+        Path(sft_checkpoint).parent / "topology_sft.jsonl",
+    ]:
+        if candidate.exists():
+            sft_data = candidate
+            break
+    if sft_data and sft_data.exists():
         with open(sft_data, "r", encoding="utf-8") as f:
             for line in f:
                 entry = json.loads(line)
@@ -228,24 +251,26 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
 
     config = GRPOConfig(
         output_dir=output_dir,
-        num_generations=8,  # K=8 sampled topologies per query
+        num_generations=4,  # K=4 sampled topologies per query (VRAM limited)
         max_completion_length=512,
+        max_prompt_length=256,
         num_train_epochs=1,
-        per_device_train_batch_size=2,
+        per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
         learning_rate=5e-6,
         beta=0.04,  # KL penalty coefficient
-        logging_steps=10,
+        logging_steps=5,
         save_strategy="epoch",
         bf16=True,
+        gradient_checkpointing=True,
     )
 
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=[reward_fn],
-        config=config,
+        args=config,
         train_dataset=dataset,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     log.info("Starting GRPO training (%d prompts)...", len(prompts))
