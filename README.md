@@ -5,12 +5,12 @@
 <h1 align="center">YGN-SAGE</h1>
 
 <p align="center">
-  <strong>Agent Development Kit with Cognitive Routing, Guardrails, and Real-Time Dashboard</strong>
+  <strong>Self-Adaptive Generation Engine — Agent Development Kit</strong>
 </p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/status-research%20prototype-yellow?style=flat-square" alt="Status">
-  <img src="https://img.shields.io/badge/tests-1426%20passed%20%7C%207%20failing-yellow?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1518%20passed%20%7C%200%20failing-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -18,154 +18,125 @@
 
 ---
 
-YGN-SAGE is a research prototype Agent Development Kit that combines **cognitive routing (S1/S2/S3)**, **multi-provider model selection** (7 providers), **composable guardrails**, and a **real-time dashboard**. It uses a Rust data plane with a Python SDK.
+YGN-SAGE is a Self-Adaptive Agent Development Kit built on **5 cognitive pillars**: Topology, Tools, Memory, Evolution, Strategy. Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
-## Features
+The system designs, executes, and improves its own multi-agent architectures autonomously.
 
-- **S1/S2/S3 cognitive routing** — adaptive 4-stage routing (structural → kNN embeddings → BERT ONNX → entropy probe; cascade fallback) with Rust ContextualBandit + telemetry calibration. kNN on arctic-embed-m (arXiv 2505.12601): 52% → 92% accuracy on 50 GT tasks, Rust-native SIMD dot product
-- **Multi-provider** — 7 providers auto-discovered at boot (Google, OpenAI, xAI, DeepSeek, MiniMax, Kimi, Codex CLI)
-- **Composable guardrails** — cost limits, output validation, schema validation, Z3 bounds checking at input/runtime/output
-- **4-tier memory** — working memory (Rust Arrow), episodic (SQLite), semantic (entity graph), ExoCortex (Google File Search)
-- **Tool Security** — Rust ToolExecutor: tree-sitter AST validation (23 blocked modules, 21 blocked calls, 20 blocked dunders) + Wasm WASI sandbox (deny-by-default) + subprocess fallback with timeout
-- **Sandbox** — Wasm (wasmtime v36 LTS) Component Model sandbox with WASI deny-by-default capabilities
-- **Dashboard** — built-in FastAPI + WebSocket real-time event viewer with task queue
-- **Benchmarks** — EvalPlus HumanEval+ (164), MBPP+ (378), ablation study, routing quality, official evaluation protocol with error logging
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed component status and known limitations.
-
-## Quick Start
-
-```bash
-# Clone and install
-git clone https://github.com/yannabadie/YGN-SAGE.git
-cd YGN-SAGE/sage-python
-pip install -e ".[all,dev]"
-
-# Set your API key
-export GOOGLE_API_KEY="your_key"
-
-# Run the dashboard
-cd .. && python ui/app.py
-# Open http://localhost:8000
-```
-
-## How It Works
+## Architecture
 
 ```
-User Task
-    |
-    v
-AdaptiveRouter --- 4-stage routing (structural → kNN → BERT → entropy; cascade fallback)
-    |
-    +---> S1 (Simple)   --- fast model, no validation
-    +---> S2 (Code)     --- mid-tier model, sandbox AVR loop
-    +---> S3 (Formal)   --- reasoner model, Z3 bounds checking
-    |
-    v
-AgentLoop: perceive -> think -> act -> learn
-    |
-    +---> Guardrails (input/runtime/output) --- Z3 bounds, cost limits
-    +---> Memory (4 tiers) --- STM, SQLite episodic, semantic graph, ExoCortex RAG
-    +---> Tools (dynamic) --- Python, Bash, search, sub-agents
-    +---> Evolution --- SAMPO + MAP-Elites topology search
-    |
-    v
-EventBus ---> Dashboard (WebSocket, real-time)
+                    ┌─── PIPELINE 5-STAGE ───┐
+                    │                         │
+CLASSIFY ──> DECOMPOSE ──> TOPOLOGY ──> ASSIGN ──> EXECUTE ──> LEARN
+   │            │            │            │          │           │
+   v            v            v            v          v           v
+SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
+  (Rust)      (Python)     (Rust)        (Rust)      (Python)    MAP-Elites
+   │                         │                         │
+   ├─ kNN (92% GT)           ├─ S-MMU retrieval        ├─ Wasm WASI sandbox
+   ├─ StructuralFeatures     ├─ MAP-Elites archive     ├─ tree-sitter validator
+   └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
+                             ├─ MCTS search            └─ ProviderPool (7 providers)
+                             ├─ LLM synthesis               ├─ CircuitBreaker
+                             ├─ Template fallback (x8)       └─ FrugalGPT cascade
+                             └─ [Path 6: RL policy]
 ```
+
+## 5 Cognitive Pillars
+
+### 1. Topology (Rust)
+Dynamic multi-agent architecture generation via 6-path DynamicTopologyEngine:
+- **S-MMU hit**: retrieve similar past topology (similarity > 0.7)
+- **MAP-Elites**: 108-cell quality-diversity archive (4D behavior descriptor)
+- **CMA-ME**: covariance matrix adaptation for continuous topology parameters
+- **MCTS**: Monte Carlo tree search over mutation space (UCB1)
+- **LLM synthesis**: 3-stage pipeline (roles, structure, validation)
+- **Templates**: 8 pre-wired patterns (sequential, parallel, AVR, debate, hub, hierarchical, selfmoa, brainstorming)
+
+Topology graph: petgraph DiGraph with 3-flow edges (Control, Message, State).
+
+### 2. Tools (Rust)
+3-layer sandbox with defense-in-depth:
+- **tree-sitter**: AST validation (23 blocked modules, 21 blocked calls)
+- **Wasm WASI**: wasmtime v36 LTS Component Model (deny-by-default)
+- **subprocess**: kill-on-drop timeout fallback
+
+### 3. Memory (Rust + Python)
+4-tier hierarchical memory:
+- **Tier 0**: Working memory (Rust Arrow, zero-copy, SIMD)
+- **Tier 1**: Episodic (SQLite, cross-session)
+- **Tier 2**: Semantic (entity-relation graph)
+- **Tier 3**: ExoCortex (Google File Search RAG, 500+ research sources)
+
+S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causal, entity) with ULID chunk IDs.
+
+### 4. Evolution (Rust)
+- **MAP-Elites + CMA-ME**: quality-diversity search over topology space
+- **Online evolution**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to archive
+- **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
+- **RLVR-Topology** (in progress): RL topology policy with verified dense rewards
+
+### 5. Strategy (Rust)
+- **S1/S2/S3 cognitive routing** (Kahneman dual-process): kNN (92% GT), SystemRouter (86% GT)
+- **ContextualBandit**: per-arm Thompson sampling with Pareto front
+- **ModelAssigner**: per-node model selection (affinity 0.4 + domain 0.4 + cost 0.2)
+- **CircuitBreaker**: per-provider fault tolerance (auto-skip after 3 failures)
+
+## Formal Verification (Rust)
+
+- **OxiZ SmtVerifier**: sub-0.1ms formal proofs (memory safety, loop bounds, arithmetic, invariants, CEGAR synthesis)
+- **HybridVerifier**: 6 structural + 4 semantic checks on TopologyGraph, O(V+E)
+- **LtlVerifier**: 4 temporal property checks (reachability, safety, liveness, bounded liveness)
+- **QualityLabeler**: Z3-based quality scoring (zero heuristics)
+- **TopologyDensity**: S_complex cost metric (AgentConductor Theorem 1) + N_max bounds
+- **TopologyReward**: multi-signal dense reward for RL topology training
+
+## Self-Adaptive Engine (In Progress)
+
+| Component | Description | Status |
+|-----------|-------------|--------|
+| **SA-1** | Runtime Agent Factory: custom TopologyNode prompts, LLM-generated agent specs | Phase 1+2 done |
+| **SA-3** | Online Evolution: `_auto_evolve=True`, pipeline records to MAP-Elites | Done |
+| **SA-4** | Z3 Quality Pipeline: QualityLabeler replaces heuristic, zero false signals | Done |
+| **RLVR-Topology** | RL topology policy (Phi-4-mini-instruct SFT + GRPO with verified rewards) | SFT training |
 
 ## Benchmark Results
 
-### Framework Value (Ablation Study)
-
-YGN-SAGE adds **+15 percentage points** over a bare LLM baseline on coding tasks (N=20, paired A/B test):
-
-| Configuration | pass@1 | Delta |
-|--------------|--------|-------|
-| Full framework | 100% | — |
-| Bare LLM (no framework) | 85% | -15pp |
-
-Routing contributes +5pp. Memory, AVR, and guardrails show no isolated delta on single-turn code tasks — re-run at N=100 with statistical tests pending. Non-code evaluation (reasoning, multi-turn, research) in progress.
-
-### Code Generation (EvalPlus)
-
-| Benchmark | Score | Model |
+| Benchmark | Score | Notes |
 |-----------|-------|-------|
-| HumanEval+ pass@1 | **84.1%** (138/164) | Gemini 2.5 Flash |
-| MBPP+ pass@1 | **75.1%** (284/378) | Gemini 2.5 Flash |
-
-> **Note:** These are absolute scores using a budget-tier model. Cross-model comparisons (e.g., vs GPT-4o, O1) are not meaningful — different model tiers, different cost profiles. The framework's value is the +15pp delta over the same model without it.
-
-### Routing
-
-| Method | Accuracy (50 GT tasks) | Notes |
-|--------|----------------------|-------|
-| kNN on arctic-embed-m (arXiv 2505.12601) | **92%** (46/50) | Replaces keyword heuristic |
-| Keyword heuristic baseline | 52% (26/50) | Non-circular, human-labeled |
+| **HumanEval+ pipeline** | **89.6%** (147/164) | +5.5pp over pre-pipeline (84.1%). Budget model. |
+| **BigCodeBench Hard Instruct** | **37.8%** (56/148) | Budget model. Leaderboard SOTA 33.1% (stale, Apr 2025). |
+| **kNN routing GT** | **92%** (46/50) | arXiv 2505.12601, arctic-embed-m |
+| **Rust SystemRouter GT** | **86%** (43/50) | Domain scoring from cards.toml |
 
 ### Tests
 
 | Suite | Result |
 |-------|--------|
-| Python unit tests | **1426 passed**, 111 skipped, 7 pre-existing failures |
-| Rust unit tests | **243 passed** (--no-default-features) |
+| Python | **1518 passed**, 0 failures, 22 skipped |
+| Rust | **270+ passed** (with smt, tool-executor, onnx features) |
+| CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
+
+## Quick Start
 
 ```bash
-# Run benchmarks
-python -m sage.bench --type evalplus --dataset humaneval   # EvalPlus HumanEval+ (requires GOOGLE_API_KEY)
-python -m sage.bench --type routing                        # Routing self-consistency (instant)
-python -m sage.bench --type ablation --limit 20            # Ablation study (6 configs)
+# Build
+cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor
+cd sage-python && pip install -e ".[all,dev]"
 
-# Official evaluation protocol (with full error logging)
-python -m sage.bench.eval_protocol --suite humaneval --limit 20 -v   # HumanEval+ with error capture
-python -m sage.bench.eval_protocol --suite mbpp --limit 20 -v       # MBPP+ with error capture
-python -m sage.bench.eval_protocol --replay docs/benchmarks/errors.jsonl  # Post-mortem analysis
+# Test
+cd sage-core && cargo test --no-default-features --features smt,tool-executor --lib
+cd sage-python && python -m pytest tests/ -v
 
-python tests/e2e_proof.py                                  # E2E proof (requires GOOGLE_API_KEY)
+# Benchmark (USE BigCodeBench, NOT HumanEval+)
+python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
+python -m sage.bench --type routing_gt
+python -m sage.bench --type ablation --limit 50
+
+# APPS / LiveCodeBench (competition-level code)
+python -m sage.bench --type apps --limit 20
+python -m sage.bench --type livecodebench --limit 20
 ```
-
-## Run Tests
-
-```bash
-cd sage-python && python -m pytest tests/ -v    # 1426 passed, 111 skipped, 7 pre-existing failures
-cd sage-core && cargo test --no-default-features --lib  # 243 tests
-cd sage-discover && python -m pytest tests/ -v   # 52 passed
-# Integration tests: sage-python/tests/integration/ (50 tests, no mocks)
-```
-
-## Project Structure
-
-```
-YGN-SAGE/
-|-- sage-core/           # Rust core (ToolExecutor, Arrow memory, Wasm sandbox)
-|-- sage-python/         # Python SDK
-|   +-- src/sage/
-|       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
-|       |-- bench/       # EvalPlus HumanEval+/MBPP+, routing, ablation, evaluation protocol
-|       |-- events/      # EventBus (central nervous system)
-|       |-- guardrails/  # Cost, Output, Schema, Z3 formal guardrails
-|       |-- llm/         # Google Gemini + Codex CLI providers
-|       |-- memory/      # 4-tier: STM, Episodic (SQLite), Semantic, ExoCortex
-|       |-- strategy/    # S1/S2/S3 metacognitive routing + CGRS self-braking
-|       |-- tools/       # Dynamic tool creation + 9 memory tools
-|       |-- topology/    # MAP-Elites + CMA-ME + MCTS + LLM synthesis + Z3 PRM
-|       |-- evolution/   # LLM mutator + SAMPO solver
-|       |-- agent_loop.py
-|       +-- boot.py
-|-- sage-discover/       # Knowledge pipeline (arXiv/S2/HF -> ExoCortex)
-|-- ui/                  # Dashboard (FastAPI + single-file HTML)
-+-- docs/                # ADR, designs, plans
-```
-
-## Configuration
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `GOOGLE_API_KEY` | Yes | Google AI API key for Gemini models |
-| `SAGE_MODEL_<TIER>` | No | Override model per tier (e.g. `SAGE_MODEL_FAST=gemini-2.5-flash`) |
-
-ExoCortex is auto-configured with the default research store. No setup needed.
-
-Model IDs are resolved: **env var > `config/models.toml` > hardcoded defaults**.
 
 ## Use as a Library
 
@@ -181,50 +152,56 @@ async def main():
 asyncio.run(main())
 ```
 
-### Compose Agents
+## Project Structure
 
-```python
-from sage.agents import SequentialAgent, ParallelAgent, Handoff
-
-# Chain agents
-pipeline = SequentialAgent(name="pipeline", agents=[analyzer, coder, reviewer])
-
-# Run in parallel
-team = ParallelAgent(name="team", agents=[researcher, implementer])
-
-# Handoff to specialist
-handoff = Handoff(target=debugger, description="For debugging tasks")
+```
+YGN-SAGE/
+|-- sage-core/           # Rust core (PyO3): TopologyEngine, SystemRouter, ModelAssigner,
+|   |                    #   QualityLabeler, S-MMU, SmtVerifier, HybridVerifier, LtlVerifier,
+|   |                    #   WasmSandbox, ToolExecutor, ContextualBandit, MAP-Elites, CMA-ME,
+|   |                    #   MCTS, TopologyDensity, TopologyReward, RustEmbedder, RustKnnRouter
+|   +-- config/cards.toml  # Single source of truth for 27 model cards
+|-- sage-python/         # Python SDK
+|   +-- src/sage/
+|       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
+|       |-- bench/       # BigCodeBench, APPS, LiveCodeBench, EvalPlus, ablation, routing GT
+|       |-- events/      # EventBus (central nervous system)
+|       |-- guardrails/  # Cost, Output, Schema guardrails
+|       |-- llm/         # Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, Codex providers
+|       |-- memory/      # 4-tier: STM (Arrow), Episodic (SQLite), Semantic, ExoCortex
+|       |-- strategy/    # S1/S2/S3 routing, kNN, AdaptiveRouter
+|       |-- topology/    # TopologyRunner, LLM caller, TopologyController
+|       |-- pipeline.py  # 5-stage CognitiveOrchestrationPipeline (ONLY execution path)
+|       +-- boot.py      # System bootstrap
+|-- sage-discover/       # Knowledge pipeline (arXiv -> ExoCortex)
+|-- Researches/          # 25+ research papers backing architecture decisions
++-- docs/                # Specs, plans, benchmarks
 ```
 
-### Add Guardrails
+## Configuration
 
-```python
-from sage.guardrails import GuardrailPipeline, CostGuardrail, OutputGuardrail
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GOOGLE_API_KEY` | Yes | Google AI API key (Gemini models) |
+| `OPENAI_API_KEY` | No | OpenAI API key (GPT-5.x, Codex) |
+| `DEEPSEEK_API_KEY` | No | DeepSeek API key |
+| `GROK_API_KEY` | No | xAI Grok API key |
+| `KIMI_API_KEY` | No | Moonshot Kimi API key |
+| `MINIMAX_API_KEY` | No | MiniMax API key |
 
-pipeline = GuardrailPipeline([
-    CostGuardrail(max_usd=0.50),
-    OutputGuardrail(),  # Warns on empty, too-long, or refusal outputs
-])
-# For JSON mode, use SchemaGuardrail(required_fields=["answer"]) instead
-```
+Provider discovery cached 24h at `~/.sage/discovery_cache/`. Model cards at `sage-core/config/cards.toml` (single source of truth).
 
-## Status (March 2026)
+## Research References
 
-> **Research prototype.** Not production-ready. See [ARCHITECTURE.md](ARCHITECTURE.md) for honest component status.
-
-- **EvalPlus HumanEval+ 84.1%** pass@1 (138/164) with budget Gemini 2.5 Flash — official 80x harder tests
-- **Routing 100%** self-consistency on 30 deterministic tasks (heuristic, not learned)
-- **1426 tests passed** (Python, 7 pre-existing failures) + 243 Rust + 52 Discover + 50 integration tests (no mocks)
-- **CI/CD**: GitHub Actions (5 jobs: Rust, Rust features, Python, Discover, **Windows**)
-- **Dashboard**: functional, real-time via WebSocket (First-Message auth pattern), task queue (up to 10)
-- **Cognitive Routing**: S1/S2/S3 adaptive 4-stage routing (structural → kNN embeddings on arctic-embed-m ONNX 768-dim → BERT ONNX → entropy probe; cascade fallback). kNN routing: 92% accuracy (arXiv 2505.12601)
-- **Memory**: 4 tiers wired end-to-end — Tier 0 Working Memory (Rust Arrow + S-MMU), Tier 1 Episodic (SQLite), Tier 2 Semantic (deque + lazy eviction), Tier 3 ExoCortex (Google File Search)
-- **Embeddings**: RustEmbedder ONNX with auto-discovery, 3-tier fallback + hash fallback warning
-- **Guardrails**: wired at 3 points (input/runtime/output), cost + output + schema + Z3 bounds
-- **Sandbox**: Wasm (wasmtime v36 LTS) + WASI deny-by-default + Rust ToolExecutor (tree-sitter validator + subprocess with kill-on-drop), wired to S2 AVR path
-- **Benchmarks**: EvalPlus HumanEval+ (164), MBPP+ (378), ablation study, routing self-consistency (30 tasks), E2E proof
-- **Composition**: Sequential, Parallel, Loop, Handoff patterns
-- **Security**: thread-safe ModelRegistry, bounded messages (MAX_MESSAGES=40), EventBus timeout, OnceLock ORT resolution
+- **kNN routing**: arXiv 2505.12601 (92% accuracy)
+- **AgentConductor**: arXiv 2602.17100 (RL topology evolution, +29pp from RL)
+- **Graph-GRPO**: arXiv 2603.02701 (edge-level credit assignment)
+- **AdaptOrch**: arXiv 2602.16873 (topology > model capability)
+- **OpenSage**: arXiv 2602.16891 (AI-created agents at runtime, ICML '26)
+- **AlphaEvolve**: arXiv 2506.13131 (LLM as mutation operator)
+- **Cascade Routing**: arXiv 2410.10347 (quality estimator > routing algorithm)
+- **CoALA**: cognitive architecture foundation
+- **FoVer**: Z3 auto-labels for PRM training
 
 ## License
 
