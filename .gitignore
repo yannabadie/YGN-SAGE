@@ -71,3 +71,26 @@ sage-python/src/sage/tools/generated_tools/
 .worktrees/
 site/
 certs/
+
+# Data blobs (regenerate via scripts/)
+sage-python/data/*.log
+sage-python/data/*.jsonl
+
+# Trained models (regenerate via scripts/train_topology_grpo.py)
+sage-python/models/topology_sft/
+sage-python/models/*.safetensors
+sage-python/models/training_summary.json
+
+# Research papers (not code)
+Researches/
+
+# Binary / media files in sage-python
+sage-python/*.jpg
+sage-python/*.png
+sage-python/*.enc
+sage-python/*.key
+sage-python/*.xlsx
+sage-python/*.csv
+sage-python/*.txt
+sage-python/test_*.json
+sage-python/output/
