@@ -173,16 +173,17 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
 
     def reward_fn(completions: list[str], **kwargs) -> list[float]:
         """RLVR reward: verified dense rewards from SAGE infrastructure."""
+        import yaml
         rewards = []
         for completion in completions:
             try:
-                # Parse JSON topology (AgentConductor-style graduated penalties)
-                topo_data = json.loads(completion)
+                # Parse YAML topology (model was SFT'd on YAML format)
+                topo_data = yaml.safe_load(completion)
                 if not topo_data or not isinstance(topo_data, dict):
-                    rewards.append(-2.0)  # NO_JSON_FOUND
+                    rewards.append(-2.0)  # NO_YAML_FOUND
                     continue
                 if "nodes" not in topo_data:
-                    rewards.append(-1.0)  # JSON_SCHEMA_INVALID
+                    rewards.append(-1.0)  # YAML_SCHEMA_INVALID
                     continue
 
                 # Build TopologyGraph
@@ -253,7 +254,6 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         output_dir=output_dir,
         num_generations=4,  # K=4 sampled topologies per query (VRAM limited)
         max_completion_length=512,
-        max_prompt_length=256,
         num_train_epochs=1,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=4,
