@@ -457,9 +457,9 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
                         f"<|user|>{p}<|end|>\n"
                         f"<|assistant|>"
                     )
-        # Limit to 50 for first run
-        prompts = prompts[:50]
-        log.info("Loaded %d code prompts (GSM8K excluded, limited to 50)", len(prompts))
+        # Limit to 200 for run 2 (was 50 in run 1)
+        prompts = prompts[:200]
+        log.info("Loaded %d code prompts (GSM8K excluded, limited to 200)", len(prompts))
     else:
         log.error("No SFT data found")
         sys.exit(1)
@@ -473,16 +473,17 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         num_generations=8,
         generation_batch_size=8,
         max_completion_length=256,
+        temperature=0.6,            # CRITICAL — default 1.0 destroys YAML validity
         loss_type="grpo",           # Standard GRPO (not dr_grpo — we use beta>0)
         beta=0.04,                  # KL anchor — prevents v1 divergence
         # Reward weights: execution dominates
         reward_weights=[0.3, 0.2, 0.5],
         # Training
-        num_train_epochs=1,
+        num_train_epochs=3,         # 3 epochs (was 1 — more exposure to execution signal)
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        learning_rate=1e-5,
-        warmup_steps=20,
+        learning_rate=5e-6,         # Reduced from 1e-5 (more stable)
+        warmup_steps=50,            # More warmup (was 20)
         seed=42,
         # Memory
         bf16=True,

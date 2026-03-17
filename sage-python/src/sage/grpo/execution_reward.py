@@ -275,6 +275,15 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
             tasks_and_topos.append((prompt, topo))
             indices.append(i)
 
+    # Parse stats
+    n_valid = len(tasks_and_topos)
+    n_invalid = len(completions) - n_valid
+    if (n_valid + n_invalid) > 0 and (n_valid + n_invalid) % 8 == 0:
+        log.info(
+            "Parse: %d valid (%.0f%%) | %d invalid — temp=0.6 target: >50%%",
+            n_valid, 100 * n_valid / max(n_valid + n_invalid, 1), n_invalid,
+        )
+
     # All unparseable → 0.0
     rewards = [0.0] * len(completions)
 
