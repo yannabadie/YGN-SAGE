@@ -26,8 +26,8 @@ tags:
   - agent-orchestration
   - qlora
   - phi-4
-datasets:
-  - custom (GPT-5.4 distilled)
+dataset_info:
+  - description: 2624 topologies distilled from GPT-5.4
 language:
   - en
 metrics:
