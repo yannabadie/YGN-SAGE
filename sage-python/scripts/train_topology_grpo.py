@@ -61,21 +61,24 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         device_map="auto",
     )
 
-    # Load SFT data
+    # Load SFT data — JSON format (not YAML: +12pp validity on small models, StructEval 2505.20139)
     data = []
     with open(data_path, "r", encoding="utf-8") as f:
         for line in f:
             entry = json.loads(line)
-            # Format: task description -> topology YAML
             prompt = entry.get("prompt", "")
-            topology = entry.get("topology_yaml", "")
-            if prompt and topology:
+            # Use JSON directly from GPT-5.4 (already valid), NOT yaml.dump conversion
+            topology_dict = entry.get("topology", {})
+            if not topology_dict:
+                continue
+            topology_json = json.dumps(topology_dict, indent=2)
+            if prompt and topology_json:
                 data.append({
                     "text": (
                         f"<|system|>You are a multi-agent topology designer. "
-                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
+                        f"Given a task, generate an optimal agent topology in JSON format.<|end|>\n"
                         f"<|user|>{prompt}<|end|>\n"
-                        f"<|assistant|>{topology}<|end|>"
+                        f"<|assistant|>{topology_json}<|end|>"
                     )
                 })
 
@@ -156,14 +159,16 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
 
     def reward_fn(completions: list[str], **kwargs) -> list[float]:
         """RLVR reward: verified dense rewards from SAGE infrastructure."""
-        import yaml
         rewards = []
         for completion in completions:
             try:
-                # Parse YAML topology
-                topo_data = yaml.safe_load(completion)
-                if not topo_data or "nodes" not in topo_data:
-                    rewards.append(-1.0)  # Invalid YAML penalty
+                # Parse JSON topology (AgentConductor-style graduated penalties)
+                topo_data = json.loads(completion)
+                if not topo_data or not isinstance(topo_data, dict):
+                    rewards.append(-2.0)  # NO_JSON_FOUND
+                    continue
+                if "nodes" not in topo_data:
+                    rewards.append(-1.0)  # JSON_SCHEMA_INVALID
                     continue
 
                 # Build TopologyGraph
