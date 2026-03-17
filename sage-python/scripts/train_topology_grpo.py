@@ -339,9 +339,181 @@ def run_export(checkpoint: str, output_path: str):
         sys.exit(1)
 
 
+def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
+    """Stage 2b: GRPO v2 with execution reward via DeepSeek Reasoner.
+
+    Three reward signals:
+    - format_reward: YAML validity (graduated -2.0 to +0.5)
+    - structure_reward: node/edge quality (0.0 to +1.0)
+    - execution_reward: real LLM execution + TopologyReward Rust (0.0 to +1.0)
+    """
+    try:
+        import torch
+        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        from trl import GRPOTrainer, GRPOConfig
+        from peft import LoraConfig, PeftModel
+    except ImportError:
+        log.error("Missing deps: pip install trl transformers torch peft")
+        sys.exit(1)
+
+    log.info("GRPO v2 — execution reward via DeepSeek Reasoner")
+
+    # Tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(
+        sft_checkpoint, trust_remote_code=False, local_files_only=True,
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # Load base + SFT adapter (PeftModel — trainer handles reference via adapter disable)
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
+    )
+    log.info("Loading base model + SFT adapter...")
+    base = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL, trust_remote_code=False,
+        quantization_config=bnb_config, device_map={"": 0},
+    )
+    model = PeftModel.from_pretrained(base, sft_checkpoint)
+    log.info("SFT model loaded")
+
+    # Reuse format_reward and structure_reward from v1 (defined in run_grpo)
+    import yaml as _yaml
+
+    def format_reward(completions, **kwargs):
+        rewards = []
+        for c in completions:
+            text = c[0]["content"] if isinstance(c, list) else c
+            try:
+                data = _yaml.safe_load(text)
+                if not isinstance(data, dict):
+                    rewards.append(-1.5)
+                elif "nodes" not in data:
+                    rewards.append(-0.5)
+                elif not isinstance(data["nodes"], list) or len(data["nodes"]) == 0:
+                    rewards.append(-0.25)
+                else:
+                    rewards.append(0.5)
+            except Exception:
+                rewards.append(-2.0)
+        return rewards
+
+    def structure_reward(completions, **kwargs):
+        rewards = []
+        for c in completions:
+            text = c[0]["content"] if isinstance(c, list) else c
+            try:
+                data = _yaml.safe_load(text)
+                if not isinstance(data, dict) or "nodes" not in data:
+                    rewards.append(0.0)
+                    continue
+                nodes = data.get("nodes", [])
+                if not isinstance(nodes, list):
+                    rewards.append(0.0)
+                    continue
+                score = 0.0
+                if 1 <= len(nodes) <= 10:
+                    score += 0.3
+                if data.get("edges"):
+                    score += 0.2
+                if all(isinstance(n, dict) and "role" in n for n in nodes):
+                    score += 0.3
+                if data.get("reasoning"):
+                    score += 0.2
+                rewards.append(score)
+            except Exception:
+                rewards.append(0.0)
+        return rewards
+
+    def execution_reward(completions, **kwargs):
+        from sage.grpo.execution_reward import execution_reward_batch
+        return execution_reward_batch(completions, **kwargs)
+
+    # Prompts — code tasks only (not GSM8K math)
+    prompts = []
+    sft_data = None
+    for candidate in [
+        Path("data/topology_sft_clean.jsonl"),
+        Path("data/topology_sft_combined.jsonl"),
+    ]:
+        if candidate.exists():
+            sft_data = candidate
+            break
+
+    if sft_data:
+        with open(sft_data, "r", encoding="utf-8") as f:
+            for line in f:
+                entry = json.loads(line)
+                tid = entry.get("task_id", "")
+                # Skip GSM8K — execution reward needs code tasks
+                if tid.startswith("GSM8K"):
+                    continue
+                p = entry.get("prompt", "")
+                if p:
+                    prompts.append(
+                        f"<|system|>You are a multi-agent topology designer. "
+                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
+                        f"<|user|>{p}<|end|>\n"
+                        f"<|assistant|>"
+                    )
+        # Limit to 50 for first run
+        prompts = prompts[:50]
+        log.info("Loaded %d code prompts (GSM8K excluded, limited to 50)", len(prompts))
+    else:
+        log.error("No SFT data found")
+        sys.exit(1)
+
+    from datasets import Dataset
+    dataset = Dataset.from_dict({"prompt": prompts})
+
+    config = GRPOConfig(
+        output_dir=output_dir,
+        # GRPO core
+        num_generations=8,
+        generation_batch_size=8,
+        max_completion_length=256,
+        loss_type="grpo",           # Standard GRPO (not dr_grpo — we use beta>0)
+        beta=0.04,                  # KL anchor — prevents v1 divergence
+        # Reward weights: execution dominates
+        reward_weights=[0.3, 0.2, 0.5],
+        # Training
+        num_train_epochs=1,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=1e-5,
+        warmup_steps=20,
+        seed=42,
+        # Memory
+        bf16=True,
+        gradient_checkpointing=True,
+        optim="paged_adamw_8bit",
+        # Logging
+        logging_steps=5,
+        save_strategy="steps",
+        save_steps=50,
+        log_completions=True,
+        mask_truncated_completions=True,
+    )
+
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=[format_reward, structure_reward, execution_reward],
+        args=config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    log.info("Starting GRPO v2 (%d prompts, execution reward via DeepSeek Reasoner)...", len(prompts))
+    trainer.train()
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    log.info("GRPO v2 model saved to %s", output_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train topology generation policy (GRPO)")
-    parser.add_argument("--mode", choices=["sft", "grpo", "export"], required=True)
+    parser.add_argument("--mode", choices=["sft", "grpo", "grpo-v2", "export"], required=True)
     parser.add_argument("--data", type=str, default="data/topology_sft.jsonl")
     parser.add_argument("--sft-checkpoint", type=str, default="models/topology_sft/")
     parser.add_argument("--checkpoint", type=str, default="models/topology_grpo/")
@@ -354,6 +526,8 @@ def main():
         run_sft(args.data, "models/topology_sft/", args.epochs)
     elif args.mode == "grpo":
         run_grpo(args.sft_checkpoint, "models/topology_grpo/", args.episodes)
+    elif args.mode == "grpo-v2":
+        run_grpo_v2(args.sft_checkpoint, "models/topology_grpo_v2/", args.episodes)
     elif args.mode == "export":
         run_export(args.checkpoint, args.output)
 
