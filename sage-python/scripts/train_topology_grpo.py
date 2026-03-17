@@ -61,24 +61,24 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         device_map="auto",
     )
 
-    # Load SFT data — JSON format (not YAML: +12pp validity on small models, StructEval 2505.20139)
+    # Load SFT data — clean YAML (no line wrapping, consistent key ordering)
     data = []
     with open(data_path, "r", encoding="utf-8") as f:
         for line in f:
             entry = json.loads(line)
             prompt = entry.get("prompt", "")
-            # Use JSON directly from GPT-5.4 (already valid), NOT yaml.dump conversion
-            topology_dict = entry.get("topology", {})
-            if not topology_dict:
-                continue
-            topology_json = json.dumps(topology_dict, indent=2)
-            if prompt and topology_json:
+            # Use clean YAML (width=10000, no multiline wrapping) if available
+            topology = entry.get("topology_yaml_clean", entry.get("topology_yaml", ""))
+            if not topology and entry.get("topology"):
+                import yaml
+                topology = yaml.dump(entry["topology"], default_flow_style=False, width=10000)
+            if prompt and topology:
                 data.append({
                     "text": (
                         f"<|system|>You are a multi-agent topology designer. "
-                        f"Given a task, generate an optimal agent topology in JSON format.<|end|>\n"
+                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
                         f"<|user|>{prompt}<|end|>\n"
-                        f"<|assistant|>{topology_json}<|end|>"
+                        f"<|assistant|>{topology}<|end|>"
                     )
                 })
 
@@ -106,7 +106,7 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         logging_steps=10,
         save_strategy="epoch",
         bf16=True,
-        max_length=1024,
+        max_length=1280,
         gradient_checkpointing=True,
     )
 
