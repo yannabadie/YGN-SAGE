@@ -6,6 +6,7 @@ with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -244,28 +245,30 @@ class CognitiveOrchestrationPipeline:
                 )
 
         # Path 6: Learned topology policy (SFT Phi-4-mini-instruct)
-        try:
-            from sage.topology.llm_caller import generate_topology_from_policy
+        # Only enable when explicitly opted in (heavy: loads 3.8B model on GPU)
+        if os.environ.get("SAGE_ENABLE_PATH6"):
+            try:
+                from sage.topology.llm_caller import generate_topology_from_policy
 
-            policy_result = generate_topology_from_policy(ctx.task)
-            if policy_result and "nodes" in policy_result:
-                from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+                policy_result = generate_topology_from_policy(ctx.task)
+                if policy_result and "nodes" in policy_result:
+                    from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
 
-                topo = TopologyGraph("learned_policy")
-                for node_data in policy_result["nodes"]:
-                    node = TopologyNode(
-                        role=node_data.get("role", "agent"),
-                        model_id="",
-                        system=ctx.system,
-                        prompt=node_data.get("prompt", ""),
-                    )
-                    topo.add_node(node)
-                ctx.topology = topo
-                log.info("Stage 2 Path 6 (learned policy): %d nodes", topo.node_count())
-                self._check_topology_budget(ctx)
-                return ctx
-        except Exception as exc:
-            log.debug("Path 6 failed: %s", str(exc)[:100])
+                    topo = TopologyGraph("learned_policy")
+                    for node_data in policy_result["nodes"]:
+                        node = TopologyNode(
+                            role=node_data.get("role", "agent"),
+                            model_id="",
+                            system=ctx.system,
+                            prompt=node_data.get("prompt", ""),
+                        )
+                        topo.add_node(node)
+                    ctx.topology = topo
+                    log.info("Stage 2 Path 6 (learned policy): %d nodes", topo.node_count())
+                    self._check_topology_budget(ctx)
+                    return ctx
+            except Exception as exc:
+                log.debug("Path 6 failed: %s", str(exc)[:100])
 
         # Fallback: create topology from template
         try:
