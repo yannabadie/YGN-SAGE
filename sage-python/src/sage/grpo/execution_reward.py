@@ -134,7 +134,7 @@ def _build_topology_graph(topology_dict: dict) -> Any:
     if not nodes:
         return None
 
-    graph = TopologyGraph("grpo_eval")
+    graph = TopologyGraph("sequential")
     for node_data in nodes:
         if not isinstance(node_data, dict):
             continue
@@ -156,7 +156,7 @@ def _compute_rust_reward(graph: Any, execution_passed: bool) -> float:
     try:
         density = _density_scorer.compute(graph, 2)
         verification = _verifier.verify(graph)
-        structural_score = 1.0 if verification.passed else 0.5
+        structural_score = 1.0 if verification.valid else 0.5
 
         reward = _reward_scorer.compute(
             execution_passed=execution_passed,
