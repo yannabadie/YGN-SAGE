@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from datetime import datetime
 
-LOG_FILE = Path("data/sft_training.log")
+LOG_FILE = Path("data/sft_training_dq.log")
 MONITOR_LOG = Path("data/sft_training_monitor.jsonl")
 
 last_step = 0
