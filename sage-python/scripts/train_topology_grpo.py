@@ -261,7 +261,7 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         per_device_train_batch_size=1,
         gradient_accumulation_steps=8,
         learning_rate=1e-5,            # TRL recommended for LoRA GRPO
-        warmup_ratio=0.1,
+        warmup_steps=50,
         # Memory (12GB VRAM)
         bf16=True,
         gradient_checkpointing=True,
@@ -280,7 +280,8 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         struct = structure_reward(completions, **kwargs)
         return [f + 0.5 * s for f, s in zip(fmt, struct)]
 
-    # Load base model + merge SFT adapter, then let GRPOTrainer apply fresh LoRA
+    # Load SFT model as PeftModel — do NOT merge_and_unload (crashes on 4-bit)
+    # GRPOTrainer handles LoRA stacking internally
     from transformers import BitsAndBytesConfig
     from peft import PeftModel
     bnb_config = BitsAndBytesConfig(
@@ -289,22 +290,20 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
     )
-    log.info("Loading base model + SFT adapter...")
+    log.info("Loading base model (4-bit) + SFT adapter...")
     base = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL, trust_remote_code=False,
         quantization_config=bnb_config,
         device_map={"": 0},
     )
     model = PeftModel.from_pretrained(base, sft_checkpoint)
-    model = model.merge_and_unload()  # Merge SFT weights into base
-    log.info("SFT adapter merged. Launching GRPO with fresh LoRA...")
+    log.info("SFT model loaded. Launching GRPO...")
 
     trainer = GRPOTrainer(
         model=model,
         reward_funcs=[combined_reward],
         args=config,
         train_dataset=dataset,
-        peft_config=peft_config,       # Fresh LoRA for GRPO
         processing_class=tokenizer,
     )
 
