@@ -251,17 +251,17 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
     config = GRPOConfig(
         output_dir=output_dir,
         # GRPO core (research-backed March 2026)
-        num_generations=8,             # K=8 for diversity (DAPO uses 16)
+        num_generations=16,            # K=16 for diversity (DAPO standard, fills VRAM)
         max_completion_length=256,     # Topologies fit in ~200 tokens
         loss_type="dr_grpo",           # No std division — zero-variance safe (Dr. GRPO)
         scale_rewards=False,           # No per-group std scaling
         beta=0.0,                      # NO reference model (saves ~2GB, DAPO validated)
-        # Training
+        # Training — fill 12GB VRAM
         num_train_epochs=1,
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        per_device_train_batch_size=4, # 4x batch (was 1, only 4.3GB used)
+        gradient_accumulation_steps=2, # effective batch = 8 (4*2)
         learning_rate=1e-5,            # TRL recommended for LoRA GRPO
-        warmup_steps=50,
+        warmup_steps=20,
         # Memory (12GB VRAM)
         bf16=True,
         gradient_checkpointing=True,
