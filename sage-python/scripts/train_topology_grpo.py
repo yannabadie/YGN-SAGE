@@ -469,24 +469,19 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
 
     config = GRPOConfig(
         output_dir=output_dir,
-        # GRPO core
-        # GRPO v3 config — fixes 4 critical bugs from v2
-        num_generations=8,              # K=8 (parse rate 75-100%, 16 was overkill)
+        # === GRPO v3 overnight — single provider, no interruption ===
+        num_generations=8,
         generation_batch_size=8,
-        max_completion_length=512,      # Was 256 — topologies need 300+ tokens to complete
-        temperature=0.4,                # Was 0.6 — lower = more valid YAML per group
-        # FIX 1: Don't mask truncated completions (was True — killed 88% of gradients)
+        max_completion_length=512,
+        temperature=0.4,
         mask_truncated_completions=False,
-        # FIX 3: normalize each reward independently before summing (GDPO)
-        multi_objective_aggregation="normalize_then_sum",
-        reward_weights=[1.0, 1.0, 1.0],  # Equal after normalization
-        # DAPO loss (token-level, better for variable-length output)
-        loss_type="dapo",
-        beta=0.0,                       # No KL (DAPO standard, saves VRAM)
+        loss_type="grpo",
+        beta=0.04,
+        reward_weights=[0.3, 0.2, 0.5],
         # Training
-        num_train_epochs=3,
-        per_device_train_batch_size=2,  # batch=4 was slower (148s vs 90s)
-        gradient_accumulation_steps=4,  # Effective batch = 8
+        num_train_epochs=2,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
         learning_rate=5e-6,
         warmup_steps=50,
         seed=42,
@@ -494,10 +489,10 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         bf16=True,
         gradient_checkpointing=True,
         optim="paged_adamw_8bit",
-        # Logging
+        # Logging + checkpoints for resume
         logging_steps=5,
         save_strategy="steps",
-        save_steps=50,
+        save_steps=25,
         log_completions=True,
     )
 
