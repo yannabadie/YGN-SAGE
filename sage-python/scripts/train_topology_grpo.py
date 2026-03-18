@@ -441,6 +441,7 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
             sft_data = candidate
             break
 
+    task_ids = []  # Passed to reward functions via TRL kwargs
     if sft_data:
         with open(sft_data, "r", encoding="utf-8") as f:
             for line in f:
@@ -457,15 +458,18 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
                         f"<|user|>{p}<|end|>\n"
                         f"<|assistant|>"
                     )
+                    task_ids.append(tid)
         # Limit to 200 for run 2 (was 50 in run 1)
         prompts = prompts[:200]
+        task_ids = task_ids[:200]
         log.info("Loaded %d code prompts (GSM8K excluded, limited to 200)", len(prompts))
     else:
         log.error("No SFT data found")
         sys.exit(1)
 
     from datasets import Dataset
-    dataset = Dataset.from_dict({"prompt": prompts})
+    # task_id column: TRL passes all extra columns as **kwargs to reward functions
+    dataset = Dataset.from_dict({"prompt": prompts, "task_id": task_ids})
 
     config = GRPOConfig(
         output_dir=output_dir,

@@ -187,15 +187,32 @@ async def compute_execution_score(
     return 0.0, "CRASH"
 
 
-# Test case loading (HumanEval — loaded once)
+# Test case loading (BigCodeBench + HumanEval — loaded once)
 _TEST_CASES: dict[str, str] | None = None
 
 
 def _load_test_cases() -> dict[str, str]:
+    """Load test cases from BigCodeBench (cached on HF) + HumanEval (local JSON)."""
     global _TEST_CASES
     if _TEST_CASES is not None:
         return _TEST_CASES
     _TEST_CASES = {}
+
+    # 1. BigCodeBench — matches our SFT task_ids ("BigCodeBench/0", etc.)
+    try:
+        from bigcodebench.data import get_bigcodebench
+        bcb = get_bigcodebench()
+        for tid, item in bcb.items():
+            test = item.get("test", "")
+            entry_point = item.get("entry_point", "")
+            if tid and test:
+                # BigCodeBench tests use unittest — wrap with entry_point call
+                _TEST_CASES[tid] = test
+        log.info("Loaded %d BigCodeBench test cases", len(_TEST_CASES))
+    except Exception as exc:
+        log.warning("BigCodeBench test cases unavailable: %s", str(exc)[:80])
+
+    # 2. HumanEval — fallback for local testing
     for path in [
         Path(__file__).parent.parent / "bench" / "humaneval_data.json",
         Path("src/sage/bench/humaneval_data.json"),
@@ -204,15 +221,20 @@ def _load_test_cases() -> dict[str, str]:
             try:
                 with open(path) as f:
                     data = json.load(f)
+                count = 0
                 for item in data:
                     tid = item.get("task_id", "")
                     test = item.get("test", "")
-                    if tid and test:
+                    if tid and test and tid not in _TEST_CASES:
                         _TEST_CASES[tid] = test
-                log.info("Loaded %d HumanEval test cases from %s", len(_TEST_CASES), path)
+                        count += 1
+                if count:
+                    log.info("Loaded %d HumanEval test cases from %s", count, path)
             except Exception as exc:
-                log.warning("Failed to load test cases: %s", str(exc)[:80])
+                log.warning("HumanEval test cases failed: %s", str(exc)[:80])
             break
+
+    log.info("Total test cases available: %d", len(_TEST_CASES))
     return _TEST_CASES
 
 
@@ -376,8 +398,14 @@ async def evaluate_topology(
 # ── Batch entry point (called by GRPOTrainer) ───────────────────
 
 def execution_reward_batch(completions: list, **kwargs) -> list[float]:
-    """Sync wrapper for batch execution reward. Called by GRPOTrainer."""
+    """Sync wrapper for batch execution reward. Called by GRPOTrainer.
+
+    TRL passes all Dataset columns as kwargs. We use:
+      - prompts: list[str] — the task descriptions
+      - task_id: list[str] — e.g. ["BigCodeBench/13", ...] for test-case matching
+    """
     prompts = kwargs.get("prompts", [])
+    task_ids = kwargs.get("task_id", [])
 
     tasks_and_topos = []
     indices = []
@@ -386,6 +414,7 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
         prompt = prompts[i] if i < len(prompts) else ""
         if isinstance(prompt, list):
             prompt = prompt[-1]["content"] if prompt else ""
+        tid = task_ids[i] if i < len(task_ids) else ""
 
         topo = None
         try:
@@ -397,6 +426,7 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
                 pass
 
         if isinstance(topo, dict) and "nodes" in topo and len(topo.get("nodes", [])) > 0:
+            topo["_task_id"] = tid  # inject for evaluate_topology
             tasks_and_topos.append((prompt, topo))
             indices.append(i)
 
