@@ -485,8 +485,8 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         beta=0.0,                       # No KL (DAPO standard, saves VRAM)
         # Training
         num_train_epochs=3,
-        per_device_train_batch_size=4,  # GPU at 0% — API is bottleneck, batch more
-        gradient_accumulation_steps=2,  # Effective batch = 8
+        per_device_train_batch_size=2,  # batch=4 was slower (148s vs 90s)
+        gradient_accumulation_steps=4,  # Effective batch = 8
         learning_rate=5e-6,
         warmup_steps=50,
         seed=42,
