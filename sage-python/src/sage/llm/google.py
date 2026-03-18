@@ -45,9 +45,28 @@ class GoogleProvider:
             raise ValueError(
                 "GOOGLE_API_KEY not set. Set it via environment variable or pass api_key= to GoogleProvider."
             )
+        from sage.llm._ssl import ssl_verify
         client = genai.Client(api_key=self.api_key)
-        from sage.llm._ssl import patch_genai_ssl
-        patch_genai_ssl(client)
+        if not ssl_verify():
+            # google-genai uses aiohttp internally — patch SSL at every level
+            import ssl as _ssl
+            _no_verify = _ssl.create_default_context()
+            _no_verify.check_hostname = False
+            _no_verify.verify_mode = _ssl.CERT_NONE
+            try:
+                import httpx
+                client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
+                if hasattr(client._api_client, '_async_httpx_client'):
+                    client._api_client._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
+            except Exception:
+                pass
+            # Patch the aiohttp session with no-verify connector
+            try:
+                import aiohttp
+                connector = aiohttp.TCPConnector(ssl=_no_verify)
+                client._api_client._aiohttp_session = aiohttp.ClientSession(connector=connector)
+            except Exception:
+                pass
 
         # Default model
         model = "gemini-3.1-pro-preview"

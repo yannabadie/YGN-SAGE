@@ -82,8 +82,18 @@ class OpenAICompatProvider:
             if "reasoner" in model and "temperature" in params:
                 del params["temperature"]
         elif self.provider_name == "kimi":
-            if "temperature" in params:
+            # K2.5: temperature fixed at 1.0 (thinking) or 0.6 (non-thinking)
+            # Passing any other value → 400 error. Just remove it.
+            if "k2.5" in model or "k2-5" in model:
+                params.pop("temperature", None)
+            elif "temperature" in params:
                 params["temperature"] = min(params["temperature"], 1.0)
+        elif self.provider_name == "qwen":
+            # Qwen3.5/QwQ: enable_thinking for reasoning mode
+            if "qwen3" in model or "qwq" in model:
+                if "extra_body" not in params:
+                    params["extra_body"] = {}
+                params["extra_body"]["enable_thinking"] = True
 
         return params
 

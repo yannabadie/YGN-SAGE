@@ -26,8 +26,8 @@ log = logging.getLogger("grpo_v2")
 # Per-provider concurrency limits
 DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "64"))
 GEMINI_CONCURRENCY = int(os.environ.get("SAGE_GEMINI_CONCURRENCY", "10"))
-QWEN_CONCURRENCY = int(os.environ.get("SAGE_QWEN_CONCURRENCY", "10"))
-KIMI_CONCURRENCY = int(os.environ.get("SAGE_KIMI_CONCURRENCY", "5"))
+MINIMAX_CONCURRENCY = int(os.environ.get("SAGE_MINIMAX_CONCURRENCY", "20"))
+KIMI_CONCURRENCY = int(os.environ.get("SAGE_KIMI_CONCURRENCY", "50"))  # Tier 3: 200 max, 5000 RPM
 
 @dataclass
 class ProviderSlot:
@@ -126,42 +126,45 @@ def _init_provider_pool():
         except Exception as e:
             log.warning("DeepSeek init failed: %s", str(e)[:80])
 
-    # 2. Gemini 3.1 Pro Preview — thinking HIGH
+    # 2. Gemini 3.1 Pro Preview — via OpenAI-compat (bypasses aiohttp SSL issues)
     key = os.environ.get("GOOGLE_API_KEY", "")
     if key:
         try:
-            from sage.llm.google import GoogleProvider
             _PROVIDER_POOL.append(ProviderSlot(
-                name="gemini-pro-thinking",
-                provider=GoogleProvider(api_key=key),
+                name="gemini-pro",
+                provider=OpenAICompatProvider(
+                    api_key=key,
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    provider_name="google",
+                ),
                 model="gemini-3.1-pro-preview",
                 concurrency=GEMINI_CONCURRENCY,
                 timeout=60.0,
-                provider_type="google",
+                provider_type="openai",
             ))
-            log.info("Pool: Gemini 3.1 Pro thinking HIGH (concurrency=%d)", GEMINI_CONCURRENCY)
+            log.info("Pool: Gemini 3.1 Pro (concurrency=%d)", GEMINI_CONCURRENCY)
         except Exception as e:
             log.warning("Gemini init failed: %s", str(e)[:80])
 
-    # 3. Qwen QwQ-Plus — native reasoning model
-    key = os.environ.get("QWEN_API_KEY", "")
+    # 3. MiniMax M2.7 — native thinking (<think> tags)
+    key = os.environ.get("MINIMAX_API_KEY", "")
     if key:
         try:
             _PROVIDER_POOL.append(ProviderSlot(
-                name="qwen-qwq-plus",
+                name="minimax-m2.7",
                 provider=OpenAICompatProvider(
                     api_key=key,
-                    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
-                    provider_name="qwen",
+                    base_url="https://api.minimaxi.chat/v1",
+                    provider_name="minimax",
                 ),
-                model="qwq-plus",
-                concurrency=QWEN_CONCURRENCY,
-                timeout=90.0,
+                model="MiniMax-M2.7",
+                concurrency=MINIMAX_CONCURRENCY,
+                timeout=60.0,
                 provider_type="openai",
             ))
-            log.info("Pool: Qwen QwQ-Plus reasoning (concurrency=%d)", QWEN_CONCURRENCY)
+            log.info("Pool: MiniMax M2.7 thinking (concurrency=%d)", MINIMAX_CONCURRENCY)
         except Exception as e:
-            log.warning("Qwen init failed: %s", str(e)[:80])
+            log.warning("MiniMax init failed: %s", str(e)[:80])
 
     # 4. Kimi K2.5 — thinking mode
     key = os.environ.get("KIMI_API_KEY", "")
@@ -179,7 +182,7 @@ def _init_provider_pool():
                 timeout=60.0,
                 provider_type="openai",
             ))
-            log.info("Pool: Kimi K2.5 thinking (concurrency=%d)", KIMI_CONCURRENCY)
+            log.info("Pool: Kimi K2.5 thinking (concurrency=%d, Tier 3: 200 max)", KIMI_CONCURRENCY)
         except Exception as e:
             log.warning("Kimi init failed: %s", str(e)[:80])
 
