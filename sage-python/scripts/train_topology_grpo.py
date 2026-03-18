@@ -471,8 +471,8 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         output_dir=output_dir,
         # GRPO core
         # GRPO v3 config — fixes 4 critical bugs from v2
-        num_generations=16,             # K=16 for diversity (was 8)
-        generation_batch_size=16,
+        num_generations=8,              # K=8 (parse rate 75-100%, 16 was overkill)
+        generation_batch_size=8,
         max_completion_length=512,      # Was 256 — topologies need 300+ tokens to complete
         temperature=0.4,                # Was 0.6 — lower = more valid YAML per group
         # FIX 1: Don't mask truncated completions (was True — killed 88% of gradients)
@@ -485,8 +485,8 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         beta=0.0,                       # No KL (DAPO standard, saves VRAM)
         # Training
         num_train_epochs=3,
-        per_device_train_batch_size=1,  # Reduced (K=16 uses more VRAM)
-        gradient_accumulation_steps=8,  # Effective batch = 8
+        per_device_train_batch_size=4,  # GPU at 0% — API is bottleneck, batch more
+        gradient_accumulation_steps=2,  # Effective batch = 8
         learning_rate=5e-6,
         warmup_steps=50,
         seed=42,

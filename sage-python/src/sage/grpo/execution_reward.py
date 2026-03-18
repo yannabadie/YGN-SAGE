@@ -20,7 +20,7 @@ import yaml
 log = logging.getLogger("grpo_v2")
 
 # Concurrency — DeepSeek has "no official constraint" but be conservative
-DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "8"))
+DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "16"))
 
 # Lazy-loaded providers
 _DEEPSEEK_PROVIDER = None
