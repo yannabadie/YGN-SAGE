@@ -180,8 +180,8 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
                 if not isinstance(nodes, list) or len(nodes) == 0:
                     rewards.append(-0.25)  # Has nodes key but empty
                     continue
-                # Valid topology structure
-                rewards.append(0.5)
+                # Valid topology — 1.0 (aligned with execution reward range)
+                rewards.append(1.0)
             except yaml.YAMLError:
                 rewards.append(-2.0)  # Not valid YAML
             except Exception:
@@ -483,7 +483,7 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         num_train_epochs=2,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        learning_rate=5e-6,
+        learning_rate=1e-6,  # AgentConductor uses 1e-6 (was 5e-6 = 5x too aggressive)
         warmup_steps=50,
         seed=42,
         # Memory
