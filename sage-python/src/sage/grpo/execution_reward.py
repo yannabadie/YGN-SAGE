@@ -44,9 +44,7 @@ class ProviderSlot:
 
 # Provider pool — populated lazily
 _PROVIDER_POOL: list[ProviderSlot] = []
-_DEEPSEEK_FALLBACK: ProviderSlot | None = None  # slow but reliable
 _POOL_INITIALIZED = False
-_POOL_COUNTER = 0  # round-robin counter
 
 # Rust reward infrastructure (optional)
 try:
@@ -111,21 +109,19 @@ def _init_provider_pool():
 
     from sage.providers.openai_compat import OpenAICompatProvider
 
-    # 1. DeepSeek Reasoner — FALLBACK ONLY (40s/req too slow for primary pool)
-    #    Kept as fallback in evaluate_topology() if fast providers fail
+    # 1. DeepSeek Reasoner — in pool (slow but unlimited RPM, shared queue handles it)
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         try:
-            global _DEEPSEEK_FALLBACK
-            _DEEPSEEK_FALLBACK = ProviderSlot(
+            _PROVIDER_POOL.append(ProviderSlot(
                 name="deepseek-reasoner",
                 provider=OpenAICompatProvider(api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek"),
                 model="deepseek-reasoner",
                 concurrency=DEEPSEEK_CONCURRENCY,
                 timeout=120.0,
                 provider_type="openai",
-            )
-            log.info("Fallback: DeepSeek Reasoner (40s/req, concurrency=%d)", DEEPSEEK_CONCURRENCY)
+            ))
+            log.info("Pool: DeepSeek Reasoner (concurrency=%d)", DEEPSEEK_CONCURRENCY)
         except Exception as e:
             log.warning("DeepSeek init failed: %s", str(e)[:80])
 
@@ -193,15 +189,6 @@ def _init_provider_pool():
     log.info("Provider pool: %d providers, %d total concurrent slots", len(_PROVIDER_POOL), total_concurrent)
 
 
-def _pick_provider() -> ProviderSlot | None:
-    """Round-robin provider selection."""
-    global _POOL_COUNTER
-    _init_provider_pool()
-    if not _PROVIDER_POOL:
-        return None
-    slot = _PROVIDER_POOL[_POOL_COUNTER % len(_PROVIDER_POOL)]
-    _POOL_COUNTER += 1
-    return slot
 
 
 def _build_topology_graph(topology_dict: dict) -> Any:
@@ -260,17 +247,10 @@ async def _call_provider(slot: ProviderSlot, messages: list, config: Any) -> str
 
     async with slot.semaphore:
         try:
-            if slot.provider_type == "google":
-                # Gemini uses thinking config via generation_config
-                response = await asyncio.wait_for(
-                    slot.provider.generate(messages=messages, config=config),
-                    timeout=slot.timeout,
-                )
-            else:
-                response = await asyncio.wait_for(
-                    slot.provider.generate(messages=messages, config=config),
-                    timeout=slot.timeout,
-                )
+            response = await asyncio.wait_for(
+                slot.provider.generate(messages=messages, config=config),
+                timeout=slot.timeout,
+            )
             slot.calls += 1
             return response.content or ""
         except Exception:
@@ -278,21 +258,16 @@ async def _call_provider(slot: ProviderSlot, messages: list, config: Any) -> str
             return None
 
 
-async def evaluate_topology(
+async def _evaluate_single(
     task: str, topology_dict: dict, slot: ProviderSlot,
 ) -> float:
     """Execute a topology on a task via a specific provider slot."""
     t0 = time.time()
-
-    # Build graph
     graph = _build_topology_graph(topology_dict)
 
-    # Build messages from first node
     from sage.llm.base import Message, Role, LLMConfig
-
     nodes = topology_dict.get("nodes", [])
     system_prompt = nodes[0].get("prompt", "You are a helpful assistant.") if nodes else ""
-
     messages = [
         Message(role=Role.SYSTEM, content=system_prompt),
         Message(role=Role.USER, content=task[:1000]),
@@ -300,24 +275,25 @@ async def evaluate_topology(
     config = LLMConfig(provider=slot.name, model=slot.model)
 
     result = await _call_provider(slot, messages, config)
-
     if result is not None:
         execution_passed = len(result.strip()) > 20
-        tokens = len(result) // 4
-        _stats.record(success=execution_passed, tokens=tokens, latency=time.time() - t0)
+        _stats.record(success=execution_passed, tokens=len(result) // 4, latency=time.time() - t0)
         return _compute_rust_reward(graph, execution_passed)
-
-    # Primary failed — try DeepSeek fallback (slow but reliable)
-    if _DEEPSEEK_FALLBACK is not None:
-        fb_config = LLMConfig(provider=_DEEPSEEK_FALLBACK.name, model=_DEEPSEEK_FALLBACK.model)
-        result = await _call_provider(_DEEPSEEK_FALLBACK, messages, fb_config)
-        if result is not None:
-            execution_passed = len(result.strip()) > 20
-            _stats.record(success=execution_passed, tokens=len(result) // 4, latency=time.time() - t0)
-            return _compute_rust_reward(graph, execution_passed)
 
     _stats.record(success=False, api_error=True, latency=time.time() - t0)
     return 0.0
+
+
+async def _worker(slot: ProviderSlot, queue: asyncio.Queue, results: dict):
+    """Worker: pull items from shared queue, evaluate, store result. Exits when queue empty."""
+    while True:
+        try:
+            idx, task, topo = queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return
+        reward = await _evaluate_single(task, topo, slot)
+        results[idx] = reward
+        queue.task_done()
 
 
 def execution_reward_batch(completions: list, **kwargs) -> list[float]:
@@ -363,32 +339,47 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
     if not tasks_and_topos:
         return rewards
 
-    # Initialize pool and assign providers round-robin
+    # Initialize pool — shared work queue, each provider pulls at its own pace
     _init_provider_pool()
     if not _PROVIDER_POOL:
         log.error("No providers available — all execution rewards = 0.0")
         return rewards
 
     async def _run_all():
-        global _POOL_COUNTER
-        coros = []
-        for task, topo in tasks_and_topos:
-            slot = _PROVIDER_POOL[_POOL_COUNTER % len(_PROVIDER_POOL)]
-            _POOL_COUNTER += 1
-            coros.append(evaluate_topology(task, topo, slot))
-        return await asyncio.gather(*coros, return_exceptions=True)
+        # Fill work queue
+        queue: asyncio.Queue = asyncio.Queue()
+        for i, (task, topo) in enumerate(tasks_and_topos):
+            queue.put_nowait((i, task, topo))
+
+        results_map: dict[int, float] = {}
+
+        # Launch workers — each provider gets `concurrency` workers pulling from shared queue
+        # Fast providers (5-10s) will pull more items than slow ones (40s)
+        workers = []
+        for slot in _PROVIDER_POOL:
+            for _ in range(min(slot.concurrency, queue.qsize() or 1)):
+                workers.append(_worker(slot, queue, results_map))
+
+        # Run all workers with global 120s timeout
+        await asyncio.wait_for(
+            asyncio.gather(*workers, return_exceptions=True),
+            timeout=120.0,
+        )
+        return results_map
 
     try:
-        results = asyncio.run(_run_all())
+        results_map = asyncio.run(_run_all())
     except RuntimeError:
-        # Already in an event loop — use nest_asyncio or thread
         import concurrent.futures
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            results = pool.submit(lambda: asyncio.run(_run_all())).result(timeout=300)
+            results_map = pool.submit(lambda: asyncio.run(_run_all())).result(timeout=150)
+    except asyncio.TimeoutError:
+        log.warning("Batch timeout (120s) — some evaluations dropped")
+        results_map = {}
 
-    for idx, result in zip(indices, results):
-        if isinstance(result, (int, float)):
-            rewards[idx] = float(result)
+    for i, idx in enumerate(indices):
+        if i in results_map:
+            rewards[idx] = results_map[i]
 
     # Log if all failed + per-provider stats
     valid_count = sum(1 for r in rewards if r > 0)
@@ -400,6 +391,6 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
         f"{s.name}: {s.calls}ok/{s.errors}err" for s in _PROVIDER_POOL
     )
     if pool_stats:
-        log.info("Pool: %s", pool_stats)
+        log.info("Pool (shared queue): %s", pool_stats)
 
     return rewards
