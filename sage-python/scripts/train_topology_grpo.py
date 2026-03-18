@@ -470,20 +470,25 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
     config = GRPOConfig(
         output_dir=output_dir,
         # GRPO core
-        num_generations=8,
-        generation_batch_size=8,
-        max_completion_length=256,
-        temperature=0.6,            # CRITICAL — default 1.0 destroys YAML validity
-        loss_type="grpo",           # Standard GRPO (not dr_grpo — we use beta>0)
-        beta=0.04,                  # KL anchor — prevents v1 divergence
-        # Reward weights: execution dominates
-        reward_weights=[0.3, 0.2, 0.5],
+        # GRPO v3 config — fixes 4 critical bugs from v2
+        num_generations=16,             # K=16 for diversity (was 8)
+        generation_batch_size=16,
+        max_completion_length=512,      # Was 256 — topologies need 300+ tokens to complete
+        temperature=0.4,                # Was 0.6 — lower = more valid YAML per group
+        # FIX 1: Don't mask truncated completions (was True — killed 88% of gradients)
+        mask_truncated_completions=False,
+        # FIX 3: normalize each reward independently before summing (GDPO)
+        multi_objective_aggregation="normalize_then_sum",
+        reward_weights=[1.0, 1.0, 1.0],  # Equal after normalization
+        # DAPO loss (token-level, better for variable-length output)
+        loss_type="dapo",
+        beta=0.0,                       # No KL (DAPO standard, saves VRAM)
         # Training
-        num_train_epochs=3,         # 3 epochs (was 1 — more exposure to execution signal)
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
-        learning_rate=5e-6,         # Reduced from 1e-5 (more stable)
-        warmup_steps=50,            # More warmup (was 20)
+        num_train_epochs=3,
+        per_device_train_batch_size=1,  # Reduced (K=16 uses more VRAM)
+        gradient_accumulation_steps=8,  # Effective batch = 8
+        learning_rate=5e-6,
+        warmup_steps=50,
         seed=42,
         # Memory
         bf16=True,
@@ -494,7 +499,6 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         save_strategy="steps",
         save_steps=50,
         log_completions=True,
-        mask_truncated_completions=True,
     )
 
     trainer = GRPOTrainer(
@@ -514,7 +518,7 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
 
 def main():
     parser = argparse.ArgumentParser(description="Train topology generation policy (GRPO)")
-    parser.add_argument("--mode", choices=["sft", "grpo", "grpo-v2", "export"], required=True)
+    parser.add_argument("--mode", choices=["sft", "grpo", "grpo-v2", "grpo-v3", "export"], required=True)
     parser.add_argument("--data", type=str, default="data/topology_sft.jsonl")
     parser.add_argument("--sft-checkpoint", type=str, default="models/topology_sft/")
     parser.add_argument("--checkpoint", type=str, default="models/topology_grpo/")
@@ -529,6 +533,8 @@ def main():
         run_grpo(args.sft_checkpoint, "models/topology_grpo/", args.episodes)
     elif args.mode == "grpo-v2":
         run_grpo_v2(args.sft_checkpoint, "models/topology_grpo_v2/", args.episodes)
+    elif args.mode == "grpo-v3":
+        run_grpo_v2(args.sft_checkpoint, "models/topology_grpo_v3/", args.episodes)
     elif args.mode == "export":
         run_export(args.checkpoint, args.output)
 
