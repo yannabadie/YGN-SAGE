@@ -516,9 +516,237 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
     log.info("GRPO v2 model saved to %s", output_dir)
 
 
+# ── Shared reward functions (used by Phase 1 + Phase 2) ──────────
+
+def _format_reward(completions, **kwargs):
+    """Graduated YAML format reward. Range: [-2.0, +1.0]."""
+    import yaml as _y
+    rewards = []
+    for c in completions:
+        text = c[0]["content"] if isinstance(c, list) else c
+        try:
+            data = _y.safe_load(text)
+            if not isinstance(data, dict):
+                rewards.append(-1.5)
+            elif "nodes" not in data:
+                rewards.append(-0.5)
+            elif not isinstance(data["nodes"], list) or len(data["nodes"]) == 0:
+                rewards.append(-0.25)
+            else:
+                rewards.append(1.0)
+        except Exception:
+            rewards.append(-2.0)
+    return rewards
+
+
+def _structure_reward(completions, **kwargs):
+    """Structural quality reward. Range: [0.0, 1.0]."""
+    import yaml as _y
+    rewards = []
+    for c in completions:
+        text = c[0]["content"] if isinstance(c, list) else c
+        try:
+            data = _y.safe_load(text)
+            if not isinstance(data, dict) or "nodes" not in data:
+                rewards.append(0.0)
+                continue
+            nodes = data.get("nodes", [])
+            if not isinstance(nodes, list):
+                rewards.append(0.0)
+                continue
+            score = 0.0
+            if 1 <= len(nodes) <= 10:
+                score += 0.3
+            if data.get("edges"):
+                score += 0.2
+            if all(isinstance(n, dict) and "role" in n for n in nodes):
+                score += 0.3
+            if data.get("reasoning"):
+                score += 0.2
+            rewards.append(score)
+        except Exception:
+            rewards.append(0.0)
+    return rewards
+
+
+def _load_prompts_and_ids(limit: int = 200):
+    """Load code prompts + task_ids from SFT data (excludes GSM8K)."""
+    prompts, task_ids = [], []
+    for candidate in [Path("data/topology_sft_clean.jsonl"), Path("data/topology_sft_combined.jsonl")]:
+        if candidate.exists():
+            with open(candidate, "r", encoding="utf-8") as f:
+                for line in f:
+                    entry = json.loads(line)
+                    tid = entry.get("task_id", "")
+                    if tid.startswith("GSM8K"):
+                        continue
+                    p = entry.get("prompt", "")
+                    if p:
+                        prompts.append(
+                            f"<|system|>You are a multi-agent topology designer. "
+                            f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
+                            f"<|user|>{p}<|end|>\n"
+                            f"<|assistant|>"
+                        )
+                        task_ids.append(tid)
+            break
+    prompts = prompts[:limit]
+    task_ids = task_ids[:limit]
+    log.info("Loaded %d code prompts (GSM8K excluded)", len(prompts))
+    return prompts, task_ids
+
+
+def _load_base_with_adapter(checkpoint: str):
+    """Load base Phi-4-mini + LoRA adapter checkpoint. Returns (model, tokenizer)."""
+    import torch
+    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from peft import PeftModel
+
+    tokenizer = AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=False, local_files_only=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
+    )
+    base = AutoModelForCausalLM.from_pretrained(
+        BASE_MODEL, trust_remote_code=False,
+        quantization_config=bnb_config, device_map={"": 0},
+    )
+    model = PeftModel.from_pretrained(base, checkpoint)
+    log.info("Loaded base + adapter from %s", checkpoint)
+    return model, tokenizer
+
+
+# ── Phase 1: Structure learning (no API calls) ──────────────────
+
+def run_grpo_phase1(sft_checkpoint: str, output_dir: str):
+    """Phase 1: Learn YAML structure (format + structure rewards only).
+
+    No execution reward = no API calls = fast (~15s/step).
+    Goal: 80%+ valid YAML before adding execution signal.
+    """
+    from trl import GRPOTrainer, GRPOConfig
+
+    log.info("GRPO Phase 1 — structure learning (no API calls)")
+    model, tokenizer = _load_base_with_adapter(sft_checkpoint)
+    prompts, _ = _load_prompts_and_ids(limit=200)
+
+    from datasets import Dataset
+    dataset = Dataset.from_dict({"prompt": prompts})
+
+    config = GRPOConfig(
+        output_dir=output_dir,
+        num_generations=8,
+        generation_batch_size=8,
+        max_completion_length=512,
+        temperature=0.4,
+        mask_truncated_completions=False,
+        loss_type="grpo",
+        beta=0.04,
+        multi_objective_aggregation="normalize_then_sum",
+        reward_weights=[1.0, 1.0],  # 2 rewards: format + structure
+        num_train_epochs=2,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=1e-6,
+        warmup_steps=20,
+        seed=42,
+        bf16=True,
+        gradient_checkpointing=True,
+        optim="paged_adamw_8bit",
+        logging_steps=5,
+        save_strategy="steps",
+        save_steps=25,
+        log_completions=True,
+    )
+
+    # PeftModel passed directly — no peft_config (reviewer: ValueError if both)
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=[_format_reward, _structure_reward],
+        args=config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    log.info("Phase 1: starting (%d prompts, format+structure only, ~15s/step)...", len(prompts))
+    trainer.train()
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    log.info("Phase 1 complete → %s", output_dir)
+
+
+# ── Phase 2: Execution learning (TopologyRunner + Gemini Flash) ──
+
+def run_grpo_phase2(phase1_checkpoint: str, output_dir: str):
+    """Phase 2: Learn execution quality via real multi-agent topology execution.
+
+    Loads Phase 1 checkpoint (stable YAML structure) and adds execution reward.
+    Each topology is executed via TopologyRunner with Gemini Flash (~3s/node).
+    """
+    from trl import GRPOTrainer, GRPOConfig
+
+    log.info("GRPO Phase 2 — execution learning (TopologyRunner + Gemini Flash)")
+    model, tokenizer = _load_base_with_adapter(phase1_checkpoint)
+    prompts, task_ids = _load_prompts_and_ids(limit=200)
+
+    def execution_reward(completions, **kwargs):
+        from sage.grpo.execution_reward import execution_reward_batch
+        return execution_reward_batch(completions, **kwargs)
+
+    from datasets import Dataset
+    dataset = Dataset.from_dict({"prompt": prompts, "task_id": task_ids})
+
+    config = GRPOConfig(
+        output_dir=output_dir,
+        num_generations=8,
+        generation_batch_size=8,
+        max_completion_length=512,
+        temperature=0.4,
+        mask_truncated_completions=False,
+        loss_type="grpo",
+        beta=0.04,
+        multi_objective_aggregation="normalize_then_sum",
+        reward_weights=[1.0, 1.0, 1.0],  # 3 rewards: format + structure + execution
+        num_train_epochs=2,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=1e-6,
+        warmup_steps=20,
+        seed=42,
+        bf16=True,
+        gradient_checkpointing=True,
+        optim="paged_adamw_8bit",
+        logging_steps=5,
+        save_strategy="steps",
+        save_steps=25,
+        log_completions=True,
+    )
+
+    trainer = GRPOTrainer(
+        model=model,
+        reward_funcs=[_format_reward, _structure_reward, execution_reward],
+        args=config,
+        train_dataset=dataset,
+        processing_class=tokenizer,
+    )
+
+    log.info("Phase 2: starting (%d prompts, TopologyRunner execution, ~100s/step)...", len(prompts))
+    trainer.train()
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    log.info("Phase 2 complete → %s", output_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train topology generation policy (GRPO)")
-    parser.add_argument("--mode", choices=["sft", "grpo", "grpo-v2", "grpo-v3", "export"], required=True)
+    parser.add_argument("--mode", choices=[
+        "sft", "grpo", "grpo-v2", "grpo-v3",
+        "grpo-phase1", "grpo-phase2",
+        "export",
+    ], required=True)
     parser.add_argument("--data", type=str, default="data/topology_sft.jsonl")
     parser.add_argument("--sft-checkpoint", type=str, default="models/topology_sft/")
     parser.add_argument("--checkpoint", type=str, default="models/topology_grpo/")
@@ -535,6 +763,21 @@ def main():
         run_grpo_v2(args.sft_checkpoint, "models/topology_grpo_v2/", args.episodes)
     elif args.mode == "grpo-v3":
         run_grpo_v2(args.sft_checkpoint, "models/topology_grpo_v3/", args.episodes)
+    elif args.mode == "grpo-phase1":
+        run_grpo_phase1(args.sft_checkpoint, "models/topology_grpo_phase1/")
+    elif args.mode == "grpo-phase2":
+        # Phase 2 loads Phase 1 output (or last checkpoint if Phase 1 crashed)
+        p1_dir = "models/topology_grpo_phase1/"
+        if not Path(p1_dir).joinpath("adapter_model.safetensors").exists():
+            # Look for last checkpoint
+            checkpoints = sorted(Path(p1_dir).glob("checkpoint-*"))
+            if checkpoints:
+                p1_dir = str(checkpoints[-1])
+                log.info("Phase 1 final not found, using last checkpoint: %s", p1_dir)
+            else:
+                log.error("No Phase 1 checkpoint found. Run --mode grpo-phase1 first.")
+                sys.exit(1)
+        run_grpo_phase2(p1_dir, "models/topology_grpo_phase2/")
     elif args.mode == "export":
         run_export(args.checkpoint, args.output)
 
