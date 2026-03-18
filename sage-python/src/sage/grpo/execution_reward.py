@@ -20,7 +20,7 @@ import yaml
 log = logging.getLogger("grpo_v2")
 
 # Concurrency — DeepSeek has "no official constraint" but be conservative
-DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "16"))
+DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "64"))
 
 # Lazy-loaded providers
 _DEEPSEEK_PROVIDER = None
@@ -73,7 +73,7 @@ class ExecutionStats:
                 self.failed, self.timeout, self.api_errors,
                 self.total_tokens,
                 self.total_latency / max(self.total, 1),
-                self.total_tokens * 2.19 / 1_000_000,  # reasoner output rate
+                self.total_tokens * 0.42 / 1_000_000,  # chat output rate
             )
 
 
@@ -186,7 +186,7 @@ async def evaluate_topology(
 
         # Get provider
         provider = _get_deepseek_provider()
-        model = "deepseek-reasoner"
+        model = "deepseek-chat"  # V3.2 non-thinking: 2-5s vs 40s for reasoner
 
         if provider is None:
             provider = _get_fallback_provider()
@@ -212,7 +212,7 @@ async def evaluate_topology(
         try:
             response = await asyncio.wait_for(
                 provider.generate(messages=messages, config=config),
-                timeout=60.0,
+                timeout=30.0,  # deepseek-chat is fast (2-5s TTFT)
             )
             result = response.content or ""
             execution_passed = len(result.strip()) > 20
@@ -233,7 +233,7 @@ async def evaluate_topology(
                     fb_config = LLMConfig(provider="google", model="gemini-3.1-flash-lite-preview")
                     response = await asyncio.wait_for(
                         fallback.generate(messages=messages, config=fb_config),
-                        timeout=60.0,
+                        timeout=30.0,  # deepseek-chat is fast (2-5s TTFT)
                     )
                     result = response.content or ""
                     execution_passed = len(result.strip()) > 20
