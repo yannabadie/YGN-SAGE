@@ -44,6 +44,7 @@ class ProviderSlot:
 
 # Provider pool — populated lazily
 _PROVIDER_POOL: list[ProviderSlot] = []
+_DEEPSEEK_FALLBACK: ProviderSlot | None = None  # slow but reliable
 _POOL_INITIALIZED = False
 _POOL_COUNTER = 0  # round-robin counter
 
@@ -110,19 +111,21 @@ def _init_provider_pool():
 
     from sage.providers.openai_compat import OpenAICompatProvider
 
-    # 1. DeepSeek Reasoner — primary, unlimited RPM
+    # 1. DeepSeek Reasoner — FALLBACK ONLY (40s/req too slow for primary pool)
+    #    Kept as fallback in evaluate_topology() if fast providers fail
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         try:
-            _PROVIDER_POOL.append(ProviderSlot(
+            global _DEEPSEEK_FALLBACK
+            _DEEPSEEK_FALLBACK = ProviderSlot(
                 name="deepseek-reasoner",
                 provider=OpenAICompatProvider(api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek"),
                 model="deepseek-reasoner",
                 concurrency=DEEPSEEK_CONCURRENCY,
                 timeout=120.0,
                 provider_type="openai",
-            ))
-            log.info("Pool: DeepSeek Reasoner (concurrency=%d)", DEEPSEEK_CONCURRENCY)
+            )
+            log.info("Fallback: DeepSeek Reasoner (40s/req, concurrency=%d)", DEEPSEEK_CONCURRENCY)
         except Exception as e:
             log.warning("DeepSeek init failed: %s", str(e)[:80])
 
@@ -304,13 +307,10 @@ async def evaluate_topology(
         _stats.record(success=execution_passed, tokens=tokens, latency=time.time() - t0)
         return _compute_rust_reward(graph, execution_passed)
 
-    # Primary failed — try any other available provider
-    _init_provider_pool()
-    for fallback_slot in _PROVIDER_POOL:
-        if fallback_slot is slot:
-            continue
-        fb_config = LLMConfig(provider=fallback_slot.name, model=fallback_slot.model)
-        result = await _call_provider(fallback_slot, messages, fb_config)
+    # Primary failed — try DeepSeek fallback (slow but reliable)
+    if _DEEPSEEK_FALLBACK is not None:
+        fb_config = LLMConfig(provider=_DEEPSEEK_FALLBACK.name, model=_DEEPSEEK_FALLBACK.model)
+        result = await _call_provider(_DEEPSEEK_FALLBACK, messages, fb_config)
         if result is not None:
             execution_passed = len(result.strip()) > 20
             _stats.record(success=execution_passed, tokens=len(result) // 4, latency=time.time() - t0)
