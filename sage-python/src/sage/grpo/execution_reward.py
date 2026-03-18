@@ -353,11 +353,13 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
 
         results_map: dict[int, float] = {}
 
-        # Launch workers — each provider gets `concurrency` workers pulling from shared queue
-        # Fast providers (5-10s) will pull more items than slow ones (40s)
+        # Launch workers — equal workers per provider (fast ones pull more items naturally)
+        # Don't scale by concurrency — that gives DeepSeek 64 workers who grab everything
+        n_items = queue.qsize()
+        workers_per_provider = max(1, n_items // len(_PROVIDER_POOL))
         workers = []
         for slot in _PROVIDER_POOL:
-            for _ in range(min(slot.concurrency, queue.qsize() or 1)):
+            for _ in range(min(workers_per_provider, slot.concurrency)):
                 workers.append(_worker(slot, queue, results_map))
 
         # Run all workers with global 120s timeout
