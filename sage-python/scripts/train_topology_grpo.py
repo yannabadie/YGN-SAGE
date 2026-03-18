@@ -477,7 +477,8 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         mask_truncated_completions=False,
         loss_type="grpo",
         beta=0.04,
-        reward_weights=[0.3, 0.2, 0.5],
+        multi_objective_aggregation="normalize_then_sum",  # Fix #3: prevents format(-2) drowning exec(0.05)
+        reward_weights=[1.0, 1.0, 1.0],  # Equal after normalization
         # Training
         num_train_epochs=2,
         per_device_train_batch_size=2,
