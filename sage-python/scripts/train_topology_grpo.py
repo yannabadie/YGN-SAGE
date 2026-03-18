@@ -648,8 +648,8 @@ def run_grpo_phase1(sft_checkpoint: str, output_dir: str):
         multi_objective_aggregation="normalize_then_sum",
         reward_weights=[1.0, 1.0],  # 2 rewards: format + structure
         num_train_epochs=2,
-        per_device_train_batch_size=2,
-        gradient_accumulation_steps=4,
+        per_device_train_batch_size=1,  # Was 2 — OOM crash (no API pauses = sustained GPU load)
+        gradient_accumulation_steps=8,  # Effective batch still 8
         learning_rate=1e-6,
         warmup_steps=20,
         seed=42,
