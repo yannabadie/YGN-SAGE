@@ -1,10 +1,14 @@
-"""Execution reward for GRPO v4 — real sandbox execution + TopologyReward Rust.
+"""Execution reward for GRPO v5 — full multi-agent topology execution.
 
-Fixes 5 critical issues from v3:
-1. Real subprocess execution (was len(response) > 20)
-2. Edges built in TopologyGraph (was 0 edges -> s_edge always 1.0)
-3. System inferred from difficulty field (was hardcoded to 2)
-4-5: format_reward range and LR fixed in train_topology_grpo.py
+The model (Phi-4-mini) generates TOPOLOGY YAML, not code.
+The reward measures: "does this ORGANIZATION of agents solve the problem?"
+
+Flow:
+  1. Parse YAML → TopologyGraph (Rust, with edges)
+  2. Execute ALL nodes via TopologyRunner (Gemini Flash, fast+cheap)
+  3. Extract code from final node output
+  4. Test code in sandbox + BigCodeBench tests
+  5. Graduated reward → GRPO reinforces better topologies
 
 Graduated rewards (AgentConductor-style):
   PASSED=1.5, WRONG_ANSWER=1.0, RUNTIME_ERROR=0.7,
@@ -27,7 +31,7 @@ import yaml
 
 log = logging.getLogger("grpo_v2")
 
-CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "8"))
+CONCURRENCY = int(os.environ.get("SAGE_GRPO_CONCURRENCY", "8"))
 
 # Rust reward infrastructure (optional)
 try:
@@ -45,8 +49,9 @@ except ImportError:
 # Re-use SandboxResult from existing infra
 from sage.tools.sandbox_executor import SandboxResult
 
-# Lazy-loaded provider
-_PROVIDER = None
+# Lazy-loaded agent provider (Gemini Flash — fast+cheap for node execution)
+_AGENT_PROVIDER = None
+_AGENT_MODEL = ""
 
 
 # ── Stats ────────────────────────────────────────────────────────
@@ -238,28 +243,50 @@ def _load_test_cases() -> dict[str, str]:
     return _TEST_CASES
 
 
-# ── Provider ─────────────────────────────────────────────────────
+# ── Agent provider (for executing topology nodes) ────────────────
 
-def _get_provider():
-    global _PROVIDER
-    if _PROVIDER is not None:
-        return _PROVIDER
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        log.warning("DEEPSEEK_API_KEY not set")
-        return None
-    try:
-        from sage.providers.openai_compat import OpenAICompatProvider
-        _PROVIDER = OpenAICompatProvider(
-            api_key=api_key,
-            base_url="https://api.deepseek.com/v1",
-            provider_name="deepseek",
-        )
-        log.info("DeepSeek Reasoner initialized (concurrency=%d)", CONCURRENCY)
-        return _PROVIDER
-    except Exception as exc:
-        log.warning("DeepSeek init failed: %s", str(exc)[:100])
-        return None
+def _get_agent_provider():
+    """Provider for executing topology nodes. Must be FAST and CHEAP.
+    Gemini Flash (~3s, $0.30/$2.50) or DeepSeek chat (~5s, $0.28/$0.42).
+    """
+    global _AGENT_PROVIDER, _AGENT_MODEL
+    if _AGENT_PROVIDER is not None:
+        return _AGENT_PROVIDER, _AGENT_MODEL
+
+    from sage.providers.openai_compat import OpenAICompatProvider
+
+    # Option 1: Gemini Flash via OpenAI-compat (fast, bypasses SSL)
+    key = os.environ.get("GOOGLE_API_KEY", "")
+    if key:
+        try:
+            _AGENT_PROVIDER = OpenAICompatProvider(
+                api_key=key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                provider_name="google",
+            )
+            _AGENT_MODEL = "gemini-2.5-flash"
+            log.info("Agent provider: Gemini 2.5 Flash (~3s/node)")
+            return _AGENT_PROVIDER, _AGENT_MODEL
+        except Exception:
+            pass
+
+    # Option 2: DeepSeek chat (non-thinking, cheap)
+    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if key:
+        try:
+            _AGENT_PROVIDER = OpenAICompatProvider(
+                api_key=key,
+                base_url="https://api.deepseek.com/v1",
+                provider_name="deepseek",
+            )
+            _AGENT_MODEL = "deepseek-chat"
+            log.info("Agent provider: DeepSeek chat (~5s/node)")
+            return _AGENT_PROVIDER, _AGENT_MODEL
+        except Exception:
+            pass
+
+    log.error("No agent provider available (need GOOGLE_API_KEY or DEEPSEEK_API_KEY)")
+    return None, ""
 
 
 # ── Topology graph builder (FIX #2 + #3) ────────────────────────
@@ -335,12 +362,18 @@ def _compute_rust_reward(graph: Any, exec_score: float, system: int) -> float:
         return exec_norm
 
 
-# ── Main evaluation (FIX #1) ────────────────────────────────────
+# ── Main evaluation — full topology execution ───────────────────
 
 async def evaluate_topology(
     task: str, topology_dict: dict, semaphore: asyncio.Semaphore,
 ) -> float:
-    """Execute topology via DeepSeek Reasoner, then run code in real sandbox."""
+    """Execute the FULL topology as a multi-agent system, then test the result.
+
+    This is what makes GRPO learn topology quality:
+    - Topology A (coder alone) → might solve 30%
+    - Topology B (planner→coder→reviewer) → might solve 50%
+    - GRPO reinforces B over A
+    """
     async with semaphore:
         t0 = time.time()
 
@@ -349,48 +382,62 @@ async def evaluate_topology(
             str(difficulty).lower(), 2
         )
 
+        # Build Rust graph (for structural/density scoring)
         graph = _build_topology_graph(topology_dict)
 
-        provider = _get_provider()
+        provider, model = _get_agent_provider()
         if provider is None:
             return 0.0
 
-        from sage.llm.base import Message, Role, LLMConfig
-        nodes = topology_dict.get("nodes", [])
-        system_prompt = (
-            nodes[0].get("prompt", "You are a helpful assistant.")
-            if nodes else "You are a helpful assistant."
-        )
-        messages = [
-            Message(role=Role.SYSTEM, content=system_prompt),
-            Message(role=Role.USER, content=task[:2000]),
-        ]
-        config = LLMConfig(provider="deepseek", model="deepseek-reasoner")
-
+        # Execute topology via TopologyRunner (all nodes, in order, with context)
+        from sage.llm.base import LLMConfig
         try:
-            response = await asyncio.wait_for(
-                provider.generate(messages=messages, config=config),
+            from sage.topology.runner import TopologyRunner
+            from sage_core import TopologyExecutor
+
+            if graph is None:
+                _stats.record(success=False, latency=time.time() - t0, status="NO_GRAPH")
+                return 0.0
+
+            executor = TopologyExecutor(graph)
+            config = LLMConfig(provider="agent", model=model)
+            runner = TopologyRunner(
+                graph=graph,
+                executor=executor,
+                llm_provider=provider,
+                llm_config=config,
+            )
+            final_output = await asyncio.wait_for(
+                runner.run(task[:2000]),
                 timeout=120.0,
             )
-            result_text = response.content or ""
-        except (asyncio.TimeoutError, Exception):
-            _stats.record(success=False, timeout=True, latency=time.time() - t0, status="API_TIMEOUT")
-            return 0.0
+        except asyncio.TimeoutError:
+            _stats.record(success=False, timeout=True, latency=time.time() - t0, status="TOPO_TIMEOUT")
+            return _compute_rust_reward(graph, 0.0, system)
+        except Exception as exc:
+            log.warning("TopologyRunner failed: %s", str(exc)[:100])
+            _stats.record(success=False, latency=time.time() - t0, status="RUNNER_ERROR")
+            return _compute_rust_reward(graph, 0.0, system)
 
-        # FIX #1: extract code and run in real sandbox
-        code = extract_python_code(result_text)
+        # Extract code from the final node's output
+        code = extract_python_code(final_output)
         if code is None:
             _stats.record(success=False, latency=time.time() - t0, status="NO_CODE")
             return _compute_rust_reward(graph, 0.0, system)
 
+        # Test the code in sandbox + BigCodeBench tests
         task_id = topology_dict.get("_task_id", "")
         exec_score, status = await compute_execution_score(code, task_id, timeout=30)
 
-        tokens = len(result_text) // 4
+        n_nodes = len(topology_dict.get("nodes", []))
         _stats.record(
-            success=(exec_score >= 1.0), tokens=tokens,
+            success=(exec_score >= 1.0), tokens=len(final_output) // 4,
             latency=time.time() - t0, status=status,
         )
+
+        if _stats.total % 5 == 0:
+            log.info("Topo: %s | nodes=%d | %.1fs | task=%s",
+                     status, n_nodes, time.time() - t0, task_id[:30])
 
         return _compute_rust_reward(graph, exec_score, system)
 
