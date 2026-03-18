@@ -1,10 +1,13 @@
-"""Execution reward for GRPO v2 — runs topologies via DeepSeek Reasoner + TopologyReward Rust.
+"""Execution reward for GRPO v3 — multi-provider reasoning pool + TopologyReward Rust.
 
-Executes each generated topology on the original task using real LLM providers,
-then scores with TopologyReward (structural + density + execution).
+Executes each generated topology on the original task using MULTIPLE reasoning providers
+in parallel (round-robin), then scores with TopologyReward (structural + density + execution).
 
-Provider: DeepSeek V3.2 Reasoner (thinking mode, $2.19/M output, best for algorithmic/reasoning)
-Fallback: Gemini 3.1 Flash Lite Preview
+Provider pool (all reasoning/thinking models):
+  1. DeepSeek Reasoner  — unlimited RPM, ~40s latency, 64 concurrent
+  2. Gemini 3.1 Pro     — thinking=HIGH, ~10s latency, 10 concurrent
+  3. Qwen QwQ-Plus      — native reasoning, ~20s latency, 10 concurrent
+  4. Kimi K2.5          — thinking mode, ~10s latency, 5 concurrent
 """
 from __future__ import annotations
 
@@ -13,18 +16,36 @@ import json
 import logging
 import os
 import time
+from dataclasses import dataclass, field
 from typing import Any
 
 import yaml
 
 log = logging.getLogger("grpo_v2")
 
-# Concurrency — DeepSeek has "no official constraint" but be conservative
+# Per-provider concurrency limits
 DEEPSEEK_CONCURRENCY = int(os.environ.get("SAGE_DEEPSEEK_CONCURRENCY", "64"))
+GEMINI_CONCURRENCY = int(os.environ.get("SAGE_GEMINI_CONCURRENCY", "10"))
+QWEN_CONCURRENCY = int(os.environ.get("SAGE_QWEN_CONCURRENCY", "10"))
+KIMI_CONCURRENCY = int(os.environ.get("SAGE_KIMI_CONCURRENCY", "5"))
 
-# Lazy-loaded providers
-_DEEPSEEK_PROVIDER = None
-_FALLBACK_PROVIDER = None
+@dataclass
+class ProviderSlot:
+    """A reasoning provider with its own semaphore and config."""
+    name: str
+    provider: Any  # OpenAICompatProvider or GoogleProvider
+    model: str
+    semaphore: asyncio.Semaphore | None = None  # created per event loop
+    concurrency: int = 10
+    timeout: float = 120.0
+    provider_type: str = "openai"  # "openai" or "google"
+    calls: int = 0
+    errors: int = 0
+
+# Provider pool — populated lazily
+_PROVIDER_POOL: list[ProviderSlot] = []
+_POOL_INITIALIZED = False
+_POOL_COUNTER = 0  # round-robin counter
 
 # Rust reward infrastructure (optional)
 try:
@@ -80,49 +101,101 @@ class ExecutionStats:
 _stats = ExecutionStats()
 
 
-def _get_deepseek_provider():
-    """Lazy-load DeepSeek Reasoner provider."""
-    global _DEEPSEEK_PROVIDER
-    if _DEEPSEEK_PROVIDER is not None:
-        return _DEEPSEEK_PROVIDER
+def _init_provider_pool():
+    """Initialize all available reasoning providers."""
+    global _PROVIDER_POOL, _POOL_INITIALIZED
+    if _POOL_INITIALIZED:
+        return
+    _POOL_INITIALIZED = True
 
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if not api_key:
-        log.warning("DEEPSEEK_API_KEY not set — execution reward disabled")
+    from sage.providers.openai_compat import OpenAICompatProvider
+
+    # 1. DeepSeek Reasoner — primary, unlimited RPM
+    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if key:
+        try:
+            _PROVIDER_POOL.append(ProviderSlot(
+                name="deepseek-reasoner",
+                provider=OpenAICompatProvider(api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek"),
+                model="deepseek-reasoner",
+                concurrency=DEEPSEEK_CONCURRENCY,
+                timeout=120.0,
+                provider_type="openai",
+            ))
+            log.info("Pool: DeepSeek Reasoner (concurrency=%d)", DEEPSEEK_CONCURRENCY)
+        except Exception as e:
+            log.warning("DeepSeek init failed: %s", str(e)[:80])
+
+    # 2. Gemini 3.1 Pro Preview — thinking HIGH
+    key = os.environ.get("GOOGLE_API_KEY", "")
+    if key:
+        try:
+            from sage.llm.google import GoogleProvider
+            _PROVIDER_POOL.append(ProviderSlot(
+                name="gemini-pro-thinking",
+                provider=GoogleProvider(api_key=key),
+                model="gemini-3.1-pro-preview",
+                concurrency=GEMINI_CONCURRENCY,
+                timeout=60.0,
+                provider_type="google",
+            ))
+            log.info("Pool: Gemini 3.1 Pro thinking HIGH (concurrency=%d)", GEMINI_CONCURRENCY)
+        except Exception as e:
+            log.warning("Gemini init failed: %s", str(e)[:80])
+
+    # 3. Qwen QwQ-Plus — native reasoning model
+    key = os.environ.get("QWEN_API_KEY", "")
+    if key:
+        try:
+            _PROVIDER_POOL.append(ProviderSlot(
+                name="qwen-qwq-plus",
+                provider=OpenAICompatProvider(
+                    api_key=key,
+                    base_url="https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+                    provider_name="qwen",
+                ),
+                model="qwq-plus",
+                concurrency=QWEN_CONCURRENCY,
+                timeout=90.0,
+                provider_type="openai",
+            ))
+            log.info("Pool: Qwen QwQ-Plus reasoning (concurrency=%d)", QWEN_CONCURRENCY)
+        except Exception as e:
+            log.warning("Qwen init failed: %s", str(e)[:80])
+
+    # 4. Kimi K2.5 — thinking mode
+    key = os.environ.get("KIMI_API_KEY", "")
+    if key:
+        try:
+            _PROVIDER_POOL.append(ProviderSlot(
+                name="kimi-k2.5",
+                provider=OpenAICompatProvider(
+                    api_key=key,
+                    base_url="https://api.moonshot.ai/v1",
+                    provider_name="kimi",
+                ),
+                model="kimi-k2.5",
+                concurrency=KIMI_CONCURRENCY,
+                timeout=60.0,
+                provider_type="openai",
+            ))
+            log.info("Pool: Kimi K2.5 thinking (concurrency=%d)", KIMI_CONCURRENCY)
+        except Exception as e:
+            log.warning("Kimi init failed: %s", str(e)[:80])
+
+    total_concurrent = sum(s.concurrency for s in _PROVIDER_POOL)
+    log.info("Provider pool: %d providers, %d total concurrent slots", len(_PROVIDER_POOL), total_concurrent)
+
+
+def _pick_provider() -> ProviderSlot | None:
+    """Round-robin provider selection."""
+    global _POOL_COUNTER
+    _init_provider_pool()
+    if not _PROVIDER_POOL:
         return None
-
-    try:
-        from sage.providers.openai_compat import OpenAICompatProvider
-        _DEEPSEEK_PROVIDER = OpenAICompatProvider(
-            api_key=api_key,
-            base_url="https://api.deepseek.com/v1",
-            provider_name="deepseek",
-        )
-        log.info("DeepSeek Reasoner provider initialized")
-        return _DEEPSEEK_PROVIDER
-    except Exception as exc:
-        log.warning("DeepSeek init failed: %s", str(exc)[:100])
-        return None
-
-
-def _get_fallback_provider():
-    """Lazy-load Gemini 3.1 Flash Lite fallback."""
-    global _FALLBACK_PROVIDER
-    if _FALLBACK_PROVIDER is not None:
-        return _FALLBACK_PROVIDER
-
-    api_key = os.environ.get("GOOGLE_API_KEY", "")
-    if not api_key:
-        return None
-
-    try:
-        from sage.llm.google import GoogleProvider
-        _FALLBACK_PROVIDER = GoogleProvider(api_key=api_key)
-        log.info("Gemini fallback provider initialized")
-        return _FALLBACK_PROVIDER
-    except Exception as exc:
-        log.warning("Gemini fallback init failed: %s", str(exc)[:100])
-        return None
+    slot = _PROVIDER_POOL[_POOL_COUNTER % len(_PROVIDER_POOL)]
+    _POOL_COUNTER += 1
+    return slot
 
 
 def _build_topology_graph(topology_dict: dict) -> Any:
@@ -174,77 +247,74 @@ def _compute_rust_reward(graph: Any, execution_passed: bool) -> float:
         return 1.0 if execution_passed else 0.0
 
 
-async def evaluate_topology(
-    task: str, topology_dict: dict, semaphore: asyncio.Semaphore,
-) -> float:
-    """Execute a topology on a task and return reward score (0.0-1.0)."""
-    async with semaphore:
-        t0 = time.time()
+async def _call_provider(slot: ProviderSlot, messages: list, config: Any) -> str | None:
+    """Call a single provider with its semaphore. Returns response text or None."""
+    if slot.semaphore is None:
+        slot.semaphore = asyncio.Semaphore(slot.concurrency)
 
-        # Build graph
-        graph = _build_topology_graph(topology_dict)
-
-        # Get provider
-        provider = _get_deepseek_provider()
-        model = "deepseek-reasoner"  # V3.2 thinking mode: better code quality for reward signal
-
-        if provider is None:
-            provider = _get_fallback_provider()
-            model = "gemini-3.1-flash-lite-preview"
-
-        if provider is None:
-            _stats.record(success=False, api_error=True, latency=time.time() - t0)
-            return 0.0
-
-        # Execute: single-node simplified execution (not full TopologyRunner)
-        # For GRPO speed, we just test if the first node's prompt + task produces useful output
-        from sage.llm.base import Message, Role, LLMConfig
-
-        nodes = topology_dict.get("nodes", [])
-        system_prompt = nodes[0].get("prompt", "You are a helpful assistant.") if nodes else ""
-
-        messages = [
-            Message(role=Role.SYSTEM, content=system_prompt),
-            Message(role=Role.USER, content=task[:1000]),
-        ]
-        config = LLMConfig(provider="deepseek", model=model)
-
+    async with slot.semaphore:
         try:
-            response = await asyncio.wait_for(
-                provider.generate(messages=messages, config=config),
-                timeout=120.0,  # deepseek-reasoner needs time to think
-            )
-            result = response.content or ""
+            if slot.provider_type == "google":
+                # Gemini uses thinking config via generation_config
+                response = await asyncio.wait_for(
+                    slot.provider.generate(messages=messages, config=config),
+                    timeout=slot.timeout,
+                )
+            else:
+                response = await asyncio.wait_for(
+                    slot.provider.generate(messages=messages, config=config),
+                    timeout=slot.timeout,
+                )
+            slot.calls += 1
+            return response.content or ""
+        except Exception:
+            slot.errors += 1
+            return None
+
+
+async def evaluate_topology(
+    task: str, topology_dict: dict, slot: ProviderSlot,
+) -> float:
+    """Execute a topology on a task via a specific provider slot."""
+    t0 = time.time()
+
+    # Build graph
+    graph = _build_topology_graph(topology_dict)
+
+    # Build messages from first node
+    from sage.llm.base import Message, Role, LLMConfig
+
+    nodes = topology_dict.get("nodes", [])
+    system_prompt = nodes[0].get("prompt", "You are a helpful assistant.") if nodes else ""
+
+    messages = [
+        Message(role=Role.SYSTEM, content=system_prompt),
+        Message(role=Role.USER, content=task[:1000]),
+    ]
+    config = LLMConfig(provider=slot.name, model=slot.model)
+
+    result = await _call_provider(slot, messages, config)
+
+    if result is not None:
+        execution_passed = len(result.strip()) > 20
+        tokens = len(result) // 4
+        _stats.record(success=execution_passed, tokens=tokens, latency=time.time() - t0)
+        return _compute_rust_reward(graph, execution_passed)
+
+    # Primary failed — try any other available provider
+    _init_provider_pool()
+    for fallback_slot in _PROVIDER_POOL:
+        if fallback_slot is slot:
+            continue
+        fb_config = LLMConfig(provider=fallback_slot.name, model=fallback_slot.model)
+        result = await _call_provider(fallback_slot, messages, fb_config)
+        if result is not None:
             execution_passed = len(result.strip()) > 20
-
-            tokens = len(result) // 4  # rough estimate
-            _stats.record(
-                success=execution_passed, tokens=tokens, latency=time.time() - t0,
-            )
-
+            _stats.record(success=execution_passed, tokens=len(result) // 4, latency=time.time() - t0)
             return _compute_rust_reward(graph, execution_passed)
 
-        except asyncio.TimeoutError:
-            _stats.record(success=False, timeout=True, latency=time.time() - t0)
-            # Retry with fallback
-            fallback = _get_fallback_provider()
-            if fallback and fallback is not provider:
-                try:
-                    fb_config = LLMConfig(provider="google", model="gemini-3.1-flash-lite-preview")
-                    response = await asyncio.wait_for(
-                        fallback.generate(messages=messages, config=fb_config),
-                        timeout=120.0,  # deepseek-reasoner needs time to think
-                    )
-                    result = response.content or ""
-                    execution_passed = len(result.strip()) > 20
-                    return _compute_rust_reward(graph, execution_passed)
-                except Exception:
-                    pass
-            return 0.0
-
-        except Exception:
-            _stats.record(success=False, api_error=True, latency=time.time() - t0)
-            return 0.0
+    _stats.record(success=False, api_error=True, latency=time.time() - t0)
+    return 0.0
 
 
 def execution_reward_batch(completions: list, **kwargs) -> list[float]:
@@ -290,14 +360,19 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
     if not tasks_and_topos:
         return rewards
 
-    # Run async evaluations
-    semaphore = asyncio.Semaphore(DEEPSEEK_CONCURRENCY)
+    # Initialize pool and assign providers round-robin
+    _init_provider_pool()
+    if not _PROVIDER_POOL:
+        log.error("No providers available — all execution rewards = 0.0")
+        return rewards
 
     async def _run_all():
-        coros = [
-            evaluate_topology(task, topo, semaphore)
-            for task, topo in tasks_and_topos
-        ]
+        global _POOL_COUNTER
+        coros = []
+        for task, topo in tasks_and_topos:
+            slot = _PROVIDER_POOL[_POOL_COUNTER % len(_PROVIDER_POOL)]
+            _POOL_COUNTER += 1
+            coros.append(evaluate_topology(task, topo, slot))
         return await asyncio.gather(*coros, return_exceptions=True)
 
     try:
@@ -312,9 +387,16 @@ def execution_reward_batch(completions: list, **kwargs) -> list[float]:
         if isinstance(result, (int, float)):
             rewards[idx] = float(result)
 
-    # Log if all failed
+    # Log if all failed + per-provider stats
     valid_count = sum(1 for r in rewards if r > 0)
     if valid_count == 0 and len(tasks_and_topos) > 0:
         log.warning("All execution rewards failed — degraded mode (format+structure only)")
+
+    # Per-provider stats every batch
+    pool_stats = " | ".join(
+        f"{s.name}: {s.calls}ok/{s.errors}err" for s in _PROVIDER_POOL
+    )
+    if pool_stats:
+        log.info("Pool: %s", pool_stats)
 
     return rewards
