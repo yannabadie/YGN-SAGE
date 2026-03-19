@@ -421,6 +421,25 @@ async def evaluate_topology(
 
         # Extract code from the final node's output
         code = extract_python_code(final_output)
+
+        # If no code block found, ask the agent to return just the code
+        if code is None and final_output and len(final_output.strip()) > 20:
+            from sage.llm.base import Message, Role, LLMConfig
+            try:
+                followup = await asyncio.wait_for(
+                    provider.generate(
+                        messages=[
+                            Message(role=Role.SYSTEM, content="Extract the Python code from the conversation and return ONLY the code in a ```python block. No explanation."),
+                            Message(role=Role.USER, content=final_output[:3000]),
+                        ],
+                        config=LLMConfig(provider="agent", model=model),
+                    ),
+                    timeout=30.0,
+                )
+                code = extract_python_code(followup.content or "")
+            except Exception:
+                pass
+
         if code is None:
             _stats.record(success=False, latency=time.time() - t0, status="NO_CODE")
             return _compute_rust_reward(graph, 0.0, system)
