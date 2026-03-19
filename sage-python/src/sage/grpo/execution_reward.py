@@ -279,7 +279,7 @@ def _get_agent_provider():
                 base_url="https://api.deepseek.com/v1",
                 provider_name="deepseek",
             )
-            _AGENT_MODEL = "deepseek-chat"
+            _AGENT_MODEL = "deepseek-reasoner"
             log.info("Agent provider: DeepSeek chat (~5s/node)")
             return _AGENT_PROVIDER, _AGENT_MODEL
         except Exception:
@@ -307,7 +307,7 @@ def _get_fallback_provider():
         _FALLBACK_PROVIDER = OpenAICompatProvider(
             api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek",
         )
-        _FALLBACK_MODEL = "deepseek-chat"
+        _FALLBACK_MODEL = "deepseek-reasoner"
         log.info("Fallback provider: DeepSeek chat")
         return _FALLBACK_PROVIDER, _FALLBACK_MODEL
     except Exception:
