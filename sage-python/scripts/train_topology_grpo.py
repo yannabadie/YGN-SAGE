@@ -1,6 +1,6 @@
 """Train topology generation policy via GRPO (Group Relative Policy Optimization).
 
-Uses Phi-4-mini-instruct (3.8B, MIT, official ONNX) as base model.
+Uses Qwen3.5-9B (9B, Apache 2.0) as base model.
 Reward function: SAGE's verified dense reward (execution + HybridVerifier + S_complex + LTL).
 
 Requires: pip install trl transformers torch peft accelerate
@@ -26,10 +26,9 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
 log = logging.getLogger("train_topology")
 
-# Base model: Phi-4-mini-instruct (3.8B, MIT license)
-# Official ONNX: microsoft/Phi-4-mini-instruct-onnx
-BASE_MODEL = "microsoft/Phi-4-mini-instruct"
-ONNX_MODEL = "microsoft/Phi-4-mini-instruct-onnx"
+# Base model: Qwen3.5-9B (9B, Apache 2.0 license)
+BASE_MODEL = "Qwen/Qwen3.5-9B"
+ONNX_MODEL = None  # ONNX export séparé si nécessaire
 
 
 def run_sft(data_path: str, output_dir: str, epochs: int):
@@ -52,16 +51,10 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    from transformers import BitsAndBytesConfig
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-    )
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL, trust_remote_code=False,
-        quantization_config=bnb_config,
+        BASE_MODEL,
+        trust_remote_code=False,
+        torch_dtype=torch.bfloat16,
         device_map="auto",
     )
 
@@ -79,10 +72,10 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
             if prompt and topology:
                 data.append({
                     "text": (
-                        f"<|system|>You are a multi-agent topology designer. "
-                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-                        f"<|user|>{prompt}<|end|>\n"
-                        f"<|assistant|>{topology}<|end|>"
+                        f"<|im_start|>system\nYou are a multi-agent topology designer. "
+                        f"Given a task, generate an optimal agent topology in YAML format.<|im_end|>\n"
+                        f"<|im_start|>user\n{prompt}<|im_end|>\n"
+                        f"<|im_start|>assistant\n{topology}<|im_end|>"
                     )
                 })
 
@@ -93,10 +86,11 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
     from datasets import Dataset
     dataset = Dataset.from_list(data)
 
-    # LoRA config (4-bit QLoRA for memory efficiency)
+    # LoRA config (bf16, 7 target modules for Qwen3.5)
     peft_config = LoraConfig(
-        r=16, lora_alpha=32, lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        r=16, lora_alpha=16, lora_dropout=0.05,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                         "gate_proj", "up_proj", "down_proj"],
         task_type="CAUSAL_LM",
     )
 
@@ -110,7 +104,7 @@ def run_sft(data_path: str, output_dir: str, epochs: int):
         logging_steps=10,
         save_strategy="epoch",
         bf16=True,
-        max_length=1280,
+        max_length=2048,
         gradient_checkpointing=True,
     )
 
@@ -154,10 +148,11 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    # LoRA config for GRPO (applied by GRPOTrainer, not pre-loaded)
+    # LoRA config for GRPO (7 target modules for Qwen3.5)
     peft_config = LoraConfig(
-        r=16, lora_alpha=32, lora_dropout=0.05,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+        r=16, lora_alpha=16, lora_dropout=0.05,
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                         "gate_proj", "up_proj", "down_proj"],
         task_type="CAUSAL_LM",
     )
 
@@ -222,6 +217,8 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
     prompts = []
     sft_data = None
     for candidate in [
+        Path("data/topology_sft_v3.jsonl"),
+        Path("data/topology_sft_v2.jsonl"),
         Path("data/topology_sft_clean.jsonl"),
         Path("data/topology_sft_combined.jsonl"),
     ]:
@@ -235,10 +232,10 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
                 p = entry.get("prompt", "")
                 if p:
                     prompts.append(
-                        f"<|system|>You are a multi-agent topology designer. "
-                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-                        f"<|user|>{p}<|end|>\n"
-                        f"<|assistant|>"
+                        f"<|im_start|>system\nYou are a multi-agent topology designer. "
+                        f"Given a task, generate an optimal agent topology in YAML format.<|im_end|>\n"
+                        f"<|im_start|>user\n{p}<|im_end|>\n"
+                        f"<|im_start|>assistant\n"
                     )
         log.info("Loaded %d prompts from %s", len(prompts), sft_data)
     else:
@@ -281,20 +278,12 @@ def run_grpo(sft_checkpoint: str, output_dir: str, episodes: int):
         struct = structure_reward(completions, **kwargs)
         return [f + 0.5 * s for f, s in zip(fmt, struct)]
 
-    # Load SFT model as PeftModel — do NOT merge_and_unload (crashes on 4-bit)
-    # GRPOTrainer handles LoRA stacking internally
-    from transformers import BitsAndBytesConfig
+    # Load SFT model as PeftModel — do NOT merge_and_unload
     from peft import PeftModel
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_use_double_quant=True,
-    )
-    log.info("Loading base model (4-bit) + SFT adapter...")
+    log.info("Loading base model (bf16) + SFT adapter...")
     base = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL, trust_remote_code=False,
-        quantization_config=bnb_config,
+        torch_dtype=torch.bfloat16,
         device_map={"": 0},
     )
     model = PeftModel.from_pretrained(base, sft_checkpoint)
@@ -349,7 +338,7 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
     """
     try:
         import torch
-        from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+        from transformers import AutoTokenizer, AutoModelForCausalLM
         from trl import GRPOTrainer, GRPOConfig
         from peft import LoraConfig, PeftModel
     except ImportError:
@@ -366,14 +355,10 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
         tokenizer.pad_token = tokenizer.eos_token
 
     # Load base + SFT adapter (PeftModel — trainer handles reference via adapter disable)
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
-    )
-    log.info("Loading base model + SFT adapter...")
+    log.info("Loading base model (bf16) + SFT adapter...")
     base = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL, trust_remote_code=False,
-        quantization_config=bnb_config, device_map={"": 0},
+        torch_dtype=torch.bfloat16, device_map={"": 0},
     )
     model = PeftModel.from_pretrained(base, sft_checkpoint)
     log.info("SFT model loaded")
@@ -432,16 +417,17 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
 
     # Prompts — code tasks only (not GSM8K math)
     prompts = []
+    task_ids = []  # Passed to reward functions via TRL kwargs
     sft_data = None
     for candidate in [
+        Path("data/topology_sft_v3.jsonl"),
+        Path("data/topology_sft_v2.jsonl"),
         Path("data/topology_sft_clean.jsonl"),
         Path("data/topology_sft_combined.jsonl"),
     ]:
         if candidate.exists():
             sft_data = candidate
             break
-
-    task_ids = []  # Passed to reward functions via TRL kwargs
     if sft_data:
         with open(sft_data, "r", encoding="utf-8") as f:
             for line in f:
@@ -453,10 +439,10 @@ def run_grpo_v2(sft_checkpoint: str, output_dir: str, episodes: int):
                 p = entry.get("prompt", "")
                 if p:
                     prompts.append(
-                        f"<|system|>You are a multi-agent topology designer. "
-                        f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-                        f"<|user|>{p}<|end|>\n"
-                        f"<|assistant|>"
+                        f"<|im_start|>system\nYou are a multi-agent topology designer. "
+                        f"Given a task, generate an optimal agent topology in YAML format.<|im_end|>\n"
+                        f"<|im_start|>user\n{p}<|im_end|>\n"
+                        f"<|im_start|>assistant\n"
                     )
                     task_ids.append(tid)
         # Limit to 200 for run 2 (was 50 in run 1)
@@ -572,7 +558,7 @@ def _structure_reward(completions, **kwargs):
 def _load_prompts_and_ids(limit: int = 200):
     """Load code prompts + task_ids from SFT data (excludes GSM8K)."""
     prompts, task_ids = [], []
-    for candidate in [Path("data/topology_sft_clean.jsonl"), Path("data/topology_sft_combined.jsonl")]:
+    for candidate in [Path("data/topology_sft_v3.jsonl"), Path("data/topology_sft_v2.jsonl"), Path("data/topology_sft_clean.jsonl"), Path("data/topology_sft_combined.jsonl")]:
         if candidate.exists():
             with open(candidate, "r", encoding="utf-8") as f:
                 for line in f:
@@ -583,10 +569,10 @@ def _load_prompts_and_ids(limit: int = 200):
                     p = entry.get("prompt", "")
                     if p:
                         prompts.append(
-                            f"<|system|>You are a multi-agent topology designer. "
-                            f"Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-                            f"<|user|>{p}<|end|>\n"
-                            f"<|assistant|>"
+                            f"<|im_start|>system\nYou are a multi-agent topology designer. "
+                            f"Given a task, generate an optimal agent topology in YAML format.<|im_end|>\n"
+                            f"<|im_start|>user\n{p}<|im_end|>\n"
+                            f"<|im_start|>assistant\n"
                         )
                         task_ids.append(tid)
             break
@@ -597,22 +583,18 @@ def _load_prompts_and_ids(limit: int = 200):
 
 
 def _load_base_with_adapter(checkpoint: str):
-    """Load base Phi-4-mini + LoRA adapter checkpoint. Returns (model, tokenizer)."""
+    """Load base Qwen3.5-9B + LoRA adapter checkpoint. Returns (model, tokenizer)."""
     import torch
-    from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
+    from transformers import AutoTokenizer, AutoModelForCausalLM
     from peft import PeftModel
 
     tokenizer = AutoTokenizer.from_pretrained(checkpoint, trust_remote_code=False, local_files_only=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
-        bnb_4bit_quant_type="nf4", bnb_4bit_use_double_quant=True,
-    )
     base = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL, trust_remote_code=False,
-        quantization_config=bnb_config, device_map={"": 0},
+        torch_dtype=torch.bfloat16, device_map={"": 0},
     )
     model = PeftModel.from_pretrained(base, checkpoint)
     log.info("Loaded base + adapter from %s", checkpoint)

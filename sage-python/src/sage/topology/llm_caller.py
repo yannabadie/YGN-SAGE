@@ -260,7 +260,7 @@ async def synthesize_topology(
 # SFT Policy Model (Path 6 in TopologyEngine)
 # ---------------------------------------------------------------------------
 
-HF_POLICY_REPO = "yannabadie/sage-topology-policy"
+HF_POLICY_REPO = "yannabadie/sage-topology-policy-v2-qwen35"
 _POLICY_CACHE_DIR = None  # Populated by download_policy_model()
 
 
@@ -327,7 +327,7 @@ def generate_topology_from_policy(task: str) -> dict | None:
                 adapter_path, trust_remote_code=False, local_files_only=True,
             )
             base = AutoModelForCausalLM.from_pretrained(
-                "microsoft/Phi-4-mini-instruct",
+                "Qwen/Qwen3.5-9B",
                 trust_remote_code=False,
                 dtype=torch.float16,
                 device_map="cpu",
@@ -347,10 +347,10 @@ def generate_topology_from_policy(task: str) -> dict | None:
     import torch
 
     prompt = (
-        "<|system|>You are a multi-agent topology designer. "
-        "Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-        f"<|user|>{task[:500]}<|end|>\n"
-        "<|assistant|>"
+        "<|im_start|>system\nYou are a multi-agent topology designer. "
+        "Given a task, generate an optimal agent topology in YAML format.<|im_end|>\n"
+        f"<|im_start|>user\n{task[:500]}<|im_end|>\n"
+        "<|im_start|>assistant\n"
     )
     inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
 
