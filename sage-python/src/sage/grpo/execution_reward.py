@@ -264,8 +264,8 @@ def _get_agent_provider():
                 base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                 provider_name="google",
             )
-            _AGENT_MODEL = "gemini-2.5-flash"
-            log.info("Agent provider: Gemini 2.5 Flash (~3s/node)")
+            _AGENT_MODEL = "gemini-3-flash-preview"
+            log.info("Agent provider: Gemini 3 Flash (~6s/node, 5x faster than 2.5)")
             return _AGENT_PROVIDER, _AGENT_MODEL
         except Exception:
             pass
