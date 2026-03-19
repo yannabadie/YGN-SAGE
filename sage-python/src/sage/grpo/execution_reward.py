@@ -246,31 +246,14 @@ def _load_test_cases() -> dict[str, str]:
 # ── Agent provider (for executing topology nodes) ────────────────
 
 def _get_agent_provider():
-    """Provider for executing topology nodes. Must be FAST and CHEAP.
-    Gemini Flash (~3s, $0.30/$2.50) or DeepSeek chat (~5s, $0.28/$0.42).
-    """
+    """Provider for executing topology nodes. DeepSeek Reasoner primary, Gemini fallback."""
     global _AGENT_PROVIDER, _AGENT_MODEL
     if _AGENT_PROVIDER is not None:
         return _AGENT_PROVIDER, _AGENT_MODEL
 
     from sage.providers.openai_compat import OpenAICompatProvider
 
-    # Option 1: Gemini Flash via OpenAI-compat (fast, bypasses SSL)
-    key = os.environ.get("GOOGLE_API_KEY", "")
-    if key:
-        try:
-            _AGENT_PROVIDER = OpenAICompatProvider(
-                api_key=key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                provider_name="google",
-            )
-            _AGENT_MODEL = "gemini-3-flash-preview"
-            log.info("Agent provider: Gemini 3 Flash (~6s/node, 5x faster than 2.5)")
-            return _AGENT_PROVIDER, _AGENT_MODEL
-        except Exception:
-            pass
-
-    # Option 2: DeepSeek chat (non-thinking, cheap)
+    # Primary: DeepSeek Reasoner (deep thinking, best code quality)
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         try:
@@ -280,12 +263,27 @@ def _get_agent_provider():
                 provider_name="deepseek",
             )
             _AGENT_MODEL = "deepseek-reasoner"
-            log.info("Agent provider: DeepSeek chat (~5s/node)")
+            log.info("Agent provider: DeepSeek Reasoner (primary)")
             return _AGENT_PROVIDER, _AGENT_MODEL
         except Exception:
             pass
 
-    log.error("No agent provider available (need GOOGLE_API_KEY or DEEPSEEK_API_KEY)")
+    # Fallback: Gemini 3 Flash
+    key = os.environ.get("GOOGLE_API_KEY", "")
+    if key:
+        try:
+            _AGENT_PROVIDER = OpenAICompatProvider(
+                api_key=key,
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                provider_name="google",
+            )
+            _AGENT_MODEL = "gemini-3-flash-preview"
+            log.info("Agent provider: Gemini 3 Flash (fallback)")
+            return _AGENT_PROVIDER, _AGENT_MODEL
+        except Exception:
+            pass
+
+    log.error("No agent provider available (need DEEPSEEK_API_KEY or GOOGLE_API_KEY)")
     return None, ""
 
 
@@ -295,20 +293,22 @@ _FALLBACK_MODEL = ""
 
 
 def _get_fallback_provider():
-    """DeepSeek chat as runtime fallback when Gemini fails mid-training."""
+    """Gemini 3 Flash as runtime fallback when DeepSeek fails mid-training."""
     global _FALLBACK_PROVIDER, _FALLBACK_MODEL
     if _FALLBACK_PROVIDER is not None:
         return _FALLBACK_PROVIDER, _FALLBACK_MODEL
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    key = os.environ.get("GOOGLE_API_KEY", "")
     if not key:
         return None, ""
     from sage.providers.openai_compat import OpenAICompatProvider
     try:
         _FALLBACK_PROVIDER = OpenAICompatProvider(
-            api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek",
+            api_key=key,
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+            provider_name="google",
         )
-        _FALLBACK_MODEL = "deepseek-reasoner"
-        log.info("Fallback provider: DeepSeek chat")
+        _FALLBACK_MODEL = "gemini-3-flash-preview"
+        log.info("Fallback provider: Gemini 3 Flash")
         return _FALLBACK_PROVIDER, _FALLBACK_MODEL
     except Exception:
         return None, ""
@@ -442,7 +442,7 @@ async def evaluate_topology(
         except Exception as exc:
             # Fallback: retry with DeepSeek chat if Gemini failed
             fb_provider, fb_model = _get_fallback_provider()
-            if fb_provider is not None and "gemini" in model.lower():
+            if fb_provider is not None:
                 try:
                     from sage.topology.runner import TopologyRunner as _TR
                     from sage_core import TopologyExecutor as _TE
