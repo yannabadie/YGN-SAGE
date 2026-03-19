@@ -289,6 +289,31 @@ def _get_agent_provider():
     return None, ""
 
 
+# Fallback provider (lazy, only created if primary fails at runtime)
+_FALLBACK_PROVIDER = None
+_FALLBACK_MODEL = ""
+
+
+def _get_fallback_provider():
+    """DeepSeek chat as runtime fallback when Gemini fails mid-training."""
+    global _FALLBACK_PROVIDER, _FALLBACK_MODEL
+    if _FALLBACK_PROVIDER is not None:
+        return _FALLBACK_PROVIDER, _FALLBACK_MODEL
+    key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not key:
+        return None, ""
+    from sage.providers.openai_compat import OpenAICompatProvider
+    try:
+        _FALLBACK_PROVIDER = OpenAICompatProvider(
+            api_key=key, base_url="https://api.deepseek.com/v1", provider_name="deepseek",
+        )
+        _FALLBACK_MODEL = "deepseek-chat"
+        log.info("Fallback provider: DeepSeek chat")
+        return _FALLBACK_PROVIDER, _FALLBACK_MODEL
+    except Exception:
+        return None, ""
+
+
 # ── Topology graph builder (FIX #2 + #3) ────────────────────────
 
 def _build_topology_graph(topology_dict: dict) -> Any:
@@ -415,9 +440,25 @@ async def evaluate_topology(
             _stats.record(success=False, timeout=True, latency=time.time() - t0, status="TOPO_TIMEOUT")
             return _compute_rust_reward(graph, 0.0, system)
         except Exception as exc:
-            log.warning("TopologyRunner failed: %s", str(exc)[:100])
-            _stats.record(success=False, latency=time.time() - t0, status="RUNNER_ERROR")
-            return _compute_rust_reward(graph, 0.0, system)
+            # Fallback: retry with DeepSeek chat if Gemini failed
+            fb_provider, fb_model = _get_fallback_provider()
+            if fb_provider is not None and "gemini" in model.lower():
+                try:
+                    from sage.topology.runner import TopologyRunner as _TR
+                    from sage_core import TopologyExecutor as _TE
+                    executor2 = _TE(graph)
+                    fb_config = LLMConfig(provider="fallback", model=fb_model)
+                    runner2 = _TR(graph=graph, executor=executor2, llm_provider=fb_provider, llm_config=fb_config)
+                    final_output = await asyncio.wait_for(runner2.run(task[:2000]), timeout=120.0)
+                    log.info("Fallback DeepSeek succeeded for topology")
+                except Exception:
+                    log.warning("TopologyRunner failed (primary + fallback): %s", str(exc)[:100])
+                    _stats.record(success=False, latency=time.time() - t0, status="RUNNER_ERROR")
+                    return _compute_rust_reward(graph, 0.0, system)
+            else:
+                log.warning("TopologyRunner failed: %s", str(exc)[:100])
+                _stats.record(success=False, latency=time.time() - t0, status="RUNNER_ERROR")
+                return _compute_rust_reward(graph, 0.0, system)
 
         # Extract code from the final node's output
         code = extract_python_code(final_output)
