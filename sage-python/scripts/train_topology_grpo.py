@@ -733,8 +733,13 @@ def run_grpo_phase2(phase1_checkpoint: str, output_dir: str):
         processing_class=tokenizer,
     )
 
-    log.info("Phase 2: starting (%d prompts, TopologyRunner execution, ~100s/step)...", len(prompts))
-    trainer.train()
+    # Resume from checkpoint if available (e.g. after kill/restart)
+    resume = any(Path(output_dir).glob("checkpoint-*"))
+    if resume:
+        log.info("Phase 2: RESUMING from last checkpoint in %s", output_dir)
+    else:
+        log.info("Phase 2: starting fresh (%d prompts, TopologyRunner execution, ~100s/step)...", len(prompts))
+    trainer.train(resume_from_checkpoint=resume)
     trainer.save_model(output_dir)
     tokenizer.save_pretrained(output_dir)
     log.info("Phase 2 complete → %s", output_dir)
