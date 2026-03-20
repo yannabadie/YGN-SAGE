@@ -64,7 +64,7 @@ git checkout VeRLGIGPO
 
 # Vérifier la branche
 git log --oneline -3
-# Doit montrer: f1cfbff feat: implement veRL reward + edge credit...
+# Doit montrer le dernier commit de VeRLGIGPO
 ```
 
 ### Étape 3 — Configurer les clés API
@@ -73,10 +73,10 @@ Les données de training sont DANS le repo (1965 entries, pas de scp nécessaire
 
 ```bash
 # Sur le pod — configurer les clés API :
-export GOOGLE_API_KEY="<ta clé Google>"       # Pour Gemini Flash (node execution)
-export DEEPSEEK_API_KEY="<ta clé DeepSeek>"   # Pour DeepSeek Reasoner (optionnel)
-export WANDB_API_KEY="<ta clé W&B>"           # Pour le dashboard (optionnel)
-export HF_TOKEN="<ton token HuggingFace>"     # Pour télécharger Qwen3.5-9B
+export DEEPSEEK_API_KEY="<ta clé DeepSeek>"   # REQUIS — primary provider (Chat V3.2, no CoT waste)
+export GOOGLE_API_KEY="<ta clé Google>"       # REQUIS — fallback + fast/budget nodes
+export HF_TOKEN="<ton token HuggingFace>"     # REQUIS — télécharger Qwen3.5-9B
+export WANDB_API_KEY="<ta clé W&B>"           # Optionnel — dashboard training
 
 # Vérifier :
 echo "Google: ${GOOGLE_API_KEY:0:10}..."
@@ -117,18 +117,22 @@ python3 scripts/verl/validate_setup.py
 
 **Si un check échoue** : corriger avant de continuer. Voir la section Troubleshooting ci-dessous.
 
-### Étape 6 — Lancer le training (~2-4h)
+### Étape 6 — Lancer le training
+
+Le script fait **2 phases automatiquement** :
+- **Phase A** (5 epochs, ~30 min) : reward structural uniquement → apprend le format YAML ($0 API)
+- **Phase B** (5 epochs, ~4-8h) : reward execution multi-provider → apprend ce qui MARCHE (~$60-80 API)
 
 ```bash
 cd /workspace/YGN-SAGE/sage-python
 
-# Lancer en background avec log
-nohup bash scripts/verl/train_topology.sh > train.log 2>&1 &
-echo $! > train.pid
-echo "Training PID: $(cat train.pid)"
+# Optionnel : curater 500 prompts diversifiés (GSM8K cappé, GPT-5.4 Pro prioritaire)
+python3 scripts/verl/curate_training_data.py
 
-# Monitorer
-tail -f train.log
+# Lancer (web terminal : utilise screen/tmux pour ne pas perdre le process)
+screen -S train
+bash scripts/verl/train_topology.sh 2>&1 | tee train.log
+# Ctrl+A D pour détacher, screen -r train pour rattacher
 ```
 
 **Signaux à surveiller :**
