@@ -94,3 +94,6 @@ sage-python/*.csv
 sage-python/*.txt
 sage-python/test_*.json
 sage-python/output/
+docs/VeRLGIGPO_README.md
+memory-bank/
+sage-python/models/topology_grpo*
