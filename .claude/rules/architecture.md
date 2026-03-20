@@ -33,7 +33,7 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (Top
 - **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive. Done.
 - **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics. Done.
 - **Path 6**: Learned topology policy (Phi-4-mini-instruct SFT, 70% YAML valid). Opt-in via `SAGE_ENABLE_PATH6=1`. Auto-downloads from `yannabadie/sage-topology-policy` on HuggingFace. Lazy-loaded on first call (no boot impact). Falls back to templates on invalid output.
-- **GRPO v2** (next): TopologyReward Rust with real execution as reward signal (not format-only).
+- **GRPO veRL** (VeRLGIGPO branch): Mixed reward (structural + execution with multi-provider ProviderPool). Edge-level credit (Graph-GRPO arXiv 2603.02701). Qwen3.5-9B on RunPod H100. Ready to deploy.
 
 ## Key Competitors
 - **OpenSage** (ICML '26): AI-created agents+tools+memory at runtime. 59% SWE-Bench Pro.

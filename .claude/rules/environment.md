@@ -24,30 +24,35 @@ For httpx (HuggingFace Hub), also pass `verify="C:/Code/certs/ca-bundle.pem"` to
 
 **NEVER use verify=False when ca-bundle.pem is available.** Use the proper certificate instead.
 
-## Active Models (March 2026)
+## Active Models (March 20, 2026)
 | Tier | Model ID | Provider | Notes |
 |------|----------|----------|-------|
-| codex | gpt-5.3-codex | Codex CLI | SOTA coding, provider="codex" in cards.toml |
-| reasoner | gemini-3.1-pro-preview | Google | Complex evaluation |
-| fast | gemini-3.1-flash-lite-preview | Google | Low-latency |
-| budget | gemini-2.5-flash-lite | Google | Cheapest |
-| topology-sft | gpt-5.4 | OpenAI API | Best for SFT data generation (reasoning=high) |
-| topology-policy | microsoft/Phi-4-mini-instruct | Local ONNX | 3.8B, MIT, trained via GRPO |
+| codex | gpt-5.3-codex | OpenAI | SOTA coding |
+| reasoner | gemini-3.1-pro-preview | Google | Complex evaluation ($2.00/$12.00) |
+| fast | gemini-3.1-flash-lite-preview | Google | Low-latency ($0.25/$1.50) |
+| budget | deepseek-chat | DeepSeek | Best cost/quality ($0.28/$0.42, no rate limits) |
+| budget-alt | grok-4-1-fast-reasoning | xAI | 2M context, $0.20/$0.50 |
+| topology-sft | gpt-5.4 | OpenAI | SFT data generation |
+| topology-policy | Qwen/Qwen3.5-9B | veRL training | Replacing Phi-4-mini via GRPO on RunPod H100 |
+| new | minimax-m2.7 | MiniMax | Self-evolving, $0.30/$1.20 |
+| new | qwen/qwen3.5-plus-02-15 | OpenRouter | Qwen3.5-Plus via OpenRouter ($0.26/$1.56) |
+| new | gpt-5.4-mini | OpenAI | Budget frontier ($0.75/$4.50) |
 
-## API Keys (all 6 + Codex CLI)
+## API Keys (all 7 + Codex CLI)
 ```
-GOOGLE_API_KEY      # Required
-OPENAI_API_KEY      # Required for SFT data generation
-DEEPSEEK_API_KEY    # Optional (NOT DEEP_SEEK_API_KEY)
-GROK_API_KEY        # Optional
-KIMI_API_KEY        # Optional
-MINIMAX_API_KEY     # Optional
+GOOGLE_API_KEY        # Required
+OPENAI_API_KEY        # Required
+DEEPSEEK_API_KEY      # Required (primary training provider)
+GROK_API_KEY          # Optional
+KIMI_API_KEY          # Optional
+MINIMAX_API_KEY       # Optional
+OPEN_ROUTER_API_KEY   # For Qwen3.5-Plus
 ```
 
-## cards.toml (27 models, 7 providers)
+## cards.toml (20 models, 8 providers)
 - Single source of truth: sage-core/config/cards.toml
 - sage-python/config/cards.toml is a SYMLINK
-- codex provider = "codex" (not "openai")
+- Providers: google, openai, deepseek, xai, minimax, kimi, openrouter, codex
 
 ## Discovery Cache
 ~/.sage/discovery_cache/ — 24h TTL. Delete to force refresh.

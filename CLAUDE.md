@@ -39,16 +39,18 @@ python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 ```
 
-## Current State (March 17, 2026)
+## Current State (March 20, 2026)
 
-- **Tests**: Python 1516 passed / Rust 270+ passed / 0 failures
-- **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA 33.1% (stale, April 2025)
+- **Tests**: Python 1516+ passed / Rust 270+ passed / 0 failures (+ 31 veRL-specific tests)
+- **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
 - **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%
-- **Providers**: 7 functional (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, Codex)
-- **Self-Adaptive**: SA-1, SA-3, SA-4 implemented + **Path 6 learned topology policy** (70% YAML valid)
+- **Providers**: 8 functional (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex)
+- **Models**: 20 in cards.toml (minimax-m2.7, gpt-5.4-mini/nano, qwen3.5-plus via OpenRouter)
+- **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (Phi-4-mini SFT, 70% YAML valid)
+- **GRPO Training**: VeRLGIGPO branch ready for RunPod H100 (mixed structural+execution reward, 1965 entries, Graph-GRPO edge credit)
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
-- **HuggingFace**: `yannabadie/sage-topology-policy` — SFT Phi-4-mini-instruct
+- **HuggingFace**: `yannabadie/sage-topology-policy` — SFT Phi-4-mini-instruct (to be replaced by Qwen3.5-9B after veRL training)
 
 ## Detailed rules in .claude/rules/
 
