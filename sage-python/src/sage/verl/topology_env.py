@@ -78,6 +78,20 @@ class SageTopologyEnv:
         self._difficulty = "moderate"
         self._step_reward_vec: StepRewardVector | None = None
         self._predecessor_map: dict[int, list[int]] = {}  # node_idx -> [predecessor indices]
+        # V2: Adaptive topology state
+        self._memory: Any = None
+        self._awaiting_decision = False
+        self._checkpoints: set = set()
+        self._max_upgrades = 0
+        self._quality_threshold = 0.5
+        # Initialize TrainingMemory if configured
+        db = self._config.get("memory_db", "")
+        if db:
+            try:
+                from sage.verl.training_memory import TrainingMemory
+                self._memory = TrainingMemory(db_path=db)
+            except Exception:
+                pass
 
     def reset(self, prompt: str, task_id: str = "") -> dict:
         """Start a new episode. Returns initial observation."""
@@ -88,9 +102,29 @@ class SageTopologyEnv:
         self._difficulty = "moderate"
         self._step_reward_vec = None
         self._predecessor_map = {}
+        self._awaiting_decision = False
+        self._checkpoints = set()
+        self._max_upgrades = 0
+        self._quality_threshold = 0.5
+
+        # V2: Query episodic memory for similar past episodes
+        memory_ctx = ""
+        if self._memory:
+            try:
+                import numpy as np
+                # Placeholder embedding — real embeddings precomputed offline
+                query_emb = np.zeros(768, dtype=np.float32)
+                episodes = self._memory.query_similar(query_emb, k=3)
+                memory_ctx = self._memory.format_context(episodes)
+            except Exception:
+                pass
+
+        obs_text = prompt
+        if memory_ctx:
+            obs_text = prompt + "\n\n" + memory_ctx
 
         return {
-            "text": prompt,
+            "text": obs_text,
             "image": None,
             "anchor": _make_anchor("topology_generator", "unknown",
                                    hashlib.md5(prompt.encode()).hexdigest()[:8]),
@@ -126,6 +160,13 @@ class SageTopologyEnv:
 
         self._topo_dict = topo
         self._difficulty = topo.get("difficulty", "moderate")
+
+        # V2: Parse adaptation metadata for TopologyController
+        adaptation = topo.get("adaptation", {})
+        if isinstance(adaptation, dict):
+            self._checkpoints = set(adaptation.get("checkpoints", []))
+            self._max_upgrades = adaptation.get("max_upgrades", 0)
+            self._quality_threshold = adaptation.get("quality_threshold", 0.5)
 
         # Structural reward for step 0
         struct_score = 0.0
@@ -267,6 +308,11 @@ class SageTopologyEnv:
             if isinstance(ed, dict):
                 to_idx = ed.get("to_idx", 0)
                 from_idx = ed.get("from_idx", 0)
+                # V2: Map gate:conditional -> gate:open (Rust Gate enum
+                # only has open/closed; controller handles closing). See spec C1.
+                gate = ed.get("gate", "open")
+                if gate == "conditional":
+                    gate = "open"  # Controller handles condition evaluation
                 pred_map.setdefault(to_idx, []).append(from_idx)
         return pred_map
 
@@ -364,15 +410,37 @@ class SageTopologyEnv:
 
             config = LLMConfig(provider="agent", model=model)
 
-            # TODO: Wire ProviderPool for per-node model resolution
-            # For now, use the primary provider. Full ProviderPool integration
-            # requires boot.py context (ModelRegistry + runtime adapters).
-            # The ProviderPool integration is the next priority after this works.
+            # V2: Wire ProviderPool for per-node model resolution
+            provider_pool = None
+            try:
+                from sage.llm.provider_pool import ProviderPool
+                provider_pool = ProviderPool(
+                    default_provider=provider,
+                    registry=None,
+                    default_config=config,
+                )
+            except Exception:
+                pass
+
+            # V2: Wire TopologyController if adaptation metadata present
+            controller = None
+            adaptation = self._topo_dict.get("adaptation", {}) if self._topo_dict else {}
+            if isinstance(adaptation, dict) and adaptation.get("max_upgrades", 0) > 0:
+                try:
+                    from sage.topology_controller import TopologyController
+                    controller = TopologyController()
+                    controller.THETA_GOOD = adaptation.get("quality_threshold", 0.5)
+                    controller.MAX_RETRIES = adaptation.get("max_upgrades", 1)
+                except Exception:
+                    pass
+
             runner = TopologyRunner(
                 graph=graph,
                 executor=executor,
                 llm_provider=provider,
                 llm_config=config,
+                provider_pool=provider_pool,
+                controller=controller,
             )
 
             # run_traced() returns per-node outputs with metadata
@@ -443,6 +511,31 @@ class SageTopologyEnv:
 
         self._trace.total_reward = sum(s.reward for s in self._trace.steps)
         self._trace.status = status
+
+        # V2: Store episode in episodic memory for future reference
+        if self._memory:
+            try:
+                import numpy as np
+                self._memory.store_episode(
+                    task_id=self._trace.task_id,
+                    prompt_hash=hashlib.md5(self._trace.prompt.encode()).hexdigest()[:8],
+                    domain="code",
+                    topology_yaml=self._trace.topology_yaml[:2000],
+                    n_nodes=len(self._node_traces),
+                    difficulty=self._difficulty,
+                    outcome=status,
+                    total_reward=self._trace.total_reward,
+                    per_node_results=[
+                        {"role": t.get("role", ""), "reward": t.get("reward", 0)}
+                        for t in self._node_traces
+                    ],
+                    adaptations_triggered=sum(
+                        1 for t in self._node_traces if t.get("was_upgraded", False)
+                    ),
+                    embedding=np.zeros(768, dtype=np.float32),
+                )
+            except Exception:
+                pass
 
         # Build StepRewardVector for GiGPO
         self._step_reward_vec = StepRewardVector.from_episode_trace(self._trace)
