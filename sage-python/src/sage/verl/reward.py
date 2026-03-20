@@ -131,6 +131,46 @@ def _score_rust_density(text: str, extra_info: dict) -> float:
         return 0.0
 
 
+# ── Resilience scoring ──────────────────────────────────────
+
+def _score_resilience(trace: list[dict]) -> float:
+    """Bonus for topologies that survived adaptation.
+
+    0.0 — no adaptation triggered
+    0.3 — adaptation triggered and succeeded
+    0.5 — adaptation triggered, succeeded, and terminal PASSED
+    """
+    adaptation_triggered = any(t.get("was_upgraded", False) for t in trace)
+    if not adaptation_triggered:
+        return 0.0
+
+    adaptation_succeeded = any(
+        t.get("was_upgraded", False) and not str(t.get("output", "")).startswith("ERROR")
+        for t in trace
+    )
+    final_passed = trace[-1].get("status") == "PASSED" if trace else False
+
+    if adaptation_succeeded and final_passed:
+        return 0.5
+    elif adaptation_succeeded:
+        return 0.3
+    return 0.0
+
+
+# ── Cost efficiency scoring (inspired by CARD 2603.01089) ───
+
+BUDGET_REF = {"simple": 0.01, "moderate": 0.05, "complex": 0.20}
+
+
+def _score_cost_efficiency(total_cost: float, difficulty: str) -> float:
+    """CARD-style price penalty. Range: [0.0, 1.0].
+
+    R_cost = 1.0 - tanh(cost / budget_ref[difficulty])
+    """
+    ref = BUDGET_REF.get(difficulty, 0.05)
+    return 1.0 - math.tanh(total_cost / ref)
+
+
 # ── Combined reward (veRL entry point) ───────────────────────
 
 # Mode selection: structural (fast, $0) or execution (real multi-provider, ~$0.003/call)
