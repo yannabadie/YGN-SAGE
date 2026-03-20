@@ -574,8 +574,8 @@ factual = 0.56
 # --- Qwen models (new, March 2026) ---
 
 [[models]]
-id = "qwen3.5-plus"
-provider = "qwen"
+id = "qwen/qwen3.5-plus-02-15"
+provider = "openrouter"
 family = "qwen3.5"
 code_score = 0.82
 reasoning_score = 0.90

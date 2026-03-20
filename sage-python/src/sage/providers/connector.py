@@ -86,13 +86,20 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "api_key_env": "MINIMAX_API_KEY",
         "base_url": "https://api.minimaxi.chat/v1",
         "sdk": "openai",
-        "hardcoded_models": ["MiniMax-M2.5", "MiniMax-M2.5-highspeed", "MiniMax-M2.1"],
+        "hardcoded_models": ["minimax-m2.7", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
     },
     {
         "provider": "kimi",
         "api_key_env": "KIMI_API_KEY",
         "base_url": "https://api.moonshot.ai/v1",
         "sdk": "openai",
+    },
+    {
+        "provider": "openrouter",
+        "api_key_env": "OPEN_ROUTER_API_KEY",
+        "base_url": "https://openrouter.ai/api/v1",
+        "sdk": "openai",
+        "hardcoded_models": ["qwen/qwen3.5-plus-02-15"],
     },
 ]
 
