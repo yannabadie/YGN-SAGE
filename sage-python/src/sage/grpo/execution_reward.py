@@ -364,7 +364,15 @@ def _build_topology_graph(topology_dict: dict) -> Any:
 # ── Rust reward computation ──────────────────────────────────────
 
 def _compute_rust_reward(graph: Any, exec_score: float, system: int) -> float:
-    """Combine Rust structural/density with graduated execution score."""
+    """Combine Rust structural/density with graduated execution score.
+
+    Per-difficulty density bounds (AgentConductor 2602.17100):
+      simple  → N_max=4 (S1)
+      moderate→ N_max=7 (S2)
+      complex → N_max=10 (S3)
+    Over-budget penalty: tanh((N_max - |V|) / N_max) — from AgentConductor Eq.13.
+    """
+    import math
     exec_norm = min(exec_score / 1.5, 1.0)
     if not _RUST_AVAILABLE or graph is None:
         return exec_norm
@@ -380,8 +388,13 @@ def _compute_rust_reward(graph: Any, exec_score: float, system: int) -> float:
             temporal_score=None,
         )
         score = reward.total
+
+        # AgentConductor Eq.13: over-budget gets tanh penalty (can go negative)
         if density.over_budget:
-            score *= 0.5
+            n_nodes = graph.node_count()
+            penalty = math.tanh((density.n_max - n_nodes) / max(density.n_max, 1))
+            score = score * max(0.0, 1.0 + penalty)  # penalty is negative when over
+
         return float(score)
     except Exception:
         return exec_norm
