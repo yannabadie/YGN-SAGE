@@ -1,80 +1,98 @@
 #!/bin/bash
 # ============================================================
-# YGN-SAGE veRL + GiGPO Training Setup for RunPod H100
+# YGN-SAGE veRL Training Setup for RunPod H100
 # ============================================================
-# Usage: After cloning the repo on RunPod, run:
-#   cd YGN-SAGE && bash sage-python/scripts/verl/setup_runpod.sh
+# Docker image: verlai/verl:vllm017.latest
+# Model: Qwen/Qwen3.5-9B (9B, bf16)
+# Local inference: cyankiwi/Qwen3.5-9B-AWQ-4bit (~5GB)
 #
-# Prerequisites:
-#   - RunPod pod with H100 80GB (or A100 80GB)
-#   - CUDA 12.x + Python 3.12+
-#   - Git access to yannabadie/YGN-SAGE
+# Usage on RunPod:
+#   1. Create pod with Docker image: verlai/verl:vllm017.latest
+#   2. SSH into pod
+#   3. git clone https://github.com/yannabadie/YGN-SAGE.git /workspace/YGN-SAGE
+#   4. cd /workspace/YGN-SAGE && git checkout VeRLGIGPO
+#   5. bash sage-python/scripts/verl/setup_runpod.sh
+#   6. bash sage-python/scripts/verl/train_topology.sh
 # ============================================================
 
 set -euo pipefail
-echo "=== YGN-SAGE veRL Setup for RunPod ==="
+echo "=== YGN-SAGE veRL Setup for RunPod H100 ==="
+echo ""
 
-# ── 1. System packages ──────────────────────────────────────
-echo "[1/7] System packages..."
-apt-get update -qq && apt-get install -y -qq git curl wget htop nvtop 2>/dev/null || true
+# ── 1. Verify environment ───────────────────────────────────
+echo "[1/6] Verifying environment..."
+python3 -c "
+import torch
+assert torch.cuda.is_available(), 'No CUDA!'
+gpu = torch.cuda.get_device_name(0)
+vram = torch.cuda.get_device_properties(0).total_mem / 1024**3
+print(f'GPU: {gpu} ({vram:.0f} GB)')
+assert vram >= 40, f'Need >= 40GB VRAM, got {vram:.0f}GB'
+print('OK')
+"
 
-# ── 2. Python environment ───────────────────────────────────
-echo "[2/7] Python environment..."
-pip install --upgrade pip setuptools wheel
+# ── 2. Install veRL (if not in Docker image) ────────────────
+echo "[2/6] Checking veRL..."
+python3 -c "import verl; print(f'veRL already installed')" 2>/dev/null || {
+    echo "Installing veRL from source..."
+    cd /workspace
+    [ ! -d verl ] && git clone https://github.com/volcengine/verl.git
+    cd verl && pip3 install --no-deps -e . && cd -
+}
 
-# ── 3. veRL + vLLM ──────────────────────────────────────────
-echo "[3/7] Installing veRL + vLLM..."
-pip install vllm>=0.8.5
-pip install flash-attn --no-build-isolation --no-cache-dir 2>/dev/null || echo "flash-attn: using pre-built"
-
-# Install veRL from source (latest)
-if [ ! -d "/workspace/verl" ]; then
-    git clone https://github.com/volcengine/verl.git /workspace/verl
-fi
-cd /workspace/verl && pip install -e ".[vllm]" && cd -
-
-# Install verl-agent (GiGPO)
-if [ ! -d "/workspace/verl-agent" ]; then
-    git clone https://github.com/langfengQ/verl-agent.git /workspace/verl-agent
-fi
-cd /workspace/verl-agent && pip install -e . && cd -
-
-# ── 4. SAGE dependencies ────────────────────────────────────
-echo "[4/7] Installing SAGE..."
+# ── 3. Install SAGE ─────────────────────────────────────────
+echo "[3/6] Installing SAGE Python SDK..."
 cd /workspace/YGN-SAGE
-pip install -e "sage-python/.[all,dev]"
+pip install -e "sage-python/.[all,dev]" -q
 
-# Build sage-core (Rust)
-echo "[5/7] Building sage-core..."
-cd sage-core && pip install maturin && maturin develop --features smt,onnx,cognitive,tool-executor && cd ..
+# ── 4. Build sage-core (Rust) ────────────────────────────────
+echo "[4/6] Building sage-core..."
+cd sage-core
+pip install maturin -q
+maturin develop --features smt,onnx,cognitive,tool-executor --release 2>&1 | tail -3
+cd ..
 
 # ── 5. Convert training data ────────────────────────────────
-echo "[6/7] Converting training data to veRL format..."
+echo "[5/6] Converting training data to veRL format..."
 cd sage-python
 python scripts/verl/convert_sft_to_verl.py \
     --input data/topology_sft_v2_combined.jsonl \
     --output data/verl_topology_train.parquet
 
-# ── 6. Verify ───────────────────────────────────────────────
-echo "[7/7] Verification..."
-python -c "
-import torch, vllm, verl
+# ── 6. Final verification ───────────────────────────────────
+echo "[6/6] Verification..."
+python3 -c "
+import torch, vllm
 print(f'PyTorch: {torch.__version__}')
-print(f'CUDA: {torch.cuda.is_available()} ({torch.cuda.get_device_name(0)})')
-print(f'VRAM: {torch.cuda.get_device_properties(0).total_mem / 1024**3:.0f} GB')
+print(f'GPU: {torch.cuda.get_device_name(0)} ({torch.cuda.get_device_properties(0).total_mem / 1024**3:.0f} GB)')
 print(f'vLLM: {vllm.__version__}')
-print(f'veRL: OK')
+
+try:
+    import verl
+    print('veRL: OK')
+except ImportError:
+    print('veRL: MISSING — run setup again')
+
 try:
     import sage_core
-    print(f'sage-core: OK ({sage_core.__version__})')
-except:
-    print('sage-core: NOT BUILT (run maturin develop in sage-core/)')
+    print('sage-core: OK')
+except ImportError:
+    print('sage-core: NOT BUILT — check Rust/maturin')
+
 import pandas as pd
 df = pd.read_parquet('data/verl_topology_train.parquet')
 print(f'Training data: {len(df)} entries')
+print(f'Columns: {list(df.columns)}')
+print(f'data_source: {df[\"data_source\"].unique()}')
 "
 
 echo ""
 echo "=== Setup complete ==="
-echo "Next: Run training with:"
-echo "  bash sage-python/scripts/verl/train_topology.sh"
+echo ""
+echo "To train:"
+echo "  cd /workspace/YGN-SAGE/sage-python"
+echo "  bash scripts/verl/train_topology.sh"
+echo ""
+echo "To monitor:"
+echo "  wandb login  # optional, for W&B dashboards"
+echo "  tail -f models/topology_verl/logs/*.log"
