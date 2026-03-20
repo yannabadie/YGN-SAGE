@@ -108,6 +108,10 @@ COMMON_ARGS=(
     'trainer.logger=["console","wandb"]'
 )
 
+# ── Register SageTopologyEnv in verl-agent ─────────────────────
+echo "Registering SageTopologyEnv in verl-agent..."
+python3 -c "import sage.verl.env_register; print('SageTopologyEnv registered')"
+
 # ── Phase A: Structural (5 epochs, full data, $0 API) ──────────
 echo ""
 echo "=== Phase A: Structural GiGPO (5 epochs, full dataset) ==="

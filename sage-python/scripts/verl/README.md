@@ -35,13 +35,16 @@ that assigning the right model_tier to the right node MATTERS.
 
 Set `SAGE_VERL_EXEC=1` to activate execution mode (done automatically by train_topology.sh).
 
-## Why GRPO, not GiGPO?
+## Why GiGPO (not GRPO standard)
 
-Verified in verl-agent source code (`core_gigpo.py`): GiGPO's step-level advantage
-requires the model to ACT at each step. Our topology generation is single-turn
-(1 prompt → 1 YAML). For single-action episodes, GiGPO = GRPO exactly.
+Our topology execution IS multi-step: the model generates YAML at step 0, then
+the environment executes each node sequentially (steps 1..N). Each step has its
+own reward and anchor state. GiGPO compares actions at identical anchor states
+across trajectories — this provides temporal credit assignment that flat GRPO
+cannot: "when a reviewer sees good coder output (same anchor), does it produce
+better feedback?"
 
-Ref: GiGPO paper (arXiv 2505.10978), Section 3.2
+Ref: GiGPO (arXiv 2505.10978), verl-agent (langfengQ/verl-agent)
 
 ## Files
 

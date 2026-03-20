@@ -287,3 +287,49 @@ class TopologyRunner:
                     last_output = self._node_outputs.get(idx, output)
 
         return last_output
+
+    async def run_traced(self, task: str) -> list[dict]:
+        """Execute topology and return per-node traces for GiGPO step rewards.
+
+        Returns a list of dicts, one per executed node:
+            [{"node_idx": 0, "role": "coder", "output": "...", "latency": 1.2}, ...]
+
+        Uses the same execution logic as run() (ProviderPool, controller, fallback)
+        but captures per-node metadata instead of just the final output.
+        """
+        import time
+        traces: list[dict] = []
+
+        while not self.executor.is_done():
+            ready = self.executor.next_ready(self.graph)
+            if not ready:
+                break
+
+            for node_idx in ready:
+                t0 = time.time()
+                node = self.graph.get_node(node_idx)
+                role = getattr(node, "role", f"node-{node_idx}")
+
+                result = await self._execute_node(node_idx, task)
+
+                # Phase C adaptation (same as run())
+                if self._controller:
+                    decision = self._controller.evaluate_and_decide(
+                        node_idx, result, task, self.graph, None,
+                        parallel_outputs=None,
+                    )
+                    if decision.action == "upgrade_model":
+                        result = await self._retry_with_upgrade(node_idx, decision, task)
+                        self._node_outputs[node_idx] = result
+
+                self.executor.mark_completed(node_idx)
+
+                traces.append({
+                    "node_idx": node_idx,
+                    "role": role,
+                    "output": self._node_outputs.get(node_idx, result),
+                    "latency": time.time() - t0,
+                    "model_id": getattr(node, "model_id", ""),
+                })
+
+        return traces
