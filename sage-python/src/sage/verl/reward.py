@@ -133,6 +133,15 @@ def _score_rust_density(text: str, extra_info: dict) -> float:
 
 # ── Combined reward (veRL entry point) ───────────────────────
 
+# Mode selection: structural (fast, $0) or execution (real multi-provider, ~$0.003/call)
+# Set SAGE_VERL_EXEC=1 to enable execution mode with real topology execution.
+# In execution mode, evaluate_topology() from execution_reward.py is called,
+# which uses TopologyRunner + ProviderPool to execute each node with the
+# provider assigned by ModelAssigner (multi-provider: Google, DeepSeek, OpenAI, etc.)
+import os
+_EXEC_MODE = os.environ.get("SAGE_VERL_EXEC", "0") == "1"
+
+
 def compute_score(
     data_source: str,
     solution_str: str,
@@ -141,7 +150,20 @@ def compute_score(
 ) -> float:
     """Combined topology reward for veRL.
 
-    This is registered in veRL config as:
+    Two modes controlled by SAGE_VERL_EXEC env var:
+
+    SAGE_VERL_EXEC=0 (default): Structural only — YAML format + structure + Rust density.
+        Fast, no API calls. Use for early epochs to learn format.
+
+    SAGE_VERL_EXEC=1: Full execution via TopologyRunner + ProviderPool.
+        Each node is executed by its assigned provider (multi-provider).
+        model_tier in YAML (reasoner/fast/budget) is resolved to real models
+        via ModelAssigner → ProviderPool.resolve() → actual LLM API calls.
+        This teaches the model that model assignment MATTERS — putting a
+        reasoner on the planner and a fast on the reviewer produces different
+        results than all-budget.
+
+    Register in veRL config:
         custom_reward_function.path=sage-python/src/sage/verl/reward.py
         custom_reward_function.name=compute_score
     """
@@ -153,7 +175,74 @@ def compute_score(
     rust = _score_rust_density(solution_str, extra_info)
 
     fmt_norm = (fmt + 2.0) / 3.0  # [-2.0, 1.0] -> [0.0, 1.0]
-    combined = (fmt_norm + struct + rust) / 3.0
+    structural = (fmt_norm + struct + rust) / 3.0
+
+    if not _EXEC_MODE or fmt < 0.0:
+        # Structural only (invalid YAML can't be executed)
+        return float(structural)
+
+    # Execution mode: run the real multi-provider topology
+    try:
+        return _compute_execution_reward(solution_str, extra_info, structural)
+    except Exception as exc:
+        log.warning("Execution reward failed, falling back to structural: %s", exc)
+        return float(structural)
+
+
+def _compute_execution_reward(
+    solution_str: str, extra_info: dict, structural_score: float,
+) -> float:
+    """Execute topology via the real SAGE pipeline with multi-provider support.
+
+    Uses evaluate_topology() from execution_reward.py which:
+    1. Parses YAML → TopologyGraph (Rust)
+    2. Executes via TopologyRunner with per-node ProviderPool resolution
+    3. Extracts code from final node output
+    4. Tests code in sandbox
+    5. Returns graduated reward (PASSED=1.5, WRONG_ANSWER=1.0, etc.)
+    6. Combines with Rust density scoring (AgentConductor Eq.9)
+    """
+    import asyncio
+    from sage.grpo.execution_reward import evaluate_topology
+
+    try:
+        topo = yaml.safe_load(solution_str)
+    except Exception:
+        return float(structural_score)
+
+    if not isinstance(topo, dict) or "nodes" not in topo:
+        return float(structural_score)
+
+    # Inject task_id for test case matching
+    topo["_task_id"] = extra_info.get("task_id", "")
+    task_prompt = extra_info.get("prompt", "")
+    if not task_prompt:
+        # Try to reconstruct from the veRL data
+        task_prompt = extra_info.get("question", str(topo.get("reasoning", "")))
+
+    semaphore = asyncio.Semaphore(8)
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                exec_score = pool.submit(
+                    lambda: asyncio.run(evaluate_topology(task_prompt, topo, semaphore))
+                ).result(timeout=120)
+        else:
+            exec_score = asyncio.run(evaluate_topology(task_prompt, topo, semaphore))
+    except Exception:
+        return float(structural_score)
+
+    # If execution returned 0.0 and no provider was available, fallback to structural
+    # (don't penalize the topology for infrastructure failure)
+    from sage.grpo.execution_reward import _AGENT_PROVIDER
+    if exec_score == 0.0 and _AGENT_PROVIDER is None:
+        return float(structural_score)
+
+    # Combine: 30% structural + 70% execution (execution dominates)
+    combined = 0.3 * structural_score + 0.7 * exec_score
     return float(combined)
 
 
