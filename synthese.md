@@ -11,7 +11,7 @@ Architecture SAGE — toutes les briques
      ├─ kNN (Rust, 92%)        ├─ S-MMU hit             ├─ Wasm WASI sandbox
      ├─ StructuralFeatures     ├─ MAP-Elites archive    ├─ tree-sitter validator
      └─ ContextualBandit       ├─ LLM synthesis         ├─ subprocess fallback
-        (Thompson sampling)    ├─ CMA-ME mutation       └─ ProviderPool (7 providers)
+        (Thompson sampling)    ├─ CMA-ME mutation       └─ ProviderPool (8 providers)
                                ├─ MCTS search               ├─ CircuitBreaker
                                ├─ Template fallback          └─ FrugalGPT cascade
                                └─ [Path 6: politique RL] ← EN COURS

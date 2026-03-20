@@ -42,7 +42,7 @@ SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
    ├─ kNN (92% GT)           ├─ S-MMU retrieval        ├─ Wasm WASI sandbox
    ├─ StructuralFeatures     ├─ MAP-Elites archive     ├─ tree-sitter validator
    └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
-                             ├─ MCTS search            └─ ProviderPool (7 providers)
+                             ├─ MCTS search            └─ ProviderPool (8 providers)
                              ├─ LLM synthesis               ├─ CircuitBreaker
                              ├─ Path 6: learned policy (Phi-4-mini SFT, 70%)
                              └─ Template fallback (x8)       └─ FrugalGPT cascade
@@ -168,7 +168,7 @@ YGN-SAGE/
 |   |                    #   QualityLabeler, S-MMU, SmtVerifier, HybridVerifier, LtlVerifier,
 |   |                    #   WasmSandbox, ToolExecutor, ContextualBandit, MAP-Elites, CMA-ME,
 |   |                    #   MCTS, TopologyDensity, TopologyReward, RustEmbedder, RustKnnRouter
-|   +-- config/cards.toml  # Single source of truth for 27 model cards
+|   +-- config/cards.toml  # Single source of truth for 20 model cards (8 providers)
 |-- sage-python/         # Python SDK
 |   +-- src/sage/
 |       |-- agents/      # Sequential, Parallel, Loop, Handoff composition
