@@ -67,7 +67,7 @@ def export_lora(checkpoint_dir: str, output_dir: str):
     log.info("To use locally (12GB GPU):")
     log.info("  from peft import PeftModel")
     log.info("  from transformers import AutoModelForCausalLM")
-    log.info("  base = AutoModelForCausalLM.from_pretrained('Qwen/Qwen3-8B', load_in_4bit=True)")
+    log.info("  base = AutoModelForCausalLM.from_pretrained('Qwen/Qwen3.5-9B', load_in_4bit=True)")
     log.info("  model = PeftModel.from_pretrained(base, '%s')", out)
 
 

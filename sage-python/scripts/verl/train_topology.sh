@@ -10,7 +10,7 @@
 set -euo pipefail
 
 # ── Config ───────────────────────────────────────────────────
-MODEL=${SAGE_MODEL:-"Qwen/Qwen3-8B"}  # Override with SAGE_MODEL env var
+MODEL=${SAGE_MODEL:-"Qwen/Qwen3.5-9B"}  # Override with SAGE_MODEL env var
 DATA=${SAGE_DATA:-"/workspace/YGN-SAGE/sage-python/data/verl_topology_train.parquet"}
 OUTPUT=${SAGE_OUTPUT:-"/workspace/YGN-SAGE/sage-python/models/topology_verl_gigpo/"}
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/scripts/verl/reward_topology.py"
@@ -58,7 +58,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.total_epochs=3 \
     trainer.save_freq=50 \
     trainer.project_name=sage_topology \
-    trainer.experiment_name=gigpo_qwen3_9b \
+    trainer.experiment_name=grpo_qwen35_9b \
     trainer.default_local_dir="$OUTPUT" \
     \
     +trainer.val_before_train=False

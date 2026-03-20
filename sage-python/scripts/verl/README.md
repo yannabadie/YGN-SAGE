@@ -2,7 +2,7 @@
 
 ## Overview
 
-Train a topology generation model (Qwen3-8B/9B) via GRPO/GiGPO on RunPod H100.
+Train a topology generation model (Qwen3.5-9B/9B) via GRPO/GiGPO on RunPod H100.
 The model learns to generate optimal multi-agent YAML topologies for coding tasks.
 
 ## Architecture
@@ -11,7 +11,7 @@ The model learns to generate optimal multi-agent YAML topologies for coding task
 RunPod H100 (80GB)                    Local Ada 3500 (12GB)
 ┌─────────────────────┐               ┌─────────────────────┐
 │ veRL + vLLM          │               │ Quantized inference  │
-│ Qwen3-8B bf16        │  ──export──►  │ Qwen3-8B-GPTQ 4-bit │
+│ Qwen3.5-9B bf16        │  ──export──►  │ Qwen3.5-9B-GPTQ 4-bit │
 │ LoRA r=32            │               │ ~5GB VRAM            │
 │ GiGPO/GRPO training  │               │ SAGE pipeline Path 6 │
 └─────────────────────┘               └─────────────────────┘
@@ -69,7 +69,7 @@ not during training. Training uses the Rust structural proxy for speed.
 
 ## Model
 
-- **Training**: Qwen3-8B (or Qwen3.5-9B when available) in bf16 with LoRA r=32
+- **Training**: Qwen3.5-9B (or Qwen3.5-9B when available) in bf16 with LoRA r=32
 - **Local inference**: GPTQ/AWQ 4-bit quantized version (~5GB VRAM)
 - **Fallback**: Phi-4-mini-instruct 3.8B (current, works on 12GB)
 
