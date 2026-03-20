@@ -172,17 +172,29 @@ def load_dataset(phase: str):
     log.info("Loaded %d prompts from %s", len(df), path)
 
     # Convert to list of chat message dicts
+    # Parquet stores prompts as numpy arrays of dicts — convert to list
     dataset = []
     for _, row in df.iterrows():
         prompt = row.get("prompt", [])
+        # Handle numpy array (from parquet)
+        if hasattr(prompt, "tolist"):
+            prompt = prompt.tolist()
         if isinstance(prompt, str):
             try:
                 prompt = json.loads(prompt)
             except json.JSONDecodeError:
                 prompt = [{"role": "user", "content": prompt}]
-        if isinstance(prompt, list) and len(prompt) > 0:
-            dataset.append({"prompt": prompt})
+        if isinstance(prompt, (list, tuple)) and len(prompt) > 0:
+            # Extract just the user message text for TRL GRPOTrainer
+            user_msg = ""
+            for msg in prompt:
+                if isinstance(msg, dict) and msg.get("role") == "user":
+                    user_msg = msg.get("content", "")
+                    break
+            if user_msg:
+                dataset.append({"prompt": user_msg})
 
+    log.info("Converted %d prompts to training format", len(dataset))
     return dataset
 
 
