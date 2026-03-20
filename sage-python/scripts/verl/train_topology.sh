@@ -27,27 +27,27 @@ MODEL=${SAGE_MODEL:-"Qwen/Qwen3.5-9B"}
 OUTPUT=${SAGE_OUTPUT:-"/workspace/YGN-SAGE/sage-python/models/topology_verl/"}
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 
-# Use curated dataset (500 diverse prompts) if available, else full
-if [ -f "data/verl_topology_curated.parquet" ]; then
-    DATA="data/verl_topology_curated.parquet"
-    echo "Using curated dataset (500 prompts)"
-else
-    DATA=${SAGE_DATA:-"data/verl_topology_train.parquet"}
-    echo "Using full dataset"
+# Phase A uses FULL dataset (1965 prompts, $0 API — learn format on max diversity)
+# Phase B uses CURATED dataset (499 prompts, ~$50 API — learn execution on best data)
+DATA_FULL=${SAGE_DATA:-"data/verl_topology_train.parquet"}
+DATA_CURATED="data/verl_topology_curated.parquet"
+if [ ! -f "$DATA_CURATED" ]; then
+    DATA_CURATED="$DATA_FULL"
+    echo "WARNING: curated parquet not found, using full for both phases"
 fi
 
 echo "=== YGN-SAGE veRL GRPO Training ==="
-echo "Model:  $MODEL"
-echo "Data:   $DATA"
-echo "Output: $OUTPUT"
-echo "Reward: $REWARD_SCRIPT"
+echo "Model:    $MODEL"
+echo "Phase A:  $DATA_FULL (structural, full dataset)"
+echo "Phase B:  $DATA_CURATED (execution, curated)"
+echo "Output:   $OUTPUT"
+echo "Reward:   $REWARD_SCRIPT"
 echo ""
 
 # ── Common training args ─────────────────────────────────────
 COMMON_ARGS=(
     algorithm.adv_estimator=grpo
 
-    data.train_files="$DATA"
     data.train_batch_size=64
     data.max_prompt_length=512
     data.max_response_length=512
@@ -105,6 +105,7 @@ export SAGE_VERL_EXEC=0
 
 python3 -m verl.trainer.main_ppo \
     "${COMMON_ARGS[@]}" \
+    data.train_files="$DATA_FULL" \
     trainer.total_epochs=5 \
     trainer.experiment_name=grpo_qwen35_structural
 
@@ -123,6 +124,7 @@ export SAGE_VERL_EXEC=1
 
 python3 -m verl.trainer.main_ppo \
     "${COMMON_ARGS[@]}" \
+    data.train_files="$DATA_CURATED" \
     trainer.total_epochs=5 \
     trainer.experiment_name=grpo_qwen35_execution
 
