@@ -348,14 +348,28 @@ def _load_test_cases() -> dict[str, str]:
 # ── Agent provider (for executing topology nodes) ────────────────
 
 def _get_agent_provider():
-    """Provider for executing topology nodes. DeepSeek Reasoner primary, Gemini fallback."""
+    """Provider for executing topology nodes. DeepSeek Chat primary, Gemini fallback.
+
+    Why DeepSeek Chat over Reasoner:
+      - Same model (V3.2), same per-token price ($0.28/$0.42 per 1M)
+      - Reasoner generates 2000-5000 CoT tokens per call that are DISCARDED
+        (topology executor never uses them) → 3.4x more expensive for zero benefit
+      - Chat: 4-8s/call vs Reasoner: 20-30s/call
+      - No rate limits on DeepSeek (vs Gemini 150-300 RPM hard cap)
+      - Full training cost: Chat ~$258 vs Reasoner ~$888 vs Gemini ~$1,288
+
+    Why not Gemini Flash as primary:
+      - 150-300 RPM hard cap makes 50+ concurrent requests infeasible
+      - "Ghost 429" bugs reported in 2026
+      - 7x more expensive output tokens ($3.00 vs $0.42 per 1M)
+    """
     global _AGENT_PROVIDER, _AGENT_MODEL
     if _AGENT_PROVIDER is not None:
         return _AGENT_PROVIDER, _AGENT_MODEL
 
     from sage.providers.openai_compat import OpenAICompatProvider
 
-    # Primary: DeepSeek Reasoner (deep thinking, best code quality)
+    # Primary: DeepSeek Chat (V3.2, no CoT overhead, no rate limits)
     key = os.environ.get("DEEPSEEK_API_KEY", "")
     if key:
         try:
@@ -364,13 +378,13 @@ def _get_agent_provider():
                 base_url="https://api.deepseek.com/v1",
                 provider_name="deepseek",
             )
-            _AGENT_MODEL = "deepseek-reasoner"
-            log.info("Agent provider: DeepSeek Reasoner (primary)")
+            _AGENT_MODEL = "deepseek-chat"
+            log.info("Agent provider: DeepSeek Chat V3.2 (primary, no CoT overhead)")
             return _AGENT_PROVIDER, _AGENT_MODEL
         except Exception:
             pass
 
-    # Fallback: Gemini 3 Flash
+    # Fallback: Gemini 3 Flash (rate-limited but fast per call)
     key = os.environ.get("GOOGLE_API_KEY", "")
     if key:
         try:
