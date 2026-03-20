@@ -149,12 +149,21 @@ pub struct TopologyNode {
     /// Custom system prompt for this node. Empty = use role-based default.
     #[pyo3(get, set)]
     pub prompt: String,
+    /// Fallback model tier for runtime adaptation. Empty = no fallback.
+    #[pyo3(get, set)]
+    pub fallback_tier: String,
+    /// Whether this node is a quality checkpoint.
+    #[pyo3(get, set)]
+    pub is_checkpoint: bool,
+    /// Max retries for this node (0 = use controller default).
+    #[pyo3(get)]
+    pub max_retries: u8,
 }
 
 #[pymethods]
 impl TopologyNode {
     #[new]
-    #[pyo3(signature = (role, model_id, system=1, required_capabilities=vec![], security_label=0, max_cost_usd=1.0, max_wall_time_s=60.0, prompt=String::new()))]
+    #[pyo3(signature = (role, model_id, system=1, required_capabilities=vec![], security_label=0, max_cost_usd=1.0, max_wall_time_s=60.0, prompt=String::new(), fallback_tier=String::new(), is_checkpoint=false, max_retries=0))]
     pub fn py_new(
         role: String,
         model_id: String,
@@ -164,6 +173,9 @@ impl TopologyNode {
         max_cost_usd: f32,
         max_wall_time_s: f32,
         prompt: String,
+        fallback_tier: String,
+        is_checkpoint: bool,
+        max_retries: u8,
     ) -> Self {
         let mut node = Self::new(
             role,
@@ -175,6 +187,9 @@ impl TopologyNode {
             max_wall_time_s,
         );
         node.prompt = prompt;
+        node.fallback_tier = fallback_tier;
+        node.is_checkpoint = is_checkpoint;
+        node.max_retries = max_retries;
         node
     }
 
@@ -187,13 +202,15 @@ impl std::fmt::Display for TopologyNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "TopologyNode(role='{}', model='{}', S{}, label={}, budget=${:.2}, timeout={:.0}s)",
+            "TopologyNode(role='{}', model='{}', S{}, label={}, budget=${:.2}, timeout={:.0}s{})",
             self.role,
             self.model_id,
             self.system,
             self.security_label,
             self.max_cost_usd,
-            self.max_wall_time_s
+            self.max_wall_time_s,
+            if self.fallback_tier.is_empty() { String::new() }
+            else { format!(", fallback='{}'", self.fallback_tier) }
         )
     }
 }
@@ -219,6 +236,9 @@ impl TopologyNode {
             max_cost_usd,
             max_wall_time_s,
             prompt: String::new(),
+            fallback_tier: String::new(),
+            is_checkpoint: false,
+            max_retries: 0,
         }
     }
 
@@ -234,6 +254,9 @@ impl TopologyNode {
             max_cost_usd: 1.0,
             max_wall_time_s: 60.0,
             prompt: String::new(),
+            fallback_tier: String::new(),
+            is_checkpoint: false,
+            max_retries: 0,
         }
     }
 }
