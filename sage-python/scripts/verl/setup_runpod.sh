@@ -53,13 +53,21 @@ print('OK')
     pip install vllm -q 2>&1 | tail -3
 }
 
-# ── 3. Install veRL (from source, --no-deps since deps are in Docker) ─
-echo "[3/8] Installing veRL..."
-python3 -c "import verl; print('veRL already installed')" 2>/dev/null || {
-    echo "Installing veRL from source..."
+# ── 3. Install verl-agent (fork with GiGPO support, not vanilla veRL) ─
+echo "[3/8] Installing verl-agent (GiGPO)..."
+python3 -c "
+try:
+    import verl
+    # Check if GiGPO is available (verl-agent, not vanilla veRL)
+    from verl.trainer.ppo.core_algos import compute_grpo_outcome_advantage
+    print('verl-agent already installed')
+except (ImportError, ModuleNotFoundError):
+    import sys; sys.exit(1)
+" 2>/dev/null || {
+    echo "Installing verl-agent from source (includes GiGPO)..."
     cd /workspace
-    [ ! -d verl ] && git clone https://github.com/volcengine/verl.git
-    cd verl && git checkout v0.7.1 2>/dev/null; pip3 install --no-deps -e . -q 2>&1 | tail -3
+    [ ! -d verl-agent ] && git clone https://github.com/langfengQ/verl-agent.git
+    cd verl-agent && pip3 install -e . -q 2>&1 | tail -5
     cd /workspace/YGN-SAGE
 }
 
