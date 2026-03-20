@@ -223,7 +223,6 @@ def train_phase(phase: str, model, tokenizer, batch_size: int = 4):
         learning_rate=lr,
         num_generations=4,  # K=4 rollouts per prompt (for RewardFlow compatibility)
         max_completion_length=1024,
-        max_prompt_length=512,
         logging_steps=10,
         save_steps=200,
         save_total_limit=3,
