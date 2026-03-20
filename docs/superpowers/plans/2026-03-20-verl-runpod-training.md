@@ -36,7 +36,7 @@ Before starting ANY task, read these files:
 ## Environment Context
 
 - **RunPod H100 80GB** (or A100 80GB)
-- **Docker**: `verlai/verl:vllm017.latest` (verified working, March 12 2026)
+- **Docker**: `verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3` (CUDA 12.6, PyTorch 2.7.1, FA2.8, TE2.3 — vLLM+veRL installed by setup script)
 - **Branch**: `VeRLGIGPO`
 - **Model**: `Qwen/Qwen3.5-9B` (primary) — set `num_speculative_tokens=0` in rollout config to avoid MTP CUDA bug
 - **Fallback model**: `Qwen/Qwen2.5-7B-Instruct` (if Qwen3.5 crashes)

@@ -15,13 +15,13 @@ surpassant AgentConductor (Qwen2.5-3B, arXiv 2602.17100) sur BigCodeBench Hard.
 |-----------|--------|
 | Modèle | `Qwen/Qwen3.5-9B` (dense 9B, GatedDeltaNet + attention, Apache 2.0) |
 | Fallback | `Qwen/Qwen2.5-7B-Instruct` (si Qwen3.5 crashe) |
-| Framework | veRL 0.7.1 + vLLM 0.17.0 |
-| Docker | `verlai/verl:vllm017.latest` |
+| Framework | veRL 0.7.1 (from source) + vLLM >= 0.17.0 (pip) |
+| Docker | `verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3` |
 | Algorithme | GRPO standard (GiGPO = GRPO pour single-action, vérifié dans core_gigpo.py) |
 | LoRA | r=64, alpha=32, target=all-linear |
 | GPU | 1x H100 80GB (ou A100 80GB) |
 | VRAM estimé | ~68 GB (model 18 + KV cache 45 + optimizer 1 + activations 4) |
-| Données | 1880 entries (BigCodeBench 60%, GSM8K 20%, RAFT 11%, CodeContests 9%) |
+| Données | **1965 entries** (SFT v2 1532 + RAFT 199 + GPT-5.4 Pro 234) dans le repo |
 | Bug vLLM | `num_speculative_tokens=0` obligatoire (CUDA bug #36408 avec MTP) |
 | Reward | Format YAML + structure + Rust density (AgentConductor Eq.9) |
 | Innovation | Edge-level credit (Graph-GRPO, arXiv 2603.02701) |
@@ -46,9 +46,10 @@ surpassant AgentConductor (Qwen2.5-3B, arXiv 2602.17100) sur BigCodeBench Hard.
 1. Aller sur RunPod.io
 2. Créer un pod GPU :
    - **GPU** : H100 80GB SXM (ou A100 80GB)
-   - **Docker image** : `verlai/verl:vllm017.latest`
-   - **Disk** : 100GB+ (modèle 9B + checkpoints)
+   - **Docker image** : `verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3`
+   - **Disk** : 150GB+ (modèle 9B bf16 = 18GB, checkpoints, vLLM cache)
    - **Volume** : monter sur `/workspace`
+   - **Note** : cette image a CUDA 12.6, PyTorch 2.7.1, FlashAttention 2.8, TransformerEngine 2.3 pré-installés. vLLM et veRL seront installés par setup_runpod.sh.
 3. Attendre que le pod démarre
 4. SSH sur le pod
 
@@ -65,20 +66,20 @@ git log --oneline -3
 # Doit montrer: f1cfbff feat: implement veRL reward + edge credit...
 ```
 
-### Étape 3 — Uploader les données et clés API
+### Étape 3 — Configurer les clés API
+
+Les données de training sont DANS le repo (1965 entries, pas de scp nécessaire).
 
 ```bash
-# Depuis la MACHINE LOCALE (pas le pod) :
-scp sage-python/data/topology_sft_v2_combined.jsonl <pod>:/workspace/YGN-SAGE/sage-python/data/
-
 # Sur le pod — configurer les clés API :
-export GOOGLE_API_KEY="<ta clé Google>"
-export DEEPSEEK_API_KEY="<ta clé DeepSeek>"
-export WANDB_API_KEY="<ta clé W&B>"  # optionnel, pour le dashboard
+export GOOGLE_API_KEY="<ta clé Google>"       # Pour Gemini Flash (node execution)
+export DEEPSEEK_API_KEY="<ta clé DeepSeek>"   # Pour DeepSeek Reasoner (optionnel)
+export WANDB_API_KEY="<ta clé W&B>"           # Pour le dashboard (optionnel)
+export HF_TOKEN="<ton token HuggingFace>"     # Pour télécharger Qwen3.5-9B
 
 # Vérifier :
 echo "Google: ${GOOGLE_API_KEY:0:10}..."
-echo "DeepSeek: ${DEEPSEEK_API_KEY:0:10}..."
+echo "HF: ${HF_TOKEN:0:10}..."
 ```
 
 ### Étape 4 — Setup automatique (~5 min)
