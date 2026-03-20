@@ -6,7 +6,7 @@
 
 **Architecture:** veRL GRPO with async Reward Loop on single H100 80GB. Model generates YAML topology → async reward function executes topology via external LLM APIs (Gemini Flash) → Rust structural/density scoring → graduated reward. Edge-level credit assignment (Graph-GRPO) as Phase 2 enhancement.
 
-**Tech Stack:** veRL 0.7.1, vLLM, Qwen2.5-7B-Instruct (safe) or Qwen3.5-9B (if vLLM fixes land), LoRA r=64, PyO3/maturin for sage-core Rust, asyncio for parallel reward computation.
+**Tech Stack:** veRL 0.7.1, vLLM 0.17.0, Qwen/Qwen3.5-9B (primary, dense 9B hybrid GatedDeltaNet+attention) or Qwen/Qwen2.5-7B-Instruct (fallback), LoRA r=64, PyO3/maturin for sage-core Rust, asyncio for parallel reward computation.
 
 **Critical References:**
 - veRL docs: https://verl.readthedocs.io/en/latest/
@@ -14,6 +14,13 @@
 - AgentConductor: arXiv 2602.17100
 - Graph-GRPO: arXiv 2603.02701
 - SAGE CLAUDE.md: read first for project rules
+
+**Qwen3.5-9B Status (verified March 20, 2026):**
+- Architecture: DENSE (NOT MoE — the MoE variant is 35B-A3B only)
+- Docker: `verlai/verl:vllm017.latest` EXISTS and works (updated March 12)
+- vLLM 0.17.0 bug: CUDA illegal memory access (issue #36408) — WORKAROUND: set `num_speculative_tokens=0` to disable MTP speculative decoding
+- veRL issue #5441 is Huawei NPU tracking only, NOT a GPU bug
+- 22GB VRAM in bf16 for LoRA fine-tuning — fits H100 80GB easily
 
 ---
 
@@ -29,9 +36,12 @@ Before starting ANY task, read these files:
 ## Environment Context
 
 - **RunPod H100 80GB** (or A100 80GB)
-- **Docker**: check `verlai/verl` tags on Docker Hub for latest vLLM-compatible image
+- **Docker**: `verlai/verl:vllm017.latest` (verified working, March 12 2026)
 - **Branch**: `VeRLGIGPO`
+- **Model**: `Qwen/Qwen3.5-9B` (primary) — set `num_speculative_tokens=0` in rollout config to avoid MTP CUDA bug
+- **Fallback model**: `Qwen/Qwen2.5-7B-Instruct` (if Qwen3.5 crashes)
 - **Training data**: `sage-python/data/topology_sft_v2_combined.jsonl` (1880 entries) — upload via scp
+- **Additional data** (if available): `topology_raft_phase2.jsonl` (199 exec-verified), `topology_raft_phase2_final.jsonl` (63 final), `topology_sft_gpt54_complex.jsonl` (144 complex), `topology_corrections.jsonl` (GPT-5.4 Pro 2nd-turn pairs)
 - **Rust toolchain**: needs `maturin` + Rust 1.90+ for sage-core
 
 ## File Structure
@@ -605,7 +615,7 @@ Key changes from the verified research:
 
 ```bash
 # In train_topology.sh, update these lines:
-MODEL=${SAGE_MODEL:-"Qwen/Qwen2.5-7B-Instruct"}  # Safe default, tested with veRL
+MODEL=${SAGE_MODEL:-"Qwen/Qwen3.5-9B"}  # Dense 9B, Apache 2.0. Fallback: Qwen/Qwen2.5-7B-Instruct
 # ...
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 # ...
@@ -613,6 +623,7 @@ data.train_batch_size=64 \          # was 256, too high for 1 GPU
 # ...
 actor_rollout_ref.rollout.gpu_memory_utilization=0.8 \  # was 0.6, Engineering Handbook optimal
 actor_rollout_ref.rollout.n=5 \     # was 8, handbook says n=10 adds +70% time
+actor_rollout_ref.rollout.num_speculative_tokens=0 \  # CRITICAL: disable MTP to avoid vLLM 0.17 CUDA bug (#36408)
 ```
 
 - [ ] **Step 2: Verify the script parses correctly**
@@ -1086,9 +1097,10 @@ scp -r <pod>:/workspace/YGN-SAGE/sage-python/models/topology_verl_local/ sage-py
 - Reduce `rollout.n` to 3
 
 ### vLLM crashes with Qwen3.5-9B
-- Fall back to `Qwen/Qwen2.5-7B-Instruct`
-- Check veRL issue #5441 for updates
-- Try `rollout.name=sglang` instead of vLLM
+- Ensure `num_speculative_tokens=0` is set (disables MTP, fixes CUDA bug #36408)
+- Use Docker `verlai/verl:vllm017.latest` (NOT pip install — pip pins old vLLM)
+- If still crashes: fall back to `Qwen/Qwen2.5-7B-Instruct`
+- Issue #5441 is Huawei NPU only — not relevant for GPU
 
 ### Reward function errors
 - Check API keys are set
@@ -1104,7 +1116,7 @@ scp -r <pod>:/workspace/YGN-SAGE/sage-python/models/topology_verl_local/ sage-py
 
 | Aspect | AgentConductor | SAGE (after this plan) |
 |--------|----------------|------------------------|
-| Model | Qwen2.5-3B | Qwen2.5-7B (→ 3.5-9B) |
+| Model | Qwen2.5-3B | Qwen3.5-9B (dense, 3x capacity) |
 | Algorithm | GRPO | GRPO + Edge Credit |
 | Verification | None | OxiZ SMT formal |
 | Density | S_complex (identical) | S_complex + Rust perf |
