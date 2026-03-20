@@ -470,20 +470,25 @@ class SageTopologyEnv:
         return {"text": text, "image": None, "anchor": f"error:{status}"}, reward, True, {"status": status}
 
     def _compute_node_reward(self, role: str, output: str) -> float:
-        """Per-node quality reward (intermediate signal for GiGPO)."""
-        from sage.grpo.execution_reward import extract_python_code
-        reward = 0.0
-        if output and len(output.strip()) > 10 and not output.startswith("[fallback]") and not output.startswith("ERROR"):
-            reward += 0.1
-        if role in ("coder", "synthesizer", "programmer") and extract_python_code(output):
-            reward += 0.2
-        elif role in ("coder", "synthesizer", "programmer"):
-            reward -= 0.1
-        if role == "reviewer" and len(output) > 50:
-            reward += 0.1
-        if role == "planner" and len(output) > 100:
-            reward += 0.1
-        return reward
+        """Per-node quality reward using Rust QualityLabeler (OxiZ formal, zero heuristics).
+
+        Falls back to a minimal signal if QualityLabeler is unavailable.
+        """
+        if not output or output.startswith("[fallback]") or output.startswith("ERROR"):
+            return 0.0
+
+        # Use Rust QualityLabeler (OxiZ SMT + tree-sitter, zero heuristics)
+        try:
+            from sage_core import QualityLabeler
+            ql = QualityLabeler()
+            label = ql.label(f"Node role: {role}", output)
+            if label and label.assessable:
+                return float(label.score)
+        except ImportError:
+            pass
+
+        # Minimal fallback: non-empty output = 0.1 (no heuristic thresholds)
+        return 0.1 if len(output.strip()) > 0 else 0.0
 
     def get_trace(self) -> EpisodeTrace:
         return self._trace
