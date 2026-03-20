@@ -139,7 +139,17 @@ def _score_rust_density(text: str, extra_info: dict) -> float:
 # which uses TopologyRunner + ProviderPool to execute each node with the
 # provider assigned by ModelAssigner (multi-provider: Google, DeepSeek, OpenAI, etc.)
 import os
-_EXEC_MODE = os.environ.get("SAGE_VERL_EXEC", "0") == "1"
+
+
+def _is_exec_mode() -> bool:
+    """Check execution mode dynamically (not frozen at import time).
+
+    train_topology.sh sets SAGE_VERL_EXEC=0 for Phase A, then SAGE_VERL_EXEC=1
+    for Phase B. Each phase is a SEPARATE python process, so module re-import
+    happens. But if somehow the module is cached, this function still reads
+    the current env var.
+    """
+    return os.environ.get("SAGE_VERL_EXEC", "0") == "1"
 
 
 def compute_score(
@@ -177,8 +187,14 @@ def compute_score(
     fmt_norm = (fmt + 2.0) / 3.0  # [-2.0, 1.0] -> [0.0, 1.0]
     structural = (fmt_norm + struct + rust) / 3.0
 
-    if not _EXEC_MODE or fmt < 0.0:
+    if not _is_exec_mode() or fmt < 0.0:
         # Structural only (invalid YAML can't be executed)
+        return float(structural)
+
+    # Check provider availability BEFORE attempting execution
+    from sage.grpo.execution_reward import _get_agent_provider
+    provider, _ = _get_agent_provider()
+    if provider is None:
         return float(structural)
 
     # Execution mode: run the real multi-provider topology
@@ -233,12 +249,6 @@ def _compute_execution_reward(
         else:
             exec_score = asyncio.run(evaluate_topology(task_prompt, topo, semaphore))
     except Exception:
-        return float(structural_score)
-
-    # If execution returned 0.0 and no provider was available, fallback to structural
-    # (don't penalize the topology for infrastructure failure)
-    from sage.grpo.execution_reward import _AGENT_PROVIDER
-    if exec_score == 0.0 and _AGENT_PROVIDER is None:
         return float(structural_score)
 
     # Combine: 30% structural + 70% execution (execution dominates)

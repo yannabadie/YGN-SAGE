@@ -579,7 +579,7 @@ async def evaluate_topology(
                     fb_config = LLMConfig(provider="fallback", model=fb_model)
                     runner2 = _TR(graph=graph, executor=executor2, llm_provider=fb_provider, llm_config=fb_config)
                     final_output = await asyncio.wait_for(runner2.run(task[:2000]), timeout=120.0)
-                    log.info("Fallback DeepSeek succeeded for topology")
+                    log.info("Fallback provider succeeded for topology")
                 except Exception:
                     log.warning("TopologyRunner failed (primary + fallback): %s", str(exc)[:100])
                     _stats.record(success=False, latency=time.time() - t0, status="RUNNER_ERROR")

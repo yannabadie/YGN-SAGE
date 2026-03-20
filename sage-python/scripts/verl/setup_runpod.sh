@@ -34,7 +34,7 @@ python3 -c "
 import torch
 assert torch.cuda.is_available(), 'No CUDA!'
 gpu = torch.cuda.get_device_name(0)
-vram = torch.cuda.get_device_properties(0).total_mem / 1024**3
+vram = torch.cuda.get_device_properties(0).total_memory / 1024**3
 print(f'GPU: {gpu} ({vram:.0f} GB)')
 assert vram >= 40, f'Need >= 40GB VRAM, got {vram:.0f}GB'
 print('OK')
@@ -59,8 +59,8 @@ python3 -c "
 try:
     import verl
     # Check if GiGPO is available (verl-agent, not vanilla veRL)
-    from verl.trainer.ppo.core_algos import compute_grpo_outcome_advantage
-    print('verl-agent already installed')
+    from gigpo.core_gigpo import compute_gigpo_outcome_advantage
+    print('verl-agent with GiGPO already installed')
 except (ImportError, ModuleNotFoundError):
     import sys; sys.exit(1)
 " 2>/dev/null || {
@@ -115,7 +115,7 @@ echo "[8/8] Verification..."
 python3 -c "
 import torch
 print(f'PyTorch: {torch.__version__}')
-print(f'GPU: {torch.cuda.get_device_name(0)} ({torch.cuda.get_device_properties(0).total_mem / 1024**3:.0f} GB)')
+print(f'GPU: {torch.cuda.get_device_name(0)} ({torch.cuda.get_device_properties(0).total_memory / 1024**3:.0f} GB)')
 
 try:
     import vllm

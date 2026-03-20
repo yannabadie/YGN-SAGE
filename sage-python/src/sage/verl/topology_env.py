@@ -271,20 +271,16 @@ class SageTopologyEnv:
             )
 
             # run_traced() returns per-node outputs with metadata
+            # Always use ThreadPoolExecutor to avoid event loop conflicts
+            # (verl-agent may call step() from within its own event loop)
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    import concurrent.futures
-                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                        traces = pool.submit(
-                            lambda: asyncio.run(
-                                asyncio.wait_for(runner.run_traced(self._trace.prompt[:2000]), timeout=120)
-                            )
-                        ).result(timeout=130)
-                else:
-                    traces = asyncio.run(
-                        asyncio.wait_for(runner.run_traced(self._trace.prompt[:2000]), timeout=120)
-                    )
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    traces = pool.submit(
+                        lambda: asyncio.run(
+                            asyncio.wait_for(runner.run_traced(self._trace.prompt[:2000]), timeout=120)
+                        )
+                    ).result(timeout=130)
             except Exception as exc:
                 log.warning("run_traced() failed: %s", exc)
                 return self._execute_sequential_fallback(topo)
@@ -323,20 +319,15 @@ class SageTopologyEnv:
             if code is not None:
                 self._trace.final_code = code
                 try:
-                    exec_score, status = asyncio.run(
-                        compute_execution_score(code, self._trace.task_id, timeout=30)
-                    )
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                        exec_score, status = pool.submit(
+                            lambda: asyncio.run(
+                                compute_execution_score(code, self._trace.task_id, timeout=30)
+                            )
+                        ).result(timeout=35)
                 except Exception:
-                    try:
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                            exec_score, status = pool.submit(
-                                lambda: asyncio.run(
-                                    compute_execution_score(code, self._trace.task_id, timeout=30)
-                                )
-                            ).result(timeout=35)
-                    except Exception:
-                        exec_score, status = 0.0, "EXEC_ERROR"
+                    exec_score, status = 0.0, "EXEC_ERROR"
 
         # Terminal step result
         self._trace.steps.append(StepResult(
