@@ -41,14 +41,21 @@ pub struct RewardScore {
     /// Number of signals that contributed.
     #[pyo3(get)]
     pub n_signals: u32,
+    /// Resilience score: bonus for topologies that survived adaptation.
+    #[pyo3(get)]
+    pub resilience: f32,
+    /// Cost efficiency score: 1.0 - tanh(cost / budget).
+    #[pyo3(get)]
+    pub cost_efficiency: f32,
 }
 
 #[pymethods]
 impl RewardScore {
     fn __repr__(&self) -> String {
         format!(
-            "RewardScore(total={:.4}, execution={:.1}, structural={:.4}, density={:.4}, temporal={:.4}, n_signals={})",
-            self.total, self.execution, self.structural, self.density, self.temporal, self.n_signals
+            "RewardScore(total={:.4}, execution={:.1}, structural={:.4}, density={:.4}, temporal={:.4}, resilience={:.4}, cost_eff={:.4}, n_signals={})",
+            self.total, self.execution, self.structural, self.density, self.temporal,
+            self.resilience, self.cost_efficiency, self.n_signals
         )
     }
 }
@@ -112,6 +119,34 @@ impl TopologyReward {
             density: density_score,
             temporal,
             n_signals,
+            resilience: 0.0,
+            cost_efficiency: 0.0,
+        }
+    }
+
+    /// Compute reward with all 6 signals including resilience and cost efficiency.
+    ///
+    /// The resilience and cost_efficiency values are computed in Python
+    /// (from trace analysis and provider costs) and passed in directly.
+    /// Weights are initial values subject to ablation (see spec C2).
+    #[instrument(skip(self))]
+    #[pyo3(signature = (execution_passed, structural_score, density_score, temporal_score=None, resilience=0.0, cost_efficiency=1.0))]
+    pub fn compute_full(
+        &self,
+        execution_passed: bool,
+        structural_score: f32,
+        density_score: f32,
+        temporal_score: Option<f32>,
+        resilience: f32,
+        cost_efficiency: f32,
+    ) -> RewardScore {
+        let base = self.compute(execution_passed, structural_score, density_score, temporal_score);
+        // Return with resilience and cost_efficiency filled in.
+        // The Python reward.py handles the final weighted combination.
+        RewardScore {
+            resilience,
+            cost_efficiency,
+            ..base
         }
     }
 }
@@ -253,5 +288,32 @@ mod tests {
         let repr = score.__repr__();
         assert!(repr.starts_with("RewardScore("), "repr should start with class name");
         assert!(repr.contains("n_signals=3"), "repr should show n_signals");
+    }
+
+    #[test]
+    fn test_compute_full_with_resilience() {
+        let reward = TopologyReward::new();
+        let score = reward.compute_full(true, 0.8, 0.6, Some(0.9), 0.5, 0.7);
+        assert!((score.resilience - 0.5).abs() < 1e-6);
+        assert!((score.cost_efficiency - 0.7).abs() < 1e-6);
+        // Base total unchanged (compute_full delegates to compute for base signals)
+        assert_eq!(score.n_signals, 4);
+    }
+
+    #[test]
+    fn test_compute_full_defaults() {
+        let reward = TopologyReward::new();
+        let score = reward.compute_full(true, 0.8, 0.6, None, 0.0, 1.0);
+        assert_eq!(score.resilience, 0.0);
+        assert!((score.cost_efficiency - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_compute_backward_compat() {
+        let reward = TopologyReward::new();
+        let score = reward.compute(true, 0.8, 0.6, None);
+        // Existing compute() sets resilience=0, cost_efficiency=0
+        assert_eq!(score.resilience, 0.0);
+        assert_eq!(score.cost_efficiency, 0.0);
     }
 }
