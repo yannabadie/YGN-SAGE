@@ -429,6 +429,15 @@ pub struct TopologyGraph {
     #[pyo3(get)]
     pub template_type: String,
     template: TopologyTemplate,
+    /// Maximum model upgrades allowed for this topology execution.
+    #[pyo3(get, set)]
+    pub max_upgrades: u8,
+    /// Maximum topology reroutes allowed.
+    #[pyo3(get, set)]
+    pub max_reroutes: u8,
+    /// Quality threshold below which adaptation triggers.
+    #[pyo3(get, set)]
+    pub quality_threshold: f32,
 }
 
 #[pymethods]
@@ -588,6 +597,9 @@ impl TopologyGraph {
             id: Ulid::new().to_string(),
             template_type: template.as_str().to_string(),
             template,
+            max_upgrades: 1,
+            max_reroutes: 0,
+            quality_threshold: 0.5,
         })
     }
 
