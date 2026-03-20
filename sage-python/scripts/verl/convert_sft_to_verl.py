@@ -16,6 +16,9 @@ Loads the main SFT dataset PLUS all GPT-5.4 Pro supplementary data:
   - topology_sft_gpt54_pro.jsonl — 60 combined GPT-5.4 Pro
   - topology_raft_phase2.jsonl — 199 execution-verified
   - topology_sft_gpt54_complex.jsonl — 144 complex topologies
+  - gpt54_adaptive_topologies.jsonl — 120 adaptive topologies (uses topology)
+  - gpt54_static_to_adaptive.jsonl — 60 static→adaptive (uses topology_adaptive)
+  - gpt54_recovery_scenarios.jsonl — 40 recovery (2 entries each: initial + recovered)
 
 Usage:
     python scripts/verl/convert_sft_to_verl.py \
@@ -56,6 +59,17 @@ GPT54_FILES = [
 # Special format files (error correction, audit)
 GPT54_CORRECTION = "gpt54_error_correction.jsonl"
 GPT54_AUDIT = "gpt54_audit.jsonl"
+
+# V2 Adaptive data (gpt54_adaptive + static_to_adaptive + recovery)
+GPT54_ADAPTIVE_FILES = [
+    "gpt54_adaptive_topologies.jsonl",
+]
+
+# Special format: static→adaptive (use topology_adaptive field)
+GPT54_STATIC_TO_ADAPTIVE = "gpt54_static_to_adaptive.jsonl"
+
+# Special format: recovery scenarios (2 entries per: initial + recovered)
+GPT54_RECOVERY = "gpt54_recovery_scenarios.jsonl"
 
 
 def _topology_to_yaml(topo: dict) -> str:
@@ -178,6 +192,71 @@ def _load_audit_entries(path: Path) -> list[dict]:
     return rows
 
 
+def _load_static_to_adaptive_entries(path: Path) -> list[dict]:
+    """Load static→adaptive entries. Uses 'topology_adaptive' as target."""
+    rows = []
+    if not path.exists():
+        return rows
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            entry = json.loads(line)
+            topo = entry.get("topology_adaptive", entry.get("topology", {}))
+            if not topo:
+                continue
+            row = _make_row(
+                task_id=entry.get("task_id", ""),
+                prompt_text=entry.get("prompt", ""),
+                difficulty=topo.get("difficulty", entry.get("difficulty", "moderate")),
+                topology=topo,
+                topology_yaml="",
+                source="gpt54_static_to_adaptive",
+            )
+            if row:
+                rows.append(row)
+    return rows
+
+
+def _load_recovery_entries(path: Path) -> list[dict]:
+    """Load recovery scenarios. Yields 2 entries per scenario: initial + recovered."""
+    rows = []
+    if not path.exists():
+        return rows
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            entry = json.loads(line)
+            task_id = entry.get("task_id", "")
+            prompt = entry.get("prompt", "")
+
+            # Entry A: initial topology
+            topo_init = entry.get("initial_topology", {})
+            if topo_init:
+                row = _make_row(
+                    task_id=task_id + "_init",
+                    prompt_text=prompt,
+                    difficulty=topo_init.get("difficulty", entry.get("difficulty", "moderate")),
+                    topology=topo_init,
+                    topology_yaml="",
+                    source="gpt54_recovery_init",
+                )
+                if row:
+                    rows.append(row)
+
+            # Entry B: recovered topology
+            topo_rec = entry.get("recovered_topology", {})
+            if topo_rec:
+                row = _make_row(
+                    task_id=task_id + "_recovered",
+                    prompt_text=prompt,
+                    difficulty=topo_rec.get("difficulty", entry.get("difficulty", "moderate")),
+                    topology=topo_rec,
+                    topology_yaml="",
+                    source="gpt54_recovery_recovered",
+                )
+                if row:
+                    rows.append(row)
+    return rows
+
+
 def convert(input_path: str, output_path: str, limit: int | None = None):
     """Convert all SFT data sources to veRL parquet."""
     data_dir = Path(input_path).parent
@@ -205,6 +284,26 @@ def convert(input_path: str, output_path: str, limit: int | None = None):
     if audit_rows:
         log.info("Audit: %d entries from %s", len(audit_rows), GPT54_AUDIT)
         rows.extend(audit_rows)
+
+    # 5. V2 Adaptive topologies (standard format, uses "topology" field)
+    for fname in GPT54_ADAPTIVE_FILES:
+        fpath = data_dir / fname
+        new_rows = _load_standard_entries(fpath, fname.replace(".jsonl", ""))
+        if new_rows:
+            log.info("Adaptive: %d entries from %s", len(new_rows), fname)
+            rows.extend(new_rows)
+
+    # 6. Static→Adaptive (use topology_adaptive field)
+    sta_rows = _load_static_to_adaptive_entries(data_dir / GPT54_STATIC_TO_ADAPTIVE)
+    if sta_rows:
+        log.info("Static→Adaptive: %d entries from %s", len(sta_rows), GPT54_STATIC_TO_ADAPTIVE)
+        rows.extend(sta_rows)
+
+    # 7. Recovery scenarios (2 entries each: initial + recovered)
+    rec_rows = _load_recovery_entries(data_dir / GPT54_RECOVERY)
+    if rec_rows:
+        log.info("Recovery: %d entries from %s", len(rec_rows), GPT54_RECOVERY)
+        rows.extend(rec_rows)
 
     if limit:
         rows = rows[:limit]
