@@ -4,3 +4,16 @@
 *.csv
 *.npz
 !.gitignore
+
+# KEEP: veRL training data (needed on RunPod)
+!topology_sft_v2_combined.jsonl
+!topology_gpt54_codeforces_gcj.jsonl
+!gpt54_deep_reasoning.jsonl
+!gpt54_simple_calibrated.jsonl
+!gpt54_error_correction.jsonl
+!gpt54_audit.jsonl
+!gpt54_preferences2.jsonl
+!topology_sft_gpt54_pro.jsonl
+!topology_sft_gpt54_complex.jsonl
+!topology_raft_phase2.jsonl
+!verl_topology_train.parquet
