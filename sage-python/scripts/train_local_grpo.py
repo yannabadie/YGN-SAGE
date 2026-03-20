@@ -56,30 +56,56 @@ def load_env():
         log.info("Loaded .env with %d keys", count)
 
 
-def setup_model():
-    """Load Qwen3.5-4B with Unsloth QLoRA."""
-    from unsloth import FastLanguageModel
+def setup_model(model_name: str = "Qwen/Qwen2.5-3B-Instruct"):
+    """Load model with PEFT QLoRA (4-bit).
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name="unsloth/Qwen3.5-4B",
-        max_seq_length=2048,
-        dtype=None,  # auto-detect
+    Uses transformers + peft directly (Unsloth incompatible with Windows).
+    Default: Qwen2.5-3B-Instruct (proven, stable, fits 12GB).
+    Override with --model flag for Qwen3.5-4B when available.
+    """
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
     )
 
-    model = FastLanguageModel.get_peft_model(
-        model,
+    log.info("Loading model: %s (4-bit QLoRA)", model_name)
+    tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        quantization_config=bnb_config,
+        device_map="auto",
+        trust_remote_code=True,
+        torch_dtype=torch.bfloat16,
+    )
+
+    model = prepare_model_for_kbit_training(model)
+
+    lora_config = LoraConfig(
         r=64,
+        lora_alpha=32,
         target_modules=[
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj",
         ],
-        lora_alpha=32,
-        lora_dropout=0,
-        use_gradient_checkpointing="unsloth",
+        lora_dropout=0.0,
+        bias="none",
+        task_type="CAUSAL_LM",
     )
+    model = get_peft_model(model, lora_config)
 
-    log.info("Model loaded: Qwen3.5-4B QLoRA r=64")
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    log.info("Model loaded: %s, %d/%d params trainable (%.1f%%)",
+             model_name, trainable, total, 100 * trainable / total)
     return model, tokenizer
 
 
@@ -229,6 +255,8 @@ def main():
                         help="Training phase: A (structural), B (execution), AB (both)")
     parser.add_argument("--batch-size", type=int, default=4,
                         help="Per-device batch size (auto-halved on OOM)")
+    parser.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct",
+                        help="Model name (default: Qwen2.5-3B-Instruct)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Load model and data, don't train")
     args = parser.parse_args()
@@ -236,11 +264,11 @@ def main():
     load_env()
     log.info("=" * 60)
     log.info("SAGE V2 Local GRPO Training — %s", time.strftime("%Y-%m-%d %H:%M:%S"))
-    log.info("Phase: %s, Batch size: %d", args.phase, args.batch_size)
+    log.info("Phase: %s, Batch size: %d, Model: %s", args.phase, args.batch_size, args.model)
     log.info("=" * 60)
 
-    log.info("Setting up Qwen3.5-4B with Unsloth QLoRA...")
-    model, tokenizer = setup_model()
+    log.info("Setting up %s with PEFT QLoRA...", args.model)
+    model, tokenizer = setup_model(args.model)
 
     if args.dry_run:
         log.info("Dry run: model loaded, testing data loading...")
