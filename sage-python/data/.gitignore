@@ -17,3 +17,4 @@
 !topology_sft_gpt54_complex.jsonl
 !topology_raft_phase2.jsonl
 !verl_topology_train.parquet
+*.log
