@@ -57,7 +57,7 @@ Ref: GiGPO (arXiv 2505.10978), verl-agent (langfengQ/verl-agent)
 | `validate_setup.py` | 8-point pod validation |
 | `benchmark_post_train.py` | Post-training BigCodeBench eval with trained model |
 | `export_for_local.py` | Export LoRA adapter for local 12GB inference |
-| `reward_topology.py` | Legacy reward (backward compat with TRL) |
+| *(deleted)* | Legacy TRL reward removed — single reward in `sage.verl.reward` |
 
 ## Training Config
 

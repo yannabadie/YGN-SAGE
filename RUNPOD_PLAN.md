@@ -261,8 +261,8 @@ sage-python/
 │   ├── step_reward.py       # StepRewardVector (per-node rewards for GiGPO)
 │   ├── reward.py            # compute_score (structural + execution)
 │   └── edge_credit.py       # Graph-GRPO per-edge advantage
-├── src/sage/grpo/
-│   └── execution_reward.py  # evaluate_topology() + multi-provider
+├── src/sage/execution/
+│   └── __init__.py          # evaluate_topology(), extract_python_code, providers
 ├── scripts/verl/
 │   ├── setup_runpod.sh      # Installs verl-agent (GiGPO), not vanilla veRL
 │   ├── train_topology.sh    # adv_estimator=gigpo, multi_turn=True, 2 phases

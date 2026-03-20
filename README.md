@@ -121,7 +121,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 
 | Suite | Result |
 |-------|--------|
-| Python | **1516 passed**, 0 failures, 22 skipped |
+| Python | **1500+ passed**, 0 failures (68 veRL/GiGPO-specific) |
 | Rust | **270+ passed** (with smt, tool-executor, onnx features) |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 

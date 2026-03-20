@@ -16,8 +16,8 @@ cd sage-python && pip install -e ".[all,dev]"                                 # 
 
 ## Test
 ```bash
-cd sage-core && cargo test --no-default-features --features smt,tool-executor --lib  # Rust (259 tests)
-cd sage-python && python -m pytest tests/ -v                                          # Python (1559 tests)
+cd sage-core && cargo test --no-default-features --features smt,tool-executor --lib  # Rust (270+ tests)
+cd sage-python && python -m pytest tests/ -v                                          # Python (1500+ tests, 68 veRL-specific)
 ```
 
 ## Benchmarks — USE THESE (not HumanEval+)
@@ -48,9 +48,8 @@ python scripts/collect_quality_labels.py --dataset bigcodebench --subset hard --
 export SAGE_ENABLE_PATH6=1
 python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
 
-# Train topology policy
-python scripts/train_topology_grpo.py --mode sft --data data/topology_sft_clean.jsonl --epochs 5
-python scripts/upload_hf.py  # publish to yannabadie/sage-topology-policy
+# Train topology policy (on RunPod H100 — see RUNPOD_PLAN.md)
+cd sage-python && bash scripts/verl/train_topology.sh  # GiGPO via verl-agent
 
 # Generate SFT data (requires OPENAI_API_KEY for GPT-5.4)
 python scripts/generate_topology_sft.py --dataset bigcodebench --limit 100 --model gpt-5.4
