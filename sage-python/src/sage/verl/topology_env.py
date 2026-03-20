@@ -77,6 +77,7 @@ class SageTopologyEnv:
         self._current_step = 0
         self._difficulty = "moderate"
         self._step_reward_vec: StepRewardVector | None = None
+        self._predecessor_map: dict[int, list[int]] = {}  # node_idx -> [predecessor indices]
 
     def reset(self, prompt: str, task_id: str = "") -> dict:
         """Start a new episode. Returns initial observation."""
@@ -86,6 +87,7 @@ class SageTopologyEnv:
         self._current_step = 0
         self._difficulty = "moderate"
         self._step_reward_vec = None
+        self._predecessor_map = {}
 
         return {
             "text": prompt,
@@ -143,6 +145,18 @@ class SageTopologyEnv:
             output=yaml_text, reward=struct_score, latency=0.0, anchor_key=anchor,
         ))
 
+        # Build predecessor map from YAML edges (Trou #2 workaround)
+        # TopologyGraph doesn't expose get_predecessors() yet, so we build from YAML
+        self._predecessor_map = {}
+        for ed in topo.get("edges", []):
+            if isinstance(ed, dict):
+                to_idx = ed.get("to_idx", 0)
+                from_idx = ed.get("from_idx", 0)
+                self._predecessor_map.setdefault(to_idx, []).append(from_idx)
+
+        # Assign real model_ids via ModelAssigner + ModelRegistry (Trou #1 fix)
+        self._assign_models_to_topology(topo, nodes)
+
         # Execute ALL nodes via TopologyRunner + ProviderPool
         exec_mode = os.environ.get("SAGE_VERL_EXEC", "0") == "1"
         if exec_mode:
@@ -188,11 +202,17 @@ class SageTopologyEnv:
         latency = node_trace.get("latency", 0.0)
         model_id = node_trace.get("model_id", "")
 
-        # Build context hash from all previous outputs
-        prev_outputs = " ".join(
+        # Build context hash from PREDECESSOR outputs only (not all previous)
+        # Uses the edge map built from YAML to identify direct predecessors
+        predecessors = self._predecessor_map.get(node_trace["node_idx"], [])
+        pred_outputs = " ".join(
+            self._node_traces[p]["output"][:200]
+            for p in range(len(self._node_traces[:trace_idx]))
+            if self._node_traces[p]["node_idx"] in predecessors
+        ) if predecessors else " ".join(
             t["output"][:200] for t in self._node_traces[:trace_idx]
         )
-        context_hash = hashlib.md5(prev_outputs.encode()).hexdigest()[:8] if prev_outputs else ""
+        context_hash = hashlib.md5(pred_outputs.encode()).hexdigest()[:8] if pred_outputs else ""
 
         # Per-node reward
         reward = self._compute_node_reward(role, output)
@@ -222,6 +242,64 @@ class SageTopologyEnv:
             "anchor": _make_anchor(next_role, self._difficulty, context_hash),
         }
         return obs, reward, False, {"status": "NODE_COMPLETED", "role": role, "node_idx": node_trace["node_idx"]}
+
+    def _assign_models_to_topology(self, topo: dict, nodes: list) -> None:
+        """Assign real model_ids from cards.toml via ModelAssigner (Trou #1 fix).
+
+        Maps model_tier (reasoner/fast/budget) to actual model IDs
+        (gemini-3.1-pro, deepseek-chat, gpt-5.4-nano) using ModelRegistry
+        + ModelAssigner scoring (affinity 0.4 + domain 0.4 + cost 0.2).
+        """
+        try:
+            from sage_core import ModelRegistry
+            from sage.llm.model_assigner import ModelAssigner
+
+            cards_paths = [
+                "/workspace/YGN-SAGE/sage-core/config/cards.toml",
+                "config/cards.toml",
+                "../sage-core/config/cards.toml",
+            ]
+            registry = None
+            for path in cards_paths:
+                try:
+                    registry = ModelRegistry.from_toml_file(path)
+                    if registry.len() > 0:
+                        break
+                except Exception:
+                    continue
+
+            if registry is None or registry.len() == 0:
+                log.warning("ModelRegistry empty — model_tier assignment skipped")
+                return
+
+            # Map model_tier to cognitive system for model selection
+            from sage_core import CognitiveSystem
+            tier_to_cs = {
+                "reasoner": CognitiveSystem.S3,
+                "fast": CognitiveSystem.S2,
+                "budget": CognitiveSystem.S1,
+            }
+
+            for i, node in enumerate(nodes):
+                if not isinstance(node, dict):
+                    continue
+                tier = node.get("model_tier", "fast")
+                cs = tier_to_cs.get(tier, CognitiveSystem.S2)
+
+                # select_for_system returns models sorted by affinity for that system
+                candidates = registry.select_for_system(cs)
+                if candidates:
+                    # Pick the best-affinity model for this system
+                    best = candidates[0]
+                    node["_assigned_model_id"] = best.id
+                    node["_assigned_provider"] = best.provider
+                    log.debug("Node %d (%s): tier=%s -> model=%s (provider=%s)",
+                              i, node.get("role", "?"), tier, best.id, best.provider)
+
+        except ImportError as exc:
+            log.warning("ModelAssigner unavailable (%s) — using default provider", exc)
+        except Exception as exc:
+            log.warning("Model assignment failed: %s", exc)
 
     def _execute_topology_traced(self, topo: dict) -> list[dict]:
         """Execute topology via TopologyRunner.run_traced() with ProviderPool.
