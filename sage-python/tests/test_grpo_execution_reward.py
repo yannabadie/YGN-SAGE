@@ -87,6 +87,35 @@ class TestComputeExecutionScore:
         assert status == "TIMEOUT"
 
 
+class TestStdinTests:
+    @pytest.mark.asyncio
+    async def test_stdin_passed(self):
+        from sage.grpo.execution_reward import _run_stdin_tests
+        code = "n = int(input())\nprint(n * 2)"
+        pairs = [("3\n", "6\n"), ("5\n", "10\n")]
+        score, status = await _run_stdin_tests(code, pairs)
+        assert score == 1.5
+        assert status == "PASSED"
+
+    @pytest.mark.asyncio
+    async def test_stdin_wrong_answer(self):
+        from sage.grpo.execution_reward import _run_stdin_tests
+        code = "n = int(input())\nprint(n + 1)"  # wrong: adds 1 instead of doubling
+        pairs = [("3\n", "6\n")]
+        score, status = await _run_stdin_tests(code, pairs)
+        assert score == 1.0
+        assert status == "WRONG_ANSWER"
+
+    @pytest.mark.asyncio
+    async def test_stdin_crash(self):
+        from sage.grpo.execution_reward import _run_stdin_tests
+        code = "raise ValueError()"
+        pairs = [("3\n", "6\n")]
+        score, status = await _run_stdin_tests(code, pairs)
+        # Crash produces empty stdout → classified as WRONG_ANSWER (no output matched)
+        assert status == "WRONG_ANSWER"
+
+
 class TestBuildTopologyGraph:
     def test_nodes_and_edges_built(self):
         from sage.grpo.execution_reward import _build_topology_graph

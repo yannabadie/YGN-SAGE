@@ -170,6 +170,7 @@ async def compute_execution_score(
     test_cases = _load_test_cases()
     test_code = test_cases.get(task_id, "")
 
+    # Path A: code-append tests (BigCodeBench, HumanEval)
     if test_code:
         full_code = code + "\n\n" + test_code
         result = await run_code_sandbox(full_code, timeout=timeout)
@@ -183,7 +184,12 @@ async def compute_execution_score(
             return 0.7, "RUNTIME_ERROR"
         return 1.0, "WRONG_ANSWER"
 
-    # No test cases — run code standalone
+    # Path B: stdin/stdout tests (CodeContests)
+    stdin_pairs = (_STDIN_TESTS or {}).get(task_id, [])
+    if stdin_pairs:
+        return await _run_stdin_tests(code, stdin_pairs, timeout)
+
+    # Path C: No test cases — run code standalone
     result = await run_code_sandbox(code, timeout=timeout)
     if result.exit_code == 0:
         return 0.3, "RUNS_OK"
@@ -192,8 +198,70 @@ async def compute_execution_score(
     return 0.0, "CRASH"
 
 
+async def _run_stdin_tests(
+    code: str, pairs: list[tuple[str, str]], timeout: int = 30,
+) -> tuple[float, str]:
+    """Run code against stdin/stdout test pairs (competitive programming)."""
+    import tempfile
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".py", delete=False, encoding="utf-8",
+    )
+    tmp.write(code)
+    tmp.close()
+    script_path = tmp.name
+
+    passed = 0
+    wrong = 0
+    errors = 0
+    try:
+        for inp, expected in pairs:
+            proc = await asyncio.create_subprocess_exec(
+                _sys.executable, script_path,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            try:
+                stdout_b, stderr_b = await asyncio.wait_for(
+                    proc.communicate(input=inp.encode("utf-8")),
+                    timeout=timeout // max(len(pairs), 1) + 5,
+                )
+                got = stdout_b.decode("utf-8", errors="replace").strip()
+                want = expected.strip()
+                if got == want:
+                    passed += 1
+                else:
+                    wrong += 1
+            except asyncio.TimeoutError:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    pass
+                return 0.5, "TIMEOUT"
+            except Exception:
+                errors += 1
+    finally:
+        try:
+            os.unlink(script_path)
+        except OSError:
+            pass
+
+    total = passed + wrong + errors
+    if total == 0:
+        return 0.0, "CRASH"
+    if passed == total:
+        return 1.5, "PASSED"
+    if passed > 0:
+        return 1.0, "WRONG_ANSWER"  # partial pass
+    if errors > wrong:
+        return 0.7, "RUNTIME_ERROR"
+    return 1.0, "WRONG_ANSWER"
+
+
 # Test case loading (BigCodeBench + HumanEval — loaded once)
 _TEST_CASES: dict[str, str] | None = None
+# CodeContests stdin/stdout pairs — separate from code-append tests
+_STDIN_TESTS: dict[str, list[tuple[str, str]]] | None = None
 
 
 def _load_test_cases() -> dict[str, str]:
@@ -239,7 +307,41 @@ def _load_test_cases() -> dict[str, str]:
                 log.warning("HumanEval test cases failed: %s", str(exc)[:80])
             break
 
-    log.info("Total test cases available: %d", len(_TEST_CASES))
+    # 3. CodeContests — stdin/stdout competitive programming (separate dict)
+    global _STDIN_TESTS
+    if _STDIN_TESTS is None:
+        _STDIN_TESTS = {}
+        for cc_path in [
+            Path(__file__).parent.parent.parent.parent / "data" / "code_contests_test.parquet",
+            Path("data/code_contests_test.parquet"),
+        ]:
+            if cc_path.exists():
+                try:
+                    import pandas as _pd
+                    cc_df = _pd.read_parquet(str(cc_path))
+                    for idx, row in cc_df.iterrows():
+                        tid = f"CodeContests/{idx}"
+                        pairs: list[tuple[str, str]] = []
+                        for col in ("public_tests", "private_tests"):
+                            tests = row.get(col)
+                            if isinstance(tests, dict):
+                                for inp, out in zip(
+                                    tests.get("input", []), tests.get("output", [])
+                                ):
+                                    if inp is not None and out is not None:
+                                        pairs.append((str(inp), str(out)))
+                            if len(pairs) >= 10:
+                                break
+                        if pairs:
+                            _STDIN_TESTS[tid] = pairs[:10]
+                    log.info("Loaded %d CodeContests stdin/stdout tests from %s",
+                             len(_STDIN_TESTS), cc_path)
+                except Exception as exc:
+                    log.warning("CodeContests tests failed: %s", str(exc)[:80])
+                break
+
+    log.info("Total test cases: %d code-append + %d stdin/stdout",
+             len(_TEST_CASES), len(_STDIN_TESTS or {}))
     return _TEST_CASES
 
 
