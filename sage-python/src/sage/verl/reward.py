@@ -192,7 +192,7 @@ def compute_score(
         return float(structural)
 
     # Check provider availability BEFORE attempting execution
-    from sage.grpo.execution_reward import _get_agent_provider
+    from sage.execution import _get_agent_provider
     provider, _ = _get_agent_provider()
     if provider is None:
         return float(structural)
@@ -219,7 +219,7 @@ def _compute_execution_reward(
     6. Combines with Rust density scoring (AgentConductor Eq.9)
     """
     import asyncio
-    from sage.grpo.execution_reward import evaluate_topology
+    from sage.execution import evaluate_topology
 
     try:
         topo = yaml.safe_load(solution_str)

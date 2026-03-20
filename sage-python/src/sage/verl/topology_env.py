@@ -248,7 +248,7 @@ class SageTopologyEnv:
 
         # Try Rust path first
         try:
-            from sage.grpo.execution_reward import _build_topology_graph, _RUST_AVAILABLE
+            from sage.execution import _build_topology_graph, _RUST_AVAILABLE
             if _RUST_AVAILABLE:
                 graph = _build_topology_graph(topo)
                 if graph is not None and hasattr(graph, "get_predecessors"):
@@ -338,7 +338,7 @@ class SageTopologyEnv:
         4. Returns per-node traces
         """
         try:
-            from sage.grpo.execution_reward import (
+            from sage.execution import (
                 _build_topology_graph, _get_agent_provider, _RUST_AVAILABLE,
             )
             from sage.topology.runner import TopologyRunner
@@ -412,7 +412,7 @@ class SageTopologyEnv:
 
     def _finalize_episode(self) -> tuple[dict, float, bool, dict]:
         """Terminal step: extract code, test, build StepRewardVector."""
-        from sage.grpo.execution_reward import extract_python_code, compute_execution_score
+        from sage.execution import extract_python_code, compute_execution_score
 
         exec_score = 0.0
         status = "NO_CODE"
