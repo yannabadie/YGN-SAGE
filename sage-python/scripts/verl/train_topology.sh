@@ -17,6 +17,11 @@
 
 set -euo pipefail
 
+# Load .env if present
+if [ -f "/workspace/YGN-SAGE/.env" ]; then
+    set -a && source /workspace/YGN-SAGE/.env && set +a
+fi
+
 # ── Config ───────────────────────────────────────────────────
 MODEL=${SAGE_MODEL:-"Qwen/Qwen3.5-9B"}
 OUTPUT=${SAGE_OUTPUT:-"/workspace/YGN-SAGE/sage-python/models/topology_verl/"}

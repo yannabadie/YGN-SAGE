@@ -19,6 +19,15 @@ set -euo pipefail
 echo "=== YGN-SAGE veRL Setup for RunPod H100 ==="
 echo ""
 
+# Load .env if present (API keys)
+if [ -f "/workspace/YGN-SAGE/.env" ]; then
+    set -a && source /workspace/YGN-SAGE/.env && set +a
+    echo "Loaded API keys from .env"
+elif [ -f "../.env" ]; then
+    set -a && source ../.env && set +a
+    echo "Loaded API keys from ../.env"
+fi
+
 # ── 1. Verify GPU ────────────────────────────────────────────
 echo "[1/8] Verifying GPU..."
 python3 -c "
