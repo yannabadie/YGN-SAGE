@@ -482,9 +482,56 @@ impl TopologyGraph {
             .map_err(pyo3::exceptions::PyValueError::new_err)
     }
 
+    /// Get predecessor node indices for a given node (incoming edges).
+    /// Used by GiGPO anchor state computation to hash only direct predecessors.
+    #[pyo3(name = "get_predecessors")]
+    pub fn py_get_predecessors(&self, node_idx: usize) -> PyResult<Vec<usize>> {
+        let idx = NodeIndex::new(node_idx);
+        if self.graph.node_weight(idx).is_none() {
+            return Err(pyo3::exceptions::PyIndexError::new_err(
+                format!("Node index {} out of range", node_idx),
+            ));
+        }
+        Ok(self
+            .graph
+            .edges_directed(idx, petgraph::Direction::Incoming)
+            .map(|e| e.source().index())
+            .collect())
+    }
+
+    /// Get all edges as (from_idx, to_idx, flow_type) tuples.
+    /// Exposes the graph structure to Python for GiGPO and Graph-GRPO.
+    #[pyo3(name = "get_edges")]
+    pub fn py_get_edges(&self) -> Vec<(usize, usize, String)> {
+        self.graph
+            .edge_references()
+            .map(|e| {
+                (
+                    e.source().index(),
+                    e.target().index(),
+                    e.weight().edge_type.as_str().to_string(),
+                )
+            })
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         self.to_string()
     }
+}
+
+// Standalone pyfunction wrappers (workaround for PyO3 inventory issue on Windows
+// where #[pymethods] additions don't register in the same impl block)
+/// Get predecessor node indices for a given node.
+#[pyfunction]
+pub fn graph_get_predecessors(graph: &TopologyGraph, node_idx: usize) -> PyResult<Vec<usize>> {
+    graph.py_get_predecessors(node_idx)
+}
+
+/// Get all edges as (from_idx, to_idx, flow_type) tuples.
+#[pyfunction]
+pub fn graph_get_edges(graph: &TopologyGraph) -> Vec<(usize, usize, String)> {
+    graph.py_get_edges()
 }
 
 impl std::fmt::Display for TopologyGraph {

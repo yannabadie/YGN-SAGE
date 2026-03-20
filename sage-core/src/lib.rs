@@ -53,6 +53,10 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<routing::bandit::BanditDecision>()?;
     m.add_class::<routing::bandit::ContextualBandit>()?;
     m.add_class::<topology::TopologyGraph>()?;
+    // Standalone functions for TopologyGraph (workaround for PyO3 inventory
+    // issue on Windows where new #[pymethods] don't register properly)
+    m.add_function(pyo3::wrap_pyfunction!(topology::topology_graph::graph_get_predecessors, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(topology::topology_graph::graph_get_edges, m)?)?;
     m.add_class::<topology::TopologyNode>()?;
     m.add_class::<topology::TopologyEdge>()?;
     m.add_class::<topology::templates::PyTemplateStore>()?;

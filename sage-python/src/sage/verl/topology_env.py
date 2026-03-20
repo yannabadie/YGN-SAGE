@@ -145,14 +145,9 @@ class SageTopologyEnv:
             output=yaml_text, reward=struct_score, latency=0.0, anchor_key=anchor,
         ))
 
-        # Build predecessor map from YAML edges (Trou #2 workaround)
-        # TopologyGraph doesn't expose get_predecessors() yet, so we build from YAML
-        self._predecessor_map = {}
-        for ed in topo.get("edges", []):
-            if isinstance(ed, dict):
-                to_idx = ed.get("to_idx", 0)
-                from_idx = ed.get("from_idx", 0)
-                self._predecessor_map.setdefault(to_idx, []).append(from_idx)
+        # Build predecessor map — use Rust get_predecessors() if available,
+        # otherwise fallback to parsing YAML edges
+        self._predecessor_map = self._build_predecessor_map(topo)
 
         # Assign real model_ids via ModelAssigner + ModelRegistry (Trou #1 fix)
         self._assign_models_to_topology(topo, nodes)
@@ -242,6 +237,38 @@ class SageTopologyEnv:
             "anchor": _make_anchor(next_role, self._difficulty, context_hash),
         }
         return obs, reward, False, {"status": "NODE_COMPLETED", "role": role, "node_idx": node_trace["node_idx"]}
+
+    def _build_predecessor_map(self, topo: dict) -> dict[int, list[int]]:
+        """Build node_idx -> [predecessor_indices] map.
+
+        Uses Rust TopologyGraph.get_predecessors() if sage_core is available
+        (native petgraph query, O(degree)). Falls back to parsing YAML edges.
+        """
+        nodes = topo.get("nodes", [])
+
+        # Try Rust path first
+        try:
+            from sage.grpo.execution_reward import _build_topology_graph, _RUST_AVAILABLE
+            if _RUST_AVAILABLE:
+                graph = _build_topology_graph(topo)
+                if graph is not None and hasattr(graph, "get_predecessors"):
+                    pred_map = {}
+                    for i in range(graph.node_count()):
+                        preds = graph.get_predecessors(i)
+                        if preds:
+                            pred_map[i] = preds
+                    return pred_map
+        except Exception:
+            pass
+
+        # Fallback: parse edges from YAML
+        pred_map: dict[int, list[int]] = {}
+        for ed in topo.get("edges", []):
+            if isinstance(ed, dict):
+                to_idx = ed.get("to_idx", 0)
+                from_idx = ed.get("from_idx", 0)
+                pred_map.setdefault(to_idx, []).append(from_idx)
+        return pred_map
 
     def _assign_models_to_topology(self, topo: dict, nodes: list) -> None:
         """Assign real model_ids from cards.toml via ModelAssigner (Trou #1 fix).

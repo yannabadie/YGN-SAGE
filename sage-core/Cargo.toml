@@ -48,7 +48,7 @@ rand = "0.9"
 rusqlite = { version = "0.33", features = ["bundled"], optional = true }
 [features]
 default = ["extension-module"]
-extension-module = ["pyo3/extension-module"]
+extension-module = ["pyo3/extension-module", "pyo3/multiple-pymethods"]
 sandbox = ["wasmtime", "dep:wasmtime-wasi"]
 # On Linux CI, use sandbox + cranelift for JIT compilation.
 # On Windows, sandbox alone uses pre-compiled modules only.
