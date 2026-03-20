@@ -2,7 +2,7 @@
 # ============================================================
 # YGN-SAGE veRL Training Setup for RunPod H100
 # ============================================================
-# Docker: verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3
+# Docker: verlai/verl:vllm017.latest (CUDA 12.9.1, PyTorch 2.10, vLLM 0.17, FA 2.8.3)
 # Model: Qwen/Qwen3.5-9B (dense 9B, bf16, Apache 2.0)
 # Fallback: Qwen/Qwen2.5-7B-Instruct
 #
@@ -31,31 +31,26 @@ assert vram >= 40, f'Need >= 40GB VRAM, got {vram:.0f}GB'
 print('OK')
 "
 
-# ── 2. Install vLLM (>= 0.17 for Qwen3.5-9B) ────────────────
-echo "[2/8] Installing vLLM..."
-python3 -c "import vllm; v=vllm.__version__; print(f'vLLM {v} already installed')" 2>/dev/null && {
-    # Check version is sufficient
-    python3 -c "
+# ── 2. Verify vLLM (pre-installed in Docker image) ────────────
+echo "[2/8] Checking vLLM..."
+python3 -c "
 import vllm
+print(f'vLLM {vllm.__version__}')
 v = tuple(int(x) for x in vllm.__version__.split('.')[:2])
-if v < (0, 17):
-    print(f'vLLM {vllm.__version__} too old, upgrading...')
-    import sys; sys.exit(1)
-else:
-    print(f'vLLM {vllm.__version__} OK (>= 0.17)')
-" 2>/dev/null
-} || {
-    echo "Installing vLLM >= 0.17..."
+assert v >= (0, 17), f'vLLM {vllm.__version__} too old, need >= 0.17'
+print('OK')
+" || {
+    echo "vLLM too old or missing. Installing..."
     pip install vllm -q 2>&1 | tail -3
 }
 
-# ── 3. Install veRL from source ───────────────────────────────
+# ── 3. Install veRL (from source, --no-deps since deps are in Docker) ─
 echo "[3/8] Installing veRL..."
 python3 -c "import verl; print('veRL already installed')" 2>/dev/null || {
     echo "Installing veRL from source..."
     cd /workspace
     [ ! -d verl ] && git clone https://github.com/volcengine/verl.git
-    cd verl && pip install -e ".[vllm]" -q 2>&1 | tail -3
+    cd verl && git checkout v0.7.1 2>/dev/null; pip3 install --no-deps -e . -q 2>&1 | tail -3
     cd /workspace/YGN-SAGE
 }
 

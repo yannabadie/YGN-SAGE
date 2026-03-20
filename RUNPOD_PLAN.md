@@ -15,8 +15,8 @@ surpassant AgentConductor (Qwen2.5-3B, arXiv 2602.17100) sur BigCodeBench Hard.
 |-----------|--------|
 | Modèle | `Qwen/Qwen3.5-9B` (dense 9B, GatedDeltaNet + attention, Apache 2.0) |
 | Fallback | `Qwen/Qwen2.5-7B-Instruct` (si Qwen3.5 crashe) |
-| Framework | veRL 0.7.1 (from source) + vLLM >= 0.17.0 (pip) |
-| Docker | `verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3` |
+| Framework | veRL 0.7.1 + vLLM 0.17.0 (pre-installed in Docker) |
+| Docker | `verlai/verl:vllm017.latest` |
 | Algorithme | GRPO standard (GiGPO = GRPO pour single-action, vérifié dans core_gigpo.py) |
 | LoRA | r=64, alpha=32, target=all-linear |
 | GPU | 1x H100 80GB (ou A100 80GB) |
@@ -46,10 +46,11 @@ surpassant AgentConductor (Qwen2.5-3B, arXiv 2602.17100) sur BigCodeBench Hard.
 1. Aller sur RunPod.io
 2. Créer un pod GPU :
    - **GPU** : H100 80GB SXM (ou A100 80GB)
-   - **Docker image** : `verlai/verl:base-v4-cu126-cudnn9.8-torch2.7.1-fa2.8.0-te2.3`
+   - **Docker image** : `verlai/verl:vllm017.latest`
    - **Disk** : 150GB+ (modèle 9B bf16 = 18GB, checkpoints, vLLM cache)
    - **Volume** : monter sur `/workspace`
-   - **Note** : cette image a CUDA 12.6, PyTorch 2.7.1, FlashAttention 2.8, TransformerEngine 2.3 pré-installés. vLLM et veRL seront installés par setup_runpod.sh.
+   - **Contenu** : CUDA 12.9.1, PyTorch 2.10.0, vLLM 0.17.0, FlashAttention 2.8.3, TransformerEngine 2.12, cuDNN 9.16 — tout pré-installé. Seul veRL Python package à installer (1 pip install).
+   - **Warning** : CUDA 12.9.1 requiert driver NVIDIA >= 575.57.08. Utiliser RunPod **Secure Cloud** (drivers récents garantis) ou nodes H100 (toujours R575+).
 3. Attendre que le pod démarre
 4. SSH sur le pod
 
@@ -275,10 +276,18 @@ sage-python/
 ├── tests/
 │   ├── test_verl_reward.py      # 20 tests reward
 │   └── test_edge_credit.py      # 11 tests edge credit
-└── data/
-    ├── topology_sft_v2_combined.jsonl  # 1880 entries (UPLOADER sur le pod)
-    ├── PROMPTS_GPT54_PRO.md            # 5 prompts pour distillation GPT-5.4 Pro
-    └── verl_topology_train.parquet     # Généré par convert_sft_to_verl.py
+└── data/                                       # TOUT EST DANS LE REPO — pas de scp
+    ├── topology_sft_v2_combined.jsonl          # 1532 base entries
+    ├── topology_raft_phase2.jsonl              # 199 execution-verified
+    ├── topology_sft_gpt54_complex.jsonl        # 144 complex topologies
+    ├── topology_gpt54_codeforces_gcj.jsonl     # 20 Codeforces/GCJ (GPT-5.4 Pro)
+    ├── gpt54_deep_reasoning.jsonl              # 20 deep reasoning (GPT-5.4 Pro)
+    ├── gpt54_simple_calibrated.jsonl           # 20 simple calibrated (GPT-5.4 Pro)
+    ├── gpt54_error_correction.jsonl            # 20 error→correction pairs
+    ├── gpt54_audit.jsonl                       # 10 audit improvements
+    ├── topology_sft_gpt54_pro.jsonl            # 40 combined GPT-5.4 Pro
+    ├── gpt54_preferences2.jsonl                # 20 preference pairs (futur DPO)
+    └── verl_topology_train.parquet             # 1965 entries (auto-généré)
 ```
 
 ---
