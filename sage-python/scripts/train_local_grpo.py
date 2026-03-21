@@ -78,6 +78,25 @@ def setup_model(model_name: str = "Qwen/Qwen2.5-3B-Instruct"):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    # Qwen3.5 thinking mode fix: replace chat_template to remove <think> tags.
+    # TRL's GRPOTrainer calls apply_chat_template() without enable_thinking=False,
+    # so the model wastes all tokens on thinking instead of generating YAML.
+    if tokenizer.chat_template and "<think>" in tokenizer.chat_template:
+        import re
+        # Remove the thinking block from the Jinja template
+        ct = tokenizer.chat_template
+        # Replace the think insertion with just the assistant turn
+        ct = re.sub(
+            r'\{%-\s*if\s+enable_thinking.*?%\}.*?\{%-\s*endif\s*%\}',
+            '', ct, flags=re.DOTALL
+        )
+        # If that didn't work, simpler approach: just strip <think> tags
+        if "<think>" in ct:
+            ct = ct.replace("<think>\\n", "").replace("</think>\\n\\n", "")
+            ct = ct.replace("<think>\n", "").replace("</think>\n\n", "")
+        tokenizer.chat_template = ct
+        log.info("Patched Qwen3.5 chat_template to disable thinking mode")
+
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
         quantization_config=bnb_config,
