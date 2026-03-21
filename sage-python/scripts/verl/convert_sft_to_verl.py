@@ -39,7 +39,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)
 log = logging.getLogger("convert_verl")
 
 SYSTEM_PROMPT = (
-    "/no_think "  # Disable Qwen3.5 thinking mode — output YAML directly
+    # Thinking mode disabled at tokenizer level (patch_tokenizer.py).
+    # /no_think is a Qwen3 feature, NOT Qwen3.5. Do not pollute the prompt.
     "You are a multi-agent topology designer for the YGN-SAGE framework. "
     "Given a coding task, design an optimal agent topology as a YAML DAG. "
     "Include: difficulty, reasoning, nodes (role + prompt + model_tier), edges (from_idx + to_idx + flow_type). "

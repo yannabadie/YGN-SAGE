@@ -179,21 +179,39 @@ bash scripts/verl/train_topology.sh 2>&1 | tee train.log
 - `step_advantage` non-nul (preuve que GiGPO fonctionne)
 - GPU > 90%
 
-### Étape 7 — Export + Benchmark
+### Étape 7 — Benchmark
 
 ```bash
-python3 scripts/verl/export_for_local.py --checkpoint models/topology_verl/ --output models/topology_verl_local/
-python3 scripts/verl/benchmark_post_train.py --bench all --limit 20 --model models/topology_verl_local/
+python3 scripts/verl/benchmark_post_train.py --bench all --limit 20 --model models/topology_verl_gigpo/
 ```
 
-### Étape 8 — Récupérer + arrêter
+### Étape 8 — Export + Merge + Push HuggingFace + Quantize Q8
+
+Pipeline complet (4 sous-étapes, ~30 min) :
 
 ```bash
-tar czf /workspace/results.tar.gz models/topology_verl_local/ train.log
-# Télécharger via file browser RunPod ou scp
+# Tout d'un coup :
+python3 scripts/verl/post_training_pipeline.py all
+
+# Ou étape par étape :
+python3 scripts/verl/post_training_pipeline.py export     # LoRA → models/topology_verl_lora/
+python3 scripts/verl/post_training_pipeline.py merge       # Merge LoRA + Qwen3.5-9B → models/topology_verl_merged/
+python3 scripts/verl/post_training_pipeline.py push        # Push merged + GGUF → yannabadie/sage-topology-policy-v2
+python3 scripts/verl/post_training_pipeline.py quantize    # Q8_0 GGUF → models/topology_verl_gguf/
 ```
 
-**STOP le pod** sur console.runpod.io dès que fini.
+**Résultats HuggingFace :**
+- `yannabadie/sage-topology-policy-v2` — modèle merged float16 (~18GB)
+- `yannabadie/sage-topology-policy-v2/gguf/` — Q8_0 GGUF (~9.5GB, tourne sur RTX 3500 Ada 12GB)
+
+### Étape 9 — Arrêter le pod
+
+```bash
+# Vérifier que tout est pushé sur HuggingFace
+python3 -c "from huggingface_hub import list_repo_files; print(list_repo_files('yannabadie/sage-topology-policy-v2'))"
+```
+
+**STOP le pod** sur console.runpod.io dès que confirmé.
 
 ---
 
