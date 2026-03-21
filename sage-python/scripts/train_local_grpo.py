@@ -213,14 +213,26 @@ def train_phase(phase: str, model, tokenizer, batch_size: int = 4):
 
     log.info("=== Starting Phase %s (batch_size=%d) ===", phase, batch_size)
 
-    dataset = load_dataset(phase)
-    if not dataset:
+    full_dataset = load_dataset(phase)
+    if not full_dataset:
         log.error("No data for Phase %s", phase)
         return None
 
+    # Limit dataset size for local validation (RTX 3500 Ada is slow).
+    # 200 prompts × 1 epoch × 4 rollouts × ~2.5min/step ≈ 4 hours.
+    # Full training on pod H100 later.
+    max_prompts = int(os.environ.get("SAGE_MAX_PROMPTS", "200"))
+    if len(full_dataset) > max_prompts:
+        import random
+        random.seed(42)
+        dataset = random.sample(full_dataset, max_prompts)
+        log.info("Sampled %d/%d prompts for local validation", max_prompts, len(full_dataset))
+    else:
+        dataset = full_dataset
+
     reward_fn = create_reward_fn(phase)
 
-    epochs = 3 if phase == "A" else 5
+    epochs = 1 if phase == "A" else 2  # Local validation: fewer epochs
     lr = 5e-5 if phase == "A" else 2e-5
     output_dir = f"models/local_grpo_phase_{phase}"
 
@@ -231,9 +243,9 @@ def train_phase(phase: str, model, tokenizer, batch_size: int = 4):
         gradient_accumulation_steps=max(1, 4 // batch_size),
         learning_rate=lr,
         num_generations=4,  # K=4 rollouts per prompt (for RewardFlow compatibility)
-        max_completion_length=512,  # YAML topologies are ~200-400 tokens
-        logging_steps=10,
-        save_steps=200,
+        max_completion_length=384,  # YAML topologies are ~150-300 tokens
+        logging_steps=5,
+        save_steps=50,
         save_total_limit=3,
         report_to="none",
         bf16=True,
