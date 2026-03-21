@@ -110,13 +110,22 @@ def setup_model(model_name: str = "Qwen/Qwen2.5-3B-Instruct"):
 
 
 def create_reward_fn(phase: str):
-    """Create reward function for the given phase."""
+    """Create reward function for the given phase.
+
+    TRL 0.29.1 GRPOTrainer passes completions as list of strings (generated text).
+    Each string is the raw model output after the chat template.
+    """
     from sage.verl.reward import _score_format, _score_structure
 
     def reward_fn(completions, **kwargs):
         rewards = []
         for completion in completions:
-            text = completion[0]["content"] if isinstance(completion, list) else str(completion)
+            # TRL 0.29.1: completion is a string (raw generated text)
+            if isinstance(completion, list):
+                # Chat message format — extract assistant content
+                text = completion[-1]["content"] if completion else ""
+            else:
+                text = str(completion)
 
             fmt = _score_format(text)
             struct = _score_structure(text)
@@ -171,8 +180,9 @@ def load_dataset(phase: str):
     df = pd.read_parquet(path)
     log.info("Loaded %d prompts from %s", len(df), path)
 
-    # Convert to list of chat message dicts
-    # Parquet stores prompts as numpy arrays of dicts — convert to list
+    # Convert to chat message format for TRL GRPOTrainer.
+    # TRL applies tokenizer.apply_chat_template() when prompt is a list of dicts.
+    # This ensures the model sees the proper <|im_start|>system/user/assistant tokens.
     dataset = []
     for _, row in df.iterrows():
         prompt = row.get("prompt", [])
@@ -185,16 +195,15 @@ def load_dataset(phase: str):
             except json.JSONDecodeError:
                 prompt = [{"role": "user", "content": prompt}]
         if isinstance(prompt, (list, tuple)) and len(prompt) > 0:
-            # Extract just the user message text for TRL GRPOTrainer
-            user_msg = ""
+            # Keep as chat messages — TRL will apply chat template
+            messages = []
             for msg in prompt:
-                if isinstance(msg, dict) and msg.get("role") == "user":
-                    user_msg = msg.get("content", "")
-                    break
-            if user_msg:
-                dataset.append({"prompt": user_msg})
+                if isinstance(msg, dict) and "role" in msg and "content" in msg:
+                    messages.append({"role": msg["role"], "content": msg["content"]})
+            if messages:
+                dataset.append({"prompt": messages})
 
-    log.info("Converted %d prompts to training format", len(dataset))
+    log.info("Converted %d prompts to chat format", len(dataset))
     return dataset
 
 
@@ -222,13 +231,14 @@ def train_phase(phase: str, model, tokenizer, batch_size: int = 4):
         gradient_accumulation_steps=max(1, 4 // batch_size),
         learning_rate=lr,
         num_generations=4,  # K=4 rollouts per prompt (for RewardFlow compatibility)
-        max_completion_length=1024,
+        max_completion_length=512,  # YAML topologies are ~200-400 tokens
         logging_steps=10,
         save_steps=200,
         save_total_limit=3,
         report_to="none",
         bf16=True,
         remove_unused_columns=False,
+        disable_tqdm=True,  # Prevent tqdm crash on Windows nohup
     )
 
     trainer = GRPOTrainer(
