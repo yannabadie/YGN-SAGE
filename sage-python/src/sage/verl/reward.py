@@ -19,11 +19,26 @@ import yaml
 log = logging.getLogger("verl_reward")
 
 
+# ── Utility ──────────────────────────────────────────────────
+
+import re
+
+def _strip_code_fence(text: str) -> str:
+    """Strip markdown code fences (```yaml ... ```) from model output."""
+    text = text.strip()
+    # Remove opening fence
+    text = re.sub(r'^```(?:yaml|yml)?\s*\n?', '', text)
+    # Remove closing fence
+    text = re.sub(r'\n?```\s*$', '', text)
+    return text.strip()
+
+
 # ── Format scoring ───────────────────────────────────────────
 
 def _score_format(text: str) -> float:
     """YAML format validity. Range: [-2.0, +1.0]."""
     try:
+        text = _strip_code_fence(text)
         data = yaml.safe_load(text)
         if not isinstance(data, dict):
             return -1.5
@@ -44,6 +59,7 @@ def _score_format(text: str) -> float:
 def _score_structure(text: str) -> float:
     """Structural quality. Range: [0.0, 1.0]."""
     try:
+        text = _strip_code_fence(text)
         data = yaml.safe_load(text)
         if not isinstance(data, dict) or "nodes" not in data:
             return 0.0
@@ -69,6 +85,7 @@ def _score_structure(text: str) -> float:
 def _score_rust_density(text: str, extra_info: dict) -> float:
     """Rust TopologyReward + TopologyDensity. Fallback: 0.5 for valid topology."""
     try:
+        text = _strip_code_fence(text)
         data = yaml.safe_load(text)
         if not isinstance(data, dict) or "nodes" not in data:
             return 0.0
