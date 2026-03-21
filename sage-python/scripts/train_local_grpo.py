@@ -60,8 +60,7 @@ def setup_model(model_name: str = "Qwen/Qwen2.5-3B-Instruct"):
     """Load model with PEFT QLoRA (4-bit).
 
     Uses transformers + peft directly (Unsloth incompatible with Windows).
-    Default: Qwen2.5-3B-Instruct (proven, stable, fits 12GB).
-    Override with --model flag for Qwen3.5-4B when available.
+    Default: Qwen3.5-4B (GDN hybrid, Apache 2.0, fits 12GB in 4-bit).
     """
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -288,8 +287,8 @@ def main():
                         help="Training phase: A (structural), B (execution), AB (both)")
     parser.add_argument("--batch-size", type=int, default=4,
                         help="Per-device batch size (auto-halved on OOM)")
-    parser.add_argument("--model", default="Qwen/Qwen2.5-3B-Instruct",
-                        help="Model name (default: Qwen2.5-3B-Instruct)")
+    parser.add_argument("--model", default="Qwen/Qwen3.5-4B",
+                        help="Model name (default: Qwen3.5-4B)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Load model and data, don't train")
     args = parser.parse_args()
