@@ -13,7 +13,7 @@ Mixed reward: structural (format/density) + execution (real multi-provider Topol
 RunPod H100 (80GB)                          Local RTX 3500 (12GB)
 ┌──────────────────────────┐                ┌──────────────────────────┐
 │ Docker: verlai/verl:      │                │ Qwen3.5-9B Q5_K_M GGUF  │
-│   vllm017.latest          │                │   (~6.6GB VRAM)          │
+│   vllm011.latest          │                │   (~6.6GB VRAM)          │
 │ Qwen/Qwen3.5-9B bf16     │  ── export ──► │ LoRA adapter merged      │
 │ LoRA r=64, GRPO           │                │ Ollama / llama.cpp       │
 │ K=4 samples, 8 epochs     │                │ SAGE pipeline Path 6     │
@@ -80,7 +80,7 @@ saves a patched tokenizer. The training script points to this patched tokenizer 
 ## Setup Sequence
 
 ```bash
-# On RunPod H100 pod (Docker: verlai/verl:vllm017.latest)
+# On RunPod H100 pod (Docker: verlai/verl:vllm011.latest)
 git clone https://github.com/yannabadie/YGN-SAGE.git /workspace/YGN-SAGE
 cd /workspace/YGN-SAGE && git checkout VeRLGIGPO
 
