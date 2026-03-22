@@ -1,125 +1,110 @@
-# YGN-SAGE — Plan d'exécution RunPod H100
+# YGN-SAGE V2 — Plan d'exécution RunPod H100
 
 > **Ce fichier est le seul document à suivre sur le pod.**
-> Tout le code est implémenté et testé. Aucun code à écrire sur le pod.
+> Tout le code est implémenté et testé (46 tests, 0 failures). Aucun code à écrire sur le pod.
 
 ## Objectif
 
-Entraîner une politique de génération de topologies multi-agents via **verl-agent GiGPO**
-sur Qwen3.5-9B. GiGPO (Group-in-Group Policy Optimization) fournit du credit assignment
-step-level : chaque nœud de topologie = un step dans l'épisode, avec des anchor states
-pour comparer les actions entre trajectoires.
+Entraîner Qwen3.5-9B via **verl-agent GiGPO** pour générer des topologies multi-agents adaptatives.
+Le modèle apprend **3 choses simultanément** :
+1. **Comment structurer** une topologie YAML (nodes, edges, model_tiers)
+2. **Où placer** les checkpoints (quels nœuds sont fragiles)
+3. **Quand upgrader** vs continuer vs rerouter (coût-bénéfice de l'adaptation)
 
-## Pourquoi GiGPO, pas GRPO standard
+C'est LE différenciateur vs The Conductor (ICLR 2026), CARD, AgentConductor, AdaptOrch.
+Aucun concurrent n'entraîne un modèle à prendre des micro-décisions d'adaptation en cours d'exécution.
+
+## Pourquoi GiGPO, pas GRPO
 
 ```
-GRPO standard (flat reward):
-  Step 0: YAML → reward = 0.7
-  Le modèle sait que cette topologie vaut 0.7, mais pas POURQUOI.
+GRPO (flat reward):
+  Step 0: modèle génère YAML → reward = 0.7
+  Pas de credit assignment — le modèle ne sait pas POURQUOI 0.7.
 
-GiGPO (step-level reward):
-  Step 0: YAML         → reward_0 = 0.8 (bonne structure)
-  Step 1: nœud coder   → reward_1 = 0.3 (code médiocre)    anchor = coder:moderate:abc123
-  Step 2: nœud reviewer→ reward_2 = 0.1 (review inutile)   anchor = reviewer:moderate:def456
-  Step 3: synthesizer  → reward_3 = 0.0 (CRASH)            anchor = synthesizer:moderate:789
+GiGPO avec micro-décisions (step-level):
+  Step 0: YAML                      → reward_0 = 0.8    anchor = prompt_hash
+  Step 1: nœud coder exécuté        → reward_1 = 0.3    anchor = coder:moderate:abc
+  Step 2: CHECKPOINT quality=0.3    → modèle décide "upgrade"
+          [mask=0 pour l'obs, mask=1 pour "upgrade"]
+  Step 3: coder ré-exécuté (reasoner)→ reward_3 = 0.8   anchor = upgrade:coder
+  Step 4: nœud reviewer             → reward_4 = 0.6    anchor = reviewer:moderate:def
+  Step 5: synthesizer               → reward_5 = 0.9    anchor = synthesizer:moderate:ghi
+  Terminal: PASSED                   → reward_T = 1.0
 
-  GiGPO compare: "quand un reviewer voit le même contexte (même anchor),
-  quel type de review produit de meilleurs résultats en aval?"
-  → Credit assignment temporel que GRPO ne peut pas faire.
+  GiGPO groupe: "4 trajectoires arrivent au checkpoint coder avec quality=0.3.
+  Trajectoires A,B choisissent upgrade → reward 0.8. C,D choisissent continue → reward 0.2.
+  Advantage positif assigné à upgrade au anchor decision:coder:moderate:low."
 ```
+
+**verl-agent masque automatiquement** les tokens d'observation (mask=0). Seuls les tokens
+générés par le modèle (YAML, "continue"/"upgrade"/"reroute") reçoivent des gradients.
 
 ## Contexte technique
 
 | Composant | Valeur |
 |-----------|--------|
-| Modèle | `Qwen/Qwen3.5-9B` (dense 9B, GatedDeltaNet + attention, Apache 2.0) |
-| Fallback | `Qwen/Qwen2.5-7B-Instruct` |
-| Framework | **verl-agent** (fork de veRL avec GiGPO, github.com/langfengQ/verl-agent) |
-| Docker | `verlai/verl:vllm017.latest` (CUDA 12.9.1, PyTorch 2.10, vLLM 0.17) |
-| Algorithme | **GiGPO** (`adv_estimator=gigpo`, `step_advantage_w=1.0`) |
-| Environnement | `SageTopologyEnv` — multi-step gym (1 YAML + N nœuds) |
+| Modèle | `Qwen/Qwen3.5-9B` (dense 9B, GDN + attention, Apache 2.0) |
+| Fallback modèle | `Qwen/Qwen2.5-7B-Instruct` (si GDN crash vLLM) |
+| Framework | **verl-agent** (github.com/langfengQ/verl-agent) |
+| Docker | `verlai/verl:vllm017.latest` |
+| Algorithme | **GiGPO** (`algorithm.adv_estimator=gigpo`) |
+| GiGPO params | `algorithm.gigpo.{enable_similarity=True, similarity_thresh=0.85, step_advantage_w=1.0, mode=mean_norm}` |
+| Environnement | `SageTopologyEnv` — 4-state machine (awaiting_yaml → executing → awaiting_decision → terminal) |
 | LoRA | r=64, alpha=32, target=all-linear |
-| GPU | 1x H100 80GB SXM (Secure Cloud, driver >= 575) |
-| Données | **1965 entries** full (Phase A) + **499 curated** (Phase B) |
-| Bug vLLM | `num_speculative_tokens=0` obligatoire (CUDA bug #36408) |
-| Innovation | GiGPO step-level + Graph-GRPO edge credit (arXiv 2603.02701) |
+| GPU | 1x H100 80GB SXM |
+| Données | **2225 entries** (Phase A) + **~600 curated** (Phase B) |
+| Tokenizer | Patché (`patch_tokenizer.py` — supprime `<think>` de Qwen3.5) |
+| Innovation | **Micro-décisions GiGPO** — le modèle décide upgrade/continue/reroute aux checkpoints |
 
-## Stratégie de training (Mixed GiGPO, 2 phases)
+## Données d'entraînement (2225 entries)
 
-| Phase | Epochs | Dataset | Reward | Env | Coût API |
-|-------|--------|---------|--------|-----|----------|
-| **A: Structural GiGPO** | 5 | Full (1965) | Format + structure + density | Multi-step (anchors structurels) | $0 |
-| **B: Execution GiGPO** | 5 | Curated (499) | Real multi-provider execution | Multi-step (8 providers réels) | ~$50 |
+| Source | Entries | Contenu |
+|--------|---------|---------|
+| SFT v2 combined | 1532 | BigCodeBench, CodeContests, statiques |
+| RAFT Phase 2 | 199 | Execution-verified |
+| GPT-5.4 complex | 144 | 5-7 nœuds |
+| GPT-5.4 adaptive (V2) | 120 | fallback_tier + checkpoints + gates |
+| GPT-5.4 recovery (V2) | 80 | Scénarios échec → recovery (init + recovered) |
+| GPT-5.4 static→adaptive | 60 | Migration statique → adaptatif |
+| Autres GPT-5.4 | 90 | Codeforces, reasoning, simple, audit, correction |
 
-## Providers (8 actifs pendant Phase B)
+**260 entrées adaptatives** (12% du dataset) enseignent les micro-décisions.
 
-| Provider | Modèles | Rôle topologie | Prix (in/out par 1M) |
-|----------|---------|----------------|---------------------|
-| DeepSeek | deepseek-chat, reasoner | Primary reasoner + budget | $0.14*/$0.42 |
-| Google | gemini-3.1-pro, flash-lite, 3-flash | Reasoner + fast tier | $0.25-$2/$1.50-$12 |
-| xAI | grok-4-1-fast | Budget (2M context) | $0.20/$0.50 |
-| OpenAI | gpt-5.4, mini, nano | Flagship + budget | $0.20-$2.50/$1.25-$15 |
-| MiniMax | minimax-m2.7 | Budget | $0.30/$1.20 |
-| Kimi | kimi-k2.5 | Agent Swarm | $0.60/$2.50 |
-| OpenRouter | qwen3.5-plus | Qwen3.5-Plus | $0.26/$1.56 |
-| Codex | gpt-5.3-codex | Code specialist | CLI |
+## Stratégie de training
+
+| Phase | Epochs | Dataset | Reward | Micro-décisions | Coût API |
+|-------|--------|---------|--------|-----------------|----------|
+| **A: Structural** | 5 | 2225 | Format + density + adaptation bonus | Oui (checkpoints en structural) | $0 |
+| **B: Execution** | 3 | ~600 curated | Structural + real multi-provider | Oui (checkpoints + vrai quality) | ~$50-80 |
 
 ## Coût estimé
 
-| Poste | Dataset curated | Dataset full |
-|-------|----------------|-------------|
-| Phase A (structural GiGPO, $0 API) | ~1h GPU | ~2h GPU |
-| Phase B API (8 providers) | ~$50 | ~$200 |
-| RunPod H100 Secure ($3.09/h) | ~$6 (~2h) | ~$18 (~6h) |
-| **TOTAL** | **~$56** | **~$218** |
-
-## Prérequis locaux (déjà fait)
-
-- [x] `sage.verl.topology_env` — SageTopologyEnv (multi-step gym avec anchor states)
-- [x] `sage.verl.step_reward` — StepRewardVector (per-node reward pour GiGPO)
-- [x] `sage.verl.reward` — compute_score (structural + execution multi-provider)
-- [x] `sage.verl.edge_credit` — Graph-GRPO edge-level credit
-- [x] `scripts/verl/train_topology.sh` — GiGPO config (adv_estimator=gigpo, multi_turn=True)
-- [x] `scripts/verl/setup_runpod.sh` — installe **verl-agent** (pas veRL vanilla)
-- [x] `scripts/verl/curate_training_data.py` — 499 prompts curated
-- [x] `sage-core/config/cards.toml` — 20 modèles, 8 providers, prix mars 2026
-- [x] `sage-python/src/sage/providers/connector.py` — 7 configs API + Codex CLI + OpenRouter
+| Poste | Coût |
+|-------|------|
+| RunPod H100 Secure (~4h, $3.09/h) | ~$13 |
+| API Phase B (600 × 3 epochs × ~3 nœuds × $0.001) | ~$50-80 |
+| **TOTAL** | **~$63-93** |
 
 ---
 
 ## Étapes sur le pod
 
-### Étape 1 — Créer le pod RunPod
+### Étape 1 — Créer le pod
 
 1. [console.runpod.io](https://console.runpod.io) → **Pods** → **+ Deploy**
 2. GPU : **H100 80GB SXM**, **Secure Cloud**
-3. Template : cliquer **"Go to my templates"** → **New Template** :
-   - Name : `SAGE-GiGPO`
+3. Template :
    - Container Image : `verlai/verl:vllm017.latest`
-   - Container Disk : **50 GB**
-   - Volume Disk : **100 GB**
-   - Volume Mount : `/workspace`
-   - Env var : `HF_TOKEN` = `<ton token HuggingFace>`
-   - Save → Deploy On-Demand
-4. Attendre ~5-10 min (image Docker 13.4GB)
+   - Container Disk : **50 GB**, Volume Disk : **100 GB**, Volume Mount : `/workspace`
+   - Env var : `HF_TOKEN` = `<ton token>`
+4. Attendre ~5-10 min
 
-### Étape 2 — Connecter (web terminal ou SSH)
-
-**Web terminal** : Pod → Connect → Start Web Terminal
-
-**SSH** (si web terminal ne marche pas) :
-```bash
-ssh <pod-id>@ssh.runpod.io -i <ta-clé>
-```
-
-### Étape 3 — Clone + .env
+### Étape 2 — Clone + .env
 
 ```bash
 git clone https://github.com/yannabadie/YGN-SAGE.git /workspace/YGN-SAGE
 cd /workspace/YGN-SAGE && git checkout VeRLGIGPO
-```
 
-```bash
 cat > .env << 'EOF'
 DEEPSEEK_API_KEY="<ta clé>"
 GOOGLE_API_KEY="<ta clé>"
@@ -132,141 +117,157 @@ HF_TOKEN="<ton token>"
 EOF
 ```
 
-### Étape 4 — Setup (~5-8 min)
+### Étape 3 — Setup (~8 min)
 
 ```bash
 bash sage-python/scripts/verl/setup_runpod.sh
 ```
 
-Ce script (8 étapes) :
+Ce script (9 étapes) :
 1. Vérifie GPU (H100/A100, >= 40GB VRAM)
-2. Vérifie vLLM >= 0.17.0
-3. **Installe verl-agent** (fork avec GiGPO, pas veRL vanilla)
-4. Installe SAGE Python SDK
-5. Build sage-core Rust (~3 min)
-6. Vérifie le modèle Qwen3.5-9B
-7. Convertit données → parquet (1965 entries)
-8. Vérification finale
+2. Vérifie vLLM
+3. **Installe flash-linear-attention + causal-conv1d** (Qwen3.5 GDN fast path)
+4. **Installe verl-agent** (pas veRL vanilla)
+5. Installe SAGE Python SDK + build sage-core Rust (~3 min)
+6. **Patche le tokenizer Qwen3.5** (supprime `<think>` mode)
+7. Convertit données → parquet (2225 entries)
+8. Curate Phase B subset (~600 entries)
+9. Vérification finale (10 checks)
 
-### Étape 5 — Valider
+### Étape 4 — Valider
 
 ```bash
 cd sage-python && python3 scripts/verl/validate_setup.py
 ```
 
-**8/8 checks doivent passer.**
+**10/10 checks doivent passer** (GPU, veRL, vLLM, flash-linear-attention, sage-core, SDK, reward, data, API keys, patched tokenizer).
 
-### Étape 6 — Lancer le training GiGPO
+### Étape 5 — Lancer le training
 
 ```bash
 cd /workspace/YGN-SAGE/sage-python
-
-# Curater 499 prompts
-python3 scripts/verl/curate_training_data.py
-
-# Lancer (screen pour web terminal)
 screen -S train
 bash scripts/verl/train_topology.sh 2>&1 | tee train.log
-# Ctrl+A D pour détacher, screen -r train pour rattacher
+# Ctrl+A D pour détacher
 ```
 
-**Le script fait 2 phases automatiquement** :
-- **Phase A** (~1h) : GiGPO structural sur 1965 prompts — $0 API
-- **Phase B** (~1-2h) : GiGPO execution sur 499 prompts — ~$50 API (8 providers)
+**Le script fait** :
+- **Step 0** : Validation GiGPO config (vérifie les params contre verl-agent)
+- **Phase A** (~1-2h) : GiGPO structural, 2225 prompts, micro-décisions en mode structural
+- **Phase B** (~1-2h) : GiGPO execution, ~600 curated, 8 providers réels
 
-**Signaux :**
-- `reward/mean` augmente
-- `step_advantage` non-nul (preuve que GiGPO fonctionne)
-- GPU > 90%
+**Signaux de succès :**
+- `reward/mean` augmente au fil des epochs
+- `step_advantage` **non-nul** (preuve que GiGPO micro-décisions fonctionnent)
+- Des steps avec `anchor = decision:*` apparaissent dans les logs
+- GPU utilization > 80%
 
-### Étape 7 — Benchmark
-
+**Si Qwen3.5-9B crash (GDN vLLM bug)** :
 ```bash
-python3 scripts/verl/benchmark_post_train.py --bench all --limit 20 --model models/topology_verl_gigpo/
+SAGE_MODEL="Qwen/Qwen2.5-7B-Instruct" bash scripts/verl/train_topology.sh
 ```
 
-### Étape 8 — Export + Merge + Push HuggingFace + Quantize Q8
-
-Pipeline complet (4 sous-étapes, ~30 min) :
+### Étape 6 — Benchmark
 
 ```bash
-# Tout d'un coup :
+python3 scripts/verl/benchmark_post_train.py --bench all --limit 20
+```
+
+**Targets** :
+- BigCodeBench Hard > **40.0%** (battre The Conductor)
+- Topologies adaptatives > templates statiques
+
+### Étape 7 — Export → HuggingFace → Q8 GGUF
+
+```bash
 python3 scripts/verl/post_training_pipeline.py all
-
-# Ou étape par étape :
-python3 scripts/verl/post_training_pipeline.py export     # LoRA → models/topology_verl_lora/
-python3 scripts/verl/post_training_pipeline.py merge       # Merge LoRA + Qwen3.5-9B → models/topology_verl_merged/
-python3 scripts/verl/post_training_pipeline.py push        # Push merged + GGUF → yannabadie/sage-topology-policy-v2
-python3 scripts/verl/post_training_pipeline.py quantize    # Q8_0 GGUF → models/topology_verl_gguf/
 ```
 
-**Résultats HuggingFace :**
-- `yannabadie/sage-topology-policy-v2` — modèle merged float16 (~18GB)
-- `yannabadie/sage-topology-policy-v2/gguf/` — Q8_0 GGUF (~9.5GB, tourne sur RTX 3500 Ada 12GB)
+4 sous-étapes (~30 min) :
+1. `export` — LoRA depuis checkpoint veRL
+2. `merge` — Merge LoRA + Qwen3.5-9B base → float16
+3. `push` — Upload vers `yannabadie/sage-topology-policy-v2`
+4. `quantize` — Q8_0 GGUF pour RTX 3500 Ada 12GB local
 
-### Étape 9 — Arrêter le pod
+**Résultat HuggingFace :**
+- `yannabadie/sage-topology-policy-v2` — merged float16 (~18GB)
+- `yannabadie/sage-topology-policy-v2/gguf/sage-topology-v2-Q8_0.gguf` (~9.5GB)
+
+### Étape 8 — Stop pod
 
 ```bash
-# Vérifier que tout est pushé sur HuggingFace
 python3 -c "from huggingface_hub import list_repo_files; print(list_repo_files('yannabadie/sage-topology-policy-v2'))"
 ```
-
-**STOP le pod** sur console.runpod.io dès que confirmé.
+**STOP** sur console.runpod.io dès que confirmé.
 
 ---
 
 ## Troubleshooting
 
-### verl-agent ne s'installe pas
+### Qwen3.5-9B GDN crash vLLM
 ```bash
-cd /workspace && rm -rf verl-agent
-git clone https://github.com/langfengQ/verl-agent.git
-cd verl-agent && pip install -e . && cd /workspace/YGN-SAGE
+# Le GDN hybrid a des bugs vLLM actifs. Fallback :
+SAGE_MODEL="Qwen/Qwen2.5-7B-Instruct" bash scripts/verl/train_topology.sh
+# Ou : ajouter --enforce-eager dans les params vLLM (2x plus lent)
 ```
 
-### GiGPO: "gigpo not found in adv_estimator"
-verl-agent n'est pas installé (veRL vanilla ne supporte pas GiGPO).
-Vérifie : `python3 -c "from gigpo.core_gigpo import compute_gigpo_outcome_advantage; print('OK')"`
-
-### vLLM CUDA crash
-`num_speculative_tokens=0` (déjà dans train_topology.sh).
-Fallback : `SAGE_MODEL="Qwen/Qwen2.5-7B-Instruct" bash scripts/verl/train_topology.sh`
+### GiGPO: "gigpo not found"
+```bash
+# verl-agent pas installé
+cd /workspace && rm -rf verl-agent
+git clone https://github.com/langfengQ/verl-agent.git
+cd verl-agent && pip install -e . && cd /workspace/YGN-SAGE/sage-python
+```
 
 ### OOM
-Réduire : `gpu_memory_utilization=0.6` → `train_batch_size=32` → `rollout.n=3`
+```bash
+# Réduire progressivement :
+# 1. gpu_memory_utilization=0.6
+# 2. train_batch_size=32
+# 3. rollout.n=3 (au lieu de 4)
+# 4. ppo_micro_batch_size_per_gpu=4
+```
 
-### Provider API échoue en Phase B
-Smart fallback : reward structural si execution échoue. Training continue.
+### Provider API fail en Phase B
+Le reward fallback structural si l'exécution échoue. Training continue.
 
 ---
 
-## Architecture GiGPO multi-step
+## Architecture micro-décisions (V2)
 
 ```
-SageTopologyEnv.reset(prompt) → obs = {text: prompt, anchor: hash(prompt)}
-                                          │
-                Model generates YAML ◄─────┘
-                          │
-SageTopologyEnv.step(yaml) → obs, reward_0 (structural), done=False
-                          │   anchor_0 = topology_generator:difficulty:yaml_hash
-                          │
-                Model sees node 0 result, generates response
-                          │
-SageTopologyEnv.step(response) → obs, reward_1 (node quality), done=False
-                          │       anchor_1 = role:difficulty:context_hash
-                          │
-                ... repeat for each node ...
-                          │
-SageTopologyEnv.step(response) → obs, reward_N (terminal), done=True
-                                  anchor_N = terminal:status
+SageTopologyEnv — Machine à 4 états :
 
-GiGPO advantage:
-  A'(i,k) = A_episode(i) + ω × A_step(i,k)
-
-  A_episode = (R_total - mean) / std     ← same as GRPO
-  A_step    = (R_from_k - mean_group) / std_group
-              where group = all (trajectory,step) pairs sharing anchor_k
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  AWAITING_YAML                                                  │
+  │  reset() → obs = {prompt + memory_context}                     │
+  │  model generates YAML                                           │
+  │  step(yaml) → parse, start incremental execution               │
+  └───────────────────────────┬─────────────────────────────────────┘
+                              ▼
+  ┌─────────────────────────────────────────────────────────────────┐
+  │  EXECUTING (incrémental, nœud par nœud)                        │
+  │  _execute_single_node(cursor) → trace                          │
+  │  Si checkpoint → qualité estimée → AWAITING_DECISION           │
+  │  Si pas checkpoint → cursor++ → continuer                      │
+  │  Si fin → TERMINAL                                              │
+  └──────────┬───────────────────────────────┬──────────────────────┘
+             ▼                               ▼
+  ┌──────────────────────┐     ┌────────────────────────────────────┐
+  │  AWAITING_DECISION   │     │  TERMINAL                          │
+  │  obs = [CHECKPOINT]  │     │  sandbox test → PASSED/FAILED      │
+  │  model: continue /   │     │  resilience bonus if upgrade worked│
+  │         upgrade /    │     │  StepRewardVector for GiGPO        │
+  │         reroute      │     │  store to episodic memory          │
+  │  [mask=1 sur action] │     └────────────────────────────────────┘
+  └──────────┬───────────┘
+             ▼
+     Retour à EXECUTING
 ```
+
+**Tokens masking (verl-agent automatique) :**
+- `mask=0` : observations env ([CHECKPOINT] Node 0...) → pas de gradients
+- `mask=1` : actions modèle (YAML, "upgrade", "continue") → gradients GiGPO
 
 ---
 
@@ -275,24 +276,40 @@ GiGPO advantage:
 ```
 sage-python/
 ├── src/sage/verl/
-│   ├── topology_env.py      # SageTopologyEnv (multi-step gym, anchor states)
-│   ├── step_reward.py       # StepRewardVector (per-node rewards for GiGPO)
-│   ├── reward.py            # compute_score (structural + execution)
-│   └── edge_credit.py       # Graph-GRPO per-edge advantage
-├── src/sage/execution/
-│   └── __init__.py          # evaluate_topology(), extract_python_code, providers
+│   ├── topology_env.py      # 4-state machine, micro-décisions, episodic memory
+│   ├── step_reward.py       # StepRewardVector (per-step rewards for GiGPO)
+│   ├── reward.py            # 5-signal: structural + execution + rewardflow + resilience + cost
+│   ├── edge_credit.py       # Graph-GRPO per-edge advantage
+│   ├── rewardflow.py        # PageRank per-node credit (arXiv 2603.18859)
+│   ├── training_memory.py   # SQLite episodic memory
+│   └── env_register.py      # verl-agent env registration (monkey-patch)
 ├── scripts/verl/
-│   ├── setup_runpod.sh      # Installs verl-agent (GiGPO), not vanilla veRL
-│   ├── train_topology.sh    # adv_estimator=gigpo, multi_turn=True, 2 phases
+│   ├── setup_runpod.sh      # 9 étapes : deps + flash-linear-attention + patch tokenizer
+│   ├── train_topology.sh    # GiGPO config (algorithm.gigpo.*), 2 phases
+│   ├── patch_tokenizer.py   # Supprime <think> mode de Qwen3.5
+│   ├── validate_setup.py    # 10 checks pré-training
+│   ├── post_training_pipeline.py  # Export → Merge → HF → Q8 GGUF
 │   ├── curate_training_data.py
-│   ├── convert_sft_to_verl.py
-│   ├── validate_setup.py
-│   ├── benchmark_post_train.py
-│   └── export_for_local.py
-└── data/                    # TOUT DANS LE REPO
-    ├── verl_topology_curated.parquet  # 499 (Phase B)
-    ├── verl_topology_train.parquet    # 1965 (Phase A)
-    └── (10 fichiers .jsonl sources)
+│   ├── convert_sft_to_verl.py     # 11 sources → 2225 entries
+│   └── benchmark_post_train.py
+├── tests/
+│   ├── test_verl_micro_decisions.py  # 7 tests micro-décisions
+│   ├── test_verl_v2.py              # 20 tests V2 (memory, rewardflow, env)
+│   └── test_verl_reward.py          # 19 tests reward
+└── data/
+    ├── verl_topology_train.parquet   # 2225 entries (0 /no_think)
+    ├── verl_topology_curated.parquet # ~600 (Phase B)
+    └── 11 fichiers .jsonl sources
 
-sage-core/config/cards.toml  # 20 modèles, 8 providers
+sage-core/config/cards.toml          # 18 modèles, 7 providers
+```
+
+## Tests : 46 passed, 0 failed
+
+```
+tests/test_verl_micro_decisions.py  — 7 tests (micro-décisions)
+tests/test_verl_v2.py               — 20 tests (V2 adaptive)
+tests/test_verl_reward.py           — 19 tests (reward functions)
+sage-core (Rust)                     — 351 tests
+Total                                — 397 tests, 0 failures
 ```
