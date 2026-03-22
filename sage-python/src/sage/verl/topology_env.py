@@ -1,15 +1,15 @@
 """SageTopologyEnv — Multi-step environment for GiGPO topology training.
 
-Implements the verl-agent gym-style interface (reset/step) where:
+Implements the verl-agent gym-style interface (reset/step) with a 4-state machine:
+  AWAITING_YAML → EXECUTING → AWAITING_DECISION → EXECUTING → ... → TERMINAL
+
+The model makes REAL decisions at checkpoint nodes:
   Step 0: Model generates YAML topology → structural reward + anchor(prompt)
-  Steps 1..N: Env executes each topology node via TopologyRunner + ProviderPool
-              → per-node reward + anchor(role, difficulty, context)
+  Checkpoint steps: Model decides continue/upgrade/reroute → step-level advantage
   Terminal: Code tested in sandbox → execution reward
 
-Uses the REAL TopologyRunner with ProviderPool.resolve() for multi-provider
-execution. model_tier in YAML is resolved to actual providers (DeepSeek, Google,
-OpenAI, xAI, MiniMax, Kimi, OpenRouter) so the model learns that provider
-assignment matters.
+GiGPO computes step-level advantages on the model's actions at each step.
+Without real decisions at checkpoints, advantages degenerate to episode-level = GRPO.
 
 Reference: GiGPO (arXiv 2505.10978), verl-agent env_manager interface.
 """
@@ -29,6 +29,24 @@ from sage.verl.step_reward import StepRewardVector
 
 log = logging.getLogger("topology_env")
 
+# ---------------------------------------------------------------------------
+# Reward constants for micro-decisions
+# ---------------------------------------------------------------------------
+_REWARD_UPGRADE_COST = -0.05
+_REWARD_REROUTE_PENALTY = -0.3
+_REWARD_UPGRADE_SUCCESS = 0.15
+
+
+def _quality_bucket(quality: float, threshold: float) -> str:
+    if quality < threshold * 0.6:
+        return "very_low"
+    elif quality < threshold:
+        return "low"
+    elif quality < threshold * 1.4:
+        return "adequate"
+    else:
+        return "high"
+
 
 @dataclass
 class StepResult:
@@ -41,6 +59,10 @@ class StepResult:
     latency: float
     anchor_key: str
     model_id: str = ""
+    action: str = ""            # text of the model's action
+    was_upgraded: bool = False
+    quality_before: float = 0.0
+    quality_after: float = 0.0
 
 
 @dataclass
@@ -63,6 +85,8 @@ def _make_anchor(role: str, difficulty: str, context_hash: str) -> str:
 class SageTopologyEnv:
     """Gym-style environment for multi-step topology execution.
 
+    4-state machine: awaiting_yaml → executing → awaiting_decision → terminal
+
     Interface (verl-agent compatible):
         reset(prompt, task_id) -> observation dict with 'anchor' field
         step(model_response) -> (observation, reward, done, info)
@@ -73,17 +97,23 @@ class SageTopologyEnv:
         self._config = config or {}
         self._trace: EpisodeTrace | None = None
         self._topo_dict: dict | None = None
-        self._node_traces: list[dict] = []  # from TopologyRunner.run_traced()
-        self._current_step = 0
+        self._node_traces: list[dict] = []  # from incremental execution
         self._difficulty = "moderate"
         self._step_reward_vec: StepRewardVector | None = None
-        self._predecessor_map: dict[int, list[int]] = {}  # node_idx -> [predecessor indices]
+        self._predecessor_map: dict[int, list[int]] = {}
         # V2: Adaptive topology state
         self._memory: Any = None
-        self._awaiting_decision = False
         self._checkpoints: set = set()
         self._max_upgrades = 0
         self._quality_threshold = 0.5
+        # V3: Micro-decision state machine
+        self._state = "awaiting_yaml"
+        self._exec_cursor = 0
+        self._pending_checkpoint = None
+        self._upgrades_used = 0
+        self._node_outputs: dict[int, str] = {}
+        # Legacy compat field (kept for test_reset_clears_v2_state)
+        self._awaiting_decision = False
         # Initialize TrainingMemory if configured
         db = self._config.get("memory_db", "")
         if db:
@@ -98,14 +128,20 @@ class SageTopologyEnv:
         self._trace = EpisodeTrace(prompt=prompt, task_id=task_id)
         self._topo_dict = None
         self._node_traces = []
-        self._current_step = 0
         self._difficulty = "moderate"
         self._step_reward_vec = None
         self._predecessor_map = {}
-        self._awaiting_decision = False
         self._checkpoints = set()
         self._max_upgrades = 0
         self._quality_threshold = 0.5
+        # V3: Reset state machine
+        self._state = "awaiting_yaml"
+        self._exec_cursor = 0
+        self._pending_checkpoint = None
+        self._upgrades_used = 0
+        self._node_outputs = {}
+        # Legacy compat
+        self._awaiting_decision = False
 
         # V2: Query episodic memory for similar past episodes
         memory_ctx = ""
@@ -130,21 +166,35 @@ class SageTopologyEnv:
                                    hashlib.md5(prompt.encode()).hexdigest()[:8]),
         }
 
+    # ------------------------------------------------------------------
+    # step() dispatcher — 4-state machine
+    # ------------------------------------------------------------------
+
     def step(self, model_response: str) -> tuple[dict, float, bool, dict]:
-        """Execute one step.
+        """Execute one step in the 4-state machine.
 
-        Step 0: model_response = YAML topology
-        Steps 1..N: model observes node output, responds (may be "continue")
-                    The env has already executed nodes via TopologyRunner.run_traced()
+        awaiting_yaml: model_response = YAML topology
+        awaiting_decision: model_response = continue/upgrade/reroute
+        terminal: finalize episode
+        executing: should not happen externally, drive execution internally
         """
-        if self._current_step == 0:
-            return self._step_parse_and_execute(model_response)
+        if self._state == "awaiting_yaml":
+            return self._handle_yaml(model_response)
+        elif self._state == "awaiting_decision":
+            return self._handle_decision(model_response)
+        elif self._state == "terminal":
+            return self._finalize_episode()
         else:
-            return self._step_deliver_node_result()
+            # _state == "executing": should not happen from outside
+            return self._execute_until_checkpoint_or_end()
 
-    def _step_parse_and_execute(self, yaml_text: str) -> tuple[dict, float, bool, dict]:
-        """Step 0: parse YAML, execute ALL nodes via TopologyRunner + ProviderPool,
-        then deliver results one step at a time."""
+    # ------------------------------------------------------------------
+    # _handle_yaml — replaces _step_parse_and_execute
+    # ------------------------------------------------------------------
+
+    def _handle_yaml(self, yaml_text: str) -> tuple[dict, float, bool, dict]:
+        """Step 0: parse YAML, setup incremental execution, run until
+        first checkpoint or end."""
         self._trace.topology_yaml = yaml_text
 
         # Parse YAML
@@ -161,7 +211,7 @@ class SageTopologyEnv:
         self._topo_dict = topo
         self._difficulty = topo.get("difficulty", "moderate")
 
-        # V2: Parse adaptation metadata for TopologyController
+        # Parse adaptation metadata for checkpoints
         adaptation = topo.get("adaptation", {})
         if isinstance(adaptation, dict):
             self._checkpoints = set(adaptation.get("checkpoints", []))
@@ -186,98 +236,316 @@ class SageTopologyEnv:
             output=yaml_text, reward=struct_score, latency=0.0, anchor_key=anchor,
         ))
 
-        # Build predecessor map — use Rust get_predecessors() if available,
-        # otherwise fallback to parsing YAML edges
+        # Build predecessor map
         self._predecessor_map = self._build_predecessor_map(topo)
 
-        # Assign real model_ids via ModelAssigner + ModelRegistry (Trou #1 fix)
+        # Assign real model_ids via ModelAssigner + ModelRegistry
         self._assign_models_to_topology(topo, nodes)
 
-        # Execute ALL nodes via TopologyRunner + ProviderPool
+        # DO NOT execute all nodes at once. Start incremental execution.
+        self._state = "executing"
+        self._exec_cursor = 0
+        return self._execute_until_checkpoint_or_end()
+
+    # ------------------------------------------------------------------
+    # _execute_until_checkpoint_or_end — incremental node execution
+    # ------------------------------------------------------------------
+
+    def _execute_until_checkpoint_or_end(self) -> tuple[dict, float, bool, dict]:
+        """Execute nodes one by one from _exec_cursor.
+
+        Pauses at checkpoint nodes to ask the model for a decision.
+        """
+        nodes = self._topo_dict.get("nodes", [])
+
+        while self._exec_cursor < len(nodes):
+            node_idx = self._exec_cursor
+            node = nodes[node_idx]
+
+            # Execute THIS node (one at a time)
+            trace = self._execute_single_node(node_idx, node)
+            self._node_traces.append(trace)
+            self._node_outputs[node_idx] = trace["output"]
+
+            # Per-node reward
+            role = trace["role"]
+            reward = self._compute_node_reward(role, trace["output"])
+
+            # Build anchor from predecessor context
+            predecessors = self._predecessor_map.get(node_idx, [])
+            pred_text = " ".join(self._node_outputs.get(p, "")[:200] for p in predecessors)
+            context_hash = hashlib.md5(pred_text.encode()).hexdigest()[:8] if pred_text else ""
+            anchor = _make_anchor(role, self._difficulty, context_hash)
+
+            # Record the step
+            self._trace.steps.append(StepResult(
+                step_idx=len(self._trace.steps),
+                node_idx=node_idx,
+                role=role,
+                output=trace["output"],
+                reward=reward,
+                latency=trace.get("latency", 0.0),
+                anchor_key=anchor,
+                model_id=trace.get("model_id", ""),
+            ))
+
+            self._exec_cursor += 1
+
+            # If this node is a checkpoint
+            if node_idx in self._checkpoints:
+                quality = self._estimate_quality(trace["output"], role)
+
+                # Store pending checkpoint
+                self._pending_checkpoint = {
+                    "node_idx": node_idx,
+                    "role": role,
+                    "quality": quality,
+                    "output": trace["output"][:300],
+                    "model_tier": node.get("model_tier", ""),
+                    "fallback_tier": node.get("fallback_tier", ""),
+                }
+                self._state = "awaiting_decision"
+
+                # Build observation with quality bucket in anchor
+                q_bucket = _quality_bucket(quality, self._quality_threshold)
+                decision_anchor = _make_anchor(
+                    f"decision:{role}", self._difficulty,
+                    f"{q_bucket}:{context_hash}"
+                )
+
+                remaining_upgrades = self._max_upgrades - self._upgrades_used
+                has_fallback = bool(node.get("fallback_tier", ""))
+
+                obs_text = (
+                    f"[CHECKPOINT] Node {node_idx} ({role}, {node.get('model_tier', '?')}) completed.\n"
+                    f"Output quality: {quality:.2f} (threshold: {self._quality_threshold})\n"
+                    f"Output preview: {trace['output'][:200]}\n"
+                )
+                if has_fallback and remaining_upgrades > 0:
+                    obs_text += (
+                        f"Fallback available: {node['fallback_tier']}\n"
+                        f"Upgrades remaining: {remaining_upgrades}/{self._max_upgrades}\n"
+                        f"Actions: [continue] [upgrade] [reroute]\n"
+                    )
+                else:
+                    obs_text += "No fallback available or no upgrades remaining.\nActions: [continue] [reroute]\n"
+
+                return (
+                    {"text": obs_text, "image": None, "anchor": decision_anchor},
+                    reward,
+                    False,
+                    {"status": "CHECKPOINT", "node_idx": node_idx, "quality": quality},
+                )
+
+        # All nodes executed → terminal
+        self._state = "terminal"
+        return self._finalize_episode()
+
+    # ------------------------------------------------------------------
+    # _handle_decision — parse continue/upgrade/reroute
+    # ------------------------------------------------------------------
+
+    def _handle_decision(self, model_response: str) -> tuple[dict, float, bool, dict]:
+        """Parse the model's decision at a checkpoint and act on it."""
+        decision = self._parse_decision(model_response)
+        cp = self._pending_checkpoint
+        self._pending_checkpoint = None
+
+        node_idx = cp["node_idx"]
+        role = cp["role"]
+        reward = 0.0
+
+        if decision == "upgrade" and cp["fallback_tier"] and self._upgrades_used < self._max_upgrades:
+            # Re-execute the node with the fallback_tier
+            self._upgrades_used += 1
+
+            # Modify the model_tier of the node in topo_dict
+            node = self._topo_dict["nodes"][node_idx]
+            original_tier = node.get("model_tier", "")
+            node["model_tier"] = cp["fallback_tier"]
+
+            # Re-assign the real model
+            self._assign_models_to_topology(self._topo_dict, self._topo_dict["nodes"])
+
+            # Re-execute
+            new_trace = self._execute_single_node(node_idx, node)
+            self._node_outputs[node_idx] = new_trace["output"]
+
+            # Update trace
+            new_quality = self._estimate_quality(new_trace["output"], role)
+            quality_improved = new_quality > cp["quality"]
+
+            reward = _REWARD_UPGRADE_COST  # cost of the upgrade
+            if quality_improved:
+                reward += _REWARD_UPGRADE_SUCCESS
+
+            # Record the upgrade step
+            self._trace.steps.append(StepResult(
+                step_idx=len(self._trace.steps),
+                node_idx=node_idx,
+                role=f"upgrade:{role}",
+                output=new_trace["output"],
+                reward=reward,
+                latency=new_trace.get("latency", 0.0),
+                anchor_key=_make_anchor(f"upgrade:{role}", self._difficulty, ""),
+                model_id=new_trace.get("model_id", ""),
+                action="upgrade",
+                was_upgraded=True,
+                quality_before=cp["quality"],
+                quality_after=new_quality,
+            ))
+
+            obs_text = (
+                f"Node {node_idx} upgraded {original_tier}\u2192{cp['fallback_tier']}. "
+                f"Quality: {cp['quality']:.2f}\u2192{new_quality:.2f}. "
+                f"Continuing execution."
+            )
+
+        elif decision == "reroute":
+            reward = _REWARD_REROUTE_PENALTY
+            self._trace.steps.append(StepResult(
+                step_idx=len(self._trace.steps),
+                node_idx=node_idx,
+                role="reroute",
+                output="REROUTE",
+                reward=reward,
+                latency=0.0,
+                anchor_key=_make_anchor("reroute", self._difficulty, ""),
+                action="reroute",
+            ))
+            self._state = "terminal"
+            self._trace.status = "REROUTED"
+            return self._finalize_episode()
+
+        else:  # "continue"
+            reward = 0.0
+            self._trace.steps.append(StepResult(
+                step_idx=len(self._trace.steps),
+                node_idx=node_idx,
+                role=f"continue:{role}",
+                output="continue",
+                reward=reward,
+                latency=0.0,
+                anchor_key=_make_anchor(f"decision:{role}", self._difficulty, "continue"),
+                action="continue",
+            ))
+            obs_text = f"Continuing with node {node_idx} output as-is."
+
+        # Resume execution
+        self._state = "executing"
+        return self._execute_until_checkpoint_or_end()
+
+    # ------------------------------------------------------------------
+    # _execute_single_node — one node at a time
+    # ------------------------------------------------------------------
+
+    def _execute_single_node(self, node_idx: int, node_dict: dict) -> dict:
+        """Execute a single node (API call in exec mode, structural stub otherwise)."""
+        role = node_dict.get("role", f"node-{node_idx}")
         exec_mode = os.environ.get("SAGE_VERL_EXEC", "0") == "1"
-        if exec_mode:
-            self._node_traces = self._execute_topology_traced(topo)
-        else:
-            # Structural mode: create synthetic traces from topology structure
-            self._node_traces = []
-            for i, node in enumerate(nodes):
-                if isinstance(node, dict):
-                    self._node_traces.append({
-                        "node_idx": i,
-                        "role": node.get("role", f"node-{i}"),
-                        "output": f"[structural mode] Node {i} ({node.get('role', 'agent')})",
-                        "latency": 0.0,
-                        "model_id": node.get("model_tier", ""),
-                    })
 
-        if not self._node_traces:
-            return self._terminal(struct_score, "NO_EXECUTION", "No nodes executed.")
+        if not exec_mode:
+            return {
+                "node_idx": node_idx,
+                "role": role,
+                "output": f"[structural mode] Node {node_idx} ({role})",
+                "latency": 0.0,
+                "model_id": node_dict.get("model_tier", ""),
+            }
 
-        self._current_step = 1
+        # Real execution mode: LLM call
+        try:
+            from sage.execution import _get_agent_provider
+            from sage.llm.base import LLMConfig, Message, Role
 
-        # Deliver first node result
-        first = self._node_traces[0]
-        obs = {
-            "text": f"Topology parsed ({len(nodes)} nodes, {self._difficulty}). "
-                    f"Node 0 ({first['role']}) executed: {first['output'][:300]}",
-            "image": None,
-            "anchor": _make_anchor(first["role"], self._difficulty, ""),
+            provider, model = _get_agent_provider()
+            if provider is None:
+                return self._structural_stub(node_idx, role, node_dict)
+
+            # Build prompt from role + predecessor context
+            predecessors = self._predecessor_map.get(node_idx, [])
+            context = "\n\n".join(
+                f"[{self._topo_dict['nodes'][p].get('role', f'node-{p}')}]: "
+                f"{self._node_outputs.get(p, '')[:500]}"
+                for p in predecessors if p in self._node_outputs
+            )
+
+            custom_prompt = node_dict.get("prompt", f"You are acting as: {role}")
+            messages = [
+                Message(role=Role.SYSTEM, content=custom_prompt),
+            ]
+            if context:
+                messages.append(Message(role=Role.SYSTEM, content=f"Context from previous agents:\n{context}"))
+            messages.append(Message(role=Role.USER, content=self._trace.prompt[:2000]))
+
+            config = LLMConfig(provider="agent", model=model)
+
+            t0 = time.time()
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                response = pool.submit(
+                    lambda: asyncio.run(provider.generate(messages=messages, config=config))
+                ).result(timeout=60)
+            output = response.content or ""
+            latency = time.time() - t0
+
+            return {
+                "node_idx": node_idx,
+                "role": role,
+                "output": output,
+                "latency": latency,
+                "model_id": node_dict.get("_assigned_model_id", node_dict.get("model_tier", "")),
+            }
+        except Exception as exc:
+            log.warning("Node %d execution failed: %s", node_idx, exc)
+            return self._structural_stub(node_idx, role, node_dict)
+
+    def _structural_stub(self, node_idx: int, role: str, node_dict: dict) -> dict:
+        return {
+            "node_idx": node_idx,
+            "role": role,
+            "output": f"[fallback] Node {node_idx} ({role}): structural only",
+            "latency": 0.0,
+            "model_id": node_dict.get("model_tier", ""),
         }
-        return obs, struct_score, False, {"status": "TOPOLOGY_PARSED", "n_nodes": len(nodes)}
 
-    def _step_deliver_node_result(self) -> tuple[dict, float, bool, dict]:
-        """Steps 1..N: deliver the next pre-executed node result."""
-        trace_idx = self._current_step - 1  # step 1 → trace[0], step 2 → trace[1]
+    # ------------------------------------------------------------------
+    # _estimate_quality / _parse_decision
+    # ------------------------------------------------------------------
 
-        if trace_idx >= len(self._node_traces):
-            return self._finalize_episode()
+    def _estimate_quality(self, output: str, role: str) -> float:
+        """Estimate output quality for checkpoint decision."""
+        # Try Rust QualityLabeler
+        try:
+            from sage_core import QualityLabeler
+            ql = QualityLabeler()
+            label = ql.label(f"Node role: {role}", output)
+            if label and label.assessable:
+                return float(label.score)
+        except ImportError:
+            pass
 
-        node_trace = self._node_traces[trace_idx]
-        role = node_trace["role"]
-        output = node_trace["output"]
-        latency = node_trace.get("latency", 0.0)
-        model_id = node_trace.get("model_id", "")
+        # Minimal heuristic for structural mode
+        if not output or output.startswith("[structural") or output.startswith("[fallback"):
+            return 0.5  # neutral in structural mode
+        if output.startswith("ERROR"):
+            return 0.1
+        # Presence of code = better quality
+        if "```" in output or "def " in output:
+            return 0.7
+        return 0.4
 
-        # Build context hash from PREDECESSOR outputs only (not all previous)
-        # Uses the edge map built from YAML to identify direct predecessors
-        predecessors = self._predecessor_map.get(node_trace["node_idx"], [])
-        pred_outputs = " ".join(
-            self._node_traces[p]["output"][:200]
-            for p in range(len(self._node_traces[:trace_idx]))
-            if self._node_traces[p]["node_idx"] in predecessors
-        ) if predecessors else " ".join(
-            t["output"][:200] for t in self._node_traces[:trace_idx]
-        )
-        context_hash = hashlib.md5(pred_outputs.encode()).hexdigest()[:8] if pred_outputs else ""
+    def _parse_decision(self, text: str) -> str:
+        t = text.strip().lower()
+        if "upgrade" in t:
+            return "upgrade"
+        elif "reroute" in t:
+            return "reroute"
+        return "continue"
 
-        # Per-node reward
-        reward = self._compute_node_reward(role, output)
-
-        anchor = _make_anchor(role, self._difficulty, context_hash)
-        self._trace.steps.append(StepResult(
-            step_idx=self._current_step, node_idx=node_trace["node_idx"],
-            role=role, output=output, reward=reward, latency=latency,
-            anchor_key=anchor, model_id=model_id,
-        ))
-
-        self._current_step += 1
-
-        # Check if last node
-        if trace_idx >= len(self._node_traces) - 1:
-            return self._finalize_episode()
-
-        # Next node observation
-        next_trace = self._node_traces[trace_idx + 1] if trace_idx + 1 < len(self._node_traces) else None
-        next_role = next_trace["role"] if next_trace else "done"
-
-        obs = {
-            "text": f"Node {node_trace['node_idx']} ({role}, model={model_id}) "
-                    f"completed ({latency:.1f}s). Output: {output[:300]}\n"
-                    f"Next: node ({next_role})",
-            "image": None,
-            "anchor": _make_anchor(next_role, self._difficulty, context_hash),
-        }
-        return obs, reward, False, {"status": "NODE_COMPLETED", "role": role, "node_idx": node_trace["node_idx"]}
+    # ------------------------------------------------------------------
+    # Methods kept intact from original
+    # ------------------------------------------------------------------
 
     def _build_predecessor_map(self, topo: dict) -> dict[int, list[int]]:
         """Build node_idx -> [predecessor_indices] map.
@@ -308,20 +576,17 @@ class SageTopologyEnv:
             if isinstance(ed, dict):
                 to_idx = ed.get("to_idx", 0)
                 from_idx = ed.get("from_idx", 0)
-                # V2: Map gate:conditional -> gate:open (Rust Gate enum
-                # only has open/closed; controller handles closing). See spec C1.
                 gate = ed.get("gate", "open")
                 if gate == "conditional":
-                    gate = "open"  # Controller handles condition evaluation
+                    gate = "open"
                 pred_map.setdefault(to_idx, []).append(from_idx)
         return pred_map
 
     def _assign_models_to_topology(self, topo: dict, nodes: list) -> None:
-        """Assign real model_ids from cards.toml via ModelAssigner (Trou #1 fix).
+        """Assign real model_ids from cards.toml via ModelAssigner.
 
         Maps model_tier (reasoner/fast/budget) to actual model IDs
-        (gemini-3.1-pro, deepseek-chat, gpt-5.4-nano) using ModelRegistry
-        + ModelAssigner scoring (affinity 0.4 + domain 0.4 + cost 0.2).
+        using ModelRegistry + ModelAssigner scoring.
         """
         try:
             from sage_core import ModelRegistry
@@ -345,7 +610,6 @@ class SageTopologyEnv:
                 log.warning("ModelRegistry empty — model_tier assignment skipped")
                 return
 
-            # Map model_tier to cognitive system for model selection
             from sage_core import CognitiveSystem
             tier_to_cs = {
                 "reasoner": CognitiveSystem.S3,
@@ -359,10 +623,8 @@ class SageTopologyEnv:
                 tier = node.get("model_tier", "fast")
                 cs = tier_to_cs.get(tier, CognitiveSystem.S2)
 
-                # select_for_system returns models sorted by affinity for that system
                 candidates = registry.select_for_system(cs)
                 if candidates:
-                    # Pick the best-affinity model for this system
                     best = candidates[0]
                     node["_assigned_model_id"] = best.id
                     node["_assigned_provider"] = best.provider
@@ -373,110 +635,6 @@ class SageTopologyEnv:
             log.warning("ModelAssigner unavailable (%s) — using default provider", exc)
         except Exception as exc:
             log.warning("Model assignment failed: %s", exc)
-
-    def _execute_topology_traced(self, topo: dict) -> list[dict]:
-        """Execute topology via TopologyRunner.run_traced() with ProviderPool.
-
-        Uses the REAL multi-provider pipeline:
-        1. Build TopologyGraph (Rust)
-        2. ModelAssigner assigns model_id per node (from cards.toml)
-        3. TopologyRunner.run_traced() executes with ProviderPool.resolve()
-        4. Returns per-node traces
-        """
-        try:
-            from sage.execution import (
-                _build_topology_graph, _get_agent_provider, _RUST_AVAILABLE,
-            )
-            from sage.topology.runner import TopologyRunner
-            from sage.llm.base import LLMConfig
-
-            # Build graph
-            topo["_task_id"] = self._trace.task_id
-            if _RUST_AVAILABLE:
-                graph = _build_topology_graph(topo)
-            else:
-                graph = None
-
-            if graph is None:
-                # Fallback: sequential execution without Rust graph
-                return self._execute_sequential_fallback(topo)
-
-            from sage_core import TopologyExecutor
-            executor = TopologyExecutor(graph)
-
-            provider, model = _get_agent_provider()
-            if provider is None:
-                return self._execute_sequential_fallback(topo)
-
-            config = LLMConfig(provider="agent", model=model)
-
-            # V2: Wire ProviderPool for per-node model resolution
-            provider_pool = None
-            try:
-                from sage.llm.provider_pool import ProviderPool
-                provider_pool = ProviderPool(
-                    default_provider=provider,
-                    registry=None,
-                    default_config=config,
-                )
-            except Exception:
-                pass
-
-            # V2: Wire TopologyController if adaptation metadata present
-            controller = None
-            adaptation = self._topo_dict.get("adaptation", {}) if self._topo_dict else {}
-            if isinstance(adaptation, dict) and adaptation.get("max_upgrades", 0) > 0:
-                try:
-                    from sage.topology_controller import TopologyController
-                    controller = TopologyController()
-                    controller.THETA_GOOD = adaptation.get("quality_threshold", 0.5)
-                    controller.MAX_RETRIES = adaptation.get("max_upgrades", 1)
-                except Exception:
-                    pass
-
-            runner = TopologyRunner(
-                graph=graph,
-                executor=executor,
-                llm_provider=provider,
-                llm_config=config,
-                provider_pool=provider_pool,
-                controller=controller,
-            )
-
-            # run_traced() returns per-node outputs with metadata
-            # Always use ThreadPoolExecutor to avoid event loop conflicts
-            # (verl-agent may call step() from within its own event loop)
-            try:
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    traces = pool.submit(
-                        lambda: asyncio.run(
-                            asyncio.wait_for(runner.run_traced(self._trace.prompt[:2000]), timeout=120)
-                        )
-                    ).result(timeout=130)
-            except Exception as exc:
-                log.warning("run_traced() failed: %s", exc)
-                return self._execute_sequential_fallback(topo)
-
-            return traces
-
-        except Exception as exc:
-            log.warning("Traced execution failed: %s", exc)
-            return self._execute_sequential_fallback(topo)
-
-    def _execute_sequential_fallback(self, topo: dict) -> list[dict]:
-        """Fallback: create structural traces without API calls."""
-        traces = []
-        for i, node in enumerate(topo.get("nodes", [])):
-            if isinstance(node, dict):
-                traces.append({
-                    "node_idx": i,
-                    "role": node.get("role", f"node-{i}"),
-                    "output": f"[fallback] Node {i} ({node.get('role', 'agent')}): structural only",
-                    "latency": 0.0,
-                    "model_id": node.get("model_tier", ""),
-                })
-        return traces
 
     def _finalize_episode(self) -> tuple[dict, float, bool, dict]:
         """Terminal step: extract code, test, build StepRewardVector."""
@@ -502,15 +660,40 @@ class SageTopologyEnv:
                 except Exception:
                     exec_score, status = 0.0, "EXEC_ERROR"
 
+        # Use REROUTED status if set by _handle_decision
+        if self._trace.status == "REROUTED":
+            status = "REROUTED"
+
+        # Resilience bonus for successful upgrades
+        n_upgrades = sum(1 for s in self._trace.steps if s.was_upgraded)
+        if n_upgrades > 0:
+            any_succeeded = any(
+                s.was_upgraded and s.quality_after > s.quality_before
+                for s in self._trace.steps
+            )
+            if any_succeeded and status == "PASSED":
+                resilience_bonus = 0.5
+            elif any_succeeded:
+                resilience_bonus = 0.3
+            else:
+                resilience_bonus = 0.0
+            self._trace.steps.append(StepResult(
+                step_idx=len(self._trace.steps), node_idx=-1, role="resilience_bonus",
+                output=f"upgrades={n_upgrades}, bonus={resilience_bonus}",
+                reward=resilience_bonus, latency=0.0,
+                anchor_key="resilience:bonus",
+            ))
+
         # Terminal step result
         self._trace.steps.append(StepResult(
-            step_idx=self._current_step, node_idx=-1, role="terminal",
+            step_idx=len(self._trace.steps), node_idx=-1, role="terminal",
             output=status, reward=exec_score, latency=0.0,
             anchor_key=f"terminal:{status}",
         ))
 
         self._trace.total_reward = sum(s.reward for s in self._trace.steps)
-        self._trace.status = status
+        if self._trace.status != "REROUTED":
+            self._trace.status = status
 
         # V2: Store episode in episodic memory for future reference
         if self._memory:

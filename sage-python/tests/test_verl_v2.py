@@ -156,7 +156,11 @@ class TestRewardV2:
 
 class TestTopologyEnvV2:
     def test_parse_adaptive_yaml(self):
-        """Verify adaptive YAML parses with adaptation block."""
+        """Verify adaptive YAML parses with adaptation block.
+
+        With the micro-decision state machine, checkpoint at node 0 pauses
+        execution and returns CHECKPOINT status instead of TOPOLOGY_PARSED.
+        """
         from sage.verl.topology_env import SageTopologyEnv
         env = SageTopologyEnv()
         env.reset("Write a sort function", "test/sort")
@@ -179,7 +183,9 @@ edges:
   - {from_idx: 0, to_idx: 1, flow_type: message}
 """
         obs, reward, done, info = env.step(yaml_text)
-        assert info["status"] == "TOPOLOGY_PARSED"
+        # Checkpoint at node 0 pauses execution for a decision
+        assert info["status"] == "CHECKPOINT"
+        assert env._state == "awaiting_decision"
         assert env._topo_dict["adaptation"]["max_upgrades"] == 1
         assert env._checkpoints == {0}
         assert env._max_upgrades == 1
@@ -269,7 +275,11 @@ edges:
 
 class TestIntegrationV2:
     def test_full_structural_episode(self):
-        """End-to-end: reset -> generate adaptive YAML -> step through -> finalize."""
+        """End-to-end: reset -> generate adaptive YAML -> step through -> finalize.
+
+        With the micro-decision state machine, checkpoint at node 0 pauses
+        execution and returns CHECKPOINT. We then step("continue") through.
+        """
         from sage.verl.topology_env import SageTopologyEnv
 
         env = SageTopologyEnv()
@@ -299,11 +309,12 @@ edges:
   - {from_idx: 1, to_idx: 2, flow_type: message}
 """
         obs, reward, done, info = env.step(yaml_text)
-        assert info["status"] == "TOPOLOGY_PARSED"
+        # Checkpoint at node 0 pauses for a decision
+        assert info["status"] == "CHECKPOINT"
         assert reward > 0
         assert not done
 
-        # Step through all nodes
+        # Step through all remaining nodes (continue at checkpoint, finalize)
         steps = 0
         while not done and steps < 20:
             obs, reward, done, info = env.step("continue")
