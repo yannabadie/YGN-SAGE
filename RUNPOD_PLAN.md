@@ -3,7 +3,95 @@
 > **Ce document est la référence pour l'opérateur (humain ou Claude Code) sur le pod.**
 > Il décrit 3 phases progressives. Chaque phase a ses propres critères de succès.
 
-## Vision
+---
+
+## Qu'est-ce que YGN-SAGE ?
+
+**YGN-SAGE** (Self-Adaptive Generation Engine) est un **Agent Development Kit** — un agent autonome de type Claude Code, Devin ou OpenSage, mais piloté par un moteur multi-agents **apprenant**. C'est un OpenSage (arXiv 2602.16891, UC Berkeley) profondément amélioré : là où OpenSage crée ses agents par prompting à chaque run (et repart de zéro), SAGE **apprend** de ses exécutions passées via RL et adapte ses topologies en temps réel.
+
+### Philosophie : 3 principes fondateurs
+
+**1. Rust first, Python tolerant**
+Tout ce qui est performance-critique est en Rust (sage-core, compilé via PyO3/maturin) : TopologyGraph (petgraph), Density S_complex, HybridVerifier (SMT/LTL), QualityLabeler (tree-sitter + OxiZ), S-MMU (4-graph mémoire), ModelAssigner, SystemRouter, ContextualBandit. Python sert uniquement à l'orchestration (pipeline, agent loop, providers, training). Le coeur Rust garantit des latences sub-milliseconde pour le scoring et la vérification — critique pendant le training RL où chaque step est évalué.
+
+**2. Zero heuristics**
+Aucun seuil hardcodé. Chaque décision est soit formellement vérifiée (Z3/OxiZ SMT), soit apprise (ONNX, RL, bandit), soit backed par un papier de recherche. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
+
+**3. Evidence before assertions**
+On ne claim pas que ça marche — on prouve. 397 tests (351 Rust + 46 Python). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
+
+### Architecture : 5 piliers cognitifs
+
+```
+                         ┌─────────────────────────────────┐
+                         │          YGN-SAGE Agent          │
+                         │   (type Claude Code / OpenSage)  │
+                         └───────────────┬─────────────────┘
+                                         │
+        ┌────────────────────────────────┼────────────────────────────────┐
+        │                                │                                │
+   sage-core (Rust)              sage-python (Python)            sage-discover
+   Performance-critical          Orchestration                   Knowledge Pipeline
+   ├── TopologyEngine            ├── Pipeline (5-stage)          ├── arXiv → ExoCortex
+   │   ├── 7 paths generation    ├── AgentLoop                  └── 500+ papers RAG
+   │   ├── MAP-Elites + CMA-ME   ├── 8 Providers (LLM)
+   │   ├── MCTS search           ├── Memory 4-tier
+   │   └── Path 6: learned ←──── ├── verl/ (RL training)
+   ├── SystemRouter (S1/S2/S3)   │   ├── topology_env.py (4-state machine)
+   ├── ModelAssigner              │   ├── reward.py (5-signal)
+   ├── QualityLabeler (Z3)        │   ├── rewardflow.py (PageRank)
+   ├── S-MMU (4-graph memory)     │   └── training_memory.py (SQLite)
+   ├── SmtVerifier (OxiZ)         ├── A2A server (v1.0)
+   └── HybridVerifier (LTL)      └── Bench (BigCodeBench, EvalPlus)
+```
+
+**Pilier 1 — Topology** : 7 chemins de génération de topologie (S-MMU retrieval → archive MAP-Elites → LLM synthesis → mutation → MCTS → **Path 6: learned policy** → templates). Path 6 est le modèle entraîné par RL. La DynamicTopologyEngine choisit le meilleur path via contextual bandit.
+
+**Pilier 2 — Tools** : `AgentTool.from_agent()` transforme n'importe quel agent en outil. Sandbox 3 couches (tree-sitter → Wasm WASI → subprocess). Dynamic sub-agent creation (`agent_mgmt.py`) comme OpenSage.
+
+**Pilier 3 — Memory** : 4 tiers inspirés de CoALA (cognitive architecture) — Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU (Semantic Memory Management Unit) en Rust avec 4 types d'edges (temporal, semantic, causal, entity) et ULID chunks.
+
+**Pilier 4 — Evolution** : MAP-Elites quality-diversity + CMA-ME + MCTS topology search. Online evolution câblée dans le pipeline Stage 5 (Learn). Les topologies qui marchent sont archivées et réutilisées.
+
+**Pilier 5 — Strategy** : Routing cognitif S1/S2/S3 (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling pour le choix de topologie.
+
+### Pipeline : comment une tâche est traitée
+
+```
+1. CLASSIFY  — kNN routing (arctic-embed-m, 92%) → S1 (simple) / S2 (moderate) / S3 (complex)
+2. DECOMPOSE — TaskPlanner → TaskDAG + features DAG (ω, δ, γ d'AdaptOrch)
+3. TOPOLOGY  — DynamicTopologyEngine choisit parmi 7 paths → TopologyGraph (Rust petgraph)
+4. ASSIGN    — ModelAssigner (Rust) : affinity 0.4 + domain 0.4 + cost 0.2 → model_id par nœud
+5. EXECUTE   — TopologyRunner + ProviderPool (8 providers) → exécution nœud par nœud
+6. LEARN     — QualityEstimator Z3 → Bandit update + MAP-Elites archive + episodic memory
+```
+
+### Ce qui différencie SAGE d'OpenSage
+
+| Aspect | OpenSage (Berkeley) | YGN-SAGE |
+|--------|-------------------|----------|
+| Topologie | Promptée à chaque run | **Apprise par RL** (GiGPO) |
+| Adaptation | Runtime prompting | **Apprise** (checkpoints, fallback_tier dans le YAML) |
+| Mémoire | Graph-based hierarchical | **4-tier** (STM → Episodic → Semantic → ExoCortex) + cross-episode training |
+| Verification | Aucune | **Formelle** (Rust SMT/LTL, QualityLabeler Z3) |
+| Providers | Multi-model (GPT/Claude/Gemini) | **8 providers** câblés DANS le training |
+| Engine | Python pur | **Rust core** (PyO3, sub-ms latency) |
+| Self-programming | Agents créent des agents | **Idem** (`agent_mgmt.py`) + topologies apprises |
+| Code | 404 (pas publié) | **Open-source MIT** |
+| Protocol | Aucun standard | **A2A v1.0** (Google) |
+| Benchmark | SWE-bench Pro 59% | BigCodeBench Hard 37.8% (→ cible >40%) |
+
+### Interface cible : pi-mono
+
+En production, SAGE sera pilotable via **pi-mono** (github.com/badlogic/pi-mono) — un toolkit TypeScript pour agents AI avec multi-provider API unifiée (`@mariozechner/pi-ai`), agent runtime (`pi-agent-core`), et web UI (`pi-web-ui`). L'intégration se fait via le serveur A2A de SAGE (`a2a_server.py`) qui expose les skills topology/code/research.
+
+### Standard A2A
+
+SAGE implémente le protocole **Agent-to-Agent v1.0** (Google) via `a2a_server.py`. L'agent est exposé comme un `AgentCard` avec 3 skills (general, code, research). N'importe quel client A2A (Google ADK, LangGraph, CrewAI) peut déléguer des tâches à SAGE. Le modèle de topologie entraîné produira des YAML qui respectent les conventions A2A pour l'interopérabilité.
+
+---
+
+## Vision training
 
 Entraîner un modèle (Qwen3.5-9B) qui génère des topologies multi-agents **adaptatives** — capables de se corriger en cours d'exécution. C'est le Path 6 de la DynamicTopologyEngine de YGN-SAGE.
 
