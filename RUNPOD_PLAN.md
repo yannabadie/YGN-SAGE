@@ -46,7 +46,7 @@ générés par le modèle (YAML, "continue"/"upgrade"/"reroute") reçoivent des 
 | Modèle | `Qwen/Qwen3.5-9B` (dense 9B, GDN + attention, Apache 2.0) |
 | Fallback modèle | `Qwen/Qwen2.5-7B-Instruct` (si GDN crash vLLM) |
 | Framework | **verl-agent** (github.com/langfengQ/verl-agent) |
-| Docker | `verlai/verl:vllm011.latest` |
+| Docker | `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04` |
 | Algorithme | **GiGPO** (`algorithm.adv_estimator=gigpo`) |
 | GiGPO params | `algorithm.gigpo.{enable_similarity=True, similarity_thresh=0.85, step_advantage_w=1.0, mode=mean_norm}` |
 | Environnement | `SageTopologyEnv` — 4-state machine (awaiting_yaml → executing → awaiting_decision → terminal) |
@@ -94,7 +94,7 @@ générés par le modèle (YAML, "continue"/"upgrade"/"reroute") reçoivent des 
 1. [console.runpod.io](https://console.runpod.io) → **Pods** → **+ Deploy**
 2. GPU : **H100 80GB SXM**, **Secure Cloud**
 3. Template :
-   - Container Image : `verlai/verl:vllm011.latest`
+   - Container Image : `runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`
    - Container Disk : **50 GB**, Volume Disk : **100 GB**, Volume Mount : `/workspace`
    - Env var : `HF_TOKEN` = `<ton token>`
 4. Attendre ~5-10 min

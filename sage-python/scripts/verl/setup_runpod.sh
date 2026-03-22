@@ -2,11 +2,11 @@
 # ============================================================
 # YGN-SAGE veRL Training Setup for RunPod H100
 # ============================================================
-# Docker: verlai/verl:vllm011.latest (CUDA 12.9.1, PyTorch 2.10)
+# Docker: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 # Model: Qwen/Qwen3.5-9B (dense 9B, bf16, Apache 2.0)
 #
 # Usage on RunPod:
-#   1. Create pod with Docker image verlai/verl:vllm011.latest
+#   1. Create pod with RunPod PyTorch 2.4.0 template
 #   2. SSH into pod
 #   3. git clone https://github.com/yannabadie/YGN-SAGE.git /workspace/YGN-SAGE
 #   4. cd /workspace/YGN-SAGE && git checkout VeRLGIGPO
