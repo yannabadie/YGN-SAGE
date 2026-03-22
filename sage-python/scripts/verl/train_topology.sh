@@ -228,10 +228,13 @@ export SAGE_VERL_EXEC=1
 
 python3 -m verl.trainer.main_ppo \
     algorithm.adv_estimator=gigpo \
-    algorithm.enable_similarity=True \
-    algorithm.similarity_thresh=0.85 \
+    algorithm.gigpo.enable_similarity=True \
+    algorithm.gigpo.similarity_thresh=0.85 \
+    algorithm.gigpo.step_advantage_w=1.0 \
+    algorithm.gigpo.mode=mean_norm \
     algorithm.norm_adv_by_std_in_grpo=True \
     algorithm.use_kl_in_reward=False \
+    algorithm.gamma=0.95 \
     \
     data.train_files="$DATA_CURATED" \
     data.train_batch_size=32 \
