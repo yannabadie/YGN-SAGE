@@ -35,6 +35,9 @@ fi
 
 cd /workspace/YGN-SAGE/sage-python
 
+# verl-agent overlay on top of verl 0.7.1 (adds GiGPO + agent env support)
+export PYTHONPATH="/workspace/verl-agent:${PYTHONPATH:-}"
+
 # ── Config ───────────────────────────────────────────────────
 MODEL=${SAGE_MODEL:-"/workspace/patched_model"}
 OUTPUT=${SAGE_OUTPUT:-"/workspace/YGN-SAGE/sage-python/models/topology_verl/"}
@@ -292,7 +295,9 @@ python3 -m verl.trainer.main_ppo \
     $GIGPO_ARGS \
     \
     data.train_files="$DATA_FULL" \
+    data.val_files="$DATA_CURATED" \
     data.train_batch_size=64 \
+    data.val_batch_size=16 \
     data.max_prompt_length=512 \
     data.max_response_length=512 \
     data.filter_overlong_prompts=True \
@@ -320,13 +325,14 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-    actor_rollout_ref.rollout.n=4 \
+    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.temperature=0.4 \
     actor_rollout_ref.rollout.load_format=safetensors \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     \
     env.env_name=sage_topology \
     env.max_steps=10 \
+    env.rollout.n=4 \
     \
     custom_reward_function.path="$REWARD_SCRIPT" \
     custom_reward_function.name=compute_score \
@@ -340,7 +346,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name=sage_topology \
     trainer.experiment_name=gigpo_qwen35_structural \
     trainer.default_local_dir="$OUTPUT" \
-    'trainer.logger=["console","wandb"]'
+    'trainer.logger=["console"]'
 
 echo ""
 echo "=== Phase A complete. Starting Phase B ==="
@@ -357,7 +363,9 @@ python3 -m verl.trainer.main_ppo \
     $GIGPO_ARGS \
     \
     data.train_files="$DATA_CURATED" \
+    data.val_files="$DATA_CURATED" \
     data.train_batch_size=32 \
+    data.val_batch_size=16 \
     data.max_prompt_length=512 \
     data.max_response_length=512 \
     data.filter_overlong_prompts=True \
@@ -385,13 +393,14 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.7 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-    actor_rollout_ref.rollout.n=4 \
+    actor_rollout_ref.rollout.n=1 \
     actor_rollout_ref.rollout.temperature=0.3 \
     actor_rollout_ref.rollout.load_format=safetensors \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     \
     env.env_name=sage_topology \
     env.max_steps=10 \
+    env.rollout.n=4 \
     \
     custom_reward_function.path="$REWARD_SCRIPT" \
     custom_reward_function.name=compute_score \
@@ -405,7 +414,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.project_name=sage_topology \
     trainer.experiment_name=gigpo_qwen35_execution \
     trainer.default_local_dir="$OUTPUT" \
-    'trainer.logger=["console","wandb"]'
+    'trainer.logger=["console"]'
 
 echo ""
 echo "=== Training complete ==="
