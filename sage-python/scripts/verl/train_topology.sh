@@ -125,6 +125,87 @@ else:
         print(f'Found recipe at {recipe_dir2}')
 
 print('Config validation complete')
+print()
+
+# ── Step 0b: Verify GiGPO YAML params exist ──
+print('--- Verifying GiGPO params in ppo_trainer.yaml ---')
+import yaml as _yaml
+yaml_path = os.path.join(verl_path, 'verl', 'trainer', 'config', 'ppo_trainer.yaml')
+if not os.path.exists(yaml_path):
+    yaml_path = os.path.join(verl_path, '..', 'verl', 'trainer', 'config', 'ppo_trainer.yaml')
+
+if os.path.exists(yaml_path):
+    with open(yaml_path) as f:
+        cfg = _yaml.safe_load(f)
+    algo = cfg.get('algorithm', {})
+    gigpo_cfg = algo.get('gigpo', {})
+    print(f'  ppo_trainer.yaml algorithm.gigpo: {gigpo_cfg}')
+
+    # Check which params exist
+    for key in ['step_advantage_w', 'mode', 'enable_similarity', 'similarity_thresh']:
+        if key in gigpo_cfg:
+            print(f'  ✓ algorithm.gigpo.{key} = {gigpo_cfg[key]}')
+        else:
+            print(f'  ✗ algorithm.gigpo.{key} NOT in yaml — will be REMOVED from train args')
+
+    # Check env config
+    env_cfg = cfg.get('env', {})
+    print(f'  ppo_trainer.yaml env: {env_cfg}')
+    for key in ['env_name', 'max_steps']:
+        if key in env_cfg:
+            print(f'  ✓ env.{key} = {env_cfg[key]}')
+        else:
+            print(f'  ✗ env.{key} NOT in yaml default — may still work as override')
+else:
+    print(f'  WARNING: ppo_trainer.yaml not found at {yaml_path}')
+    print('  Proceeding with current params — Hydra will crash on unknowns')
+
+# ── Step 0c: Verify token masking for custom env ──
+print()
+print('--- Verifying response_mask support ---')
+try:
+    import inspect
+    # Check if the rollout loop handles response_mask
+    rollout_paths = [
+        os.path.join(verl_path, 'agent_system', 'multi_turn_rollout'),
+        os.path.join(verl_path, '..', 'agent_system', 'multi_turn_rollout'),
+    ]
+    for rp in rollout_paths:
+        if os.path.isdir(rp):
+            for fname in os.listdir(rp):
+                if fname.endswith('.py'):
+                    content = open(os.path.join(rp, fname)).read()
+                    if 'response_mask' in content or 'action_mask' in content:
+                        print(f'  ✓ response_mask found in {fname}')
+                    if 'observation' in content.lower() and 'mask' in content.lower():
+                        print(f'  ✓ observation masking found in {fname}')
+            break
+    else:
+        print('  WARNING: multi_turn_rollout dir not found')
+        print('  Token masking may not work — verify manually on first batch')
+except Exception as e:
+    print(f'  WARNING: Could not verify masking: {e}')
+
+# ── Step 0d: Test env registration ──
+print()
+print('--- Testing SageTopologyEnv registration ---')
+try:
+    import sage.verl.env_register
+    from sage.verl.topology_env import SageTopologyEnv
+    env = SageTopologyEnv()
+    obs = env.reset('test', 'test/1')
+    assert 'text' in obs and 'anchor' in obs, 'Bad obs format'
+    # Quick step test
+    obs, r, done, info = env.step('difficulty: simple\nnodes:\n  - {role: coder, model_tier: budget}')
+    print(f'  ✓ SageTopologyEnv works (state={env._state}, done={done})')
+    print(f'  ✓ Env registration OK')
+except Exception as e:
+    print(f'  ✗ Env registration FAILED: {e}')
+    print('  Training will crash. Fix env_register.py before proceeding.')
+    sys.exit(1)
+
+print()
+print('=== Step 0 complete. All checks passed. ===')
 "
 
 # ── Register SageTopologyEnv ─────────────────────────────────
@@ -132,20 +213,74 @@ echo ""
 echo "Registering SageTopologyEnv..."
 python3 -c "import sage.verl.env_register; print('SageTopologyEnv registered')"
 
+# ── Build dynamic GiGPO args (only include params that exist in the YAML) ──
+echo ""
+echo "Building GiGPO args from verified ppo_trainer.yaml..."
+GIGPO_ARGS=$(python3 -c "
+import os, sys
+try:
+    import yaml
+    import verl
+    verl_path = os.path.dirname(os.path.dirname(verl.__file__))
+    yaml_path = os.path.join(verl_path, 'verl', 'trainer', 'config', 'ppo_trainer.yaml')
+    if not os.path.exists(yaml_path):
+        yaml_path = os.path.join(verl_path, '..', 'verl', 'trainer', 'config', 'ppo_trainer.yaml')
+
+    args = ['algorithm.adv_estimator=gigpo']
+
+    if os.path.exists(yaml_path):
+        cfg = yaml.safe_load(open(yaml_path))
+        gigpo_cfg = cfg.get('algorithm', {}).get('gigpo', {})
+
+        # Only add params that exist in the schema
+        if 'enable_similarity' in gigpo_cfg:
+            args.append('algorithm.gigpo.enable_similarity=True')
+        if 'similarity_thresh' in gigpo_cfg:
+            args.append('algorithm.gigpo.similarity_thresh=0.85')
+        if 'step_advantage_w' in gigpo_cfg:
+            args.append('algorithm.gigpo.step_advantage_w=1.0')
+        if 'mode' in gigpo_cfg:
+            args.append('algorithm.gigpo.mode=mean_norm')
+
+        # Top-level algorithm params
+        algo_cfg = cfg.get('algorithm', {})
+        if 'gamma' in algo_cfg:
+            args.append('algorithm.gamma=0.95')
+        if 'norm_adv_by_std_in_grpo' in algo_cfg:
+            args.append('algorithm.norm_adv_by_std_in_grpo=True')
+        if 'use_kl_in_reward' in algo_cfg:
+            args.append('algorithm.use_kl_in_reward=False')
+
+        # Env params
+        env_cfg = cfg.get('env', {})
+        if 'env_name' in env_cfg:
+            args.append('env.env_name=sage_topology')
+        if 'max_steps' in env_cfg:
+            args.append('env.max_steps=10')
+
+        # Data params
+        data_cfg = cfg.get('data', {})
+        if 'return_raw_chat' in data_cfg:
+            args.append('data.return_raw_chat=True')
+
+        print(' '.join(args))
+        print(f'# {len(args)} verified params', file=sys.stderr)
+    else:
+        # Fallback: minimal safe set
+        args.extend([
+            'algorithm.gigpo.enable_similarity=True',
+            'algorithm.gigpo.similarity_thresh=0.85',
+        ])
+        print(' '.join(args))
+        print('# FALLBACK: only core params (yaml not found)', file=sys.stderr)
+except Exception as e:
+    # Absolute minimum
+    print('algorithm.adv_estimator=gigpo')
+    print(f'# ERROR building args: {e}', file=sys.stderr)
+")
+echo "GiGPO args: $GIGPO_ARGS"
+
 # ── Phase A: Structural GiGPO ────────────────────────────────
-#
-# GiGPO-specific config (from ppo_trainer.yaml → algorithm.gigpo.*):
-#   algorithm.adv_estimator=gigpo                — selects GiGPO advantage estimator
-#   algorithm.gigpo.enable_similarity=True       — similarity-based anchor grouping
-#   algorithm.gigpo.similarity_thresh=0.85       — anchor match threshold
-#   algorithm.gigpo.step_advantage_w=1.0         — weight for step-level advantage
-#   algorithm.gigpo.mode=mean_norm               — normalization mode
-#   algorithm.gamma=0.95                         — discount factor
-#
-# Environment config:
-#   env.env_name=sage_topology                   — dispatched by env_manager
-#   env.max_steps=10                             — max steps per episode
-#
 echo ""
 echo "=== Phase A: Structural GiGPO (5 epochs, full dataset) ==="
 echo "Multi-step topology execution (structural mode). Learning format + per-node credit."
@@ -154,14 +289,7 @@ echo ""
 export SAGE_VERL_EXEC=0
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
-    algorithm.gigpo.enable_similarity=True \
-    algorithm.gigpo.similarity_thresh=0.85 \
-    algorithm.gigpo.step_advantage_w=1.0 \
-    algorithm.gigpo.mode=mean_norm \
-    algorithm.norm_adv_by_std_in_grpo=True \
-    algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
+    $GIGPO_ARGS \
     \
     data.train_files="$DATA_FULL" \
     data.train_batch_size=64 \
@@ -169,7 +297,6 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation=error \
-    data.return_raw_chat=True \
     \
     actor_rollout_ref.model.path="$MODEL" \
     actor_rollout_ref.model.use_remove_padding=True \
@@ -227,14 +354,7 @@ echo ""
 export SAGE_VERL_EXEC=1
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
-    algorithm.gigpo.enable_similarity=True \
-    algorithm.gigpo.similarity_thresh=0.85 \
-    algorithm.gigpo.step_advantage_w=1.0 \
-    algorithm.gigpo.mode=mean_norm \
-    algorithm.norm_adv_by_std_in_grpo=True \
-    algorithm.use_kl_in_reward=False \
-    algorithm.gamma=0.95 \
+    $GIGPO_ARGS \
     \
     data.train_files="$DATA_CURATED" \
     data.train_batch_size=32 \
@@ -242,7 +362,6 @@ python3 -m verl.trainer.main_ppo \
     data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation=error \
-    data.return_raw_chat=True \
     \
     actor_rollout_ref.model.path="$MODEL" \
     actor_rollout_ref.model.use_remove_padding=True \
