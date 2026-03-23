@@ -32,9 +32,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)
 log = logging.getLogger("post_train")
 
 # --- Config ---
-BASE_MODEL = "Qwen/Qwen3-14B"
+BASE_MODEL = "Qwen/Qwen3-8B"
 HF_REPO = "yannabadie/sage-topology-policy-v2"
-GGUF_QUANT = "Q4_K_M"  # Q4_K_M for 12GB GPU (~8GB, fits RTX 3500 Ada)
+GGUF_QUANT = "Q8_0"  # Q8_0 for 12GB GPU (~8.5GB for 8B model, fits RTX 3500 Ada)
 
 CHECKPOINT_DIR = "models/topology_verl_gigpo/"
 LORA_DIR = "models/topology_verl_lora/"
