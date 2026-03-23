@@ -111,11 +111,36 @@ class TopologyController:
             self._node_retries[node_idx] = retries + 1
             # Get invariant feedback for S3 nodes if available
             feedback = self._get_invariant_feedback(result, topology, node_idx)
+            # Resolve fallback_tier -> actual model_id
+            new_model_id = None
+            if topology is not None and hasattr(topology, "get_node"):
+                try:
+                    node = topology.get_node(node_idx)
+                    fallback = getattr(node, "fallback_tier", "")
+                    if fallback:
+                        try:
+                            from sage.llm.model_card import CognitiveSystem
+                            from sage.llm.model_registry import ModelCardCatalog
+                            tier_to_cs = {
+                                "reasoner": CognitiveSystem.S3,
+                                "fast": CognitiveSystem.S2,
+                                "budget": CognitiveSystem.S1,
+                            }
+                            cs = tier_to_cs.get(fallback, CognitiveSystem.S2)
+                            catalog = ModelCardCatalog.from_toml_file("config/cards.toml")
+                            candidates = catalog.select_for_system(cs)
+                            if candidates:
+                                new_model_id = candidates[0].id
+                        except (ImportError, Exception):
+                            new_model_id = fallback  # Use tier name as fallback
+                except Exception:
+                    pass
             return AdaptationDecision(
                 action="upgrade_model",
                 target_node=node_idx,
                 reason=f"quality={quality:.2f} < {self.THETA_CRITICAL}",
                 invariant_feedback=feedback,
+                new_model_id=new_model_id,
             )
 
         # 3. Parallel inconsistency -> reroute topology

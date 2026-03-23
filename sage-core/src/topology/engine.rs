@@ -3,7 +3,7 @@
 //! Ties together S-MMU retrieval, MAP-Elites archive lookup, mutation, LLM synthesis,
 //! and evolution for generating custom multi-agent DAGs per task.
 //!
-//! # 5-path strategy (priority order)
+//! # 6-path strategy (priority order)
 //!
 //! 1. **S-MMU hit**: Retrieve similar past task from S-MMU. If similarity > 0.7 AND quality > 0.5,
 //!    clone that topology. Inject bandit priors.
@@ -90,6 +90,8 @@ pub struct TopologyEngine {
     cma_emitter: CmaEmitter,
     /// All known topologies by ULID id, for lazy-load from RoutingDecision.
     topology_cache: HashMap<String, TopologyGraph>,
+    /// Last bandit decision_id from generate(), used by record_outcome() to update posteriors.
+    last_decision_id: Option<String>,
 }
 
 impl TopologyEngine {
@@ -103,6 +105,7 @@ impl TopologyEngine {
             bandit: ContextualBandit::create(0.995, 0.1),
             cma_emitter: CmaEmitter::new(3, 0.3),
             topology_cache: HashMap::new(),
+            last_decision_id: None,
         }
     }
 
@@ -152,7 +155,7 @@ impl TopologyEngine {
 
     // ── Core generation ───────────────────────────────────────────────────
 
-    /// Generate a topology for a task using the 5-path strategy.
+    /// Generate a topology for a task using the 6-path strategy.
     ///
     /// # Arguments
     /// - `smmu`: The multi-view S-MMU for context retrieval.
@@ -177,58 +180,65 @@ impl TopologyEngine {
         .entered();
 
         // Path 1: S-MMU hit — retrieve similar past task
-        if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
+        let result = if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
             info!(
                 source = "smmu_hit",
                 confidence = result.confidence,
                 "topology_generated"
             );
-            return result;
+            result
         }
-
         // Path 2: Archive hit — look up MAP-Elites by behavior descriptor
-        if let Some(result) = self.try_archive_hit(system) {
+        else if let Some(result) = self.try_archive_hit(system) {
             info!(
                 source = "archive_hit",
                 confidence = result.confidence,
                 "topology_generated"
             );
-            return result;
+            result
         }
-
-        // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
-        if exploration_budget > 0.3 && !self.synthesizer.is_rate_limited() {
-            debug!("llm_synthesis_path_available_but_deferred_to_python");
-        }
-
         // Path 4: Mutation — mutate best-by-quality from archive
-        if let Some(result) = self.try_mutation() {
+        else if let Some(result) = self.try_mutation() {
+            // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
             info!(
                 source = "mutation",
                 confidence = result.confidence,
                 "topology_generated"
             );
-            return result;
+            result
         }
-
         // Path 5: MCTS search (if archive has enough diversity)
-        if let Some(result) = self.try_mcts_search() {
+        else if let Some(result) = self.try_mcts_search() {
             info!(
                 source = "mcts_search",
                 confidence = result.confidence,
                 "topology_generated"
             );
-            return result;
+            result
+        }
+        // Path 6: Template fallback
+        else {
+            // Path 3 hint: LLM synthesis deferred to Python
+            if exploration_budget > 0.3 && !self.synthesizer.is_rate_limited() {
+                debug!("llm_synthesis_path_available_but_deferred_to_python");
+            }
+            let result = self.template_fallback(system);
+            info!(
+                source = "template_fallback",
+                confidence = result.confidence,
+                template = result.topology.template_type.as_str(),
+                "topology_generated"
+            );
+            result
+        };
+
+        // Bandit: register arm and choose() to get decision_id for record_outcome()
+        let source_str = result.source.as_str();
+        self.bandit.add_arm(source_str, &result.topology.template_type);
+        if let Ok(d) = self.bandit.choose(exploration_budget) {
+            self.last_decision_id = Some(d.decision_id.clone());
         }
 
-        // Path 6: Template fallback
-        let result = self.template_fallback(system);
-        info!(
-            source = "template_fallback",
-            confidence = result.confidence,
-            template = result.topology.template_type.as_str(),
-            "topology_generated"
-        );
         result
     }
 
@@ -515,8 +525,15 @@ impl TopologyEngine {
             }
         }
 
-        // 3. Feed bandit
-        self.bandit.add_arm("observed", &template);
+        // 3. Feed bandit — use record_outcome() with last decision_id to update posteriors
+        if let Some(ref decision_id) = self.last_decision_id {
+            if let Err(e) = self.bandit.record_outcome(decision_id, quality, cost, latency_ms) {
+                debug!(error = %e, "bandit_record_failed_fallback_to_add_arm");
+                self.bandit.add_arm("observed", &template);
+            }
+        } else {
+            self.bandit.add_arm("observed", &template);
+        }
 
         info!(
             topology_id = topology_id,

@@ -6,8 +6,7 @@ Uses TopologyExecutor for readiness-based scheduling and spawns per-node LLM cal
 Architecture follows MASFactory (2603.06007):
 - Node lifecycle: aggregate predecessor outputs → build prompt → LLM call → store output
 - Readiness: node executes when TopologyExecutor marks it ready
-- Context: all completed predecessor outputs are injected (execution-order tracking,
-  since TopologyGraph does not expose get_edges() to Python yet)
+- Context: predecessor outputs injected via TopologyGraph.get_predecessors()
 """
 from __future__ import annotations
 
@@ -66,12 +65,30 @@ class TopologyRunner:
         self._controller = controller
         self._node_outputs: dict[int, str] = {}
 
-    def _gather_completed_context(self) -> str:
-        """Collect outputs from ALL previously completed nodes.
+    def _gather_predecessor_context(self, node_idx: int) -> str:
+        """Collect outputs from direct predecessors of node_idx only.
 
-        Uses execution-order tracking instead of edge-level queries
-        (TopologyGraph does not expose get_edges() to Python).
+        Uses Rust TopologyGraph.get_predecessors() for correct DAG traversal.
+        Falls back to all completed nodes if get_predecessors unavailable.
         """
+        predecessor_indices: list[int] = []
+        try:
+            predecessor_indices = self.graph.get_predecessors(node_idx)
+        except (AttributeError, Exception):
+            # Fallback: all completed nodes (old behavior)
+            return self._gather_all_context()
+
+        context_parts: list[str] = []
+        for idx in predecessor_indices:
+            output = self._node_outputs.get(idx)
+            if output:
+                node = self.graph.get_node(idx)
+                role = getattr(node, "role", f"node-{idx}")
+                context_parts.append(f"[{role}]: {output}")
+        return "\n\n".join(context_parts)
+
+    def _gather_all_context(self) -> str:
+        """Fallback: all completed nodes (legacy behavior)."""
         context_parts: list[str] = []
         for idx in sorted(self._node_outputs.keys()):
             output = self._node_outputs[idx]
@@ -109,7 +126,7 @@ class TopologyRunner:
             Message(role=Role.SYSTEM, content=system_prompt),
         ]
 
-        context = context_override if context_override is not None else self._gather_completed_context()
+        context = context_override if context_override is not None else self._gather_predecessor_context(node_idx)
         if context:
             messages.append(Message(
                 role=Role.SYSTEM,
@@ -251,14 +268,19 @@ class TopologyRunner:
                         await self._spawn_sub(node_idx, decision, task)
                     elif decision.action == "reroute_topology":
                         return "__REROUTE__"
-                    # prune_node and continue: no special handling needed
+                    elif decision.action == "prune_node":
+                        try:
+                            self.executor.mark_skipped(decision.target_node)
+                        except (AttributeError, Exception):
+                            pass  # Executor may not support skip
+                        log.info("Node %d pruned by controller", decision.target_node)
 
                 self.executor.mark_completed(node_idx)
                 last_output = self._node_outputs.get(node_idx, result)
             else:
                 # Snapshot context before gather to prevent race:
                 # concurrent coroutines must not see each other's outputs.
-                ctx_snapshot = self._gather_completed_context()
+                ctx_snapshot = self._gather_all_context()
                 coros = [
                     self._execute_node(idx, task, context_override=ctx_snapshot)
                     for idx in ready
@@ -280,7 +302,12 @@ class TopologyRunner:
                             await self._spawn_sub(idx, decision, task)
                         elif decision.action == "reroute_topology":
                             return "__REROUTE__"
-                        # prune_node and continue: no special handling needed
+                        elif decision.action == "prune_node":
+                            try:
+                                self.executor.mark_skipped(decision.target_node)
+                            except (AttributeError, Exception):
+                                pass  # Executor may not support skip
+                            log.info("Node %d pruned by controller", decision.target_node)
 
                 for idx, output in zip(ready, results):
                     self.executor.mark_completed(idx)

@@ -45,6 +45,7 @@ class PipelineContext:
     assignments: dict[int, str] = field(default_factory=dict)
     result: str = ""
     latency_ms: float = 0.0
+    bandit_decision_id: str | None = None
 
 
 class CognitiveOrchestrationPipeline:
@@ -547,6 +548,14 @@ class CognitiveOrchestrationPipeline:
                     ctx.result = f"Error: {exc}"
             return ctx
 
+        # Bandit: choose arm BEFORE execution to get decision_id
+        if self.bandit and hasattr(self.bandit, "choose"):
+            try:
+                decision = self.bandit.choose(0.1)  # 10% exploration
+                ctx.bandit_decision_id = decision.decision_id
+            except Exception:
+                pass
+
         # Multi-agent mode: use TopologyRunner with ProviderPool
         try:
             from sage.topology.runner import TopologyRunner  # type: ignore[import-not-found]
@@ -672,11 +681,12 @@ class CognitiveOrchestrationPipeline:
                 log.warning("PRM scoring failed in LEARN: %s", exc)
 
         # Only record to bandit when quality is known — never guess
-        if quality is not None and self.bandit and hasattr(self.bandit, "record"):
-            try:
-                self.bandit.record("pipeline", quality, 0.0, ctx.latency_ms)
-            except Exception:
-                pass
+        if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
+            if ctx.bandit_decision_id:
+                try:
+                    self.bandit.record_outcome(ctx.bandit_decision_id, quality, 0.0, ctx.latency_ms)
+                except Exception:
+                    pass
 
         # Evolution feedback: record outcome in TopologyEngine archive
         # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
