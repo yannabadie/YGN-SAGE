@@ -1,7 +1,7 @@
 # AI-ARCHITECTURE.md — YGN-SAGE System Reference
 
 > **Audience**: LLMs (Claude, GPT, Gemini, etc.) consuming this file as sole context for code reasoning, bug diagnosis, and refactoring proposals.
-> **Generated**: 2026-03-23 from VeRLGIGPO branch (eb57aa6).
+> **Generated**: 2026-03-23 from VeRLGIGPO branch (da19840). Updated after 9 audit fixes (4404244 + da19840).
 
 ---
 
@@ -25,7 +25,7 @@ YGN-SAGE is an **Agent Development Kit (ADK)** that orchestrates multi-agent LLM
 
 **Invariants**: (1) Rust first for performance, Python for orchestration only. (2) Zero heuristics -- every threshold is formally verified (OxiZ SAT/UNSAT), learned (ONNX), or research-backed. (3) kNN router is primary (92% ground truth accuracy); the old ComplexityRouter heuristic (34% GT) is dead code. (4) TopologyGraph is the unified IR -- petgraph DiGraph with three-flow edges (Control, Message, State). (5) All quality labels come from QualityLabeler (Rust, OxiZ formal proofs), not heuristic scoring.
 
-**Known debts**: Python shadow modules not yet deleted (need <5% divergence gate from 1090 traces, currently 49.6%). Evolution lacks quantitative evidence (need N>=10 Wilcoxon). Path 6 (learned topology policy) is 70% YAML valid. RustEntityGraph reserved but not wired. DeBERTa quality estimator superseded by ModernBERT (backlog).
+**Known debts**: ShadowRouter deprecated (49.6% divergence, emits DeprecationWarning); Python shadow modules not yet deleted. Evolution lacks quantitative evidence (need N>=10 Wilcoxon). Path 6 (learned topology policy) is 70% YAML valid. RustEntityGraph reserved but not wired. DeBERTa quality estimator superseded by ModernBERT (backlog).
 
 ---
 
@@ -80,7 +80,7 @@ flowchart TD
         EXO[ExoCortex<br/>Google GenAI RAG]
         MC[MemoryCompressor<br/>LLM summarization]
         DM[DriftMonitor<br/>sliding-window drift]
-        SR_P[ShadowRouter<br/>Rust/Python dual traces]
+        SR_P[ShadowRouter<br/>DEPRECATED — use SystemRouter]
         QE[QualityEstimator<br/>Python heuristic fallback]
     end
 
@@ -157,7 +157,7 @@ flowchart TD
 
 | Component | Type | Responsibility | Internal Deps | Exposes (PyO3) |
 |-----------|------|---------------|---------------|-----------------|
-| `topology/engine.rs` | Struct `DynamicTopologyEngine` | 6-path topology generation orchestrator (S-MMU hit, archive hit, LLM synthesis, mutation, MCTS, template fallback) | `smmu`, `map_elites`, `mcts`, `cma_me`, `mutations`, `templates`, `llm_synthesis`, `verifier`, `bandit` | `PyTopologyEngine` |
+| `topology/engine.rs` | Struct `DynamicTopologyEngine` | 6-path topology generation orchestrator (S-MMU hit, archive hit, LLM synthesis, mutation, MCTS, template fallback). Bandit: `generate()` calls `choose()` and stores `last_decision_id`; `record_outcome()` feeds bandit with real decision_id, S-MMU bridge, and MAP-Elites archive. | `smmu`, `map_elites`, `mcts`, `cma_me`, `mutations`, `templates`, `llm_synthesis`, `verifier`, `bandit` | `PyTopologyEngine` |
 | `topology/topology_graph.rs` | Struct `TopologyGraph` | Unified IR: petgraph DiGraph with TopologyNode/TopologyEdge, three-flow model (Control/Message/State), gate-based edge blocking | `petgraph`, `ulid` | `TopologyGraph`, `TopologyNode`, `TopologyEdge` |
 | `topology/executor.rs` | Struct `TopologyExecutor` | Dual-mode scheduler: Static (Kahn's toposort O(V+E)) for DAGs, Dynamic (gate-based readiness polling) for cyclic topologies | `topology_graph` | `PyTopologyExecutor` |
 | `topology/map_elites.rs` | Struct `MapElitesArchive` | 4D behavior-descriptor grid (108 cells), Pareto dominance insertion, HybridVerifier gate | `topology_graph`, `verifier` | -- (via engine) |
@@ -180,7 +180,7 @@ flowchart TD
 | `verification/smt.rs` | Struct `SmtVerifier` | OxiZ QF_LIA: memory safety, loop bounds, arithmetic verification, invariant pre/post-condition, provider assignment SAT, CEGAR feedback loop | `oxiz` | `SmtVerifier`, `SmtVerificationResult` |
 | `verification/quality_labeler.rs` | Struct `QualityLabeler` | Formal code quality scoring: tree-sitter syntax validation + SmtVerifier proofs, zero heuristics | `smt`, `sandbox/validator` | `QualityLabeler`, `QualityLabel` |
 | `verification/ltl.rs` | Struct `LtlVerifier` | 4 temporal properties on TopologyGraph: reachability, safety (no info flow high->low), liveness, bounded liveness; petgraph BFS/DFS | `topology_graph` | `LtlVerifier`, `LtlResult` |
-| `memory/smmu.rs` | Struct `MultiViewMMU` | 4 orthogonal views in single DiGraph: Temporal (chronological), Semantic (cosine sim), Causal (parent-child), Entity (Jaccard keywords), ULID chunk IDs | `petgraph`, `ulid` | `PyMultiViewMMU` |
+| `memory/smmu.rs` | Struct `MultiViewMMU` | 4 orthogonal views in single DiGraph: Temporal (chronological), Semantic (cosine sim), Causal (parent-child), Entity (Jaccard keywords), ULID chunk IDs. GC: `evict_oldest(count)` removes N oldest chunks by ULID sort, `chunk_count()` for capacity monitoring. | `petgraph`, `ulid` | `PyMultiViewMMU` |
 | `memory/mod.rs` (WorkingMemory) | Struct `WorkingMemory` | Per-agent memory: active buffer (Vec) + Arrow compacted chunks + S-MMU graph, compress/retrieve/evict | `smmu`, `arrow_tier`, `paging` | `WorkingMemory` |
 | `memory/arrow_tier.rs` | Fn `compact_buffer_to_arrow` | Compact MemoryEvents into Arrow RecordBatch, register chunk in S-MMU | `smmu`, `arrow` | -- (via WorkingMemory) |
 | `memory/embedder.rs` | Struct `RustEmbedder` | ONNX Runtime loader for arctic-embed-m (768-dim), L2-normalized output, DLL auto-discovery | `ort`, `tokenizers` | `RustEmbedder` (behind `onnx` feature) |
@@ -197,15 +197,15 @@ flowchart TD
 
 | Component | Type | Responsibility | Internal Deps | Exposes |
 |-----------|------|---------------|---------------|---------|
-| `pipeline.py` | Class `CognitiveOrchestrationPipeline` | 5-stage orchestration: Classify -> Decompose -> Select Topology -> Assign Models -> Execute, with LEARN feedback | `pipeline_stages`, `contracts.z3_verify` | `pipeline.run(task, budget)` |
+| `pipeline.py` | Class `CognitiveOrchestrationPipeline` | 5-stage orchestration: Classify -> Decompose -> Select Topology -> Assign Models -> Execute, with LEARN feedback. Bandit: `choose()` called before Stage 4 execution to obtain `decision_id`; `record_outcome()` in Stage 5 uses real `decision_id` (not hardcoded). `PipelineContext.bandit_decision_id` tracks the live decision. | `pipeline_stages`, `contracts.z3_verify` | `pipeline.run(task, budget)` |
 | `pipeline_stages.py` | Functions | Pure functions: `_infer_domain()` (regex), `compute_dag_features()` (AdaptOrch omega/delta/gamma), `select_macro_topology()` | -- | `DAGFeatures` |
 | `boot.py` | Function `boot()` | Full system factory: loads cards.toml, initializes Rust/Python routers, builds AgentSystem dataclass | all SDK modules | `AgentSystem` |
 | `agent_loop.py` | Class `AgentLoop` | Per-agent runtime: perceive -> think -> act -> learn, tool calling, memory compression, cost tracking, stagnation detection | `llm.base`, `tools.registry`, `memory.working`, `memory.compressor`, `resilience` | `AgentLoop.run()` |
 | `strategy/adaptive_router.py` | Class `AdaptiveRouter` | 4-stage cascade: structural features -> kNN embeddings -> BERT ONNX -> entropy probe, duck-type compat with ComplexityRouter | `strategy.metacognition`, `strategy.structural_features` | `AdaptiveRouter.route()` |
 | `strategy/knn_router.py` | Class `KnnRouter` | Python kNN wrapper: loads routing_exemplars.npz, embeds task, delegates to RustKnnRouter for hot-path, OOD fallback | `sage_core.RustKnnRouter`, `memory.embedder` | `KnnRouter.route()` |
 | `strategy/metacognition.py` | Classes | `ComplexityRouter` (legacy heuristic, dead code 34% GT), `CognitiveProfile`, `RoutingDecision` | -- | `RoutingDecision(system=1/2/3)` |
-| `routing/shadow.py` | Class `ShadowRouter` | Dual Rust/Python routing with JSONL trace logging for divergence analysis | `sage_core.SystemRouter` | `ShadowRouter.route()` |
-| `topology/runner.py` | Class `TopologyRunner` | Execute TopologyGraph as real multi-agent system: aggregate predecessor outputs -> build prompt -> LLM call -> store output, per-node provider resolution | `llm.base`, `sage_core.TopologyExecutor` | `TopologyRunner.run()` |
+| `routing/shadow.py` | Class `ShadowRouter` | **DEPRECATED** (emits `DeprecationWarning` at import, 49.6% divergence). Dual Rust/Python routing with JSONL trace logging. Use Rust `SystemRouter` directly. | `sage_core.SystemRouter` | `ShadowRouter.route()` |
+| `topology/runner.py` | Class `TopologyRunner` | Execute TopologyGraph as real multi-agent system: `_gather_predecessor_context(node_idx)` calls `graph.get_predecessors(node_idx)` to inject only direct predecessor outputs (not all completed nodes). Fallback: `_gather_all_context()` if `get_predecessors` unavailable. Per-node provider resolution via ProviderPool. | `llm.base`, `sage_core.TopologyExecutor` | `TopologyRunner.run()` |
 | `topology/llm_caller.py` | Functions | Build role assignment + structure design prompts for LLM topology synthesis (Path 3) | -- | `build_role_prompt()`, `build_structure_prompt()` |
 | `topology/engine.py` | Class `Topology` | Legacy Python topology (Vertical/Horizontal/Mesh), largely superseded by Rust TopologyGraph | -- | -- |
 | `topology/topology_archive.py` | Class `TopologyArchive` | Python QD archive: per-task-type best topology records | `topology_verifier` | `TopologyArchive.recommend()` |
@@ -234,7 +234,7 @@ flowchart TD
 | `evolution/engine.py` | Class `EvolutionEngine` | MAP-Elites + SAMPO 5 strategic actions, LLM mutation, evaluation cascade | `evolution.population`, `evolution.mutator`, `evolution.evaluator`, `strategy.solvers` | `EvolutionEngine.run()` |
 | `evolution/llm_mutator.py` | Class `LLMMutator` | LLM-as-mutation-operator (AlphaEvolve-style) | `llm.base` | -- |
 | `quality_estimator.py` | Class `QualityEstimator` | Python heuristic quality (5-signal, legacy fallback for when Rust QualityLabeler unavailable) | -- | -- |
-| `topology_controller.py` | Class `TopologyController` | Runtime adaptation: upgrade_model, spawn_subagent, reroute, prune decisions after each node | -- | `TopologyController.evaluate_and_decide()` |
+| `topology_controller.py` | Class `TopologyController` | Runtime adaptation: upgrade_model, spawn_subagent, reroute, prune decisions after each node. `upgrade_model` resolves `fallback_tier` -> `model_id` via `ModelCardCatalog.select_for_system()` (no longer passes raw tier string). | -- | `TopologyController.evaluate_and_decide()` |
 | `contracts/z3_verify.py` | Function `verify_provider_assignment` | OxiZ SAT verification for provider-model assignment constraints | `sage_core.SmtVerifier` | -- |
 | `contracts/dag.py` | Module | TaskDAG contract IR | -- | `TaskDAG` |
 | `contracts/planner.py` | Class `TaskPlanner` | Decompose task into TaskDAG | -- | -- |
@@ -257,7 +257,7 @@ flowchart TD
 | `edge_credit.py` | Class `EdgeStats` + function `compute_edge_advantages` | Graph-GRPO (arXiv 2603.02701): per-edge success rates across K topologies, normalized advantages | -- | `compute_edge_advantages(topologies)` |
 | `rewardflow.py` | Class `RewardFlowPropagator` | Per-node credit via state-graph Personalized PageRank backward propagation (RewardFlow arXiv 2603.18859) | -- | `compute(rollouts) -> list[dict[int, float]]` |
 | `step_reward.py` | Class `StepRewardVector` | Per-step reward decomposition for GiGPO anchor-based advantage normalization | -- | `to_verl_format()` |
-| `training_memory.py` | Class `TrainingMemory` | SQLite episodic memory across training epochs | -- | `store_episode()`, `find_similar()` |
+| `training_memory.py` | Class `TrainingMemory` | SQLite episodic memory across training epochs. `query_similar()` optimized: `ORDER BY created_at DESC LIMIT 500` + optional domain prefilter (only matching domain rows scanned). | -- | `store_episode()`, `query_similar()` |
 | `env_register.py` | Module | Registers SageTopologyEnv with verl-agent env registry | -- | -- |
 
 ### sage-discover
@@ -303,17 +303,19 @@ INPUT: task = "Write a Python function to reverse a string"
    -> Budget check: 3 nodes * ~$0.001 < $5.00 budget
 
 5. EXECUTE (TopologyRunner)
+   -> Bandit: bandit.choose(0.1) -> decision_id stored in PipelineContext
    -> TopologyExecutor(mode=Static) -> Kahn's toposort -> [0, 1, 2]
    -> Node 0: ProviderPool.resolve("deepseek-chat") -> DeepSeek provider
       -> LLM call -> "Here is a function..."
-   -> Node 1: context = node_0 output -> LLM call -> actual implementation
-   -> Node 2: context = all outputs -> LLM call -> formatted final answer
+   -> Node 1: context = get_predecessors(1) = [node_0 output] -> LLM call -> implementation
+   -> Node 2: context = get_predecessors(2) = [node_1 output] -> LLM call -> formatted answer
 
 6. LEARN (feedback)
    -> QualityLabeler.label(response) -> tree-sitter valid + SmtVerifier proofs -> 0.85
-   -> ContextualBandit.record_outcome(arm=("deepseek-chat","sequential"), quality=0.85)
-   -> MAP-Elites: BehaviorDescriptor(agents=3, depth=3, cost=$0.003, diversity=0.0)
-      -> insert if Pareto-dominant
+   -> ContextualBandit.record_outcome(decision_id, quality=0.85, cost=0.003, latency_ms)
+   -> engine.record_outcome(topology_id, task, keywords, quality=0.85, cost, latency)
+      -> MAP-Elites: BehaviorDescriptor(agents=3, depth=3, cost=$0.003, diversity=0.0)
+         -> insert if Pareto-dominant
 
 OUTPUT: formatted code response, cost ~$0.003, latency ~2s
 ```
@@ -338,7 +340,7 @@ INPUT: task = "Prove that merge sort is O(n log n) using induction, then impleme
    -> Path 2: BehaviorDescriptor -> archive lookup -> found, quality=0.6 -> use
    -> HybridVerifier -> valid=True
    -> If Path 6 enabled (SAGE_ENABLE_PATH6=1):
-      -> Load Qwen3.5-9B policy -> generate YAML topology -> parse -> verify
+      -> Load DeepSeek-R1-0528-Qwen3-8B policy -> generate YAML topology -> parse -> verify
    -> source=ArchiveHit (or Path6), confidence=0.7
 
 4. ASSIGN MODELS
@@ -349,18 +351,23 @@ INPUT: task = "Prove that merge sort is O(n log n) using induction, then impleme
    -> Verifier downgraded to "deepseek-chat" ($0.28)
 
 5. EXECUTE (TopologyRunner with TopologyController)
+   -> Bandit: bandit.choose(0.1) -> decision_id stored in PipelineContext
    -> TopologyExecutor(mode=Dynamic) -> gate-based readiness
    -> Node "prover": Google Gemini -> formal proof text
    -> TopologyController.evaluate_and_decide(node="prover", quality=0.7)
-      -> quality < 0.8 threshold -> action: upgrade_model
-      -> Reroute to "gpt-5.3-codex" for retry -> quality=0.9 -> continue
-   -> Node "coder": OpenAI Codex -> implementation (parallel with verifier prep)
-   -> Node "verifier": DeepSeek -> verification of proof + code
+      -> quality < 0.3 (THETA_CRITICAL) -> action: upgrade_model
+      -> fallback_tier="reasoner" -> ModelCardCatalog.select_for_system(S3) -> "gpt-5.3-codex"
+      -> Retry with upgraded model -> quality=0.9 -> continue
+   -> Node "coder": context = get_predecessors("coder") = ["prover" output only]
+      -> OpenAI Codex -> implementation
+   -> Node "verifier": context = get_predecessors("verifier") = ["prover","coder" outputs]
+      -> DeepSeek -> verification of proof + code
+   -> prune_node: if controller detects low-importance node -> executor.mark_skipped()
 
 6. LEARN
    -> QualityLabeler: tree-sitter valid, SmtVerifier proves assertions -> 0.92
-   -> ContextualBandit: update posteriors for all 3 arms
-   -> MAP-Elites: topology with adaptation history archived
+   -> ContextualBandit.record_outcome(decision_id, quality=0.92, cost, latency)
+   -> engine.record_outcome(topology_id, ...) -> MAP-Elites + S-MMU + bandit
    -> S-MMU: store topology + task embedding for future retrieval
 
 OUTPUT: proof + implementation + verification, cost ~$4.28, latency ~15s
@@ -369,7 +376,7 @@ OUTPUT: proof + implementation + verification, cost ~$4.28, latency ~15s
 ### Scenario 3: GiGPO Training (veRL -> Topology Env -> Reward -> Advantage)
 
 ```
-INPUT: Qwen3.5-9B model + 1965 training entries (BigCodeBench + CodeContests)
+INPUT: DeepSeek-R1-0528-Qwen3-8B model (MIT, Qwen3-8B transformer + R1 reasoning distilled) + 1965 training entries (BigCodeBench + CodeContests)
 
 1. ENV RESET (SageTopologyEnv.reset)
    -> Pick prompt from training data
@@ -414,10 +421,11 @@ INPUT: Qwen3.5-9B model + 1965 training entries (BigCodeBench + CodeContests)
    -> GiGPO groups steps by anchor key across batch
    -> Per-anchor normalization: A_t = (r_t - mean(anchor_group)) / std(anchor_group)
    -> Step-level policy gradient (not episode-level like GRPO)
-   -> TrainingMemory stores episode for cross-epoch learning
+   -> TrainingMemory.store_episode() persists for cross-epoch learning
+      (query_similar: ORDER BY created_at DESC LIMIT 500, optional domain prefilter)
 
 LOOP: Repeat for all 1965 entries per epoch, ~3-5 epochs on RunPod H100
-TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
+TARGET: DeepSeek-R1-0528-Qwen3-8B learns to generate task-adaptive topologies
 ```
 
 ---
@@ -427,12 +435,12 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 ### sage-core/src/topology/engine.rs — DynamicTopologyEngine
 
 - **Role**: Central topology generation orchestrator. Given a task description and cognitive system level, produces a verified TopologyGraph.
-- **Mechanism**: 6-path priority cascade: (1) S-MMU similarity hit (cosine > 0.7 AND quality > 0.5), (2) MAP-Elites archive lookup via BehaviorDescriptor, (3) LLM synthesis (Python callback), (4) Mutation of best archive entry, (5) MCTS structural search, (6) Template fallback (S1->sequential, S2->AVR, S3->debate). Path 6 learned policy (Qwen3.5-9B, opt-in SAGE_ENABLE_PATH6=1) is external Python-side.
-- **Interface**: `generate(task, system, context) -> GenerateResult { topology, source, confidence }`, `evolve(outcome) -> ()`, `record_outcome(topology_id, quality, cost) -> ()`
+- **Mechanism**: 6-path priority cascade: (1) S-MMU similarity hit (cosine > 0.7 AND quality > 0.5), (2) MAP-Elites archive lookup via BehaviorDescriptor, (3) LLM synthesis (Python callback), (4) Mutation of best archive entry, (5) MCTS structural search, (6) Template fallback (S1->sequential, S2->AVR, S3->debate). Bandit learning loop: `generate()` calls `bandit.add_arm()` + `bandit.choose()` and stores `last_decision_id`; `record_outcome()` feeds bandit via `bandit.record_outcome(decision_id, quality, cost, latency)`, S-MMU bridge, and MAP-Elites archive.
+- **Interface**: `generate(task, system, context) -> GenerateResult { topology, source, confidence }`, `evolve(outcome) -> ()`, `record_outcome(smmu, topology_id, task, keywords, embedding, quality, cost, latency) -> ()`
 - **Calls**: `MultiViewMMU`, `MapElitesArchive`, `MctsSearcher`, `CmaEmitter`, `apply_random_mutation`, `HybridVerifier`, `ContextualBandit`, `TopologySynthesizer`
 - **Called by**: `CognitiveOrchestrationPipeline` (Stage 2), `boot.py` (Phase 6 init)
 - **Paper**: AgentConductor (arXiv 2602.17100) for RL topology evolution paradigm
-- **Debts**: Path 6 is 70% YAML valid. LLM synthesis path delegates to Python (no pure Rust LLM call).
+- **Debts**: Path 6 (learned policy) is 70% YAML valid. LLM synthesis path delegates to Python (no pure Rust LLM call).
 
 ### sage-core/src/topology/topology_graph.rs — TopologyGraph
 
@@ -448,7 +456,7 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 
 - **Role**: Schedule node execution in a TopologyGraph.
 - **Mechanism**: Two modes. Static: Kahn's topological sort O(V+E), deterministic for acyclic DAGs (Sequential, Parallel, Hierarchical, Brainstorming). Dynamic: gate-based readiness polling with loop support for cyclic topologies (AVR, Hub, Debate, SelfMoA). NodeStatus FSM: Pending -> Ready -> Running -> Completed/Skipped. Safety limit: 1000 max iterations.
-- **Interface**: `new(graph, mode) -> TopologyExecutor`, `next_ready(graph) -> Vec<usize>`, `mark_completed(idx)`, `is_done() -> bool`
+- **Interface**: `new(graph, mode) -> TopologyExecutor`, `next_ready(graph) -> Vec<usize>`, `mark_completed(idx)`, `mark_skipped(idx)`, `is_done() -> bool`
 - **Called by**: `TopologyRunner` (Python), `SageTopologyEnv` (veRL)
 - **Paper**: Dual-mode concept from MASFactory (2603.06007)
 
@@ -516,7 +524,7 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 
 - **Role**: 4-orthogonal-view semantic memory management unit.
 - **Mechanism**: Single petgraph DiGraph with edges labeled by EdgeKind (Temporal, Semantic, Causal, Entity). Temporal: chronological links weighted by time proximity. Semantic: cosine similarity on embeddings (bounded to MAX_SEMANTIC_NEIGHBORS=128 recent chunks). Causal: parent-child agent links. Entity: Jaccard similarity on keyword sets. Retrieval: BFS up to max_hops with per-view weight factors `[temporal, semantic, causal, entity]`. ULID chunk IDs.
-- **Interface**: `register_chunk(metadata) -> chunk_id`, `retrieve_relevant(active_chunk_id, max_hops, weights) -> Vec<(chunk_id, score)>`
+- **Interface**: `register_chunk(metadata) -> chunk_id`, `retrieve_relevant(active_chunk_id, max_hops, weights) -> Vec<(chunk_id, score)>`, `chunk_count() -> usize`, `evict_oldest(count) -> usize` (GC: removes N oldest chunks by ULID chronological sort, cleans graph edges)
 - **Called by**: `WorkingMemory`, `DynamicTopologyEngine` (Path 1)
 - **Paper**: CoALA cognitive architecture
 
@@ -531,16 +539,16 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 ### sage-python/src/sage/pipeline.py — CognitiveOrchestrationPipeline
 
 - **Role**: 5-stage orchestration pipeline replacing inline routing+topology+execution.
-- **Mechanism**: Stage 0: router.route(task) -> system. Stage 1: TaskPlanner.decompose(task) -> TaskDAG. Stage 2: engine.generate(task, system) -> TopologyGraph. Stage 3: assigner.assign_models(graph, domain, budget). Stage 4: TopologyRunner.run(graph) -> result. Stage 5: QualityLabeler/Estimator -> score, bandit.record_outcome(), MAP-Elites insert.
+- **Mechanism**: Stage 0: router.route(task) -> system. Stage 1: TaskPlanner.decompose(task) -> TaskDAG. Stage 2: engine.generate(task, system) -> TopologyGraph. Stage 3: assigner.assign_models(graph, domain, budget). Stage 4: bandit.choose() -> decision_id stored in `PipelineContext.bandit_decision_id`, then TopologyRunner.run(graph) -> result. Stage 5: QualityLabeler/Estimator -> score, bandit.record_outcome(decision_id, quality, cost, latency) with real decision_id, engine.record_outcome() for MAP-Elites insert.
 - **Interface**: `async run(task, budget_usd=5.0) -> str`
 - **Calls**: `AdaptiveRouter`, `DynamicTopologyEngine`, `ModelAssigner`, `TopologyRunner`, `ProviderPool`, `ContextualBandit`, `QualityLabeler`, `EventBus`
 
 ### sage-python/src/sage/topology/runner.py — TopologyRunner
 
 - **Role**: Execute a TopologyGraph as a real multi-agent system with LLM calls.
-- **Mechanism**: Uses TopologyExecutor for scheduling. Per-node: aggregate completed predecessor outputs -> build system/user prompt from node role/capabilities -> resolve provider via ProviderPool -> LLM call -> store output. TopologyController (if provided) evaluates quality after each node and triggers adaptation actions (upgrade_model, spawn_subagent, reroute, prune).
-- **Interface**: `async run(task, context="") -> str`
-- **Calls**: `TopologyExecutor`, `ProviderPool`, `LLMProvider`, `TopologyController`
+- **Mechanism**: Uses TopologyExecutor for scheduling. Per-node: `_gather_predecessor_context(node_idx)` calls `graph.get_predecessors(node_idx)` to collect only direct predecessor outputs (not all completed nodes), falls back to `_gather_all_context()` if unavailable -> build system/user prompt from node role/capabilities -> resolve provider via ProviderPool -> LLM call -> store output. TopologyController (if provided) evaluates quality after each node and triggers adaptation actions (upgrade_model, spawn_subagent, reroute, prune_node via `executor.mark_skipped()`).
+- **Interface**: `async run(task) -> str`, `async run_traced(task) -> list[dict]`
+- **Calls**: `TopologyExecutor`, `TopologyGraph.get_predecessors()`, `ProviderPool`, `LLMProvider`, `TopologyController`
 - **Paper**: MASFactory (2603.06007) node lifecycle
 
 ### sage-python/src/sage/verl/topology_env.py — SageTopologyEnv
@@ -549,6 +557,7 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 - **Mechanism**: 4-state machine: AWAITING_YAML (model generates topology) -> EXECUTING (nodes run with real LLM calls) -> AWAITING_DECISION (model decides continue/upgrade/reroute at checkpoints) -> TERMINAL (sandbox execution + test). Anchor keys for GiGPO step-level grouping: `"{role}:{difficulty}:{context_hash}"`. Real LLM calls via 8 providers. verl-agent compatible interface.
 - **Interface**: `reset(prompt, task_id) -> observation`, `step(model_response) -> (obs, reward, done, info)`, `get_step_rewards() -> StepRewardVector`
 - **Calls**: `reward.py`, `step_reward.py`, `ProviderPool`, `ToolExecutor`
+- **Target model**: `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` (MIT, Qwen3-8B transformer + R1 reasoning distilled)
 - **Paper**: GiGPO (arXiv 2505.10978) for step-level advantage, verl-agent env_manager
 
 ### sage-python/src/sage/verl/reward.py — compute_score
@@ -654,4 +663,4 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 2. **Critical invariant**: TopologyGraph (petgraph DiGraph) is the universal IR. Every topology passes through HybridVerifier before use. Every quality score comes from QualityLabeler (OxiZ formal) or is explicitly None.
 3. **Config source of truth**: `sage-core/config/cards.toml` defines all 20 models and 8 providers. `sage-python/config/cards.toml` is a symlink. Routing exemplars: `config/routing_exemplars.npz`.
 4. **Anti-patterns to avoid**: (a) Never hardcode thresholds -- use Z3/ONNX/paper citation. (b) Never use ComplexityRouter (34% GT, dead code). (c) Never add `verify=False`. (d) Never use HumanEval+ for framework value proofs (saturated). (e) Never use hash embeddings for routing (OK for S-MMU dedup only).
-5. **Active branch**: `VeRLGiGPO` -- GiGPO training for Qwen3.5-9B topology policy on RunPod H100. Training data: 1965 entries (BigCodeBench + CodeContests). Target: replace Phi-4-mini SFT (70% YAML valid) with RL-trained policy.
+5. **Active branch**: `VeRLGiGPO` -- GiGPO training for `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` (MIT, Qwen3-8B transformer standard, R1 reasoning distilled) topology policy on RunPod H100. Training data: 1965 entries (BigCodeBench + CodeContests). Target: replace Phi-4-mini SFT (70% YAML valid) with RL-trained policy.
