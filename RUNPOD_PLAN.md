@@ -33,7 +33,7 @@ On ne claim pas que ça marche — on prouve. 397 tests (351 Rust + 46 Python). 
    sage-core (Rust)              sage-python (Python)            sage-discover
    Performance-critical          Orchestration                   Knowledge Pipeline
    ├── TopologyEngine            ├── Pipeline (5-stage)          ├── arXiv → ExoCortex
-   │   ├── 7 paths generation    ├── AgentLoop                  └── 500+ papers RAG
+   │   ├── 6 paths generation    ├── AgentLoop                  └── 500+ papers RAG
    │   ├── MAP-Elites + CMA-ME   ├── 8 Providers (LLM)
    │   ├── MCTS search           ├── Memory 4-tier
    │   └── Path 6: learned ←──── ├── verl/ (RL training)
@@ -60,7 +60,7 @@ On ne claim pas que ça marche — on prouve. 397 tests (351 Rust + 46 Python). 
 ```
 1. CLASSIFY  — kNN routing (arctic-embed-m, 92%) → S1 (simple) / S2 (moderate) / S3 (complex)
 2. DECOMPOSE — TaskPlanner → TaskDAG + features DAG (ω, δ, γ d'AdaptOrch)
-3. TOPOLOGY  — DynamicTopologyEngine choisit parmi 7 paths → TopologyGraph (Rust petgraph)
+3. TOPOLOGY  — DynamicTopologyEngine choisit parmi 6 paths → TopologyGraph (Rust petgraph)
 4. ASSIGN    — ModelAssigner (Rust) : affinity 0.4 + domain 0.4 + cost 0.2 → model_id par nœud
 5. EXECUTE   — TopologyRunner + ProviderPool (8 providers) → exécution nœud par nœud
 6. LEARN     — QualityEstimator Z3 → Bandit update + MAP-Elites archive + episodic memory

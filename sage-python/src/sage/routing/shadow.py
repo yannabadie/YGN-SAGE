@@ -4,8 +4,18 @@ When both Rust and Python routers are available, runs both on every task.
 Logs divergences (system mismatch, model/tier mismatch) to structured JSONL.
 Tracks divergence rate for Phase 5 gate: < 5% divergence on 1000+ traces.
 Zero-overhead when only one router is available.
+
+.. deprecated::
+    ShadowRouter is deprecated (49.6% divergence). Use Rust SystemRouter directly.
 """
 from __future__ import annotations
+
+import warnings
+warnings.warn(
+    "ShadowRouter is deprecated (49.6% divergence). Use Rust SystemRouter directly.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import json
 import logging

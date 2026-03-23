@@ -74,11 +74,26 @@ class TrainingMemory:
         )
         self._conn.commit()
 
-    def query_similar(self, query_embedding: np.ndarray, k: int = 3) -> list[dict]:
-        """Find top-k similar episodes by cosine similarity on embeddings."""
-        rows = self._conn.execute(
-            "SELECT * FROM episodes WHERE embedding IS NOT NULL"
-        ).fetchall()
+    def query_similar(self, query_embedding: np.ndarray, k: int = 3, domain: str = "") -> list[dict]:
+        """Find top-k similar episodes by cosine similarity on embeddings.
+
+        Parameters
+        ----------
+        query_embedding : np.ndarray
+            The embedding vector to compare against stored episodes.
+        k : int
+            Number of top results to return.
+        domain : str
+            Optional domain prefilter. When non-empty, only episodes with
+            matching domain are considered.
+        """
+        query = "SELECT * FROM episodes WHERE embedding IS NOT NULL"
+        params: list[str] = []
+        if domain:
+            query += " AND domain = ?"
+            params.append(domain)
+        query += " ORDER BY created_at DESC LIMIT 500"
+        rows = self._conn.execute(query, params).fetchall()
 
         if not rows:
             return []

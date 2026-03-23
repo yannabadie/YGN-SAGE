@@ -104,7 +104,7 @@ impl PyTopologyEngine {
         }
     }
 
-    /// Generate a topology for a task using the 5-path strategy.
+    /// Generate a topology for a task using the 6-path strategy.
     ///
     /// Args:
     ///     task_description: Human-readable task description.

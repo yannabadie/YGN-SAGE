@@ -126,7 +126,7 @@ class AgentSystem:
     rust_router: Any = None
     # ShadowRouter: dual Rust/Python routing comparison (None if shadow mode inactive)
     shadow_router: ShadowRouter | None = None
-    # Phase 6: Rust TopologyEngine (5-path generate, MAP-Elites, bandit)
+    # Phase 6: Rust TopologyEngine (6-path generate, MAP-Elites, bandit)
     topology_engine: Any = None
     # Phase 6: Standalone ContextualBandit for model selection
     bandit: Any = None
@@ -224,7 +224,7 @@ class AgentSystem:
 
         self._last_decision = decision  # Store for telemetry in _record_topology_outcome
 
-        # 2. Topology generation (Rust engine, 5-path strategy)
+        # 2. Topology generation (Rust engine, 6-path strategy)
         #    If _current_topology is already set (externally forced by benchmark
         #    scripts or TopologyBench), skip generation to preserve the forced topology.
         topology_result = None
@@ -660,7 +660,7 @@ def boot_agent_system(
     # DynamicTopologyEngine (Rust). No separate Python instantiation needed.
     # (Removed: template_store + verifier were instantiated but never used — audit P10)
 
-    # Phase 6: Rust TopologyEngine (5-path generation + learning loop)
+    # Phase 6: Rust TopologyEngine (6-path generation + learning loop)
     rust_topology_engine = None
     rust_bandit = None
     if _HAS_RUST_ROUTER:

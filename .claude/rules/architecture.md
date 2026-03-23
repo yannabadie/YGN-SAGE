@@ -14,7 +14,7 @@ paths:
 - `Researches/` — 25+ research papers backing architecture decisions.
 
 ## 5 Cognitive Pillars
-1. **Topology** — Rust TopologyEngine: 7-path generation (S-MMU → archive → LLM → mutation → MCTS → **Path 6: learned policy** → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 uses SFT Phi-4-mini-instruct (70% YAML valid, opt-in via `SAGE_ENABLE_PATH6=1`).
+1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 learned policy (SFT Phi-4-mini-instruct, 70% YAML valid, opt-in via `SAGE_ENABLE_PATH6=1`) is external Python-side.
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU paging with ULID chunks.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5.

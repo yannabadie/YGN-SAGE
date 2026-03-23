@@ -34,7 +34,7 @@ YGN-SAGE is an **Agent Development Kit (ADK)** that orchestrates multi-agent LLM
 ```mermaid
 flowchart TD
     subgraph sage-core["sage-core (Rust + PyO3)"]
-        TE[TopologyEngine<br/>7-path generation]
+        TE[TopologyEngine<br/>6-path generation]
         TG[TopologyGraph<br/>petgraph DiGraph IR]
         TX[TopologyExecutor<br/>static/dynamic scheduler]
         ME[MAP-Elites Archive<br/>quality-diversity]
@@ -157,7 +157,7 @@ flowchart TD
 
 | Component | Type | Responsibility | Internal Deps | Exposes (PyO3) |
 |-----------|------|---------------|---------------|-----------------|
-| `topology/engine.rs` | Struct `DynamicTopologyEngine` | 7-path topology generation orchestrator (S-MMU hit, archive hit, LLM synthesis, mutation, MCTS, Path 6, template fallback) | `smmu`, `map_elites`, `mcts`, `cma_me`, `mutations`, `templates`, `llm_synthesis`, `verifier`, `bandit` | `PyTopologyEngine` |
+| `topology/engine.rs` | Struct `DynamicTopologyEngine` | 6-path topology generation orchestrator (S-MMU hit, archive hit, LLM synthesis, mutation, MCTS, template fallback) | `smmu`, `map_elites`, `mcts`, `cma_me`, `mutations`, `templates`, `llm_synthesis`, `verifier`, `bandit` | `PyTopologyEngine` |
 | `topology/topology_graph.rs` | Struct `TopologyGraph` | Unified IR: petgraph DiGraph with TopologyNode/TopologyEdge, three-flow model (Control/Message/State), gate-based edge blocking | `petgraph`, `ulid` | `TopologyGraph`, `TopologyNode`, `TopologyEdge` |
 | `topology/executor.rs` | Struct `TopologyExecutor` | Dual-mode scheduler: Static (Kahn's toposort O(V+E)) for DAGs, Dynamic (gate-based readiness polling) for cyclic topologies | `topology_graph` | `PyTopologyExecutor` |
 | `topology/map_elites.rs` | Struct `MapElitesArchive` | 4D behavior-descriptor grid (108 cells), Pareto dominance insertion, HybridVerifier gate | `topology_graph`, `verifier` | -- (via engine) |
@@ -333,7 +333,7 @@ INPUT: task = "Prove that merge sort is O(n log n) using induction, then impleme
    -> TaskPlanner -> 3-subtask DAG: [proof, implementation, verification]
    -> DAGFeatures(omega=2, delta=2, gamma=0.33)
 
-3. SELECT TOPOLOGY (TopologyEngine.generate, 7-path priority)
+3. SELECT TOPOLOGY (TopologyEngine.generate, 6-path priority)
    -> Path 1: S-MMU.retrieve(task_embedding) -> similarity=0.45 < 0.7 -> skip
    -> Path 2: BehaviorDescriptor -> archive lookup -> found, quality=0.6 -> use
    -> HybridVerifier -> valid=True
@@ -427,7 +427,7 @@ TARGET: Qwen3.5-9B learns to generate task-adaptive topologies
 ### sage-core/src/topology/engine.rs — DynamicTopologyEngine
 
 - **Role**: Central topology generation orchestrator. Given a task description and cognitive system level, produces a verified TopologyGraph.
-- **Mechanism**: 7-path priority cascade: (1) S-MMU similarity hit (cosine > 0.7 AND quality > 0.5), (2) MAP-Elites archive lookup via BehaviorDescriptor, (3) LLM synthesis (Python callback), (4) Mutation of best archive entry, (5) MCTS structural search, (6) Path 6 learned policy (Qwen3.5-9B, opt-in SAGE_ENABLE_PATH6=1), (7) Template fallback (S1->sequential, S2->AVR, S3->debate).
+- **Mechanism**: 6-path priority cascade: (1) S-MMU similarity hit (cosine > 0.7 AND quality > 0.5), (2) MAP-Elites archive lookup via BehaviorDescriptor, (3) LLM synthesis (Python callback), (4) Mutation of best archive entry, (5) MCTS structural search, (6) Template fallback (S1->sequential, S2->AVR, S3->debate). Path 6 learned policy (Qwen3.5-9B, opt-in SAGE_ENABLE_PATH6=1) is external Python-side.
 - **Interface**: `generate(task, system, context) -> GenerateResult { topology, source, confidence }`, `evolve(outcome) -> ()`, `record_outcome(topology_id, quality, cost) -> ()`
 - **Calls**: `MultiViewMMU`, `MapElitesArchive`, `MctsSearcher`, `CmaEmitter`, `apply_random_mutation`, `HybridVerifier`, `ContextualBandit`, `TopologySynthesizer`
 - **Called by**: `CognitiveOrchestrationPipeline` (Stage 2), `boot.py` (Phase 6 init)

@@ -237,6 +237,48 @@ impl MultiViewMMU {
         id
     }
 
+    /// Evict the oldest N chunks from the graph (by ULID ordering).
+    ///
+    /// ULIDs are lexicographically sortable by creation time, so sorting
+    /// `chunk_map` keys gives chronological order. Removes evicted chunks
+    /// from both `chunk_map` and the petgraph, and cleans `recent_ids`.
+    ///
+    /// After each `remove_node`, petgraph may swap-move the last node into the
+    /// removed slot (invalidating its old NodeIndex). We rebuild chunk_map from
+    /// the graph's node weights after all removals to stay consistent.
+    ///
+    /// Returns the number of chunks actually evicted.
+    pub fn evict_oldest(&mut self, count: usize) -> usize {
+        let mut chunk_ids: Vec<String> = self.chunk_map.keys().cloned().collect();
+        chunk_ids.sort(); // ULID sorts chronologically
+        let to_evict: HashSet<String> = chunk_ids.into_iter().take(count).collect();
+        let evict_count = to_evict.len();
+
+        // Remove nodes one at a time, looking up the current index each time
+        // because petgraph swap-removes may invalidate prior indices.
+        for id in &to_evict {
+            // Find current NodeIndex by scanning (chunk_map may be stale after prior remove)
+            let node_idx = self
+                .graph
+                .node_indices()
+                .find(|&idx| self.graph[idx].chunk_id == *id);
+            if let Some(idx) = node_idx {
+                self.graph.remove_node(idx);
+            }
+        }
+
+        // Rebuild chunk_map from surviving graph nodes
+        self.chunk_map.clear();
+        for idx in self.graph.node_indices() {
+            let cid = self.graph[idx].chunk_id.clone();
+            self.chunk_map.insert(cid, idx);
+        }
+
+        // Clean recent_ids ring to stay consistent
+        self.recent_ids.retain(|rid| !to_evict.contains(rid));
+        evict_count
+    }
+
     /// Return the ULID of the most recently registered chunk, if any.
     pub fn last_chunk_id(&self) -> Option<&str> {
         self.recent_ids.back().map(|s| s.as_str())
@@ -366,6 +408,12 @@ impl PyMultiViewMMU {
     /// Number of chunks registered in the S-MMU.
     fn chunk_count(&self) -> usize {
         self.inner.chunk_count()
+    }
+
+    /// Evict the oldest N chunks (ULID chronological order).
+    /// Returns the number of chunks actually evicted.
+    fn evict_oldest(&mut self, count: usize) -> usize {
+        self.inner.evict_oldest(count)
     }
 
     /// Get the summary string for a given chunk ID.
@@ -569,6 +617,80 @@ mod tests {
             MAX_SEMANTIC_NEIGHBORS <= 1024,
             "MAX_SEMANTIC_NEIGHBORS should not be excessively large"
         );
+    }
+
+    #[test]
+    fn test_evict_oldest_removes_chronologically() {
+        let mut smmu = MultiViewMMU::new();
+
+        // Register 5 chunks.
+        let ids: Vec<String> = (0..5)
+            .map(|i| {
+                smmu.register_chunk(
+                    (i * 10) as i64,
+                    (i * 10 + 5) as i64,
+                    &format!("chunk-{i}"),
+                    vec![],
+                    None,
+                    None,
+                )
+            })
+            .collect();
+
+        assert_eq!(smmu.chunk_count(), 5);
+
+        // Sort IDs lexicographically — this is the eviction order (ULID sorts chronologically,
+        // but within the same millisecond the random bits may reorder).
+        let mut sorted_ids = ids.clone();
+        sorted_ids.sort();
+        let expected_evicted: HashSet<&String> = sorted_ids[..2].iter().collect();
+        let expected_remaining: HashSet<&String> = sorted_ids[2..].iter().collect();
+
+        // Evict the 2 oldest by ULID sort order
+        let evicted = smmu.evict_oldest(2);
+        assert_eq!(evicted, 2);
+        assert_eq!(smmu.chunk_count(), 3);
+
+        // The 2 lexicographically smallest IDs should be gone
+        for id in &expected_evicted {
+            assert!(
+                smmu.chunk_map.get(*id).is_none(),
+                "Expected evicted ID {id} to be absent from chunk_map"
+            );
+        }
+
+        // The remaining 3 should still be present
+        for id in &expected_remaining {
+            assert!(
+                smmu.chunk_map.get(*id).is_some(),
+                "Expected remaining ID {id} to be present in chunk_map"
+            );
+        }
+
+        // recent_ids should also be cleaned
+        assert_eq!(smmu.recent_ids.len(), 3);
+    }
+
+    #[test]
+    fn test_evict_oldest_more_than_available() {
+        let mut smmu = MultiViewMMU::new();
+        smmu.register_chunk(0, 1, "A", vec![], None, None);
+        smmu.register_chunk(2, 3, "B", vec![], None, None);
+
+        // Request evicting 10 but only 2 exist
+        let evicted = smmu.evict_oldest(10);
+        assert_eq!(evicted, 2);
+        assert_eq!(smmu.chunk_count(), 0);
+        assert!(smmu.recent_ids.is_empty());
+    }
+
+    #[test]
+    fn test_evict_oldest_zero() {
+        let mut smmu = MultiViewMMU::new();
+        smmu.register_chunk(0, 1, "A", vec![], None, None);
+        let evicted = smmu.evict_oldest(0);
+        assert_eq!(evicted, 0);
+        assert_eq!(smmu.chunk_count(), 1);
     }
 
     /// Performance regression guard: registering 500 chunks with embeddings
