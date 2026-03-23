@@ -93,14 +93,26 @@ SAGE implémente le protocole **Agent-to-Agent v1.0** (Google) via `a2a_server.p
 
 ## Vision training
 
-Entraîner un modèle (Qwen3.5-9B) qui génère des topologies multi-agents **adaptatives** — capables de se corriger en cours d'exécution. C'est le Path 6 de la DynamicTopologyEngine de YGN-SAGE.
+Entraîner **DeepSeek-R1-0528-Qwen3-8B** (MIT license) via GiGPO pour générer des topologies multi-agents **adaptatives** — capables de se corriger en cours d'exécution. C'est le Path 6 de la DynamicTopologyEngine.
 
-**Concurrents à battre :**
-- **The Conductor** (arXiv 2512.04388, ICLR 2026, Sakana AI) — Qwen2.5-7B GRPO, 6 providers, BigCodeBench 40.0%. Pas open-source.
-- **AgentConductor** (arXiv 2602.17100) — Qwen2.5-3B GRPO, density S_complex, CodeContests 38.8%. Pas open-source.
-- **CARD** (arXiv 2603.01089, ICLR 2026) — GCN conditionnel, price penalty. Code MIT (github.com/Warma10032/CARD).
+**Pourquoi DeepSeek-R1-0528-Qwen3-8B :**
+- Architecture **Qwen3-8B transformer standard** (pas de GDN/Mamba2 = zéro flashinfer/causal_conv1d)
+- Distillé sur les **traces de raisonnement R1-0528** → AIME 86.0% (+10pp vs Qwen3-8B), bat Qwen3-32B
+- LiveCodeBench 60.5%, GPQA 61.1% — raisonnement de niveau frontier dans 8B
+- **MIT license** — plus permissif qu'Apache (Qwen3) et Falcon-LLM
+- Compatible verl GRPO (même arch que Qwen3-8B, exemple officiel `run_qwen3-8b.sh`)
+- `enable_thinking` contrôlable via chat_template (comme Qwen3)
+- GGUF Q8_0 (~8.5GB) tient sur RTX 3500 Ada 12GB local
+- Tokenizer DeepSeek-R1-0528 (pas Qwen3 standard — à patcher pour désactiver `<think>`)
 
-**Différenciation SAGE :** Seul système open-source combinant RL topology + micro-décisions aux checkpoints + Rust formal verification + 8 providers + episodic memory + edge-level credit.
+**Avantage clé vs CARD (2603.01089) :** CARD conditionne sur des feature vectors d'environnement via GCN. SAGE conditionne sur le **raisonnement profond** du modèle R1 — le chain-of-thought est la "condition", bien plus riche qu'un vecteur GCN. Le modèle raisonne sur la tâche PUIS structure la topologie.
+
+**Concurrents :**
+- **The Conductor** (2512.04388, ICLR 2026) — Qwen2.5-7B GRPO, 6 providers, BigCodeBench 40.0%. Pas open-source.
+- **AgentConductor** (2602.17100) — Qwen2.5-3B GRPO, density S_complex, CodeContests 38.8%. Pas open-source.
+- **CARD** (2603.01089, ICLR 2026) — GCN conditionnel, price penalty. Code MIT.
+
+**Différenciation SAGE :** Seul système open-source combinant RL topology + R1-level reasoning + micro-décisions checkpoints + Rust formal verification + 8 providers + episodic memory + edge-level credit.
 
 ---
 
@@ -147,7 +159,7 @@ Refs : `_score_format`, `_score_structure` dans reward.py. `TopologyDensity` dan
 
 **Config :**
 ```
-Modèle: Qwen/Qwen3.5-9B (patched tokenizer, no <think>)
+Modèle: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B (patched tokenizer)
 Algorithme: GiGPO (adv_estimator=gigpo, params dynamiques depuis ppo_trainer.yaml)
 LoRA: r=64, alpha=32, all-linear
 Epochs: 5
@@ -294,16 +306,18 @@ Phase C (après B) → SOTA complet
 
 | Composant | Valeur |
 |-----------|--------|
-| Template RunPod | `Runpod Pytorch 2.4.0` |
-| Modèle | `Qwen/Qwen3.5-9B` (GDN + attention, Apache 2.0) |
-| Fallback | `Qwen/Qwen2.5-7B-Instruct` (si GDN crash vLLM) |
-| Framework | verl 0.7.1 (Phase A/B) → verl-agent (Phase C) |
-| Algorithme | GiGPO (`adv_estimator=gigpo`, params dynamiques) |
+| Template RunPod | `Runpod Pytorch 2.4.0` (`runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`) |
+| Modèle | `deepseek-ai/DeepSeek-R1-0528-Qwen3-8B` (Qwen3 transformer, MIT, R1 reasoning distilled) |
+| Fallback | `Qwen/Qwen3-8B` (même arch, sans R1 distillation) |
+| Framework | verl 0.7.1 + GiGPO plugin (Phase A/B) → verl-agent (Phase C) |
+| Algorithme | GiGPO (`adv_estimator=gigpo`, `enable_similarity=True`, `similarity_thresh=0.85`) |
 | LoRA | r=64, alpha=32, target=all-linear |
-| GPU | 1x H100 80GB SXM |
+| GPU | 1x H100 80GB SXM (~39GB utilisés / 81GB total) |
 | Données | 2225 entries (Phase A) → ~600 curated (Phase B) |
-| Tokenizer | Patché (`patch_tokenizer.py` — supprime `<think>` Qwen3.5) |
+| Tokenizer | R1-0528 tokenizer — patcher `<think>` via `enable_thinking=False` dans vLLM ou `patch_tokenizer.py` |
+| Attention | SDPA natif PyTorch (`VLLM_ATTENTION_BACKEND=TORCH_SDPA`) — pas de flashinfer |
 | Providers Phase B | DeepSeek, Google, OpenAI, xAI, MiniMax, Kimi, OpenRouter, Codex |
+| GGUF local | Q8_0 (~8.5GB) sur RTX 3500 Ada 12GB |
 
 ## Coût estimé
 
@@ -353,7 +367,7 @@ export SAGE_VERL_EXEC=1
 
 ```bash
 python3 scripts/verl/post_training_pipeline.py all
-# → export LoRA → merge Qwen3.5-9B → push HuggingFace → Q8 GGUF
+# → export LoRA → merge DeepSeek-R1-0528-Qwen3-8B → push HuggingFace → Q8 GGUF
 ```
 
 **Résultat :** `yannabadie/sage-topology-policy-v2` sur HuggingFace + Q8_0 GGUF (~9.5GB) pour local.
@@ -362,16 +376,19 @@ python3 scripts/verl/post_training_pipeline.py all
 
 ## Troubleshooting
 
-### Qwen3.5-9B GDN crash vLLM
+### Modèle crash vLLM
 ```bash
-SAGE_MODEL="Qwen/Qwen2.5-7B-Instruct" bash scripts/verl/train_topology.sh
-# Ou: --enforce-eager (2x lent mais fonctionne)
+# DeepSeek-R1-0528-Qwen3-8B est transformer standard — ne devrait PAS crash.
+# Si problème quand même, fallback :
+SAGE_MODEL="Qwen/Qwen3-8B" bash scripts/verl/train_topology_v3.sh
+# Ou: ajouter VLLM_ATTENTION_BACKEND=TORCH_SDPA (déjà dans train_topology_v3.sh)
 ```
 
-### causal_conv1d / flash_attn incompatible
+### flash_attn / causal_conv1d non nécessaires
+DeepSeek-R1-0528-Qwen3-8B est transformer standard. Utiliser SDPA natif :
 ```bash
-pip install causal-conv1d --force-reinstall --no-build-isolation --no-cache-dir
-pip install flash-attn --force-reinstall --no-build-isolation --no-cache-dir
+export VLLM_ATTENTION_BACKEND=TORCH_SDPA
+# Pas besoin de flash_attn ni causal_conv1d
 ```
 
 ### GiGPO params rejetés par Hydra

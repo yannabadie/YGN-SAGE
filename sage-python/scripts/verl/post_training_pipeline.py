@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)
 log = logging.getLogger("post_train")
 
 # --- Config ---
-BASE_MODEL = "Qwen/Qwen3-8B"
+BASE_MODEL = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"
 HF_REPO = "yannabadie/sage-topology-policy-v2"
 GGUF_QUANT = "Q8_0"  # Q8_0 for 12GB GPU (~8.5GB for 8B model, fits RTX 3500 Ada)
 
