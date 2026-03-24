@@ -199,6 +199,29 @@ impl PyTopologyEngine {
         self.smmu.chunk_count()
     }
 
+    /// Save bandit posteriors + MAP-Elites archive to a directory.
+    ///
+    /// Creates `{dir}/bandit_state.db` and `{dir}/archive_state.db`.
+    /// Requires the `cognitive` feature (SQLite persistence).
+    #[cfg(feature = "cognitive")]
+    pub fn save_state(&self, dir: &str) -> PyResult<()> {
+        self.inner
+            .save_state(dir)
+            .map_err(pyo3::exceptions::PyIOError::new_err)
+    }
+
+    /// Load bandit posteriors + MAP-Elites archive from a directory.
+    ///
+    /// Looks for `{dir}/bandit_state.db` and `{dir}/archive_state.db`.
+    /// Missing files are silently skipped (cold start).
+    /// Returns `(bandit_arms, archive_cells)` loaded.
+    #[cfg(feature = "cognitive")]
+    pub fn load_state(&mut self, dir: &str) -> PyResult<(usize, usize)> {
+        self.inner
+            .load_state(dir)
+            .map_err(pyo3::exceptions::PyIOError::new_err)
+    }
+
     pub fn __repr__(&self) -> String {
         format!(
             "TopologyEngine(cached={}, archive_cells={}, smmu_chunks={})",

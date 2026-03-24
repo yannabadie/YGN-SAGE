@@ -25,9 +25,9 @@ fn test_new_engine_has_empty_archive() {
 #[test]
 fn test_template_fallback_s1_sequential() {
     let mut engine = TopologyEngine::new();
-    let smmu = MultiViewMMU::new();
+    let mut smmu = MultiViewMMU::new();
 
-    let result = engine.generate(&smmu, "simple greeting", None, 1, 0.0);
+    let result = engine.generate(&mut smmu, "simple greeting", None, 1, 0.0);
     assert_eq!(result.source, TopologySource::TemplateFallback);
     assert_eq!(result.topology.template_type, "sequential");
     assert_eq!(result.topology.node_count(), 3);
@@ -38,9 +38,9 @@ fn test_template_fallback_s1_sequential() {
 #[test]
 fn test_template_fallback_s2_avr() {
     let mut engine = TopologyEngine::new();
-    let smmu = MultiViewMMU::new();
+    let mut smmu = MultiViewMMU::new();
 
-    let result = engine.generate(&smmu, "write sorting code", None, 2, 0.0);
+    let result = engine.generate(&mut smmu, "write sorting code", None, 2, 0.0);
     assert_eq!(result.source, TopologySource::TemplateFallback);
     assert_eq!(result.topology.template_type, "avr");
     assert_eq!(result.topology.node_count(), 3);
@@ -51,9 +51,9 @@ fn test_template_fallback_s2_avr() {
 #[test]
 fn test_template_fallback_s3_debate() {
     let mut engine = TopologyEngine::new();
-    let smmu = MultiViewMMU::new();
+    let mut smmu = MultiViewMMU::new();
 
-    let result = engine.generate(&smmu, "prove theorem", None, 3, 0.0);
+    let result = engine.generate(&mut smmu, "prove theorem", None, 3, 0.0);
     assert_eq!(result.source, TopologySource::TemplateFallback);
     assert_eq!(result.topology.template_type, "debate");
     assert_eq!(result.topology.node_count(), 4);
@@ -154,11 +154,11 @@ fn test_record_outcome_feeds_smmu_bridge() {
 #[test]
 fn test_generate_empty_state_falls_back() {
     let mut engine = TopologyEngine::new();
-    let smmu = MultiViewMMU::new();
+    let mut smmu = MultiViewMMU::new();
 
     // All three system tiers should fall back to templates
     for (system, expected_template) in [(1, "sequential"), (2, "avr"), (3, "debate")] {
-        let result = engine.generate(&smmu, "any task", None, system, 0.5);
+        let result = engine.generate(&mut smmu, "any task", None, system, 0.5);
         assert_eq!(
             result.source,
             TopologySource::TemplateFallback,
@@ -202,7 +202,7 @@ fn test_generate_after_record_may_hit_archive_or_mutation() {
     assert!(engine.archive().cell_count() > 0);
 
     // Generate should now potentially hit archive or mutation instead of just template
-    let result = engine.generate(&smmu, "Write quicksort", None, 2, 0.1);
+    let result = engine.generate(&mut smmu, "Write quicksort", None, 2, 0.1);
 
     // Could be ArchiveHit, Mutation, or TemplateFallback — all are valid outcomes
     // The key assertion is that it doesn't panic and returns a valid topology
@@ -366,4 +366,147 @@ fn test_record_outcome_feeds_bandit() {
         engine.bandit().arm_count() > 0,
         "Bandit should have at least one arm after record_outcome"
     );
+}
+
+// ── Persistence tests (behind cognitive feature) ─────────────────────────
+
+#[cfg(feature = "cognitive")]
+mod persistence_tests {
+    use sage_core::memory::smmu::MultiViewMMU;
+    use sage_core::topology::engine::TopologyEngine;
+    use sage_core::topology::templates;
+
+    fn temp_state_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("sage_engine_state_{}", ulid::Ulid::new()))
+    }
+
+    #[test]
+    fn test_engine_save_load_round_trip() {
+        let mut engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+
+        // Populate archive + bandit with real outcomes
+        for i in 0..3 {
+            let graph = templates::sequential(&format!("model-{}", i));
+            let topo_id = graph.id.clone();
+            engine.cache_topology(graph);
+            engine.record_outcome(
+                &mut smmu,
+                &topo_id,
+                &format!("Test task {}", i),
+                vec!["test".into()],
+                None,
+                0.8 + i as f32 * 0.05,
+                0.005 + i as f32 * 0.01,
+                100.0 + i as f32 * 50.0,
+            );
+        }
+
+        let bandit_arms_before = engine.bandit().arm_count();
+        let archive_cells_before = engine.archive().cell_count();
+        assert!(bandit_arms_before > 0, "should have bandit arms");
+        assert!(archive_cells_before > 0, "should have archive cells");
+
+        // Save state
+        let dir = temp_state_dir();
+        engine.save_state(dir.to_str().unwrap()).expect("save should succeed");
+
+        // Verify files were created
+        assert!(dir.join("bandit_state.db").exists());
+        assert!(dir.join("archive_state.db").exists());
+
+        // Create fresh engine and load state
+        let mut engine2 = TopologyEngine::new();
+        assert_eq!(engine2.bandit().arm_count(), 0);
+        assert_eq!(engine2.archive().cell_count(), 0);
+
+        let (loaded_arms, loaded_cells) = engine2
+            .load_state(dir.to_str().unwrap())
+            .expect("load should succeed");
+
+        assert_eq!(loaded_arms, bandit_arms_before);
+        assert_eq!(loaded_cells, archive_cells_before);
+        assert_eq!(engine2.bandit().arm_count(), bandit_arms_before);
+        assert_eq!(engine2.archive().cell_count(), archive_cells_before);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_engine_load_cold_start() {
+        let dir = temp_state_dir();
+        // Don't create the directory — cold start should gracefully return (0, 0)
+        // Actually, load_state creates the dir if needed, but the DB files won't exist.
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let mut engine = TopologyEngine::new();
+        let (arms, cells) = engine
+            .load_state(dir.to_str().unwrap())
+            .expect("cold start load should succeed");
+
+        assert_eq!(arms, 0);
+        assert_eq!(cells, 0);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_engine_loaded_state_is_functional() {
+        let mut engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+
+        // Populate
+        let graph = templates::avr("model-a", "model-b");
+        let topo_id = graph.id.clone();
+        engine.cache_topology(graph);
+        engine.record_outcome(
+            &mut smmu,
+            &topo_id,
+            "AVR task",
+            vec!["code".into()],
+            None,
+            0.9,
+            0.01,
+            200.0,
+        );
+
+        // Save + load into fresh engine
+        let dir = temp_state_dir();
+        engine.save_state(dir.to_str().unwrap()).unwrap();
+
+        let mut engine2 = TopologyEngine::new();
+        engine2.load_state(dir.to_str().unwrap()).unwrap();
+
+        // Archive is populated, so generate should potentially hit archive/mutation
+        let mut smmu2 = MultiViewMMU::new();
+        let result = engine2.generate(&mut smmu2, "Write a function", None, 2, 0.1);
+        assert!(result.topology.node_count() > 0);
+        assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_engine_save_creates_directory() {
+        let engine = TopologyEngine::new();
+        let dir = std::env::temp_dir()
+            .join("sage_test_nested")
+            .join(format!("deep_{}", ulid::Ulid::new()));
+
+        // Directory should not exist yet
+        assert!(!dir.exists());
+
+        engine.save_state(dir.to_str().unwrap()).expect("save should create dir");
+
+        // Directory and files should now exist
+        assert!(dir.exists());
+        assert!(dir.join("bandit_state.db").exists());
+        assert!(dir.join("archive_state.db").exists());
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("sage_test_nested"));
+    }
 }

@@ -790,6 +790,92 @@ impl TopologyEngine {
     }
 }
 
+// ── Persistence (behind `cognitive` feature) ─────────────────────────────
+
+#[cfg(feature = "cognitive")]
+impl TopologyEngine {
+    /// Save both bandit posteriors and MAP-Elites archive to a directory.
+    ///
+    /// Creates two SQLite files:
+    /// - `{dir}/bandit_state.db` — arm posteriors, config (decay, exploration)
+    /// - `{dir}/archive_state.db` — MAP-Elites grid cells with topology JSON
+    ///
+    /// Existing files are overwritten (WAL mode, UPSERT semantics).
+    pub fn save_state(&self, dir: &str) -> Result<(), String> {
+        let dir_path = std::path::Path::new(dir);
+        std::fs::create_dir_all(dir_path)
+            .map_err(|e| format!("create dir {}: {}", dir, e))?;
+
+        let bandit_path = dir_path.join("bandit_state.db");
+        let archive_path = dir_path.join("archive_state.db");
+
+        crate::routing::persistence::save_bandit(
+            &self.bandit,
+            bandit_path.to_str().ok_or("invalid bandit path")?,
+        )?;
+
+        self.archive.save_to_sqlite(
+            archive_path.to_str().ok_or("invalid archive path")?,
+        )?;
+
+        info!(
+            dir = dir,
+            bandit_arms = self.bandit.arm_count(),
+            archive_cells = self.archive.cell_count(),
+            "engine_state_saved"
+        );
+
+        Ok(())
+    }
+
+    /// Load bandit posteriors and MAP-Elites archive from a directory.
+    ///
+    /// Looks for `{dir}/bandit_state.db` and `{dir}/archive_state.db`.
+    /// Missing files are silently skipped (cold start). Returns the count
+    /// of items loaded as `(bandit_arms, archive_cells)`.
+    pub fn load_state(&mut self, dir: &str) -> Result<(usize, usize), String> {
+        let dir_path = std::path::Path::new(dir);
+
+        let mut bandit_arms = 0usize;
+        let mut archive_cells = 0usize;
+
+        // Load bandit
+        let bandit_path = dir_path.join("bandit_state.db");
+        if bandit_path.exists() {
+            let loaded = crate::routing::persistence::load_bandit(
+                bandit_path.to_str().ok_or("invalid bandit path")?,
+            )?;
+            bandit_arms = loaded.arm_count();
+            self.bandit = loaded;
+            info!(arms = bandit_arms, "bandit_state_loaded");
+        } else {
+            debug!(path = ?bandit_path, "bandit_state_file_not_found_cold_start");
+        }
+
+        // Load archive
+        let archive_path = dir_path.join("archive_state.db");
+        if archive_path.exists() {
+            let loaded = MapElitesArchive::load_from_sqlite(
+                archive_path.to_str().ok_or("invalid archive path")?,
+            )?;
+            archive_cells = loaded.cell_count();
+            self.archive = loaded;
+            info!(cells = archive_cells, "archive_state_loaded");
+        } else {
+            debug!(path = ?archive_path, "archive_state_file_not_found_cold_start");
+        }
+
+        info!(
+            dir = dir,
+            bandit_arms = bandit_arms,
+            archive_cells = archive_cells,
+            "engine_state_loaded"
+        );
+
+        Ok((bandit_arms, archive_cells))
+    }
+}
+
 impl Default for TopologyEngine {
     fn default() -> Self {
         Self::new()
