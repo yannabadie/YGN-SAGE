@@ -93,29 +93,29 @@ SAGE implémente le protocole **Agent-to-Agent v1.0** (Google) via `a2a_server.p
 
 ## Vision training
 
-Entraîner **Qwen/Qwen3-8B** (Apache 2.0) via GiGPO pour générer des topologies multi-agents **adaptatives** — capables de se corriger en cours d'exécution. C'est le Path 6 de la DynamicTopologyEngine.
+Entraîner **nvidia/Nemotron-Orchestrator-8B** (NVIDIA Open Model License) via GiGPO pour générer des topologies multi-agents **adaptatives** — capables de se corriger en cours d'exécution. C'est le Path 6 de la DynamicTopologyEngine.
 
-**Pourquoi Qwen3-8B (et pas DeepSeek-R1, Falcon-H1R, Qwen3.5, etc.) :**
-- **Script verl officiel** : `examples/grpo_trainer/run_qwen3-8b.sh` — config prouvée, pas de devinette
-- **Transformer standard** : zéro GDN/Mamba2 = zéro flashinfer/causal_conv1d = zéro galère compilation
-- **vLLM stable** : aucun bug kernel connu (contrairement à Qwen3.5 GDN issue #34948)
-- **Agentic natif** : tool-calling + thinking mode désactivable via `/no_think` ou `enable_thinking=False`
-- **LCB 60.2%, AIME 81.5%** : surpasse Qwen2.5-14B (15 benchmarks) malgré 8B
+**Pourquoi Nemotron-Orchestrator-8B (et pas Qwen3-8B vanilla, DeepSeek-R1, etc.) :**
+- **GRPO-trained for orchestration** : entraîné par NVIDIA via GRPO multi-objectif (accuracy + cost + preference) pour décider quel modèle/outil utiliser à chaque étape — exactement nos décisions GiGPO de checkpoint (arXiv 2511.21689, github.com/NVlabs/ToolOrchestra)
+- **Base Qwen3-8B** : même architecture transformer = même script verl, zéro modification training loop
+- **HLE 37.1%** : bat GPT-5 sur Humanity's Last Exam, excelle aussi sur Tau2-Bench et FRAMES
+- **vLLM compatible** : architecture Qwen3, SDPA natif, aucun bug kernel
 - **1× H100 confortable** : ~17GB actor + ~22GB vLLM = 39GB/81GB, marge large
-- **Apache 2.0** : fine-tuning + commercial OK
-- **GGUF Q8_0 (~8.5GB)** tient sur RTX 3500 Ada 12GB local
-- **Pas de tokenizer patching** : `/no_think` dans le system prompt suffit (pas de hack regex)
+- **NVIDIA Open Model License** : fine-tuning + commercial + derivatives OK (permissive)
+- **GGUF disponible** : `Mungert/Nemotron-Orchestrator-8B-GGUF` pour inférence locale
+- **Pas de tokenizer patching** : `/no_think` dans le system prompt suffit (hérité de Qwen3)
 
 **Modèles rejetés et pourquoi :**
 | Modèle | Raison du rejet |
 |--------|----------------|
+| Qwen/Qwen3-8B (vanilla) | Bon modèle de base mais pas pré-entraîné pour l'orchestration — Nemotron ajoute le GRPO orchestration par-dessus |
 | DeepSeek-R1-0528-Qwen3-8B | `<think>` CoT gaspille 40× les tokens utiles ; tokenizer patching fragile |
 | Qwen3.5-9B | GDN kernel crashes vLLM (issue #34948), flashinfer compilation 5h+ |
 | Falcon-H1R-7B | Mamba2 hybrid = mêmes problèmes causal_conv1d ; Falcon license restrictive |
 | Qwen3-14B | Pas de script verl officiel ; tight VRAM sur 1× H100 avec vLLM |
 | Klear-AgentForge-8B | SWE-bench 39% (excellent) mais README vide, pas de script verl, risque intégration |
 
-**Upgrade path :** Si Phase A montre des résultats insuffisants, swap 1:1 vers `Kwai-Klear/Klear-AgentForge-8B-SFT` (même architecture Qwen3-8B, poids agentic-tuned, MIT license).
+**Pourquoi upgrader de Qwen3-8B vanilla :** Nemotron-Orchestrator-8B est un Qwen3-8B fine-tuné par NVIDIA spécifiquement pour les décisions d'orchestration (quel outil, quel modèle, quand déléguer). Notre GiGPO s'appuie donc sur des poids déjà orientés orchestration — warm start parfait.
 
 **Concurrents :**
 - **The Conductor** (2512.04388, ICLR 2026) — Qwen2.5-7B GRPO, 6 providers, BigCodeBench 40.0%. Pas open-source.
@@ -169,7 +169,7 @@ Refs : `_score_format`, `_score_structure` dans reward.py. `TopologyDensity` dan
 
 **Config :**
 ```
-Modèle: Qwen/Qwen3-8B (patched tokenizer)
+Modèle: nvidia/Nemotron-Orchestrator-8B (patched tokenizer)
 Algorithme: GiGPO (adv_estimator=gigpo, params dynamiques depuis ppo_trainer.yaml)
 LoRA: r=64, alpha=32, all-linear
 Epochs: 5
@@ -317,17 +317,17 @@ Phase C (après B) → SOTA complet
 | Composant | Valeur |
 |-----------|--------|
 | Template RunPod | `Runpod Pytorch 2.4.0` (`runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`) |
-| Modèle | `Qwen/Qwen3-8B` (Qwen3 transformer, Apache 2.0) |
-| Fallback | N/A (Qwen3-8B is the final choice) |
+| Modèle | `nvidia/Nemotron-Orchestrator-8B` (Qwen3 architecture, NVIDIA Open Model License) |
+| Fallback | N/A (Nemotron-Orchestrator-8B is the final choice) |
 | Framework | verl 0.7.1 + GiGPO plugin (Phase A/B) → verl-agent (Phase C) |
-| Algorithme | GiGPO (`adv_estimator=gigpo`, `enable_similarity=True`, `similarity_thresh=0.85`) |
+| Algorithme | GiGPO (`adv_estimator=gigpo`, `enable_similarity=True`, `similarity_thresh=0.85`) — on top of NVIDIA's GRPO orchestration weights |
 | LoRA | r=64, alpha=32, target=all-linear |
 | GPU | 1x H100 80GB SXM (~39GB utilisés / 81GB total) |
 | Données | 2225 entries (Phase A) → ~600 curated (Phase B) |
-| Tokenizer | Qwen3-8B tokenizer — patcher `<think>` via `/no_think` system prompt ou `patch_tokenizer.py` |
+| Tokenizer | Nemotron-Orchestrator-8B tokenizer (Qwen3 base) — patcher `<think>` via `/no_think` system prompt ou `patch_tokenizer.py` |
 | Attention | SDPA natif PyTorch (`VLLM_ATTENTION_BACKEND=TORCH_SDPA`) — pas de flashinfer |
 | Providers Phase B | DeepSeek, Google, OpenAI, xAI, MiniMax, Kimi, OpenRouter, Codex |
-| GGUF local | Q8_0 (~8.5GB) sur RTX 3500 Ada 12GB |
+| GGUF local | Q8_0 (~8.5GB) sur RTX 3500 Ada 12GB. Pre-quantized: `Mungert/Nemotron-Orchestrator-8B-GGUF` |
 
 ## Coût estimé
 
@@ -377,7 +377,7 @@ export SAGE_VERL_EXEC=1
 
 ```bash
 python3 scripts/verl/post_training_pipeline.py all
-# → export LoRA → merge Qwen3-8B → push HuggingFace → Q8 GGUF
+# → export LoRA → merge Nemotron-Orchestrator-8B → push HuggingFace → Q8 GGUF
 ```
 
 **Résultat :** `yannabadie/sage-topology-policy-v2` sur HuggingFace + Q8_0 GGUF (~9.5GB) pour local.
@@ -388,14 +388,14 @@ python3 scripts/verl/post_training_pipeline.py all
 
 ### Modèle crash vLLM
 ```bash
-# Qwen3-8B est transformer standard — ne devrait PAS crash.
+# Nemotron-Orchestrator-8B est Qwen3 architecture (transformer standard) — ne devrait PAS crash.
 # Si problème quand même :
 VLLM_ATTENTION_BACKEND=TORCH_SDPA bash scripts/verl/train_topology_v3.sh
 # Ou: ajouter VLLM_ATTENTION_BACKEND=TORCH_SDPA (déjà dans train_topology_v3.sh)
 ```
 
 ### flash_attn / causal_conv1d non nécessaires
-Qwen3-8B est transformer standard. Utiliser SDPA natif :
+Nemotron-Orchestrator-8B est Qwen3 architecture (transformer standard). Utiliser SDPA natif :
 ```bash
 export VLLM_ATTENTION_BACKEND=TORCH_SDPA
 # Pas besoin de flash_attn ni causal_conv1d

@@ -31,7 +31,7 @@ YGN-SAGE is a **Self-Adaptive Generation Engine** — a multi-agent orchestratio
 
 **Routing cascade**: structural features (< 1ms) -> kNN embedding (92% GT accuracy) -> SystemRouter (bandit-integrated) -> model assignment (per-node, budget-constrained). kNN is primary. Heuristic ComplexityRouter is DEAD CODE (34% GT).
 
-**Training target**: GiGPO (multi-step GRPO) on Qwen3-8B via veRL, producing a learned topology policy that generates YAML DAGs. Graph-GRPO edge credit + RewardFlow per-node credit provide fine-grained learning signal.
+**Training target**: GiGPO (multi-step GRPO) on nvidia/Nemotron-Orchestrator-8B via veRL, producing a learned topology policy that generates YAML DAGs. Nemotron is a Qwen3-8B GRPO-trained for orchestration decisions (arXiv 2511.21689). Graph-GRPO edge credit + RewardFlow per-node credit provide fine-grained learning signal.
 
 **Key constraint**: Zero heuristics. All decisions formally verified (OxiZ SMT), learned (ONNX/bandit), or research-backed. No hardcoded thresholds.
 
@@ -320,7 +320,7 @@ User: "Prove by induction that sum(1..n) = n*(n+1)/2. Generate verified Python."
 ### Scenario 3: GiGPO Training Loop (veRL env -> YAML gen -> reward -> advantage)
 
 ```
-Training setup: Qwen3-8B on RunPod H100, 1965 training entries
+Training setup: Nemotron-Orchestrator-8B on RunPod H100, 1965 training entries
 
 1. TopologyEnv.reset(prompt, ground_truth):
    State -> AWAITING_YAML
@@ -366,7 +366,7 @@ Training setup: Qwen3-8B on RunPod H100, 1965 training entries
    Marks successful topologies as replay candidates
 
 8. veRL GiGPO update:
-   Per-step advantages -> policy gradient update on Qwen3-8B
+   Per-step advantages -> policy gradient update on Nemotron-Orchestrator-8B
    Token-level: advantage at each step weighted by action probability
    Result: model learns which topology structures work for which task types
 ```
@@ -1038,7 +1038,7 @@ Training setup: Qwen3-8B on RunPod H100, 1965 training entries
 
 ## LLM Quick-Reference Cheatsheet
 
-**5-second briefing**: SAGE routes tasks to S1/S2/S3, generates multi-agent topology DAGs (8 templates + evolution + LLM synthesis), assigns heterogeneous models per node, executes with dual-mode scheduler, and learns via bandit + S-MMU + MAP-Elites. Training: GiGPO on Qwen3-8B produces YAML topology policies.
+**5-second briefing**: SAGE routes tasks to S1/S2/S3, generates multi-agent topology DAGs (8 templates + evolution + LLM synthesis), assigns heterogeneous models per node, executes with dual-mode scheduler, and learns via bandit + S-MMU + MAP-Elites. Training: GiGPO on Nemotron-Orchestrator-8B produces YAML topology policies.
 
 **Conventions**:
 - Rust = performance-critical (routing, memory, verification, topology graph). Python = orchestration + providers + training.

@@ -6,7 +6,7 @@ Run ON THE POD after training completes:
     # Step 1: Export LoRA from veRL checkpoint
     python scripts/verl/post_training_pipeline.py export
 
-    # Step 2: Merge LoRA into base Qwen3.5-9B
+    # Step 2: Merge LoRA into base Nemotron-Orchestrator-8B
     python scripts/verl/post_training_pipeline.py merge
 
     # Step 3: Push merged model to HuggingFace
@@ -32,7 +32,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)
 log = logging.getLogger("post_train")
 
 # --- Config ---
-BASE_MODEL = "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B"
+BASE_MODEL = "nvidia/Nemotron-Orchestrator-8B"
 HF_REPO = "yannabadie/sage-topology-policy-v2"
 GGUF_QUANT = "Q8_0"  # Q8_0 for 12GB GPU (~8.5GB for 8B model, fits RTX 3500 Ada)
 
@@ -156,7 +156,7 @@ def step_push():
         api.upload_folder(
             folder_path=str(merged),
             repo_id=HF_REPO,
-            commit_message="feat: SAGE V2 topology policy — Qwen3.5-9B GiGPO trained",
+            commit_message="feat: SAGE V2 topology policy — Nemotron-Orchestrator-8B GiGPO trained",
         )
         log.info("Merged model pushed to %s", HF_REPO)
     else:
@@ -167,7 +167,7 @@ def step_push():
             folder_path=str(lora),
             repo_id=HF_REPO,
             path_in_repo="lora/",
-            commit_message="feat: SAGE V2 LoRA adapter — Qwen3.5-9B GiGPO",
+            commit_message="feat: SAGE V2 LoRA adapter — Nemotron-Orchestrator-8B GiGPO",
         )
         log.info("LoRA adapter pushed to %s/lora/", HF_REPO)
 
