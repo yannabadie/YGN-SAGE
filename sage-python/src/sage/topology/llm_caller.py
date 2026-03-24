@@ -349,7 +349,7 @@ def generate_topology_from_policy(task: str) -> dict | None:
     prompt = (
         "<|system|>You are a multi-agent topology designer. "
         "Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-        f"<|user|>{task[:500]}<|end|>\n"
+        f"<|user|>{task[:2000]}<|end|>\n"
         "<|assistant|>"
     )
     inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
