@@ -37,6 +37,21 @@ _REWARD_REROUTE_PENALTY = -0.3
 _REWARD_UPGRADE_SUCCESS = 0.15
 
 
+def _get_embedding(text: str) -> "np.ndarray":
+    """Compute embedding via Embedder, fallback to zeros."""
+    import numpy as np
+    try:
+        from sage.memory.embedder import Embedder
+        embedder = Embedder()
+        if embedder.is_semantic:
+            emb = embedder.embed(text[:500])
+            if emb is not None and len(emb) == 768:
+                return np.array(emb, dtype=np.float32)
+    except Exception:
+        pass
+    return np.zeros(768, dtype=np.float32)
+
+
 def _quality_bucket(quality: float, threshold: float) -> str:
     if quality < threshold * 0.6:
         return "very_low"
@@ -147,9 +162,7 @@ class SageTopologyEnv:
         memory_ctx = ""
         if self._memory:
             try:
-                import numpy as np
-                # Placeholder embedding — real embeddings precomputed offline
-                query_emb = np.zeros(768, dtype=np.float32)
+                query_emb = _get_embedding(prompt)
                 episodes = self._memory.query_similar(query_emb, k=3)
                 memory_ctx = self._memory.format_context(episodes)
             except Exception:
@@ -698,7 +711,6 @@ class SageTopologyEnv:
         # V2: Store episode in episodic memory for future reference
         if self._memory:
             try:
-                import numpy as np
                 self._memory.store_episode(
                     task_id=self._trace.task_id,
                     prompt_hash=hashlib.md5(self._trace.prompt.encode()).hexdigest()[:8],
@@ -715,7 +727,7 @@ class SageTopologyEnv:
                     adaptations_triggered=sum(
                         1 for t in self._node_traces if t.get("was_upgraded", False)
                     ),
-                    embedding=np.zeros(768, dtype=np.float32),
+                    embedding=_get_embedding(self._trace.prompt),
                 )
             except Exception:
                 pass

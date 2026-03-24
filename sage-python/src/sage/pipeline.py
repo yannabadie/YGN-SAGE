@@ -707,13 +707,23 @@ class CognitiveOrchestrationPipeline:
                     keywords = list(set(
                         w.lower() for w in re.findall(r'\b\w{4,}\b', ctx.task)
                     ))[:10]
+                    # Compute real task embedding for S-MMU retrieval
+                    task_embedding = None
+                    try:
+                        from sage.memory.embedder import Embedder
+                        _embedder = Embedder()
+                        if _embedder.is_semantic:
+                            task_embedding = _embedder.embed(ctx.task[:500])
+                    except Exception:
+                        pass  # Embedding unavailable, degrade gracefully
+
                     self.engine.record_outcome(
                         topology_id,
                         ctx.task[:200],
                         keywords,
-                        None,  # embedding (future: compute at learn time)
+                        task_embedding,  # real embedding instead of None
                         quality,
-                        0.0,  # cost (not tracked at pipeline level yet)
+                        ctx.cost if hasattr(ctx, 'cost') else 0.0,
                         ctx.latency_ms,
                     )
                     log.debug(
