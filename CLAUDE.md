@@ -6,7 +6,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 ## CRITICAL DIRECTIVES
 
 1. **Rust first, Python tolerant** — performance-critical in Rust (sage-core), Python for orchestration only
-2. **Zero heuristics** — all decisions formally verified (Z3), learned (ONNX), or research-backed. Never hardcode thresholds
+2. **Minimal heuristics** — routing learned (kNN 92%, bandit Thompson), verification formal (Z3/OxiZ). Adaptation thresholds (THETA_GOOD=0.7, THETA_CRITICAL=0.3, etc.) are calibrated initial values subject to ablation. Safety limits (MAX_RETRIES, MAX_REROUTES, cache bounds) are engineering guards. Replace heuristics with learned alternatives when data permits
 3. **No corporate proxy** — this machine has NO proxy. Never add `verify=False`
 4. **kNN is primary router** (92% GT) — ComplexityRouter heuristic is DEAD CODE (34% GT)
 5. **Evidence before assertions** — run tests + benchmarks before claiming completion

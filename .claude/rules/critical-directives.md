@@ -15,14 +15,18 @@ Performance-critical code MUST be in Rust (sage-core). Python is orchestration +
 - Topology: Rust TopologyEngine (6-path) is PRIMARY
 - Memory: Rust Arrow + S-MMU is PRIMARY
 
-## 2. Zero Heuristics
-NEVER hardcode thresholds, magic numbers, or weight tuning. Every decision must be:
-- Formally verified (Z3/OxiZ SAT/UNSAT)
-- Learned (trained model, ONNX)
-- Research-backed (cite the paper)
-- If none available: abstain (return None), don't guess
+## 2. Minimal Heuristics
+Prefer learned/verified decisions. When heuristics are necessary, follow this hierarchy:
+- **Best**: Formally verified (Z3/OxiZ) or learned (kNN, bandit, ONNX)
+- **Acceptable**: Research-backed initial values, documented as "subject to ablation" (e.g., THETA_GOOD=0.7)
+- **Acceptable**: Engineering safety limits (MAX_RETRIES, cache bounds) — necessary for stability
+- **Banned**: Arbitrary magic numbers without justification or calibration plan
+- **Banned**: QUALITY_BASELINE, QUALITY_LENGTH_WEIGHT — these are dead heuristics
 
-Violations: QUALITY_BASELINE, QUALITY_LENGTH_WEIGHT — these are BANNED constants.
+Current thresholds in TopologyController (THETA_GOOD=0.7, THETA_CRITICAL=0.3, etc.) and
+engine.rs (similarity>0.7, quality>0.5) are calibrated initial values. A TopologyBench
+ablation sweep is planned to optimize them. task_len>500/1000 heuristics should be replaced
+by kNN embedding features when practical.
 
 ## 3. No Corporate Proxy
 This machine has NO proxy. NEVER add:

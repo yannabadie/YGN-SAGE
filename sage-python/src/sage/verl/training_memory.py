@@ -100,7 +100,8 @@ class TrainingMemory:
         if domain:
             query += " AND domain = ?"
             params.append(domain)
-        query += " ORDER BY created_at DESC LIMIT 500"
+        # Order by quality first, then recency — prevents bias toward recent low-quality episodes
+        query += " ORDER BY total_reward DESC, created_at DESC LIMIT 500"
         rows = self._conn.execute(query, params).fetchall()
 
         if not rows:
