@@ -321,6 +321,73 @@ class CognitiveOrchestrationPipeline:
             log.debug("sage_core unavailable, topology=None (single-agent mode)")
             return None
 
+    # ── Cost Estimation ──────────────────────────────────────────────────────
+
+    def _estimate_topology_cost(self, ctx: PipelineContext) -> float:
+        """Estimate execution cost from per-model pricing in cards.toml.
+
+        Loads the model catalog once (cached) and looks up cost_input_per_m /
+        cost_output_per_m for each node's assigned model.  Falls back to
+        $0.001 per node when the catalog or model is unavailable.
+
+        Assumes ~500 input tokens + ~300 output tokens per node call (conservative
+        estimate for typical multi-agent pipeline nodes).
+        """
+        if not ctx.topology or not hasattr(ctx.topology, 'node_count'):
+            return 0.0
+
+        n_nodes = ctx.topology.node_count()
+        if n_nodes == 0:
+            return 0.0
+
+        # Lazy-load model catalog for pricing
+        catalog = self._load_model_catalog()
+
+        total_cost = 0.0
+        for i in range(n_nodes):
+            model_id = ctx.assignments.get(i, '')
+            if not model_id and hasattr(ctx.topology, 'get_node'):
+                node = ctx.topology.get_node(i)
+                model_id = getattr(node, 'model_id', '') if node else ''
+
+            card = catalog.get(model_id) if catalog and model_id else None
+            if card:
+                # ~500 tokens input + ~300 tokens output per node
+                total_cost += (
+                    500 * card.cost_input_per_m + 300 * card.cost_output_per_m
+                ) / 1_000_000
+            else:
+                total_cost += 0.001  # fallback estimate per node
+
+        return total_cost
+
+    def _load_model_catalog(self) -> Any:
+        """Load ModelCardCatalog from cards.toml (cached after first call)."""
+        if hasattr(self, '_model_catalog'):
+            return self._model_catalog
+
+        self._model_catalog = None
+        # Try Python ModelCardCatalog (always available, no Rust dependency)
+        try:
+            from sage.llm.model_registry import ModelCardCatalog
+            from pathlib import Path
+
+            # Search common locations for cards.toml
+            for candidate in [
+                Path("config/cards.toml"),
+                Path("sage-python/config/cards.toml"),
+                Path(__file__).parent.parent.parent / "config" / "cards.toml",
+            ]:
+                if candidate.exists():
+                    self._model_catalog = ModelCardCatalog.from_toml_file(str(candidate))
+                    log.debug("Cost estimator: loaded %d models from %s",
+                              len(self._model_catalog), candidate)
+                    break
+        except Exception as exc:
+            log.debug("Cost estimator: catalog unavailable (%s)", exc)
+
+        return self._model_catalog
+
     # ── Stage 3: Assign Models ──────────────────────────────────────────────
 
     def _stage_assign_models(self, ctx: PipelineContext) -> PipelineContext:
@@ -665,10 +732,9 @@ class CognitiveOrchestrationPipeline:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
             ctx.result = result
-            # Estimate cost from topology node count * avg cost per node
-            if ctx.topology and hasattr(ctx.topology, "node_count"):
-                n_nodes = ctx.topology.node_count()
-                ctx.cost = n_nodes * 0.001  # ~$0.001 per node call average
+            # Estimate cost from topology execution
+            # Uses per-model pricing from cards.toml when available
+            ctx.cost = self._estimate_topology_cost(ctx)
         except Exception as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly with default provider
