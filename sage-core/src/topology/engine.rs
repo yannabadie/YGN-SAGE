@@ -343,7 +343,15 @@ impl TopologyEngine {
     }
 
     /// Path 2: Try to find a topology in the MAP-Elites archive.
-    fn try_archive_hit(&self, system: u8, task_description: &str) -> Option<GenerateResult> {
+    ///
+    /// Uses the cognitive system tier (S1/S2/S3) from kNN routing (92%
+    /// accuracy) as the sole complexity signal.  Previous versions used
+    /// `task_description.len()` as a proxy for complexity, but task length
+    /// is a terrible heuristic — short tasks can be highly complex (e.g.,
+    /// "Prove P != NP") and verbose tasks can be trivial.  The system
+    /// parameter already encodes the right complexity class, so we use it
+    /// directly without any task-length thresholds.
+    fn try_archive_hit(&self, system: u8, _task_description: &str) -> Option<GenerateResult> {
         let _span = info_span!("topology_engine.archive_path").entered();
 
         if self.archive.cell_count() == 0 {
@@ -351,26 +359,11 @@ impl TopologyEngine {
             return None;
         }
 
-        // Estimate behavior descriptor from system tier + task complexity signal
-        let task_len = task_description.len();
+        // Pure system-based descriptor — NO task_len heuristics.
         let (agent_count, max_depth) = match system {
             1 => (1u32, 1u32), // S1: solo agent, shallow
-            2 => {
-                // S2: vary based on task complexity (long descriptions => richer topologies)
-                if task_len > 500 {
-                    (4u32, 3u32)
-                } else {
-                    (3u32, 2u32)
-                }
-            }
-            3 => {
-                // S3: vary based on task complexity
-                if task_len > 1000 {
-                    (5u32, 4u32)
-                } else {
-                    (4u32, 3u32)
-                }
-            }
+            2 => (3u32, 2u32), // S2: small team, medium depth
+            3 => (5u32, 3u32), // S3: larger team, deeper collaboration
             _ => (2u32, 2u32), // default
         };
 
