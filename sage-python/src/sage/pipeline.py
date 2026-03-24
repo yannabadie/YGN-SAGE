@@ -583,9 +583,12 @@ class CognitiveOrchestrationPipeline:
                 log.info("Topology reroute triggered — regenerating")
                 ctx = self._stage_select_topology(ctx)  # new topology
                 ctx = self._stage_assign_models(ctx)    # re-assign models
+                # Fresh executor for the regenerated topology (old one is stale)
+                from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
+                executor_rerouted = _TE(ctx.topology)
                 # Re-execute with new topology (no controller to avoid infinite loop)
                 runner2 = TopologyRunner(
-                    graph=ctx.topology, executor=executor,
+                    graph=ctx.topology, executor=executor_rerouted,
                     llm_provider=self.llm_provider, llm_config=self.llm_config,
                     provider_pool=self.provider_pool,
                     controller=None,  # no controller on retry to prevent loop
