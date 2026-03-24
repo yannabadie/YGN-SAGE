@@ -7,7 +7,7 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). 259 tests.
+- `sage-core/` — Rust orchestrator (PyO3). 270+ tests (357 including veRL training tests).
 - `sage-python/` — Python SDK. 1500+ tests (68 veRL/GiGPO-specific).
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
 - `ui/` — Dashboard (FastAPI + WebSocket).
@@ -17,7 +17,7 @@ paths:
 1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 learned policy (SFT Phi-4-mini-instruct, 70% YAML valid, opt-in via `SAGE_ENABLE_PATH6=1`) is external Python-side.
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU paging with ULID chunks.
-4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5.
+4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5. Statistical validation via Wilcoxon signed-rank + Cohen's d (evolution/evaluator.py).
 5. **Strategy** — S1/S2/S3 cognitive routing (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling.
 
 ## Pipeline (5-stage)
@@ -33,7 +33,7 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (Top
 - **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive. Done.
 - **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics. Done.
 - **Path 6**: Learned topology policy (Phi-4-mini-instruct SFT, 70% YAML valid). Opt-in via `SAGE_ENABLE_PATH6=1`. Auto-downloads from `yannabadie/sage-topology-policy` on HuggingFace. Lazy-loaded on first call (no boot impact). Falls back to templates on invalid output.
-- **GiGPO veRL** (VeRLGIGPO branch): Multi-step topology env (SageTopologyEnv) with per-node rewards + anchor states. Edge-level credit (Graph-GRPO arXiv 2603.02701). QualityLabeler (OxiZ) for per-node scoring. ModelAssigner + 8 providers. Qwen3.5-9B on RunPod H100.
+- **GiGPO veRL** (VeRLGIGPO branch): Multi-step topology env (SageTopologyEnv) with per-node rewards + anchor states. Edge-level credit (Graph-GRPO arXiv 2603.02701). QualityLabeler (OxiZ) for per-node scoring. ModelAssigner + 8 providers. DeepSeek-R1-0528-Qwen3-8B on RunPod H100. 12 audit fixes applied: bandit learning loop, predecessor context, upgrade model resolution (set_node_model_id), fresh executor on reroute, real embeddings, trivial topology penalty, replay buffer, S-MMU utility eviction (auto-trigger 10K), archive descriptor enriched, quality cache eviction.
 
 ## Key Competitors
 - **OpenSage** (ICML '26): AI-created agents+tools+memory at runtime. 59% SWE-Bench Pro.

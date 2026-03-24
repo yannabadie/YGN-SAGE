@@ -18,7 +18,7 @@ Tout ce qui est performance-critique est en Rust (sage-core, compilé via PyO3/m
 Aucun seuil hardcodé. Chaque décision est soit formellement vérifiée (Z3/OxiZ SMT), soit apprise (ONNX, RL, bandit), soit backed par un papier de recherche. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
 
 **3. Evidence before assertions**
-On ne claim pas que ça marche — on prouve. 397 tests (351 Rust + 46 Python). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
+On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
 
 ### Architecture : 5 piliers cognitifs
 
@@ -444,4 +444,4 @@ sage-core/src/topology/
 └── verifier.rs           # PyHybridVerifier (acyclicity, connectivity)
 ```
 
-## Tests : 397 (46 Python + 351 Rust), 0 failures
+## Tests : 404 (47 Python + 357 Rust), 0 failures
