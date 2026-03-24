@@ -381,18 +381,21 @@ Phase C (après B) → SOTA complet
 
 | Composant | Valeur |
 |-----------|--------|
-| Template RunPod | `Runpod Pytorch 2.4.0` (`runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04`) |
-| Modèle | `nvidia/Nemotron-Orchestrator-8B` (Qwen3 architecture, NVIDIA Open Model License) |
-| Fallback | N/A (Nemotron-Orchestrator-8B is the final choice) |
-| Framework | verl 0.7.1 + GiGPO plugin (Phase A/B) → verl-agent (Phase C) |
-| Algorithme | GiGPO (`adv_estimator=gigpo`, `enable_similarity=True`, `similarity_thresh=0.85`) — on top of NVIDIA's GRPO orchestration weights |
+| Template RunPod | `Runpod Pytorch 2.4.0` (runpod-torch-v240) |
+| GPU | **1x H100 NVL 94GB** |
+| Disque système | **110 GB** |
+| Disque stockage | **80 GB** (monté sur `/workspace`) |
+| Modèle | `nvidia/Nemotron-Orchestrator-8B` (Qwen3 architecture, NVIDIA Open Model License, GRPO-trained orchestrator) |
+| Framework | verl 0.7.1 + GiGPO plugin |
+| Algorithme | GiGPO (`adv_estimator=gigpo`, `enable_similarity=True`, `similarity_thresh=0.85`) |
 | LoRA | r=64, alpha=32, target=all-linear |
-| GPU | 1x H100 80GB SXM (~39GB utilisés / 81GB total) |
-| Données | 2225 entries (Phase A) → ~600 curated (Phase B) |
-| Tokenizer | Nemotron-Orchestrator-8B tokenizer (Qwen3 base) — patcher `<think>` via `/no_think` system prompt ou `patch_tokenizer.py` |
-| Attention | SDPA natif PyTorch (`VLLM_ATTENTION_BACKEND=TORCH_SDPA`) — pas de flashinfer |
+| VRAM estimé | ~17GB actor + ~22GB vLLM = **~39GB / 94GB** — marge 55GB |
+| Dataset | **12,303 entries** (Phase A) → ~600 curated (Phase B) |
+| Tokenizer | Nemotron tokenizer (Qwen3 base) — `<think>` désactivé via `/no_think` system prompt |
+| Attention | SDPA natif PyTorch (`VLLM_ATTENTION_BACKEND=TORCH_SDPA`) |
 | Providers Phase B | DeepSeek, Google, OpenAI, xAI, MiniMax, Kimi, OpenRouter, Codex |
-| GGUF local | Q8_0 (~8.5GB) sur RTX 3500 Ada 12GB. Pre-quantized: `Mungert/Nemotron-Orchestrator-8B-GGUF` |
+| Post-training | Merge → HuggingFace (`yannabadie/sage-topology-policy-v2`) + GGUF Q8_0 (8.7GB, local RTX 3500) |
+| Opérateur | **Claude Code** en mode autonome (`--dangerously-skip-permissions`) sous user `yann` |
 
 ## Coût estimé
 
@@ -405,31 +408,103 @@ Phase C (après B) → SOTA complet
 
 ---
 
-## Étapes sur le pod (Phase A)
+## Étapes sur le pod
 
-### 1. Setup
+### Étape 0 — Créer le pod RunPod
+
+1. [console.runpod.io](https://console.runpod.io) → Deploy → GPU Cloud
+2. Template : **Runpod Pytorch 2.4.0** (`runpod-torch-v240`)
+3. GPU : **H100 NVL** (94 GB)
+4. Container Disk : **110 GB**
+5. Volume Disk : **80 GB** (monté sur `/workspace`)
+6. Deploy
+
+### Étape 1 — Créer l'utilisateur et installer Claude Code
+
+Se connecter en root (web terminal ou SSH), puis :
 
 ```bash
+# 1. Créer l'utilisateur yann avec tous les droits
+useradd -m -s /bin/bash -G sudo yann
+echo "yann ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/yann
+chmod 440 /etc/sudoers.d/yann
+
+# 2. Donner accès au workspace
+chown -R yann:yann /workspace
+
+# 3. Installer Claude Code
+curl -fsSL https://claude.ai/install.sh | bash
+
+# 4. Configurer le PATH pour yann
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> /home/yann/.bashrc
+
+# 5. Basculer sur yann
+su - yann
+```
+
+### Étape 2 — Cloner le repo et configurer
+
+```bash
+# En tant que yann
 git clone https://github.com/yannabadie/YGN-SAGE.git /workspace/YGN-SAGE
 cd /workspace/YGN-SAGE && git checkout VeRLGIGPO
-# Copier .env avec les clés API
-bash sage-python/scripts/verl/setup_runpod.sh
+
+# Créer le .env avec les clés API
+cat > .env << 'EOF'
+DEEPSEEK_API_KEY="<ta clé>"
+GOOGLE_API_KEY="<ta clé>"
+OPENAI_API_KEY="<ta clé>"
+GROK_API_KEY="<ta clé>"
+MINIMAX_API_KEY="<ta clé>"
+KIMI_API_KEY="<ta clé>"
+OPEN_ROUTER_API_KEY="<ta clé>"
+HF_TOKEN="<ton token>"
+ANTHROPIC_API_KEY="<ta clé Anthropic pour Claude Code>"
+EOF
 ```
 
-### 2. Valider
+### Étape 3 — Lancer Claude Code en mode autonome
 
 ```bash
-cd sage-python && python3 scripts/verl/validate_setup.py
+cd /workspace/YGN-SAGE
+claude --dangerously-skip-permissions
 ```
 
-### 3. Training Phase A
+### Étape 4 — Prompt pour Claude Code
 
-```bash
-screen -S train
-bash scripts/verl/train_topology.sh 2>&1 | tee train.log
+Coller ce prompt dans Claude Code :
+
+```
+Lis RUNPOD_PLAN.md et AI-ARCHITECTURE.md. Tu es sur un pod RunPod H100 NVL 94GB.
+User: yann (sudo). Branche: VeRLGIGPO.
+
+Exécute le plan de bout en bout :
+1. bash sage-python/scripts/verl/setup_runpod.sh
+2. cd sage-python && python3 scripts/verl/validate_setup.py (10/10 checks)
+3. bash scripts/verl/train_topology_v3.sh 2>&1 | tee /workspace/train.log
+4. python3 scripts/verl/benchmark_post_train.py --bench all --limit 20
+5. python3 scripts/verl/post_training_pipeline.py all
+   → export LoRA → merge Nemotron-Orchestrator-8B → push HuggingFace → GGUF Q8_0
+
+Si un step échoue, diagnostique, fixe, et réessaie. Log tout dans /workspace/.
+Le modèle est nvidia/Nemotron-Orchestrator-8B (Qwen3 arch, GRPO-trained).
+Si le tokenizer a <think> mode actif, patch avec patch_tokenizer.py.
+Si vLLM crash, essaie VLLM_ATTENTION_BACKEND=TORCH_SDPA.
+
+Push le modèle sur HuggingFace: yannabadie/sage-topology-policy-v2 (merged + GGUF Q8_0).
+Commit et push les résultats sur GitHub (branche VeRLGIGPO).
 ```
 
-**Signaux de succès :** `reward/mean` augmente, YAML parsable > 90%, adaptation blocks présents.
+### Signaux de succès
+
+| Phase | Critère | Target |
+|-------|---------|--------|
+| A (structural) | `reward/mean` | > 0.7 |
+| A | YAML parsable | > 90% |
+| A | Adaptation blocks | > 50% moderate/complex |
+| B (execution) | `reward/mean` | > 0.5 |
+| B | PASSED rate | > 30% |
+| B | BigCodeBench Hard (20 tasks) | > 38% |
 
 ### 4. Training Phase B (après Phase A)
 
