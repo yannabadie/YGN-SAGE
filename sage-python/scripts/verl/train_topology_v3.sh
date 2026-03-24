@@ -2,8 +2,8 @@
 # ============================================================
 # YGN-SAGE Topology Training V3 — verl 0.7.1 + vLLM + GiGPO
 # ============================================================
-# Model: deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
-#         (MIT license, Qwen3-8B transformer, R1 reasoning distilled)
+# Model: Qwen/Qwen3-8B
+#         (Apache 2.0 license, Qwen3-8B transformer)
 # Algorithm: GiGPO via verl 0.7.1 registry plugin
 # Hardware: 1x H100 80GB
 # ============================================================
@@ -16,7 +16,7 @@
 #   - param_offload + optimizer_offload (standard for LoRA on H100)
 #   - layered_summon + use_shm (memory-efficient weight sharing)
 #
-# Memory budget (DeepSeek-R1-0528-Qwen3-8B bf16 on H100 80GB):
+# Memory budget (Qwen3-8B bf16 on H100 80GB):
 #   Actor (FSDP): ~16GB model + 1GB LoRA/optim = ~17GB
 #   vLLM rollout: ~16GB model + KV cache = ~22GB at util=0.3
 #   Ref: offloaded to CPU
@@ -39,7 +39,7 @@ export PYTHONPATH="/workspace/verl-071:${PYTHONPATH:-}"
 export VLLM_ATTENTION_BACKEND=TORCH_SDPA
 
 # ── Config ───────────────────────────────────────────────────
-MODEL=${SAGE_MODEL:-"/workspace/patched_deepseek_r1_qwen3_8b"}
+MODEL=${SAGE_MODEL:-"/workspace/patched_qwen3_8b"}
 OUTPUT="/workspace/topology_verl_output"
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 DATA_FULL="data/verl_topology_train.parquet"
@@ -48,7 +48,7 @@ DATA_CURATED="data/verl_topology_curated.parquet"
 mkdir -p "$OUTPUT"
 
 echo "=== YGN-SAGE verl 0.7.1 GiGPO Training V3 ==="
-echo "Model:    $MODEL (DeepSeek-R1-0528-Qwen3-8B)"
+echo "Model:    $MODEL (Qwen/Qwen3-8B)"
 echo "Data:     $DATA_FULL (2225 entries)"
 echo "Output:   $OUTPUT"
 echo ""
@@ -98,7 +98,7 @@ print('=== All checks passed ===')
 
 # ── Phase A: Structural GiGPO ────────────────────────────────
 echo ""
-echo "=== Phase A: Structural GiGPO (5 epochs, 2225 entries, DeepSeek-R1-0528-Qwen3-8B) ==="
+echo "=== Phase A: Structural GiGPO (5 epochs, 2225 entries, Qwen3-8B) ==="
 echo ""
 
 export SAGE_VERL_EXEC=0

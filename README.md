@@ -44,7 +44,7 @@ SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
    └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
                              ├─ MCTS search            └─ ProviderPool (8 providers)
                              ├─ LLM synthesis               ├─ CircuitBreaker
-                             ├─ Path 6: learned policy (DeepSeek-R1-0528-Qwen3-8B GiGPO V2)
+                             ├─ Path 6: learned policy (Qwen3-8B GiGPO V2)
                              └─ Template fallback (x8)       └─ FrugalGPT cascade
 ```
 
@@ -80,7 +80,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 - **MAP-Elites + CMA-ME**: quality-diversity search over topology space
 - **Online evolution**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to archive
 - **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
-- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. V2: DeepSeek-R1-0528-Qwen3-8B GiGPO via veRL on RunPod H100. Auto-downloads from [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2). Enable with `SAGE_ENABLE_PATH6=1`.
+- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. V2: Qwen3-8B GiGPO via veRL on RunPod H100. Auto-downloads from [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2). Enable with `SAGE_ENABLE_PATH6=1`.
 - **RLVR-Topology**: GiGPO with TopologyReward Rust (execution-based, not format-only) + Graph-GRPO edge credit
 
 ### 5. Strategy (Rust)
@@ -105,7 +105,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 | **SA-1** | Runtime Agent Factory: custom TopologyNode prompts, LLM-generated agent specs | Phase 1+2 done |
 | **SA-3** | Online Evolution: `_auto_evolve=True`, pipeline records to MAP-Elites | Done |
 | **SA-4** | Z3 Quality Pipeline: QualityLabeler replaces heuristic, zero false signals | Done |
-| **Path 6** | Learned topology policy: V1 Phi-4-mini SFT (legacy), V2 DeepSeek-R1-0528-Qwen3-8B GiGPO | Done (opt-in) |
+| **Path 6** | Learned topology policy: V1 Phi-4-mini SFT (legacy), V2 Qwen3-8B GiGPO | Done (opt-in) |
 | **RLVR-Topology** | GiGPO with TopologyReward Rust (execution-based reward) + Graph-GRPO edge credit | Training |
 
 ## Benchmark Results
