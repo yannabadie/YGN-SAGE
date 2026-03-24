@@ -86,6 +86,7 @@ class CognitiveOrchestrationPipeline:
         llm_config: Any = None,
         prm: Any = None,
         controller: Any = None,
+        smmu: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -98,6 +99,7 @@ class CognitiveOrchestrationPipeline:
         self.llm_config = llm_config
         self.prm = prm
         self.controller = controller
+        self._smmu = smmu
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available."""
