@@ -44,7 +44,8 @@ from sage.llm.base import LLMConfig  # noqa: E402
 from sage.llm.mock import MockProvider  # noqa: E402
 from sage.llm.router import ModelRouter  # noqa: E402
 from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
-from sage.strategy.metacognition import ComplexityRouter  # backward compat  # noqa: E402
+# Legacy fallback (34% GT) — kNN (92%) is primary. Kept for backward compatibility.
+from sage.strategy.metacognition import ComplexityRouter  # noqa: E402
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation  # noqa: E402
 from sage.memory.memory_agent import MemoryAgent  # noqa: E402
 from sage.tools.registry import ToolRegistry  # noqa: E402

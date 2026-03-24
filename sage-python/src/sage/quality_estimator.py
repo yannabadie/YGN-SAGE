@@ -30,9 +30,14 @@ class QualityEstimator:
 
     @staticmethod
     def _try_load_onnx():  # type: ignore[return]
+        # Future capability: RustLearnedQualityEstimator from sage_core.
+        # ONNX model not shipped; QualityLabeler (SMT) is the active backend.
         try:
-            from sage_core import RustLearnedQualityEstimator
+            from sage_core import RustLearnedQualityEstimator  # noqa: F401 — future capability
             from pathlib import Path
+            # ONNX model not shipped; QualityLabeler (SMT) is the active backend.
+            # When quality_estimator_v2.onnx is trained and placed in models/,
+            # this path will activate automatically.
             model_path = Path(__file__).parent.parent.parent / "models" / "quality_estimator_v2.onnx"
             tok_path = Path(__file__).parent.parent.parent / "models" / "tokenizer.json"
             if model_path.exists() and tok_path.exists():

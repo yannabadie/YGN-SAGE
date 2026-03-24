@@ -63,8 +63,13 @@ class SageAgentExecutor(AgentExecutor):
             )
 
     async def cancel(self, context: Any, event_queue: Any) -> None:
-        """Cancel not yet supported."""
-        raise NotImplementedError("Task cancellation not yet supported")
+        """Cancel not supported — return error message instead of raising."""
+        _log.warning("A2A cancel requested but not supported")
+        await event_queue.enqueue_event(
+            new_agent_text_message(
+                "Error: task cancellation is not supported by this agent"
+            )
+        )
 
 
 def build_agent_card(
