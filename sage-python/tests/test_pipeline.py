@@ -104,14 +104,31 @@ class _MockLLMProvider:
         return _MockLLMResponse()
 
 
+class _MockBanditDecision:
+    def __init__(self):
+        self.decision_id = "mock_decision_001"
+
+
 class _MockBandit:
     """Mock ContextualBandit for learning stage."""
 
     def __init__(self) -> None:
         self.recorded: list[tuple] = []
 
+    def select_with_context(self, exploration_budget: float = 0.1, context: list | None = None):
+        return _MockBanditDecision()
+
+    def select(self, exploration_budget: float = 0.1):
+        return _MockBanditDecision()
+
+    def choose(self, exploration_budget: float = 0.1):
+        return _MockBanditDecision()
+
     def record(self, arm: str, quality: float, cost: float, latency_ms: float) -> None:
         self.recorded.append((arm, quality, cost, latency_ms))
+
+    def record_outcome(self, decision_id: str, quality: float, cost: float, latency_ms: float) -> None:
+        self.recorded.append((decision_id, quality, cost, latency_ms))
 
 
 class _MockQualityEstimator:
@@ -152,9 +169,11 @@ async def test_pipeline_full_run():
     assert result == "Pipeline test response"
     # Verify events emitted for each stage
     assert event_bus.emit.call_count >= 5  # CLASSIFY, DECOMPOSE, SELECT_TOPOLOGY, ASSIGN_MODELS, LEARN
-    # Verify bandit recorded outcome
+    # Verify bandit recorded outcome — bandit.select_with_context() is called
+    # before the single-agent early-return, so bandit_decision_id IS set and
+    # record_outcome IS called in the LEARN stage.
     assert len(bandit.recorded) == 1
-    assert bandit.recorded[0][0] == "pipeline"
+    assert bandit.recorded[0][0] == "mock_decision_001"
 
 
 @pytest.mark.asyncio
