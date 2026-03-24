@@ -98,3 +98,74 @@ class Evaluator:
 
     def stage_count(self) -> int:
         return len(self._stages)
+
+
+# ---------------------------------------------------------------------------
+# Statistical validation for EvolutionEngine
+# ---------------------------------------------------------------------------
+
+def validate_evolution(
+    baseline_scores: list[float],
+    evolved_scores: list[float],
+) -> dict:
+    """Compare baseline vs evolved topology scores with statistical rigor.
+
+    Uses Wilcoxon signed-rank test (non-parametric, paired) and Cohen's d
+    effect size to determine if evolution produced a genuine improvement.
+    Blocks promotion to production if p > 0.05 or effect size <= 0.2.
+
+    Parameters
+    ----------
+    baseline_scores : list[float]
+        Quality scores from baseline topologies (N >= 10 required).
+    evolved_scores : list[float]
+        Quality scores from evolved topologies (same length, paired).
+
+    Returns
+    -------
+    dict with keys: p_value, effect_size (Cohen's d), significant (bool),
+    mean_improvement, n_runs, gate_passed.
+    """
+    import numpy as np
+
+    if len(baseline_scores) != len(evolved_scores):
+        return {"error": "Paired samples required (same length)", "significant": False, "gate_passed": False}
+
+    n = len(baseline_scores)
+    if n < 10:
+        return {"error": f"Need N>=10 paired runs, got {n}", "significant": False, "gate_passed": False}
+
+    try:
+        from scipy.stats import wilcoxon
+    except ImportError:
+        return {"error": "scipy not installed", "significant": False, "gate_passed": False}
+
+    diff = np.array(evolved_scores) - np.array(baseline_scores)
+
+    # Wilcoxon signed-rank test (one-sided: evolved > baseline)
+    try:
+        _stat, p_value = wilcoxon(baseline_scores, evolved_scores, alternative="greater")
+    except ValueError:
+        # All differences are zero
+        return {
+            "p_value": 1.0,
+            "effect_size": 0.0,
+            "significant": False,
+            "mean_improvement": 0.0,
+            "n_runs": n,
+            "gate_passed": False,
+        }
+
+    # Cohen's d effect size
+    d = float(diff.mean() / (diff.std() + 1e-8))
+
+    significant = p_value < 0.05
+
+    return {
+        "p_value": float(p_value),
+        "effect_size": d,
+        "significant": significant,
+        "mean_improvement": float(diff.mean()),
+        "n_runs": n,
+        "gate_passed": significant and d > 0.2,
+    }

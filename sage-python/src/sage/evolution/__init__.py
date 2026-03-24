@@ -1,7 +1,7 @@
 """Evolution engine: AlphaEvolve-inspired LLM-driven code evolution."""
 from sage.evolution.population import Population, Individual
 from sage.evolution.mutator import Mutator, Mutation
-from sage.evolution.evaluator import Evaluator, EvalResult
+from sage.evolution.evaluator import Evaluator, EvalResult, validate_evolution
 from sage.evolution.engine import EvolutionEngine
 
 __all__ = [
@@ -12,4 +12,5 @@ __all__ = [
     "Evaluator",
     "EvalResult",
     "EvolutionEngine",
+    "validate_evolution",
 ]
