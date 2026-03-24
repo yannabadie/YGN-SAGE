@@ -36,10 +36,19 @@ def _strip_code_fence(text: str) -> str:
 # ── Format scoring ───────────────────────────────────────────
 
 def _score_format(text: str) -> float:
-    """YAML format validity. Range: [-2.0, +1.0]."""
+    """YAML/JSON format validity. Range: [-2.0, +1.0].
+
+    Accepts both YAML and JSON (yaml.safe_load handles valid JSON natively).
+    Falls back to json.loads for JSON with trailing commas that YAML rejects.
+    """
     try:
         text = _strip_code_fence(text)
-        data = yaml.safe_load(text)
+        try:
+            data = yaml.safe_load(text)
+        except yaml.YAMLError:
+            # Fallback: try json.loads for JSON with trailing commas
+            import json
+            data = json.loads(text)
         if not isinstance(data, dict):
             return -1.5
         if "nodes" not in data:
