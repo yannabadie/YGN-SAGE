@@ -45,13 +45,23 @@ class TestScoreStructure:
 
     def test_minimal_one_node(self):
         from sage.verl.reward import _score_structure
+        # 1 node, no difficulty -> defaults to "moderate" (expected_min=2)
+        # Base: nodes(0.3) + roles(0.3) = 0.6, then *0.5 trivial penalty = 0.3
         score = _score_structure("nodes:\n- role: coder")
+        assert score == pytest.approx(0.3)
+
+    def test_minimal_one_node_simple_no_penalty(self):
+        from sage.verl.reward import _score_structure
+        # 1 node with difficulty=simple -> expected_min=1, no penalty
+        score = _score_structure("nodes:\n- role: coder\ndifficulty: simple")
         assert score == pytest.approx(0.6)  # nodes(0.3) + roles(0.3)
 
     def test_no_roles(self):
         from sage.verl.reward import _score_structure
+        # 1 node, no difficulty -> defaults to "moderate" (expected_min=2)
+        # Base: nodes(0.3), then *0.5 trivial penalty = 0.15
         score = _score_structure("nodes:\n- name: foo")
-        assert score == pytest.approx(0.3)  # nodes only
+        assert score == pytest.approx(0.15)
 
     def test_invalid_yaml(self):
         from sage.verl.reward import _score_structure

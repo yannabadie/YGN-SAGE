@@ -75,6 +75,16 @@ def _score_structure(text: str) -> float:
             score += 0.3
         if data.get("reasoning"):
             score += 0.2
+
+        # Penalty for trivially small topologies (reward hacking mitigation)
+        # A moderate/complex task with 1 node is suspicious
+        difficulty = data.get("difficulty", "moderate")
+        expected_min = {"simple": 1, "moderate": 2, "complex": 3}.get(
+            str(difficulty).lower(), 2
+        )
+        if len(nodes) < expected_min:
+            score *= 0.5  # halve the score for under-sized topologies
+
         return score
     except Exception:
         return 0.0
