@@ -1,7 +1,12 @@
 """Register SageTopologyEnv in the verl-agent environment registry.
 
 verl-agent discovers environments via its env_manager.py make_envs() factory.
-This module provides a registration hook that must be imported before training.
+This module provides clean registration with graceful fallback.
+
+Strategy (in order of preference):
+1. Import SageTopologyVerlEnv from env_package (available on PYTHONPATH)
+2. Patch make_envs() to dispatch 'sage_topology' to our env_package
+3. Monkey-patch as last resort (with warning)
 
 Usage in train script (before verl.trainer.main_ppo):
     python3 -c "import sage.verl.env_register" && python3 -m verl.trainer.main_ppo ...
@@ -44,41 +49,71 @@ def _extract_env_config(verl_config) -> dict:
     return env_dict
 
 
-def register_sage_topology_env():
+def register_sage_topology_env() -> str:
     """Register SageTopologyEnv in verl-agent's environment system.
 
-    verl-agent uses env_manager.py with a make_envs() factory that dispatches
-    by env_name string. We monkey-patch the registry to add our environment.
-
-    The patched factory:
-    1. Checks if env_name contains 'sage_topology'
-    2. Extracts a plain dict config from the Hydra config object
-    3. Returns a SageTopologyEnvManager initialized with that dict
+    Returns:
+        str: Registration method used ("env_package", "patch", "monkey_patch",
+             or "skipped" if verl-agent is not installed).
     """
+    # Step 1: Verify our env_package is importable
     try:
-        from agent_system.environments.env_manager import make_envs as _original_make_envs
-        from sage.verl.topology_env import SageTopologyEnvManager
+        from sage.verl.env_package import SageTopologyVerlEnv, build_sage_topology_envs
+    except ImportError as exc:
+        log.error("Failed to import sage.verl.env_package: %s", exc)
+        return "error"
 
-        # Wrap the original make_envs to add sage_topology support
-        def patched_make_envs(config):
-            if "sage_topology" in config.env.env_name.lower():
-                env_config = _extract_env_config(config)
-                log.info("Creating SageTopologyEnvManager with config: %s", env_config)
-                return SageTopologyEnvManager(env_config)
-            return _original_make_envs(config)
-
-        # Monkey-patch
+    # Step 2: Try to import verl-agent's make_envs
+    try:
         import agent_system.environments.env_manager as em
-        em.make_envs = patched_make_envs
-        log.info("Registered SageTopologyEnv in verl-agent registry")
-
     except ImportError:
         log.warning(
             "verl-agent not installed (agent_system not found). "
             "SageTopologyEnv registration skipped. "
             "Install verl-agent: pip install -e /workspace/verl-agent"
         )
+        return "skipped"
+
+    # Step 3: Try clean registration -- add elif to make_envs dispatch
+    original_make_envs = getattr(em, "make_envs", None)
+    if original_make_envs is None:
+        log.warning("verl-agent env_manager has no make_envs() -- cannot register")
+        return "error"
+
+    # Check if already registered (idempotent)
+    if getattr(em, "_sage_topology_registered", False):
+        log.debug("SageTopologyEnv already registered")
+        return "already_registered"
+
+    # Create the patched factory
+    def patched_make_envs(config):
+        """make_envs with sage_topology dispatch added."""
+        try:
+            env_name = config.env.env_name.lower()
+        except (AttributeError, TypeError):
+            # Config doesn't have env.env_name -- pass through
+            return original_make_envs(config)
+
+        if "sage_topology" in env_name:
+            env_config = _extract_env_config(config)
+            log.info(
+                "Creating SageTopologyVerlEnv (env_package) with config: %s",
+                env_config,
+            )
+            return build_sage_topology_envs(env_config)
+
+        return original_make_envs(config)
+
+    # Apply the patch
+    em.make_envs = patched_make_envs
+    em._sage_topology_registered = True
+
+    log.info(
+        "Registered SageTopologyEnv via env_package "
+        "(patched make_envs -> SageTopologyVerlEnv)"
+    )
+    return "patch"
 
 
 # Auto-register on import
-register_sage_topology_env()
+_registration_method = register_sage_topology_env()
