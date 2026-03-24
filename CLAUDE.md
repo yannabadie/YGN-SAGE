@@ -47,10 +47,10 @@ python -m sage.bench --type ablation --limit 50
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%
 - **Providers**: 8 functional (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex)
 - **Models**: 20 in cards.toml (minimax-m2.7, gpt-5.4-mini/nano, qwen3.5-plus via OpenRouter)
-- **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (Phi-4-mini SFT current, Qwen3.5-9B GiGPO replacing)
+- **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (Phi-4-mini SFT V1, DeepSeek-R1-0528-Qwen3-8B GiGPO V2)
 - **GiGPO Training**: VeRLGIGPO branch ready for RunPod H100 (multi-step topology env, 8 providers, 1965 entries, GiGPO + Graph-GRPO edge credit). 12 audit fixes applied (bandit loop, predecessor context, upgrade resolution, fresh executor on reroute, real embeddings, trivial topology penalty, replay buffer, utility eviction, Wilcoxon validation).
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
-- **HuggingFace**: `yannabadie/sage-topology-policy` — SFT Phi-4-mini-instruct (to be replaced by Qwen3.5-9B after veRL training)
+- **HuggingFace**: `yannabadie/sage-topology-policy-v2` — DeepSeek-R1-0528-Qwen3-8B GiGPO (V1 legacy: `yannabadie/sage-topology-policy` Phi-4-mini SFT)
 
 ## Detailed rules in .claude/rules/
 

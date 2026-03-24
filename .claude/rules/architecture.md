@@ -14,7 +14,7 @@ paths:
 - `Researches/` — 25+ research papers backing architecture decisions.
 
 ## 5 Cognitive Pillars
-1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 learned policy (SFT Phi-4-mini-instruct, 70% YAML valid, opt-in via `SAGE_ENABLE_PATH6=1`) is external Python-side.
+1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 learned policy (V1: SFT Phi-4-mini-instruct legacy, V2: DeepSeek-R1-0528-Qwen3-8B GiGPO, opt-in via `SAGE_ENABLE_PATH6=1`) is external Python-side.
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic → ExoCortex RAG. S-MMU paging with ULID chunks.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution wired in pipeline Stage 5. Statistical validation via Wilcoxon signed-rank + Cohen's d (evolution/evaluator.py).
@@ -32,8 +32,8 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (Top
 - **SA-1**: Runtime Agent Factory — custom TopologyNode prompts, LLM-generated agent specs. Done.
 - **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive. Done.
 - **SA-4**: Z3 Quality Pipeline — QualityLabeler (Rust formal), zero heuristics. Done.
-- **Path 6**: Learned topology policy (Phi-4-mini-instruct SFT, 70% YAML valid). Opt-in via `SAGE_ENABLE_PATH6=1`. Auto-downloads from `yannabadie/sage-topology-policy` on HuggingFace. Lazy-loaded on first call (no boot impact). Falls back to templates on invalid output.
-- **GiGPO veRL** (VeRLGIGPO branch): Multi-step topology env (SageTopologyEnv) with per-node rewards + anchor states. Edge-level credit (Graph-GRPO arXiv 2603.02701). QualityLabeler (OxiZ) for per-node scoring. ModelAssigner + 8 providers. DeepSeek-R1-0528-Qwen3-8B on RunPod H100. 12 audit fixes applied: bandit learning loop, predecessor context, upgrade model resolution (set_node_model_id), fresh executor on reroute, real embeddings, trivial topology penalty, replay buffer, S-MMU utility eviction (auto-trigger 10K), archive descriptor enriched, quality cache eviction.
+- **Path 6**: Learned topology policy. V1 (legacy): Phi-4-mini-instruct SFT, 70% YAML valid. V2: DeepSeek-R1-0528-Qwen3-8B GiGPO. Opt-in via `SAGE_ENABLE_PATH6=1`. Auto-downloads from `yannabadie/sage-topology-policy-v2` on HuggingFace. Lazy-loaded on first call (no boot impact). Falls back to templates on invalid output.
+- **GiGPO veRL** (VeRLGIGPO branch): Multi-step topology env (SageTopologyEnv) with per-node rewards + anchor states. Edge-level credit (Graph-GRPO arXiv 2603.02701). QualityLabeler (OxiZ) for per-node scoring. ModelAssigner + 8 providers. deepseek-ai/DeepSeek-R1-0528-Qwen3-8B (MIT, Qwen3-8B transformer, R1 reasoning distilled) on RunPod H100. 12 audit fixes applied: bandit learning loop, predecessor context, upgrade model resolution (set_node_model_id), fresh executor on reroute, real embeddings, trivial topology penalty, replay buffer, S-MMU utility eviction (auto-trigger 10K), archive descriptor enriched, quality cache eviction.
 
 ## Key Competitors
 - **OpenSage** (ICML '26): AI-created agents+tools+memory at runtime. 59% SWE-Bench Pro.

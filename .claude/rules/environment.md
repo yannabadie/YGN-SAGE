@@ -33,7 +33,7 @@ For httpx (HuggingFace Hub), also pass `verify="C:/Code/certs/ca-bundle.pem"` to
 | budget | deepseek-chat | DeepSeek | Best cost/quality ($0.28/$0.42, no rate limits) |
 | budget-alt | grok-4-1-fast-reasoning | xAI | 2M context, $0.20/$0.50 |
 | topology-sft | gpt-5.4 | OpenAI | SFT data generation |
-| topology-policy | Qwen/Qwen3.5-9B | veRL training | Replacing Phi-4-mini via GRPO on RunPod H100 |
+| topology-policy | deepseek-ai/DeepSeek-R1-0528-Qwen3-8B | veRL training | MIT, Qwen3-8B transformer, R1 reasoning distilled. GiGPO on RunPod H100 |
 | new | minimax-m2.7 | MiniMax | Self-evolving, $0.30/$1.20 |
 | new | qwen/qwen3.5-plus-02-15 | OpenRouter | Qwen3.5-Plus via OpenRouter ($0.26/$1.56) |
 | new | gpt-5.4-mini | OpenAI | Budget frontier ($0.75/$4.50) |
