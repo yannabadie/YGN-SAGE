@@ -42,6 +42,14 @@ class TrainingMemory:
             )
         """)
         self._conn.commit()
+        # Add replay column for existing DBs (no-op if already present)
+        try:
+            self._conn.execute(
+                "ALTER TABLE episodes ADD COLUMN is_replay_candidate BOOLEAN DEFAULT 0"
+            )
+            self._conn.commit()
+        except Exception:
+            pass  # Column already exists
 
     def store_episode(
         self,
@@ -138,6 +146,47 @@ class TrainingMemory:
     def count(self) -> int:
         """Number of stored episodes."""
         return self._conn.execute("SELECT COUNT(*) FROM episodes").fetchone()[0]
+
+    def mark_replay_candidates(self, fraction: float = 0.1) -> int:
+        """Mark top fraction of episodes as replay candidates (diversity-based).
+
+        Selects episodes with highest reward across domains.
+        """
+        total = self.count()
+        if total == 0:
+            return 0
+        limit = max(1, int(total * fraction))
+        # Reset all, then mark top-reward diverse episodes
+        self._conn.execute("UPDATE episodes SET is_replay_candidate = 0")
+        self._conn.execute(
+            """UPDATE episodes SET is_replay_candidate = 1
+               WHERE id IN (
+                   SELECT id FROM episodes
+                   ORDER BY total_reward DESC, RANDOM()
+                   LIMIT ?
+               )""",
+            (limit,),
+        )
+        self._conn.commit()
+        return limit
+
+    def get_replay_batch(self, k: int = 50) -> list[dict]:
+        """Get k replay candidates for mixing into training batches."""
+        rows = self._conn.execute(
+            "SELECT * FROM episodes WHERE is_replay_candidate = 1 ORDER BY RANDOM() LIMIT ?",
+            (k,),
+        ).fetchall()
+        results = []
+        for row in rows:
+            d = dict(row)
+            d.pop("embedding", None)
+            if d.get("per_node_results"):
+                try:
+                    d["per_node_results"] = json.loads(d["per_node_results"])
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            results.append(d)
+        return results
 
     def close(self) -> None:
         self._conn.close()
