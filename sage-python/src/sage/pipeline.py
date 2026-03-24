@@ -45,6 +45,7 @@ class PipelineContext:
     assignments: dict[int, str] = field(default_factory=dict)
     result: str = ""
     latency_ms: float = 0.0
+    cost: float = 0.0
     bandit_decision_id: str | None = None
 
 
@@ -633,6 +634,10 @@ class CognitiveOrchestrationPipeline:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
             ctx.result = result
+            # Estimate cost from topology node count * avg cost per node
+            if ctx.topology and hasattr(ctx.topology, "node_count"):
+                n_nodes = ctx.topology.node_count()
+                ctx.cost = n_nodes * 0.001  # ~$0.001 per node call average
         except Exception as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly with default provider
@@ -696,7 +701,7 @@ class CognitiveOrchestrationPipeline:
         if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
             if ctx.bandit_decision_id:
                 try:
-                    self.bandit.record_outcome(ctx.bandit_decision_id, quality, 0.0, ctx.latency_ms)
+                    self.bandit.record_outcome(ctx.bandit_decision_id, quality, ctx.cost, ctx.latency_ms)
                 except Exception:
                     pass
 
@@ -725,7 +730,7 @@ class CognitiveOrchestrationPipeline:
                         keywords,
                         task_embedding,  # real embedding instead of None
                         quality,
-                        ctx.cost if hasattr(ctx, 'cost') else 0.0,
+                        ctx.cost,
                         ctx.latency_ms,
                     )
                     log.debug(
