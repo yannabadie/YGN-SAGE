@@ -123,7 +123,7 @@ impl PyTopologyEngine {
         exploration_budget: f32,
     ) -> PyResult<PyGenerateResult> {
         let result = self.inner.generate(
-            &self.smmu,
+            &mut self.smmu,
             task_description,
             task_embedding,
             system,

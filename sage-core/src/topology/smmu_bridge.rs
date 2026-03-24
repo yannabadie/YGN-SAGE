@@ -179,7 +179,7 @@ impl TopologySmmuBridge {
     /// Returns `Vec<TopologySuggestion>` with full topology metadata.
     pub fn retrieve_similar(
         &self,
-        smmu: &MultiViewMMU,
+        smmu: &mut MultiViewMMU,
         query_chunk_id: &str,
         max_results: usize,
     ) -> Vec<TopologySuggestion> {
@@ -358,10 +358,10 @@ mod tests {
 
     #[test]
     fn test_retrieve_on_empty_bridge() {
-        let smmu = MultiViewMMU::new();
+        let mut smmu = MultiViewMMU::new();
         let bridge = TopologySmmuBridge::new();
 
-        let results = bridge.retrieve_similar(&smmu, "nonexistent", 5);
+        let results = bridge.retrieve_similar(&mut smmu, "nonexistent", 5);
         assert!(results.is_empty());
     }
 
@@ -386,7 +386,7 @@ mod tests {
         let query_id =
             smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-        let results = bridge.retrieve_similar(&smmu, &query_id, 5);
+        let results = bridge.retrieve_similar(&mut smmu, &query_id, 5);
         assert!(!results.is_empty(), "Should find the similar task");
         assert_eq!(results[0].template, "avr");
         assert_eq!(results[0].topology_id, "01JTEST0001");
@@ -522,7 +522,7 @@ mod tests {
         let query_id =
             smmu.register_chunk(0, 0, "Similar task", vec!["test".into()], Some(emb), None);
 
-        let suggestions = bridge.retrieve_similar(&smmu, &query_id, 5);
+        let suggestions = bridge.retrieve_similar(&mut smmu, &query_id, 5);
         assert!(!suggestions.is_empty());
 
         let s = &suggestions[0];

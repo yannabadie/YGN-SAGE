@@ -133,7 +133,7 @@ impl WorkingMemory {
     /// Returns list of `(chunk_id, score)` tuples, descending by score.
     #[pyo3(signature = (active_chunk_id, max_hops, weights=None))]
     pub fn retrieve_relevant_chunks(
-        &self,
+        &mut self,
         active_chunk_id: &str,
         max_hops: usize,
         weights: Option<[f32; 4]>,
@@ -146,12 +146,12 @@ impl WorkingMemory {
     /// active chunk.
     #[pyo3(signature = (active_chunk_id, max_hops, budget))]
     pub fn get_page_out_candidates(
-        &self,
+        &mut self,
         active_chunk_id: &str,
         max_hops: usize,
         budget: usize,
     ) -> Vec<String> {
-        paging::page_out_candidates(&self.smmu, active_chunk_id, max_hops, budget)
+        paging::page_out_candidates(&mut self.smmu, active_chunk_id, max_hops, budget)
     }
 
     /// Number of chunks registered in the S-MMU.

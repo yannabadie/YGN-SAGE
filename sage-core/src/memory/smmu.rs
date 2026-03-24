@@ -25,6 +25,8 @@ pub struct ChunkMetadata {
     pub keywords: Vec<String>,
     /// Parent chunk ID (ULID) for causal linking (e.g. parent agent's chunk).
     pub parent_chunk_id: Option<String>,
+    /// Number of times this chunk was retrieved (for utility-based eviction).
+    pub access_count: u32,
 }
 
 /// Edge label identifying which graph view an edge belongs to.
@@ -88,8 +90,13 @@ impl MultiViewMMU {
         self.chunk_map.len()
     }
 
+    /// Capacity threshold: auto-evict when chunk count reaches this.
+    const CAPACITY_THRESHOLD: usize = 10_000;
+
     /// Register a new chunk and build all applicable edges.
     /// Returns the ULID string assigned to this chunk.
+    ///
+    /// Auto-triggers utility-based eviction when chunk count reaches 10,000.
     pub fn register_chunk(
         &mut self,
         start_time: i64,
@@ -99,6 +106,12 @@ impl MultiViewMMU {
         embedding: Option<Vec<f32>>,
         parent_chunk_id: Option<String>,
     ) -> String {
+        // Auto-GC if approaching capacity
+        if self.chunk_map.len() >= Self::CAPACITY_THRESHOLD {
+            let evict_count = Self::CAPACITY_THRESHOLD / 10; // evict 10%
+            self.evict_by_utility(evict_count);
+        }
+
         let id = Ulid::new().to_string();
 
         let meta = ChunkMetadata {
@@ -109,6 +122,7 @@ impl MultiViewMMU {
             embedding: embedding.clone(),
             keywords: keywords.clone(),
             parent_chunk_id: parent_chunk_id.clone(),
+            access_count: 0,
         };
 
         let node_idx = self.graph.add_node(meta);
@@ -291,8 +305,9 @@ impl MultiViewMMU {
     /// (default `[1.0, 1.0, 1.0, 1.0]`).
     ///
     /// Returns `(chunk_id, aggregated_score)` sorted descending by score.
+    /// Increments `access_count` on all retrieved chunks.
     pub fn retrieve_relevant(
-        &self,
+        &mut self,
         active_chunk_id: &str,
         max_hops: usize,
         weights: [f32; 4],
@@ -335,7 +350,75 @@ impl MultiViewMMU {
 
         let mut result: Vec<(String, f32)> = scores.into_iter().collect();
         result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Increment access_count on all retrieved chunks
+        for (cid, _) in &result {
+            if let Some(&idx) = self.chunk_map.get(cid) {
+                self.graph[idx].access_count += 1;
+            }
+        }
+
         result
+    }
+
+    /// Evict chunks with the lowest utility score.
+    ///
+    /// Utility = recency_decay * (access_count + 1).
+    /// Recency is derived from the ULID timestamp (newer = higher recency).
+    /// Keeps `evict_oldest()` for backward compatibility.
+    ///
+    /// Returns the number of chunks actually evicted.
+    pub fn evict_by_utility(&mut self, count: usize) -> usize {
+        if count == 0 || self.chunk_map.is_empty() {
+            return 0;
+        }
+
+        // Score each chunk: lower utility = evicted first
+        let now_ms = Ulid::new().timestamp_ms();
+        let mut scored: Vec<(String, f64)> = self
+            .chunk_map
+            .keys()
+            .filter_map(|id| {
+                let idx = *self.chunk_map.get(id)?;
+                let meta = self.graph.node_weight(idx)?;
+                let chunk_ms = ulid::Ulid::from_string(id).ok()?.timestamp_ms();
+                let age_days = (now_ms.saturating_sub(chunk_ms)) as f64 / 86_400_000.0;
+                let recency = 1.0 / (1.0 + age_days);
+                let utility = recency * (meta.access_count as f64 + 1.0);
+                Some((id.clone(), utility))
+            })
+            .collect();
+
+        // Sort by utility ascending (lowest utility first = evict first)
+        scored.sort_by(|a, b| {
+            a.1.partial_cmp(&b.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        let to_evict: HashSet<String> = scored.into_iter().take(count).map(|(id, _)| id).collect();
+        let evict_count = to_evict.len();
+
+        // Remove nodes one at a time
+        for id in &to_evict {
+            let node_idx = self
+                .graph
+                .node_indices()
+                .find(|&idx| self.graph[idx].chunk_id == *id);
+            if let Some(idx) = node_idx {
+                self.graph.remove_node(idx);
+            }
+        }
+
+        // Rebuild chunk_map from surviving graph nodes
+        self.chunk_map.clear();
+        for idx in self.graph.node_indices() {
+            let cid = self.graph[idx].chunk_id.clone();
+            self.chunk_map.insert(cid, idx);
+        }
+
+        // Clean recent_ids ring
+        self.recent_ids.retain(|rid| !to_evict.contains(rid));
+        evict_count
     }
 }
 
@@ -432,9 +515,15 @@ impl PyMultiViewMMU {
     /// Retrieve chunks relevant to `chunk_id` via multi-view BFS (up to `max_hops`).
     /// Uses default view weights `[0.4, 0.3, 0.2, 0.1]`.
     /// Returns list of `(chunk_id, score)` sorted descending by score.
-    fn retrieve_relevant(&self, chunk_id: &str, max_hops: usize) -> Vec<(String, f32)> {
+    fn retrieve_relevant(&mut self, chunk_id: &str, max_hops: usize) -> Vec<(String, f32)> {
         self.inner
             .retrieve_relevant(chunk_id, max_hops, [0.4, 0.3, 0.2, 0.1])
+    }
+
+    /// Evict chunks with the lowest utility score (recency * access_count).
+    /// Returns the number of chunks actually evicted.
+    fn evict_by_utility(&mut self, count: usize) -> usize {
+        self.inner.evict_by_utility(count)
     }
 }
 
@@ -721,6 +810,72 @@ mod tests {
             elapsed.as_secs() < 5,
             "500 registrations took {:?}, expected < 5s with bounded scan",
             elapsed
+        );
+    }
+
+    #[test]
+    fn test_evict_by_utility_removes_lowest_utility() {
+        let mut smmu = MultiViewMMU::new();
+
+        // Register 5 chunks with identical embeddings so retrieval works.
+        let emb = vec![1.0, 0.0, 0.5];
+        let ids: Vec<String> = (0..5)
+            .map(|i| {
+                smmu.register_chunk(
+                    (i * 10) as i64,
+                    (i * 10 + 5) as i64,
+                    &format!("chunk-{i}"),
+                    vec![],
+                    Some(emb.clone()),
+                    None,
+                )
+            })
+            .collect();
+
+        assert_eq!(smmu.chunk_count(), 5);
+
+        // Retrieve from the last chunk — this increments access_count on neighbors.
+        let _ = smmu.retrieve_relevant(&ids[4], 1, [0.0, 1.0, 0.0, 0.0]);
+
+        // Evict 2 lowest-utility chunks
+        let evicted = smmu.evict_by_utility(2);
+        assert_eq!(evicted, 2);
+        assert_eq!(smmu.chunk_count(), 3);
+
+        // recent_ids should be consistent
+        assert_eq!(smmu.recent_ids.len(), 3);
+    }
+
+    #[test]
+    fn test_evict_by_utility_zero_count() {
+        let mut smmu = MultiViewMMU::new();
+        smmu.register_chunk(0, 1, "A", vec![], None, None);
+
+        let evicted = smmu.evict_by_utility(0);
+        assert_eq!(evicted, 0);
+        assert_eq!(smmu.chunk_count(), 1);
+    }
+
+    #[test]
+    fn test_access_count_increments_on_retrieval() {
+        let mut smmu = MultiViewMMU::new();
+
+        let emb = vec![1.0, 0.0, 0.5];
+        let a = smmu.register_chunk(0, 1, "A", vec![], Some(emb.clone()), None);
+        let b = smmu.register_chunk(2, 3, "B", vec![], Some(emb.clone()), None);
+
+        // Before retrieval, access_count should be 0.
+        let a_idx = *smmu.chunk_map.get(&a).unwrap();
+        assert_eq!(smmu.graph[a_idx].access_count, 0);
+
+        // Retrieve from B — A should be a neighbor via semantic edge.
+        let _ = smmu.retrieve_relevant(&b, 1, [0.0, 1.0, 0.0, 0.0]);
+
+        // After retrieval, A's access_count should be incremented.
+        let a_idx = *smmu.chunk_map.get(&a).unwrap();
+        assert!(
+            smmu.graph[a_idx].access_count > 0,
+            "access_count should increment after retrieval"
         );
     }
 }

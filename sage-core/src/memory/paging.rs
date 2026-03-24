@@ -13,10 +13,10 @@ use super::smmu::MultiViewMMU;
 /// the *tail* (least relevant) ones. Chunks not reachable at all within
 /// `max_hops` are also considered candidates.
 ///
-/// This function takes `&MultiViewMMU` (immutable reference) — it never
-/// mutates the graph.
+/// This function takes `&mut MultiViewMMU` because `retrieve_relevant`
+/// increments access_count on retrieved chunks.
 pub fn page_out_candidates(
-    smmu: &MultiViewMMU,
+    smmu: &mut MultiViewMMU,
     active_chunk_id: &str,
     max_hops: usize,
     budget: usize,
