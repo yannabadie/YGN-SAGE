@@ -12,6 +12,8 @@ except ImportError:
     import types as _types
     sage_core = _types.ModuleType("sage_core")
 
+from sage.sandbox.isolated_executor import execute_isolated, BWRAP_AVAILABLE
+
 
 @dataclass
 class SandboxConfig:
@@ -108,7 +110,22 @@ class Sandbox:
             return SandboxResult(stdout="", stderr=f"Wasm execution failed: {e}", exit_code=1)
 
     async def _execute_local(self, command: str) -> SandboxResult:
-        """Fallback: execute locally when Docker is not available."""
+        """Fallback: execute locally when Docker is not available.
+
+        On Linux with bwrap, uses isolated_executor for OS-level sandboxing
+        (namespace isolation, read-only root, die-with-parent).
+        """
+        # If bwrap is available and the command looks like inline Python code
+        # (not a shell pipeline), route through the isolated executor.
+        if BWRAP_AVAILABLE and not command.startswith(("cd ", "ls ", "echo ", "cat ")):
+            stdout, stderr, rc = await asyncio.to_thread(
+                execute_isolated, command, self.config.timeout,
+            )
+            return SandboxResult(
+                stdout=stdout, stderr=stderr, exit_code=rc,
+                timed_out=(rc == -1 and "Timeout" in stderr),
+            )
+
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
