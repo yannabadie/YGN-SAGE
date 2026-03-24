@@ -209,58 +209,76 @@ impl TopologyEngine {
             exploration_budget
         };
 
-        // Path 1: S-MMU hit — retrieve similar past task
-        let result = if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
-            info!(
-                source = "smmu_hit",
-                confidence = result.confidence,
-                "topology_generated"
-            );
-            result
-        }
-        // Path 2: Archive hit — look up MAP-Elites by behavior descriptor
-        else if let Some(result) = self.try_archive_hit(system, task_description) {
-            info!(
-                source = "archive_hit",
-                confidence = result.confidence,
-                "topology_generated"
-            );
-            result
-        }
+        // Path selection: bandit-guided exploration.
+        // When effective_budget > 0.5, skip retrieval paths (S-MMU, archive)
+        // and go straight to generative paths (mutation, MCTS) to discover new topologies.
+        // When effective_budget < 0.3, prefer retrieval (exploit known-good topologies).
+        let skip_retrieval = effective_budget > 0.5;
+
+        // Path 1: S-MMU hit — retrieve similar past task (skip if exploring)
+        let result = if !skip_retrieval {
+            if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
+                info!(
+                    source = "smmu_hit",
+                    confidence = result.confidence,
+                    "topology_generated"
+                );
+                Some(result)
+            } else {
+                None
+            }
+        } else {
+            debug!("smmu_path_skipped_by_bandit_exploration");
+            None
+        };
+
+        // Path 2: Archive hit — look up MAP-Elites (skip if exploring)
+        let result = result.or_else(|| {
+            if !skip_retrieval {
+                if let Some(r) = self.try_archive_hit(system, task_description) {
+                    info!(source = "archive_hit", confidence = r.confidence, "topology_generated");
+                    return Some(r);
+                }
+            } else {
+                debug!("archive_path_skipped_by_bandit_exploration");
+            }
+            None
+        });
+
         // Path 4: Mutation — mutate best-by-quality from archive
-        else if let Some(result) = self.try_mutation() {
-            // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
-            info!(
-                source = "mutation",
-                confidence = result.confidence,
-                "topology_generated"
-            );
-            result
-        }
+        // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
+        let result = result.or_else(|| {
+            if let Some(r) = self.try_mutation() {
+                info!(source = "mutation", confidence = r.confidence, "topology_generated");
+                return Some(r);
+            }
+            None
+        });
+
         // Path 5: MCTS search (if archive has enough diversity)
-        else if let Some(result) = self.try_mcts_search() {
-            info!(
-                source = "mcts_search",
-                confidence = result.confidence,
-                "topology_generated"
-            );
-            result
-        }
-        // Path 6: Template fallback
-        else {
-            // Path 3 hint: LLM synthesis deferred to Python
+        let result = result.or_else(|| {
+            if let Some(r) = self.try_mcts_search() {
+                info!(source = "mcts_search", confidence = r.confidence, "topology_generated");
+                return Some(r);
+            }
+            None
+        });
+
+        // Path 6: Template fallback — ALWAYS succeeds, unwrap the Option chain.
+        // Path 3 hint: LLM synthesis deferred to Python side.
+        let result = result.unwrap_or_else(|| {
             if effective_budget > 0.3 && !self.synthesizer.is_rate_limited() {
                 debug!("llm_synthesis_path_available_but_deferred_to_python");
             }
-            let result = self.template_fallback(system);
+            let fb = self.template_fallback(system);
             info!(
                 source = "template_fallback",
-                confidence = result.confidence,
-                template = result.topology.template_type.as_str(),
+                confidence = fb.confidence,
+                template = fb.topology.template_type.as_str(),
                 "topology_generated"
             );
-            result
-        };
+            fb
+        });
 
         // Register the chosen path as a bandit arm so future decisions
         // can reason about this source/template combination.
