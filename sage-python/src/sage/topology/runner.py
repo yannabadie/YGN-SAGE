@@ -202,10 +202,12 @@ class TopologyRunner:
         update the node's model_id. Re-executing the node picks up the new
         model automatically via ProviderPool.resolve().
         """
-        if decision.new_model_id and self._provider_pool:
-            # Controller already updated the node's model_id; ProviderPool will
-            # resolve it on the next _execute_node call.
-            pass
+        if decision.new_model_id:
+            try:
+                self.graph.set_node_model_id(node_idx, decision.new_model_id)
+                log.info("Node %d model upgraded to %s", node_idx, decision.new_model_id)
+            except (AttributeError, Exception) as exc:
+                log.warning("Could not set model_id on node %d: %s", node_idx, exc)
         return await self._execute_node(node_idx, task)
 
     async def _spawn_sub(self, node_idx: int, decision: Any, task: str) -> None:
