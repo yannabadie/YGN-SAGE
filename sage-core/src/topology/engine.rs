@@ -126,17 +126,18 @@ impl TopologyEngine {
 
     /// Store a topology in the cache by its id.
     ///
-    /// Evicts random entries if the cache exceeds 500 topologies.
+    /// Evicts lowest-quality entries (by node+edge count) if the cache exceeds 500 topologies.
     pub fn cache_topology(&mut self, graph: TopologyGraph) {
         if self.topology_cache.len() >= 500 {
-            // Evict ~half the cache to amortise eviction cost.
-            let keys_to_remove: Vec<String> = self
+            // Evict lowest-quality entries (fewest nodes+edges) to keep rich topologies.
+            let mut scored: Vec<(String, usize)> = self
                 .topology_cache
-                .keys()
-                .take(self.topology_cache.len() - 250)
-                .cloned()
+                .iter()
+                .map(|(id, g)| (id.clone(), g.node_count() + g.edge_count()))
                 .collect();
-            for key in keys_to_remove {
+            scored.sort_by_key(|(_, score)| *score);
+            // Remove bottom half (lowest complexity)
+            for (key, _) in scored.into_iter().take(250) {
                 self.topology_cache.remove(&key);
             }
         }
@@ -165,7 +166,7 @@ impl TopologyEngine {
     /// - `exploration_budget`: 0.0 = pure exploit, 1.0 = pure explore.
     pub fn generate(
         &mut self,
-        smmu: &MultiViewMMU,
+        smmu: &mut MultiViewMMU,
         task_description: &str,
         task_embedding: Option<Vec<f32>>,
         system: u8,
@@ -189,7 +190,7 @@ impl TopologyEngine {
             result
         }
         // Path 2: Archive hit — look up MAP-Elites by behavior descriptor
-        else if let Some(result) = self.try_archive_hit(system) {
+        else if let Some(result) = self.try_archive_hit(system, task_description) {
             info!(
                 source = "archive_hit",
                 confidence = result.confidence,
@@ -245,7 +246,7 @@ impl TopologyEngine {
     /// Path 1: Try to find a similar past task in S-MMU.
     fn try_smmu_hit(
         &mut self,
-        smmu: &MultiViewMMU,
+        smmu: &mut MultiViewMMU,
         _task_description: &str,
         _task_embedding: Option<Vec<f32>>,
     ) -> Option<GenerateResult> {
@@ -313,7 +314,7 @@ impl TopologyEngine {
     }
 
     /// Path 2: Try to find a topology in the MAP-Elites archive.
-    fn try_archive_hit(&self, system: u8) -> Option<GenerateResult> {
+    fn try_archive_hit(&self, system: u8, task_description: &str) -> Option<GenerateResult> {
         let _span = info_span!("topology_engine.archive_path").entered();
 
         if self.archive.cell_count() == 0 {
@@ -321,11 +322,26 @@ impl TopologyEngine {
             return None;
         }
 
-        // Estimate behavior descriptor from system tier heuristics
+        // Estimate behavior descriptor from system tier + task complexity signal
+        let task_len = task_description.len();
         let (agent_count, max_depth) = match system {
             1 => (1u32, 1u32), // S1: solo agent, shallow
-            2 => (3u32, 2u32), // S2: small team, medium depth
-            3 => (4u32, 3u32), // S3: larger team, deeper
+            2 => {
+                // S2: vary based on task complexity (long descriptions => richer topologies)
+                if task_len > 500 {
+                    (4u32, 3u32)
+                } else {
+                    (3u32, 2u32)
+                }
+            }
+            3 => {
+                // S3: vary based on task complexity
+                if task_len > 1000 {
+                    (5u32, 4u32)
+                } else {
+                    (4u32, 3u32)
+                }
+            }
             _ => (2u32, 2u32), // default
         };
 
@@ -808,9 +824,9 @@ mod tests {
     #[test]
     fn test_generate_empty_state_falls_back_to_template() {
         let mut engine = TopologyEngine::new();
-        let smmu = MultiViewMMU::new();
+        let mut smmu = MultiViewMMU::new();
 
-        let result = engine.generate(&smmu, "Write a sorting function", None, 2, 0.5);
+        let result = engine.generate(&mut smmu, "Write a sorting function", None, 2, 0.5);
         assert_eq!(result.source, TopologySource::TemplateFallback);
         assert_eq!(result.topology.template_type, "avr");
     }
@@ -840,9 +856,9 @@ mod tests {
     #[test]
     fn test_generate_result_confidence_range() {
         let mut engine = TopologyEngine::new();
-        let smmu = MultiViewMMU::new();
+        let mut smmu = MultiViewMMU::new();
 
-        let result = engine.generate(&smmu, "test task", None, 1, 0.0);
+        let result = engine.generate(&mut smmu, "test task", None, 1, 0.0);
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
     }
 
@@ -876,8 +892,8 @@ mod tests {
         // This verifies the MCTS path doesn't break generate().
         // MCTS activates only with archive >= 5 cells, so normal generate still works.
         let mut engine = TopologyEngine::new();
-        let smmu = MultiViewMMU::new();
-        let result = engine.generate(&smmu, "test task", None, 2, 0.5);
+        let mut smmu = MultiViewMMU::new();
+        let result = engine.generate(&mut smmu, "test task", None, 2, 0.5);
         assert!(result.topology.node_count() > 0);
     }
 
