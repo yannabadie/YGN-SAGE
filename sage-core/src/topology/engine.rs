@@ -180,6 +180,35 @@ impl TopologyEngine {
         )
         .entered();
 
+        // ── Bandit-guided exploration budget ──────────────────────────────────
+        // Move bandit.choose() BEFORE the 6-path cascade so the bandit
+        // *influences* path selection rather than merely recording it.
+        // When the bandit has enough arms (>3) and returns a high-confidence
+        // decision, we reduce the exploration budget to exploit known-good
+        // paths. During cold start we keep the caller's budget unchanged.
+        let effective_budget = if self.bandit.arm_count() > 3 {
+            if let Ok(d) = self.bandit.choose(exploration_budget) {
+                self.last_decision_id = Some(d.decision_id.clone());
+                // High expected quality → reduce exploration (exploit).
+                // Low expected quality  → keep exploration high.
+                let confidence_factor = 1.0 - d.expected_quality.clamp(0.0, 1.0);
+                let modulated = exploration_budget * (0.3 + 0.7 * confidence_factor);
+                debug!(
+                    original_budget = exploration_budget,
+                    effective_budget = modulated,
+                    bandit_quality = d.expected_quality,
+                    "bandit_modulated_exploration"
+                );
+                modulated
+            } else {
+                exploration_budget
+            }
+        } else {
+            // Cold start — full caller-specified exploration
+            self.last_decision_id = None;
+            exploration_budget
+        };
+
         // Path 1: S-MMU hit — retrieve similar past task
         let result = if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
             info!(
@@ -220,7 +249,7 @@ impl TopologyEngine {
         // Path 6: Template fallback
         else {
             // Path 3 hint: LLM synthesis deferred to Python
-            if exploration_budget > 0.3 && !self.synthesizer.is_rate_limited() {
+            if effective_budget > 0.3 && !self.synthesizer.is_rate_limited() {
                 debug!("llm_synthesis_path_available_but_deferred_to_python");
             }
             let result = self.template_fallback(system);
@@ -233,12 +262,12 @@ impl TopologyEngine {
             result
         };
 
-        // Bandit: register arm and choose() to get decision_id for record_outcome()
+        // Register the chosen path as a bandit arm so future decisions
+        // can reason about this source/template combination.
+        // choose() was already called BEFORE the cascade (above), so we
+        // do NOT call it again here — just register the observed arm.
         let source_str = result.source.as_str();
         self.bandit.add_arm(source_str, &result.topology.template_type);
-        if let Ok(d) = self.bandit.choose(exploration_budget) {
-            self.last_decision_id = Some(d.decision_id.clone());
-        }
 
         result
     }
