@@ -7,12 +7,36 @@
 //! via `ort::init_from()` (ort 2.x API) or `ORT_DYLIB_PATH` env var.
 //! This avoids static linking issues on Windows MSVC (LNK1120).
 
-use ort::{inputs, session::Session, value::TensorRef};
+use ort::{inputs, session::Session, value::Tensor};
 use pyo3::prelude::*;
 use std::sync::OnceLock;
 use tokenizers::Tokenizer;
 
 const EMBEDDING_DIM: usize = 768;
+
+/// Wrapper to make `*mut Session` Send-able for `py.allow_threads()`.
+///
+/// SAFETY: This is safe because:
+/// 1. `Session` is `Send` (ort marks it `unsafe impl Send for Session`)
+/// 2. The raw pointer is derived from `&mut self.session`, so we have
+///    exclusive access for the entire duration of the `allow_threads` call.
+/// 3. No other thread can access the session while `allow_threads` runs
+///    because the `&mut self` borrow prevents it.
+struct SendSessionPtr(*mut Session);
+// SAFETY: Session is Send, and we guarantee exclusive access via &mut self.
+#[allow(unsafe_code)]
+unsafe impl Send for SendSessionPtr {}
+
+impl SendSessionPtr {
+    /// Get a mutable reference to the session.
+    ///
+    /// # Safety
+    /// The caller must guarantee exclusive access to the session.
+    #[allow(unsafe_code)]
+    unsafe fn as_mut(&self) -> &mut Session {
+        unsafe { &mut *self.0 }
+    }
+}
 
 /// Cached ORT dylib path — resolved once, reused everywhere.
 static ORT_DYLIB_RESOLVED: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
@@ -219,17 +243,21 @@ impl RustEmbedder {
             }
         }
 
-        // Build tensors using (shape, &[T]) tuple form accepted by ort 2.x
+        // Keep a copy of attention_mask for mean pooling after inference.
+        // The original is moved into the owned Tensor below.
+        let attention_mask_pooling = attention_mask.clone();
+
+        // Build owned tensors (heap-allocated Vec) so they can be moved into
+        // py.allow_threads() — TensorRef borrows stack data and prevents GIL release.
         let shape = vec![batch_size, max_len];
 
-        let id_tensor = TensorRef::from_array_view((shape.clone(), &*input_ids)).map_err(|e| {
+        let id_tensor = Tensor::from_array((shape.clone(), input_ids)).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (ids): {e}"))
         })?;
 
-        let mask_tensor =
-            TensorRef::from_array_view((shape.clone(), &*attention_mask)).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (mask): {e}"))
-            })?;
+        let mask_tensor = Tensor::from_array((shape.clone(), attention_mask)).map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (mask): {e}"))
+        })?;
 
         // Check if the ONNX model expects token_type_ids (standard BERT input).
         // Some models (e.g. snowflake-arctic-embed-m) may not include it.
@@ -239,16 +267,13 @@ impl RustEmbedder {
             .iter()
             .any(|input| input.name() == "token_type_ids");
 
-        // Allocate token_type_ids outside the if block so the borrow lives long enough
-        let token_type_ids = vec![0i64; batch_size * max_len];
-
         let session_inputs = if has_token_type {
-            let type_tensor =
-                TensorRef::from_array_view((shape, &*token_type_ids)).map_err(|e| {
-                    pyo3::exceptions::PyRuntimeError::new_err(format!(
-                        "Tensor error (type_ids): {e}"
-                    ))
-                })?;
+            let token_type_ids = vec![0i64; batch_size * max_len];
+            let type_tensor = Tensor::from_array((shape, token_type_ids)).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "Tensor error (type_ids): {e}"
+                ))
+            })?;
             inputs![
                 "input_ids" => id_tensor,
                 "attention_mask" => mask_tensor,
@@ -261,62 +286,75 @@ impl RustEmbedder {
             ]
         };
 
-        // Note: GIL is held during inference because session_inputs borrows
-        // stack-local tensor data that cannot be moved into allow_threads().
-        // The py parameter is accepted for API consistency with PyO3 conventions.
-        let _ = py; // suppress unused warning
-        let outputs = self.session.run(session_inputs).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("ORT inference error: {e}"))
-        })?;
+        // Release GIL during ONNX inference + post-processing.
+        // All tensor data is heap-owned (Tensor, not TensorRef), so session_inputs
+        // can be moved into the closure. Extraction and pooling also happen inside
+        // the closure so that SessionOutputs (which borrows Session) doesn't escape.
+        //
+        // SAFETY: We have &mut self so exclusive access to session is guaranteed.
+        // Session is Send (ort marks it `unsafe impl Send`). We use SendSessionPtr
+        // because raw pointers are !Send; the newtype is safe per the guarantees above.
+        let session_ptr = SendSessionPtr(&mut self.session as *mut Session);
+        let results = py
+            .allow_threads(move || -> Result<Vec<Vec<f32>>, String> {
+                // SAFETY: session_ptr is valid for the duration of this call —
+                // the &mut self borrow guarantees no other access exists.
+                #[allow(unsafe_code)]
+                let session = unsafe { session_ptr.as_mut() };
+                let outputs = session
+                    .run(session_inputs)
+                    .map_err(|e| format!("ORT inference error: {e}"))?;
 
-        // Extract output — shape is [batch, seq_len, hidden_dim] (768 for arctic-embed-m)
-        // try_extract_tensor returns (&Shape, &[f32]) where Shape derefs to [i64]
-        let (out_shape, out_data) = outputs[0].try_extract_tensor::<f32>().map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!("Output extraction error: {e}"))
-        })?;
+                // Extract output — shape is [batch, seq_len, hidden_dim]
+                let (out_shape, out_data) = outputs[0]
+                    .try_extract_tensor::<f32>()
+                    .map_err(|e| format!("Output extraction error: {e}"))?;
 
-        // Determine dimensions from the output shape
-        let dims: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
-        let hidden_dim = if dims.len() == 3 {
-            dims[2]
-        } else {
-            EMBEDDING_DIM
-        };
+                // Determine dimensions from the output shape
+                let dims: Vec<usize> = out_shape.iter().map(|&d| d as usize).collect();
+                let hidden_dim = if dims.len() == 3 {
+                    dims[2]
+                } else {
+                    EMBEDDING_DIM
+                };
 
-        // Mean pooling with attention mask + L2 normalization
-        let mut results = Vec::with_capacity(batch_size);
+                // Mean pooling with attention mask + L2 normalization
+                let mut results = Vec::with_capacity(batch_size);
 
-        for i in 0..batch_size {
-            let mut pooled = vec![0.0f32; hidden_dim];
-            let mut mask_sum = 0.0f32;
+                for i in 0..batch_size {
+                    let mut pooled = vec![0.0f32; hidden_dim];
+                    let mut mask_sum = 0.0f32;
 
-            for j in 0..max_len {
-                let m = attention_mask[i * max_len + j] as f32;
-                mask_sum += m;
-                // Index into flat output: out_data[i * max_len * hidden_dim + j * hidden_dim + k]
-                let offset = i * max_len * hidden_dim + j * hidden_dim;
-                for k in 0..hidden_dim {
-                    pooled[k] += out_data[offset + k] * m;
+                    for j in 0..max_len {
+                        let m = attention_mask_pooling[i * max_len + j] as f32;
+                        mask_sum += m;
+                        let offset = i * max_len * hidden_dim + j * hidden_dim;
+                        for k in 0..hidden_dim {
+                            pooled[k] += out_data[offset + k] * m;
+                        }
+                    }
+
+                    // Mean pool
+                    if mask_sum > 0.0 {
+                        for v in pooled.iter_mut() {
+                            *v /= mask_sum;
+                        }
+                    }
+
+                    // L2 normalize
+                    let norm: f32 = pooled.iter().map(|x| x * x).sum::<f32>().sqrt();
+                    if norm > 0.0 {
+                        for v in pooled.iter_mut() {
+                            *v /= norm;
+                        }
+                    }
+
+                    results.push(pooled);
                 }
-            }
 
-            // Mean pool
-            if mask_sum > 0.0 {
-                for v in pooled.iter_mut() {
-                    *v /= mask_sum;
-                }
-            }
-
-            // L2 normalize
-            let norm: f32 = pooled.iter().map(|x| x * x).sum::<f32>().sqrt();
-            if norm > 0.0 {
-                for v in pooled.iter_mut() {
-                    *v /= norm;
-                }
-            }
-
-            results.push(pooled);
-        }
+                Ok(results)
+            })
+            .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
         Ok(results)
     }
