@@ -583,6 +583,13 @@ class CognitiveOrchestrationPipeline:
                 log.info("Topology reroute triggered — regenerating")
                 ctx = self._stage_select_topology(ctx)  # new topology
                 ctx = self._stage_assign_models(ctx)    # re-assign models
+                # Refresh bandit decision for the new topology
+                if self.bandit and hasattr(self.bandit, "choose"):
+                    try:
+                        new_decision = self.bandit.choose(0.1)
+                        ctx.bandit_decision_id = new_decision.decision_id
+                    except Exception:
+                        pass
                 # Fresh executor for the regenerated topology (old one is stale)
                 from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                 executor_rerouted = _TE(ctx.topology)
