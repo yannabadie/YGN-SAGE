@@ -478,21 +478,46 @@ Coller ce prompt dans Claude Code :
 Lis RUNPOD_PLAN.md et AI-ARCHITECTURE.md. Tu es sur un pod RunPod H100 NVL 94GB.
 User: yann (sudo). Branche: VeRLGIGPO.
 
-Exécute le plan de bout en bout :
+Exécute le plan COMPLET de bout en bout (3 phases + post-training) :
+
+PHASE A — Structural GiGPO ($0 API)
 1. bash sage-python/scripts/verl/setup_runpod.sh
 2. cd sage-python && python3 scripts/verl/validate_setup.py (10/10 checks)
-3. bash scripts/verl/train_topology_v3.sh 2>&1 | tee /workspace/train.log
-4. python3 scripts/verl/benchmark_post_train.py --bench all --limit 20
-5. python3 scripts/verl/post_training_pipeline.py all
+3. bash scripts/verl/train_topology_v3.sh 2>&1 | tee /workspace/train_phase_a.log
+   Critères succès: reward/mean > 0.7, YAML parsable > 90%
+
+PHASE B — Execution GiGPO (~$50-80 API)
+4. export SAGE_VERL_EXEC=1
+5. Relancer le training avec le dataset curated et le checkpoint Phase A
+   Critères succès: reward/mean > 0.5, PASSED rate > 30%
+
+PHASE C — Micro-décisions multi-step (le différenciateur SAGE)
+6. Approche A (préférée): bash scripts/verl/train_topology_phase_c.sh 2>&1 | tee /workspace/train_phase_c.log
+   OU Approche B (fallback si verl-agent ne marche pas):
+   python3 scripts/verl/train_phase_c_custom.py --model /workspace/patched_nemotron_orchestrator \
+     --checkpoint [checkpoint Phase B] --data data/verl_topology_curated.parquet \
+     --output /workspace/topology_verl_phase_c --epochs 3 --k 4 --memory-db /workspace/training_memory.db
+   Critères succès: step_advantage non-nul, anchors decision:* dans les logs,
+   upgrade quand quality < threshold, BigCodeBench Hard > 40%
+
+POST-TRAINING
+7. python3 scripts/verl/benchmark_post_train.py --bench all --limit 20
+8. python3 scripts/verl/post_training_pipeline.py all
    → export LoRA → merge Nemotron-Orchestrator-8B → push HuggingFace → GGUF Q8_0
 
-Si un step échoue, diagnostique, fixe, et réessaie. Log tout dans /workspace/.
-Le modèle est nvidia/Nemotron-Orchestrator-8B (Qwen3 arch, GRPO-trained).
+Le modèle est nvidia/Nemotron-Orchestrator-8B (Qwen3 arch, GRPO-trained orchestrator).
 Si le tokenizer a <think> mode actif, patch avec patch_tokenizer.py.
 Si vLLM crash, essaie VLLM_ATTENTION_BACKEND=TORCH_SDPA.
+Si verl-agent env registration échoue en Phase C, utilise train_phase_c_custom.py (Approche B).
 
-Push le modèle sur HuggingFace: yannabadie/sage-topology-policy-v2 (merged + GGUF Q8_0).
-Commit et push les résultats sur GitHub (branche VeRLGIGPO).
+Push le modèle sur HuggingFace: yannabadie/sage-topology-policy-v2
+  - Merged float16 (~16GB) pour serveurs/pods
+  - GGUF Q8_0 (~8.7GB) dans /gguf/ pour local RTX 3500 Ada 12GB
+Commit et push les résultats + logs sur GitHub (branche VeRLGIGPO).
+
+Si un step échoue, diagnostique, fixe, et réessaie. Log tout dans /workspace/.
+L'ExoCortex (500+ papiers) est accessible via:
+python3 -c "from openai import OpenAI; import os; c=OpenAI(api_key=os.environ['OPENAI_API_KEY']); r=c.responses.create(model='gpt-4o-mini', input='query', tools=[{'type':'file_search','vector_store_ids':['ygnsageresearch-wii7kwkqozrd']}]); print(r.output_text)"
 ```
 
 ### Signaux de succès
@@ -505,6 +530,10 @@ Commit et push les résultats sur GitHub (branche VeRLGIGPO).
 | B (execution) | `reward/mean` | > 0.5 |
 | B | PASSED rate | > 30% |
 | B | BigCodeBench Hard (20 tasks) | > 38% |
+| **C (micro-décisions)** | `step_advantage` | **non-nul** |
+| **C** | Anchors `decision:*` | **dans les logs** |
+| **C** | Model chooses upgrade when quality < threshold | **observable** |
+| **C** | BigCodeBench Hard (20 tasks) | **> 40%** (battre The Conductor) |
 
 ### 4. Training Phase B (après Phase A)
 
