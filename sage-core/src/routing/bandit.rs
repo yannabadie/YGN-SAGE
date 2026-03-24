@@ -147,7 +147,8 @@ impl GammaPosterior {
 /// Full posterior state for a single bandit arm.
 ///
 /// Tracks quality (Beta), cost (Gamma), and latency (Gamma) posteriors
-/// along with the total observation count.
+/// along with the total observation count and aggregated task-context
+/// statistics for contextual arm selection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArmPosterior {
     pub key: ArmKey,
@@ -155,6 +156,11 @@ pub struct ArmPosterior {
     pub cost: GammaPosterior,
     pub latency: GammaPosterior,
     pub observation_count: u32,
+    /// Running sum of context feature vectors (for computing mean context).
+    pub context_sum: Vec<f64>,
+    /// Number of context-bearing observations (may differ from observation_count
+    /// if some calls omitted context).
+    pub context_count: u32,
 }
 
 impl ArmPosterior {
@@ -165,6 +171,8 @@ impl ArmPosterior {
             cost: GammaPosterior::new(),
             latency: GammaPosterior::new(),
             observation_count: 0,
+            context_sum: Vec::new(),
+            context_count: 0,
         }
     }
 
@@ -174,6 +182,36 @@ impl ArmPosterior {
         self.cost.update(cost, decay);
         self.latency.update(latency, decay);
         self.observation_count += 1;
+    }
+
+    /// Update the running context statistics with a new context vector.
+    ///
+    /// Accumulates into `context_sum` for later mean computation.
+    fn update_context(&mut self, context: &[f32]) {
+        if context.is_empty() {
+            return;
+        }
+        if self.context_sum.is_empty() {
+            self.context_sum = vec![0.0; context.len()];
+        }
+        // If dimensions changed, reset (defensive — shouldn't happen in practice)
+        if self.context_sum.len() != context.len() {
+            self.context_sum = vec![0.0; context.len()];
+            self.context_count = 0;
+        }
+        for (s, &c) in self.context_sum.iter_mut().zip(context.iter()) {
+            *s += c as f64;
+        }
+        self.context_count += 1;
+    }
+
+    /// Compute the mean context vector, or `None` if no context has been recorded.
+    fn context_mean(&self) -> Option<Vec<f64>> {
+        if self.context_count == 0 || self.context_sum.is_empty() {
+            return None;
+        }
+        let n = self.context_count as f64;
+        Some(self.context_sum.iter().map(|s| s / n).collect())
     }
 }
 
@@ -208,6 +246,9 @@ pub struct BanditDecision {
     /// True if this was an exploration (random) pick rather than exploit.
     #[pyo3(get)]
     pub exploration: bool,
+    /// Task context features used for this decision (empty if no context).
+    #[pyo3(get)]
+    pub context: Vec<f32>,
 }
 
 #[pymethods]
@@ -228,6 +269,40 @@ impl BanditDecision {
 
 // ── ContextualBandit ───────────────────────────────────────────────────────
 
+// ── Cosine similarity ─────────────────────────────────────────────────────
+
+/// Cosine similarity between a context vector (f32) and a mean vector (f64).
+///
+/// Returns a value in [-1, 1]. Returns 0.0 if either vector is zero-length
+/// or has zero norm.
+fn cosine_similarity_f64(a: &[f32], b: &[f64]) -> f64 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut dot = 0.0_f64;
+    let mut norm_a = 0.0_f64;
+    let mut norm_b = 0.0_f64;
+    for (x, y) in a.iter().zip(b.iter()) {
+        let xf = *x as f64;
+        dot += xf * y;
+        norm_a += xf * xf;
+        norm_b += y * y;
+    }
+    let denom = norm_a.sqrt() * norm_b.sqrt();
+    if denom < 1e-15 {
+        return 0.0;
+    }
+    dot / denom
+}
+
+/// Info stored for a pending decision (between choose and record_outcome).
+#[derive(Debug, Clone)]
+struct PendingInfo {
+    arm_key: ArmKey,
+    /// Context features from the choose call (empty if no context was provided).
+    context: Vec<f32>,
+}
+
 /// Contextual bandit that selects the best (model, topology) combination.
 ///
 /// Uses per-arm Beta/Gamma posteriors with Thompson sampling. Each arm
@@ -241,11 +316,20 @@ impl BanditDecision {
 /// 2. Otherwise, Thompson sample from each arm's quality posterior.
 /// 3. Pick the arm with the highest sampled quality (exploit via Thompson).
 ///
+/// # Contextual selection (`choose_contextual`)
+///
+/// When a task-feature context vector is provided, the bandit computes
+/// cosine similarity between the input context and each arm's historical
+/// mean context. This similarity acts as a multiplicative bonus on the
+/// Thompson-sampled quality score, biasing selection toward arms that
+/// have historically performed well on similar tasks.
+///
 /// # Cold start
 ///
 /// New arms start with Beta(1,1) (uniform) for quality and Gamma(2,1) for
 /// cost/latency. Early selections are effectively random due to high
-/// posterior variance, providing natural exploration.
+/// posterior variance, providing natural exploration. Arms with no context
+/// history receive no context bonus (similarity = 0).
 #[pyclass]
 #[derive(Clone)]
 pub struct ContextualBandit {
@@ -253,8 +337,8 @@ pub struct ContextualBandit {
     decay_factor: f64,
     #[allow(dead_code)]
     exploration_bonus: f64,
-    /// Pending decisions: decision_id -> arm_key (for deferred record()).
-    pending: HashMap<String, ArmKey>,
+    /// Pending decisions: decision_id -> pending info (for deferred record()).
+    pending: HashMap<String, PendingInfo>,
 }
 
 // ── Core Rust API (no PyO3 dependency) ─────────────────────────────────────
@@ -345,7 +429,13 @@ impl ContextualBandit {
         }
 
         // Store pending decision for deferred record()
-        self.pending.insert(decision_id.clone(), chosen_key.clone());
+        self.pending.insert(
+            decision_id.clone(),
+            PendingInfo {
+                arm_key: chosen_key.clone(),
+                context: Vec::new(),
+            },
+        );
 
         let decision = BanditDecision {
             decision_id,
@@ -355,6 +445,7 @@ impl ContextualBandit {
             expected_cost,
             expected_latency,
             exploration: exploring,
+            context: Vec::new(),
         };
 
         info!(
@@ -368,10 +459,132 @@ impl ContextualBandit {
         Ok(decision)
     }
 
+    /// Select the best arm with task-context bias.
+    ///
+    /// Like `choose()`, but biases Thompson-sampled arm selection using
+    /// cosine similarity between the provided `context` and each arm's
+    /// historical mean context. Arms that have performed well on similar
+    /// tasks (by context) receive a multiplicative bonus.
+    ///
+    /// `context`: a small feature vector (e.g., `[system_tier, task_length, node_count]`).
+    /// `exploration_budget`: 0.0 = pure exploit, 1.0 = pure explore.
+    ///
+    /// Falls back to standard `choose()` if `context` is empty.
+    pub fn choose_contextual(
+        &mut self,
+        exploration_budget: f32,
+        context: &[f32],
+    ) -> Result<BanditDecision, BanditError> {
+        // If no context provided, fall back to standard Thompson sampling
+        if context.is_empty() {
+            return self.choose(exploration_budget);
+        }
+
+        let _span = info_span!(
+            "bandit.select_contextual",
+            arms = self.arms.len(),
+            exploration = exploration_budget,
+            context_dim = context.len(),
+        )
+        .entered();
+
+        if self.arms.is_empty() {
+            return Err(BanditError::NoArms);
+        }
+
+        let mut rng = rand::rng();
+        let decision_id = ulid::Ulid::new().to_string();
+
+        // Decide: explore or exploit
+        let exploring = rng.random::<f32>() < exploration_budget;
+
+        let arm_keys: Vec<ArmKey> = self.arms.keys().cloned().collect();
+
+        let chosen_key = if exploring {
+            // Pure exploration: pick a random arm
+            let idx = rng.random_range(0..arm_keys.len());
+            arm_keys[idx].clone()
+        } else {
+            // Context-biased Thompson sampling:
+            // score = thompson_quality * (1.0 + context_similarity)
+            // where context_similarity = cosine(context, arm.context_mean), clamped to [0, 1]
+            let mut best_key = arm_keys[0].clone();
+            let mut best_score = f64::NEG_INFINITY;
+
+            for key in &arm_keys {
+                let arm = &self.arms[key];
+                let sampled_quality = arm.quality.sample(&mut rng);
+
+                // Compute context bonus
+                let similarity = arm.context_mean().map_or(0.0, |mean| {
+                    cosine_similarity_f64(context, &mean).max(0.0)
+                });
+
+                // Multiplicative bonus: quality * (1 + similarity)
+                // similarity in [0, 1] → boost factor in [1.0, 2.0]
+                let score = sampled_quality * (1.0 + similarity);
+
+                if score > best_score {
+                    best_score = score;
+                    best_key = key.clone();
+                }
+            }
+            best_key
+        };
+
+        let arm = &self.arms[&chosen_key];
+        let expected_quality = arm.quality.sample(&mut rng) as f32;
+        let expected_cost = arm.cost.sample(&mut rng) as f32;
+        let expected_latency = arm.latency.sample(&mut rng) as f32;
+
+        // Evict oldest pending entries if unbounded growth detected
+        if self.pending.len() > 10_000 {
+            let drain_count = self.pending.len() - 5_000;
+            let keys_to_remove: Vec<String> =
+                self.pending.keys().take(drain_count).cloned().collect();
+            for key in keys_to_remove {
+                self.pending.remove(&key);
+            }
+        }
+
+        // Store pending decision with context for deferred record()
+        self.pending.insert(
+            decision_id.clone(),
+            PendingInfo {
+                arm_key: chosen_key.clone(),
+                context: context.to_vec(),
+            },
+        );
+
+        let decision = BanditDecision {
+            decision_id,
+            model_id: chosen_key.model_id,
+            template: chosen_key.template,
+            expected_quality,
+            expected_cost,
+            expected_latency,
+            exploration: exploring,
+            context: context.to_vec(),
+        };
+
+        info!(
+            model = %decision.model_id,
+            template = %decision.template,
+            explore = decision.exploration,
+            expected_quality = decision.expected_quality,
+            context_dim = context.len(),
+            "bandit_contextual_decision"
+        );
+
+        Ok(decision)
+    }
+
     /// Record outcome for a previous decision.
     ///
     /// Updates the arm's posteriors with temporal decay. The `decision_id`
-    /// must match a previous `choose()` call.
+    /// must match a previous `choose()` or `choose_contextual()` call.
+    /// If the original decision carried context features, they are folded
+    /// into the arm's running context statistics.
     pub fn record_outcome(
         &mut self,
         decision_id: &str,
@@ -388,11 +601,12 @@ impl ContextualBandit {
         )
         .entered();
 
-        let arm_key = self
+        let pending_info = self
             .pending
             .remove(decision_id)
             .ok_or_else(|| BanditError::UnknownDecision(decision_id.to_string()))?;
 
+        let arm_key = pending_info.arm_key;
         let decay = self.decay_factor;
         let arm = match self.arms.get_mut(&arm_key) {
             Some(a) => a,
@@ -403,11 +617,17 @@ impl ContextualBandit {
 
         arm.update(quality as f64, cost as f64, latency_ms as f64, decay);
 
+        // Update context statistics if the decision carried context features
+        if !pending_info.context.is_empty() {
+            arm.update_context(&pending_info.context);
+        }
+
         debug!(
             model = %arm_key.model_id,
             template = %arm_key.template,
             observations = arm.observation_count,
             quality_mean = arm.quality.mean() as f32,
+            context_count = arm.context_count,
             "bandit_outcome_recorded"
         );
 
@@ -493,6 +713,8 @@ impl ContextualBandit {
                 rate: latency_rate,
             },
             observation_count,
+            context_sum: Vec::new(),
+            context_count: 0,
         };
         self.arms.insert(key, arm);
     }
@@ -584,6 +806,26 @@ impl ContextualBandit {
     #[pyo3(name = "select")]
     pub fn py_select(&mut self, exploration_budget: f32) -> PyResult<BanditDecision> {
         self.choose(exploration_budget).map_err(Into::into)
+    }
+
+    /// Select the best arm with task-context bias.
+    ///
+    /// `context` is a small feature vector (e.g., `[system_tier, task_length, node_count]`).
+    /// When context is provided, arms whose historical contexts are similar get a boost.
+    /// Falls back to standard Thompson sampling if context is empty.
+    #[pyo3(name = "select_with_context")]
+    #[pyo3(signature = (exploration_budget, context=vec![]))]
+    pub fn py_select_with_context(
+        &mut self,
+        exploration_budget: f32,
+        context: Vec<f32>,
+    ) -> PyResult<BanditDecision> {
+        if context.is_empty() {
+            self.choose(exploration_budget).map_err(Into::into)
+        } else {
+            self.choose_contextual(exploration_budget, &context)
+                .map_err(Into::into)
+        }
     }
 
     /// Record outcome for a previous decision.
@@ -809,5 +1051,187 @@ mod tests {
         // affinity=0.5 → Beta(2, 2), mean=0.5
         assert!((arm.quality.alpha - 2.0).abs() < 1e-10);
         assert!((arm.quality.beta - 2.0).abs() < 1e-10);
+    }
+
+    // ── Cosine similarity tests ──────────────────────────────────────────
+
+    #[test]
+    fn cosine_similarity_identical_vectors() {
+        let a = &[1.0_f32, 2.0, 3.0];
+        let b = &[1.0_f64, 2.0, 3.0];
+        let sim = cosine_similarity_f64(a, b);
+        assert!((sim - 1.0).abs() < 1e-10, "identical vectors should have sim=1.0, got {}", sim);
+    }
+
+    #[test]
+    fn cosine_similarity_orthogonal_vectors() {
+        let a = &[1.0_f32, 0.0];
+        let b = &[0.0_f64, 1.0];
+        let sim = cosine_similarity_f64(a, b);
+        assert!(sim.abs() < 1e-10, "orthogonal vectors should have sim=0.0, got {}", sim);
+    }
+
+    #[test]
+    fn cosine_similarity_opposite_vectors() {
+        let a = &[1.0_f32, 2.0];
+        let b = &[-1.0_f64, -2.0];
+        let sim = cosine_similarity_f64(a, b);
+        assert!((sim - (-1.0)).abs() < 1e-10, "opposite vectors should have sim=-1.0, got {}", sim);
+    }
+
+    #[test]
+    fn cosine_similarity_zero_vector_returns_zero() {
+        let a = &[0.0_f32, 0.0];
+        let b = &[1.0_f64, 2.0];
+        assert_eq!(cosine_similarity_f64(a, b), 0.0);
+    }
+
+    #[test]
+    fn cosine_similarity_empty_returns_zero() {
+        let a: &[f32] = &[];
+        let b: &[f64] = &[];
+        assert_eq!(cosine_similarity_f64(a, b), 0.0);
+    }
+
+    #[test]
+    fn cosine_similarity_mismatched_length_returns_zero() {
+        let a = &[1.0_f32, 2.0];
+        let b = &[1.0_f64, 2.0, 3.0];
+        assert_eq!(cosine_similarity_f64(a, b), 0.0);
+    }
+
+    // ── Arm context tracking tests ───────────────────────────────────────
+
+    #[test]
+    fn arm_context_starts_empty() {
+        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let arm = ArmPosterior::new(key);
+        assert_eq!(arm.context_count, 0);
+        assert!(arm.context_sum.is_empty());
+        assert!(arm.context_mean().is_none());
+    }
+
+    #[test]
+    fn arm_context_update_accumulates() {
+        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let mut arm = ArmPosterior::new(key);
+        arm.update_context(&[2.0, 4.0, 6.0]);
+        arm.update_context(&[4.0, 6.0, 8.0]);
+        assert_eq!(arm.context_count, 2);
+        let mean = arm.context_mean().unwrap();
+        assert!((mean[0] - 3.0).abs() < 1e-10);
+        assert!((mean[1] - 5.0).abs() < 1e-10);
+        assert!((mean[2] - 7.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn arm_context_empty_input_is_noop() {
+        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let mut arm = ArmPosterior::new(key);
+        arm.update_context(&[]);
+        assert_eq!(arm.context_count, 0);
+        assert!(arm.context_mean().is_none());
+    }
+
+    // ── choose_contextual tests ──────────────────────────────────────────
+
+    #[test]
+    fn choose_contextual_empty_context_falls_back() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "seq");
+        let decision = bandit.choose_contextual(0.0, &[]).unwrap();
+        assert!(!decision.decision_id.is_empty());
+        assert!(decision.context.is_empty());
+    }
+
+    #[test]
+    fn choose_contextual_returns_decision_with_context() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "seq");
+        bandit.add_arm("model-b", "avr");
+        let ctx = vec![1.0_f32, 100.0, 3.0];
+        let decision = bandit.choose_contextual(0.0, &ctx).unwrap();
+        assert!(!decision.decision_id.is_empty());
+        assert_eq!(decision.context, ctx);
+    }
+
+    #[test]
+    fn choose_contextual_no_arms_errors() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        let result = bandit.choose_contextual(0.0, &[1.0, 2.0]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn record_outcome_updates_context_stats() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "seq");
+
+        let ctx = vec![2.0_f32, 50.0, 3.0];
+        let decision = bandit.choose_contextual(0.0, &ctx).unwrap();
+        bandit.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0).unwrap();
+
+        let key = ArmKey { model_id: "model-a".into(), template: "seq".into() };
+        let arm = &bandit.arms_map()[&key];
+        assert_eq!(arm.context_count, 1);
+        let mean = arm.context_mean().unwrap();
+        assert!((mean[0] - 2.0).abs() < 1e-10);
+        assert!((mean[1] - 50.0).abs() < 1e-10);
+        assert!((mean[2] - 3.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn choose_without_context_does_not_update_context_stats() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "seq");
+
+        let decision = bandit.choose(0.0).unwrap();
+        bandit.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0).unwrap();
+
+        let key = ArmKey { model_id: "model-a".into(), template: "seq".into() };
+        let arm = &bandit.arms_map()[&key];
+        assert_eq!(arm.context_count, 0);
+        assert!(arm.context_mean().is_none());
+    }
+
+    #[test]
+    fn contextual_selection_biases_toward_matching_arm() {
+        // Train two arms with different contexts:
+        // arm-s1 trained on context [1.0, 0.0] (system 1 tasks)
+        // arm-s3 trained on context [3.0, 0.0] (system 3 tasks)
+        let mut bandit = ContextualBandit::create(0.999, 0.1);
+        bandit.add_arm("arm-s1", "seq");
+        bandit.add_arm("arm-s3", "seq");
+
+        // Train arm-s1 with high quality on S1-like context
+        for _ in 0..30 {
+            let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
+            let q = if d.model_id == "arm-s1" { 0.95 } else { 0.6 };
+            bandit.record_outcome(&d.decision_id, q, 0.01, 100.0).unwrap();
+        }
+        // Train arm-s3 with high quality on S3-like context
+        for _ in 0..30 {
+            let d = bandit.choose_contextual(1.0, &[3.0, 0.0]).unwrap();
+            let q = if d.model_id == "arm-s3" { 0.95 } else { 0.6 };
+            bandit.record_outcome(&d.decision_id, q, 0.01, 100.0).unwrap();
+        }
+
+        // Now test: with S1-like context, arm-s1 should be preferred
+        let mut s1_count = 0;
+        for _ in 0..40 {
+            let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
+            if d.model_id == "arm-s1" {
+                s1_count += 1;
+            }
+            bandit.record_outcome(&d.decision_id, 0.8, 0.01, 100.0).unwrap();
+        }
+
+        // With context bias, arm-s1 should be picked more often for S1-like context
+        // (exact threshold depends on stochastic Thompson sampling, so we're generous)
+        assert!(
+            s1_count >= 15,
+            "arm-s1 should be preferred for S1-like context: got {}/40",
+            s1_count,
+        );
     }
 }

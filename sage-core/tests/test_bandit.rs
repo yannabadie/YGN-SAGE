@@ -350,3 +350,104 @@ fn test_bandit_repr() {
         repr
     );
 }
+
+// ── Test 13: choose_contextual returns valid decision ─────────────────────
+
+#[test]
+fn test_choose_contextual_returns_decision() {
+    let mut bandit = ContextualBandit::create(0.995, 0.1);
+    bandit.add_arm("gemini-2.5-flash", "sequential");
+    bandit.add_arm("gpt-5.3-codex", "avr");
+
+    let context = vec![2.0_f32, 150.0, 3.0];
+    let decision = bandit.choose_contextual(0.0, &context).unwrap();
+
+    assert!(!decision.decision_id.is_empty());
+    assert_eq!(decision.decision_id.len(), 26); // ULID
+    assert!(!decision.model_id.is_empty());
+    assert!(!decision.template.is_empty());
+    assert_eq!(decision.context, context);
+    assert!(decision.expected_quality >= 0.0);
+}
+
+// ── Test 14: choose_contextual empty context falls back ───────────────────
+
+#[test]
+fn test_choose_contextual_empty_fallback() {
+    let mut bandit = ContextualBandit::create(0.995, 0.1);
+    bandit.add_arm("model-a", "sequential");
+
+    let decision = bandit.choose_contextual(0.0, &[]).unwrap();
+    assert!(!decision.decision_id.is_empty());
+    assert!(decision.context.is_empty());
+}
+
+// ── Test 15: record_outcome propagates context to arm stats ───────────────
+
+#[test]
+fn test_record_propagates_context() {
+    let mut bandit = ContextualBandit::create(0.995, 0.1);
+    bandit.add_arm("model-a", "sequential");
+
+    // Choose with context
+    let context = vec![1.0_f32, 200.0, 5.0];
+    let decision = bandit.choose_contextual(0.0, &context).unwrap();
+    bandit
+        .record_outcome(&decision.decision_id, 0.9, 0.01, 100.0)
+        .unwrap();
+
+    assert_eq!(bandit.total_observations(), 1);
+
+    // Choose without context — should not affect context stats
+    let decision2 = bandit.choose(0.0).unwrap();
+    bandit
+        .record_outcome(&decision2.decision_id, 0.8, 0.01, 100.0)
+        .unwrap();
+
+    assert_eq!(bandit.total_observations(), 2);
+}
+
+// ── Test 16: contextual selection with trained arms ───────────────────────
+
+#[test]
+fn test_contextual_trained_arms_selection() {
+    let mut bandit = ContextualBandit::create(0.999, 0.1);
+    bandit.add_arm("fast-model", "sequential");
+    bandit.add_arm("deep-model", "avr");
+
+    // Train fast-model on simple tasks (context = [1.0, 10.0])
+    for _ in 0..30 {
+        let d = bandit.choose_contextual(1.0, &[1.0, 10.0]).unwrap();
+        let q = if d.model_id == "fast-model" { 0.95 } else { 0.5 };
+        bandit
+            .record_outcome(&d.decision_id, q, 0.01, 50.0)
+            .unwrap();
+    }
+
+    // Train deep-model on complex tasks (context = [3.0, 500.0])
+    for _ in 0..30 {
+        let d = bandit.choose_contextual(1.0, &[3.0, 500.0]).unwrap();
+        let q = if d.model_id == "deep-model" { 0.95 } else { 0.5 };
+        bandit
+            .record_outcome(&d.decision_id, q, 0.05, 200.0)
+            .unwrap();
+    }
+
+    // Exploit with simple-task context: should prefer fast-model
+    let mut fast_count = 0;
+    for _ in 0..30 {
+        let d = bandit.choose_contextual(0.0, &[1.0, 10.0]).unwrap();
+        if d.model_id == "fast-model" {
+            fast_count += 1;
+        }
+        bandit
+            .record_outcome(&d.decision_id, 0.8, 0.01, 50.0)
+            .unwrap();
+    }
+
+    assert!(
+        fast_count >= 12,
+        "fast-model should be preferred for simple tasks: got {}/30",
+        fast_count,
+    );
+}

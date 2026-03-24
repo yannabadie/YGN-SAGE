@@ -532,6 +532,30 @@ class CognitiveOrchestrationPipeline:
 
     async def _stage_execute(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
+        # Bandit: choose arm BEFORE execution to get decision_id
+        # Pass task context features when available for contextual arm selection
+        if self.bandit and hasattr(self.bandit, "select_with_context"):
+            try:
+                task_context = [
+                    float(ctx.system),  # cognitive system tier (1, 2, or 3)
+                    float(len(ctx.task)),  # task length as complexity proxy
+                    float(
+                        ctx.topology.node_count()
+                        if ctx.topology and hasattr(ctx.topology, "node_count")
+                        else 0
+                    ),  # topology complexity
+                ]
+                decision = self.bandit.select_with_context(0.1, task_context)
+                ctx.bandit_decision_id = decision.decision_id
+            except Exception:
+                pass
+        elif self.bandit and hasattr(self.bandit, "select"):
+            try:
+                decision = self.bandit.select(0.1)  # 10% exploration
+                ctx.bandit_decision_id = decision.decision_id
+            except Exception:
+                pass
+
         # Single-agent mode (no topology or single node)
         if ctx.topology is None or (
             hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
@@ -550,14 +574,6 @@ class CognitiveOrchestrationPipeline:
                     log.error("Stage 4 single-agent execution failed: %s", exc)
                     ctx.result = f"Error: {exc}"
             return ctx
-
-        # Bandit: choose arm BEFORE execution to get decision_id
-        if self.bandit and hasattr(self.bandit, "choose"):
-            try:
-                decision = self.bandit.choose(0.1)  # 10% exploration
-                ctx.bandit_decision_id = decision.decision_id
-            except Exception:
-                pass
 
         # Multi-agent mode: use TopologyRunner with ProviderPool
         try:
@@ -587,9 +603,24 @@ class CognitiveOrchestrationPipeline:
                 ctx = self._stage_select_topology(ctx)  # new topology
                 ctx = self._stage_assign_models(ctx)    # re-assign models
                 # Refresh bandit decision for the new topology
-                if self.bandit and hasattr(self.bandit, "choose"):
+                if self.bandit and hasattr(self.bandit, "select_with_context"):
                     try:
-                        new_decision = self.bandit.choose(0.1)
+                        task_context = [
+                            float(ctx.system),
+                            float(len(ctx.task)),
+                            float(
+                                ctx.topology.node_count()
+                                if ctx.topology and hasattr(ctx.topology, "node_count")
+                                else 0
+                            ),
+                        ]
+                        new_decision = self.bandit.select_with_context(0.1, task_context)
+                        ctx.bandit_decision_id = new_decision.decision_id
+                    except Exception:
+                        pass
+                elif self.bandit and hasattr(self.bandit, "select"):
+                    try:
+                        new_decision = self.bandit.select(0.1)
                         ctx.bandit_decision_id = new_decision.decision_id
                     except Exception:
                         pass
