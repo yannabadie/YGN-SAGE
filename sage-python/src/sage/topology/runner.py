@@ -259,8 +259,14 @@ class TopologyRunner:
 
                 # Phase C: runtime adaptation (single-node path)
                 if self._controller:
+                    node_ctx = {
+                        "node_idx": node_idx,
+                        "latency_ms": 0.0,  # Will be populated when we have timing
+                        "model_id": getattr(self.graph.get_node(node_idx), "model_id", ""),
+                        "output_length": len(result),
+                    }
                     decision = self._controller.evaluate_and_decide(
-                        node_idx, result, task, self.graph, None,
+                        node_idx, result, task, self.graph, node_ctx,
                         parallel_outputs=None,
                     )
                     if decision.action == "upgrade_model":
@@ -293,8 +299,14 @@ class TopologyRunner:
                 if self._controller:
                     parallel_outputs = list(results)
                     for idx, result in zip(ready, results):
+                        node_ctx = {
+                            "node_idx": idx,
+                            "latency_ms": 0.0,  # Will be populated when we have timing
+                            "model_id": getattr(self.graph.get_node(idx), "model_id", ""),
+                            "output_length": len(result),
+                        }
                         decision = self._controller.evaluate_and_decide(
-                            idx, result, task, self.graph, None,
+                            idx, result, task, self.graph, node_ctx,
                             parallel_outputs=parallel_outputs,
                         )
                         if decision.action == "upgrade_model":
@@ -343,8 +355,14 @@ class TopologyRunner:
 
                 # Phase C adaptation (same as run())
                 if self._controller:
+                    node_ctx = {
+                        "node_idx": node_idx,
+                        "latency_ms": 0.0,  # Will be populated when we have timing
+                        "model_id": getattr(node, "model_id", ""),
+                        "output_length": len(result),
+                    }
                     decision = self._controller.evaluate_and_decide(
-                        node_idx, result, task, self.graph, None,
+                        node_idx, result, task, self.graph, node_ctx,
                         parallel_outputs=None,
                     )
                     if decision.action == "upgrade_model":
