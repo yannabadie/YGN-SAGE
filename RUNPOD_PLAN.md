@@ -230,33 +230,98 @@ Durée estimée: 1-2h H100
 
 ---
 
-### Phase C — Micro-décisions multi-step (futur, nécessite env integration)
+### Phase C — Micro-décisions multi-step (READY, scripts + env integration wired)
 
-**Ce qu'on ajoute :** L'environnement `SageTopologyEnv` (machine 4 états) est branché dans le training loop. Le modèle interagit avec l'env : il génère le YAML, voit les résultats nœud par nœud, et prend des décisions upgrade/continue/reroute aux checkpoints.
+**Ce qu'on ajoute :** L'environnement `SageTopologyEnv` (machine 4 états) est branché dans le training loop. Le modèle interagit avec l'env : il génère le YAML, voit les résultats noeud par noeud, et prend des décisions upgrade/continue/reroute aux checkpoints.
 
 **Ce que le modèle apprend en plus :** Compétence 5 — QUAND upgrader vs continuer. Le coût-bénéfice de l'adaptation. C'est LE différenciateur vs tous les concurrents.
 
-**Framework :** verl-agent (pas verl vanilla) avec multi-step env, OU custom training loop avec `SageTopologyEnv`.
+**La machine 4 états (`topology_env.py`) :**
+```
+awaiting_yaml ──[model generates YAML]──> executing
+executing ──[run nodes one by one]──> awaiting_decision (at checkpoint)
+                                  └──> terminal (all nodes done)
+awaiting_decision ──[model: continue]──> executing (resume)
+                  ├──[model: upgrade]──> executing (re-run node with fallback_tier)
+                  └──[model: reroute]──> terminal (abort, -0.3 penalty)
+```
+The model takes REAL actions at 2 types of steps:
+1. **Step 0 (awaiting_yaml):** Generate the YAML topology (same as Phase A/B)
+2. **Checkpoint steps (awaiting_decision):** Decide continue/upgrade/reroute based on node output quality
+
+**Micro-decision reward constants (`topology_env.py`):**
+- `_REWARD_UPGRADE_COST = -0.05` — every upgrade has a cost
+- `_REWARD_REROUTE_PENALTY = -0.30` — reroute = abort + restart
+- `_REWARD_UPGRADE_SUCCESS = +0.15` — upgrade improved quality
 
 **GiGPO en Phase C :** Les VRAIS anchor states fonctionnent. `decision:coder:moderate:low` groupe toutes les trajectoires où le coder a produit du mauvais code. GiGPO compare les décisions upgrade vs continue pour ce même anchor. Step-level advantage réel.
 
-**Reward :**
-```
-R = 0.20 × R_structural
-  + 0.35 × R_execution
-  + 0.20 × R_rewardflow            — PageRank per-node credit (arXiv 2603.18859)
-  + 0.15 × R_resilience            — bonus adaptation triggered + succeeded
-  + 0.10 × R_cost_efficiency       — CARD price penalty (arXiv 2603.01089)
-```
-5 signaux. Refs : `rewardflow.py` (RewardFlow), `_score_resilience` + `_score_cost_efficiency` dans reward.py.
+#### Deux approches (choisir au runtime)
 
-**Modules requis (tous implémentés, pas encore branchés dans le training loop) :**
-- `topology_env.py` — Machine 4 états, 46 tests passent
+**Approach A: verl-agent multi-turn (preferred)**
+
+Le script `train_topology_phase_c.sh` utilise verl-agent avec `env.env_name=sage_topology` + `env.max_steps=10`. L'`env_register.py` monkey-patche `make_envs()` pour ajouter `SageTopologyEnvManager`. verl-agent gère le multi-turn rollout et le token masking automatique (mask=0 sur les observations, gradients uniquement sur les actions du modèle).
+
+```bash
+# Sur le pod, après Phase A/B :
+bash scripts/verl/train_topology_phase_c.sh 2>&1 | tee train_phase_c.log
+```
+
+**Avantages :** vLLM rollout (rapide), FSDP, token masking correct, metrics intégrées.
+**Risque :** verl-agent env_manager API peut diverger, requires `agent_system` package.
+
+**Approach B: Custom training loop (fallback)**
+
+Le script `train_phase_c_custom.py` implémente directement GiGPO avec PyTorch + PEFT, sans verl. Il utilise `SageTopologyEnv` directement : reset -> step(yaml) -> [step(decision) aux checkpoints] -> terminal. GiGPO advantages sont calculés par groupement d'anchor keys puis normalisation within-group.
+
+```bash
+# Si Approach A échoue :
+python3 scripts/verl/train_phase_c_custom.py \
+    --model /workspace/patched_nemotron_orchestrator \
+    --checkpoint /workspace/topology_verl_output \
+    --data data/verl_topology_curated.parquet \
+    --output /workspace/topology_verl_phase_c_custom \
+    --epochs 3 --lr 5e-7 --k 4 --batch-size 8
+```
+
+**Avantages :** Simple, pas de dépendance verl-agent, exerce la machine 4 états complète.
+**Inconvénients :** Plus lent (PyTorch generate au lieu de vLLM), pas de token masking (tout le contexte reçoit des gradients).
+
+**Reward (5 signaux) :**
+```
+R = 0.20 * R_structural            — format + density + verifier
+  + 0.35 * R_execution             — PASSED=1.0, WRONG_ANSWER=0.5, ...
+  + 0.20 * R_rewardflow            — PageRank per-node credit (arXiv 2603.18859)
+  + 0.15 * R_resilience            — bonus adaptation triggered + succeeded
+  + 0.10 * R_cost_efficiency       — CARD price penalty (arXiv 2603.01089)
+```
+Refs : `rewardflow.py` (RewardFlow), `_score_resilience` + `_score_cost_efficiency` dans reward.py.
+
+**Modules (tous implémentés ET wired) :**
+- `topology_env.py` — Machine 4 états, 7 micro-decision tests passent
+- `env_register.py` — Monkey-patch verl-agent `make_envs()`, config extraction from Hydra
 - `rewardflow.py` — PageRank propagation
-- `training_memory.py` — SQLite episodic memory cross-épisode
+- `training_memory.py` — SQLite episodic memory cross-épisode (via `SAGE_TRAINING_MEMORY_DB` env var)
 - `edge_credit.py` — Graph-GRPO per-edge advantage (arXiv 2603.02701)
+- `step_reward.py` — `StepRewardVector` with `to_verl_format()` for GiGPO
 
-**Token masking (critique) :** verl-agent masque automatiquement les observations (mask=0). Seuls les tokens générés par le modèle (YAML, "upgrade", "continue") reçoivent des gradients. À vérifier sur le premier batch.
+**Token masking (critique pour Approach A) :** verl-agent masque automatiquement les observations (mask=0). Seuls les tokens générés par le modèle (YAML, "upgrade", "continue") reçoivent des gradients. A vérifier sur le premier batch.
+
+**Config Phase C :**
+```
+Modèle: Checkpoint Phase A/B (LoRA sur Nemotron-Orchestrator-8B)
+Algorithme: GiGPO (multi-step anchor grouping)
+Env: SageTopologyEnv (4-state machine, max_steps=10)
+LoRA: r=64, alpha=32, all-linear (continue from Phase A/B)
+LR: 5e-7 (lower than Phase A to preserve structural knowledge)
+Epochs: 3
+Batch: 32 (train), K=4 rollouts
+Temperature: 0.7 (diversity for GiGPO grouping)
+Providers: DeepSeek, Google, OpenAI, xAI, MiniMax, Kimi, OpenRouter, Codex
+Memory: SQLite episodic (cross-epoch learning)
+Coût API: ~$50-80
+Durée estimée: 2-3h H100
+```
 
 **Critères de succès Phase C :**
 - [ ] `step_advantage` non-nul dans les logs (preuve que GiGPO multi-step fonctionne)
@@ -373,11 +438,36 @@ export SAGE_VERL_EXEC=1
 # Relancer avec le checkpoint Phase A et le dataset curated
 ```
 
-### 5. Post-training
+### 5. Training Phase C (après Phase B)
+
+**Approche A (verl-agent multi-turn) :**
+```bash
+screen -S train_c
+bash scripts/verl/train_topology_phase_c.sh 2>&1 | tee train_phase_c.log
+```
+
+**Signaux de succès :**
+- `step_advantage` non-null dans les logs (GiGPO multi-step fonctionne)
+- Des anchors `decision:coder:moderate:low` apparaissent
+- Le modèle prend des décisions variées (pas tout "continue")
+
+**Si Approche A échoue** (verl-agent env_manager incompatible) :
+```bash
+# Fallback: custom training loop
+python3 scripts/verl/train_phase_c_custom.py \
+    --checkpoint /workspace/topology_verl_output \
+    --data data/verl_topology_curated.parquet \
+    --output /workspace/topology_verl_phase_c_custom \
+    --epochs 3 --lr 5e-7 --k 4 --batch-size 8 \
+    --memory-db /workspace/topology_training_memory.db \
+    2>&1 | tee train_phase_c_custom.log
+```
+
+### 6. Post-training
 
 ```bash
 python3 scripts/verl/post_training_pipeline.py all
-# → export LoRA → merge Nemotron-Orchestrator-8B → push HuggingFace → Q8 GGUF
+# -> export LoRA -> merge Nemotron-Orchestrator-8B -> push HuggingFace -> Q8 GGUF
 ```
 
 **Résultat :** `yannabadie/sage-topology-policy-v2` sur HuggingFace + Q8_0 GGUF (~9.5GB) pour local.
@@ -440,12 +530,15 @@ sage-python/src/sage/verl/
 └── env_register.py       # verl-agent registration (Phase C)
 
 sage-python/scripts/verl/
-├── train_topology.sh     # GiGPO config, 2 phases
-├── patch_tokenizer.py    # Qwen3.5 <think> removal
-├── setup_runpod.sh       # 9-step setup
-├── validate_setup.py     # 10 pre-flight checks
-├── post_training_pipeline.py  # Export → HF → GGUF
-└── convert_sft_to_verl.py     # 11 sources → 2225 entries
+├── train_topology.sh           # GiGPO config, Phase A/B (verl-agent)
+├── train_topology_v3.sh        # GiGPO Phase A only (verl 0.7.1)
+├── train_topology_phase_c.sh   # Phase C: multi-step micro-decisions (verl-agent)
+├── train_phase_c_custom.py     # Phase C fallback: custom GiGPO loop (no verl)
+├── patch_tokenizer.py          # Qwen3.5 <think> removal
+├── setup_runpod.sh             # 9-step setup
+├── validate_setup.py           # 10 pre-flight checks
+├── post_training_pipeline.py   # Export -> HF -> GGUF
+└── convert_sft_to_verl.py      # 11 sources -> 2225 entries
 
 sage-core/src/topology/
 ├── topology_graph.rs     # TopologyNode + TopologyGraph (6 adaptive fields)
