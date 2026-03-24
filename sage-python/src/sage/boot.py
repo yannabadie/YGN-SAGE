@@ -702,6 +702,36 @@ def boot_agent_system(
         except Exception as e:
             _log.warning("Boot: Phase 6 TopologyEngine init failed (%s)", e)
 
+    # Bootstrap S-MMU with template topologies on cold start (P5)
+    # On first run, S-MMU has 0 chunks → Path 1 always fails. Seed it with
+    # templates so that S-MMU retrieval has initial data to work with.
+    if rust_topology_engine is not None and rust_topology_engine.smmu_chunk_count() == 0:
+        _bootstrap_systems = [1, 2, 3]  # S1=sequential, S2=avr, S3=debate
+        _bootstrapped = 0
+        for _sys in _bootstrap_systems:
+            try:
+                _result = rust_topology_engine.generate(
+                    f"bootstrap_s{_sys}", None, _sys, 0.0,
+                )
+                rust_topology_engine.cache_topology(_result.topology)
+                rust_topology_engine.record_outcome(
+                    _result.topology.id,
+                    f"bootstrap_s{_sys}",
+                    [f"bootstrap", f"s{_sys}"],
+                    None,
+                    0.5,  # neutral quality
+                    0.0,
+                    0.0,
+                )
+                _bootstrapped += 1
+            except Exception:
+                pass
+        if _bootstrapped > 0:
+            _log.info(
+                "S-MMU bootstrapped with %d template topologies (%d chunks)",
+                _bootstrapped, rust_topology_engine.smmu_chunk_count(),
+            )
+
     topology_evolver = TopologyEvolver()
     topology_population = TopologyPopulation()
     memory_agent = MemoryAgent(use_llm=not use_mock_llm, llm_provider=provider if not use_mock_llm else None)
