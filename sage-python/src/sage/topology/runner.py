@@ -255,13 +255,16 @@ class TopologyRunner:
 
             if len(ready) == 1:
                 node_idx = ready[0]
+                import time as _time
+                _t0 = _time.monotonic()
                 result = await self._execute_node(node_idx, task)
+                _latency_ms = (_time.monotonic() - _t0) * 1000
 
                 # Phase C: runtime adaptation (single-node path)
                 if self._controller:
                     node_ctx = {
                         "node_idx": node_idx,
-                        "latency_ms": 0.0,  # Will be populated when we have timing
+                        "latency_ms": _latency_ms,
                         "model_id": getattr(self.graph.get_node(node_idx), "model_id", ""),
                         "output_length": len(result),
                     }
@@ -293,7 +296,10 @@ class TopologyRunner:
                     self._execute_node(idx, task, context_override=ctx_snapshot)
                     for idx in ready
                 ]
+                import time as _time
+                _t0_par = _time.monotonic()
                 results = await asyncio.gather(*coros)
+                _par_latency_ms = (_time.monotonic() - _t0_par) * 1000
 
                 # Phase C: runtime adaptation (parallel path)
                 if self._controller:
@@ -301,7 +307,7 @@ class TopologyRunner:
                     for idx, result in zip(ready, results):
                         node_ctx = {
                             "node_idx": idx,
-                            "latency_ms": 0.0,  # Will be populated when we have timing
+                            "latency_ms": _par_latency_ms,  # Total parallel batch latency
                             "model_id": getattr(self.graph.get_node(idx), "model_id", ""),
                             "output_length": len(result),
                         }
@@ -353,11 +359,13 @@ class TopologyRunner:
 
                 result = await self._execute_node(node_idx, task)
 
+                _node_latency_ms = (time.time() - t0) * 1000
+
                 # Phase C adaptation (same as run())
                 if self._controller:
                     node_ctx = {
                         "node_idx": node_idx,
-                        "latency_ms": 0.0,  # Will be populated when we have timing
+                        "latency_ms": _node_latency_ms,
                         "model_id": getattr(node, "model_id", ""),
                         "output_length": len(result),
                     }
