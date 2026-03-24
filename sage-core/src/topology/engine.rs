@@ -212,8 +212,10 @@ impl TopologyEngine {
         // Path selection: bandit-guided exploration.
         // When effective_budget > 0.5, skip retrieval paths (S-MMU, archive)
         // and go straight to generative paths (mutation, MCTS) to discover new topologies.
-        // When effective_budget < 0.3, prefer retrieval (exploit known-good topologies).
-        let skip_retrieval = effective_budget > 0.5;
+        // Threshold 0.35: with EXPLORATION_BUDGET_HIGH=0.50 and bandit modulation
+        // (0.3 + 0.7*confidence), effective_budget ranges [0.09, 0.50].
+        // At 0.35, exploration triggers when bandit has low confidence (quality < 0.43).
+        let skip_retrieval = effective_budget > 0.35;
 
         // Path 1: S-MMU hit — retrieve similar past task (skip if exploring)
         let result = if !skip_retrieval {
