@@ -89,6 +89,7 @@ class TestShadowBothRouters:
             rust_router=rust,
             python_metacognition=python,
             trace_path=trace_path,
+            enabled=True,  # explicitly enable for testing
         )
 
     @pytest.mark.asyncio
@@ -127,6 +128,7 @@ class TestShadowBothRouters:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=trace_path,
+            enabled=True,
         )
         await shadow.route("What is 2+2?", budget=10.0)
 
@@ -251,6 +253,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         for _ in range(10):
             await shadow.route("Test task", budget=10.0)
@@ -264,6 +267,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         # 8 matches
         for _ in range(8):
@@ -292,6 +296,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         for _ in range(100):
             await shadow.route("Test", budget=10.0)
@@ -305,6 +310,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         # All 1000 are mismatches -- 100% divergence
         for _ in range(1000):
@@ -317,6 +323,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         # Manually set stats to simulate 1000 traces with 4% divergence
         shadow.stats["total_comparisons"] = 1000
@@ -329,6 +336,7 @@ class TestDivergenceTracking:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 1000
         shadow.stats["system_mismatches"] = 50  # exactly 5%
@@ -351,6 +359,7 @@ class TestShadowResilience:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         decision = await shadow.route("Test", budget=10.0)
         assert int(decision.system) == 2
@@ -366,6 +375,7 @@ class TestShadowResilience:
         shadow = ShadowRouter(
             rust_router=rust, python_metacognition=python,
             trace_path=trace_path,
+            enabled=True,
         )
         await shadow.route("Test", budget=10.0)
         assert shadow.stats["total_comparisons"] == 0
@@ -384,6 +394,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         assert shadow.total == 0
         shadow.stats["total_comparisons"] = 42
@@ -394,6 +405,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 499
         shadow.stats["system_mismatches"] = 0
@@ -404,6 +416,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 500
         shadow.stats["system_mismatches"] = 49  # 9.8%
@@ -414,6 +427,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 500
         shadow.stats["system_mismatches"] = 50  # exactly 10%
@@ -424,6 +438,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 1000
         shadow.stats["system_mismatches"] = 40  # 4%
@@ -434,6 +449,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 1000
         shadow.stats["system_mismatches"] = 50
@@ -444,6 +460,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 1000
         shadow.stats["system_mismatches"] = 40
@@ -457,6 +474,7 @@ class TestPhase5TwoTierGate:
         shadow = ShadowRouter(
             rust_router=MagicMock(), python_metacognition=MagicMock(),
             trace_path=tmp_path / "traces.jsonl",
+            enabled=True,
         )
         shadow.stats["total_comparisons"] = 600
         shadow.stats["system_mismatches"] = 40  # 6.7% — soft OK, hard needs 1000+

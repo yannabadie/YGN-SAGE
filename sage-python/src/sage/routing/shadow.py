@@ -41,6 +41,12 @@ _DEFAULT_TRACE_PATH = Path.home() / ".sage" / "shadow_traces.jsonl"
 class ShadowRouter:
     """Dual-path shadow router for Rust/Python routing comparison.
 
+    .. deprecated::
+        DEPRECATED: 49.6% divergence. Rust SystemRouter should be evaluated
+        independently on GT 50 tasks before promotion. Shadow comparison is
+        disabled by default; set SAGE_ENABLE_SHADOW=1 to re-enable for trace
+        collection.
+
     Runs both routers on every task when both are present. Returns the Rust
     decision as primary (production path). Compares system numbers and logs
     divergences to a JSONL trace file for Phase 5 deletion gate.
@@ -55,6 +61,9 @@ class ShadowRouter:
         Python AdaptiveRouter or ComplexityRouter instance, or None.
     trace_path:
         Path for JSONL divergence trace file. Defaults to ~/.sage/shadow_traces.jsonl.
+    enabled:
+        Explicitly enable/disable shadow comparison. Defaults to env var
+        SAGE_ENABLE_SHADOW (off by default).
     """
 
     def __init__(
@@ -62,10 +71,19 @@ class ShadowRouter:
         rust_router: Any | None = None,
         python_metacognition: Any | None = None,
         trace_path: Path | None = None,
+        enabled: bool | None = None,
     ) -> None:
+        import os
+
         self._rust_router = rust_router
         self._python_metacognition = python_metacognition
         self._trace_path = trace_path or _DEFAULT_TRACE_PATH
+        # Shadow comparison disabled by default (49.6% divergence).
+        # Set SAGE_ENABLE_SHADOW=1 to re-enable for trace collection.
+        if enabled is not None:
+            self._enabled = enabled
+        else:
+            self._enabled = os.environ.get("SAGE_ENABLE_SHADOW", "").strip() == "1"
         self.stats: dict[str, int] = {
             "total_comparisons": 0,
             "system_mismatches": 0,
@@ -73,8 +91,16 @@ class ShadowRouter:
 
     @property
     def _shadow_active(self) -> bool:
-        """True when both routers are present (shadow comparison enabled)."""
-        return self._rust_router is not None and self._python_metacognition is not None
+        """True when both routers are present AND shadow is enabled.
+
+        Shadow comparison is disabled by default (49.6% divergence).
+        Set SAGE_ENABLE_SHADOW=1 or pass enabled=True to re-enable.
+        """
+        return (
+            self._enabled
+            and self._rust_router is not None
+            and self._python_metacognition is not None
+        )
 
     async def route(self, task: str, budget: float = DEFAULT_BUDGET_USD) -> Any:
         """Route a task, running both routers in shadow mode when available.

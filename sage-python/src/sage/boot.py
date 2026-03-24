@@ -620,17 +620,23 @@ def boot_agent_system(
             _log.warning("Boot: Python ModelRegistry init failed (%s)", e)
 
     # Shadow router: dual Rust/Python comparison when both are available.
-    # Always created — handles all combinations internally:
-    # both routers (shadow comparison), rust-only, python-only.
-    # Zero-overhead when only one router is present.
+    # DEPRECATED: 49.6% divergence — shadow comparison disabled by default.
+    # Set SAGE_ENABLE_SHADOW=1 to re-enable for trace collection.
+    # When disabled, ShadowRouter acts as a zero-overhead passthrough to
+    # whichever router is available (Rust preferred).
     shadow_router = ShadowRouter(
         rust_router=rust_router,
         python_metacognition=metacognition,
     )
-    if rust_router is not None:
+    if shadow_router._shadow_active:
         _log.info(
             "Boot: ShadowRouter active (dual Rust/Python comparison, "
             "traces -> %s)", shadow_router._trace_path,
+        )
+    elif rust_router is not None:
+        _log.info(
+            "Boot: ShadowRouter shadow comparison disabled (49.6%% divergence). "
+            "Rust SystemRouter is primary. Set SAGE_ENABLE_SHADOW=1 to re-enable."
         )
 
     # Phase 5 gate: load existing traces for cross-session continuity
@@ -702,6 +708,34 @@ def boot_agent_system(
             )
         except Exception as e:
             _log.warning("Boot: Phase 6 TopologyEngine init failed (%s)", e)
+
+    # P1: Restore persisted bandit + MAP-Elites state from previous session
+    _sage_state_dir = str(Path.home() / ".sage")
+    if rust_topology_engine is not None:
+        try:
+            if hasattr(rust_topology_engine, 'load_state'):
+                bandit_arms, archive_cells = rust_topology_engine.load_state(_sage_state_dir)
+                if bandit_arms > 0 or archive_cells > 0:
+                    _log.info(
+                        "Boot: Restored persisted state — %d bandit arms, %d archive cells from %s",
+                        bandit_arms, archive_cells, _sage_state_dir,
+                    )
+        except Exception as e:
+            _log.debug("Boot: No persisted state loaded (%s)", e)
+
+    # P1: Register atexit handler to save bandit + MAP-Elites state at shutdown
+    if rust_topology_engine is not None and hasattr(rust_topology_engine, 'save_state'):
+        import atexit
+
+        def _save_engine_state(engine=rust_topology_engine, state_dir=_sage_state_dir):
+            try:
+                engine.save_state(state_dir)
+                _log.info("Shutdown: Saved engine state to %s", state_dir)
+            except Exception as exc:
+                _log.warning("Shutdown: Failed to save engine state (%s)", exc)
+
+        atexit.register(_save_engine_state)
+        _log.info("Boot: atexit handler registered for engine state persistence")
 
     # Bootstrap S-MMU with template topologies on cold start (P5)
     # On first run, S-MMU has 0 chunks → Path 1 always fails. Seed it with
