@@ -90,6 +90,7 @@ class EpisodeTrace:
     final_code: str | None = None
     total_reward: float = 0.0
     status: str = ""
+    node_traces_for_rewardflow: list[dict] = field(default_factory=list)
 
 
 def _make_anchor(role: str, difficulty: str, context_hash: str) -> str:
@@ -731,6 +732,18 @@ class SageTopologyEnv:
                 )
             except Exception:
                 pass
+
+        # RewardFlow per-node credit (if multiple rollouts available)
+        # Applied at batch level in the training loop, not per-episode
+        # Store the node traces for later batch-level processing
+        self._trace.node_traces_for_rewardflow = [
+            {
+                "node_idx": t["node_idx"],
+                "role": t.get("role", "agent"),
+                "quality": self._compute_node_reward(t.get("role", "agent"), t.get("output", "")),
+            }
+            for t in self._node_traces
+        ]
 
         # Build StepRewardVector for GiGPO
         self._step_reward_vec = StepRewardVector.from_episode_trace(self._trace)

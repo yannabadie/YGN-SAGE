@@ -57,6 +57,10 @@ logging.basicConfig(
 )
 log = logging.getLogger("phase_c_custom")
 
+# RewardFlow (PageRank per-node credit) + Graph-GRPO edge credit
+from sage.verl.rewardflow import RewardFlowPropagator
+from sage.verl.edge_credit import compute_edge_advantages, parse_edges_from_yaml
+
 
 # ---------------------------------------------------------------------------
 # GiGPO advantage computation
@@ -204,6 +208,7 @@ def run_episode(
 
     # Collect step rewards from the env
     srv = env.get_step_rewards()
+    trace = env.get_trace()
 
     return {
         "prompt": prompt,
@@ -215,6 +220,9 @@ def run_episode(
         "total_reward": srv.episode_reward,
         "n_steps": srv.n_steps,
         "status": srv.status,
+        # For batch-level RewardFlow + edge credit
+        "node_traces_for_rewardflow": trace.node_traces_for_rewardflow,
+        "topology_yaml": trace.topology_yaml,
     }
 
 
@@ -388,8 +396,55 @@ def train_phase_c(
                     continue
 
                 # Compute GiGPO advantages across K rollouts
-                all_step_rewards = [r["step_rewards"] for r in rollout_results]
+                all_step_rewards = [list(r["step_rewards"]) for r in rollout_results]
                 all_anchor_keys = [r["anchor_keys"] for r in rollout_results]
+
+                # ── RewardFlow per-node credit (PageRank propagation) ──
+                if len(rollout_results) >= 2:
+                    try:
+                        propagator = RewardFlowPropagator(damping=0.85, max_iters=20)
+                        rollout_dicts = [
+                            {
+                                "node_traces": r["node_traces_for_rewardflow"],
+                                "terminal_reward": r["total_reward"],
+                            }
+                            for r in rollout_results
+                        ]
+                        rewardflow_credits = propagator.compute(rollout_dicts)
+                        # Add rewardflow credit to per-step rewards
+                        for k_rf, credits in enumerate(rewardflow_credits):
+                            for node_idx, rf_reward in credits.items():
+                                # Find the step corresponding to this node
+                                for step_idx, step in enumerate(rollout_results[k_rf].get("step_rewards", [])):
+                                    # Steps include topology_generator (node_idx=-1) and
+                                    # actual nodes (node_idx=0,1,...). Match by offset:
+                                    # step 0 = topology, steps 1..N = nodes
+                                    if step_idx - 1 == node_idx and step_idx < len(all_step_rewards[k_rf]):
+                                        all_step_rewards[k_rf][step_idx] += 0.2 * rf_reward
+                    except Exception as exc:
+                        log.warning("RewardFlow failed: %s", exc)
+
+                # ── Graph-GRPO edge credit (per-edge advantage) ──────
+                if len(rollout_results) >= 2:
+                    try:
+                        edge_data = []
+                        for r in rollout_results:
+                            edges = parse_edges_from_yaml(r.get("topology_yaml", ""))
+                            edge_data.append({"edges": edges, "reward": r["total_reward"]})
+
+                        edge_advantages = compute_edge_advantages(edge_data)
+                        # Adjust topology generation step (step 0) by edge advantage
+                        for k_ec, ed in enumerate(edge_data):
+                            edges = ed["edges"]
+                            if edges and edge_advantages:
+                                edge_bonus = sum(
+                                    edge_advantages.get(tuple(e), 0.0) for e in edges
+                                ) / max(len(edges), 1)
+                                if all_step_rewards[k_ec]:
+                                    all_step_rewards[k_ec][0] += 0.1 * edge_bonus
+                    except Exception as exc:
+                        log.warning("Edge credit failed: %s", exc)
+
                 advantages = compute_gigpo_advantages(
                     all_step_rewards, all_anchor_keys, gamma=gamma,
                 )

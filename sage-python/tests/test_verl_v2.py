@@ -328,3 +328,204 @@ edges:
         # Verify StepRewardVector
         srv = env.get_step_rewards()
         assert len(srv.step_rewards) > 0
+
+
+class TestRewardFlowWiring:
+    """Tests that RewardFlow is wired into topology_env and training loop."""
+
+    def test_episode_trace_has_node_traces_for_rewardflow(self):
+        """After finalize, EpisodeTrace.node_traces_for_rewardflow is populated."""
+        from sage.verl.topology_env import SageTopologyEnv
+
+        env = SageTopologyEnv()
+        env.reset("Sort a list", "test/sort")
+
+        yaml_text = (
+            "nodes:\n"
+            "  - role: coder\n"
+            "    prompt: Write code\n"
+            "  - role: reviewer\n"
+            "    prompt: Review code\n"
+            "edges:\n"
+            "  - from_idx: 0\n"
+            "    to_idx: 1\n"
+            "reasoning: Code then review\n"
+            "difficulty: moderate"
+        )
+        obs, reward, done, info = env.step(yaml_text)
+        while not done:
+            obs, reward, done, info = env.step("continue")
+
+        trace = env.get_trace()
+        assert hasattr(trace, "node_traces_for_rewardflow")
+        assert len(trace.node_traces_for_rewardflow) >= 2  # coder + reviewer
+        for nt in trace.node_traces_for_rewardflow:
+            assert "node_idx" in nt
+            assert "role" in nt
+            assert "quality" in nt
+
+    def test_rewardflow_propagator_with_env_traces(self):
+        """RewardFlow processes node traces from multiple episodes."""
+        from sage.verl.rewardflow import RewardFlowPropagator
+        from sage.verl.topology_env import SageTopologyEnv
+
+        env = SageTopologyEnv()
+        traces = []
+
+        yaml_text = (
+            "nodes:\n"
+            "  - role: coder\n"
+            "  - role: reviewer\n"
+            "edges:\n"
+            "  - from_idx: 0\n"
+            "    to_idx: 1\n"
+            "reasoning: test\n"
+            "difficulty: simple"
+        )
+
+        for _ in range(3):  # K=3 rollouts
+            env.reset("Sort", "t/s")
+            obs, r, done, info = env.step(yaml_text)
+            while not done:
+                obs, r, done, info = env.step("continue")
+            trace = env.get_trace()
+            traces.append(trace)
+
+        # Build rollout dicts from traces
+        rollout_dicts = [
+            {
+                "node_traces": t.node_traces_for_rewardflow,
+                "terminal_reward": t.total_reward,
+            }
+            for t in traces
+        ]
+
+        propagator = RewardFlowPropagator(damping=0.85, max_iters=20)
+        credits = propagator.compute(rollout_dicts)
+        assert len(credits) == 3
+        # Each rollout should have per-node credit
+        for c in credits:
+            assert isinstance(c, dict)
+            # Should have entries for the node indices
+            assert len(c) >= 1
+
+    def test_rewardflow_not_called_with_single_rollout(self):
+        """When K < 2, RewardFlow should not modify step rewards."""
+        # This tests the guard in the training loop: len(rollout_results) >= 2
+        # We just verify that RewardFlowPropagator handles a single rollout
+        from sage.verl.rewardflow import RewardFlowPropagator
+
+        prop = RewardFlowPropagator()
+        rollouts = [
+            {
+                "node_traces": [{"node_idx": 0, "role": "coder", "quality": 0.5}],
+                "terminal_reward": 0.5,
+            }
+        ]
+        result = prop.compute(rollouts)
+        assert len(result) == 1
+        # Single rollout still gets credit, but in training loop the guard skips it
+
+
+class TestEdgeCreditWiring:
+    """Tests that edge credit adjusts step 0 reward in the training loop."""
+
+    def test_edge_credit_adjusts_step_zero(self):
+        """Simulate the training loop edge credit logic with mock rollouts.
+
+        To produce non-zero advantages, we need multiple distinct edges with
+        different success rates (binary: reward > 0.5 = 1.0, else 0.0).
+        """
+        from sage.verl.edge_credit import compute_edge_advantages, parse_edges_from_yaml
+
+        # yaml_passing has two edges (0->1, 1->2) and high reward (PASSED)
+        yaml_passing = (
+            "nodes:\n"
+            "  - role: coder\n"
+            "  - role: reviewer\n"
+            "  - role: synthesizer\n"
+            "edges:\n"
+            "  - from_idx: 0\n"
+            "    to_idx: 1\n"
+            "  - from_idx: 1\n"
+            "    to_idx: 2\n"
+        )
+        # yaml_failing has only edge (0->1) and low reward (FAILED)
+        yaml_failing = (
+            "nodes:\n"
+            "  - role: coder\n"
+            "  - role: reviewer\n"
+            "edges:\n"
+            "  - from_idx: 0\n"
+            "    to_idx: 1\n"
+        )
+
+        # Rollouts: 2 passing with (0->1, 1->2), 1 failing with only (0->1)
+        # Edge (0,1): 2 pass + 1 fail => success rate 2/3
+        # Edge (1,2): 2 pass => success rate 1.0
+        # Mean success = (2/3 + 1.0) / 2 = 5/6, std > 0 => non-zero advantages
+        rollout_results = [
+            {"topology_yaml": yaml_passing, "total_reward": 1.5, "step_rewards": [0.5, 0.3, 0.7]},
+            {"topology_yaml": yaml_failing, "total_reward": 0.0, "step_rewards": [0.2, 0.0]},
+            {"topology_yaml": yaml_passing, "total_reward": 1.2, "step_rewards": [0.4, 0.3, 0.5]},
+        ]
+
+        all_step_rewards = [list(r["step_rewards"]) for r in rollout_results]
+        original_step0 = [sr[0] for sr in all_step_rewards]
+
+        # Apply edge credit (same logic as in train_phase_c_custom.py)
+        edge_data = []
+        for r in rollout_results:
+            edges = parse_edges_from_yaml(r.get("topology_yaml", ""))
+            edge_data.append({"edges": edges, "reward": r["total_reward"]})
+
+        edge_advantages = compute_edge_advantages(edge_data)
+
+        for k_ec, ed in enumerate(edge_data):
+            edges = ed["edges"]
+            if edges and edge_advantages:
+                edge_bonus = sum(
+                    edge_advantages.get(tuple(e), 0.0) for e in edges
+                ) / max(len(edges), 1)
+                if all_step_rewards[k_ec]:
+                    all_step_rewards[k_ec][0] += 0.1 * edge_bonus
+
+        # Rollout 1 has only edge (0,1) which has negative advantage => step 0 changes
+        assert all_step_rewards[1][0] != original_step0[1]
+        # Rollout 0 has edges (0,1) and (1,2) with opposite advantages that
+        # average to ~0. The key test: rollout 1 was materially adjusted.
+        # Also verify the direction: rollout 1 gets a penalty (negative advantage)
+        assert all_step_rewards[1][0] < original_step0[1]
+
+    def test_edge_credit_empty_edges_no_change(self):
+        """No edges means no adjustment to step rewards."""
+        from sage.verl.edge_credit import compute_edge_advantages, parse_edges_from_yaml
+
+        yaml_no_edges = "nodes:\n  - role: coder\n"
+        rollout_results = [
+            {"topology_yaml": yaml_no_edges, "total_reward": 0.5, "step_rewards": [0.3]},
+            {"topology_yaml": yaml_no_edges, "total_reward": 0.2, "step_rewards": [0.1]},
+        ]
+
+        all_step_rewards = [list(r["step_rewards"]) for r in rollout_results]
+        original = [sr[0] for sr in all_step_rewards]
+
+        edge_data = []
+        for r in rollout_results:
+            edges = parse_edges_from_yaml(r.get("topology_yaml", ""))
+            edge_data.append({"edges": edges, "reward": r["total_reward"]})
+
+        edge_advantages = compute_edge_advantages(edge_data)
+
+        for k_ec, ed in enumerate(edge_data):
+            edges = ed["edges"]
+            if edges and edge_advantages:
+                edge_bonus = sum(
+                    edge_advantages.get(tuple(e), 0.0) for e in edges
+                ) / max(len(edges), 1)
+                if all_step_rewards[k_ec]:
+                    all_step_rewards[k_ec][0] += 0.1 * edge_bonus
+
+        # No edges, no change
+        assert all_step_rewards[0][0] == original[0]
+        assert all_step_rewards[1][0] == original[1]
