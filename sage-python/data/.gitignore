@@ -16,5 +16,10 @@
 !topology_sft_gpt54_pro.jsonl
 !topology_sft_gpt54_complex.jsonl
 !topology_raft_phase2.jsonl
+!gpt54_adaptive_topologies.jsonl
+!gpt54_static_to_adaptive.jsonl
+!gpt54_recovery_scenarios.jsonl
+!synthetic_topologies_10k.jsonl
+!synthetic_recovery_scenarios.jsonl
 !verl_topology_train.parquet
 *.log
