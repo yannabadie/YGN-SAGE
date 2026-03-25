@@ -134,11 +134,9 @@ class TopologyRunner:
         )
 
         try:
-            from sage.sandbox.isolated_executor import run_isolated
-            result = run_isolated(wrapped_code, timeout_s=30)
-            output = result.get("stdout", "")
-            stderr = result.get("stderr", "")
-            exit_code = result.get("exit_code", -1)
+            from sage.sandbox.isolated_executor import execute_isolated
+            stdout, stderr, exit_code = execute_isolated(wrapped_code, timeout=30)
+            output = stdout
         except ImportError:
             # Fallback: subprocess execution (no bwrap)
             import subprocess
