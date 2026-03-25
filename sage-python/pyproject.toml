@@ -35,6 +35,15 @@ bench = ["evalplus>=0.3.1"]
 mcp = ["mcp>=1.7"]
 a2a = ["a2a-sdk[http-server]>=0.3"]
 protocols = ["ygn-sage[mcp,a2a]"]
+training = [
+    "torch>=2.4",
+    "transformers>=4.45",
+    "peft>=0.13",
+    "datasets>=3.0",
+    "accelerate>=1.0",
+    "pandas>=2.0",
+    "pyarrow>=18",
+]
 all = ["ygn-sage[google,openai,arrow,z3,embeddings,ui,bench,mcp,a2a]"]
 dev = [
     "pytest>=8",

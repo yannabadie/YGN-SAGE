@@ -642,8 +642,17 @@ def main():
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--memory-db", default="", help="SQLite episodic memory DB path")
     parser.add_argument("--save-every", type=int, default=50, help="Save checkpoint every N steps")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Smoke test: 1 epoch, k=1, batch=1, 2 prompts max")
 
     args = parser.parse_args()
+
+    if args.smoke:
+        args.epochs = 1
+        args.k = 1
+        args.batch_size = 1
+        args.max_new_tokens = 128
+        log.info("=== SMOKE MODE: 1 epoch, k=1, batch=1, max_tokens=128 ===")
 
     train_phase_c(
         model_path=args.model,

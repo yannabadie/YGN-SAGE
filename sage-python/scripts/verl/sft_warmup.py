@@ -209,4 +209,23 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="SFT warmup for Nemotron-Orchestrator-8B")
+    parser.add_argument("--smoke", action="store_true",
+                        help="Smoke test mode: 2 steps, tiny batch, CPU-ok")
+    parser.add_argument("--model", default=None, help="Override MODEL_PATH")
+    parser.add_argument("--output", default=None, help="Override OUTPUT_DIR")
+    args = parser.parse_args()
+
+    if args.model:
+        MODEL_PATH = args.model
+    if args.output:
+        OUTPUT_DIR = args.output
+    if args.smoke:
+        EPOCHS = 1
+        BATCH_SIZE = 1
+        GRAD_ACCUM = 1
+        MAX_SEQ_LEN = 128
+        log.info("=== SMOKE MODE: 1 epoch, batch=1, seq=128 ===")
+
     main()
