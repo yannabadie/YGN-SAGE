@@ -3,7 +3,7 @@
 # YGN-SAGE veRL Training Setup for RunPod H100
 # ============================================================
 # Docker: runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
-# Model: Qwen/Qwen3.5-9B (dense 9B, bf16, Apache 2.0)
+# Model: nvidia/Nemotron-Orchestrator-8B (Qwen3 arch, NVIDIA Open Model License)
 #
 # Usage on RunPod:
 #   1. Create pod with RunPod PyTorch 2.4.0 template
@@ -50,34 +50,12 @@ print('OK')
     pip install vllm -q 2>&1 | tail -3
 }
 
-# ── 3. Install flash-linear-attention + causal-conv1d ─────────
-# CRITICAL: Qwen3.5 uses Gated DeltaNet layers. Without these,
-# vLLM falls back to slow PyTorch implementation (3-5x slower).
-echo "[3/9] Installing flash-linear-attention (for Qwen3.5 GDN layers)..."
-python3 -c "
-try:
-    import fla
-    print(f'flash-linear-attention already installed')
-except ImportError:
-    import sys; sys.exit(1)
-" 2>/dev/null || {
-    pip install flash-linear-attention -q 2>&1 | tail -3
-    echo "flash-linear-attention installed"
-}
-
-python3 -c "
-try:
-    import causal_conv1d
-    print(f'causal-conv1d already installed')
-except ImportError:
-    import sys; sys.exit(1)
-" 2>/dev/null || {
-    pip install causal-conv1d -q 2>&1 | tail -3
-    echo "causal-conv1d installed"
-}
+# ── 3. Skip flash-linear-attention (Nemotron-Orchestrator-8B is Qwen3 arch, standard transformer)
+echo "[3/9] Skipping flash-linear-attention (not needed for Qwen3/Nemotron — uses SDPA)"
+export VLLM_ATTENTION_BACKEND=TORCH_SDPA
 
 # ── 4. Install verl-agent ─────────────────────────────────────
-echo "[4/9] Installing verl-agent..."
+echo "[4/9] Installing verl + GiGPO..."
 python3 -c "
 try:
     import verl
@@ -85,11 +63,28 @@ try:
 except ImportError:
     import sys; sys.exit(1)
 " 2>/dev/null || {
-    echo "Installing verl-agent from source..."
+    echo "Installing verl from source..."
     cd /workspace
-    [ ! -d verl-agent ] && git clone https://github.com/langfengQ/verl-agent.git
-    cd verl-agent && pip3 install -e . -q 2>&1 | tail -5
+    if [ ! -d verl-071 ]; then
+        git clone https://github.com/volcengine/verl.git verl-071
+        cd verl-071 && git checkout v0.7.1 2>/dev/null || true
+    else
+        cd verl-071
+    fi
+    pip3 install -e . -q 2>&1 | tail -5
     cd /workspace/YGN-SAGE
+}
+
+# Install GiGPO plugin
+python3 -c "import gigpo; print('GiGPO already installed')" 2>/dev/null || {
+    echo "Installing GiGPO plugin..."
+    cd /workspace
+    if [ ! -d gigpo ]; then
+        git clone https://github.com/langfengQ/GiGPO.git gigpo
+    fi
+    cd gigpo && pip3 install -e . -q 2>&1 | tail -3
+    cd /workspace/YGN-SAGE
+    echo "GiGPO installed"
 }
 
 # ── 5. Install SAGE Python SDK ────────────────────────────────
@@ -111,8 +106,8 @@ cd /workspace/YGN-SAGE
 
 # ── 7. Download model + patch tokenizer ───────────────────────
 echo "[7/9] Downloading model and patching tokenizer..."
-MODEL=${SAGE_MODEL:-"Qwen/Qwen3.5-9B"}
-PATCHED_DIR="/workspace/patched_model"
+MODEL=${SAGE_MODEL:-"nvidia/Nemotron-Orchestrator-8B"}
+PATCHED_DIR="/workspace/patched_nemotron_orchestrator"
 
 # Download model weights to HF cache
 python3 -c "
@@ -180,7 +175,7 @@ print(f'Training data: {len(df)} entries')
 
 # Verify patched tokenizer
 from transformers import AutoTokenizer
-tok = AutoTokenizer.from_pretrained('/workspace/patched_model')
+tok = AutoTokenizer.from_pretrained('/workspace/patched_nemotron_orchestrator')
 test = tok.apply_chat_template(
     [{'role': 'user', 'content': 'test'}],
     tokenize=False, add_generation_prompt=True

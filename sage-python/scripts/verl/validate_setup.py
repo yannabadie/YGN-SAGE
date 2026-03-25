@@ -23,7 +23,7 @@ checks = [
     ("GPU", 'python3 -c "import torch; assert torch.cuda.is_available(); print(torch.cuda.get_device_name(0))"'),
     ("veRL", 'python3 -c "import verl; print(\'OK\')"'),
     ("vLLM", 'python3 -c "import vllm; print(vllm.__version__)"'),
-    ("flash-linear-attention", 'python3 -c "import fla; print(\'OK — Qwen3.5 GDN fast path enabled\')"'),
+    ("GiGPO", 'python3 -c "import sys; sys.path.insert(0, \'/workspace/verl-agent\'); from verl.trainer.ppo.ray_trainer import AdvantageEstimator; assert hasattr(AdvantageEstimator, \'GiGPO\'); print(\'OK — GiGPO in AdvantageEstimator enum\')"'),
     ("sage-core", 'python3 -c "from sage_core import TopologyGraph, TopologyReward, PyHybridVerifier; print(\'OK\')"'),
     ("SAGE SDK", 'python3 -c "from sage.topology.runner import TopologyRunner; print(\'OK\')"'),
     ("Reward", 'python3 -c "from sage.verl.reward import compute_score; print(compute_score(\'t\',\'nodes:\\n- role: coder\',\'\',{}))"'),
@@ -31,7 +31,7 @@ checks = [
     ("API keys", 'python3 -c "import os; keys=[k for k in [\'GOOGLE_API_KEY\',\'DEEPSEEK_API_KEY\'] if os.environ.get(k)]; print(f\'{len(keys)} API keys set\')"'),
     ("Patched tokenizer", """python3 -c "
 from transformers import AutoTokenizer
-tok = AutoTokenizer.from_pretrained('/workspace/patched_model')
+tok = AutoTokenizer.from_pretrained('/workspace/patched_nemotron_orchestrator')
 test = tok.apply_chat_template([{'role':'user','content':'test'}], tokenize=False, add_generation_prompt=True)
 assert '<think>' not in test, 'THINKING MODE STILL ACTIVE'
 print('OK — no thinking mode')

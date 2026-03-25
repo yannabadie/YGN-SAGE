@@ -32,14 +32,27 @@ fi
 
 cd /workspace/YGN-SAGE/sage-python
 
-# GiGPO plugin must be importable
+# verl 0.7.1 vanilla for single-turn (Phase A/B)
+# GiGPO step-level advantages only matter for multi-step (Phase C)
+# For single-turn, GRPO is functionally equivalent
 export PYTHONPATH="/workspace/verl-071:${PYTHONPATH:-}"
 
 # Force SDPA attention backend (no flashinfer needed)
 export VLLM_ATTENTION_BACKEND=TORCH_SDPA
 
+# Prevent Ray from killing workers due to container memory limit
+export RAY_memory_monitor_refresh_ms=0
+export RAY_memory_usage_threshold=0.99
+
 # ── Config ───────────────────────────────────────────────────
-MODEL=${SAGE_MODEL:-"/workspace/patched_nemotron_orchestrator"}
+# Use SFT-merged model if available, otherwise base model
+if [ -d "/workspace/sft_merged_model" ]; then
+    MODEL="/workspace/sft_merged_model"
+    echo "Using SFT-merged model (YAML-aware base)"
+else
+    MODEL=${SAGE_MODEL:-"/workspace/patched_nemotron_orchestrator"}
+    echo "Using base model (no SFT warmup)"
+fi
 OUTPUT="/workspace/topology_verl_output"
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 DATA_FULL="data/verl_topology_train.parquet"
@@ -61,17 +74,16 @@ import verl; print(f'verl: {verl.__version__}')
 import vllm; print(f'vLLM: {vllm.__version__}')
 import transformers; print(f'transformers: {transformers.__version__}')
 
-# Register GiGPO
-import gigpo
+# Verify GRPO in vanilla verl 0.7.1
 from verl.trainer.ppo.core_algos import ADV_ESTIMATOR_REGISTRY
-assert 'gigpo' in ADV_ESTIMATOR_REGISTRY, 'GiGPO NOT registered!'
-print(f'GiGPO: registered')
+assert 'grpo' in ADV_ESTIMATOR_REGISTRY, 'GRPO NOT registered!'
+print(f'GRPO: registered (single-turn equivalent to GiGPO)')
 
 # Verify model
 from transformers import AutoConfig
 config = AutoConfig.from_pretrained('$MODEL')
 print(f'model: {config.model_type} ({config.architectures})')
-assert config.model_type == 'qwen3', f'Expected qwen3 (Nemotron-Orchestrator uses Qwen3 arch), got {config.model_type}'
+assert config.model_type in ('qwen3', 'qwen2'), f'Expected qwen3/qwen2 (Nemotron-Orchestrator uses Qwen3 arch), got {config.model_type}'
 
 # Verify tokenizer has no <think>
 from transformers import AutoTokenizer
@@ -104,11 +116,7 @@ echo ""
 export SAGE_VERL_EXEC=0
 
 python3 -m verl.trainer.main_ppo \
-    algorithm.adv_estimator=gigpo \
-    algorithm.gigpo.enable_similarity=True \
-    algorithm.gigpo.similarity_thresh=0.85 \
-    algorithm.gigpo.step_advantage_w=1.0 \
-    algorithm.gigpo.mode=mean_norm \
+    algorithm.adv_estimator=grpo \
     algorithm.gamma=0.95 \
     algorithm.norm_adv_by_std_in_grpo=True \
     algorithm.use_kl_in_reward=False \
@@ -116,10 +124,10 @@ python3 -m verl.trainer.main_ppo \
     \
     data.train_files="$DATA_FULL" \
     data.val_files="$DATA_CURATED" \
-    data.train_batch_size=64 \
+    data.train_batch_size=32 \
     data.val_batch_size=16 \
     data.max_prompt_length=512 \
-    data.max_response_length=768 \
+    data.max_response_length=512 \
     data.filter_overlong_prompts=True \
     data.truncation=error \
     data.return_raw_chat=True \
@@ -134,7 +142,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.model.trust_remote_code=True \
     +actor_rollout_ref.model.override_config.attn_implementation=sdpa \
     \
-    actor_rollout_ref.actor.optim.lr=1e-6 \
+    actor_rollout_ref.actor.optim.lr=5e-5 \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.actor.use_kl_loss=True \
@@ -155,8 +163,8 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.load_format=safetensors \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
     actor_rollout_ref.rollout.layered_summon=True \
-    actor_rollout_ref.rollout.max_model_len=1280 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=1280 \
+    actor_rollout_ref.rollout.max_model_len=1024 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=1024 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     \
     custom_reward_function.path="$REWARD_SCRIPT" \
@@ -167,7 +175,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
-    trainer.total_epochs=5 \
+    trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
     trainer.experiment_name=gigpo_nemotron_orch_8b_v3 \
     trainer.default_local_dir="$OUTPUT" \

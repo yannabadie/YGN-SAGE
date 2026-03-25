@@ -135,9 +135,9 @@ echo "Done. Model ready at {output_dir}"
 
 def main():
     parser = argparse.ArgumentParser(description="Patch Qwen3.5 tokenizer for veRL")
-    parser.add_argument("--model", default="Qwen/Qwen3.5-9B",
+    parser.add_argument("--model", default="nvidia/Nemotron-Orchestrator-8B",
                         help="HuggingFace model name")
-    parser.add_argument("--output", default="/workspace/patched_model",
+    parser.add_argument("--output", default="/workspace/patched_nemotron_orchestrator",
                         help="Output directory for patched tokenizer")
     args = parser.parse_args()
     
