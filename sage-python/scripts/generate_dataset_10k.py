@@ -724,6 +724,60 @@ def _pattern_analyst_coder_tester(task: str, difficulty: str) -> tuple[list[dict
 
 
 # Pattern registry: name -> (generator_func, min_nodes, difficulty_range)
+def _pattern_hybrid_validator(task: str, difficulty: str) -> tuple[list[dict], list[dict]]:
+    """HyEvo-inspired hybrid: LLM coder → code validator → LLM synthesizer.
+
+    The code validator node is deterministic (no LLM call) — it validates
+    the output format, checks for common errors, and passes structured
+    feedback. This offloads predictable validation from expensive LLM inference.
+    """
+    tier = random.choice(["reasoner", "fast"])
+    validator_code = random.choice([
+        # Format validator
+        (
+            "import json, sys\n"
+            "text = _CONTEXT\n"
+            "try:\n"
+            "    # Check if output contains a function definition\n"
+            "    has_def = 'def ' in text\n"
+            "    has_return = 'return ' in text\n"
+            "    result = {'valid': has_def and has_return, 'has_def': has_def, 'has_return': has_return}\n"
+            "    print(json.dumps(result))\n"
+            "except Exception as e:\n"
+            "    print(json.dumps({'valid': False, 'error': str(e)}))\n"
+        ),
+        # Test case generator
+        (
+            "import json\n"
+            "# Generate basic test cases from task description\n"
+            "tests = []\n"
+            "if 'sort' in _TASK.lower():\n"
+            "    tests = [{'input': [3,1,2], 'expected': [1,2,3]}, {'input': [], 'expected': []}]\n"
+            "elif 'fibonacci' in _TASK.lower():\n"
+            "    tests = [{'input': 0, 'expected': 0}, {'input': 5, 'expected': 5}]\n"
+            "else:\n"
+            "    tests = [{'input': 'test', 'expected': 'result'}]\n"
+            "print(json.dumps({'test_cases': tests, 'count': len(tests)}))\n"
+        ),
+    ])
+    return (
+        [
+            {"role": "coder", "model_tier": tier, "node_type": "llm",
+             "prompt": _role_prompt("coder", task)},
+            {"role": "validator", "node_type": "code", "deterministic": True,
+             "code_spec": validator_code,
+             "io_signature": "str -> json",
+             "prompt": ""},
+            {"role": "synthesizer", "model_tier": "fast", "node_type": "llm",
+             "prompt": _role_prompt("synthesizer", task)},
+        ],
+        [
+            {"from_idx": 0, "to_idx": 1, "flow_type": "message", "gate": "open"},
+            {"from_idx": 1, "to_idx": 2, "flow_type": "message", "gate": "open"},
+        ],
+    )
+
+
 PATTERNS: dict[str, tuple[Any, int, list[str]]] = {
     "sequential": (_pattern_sequential, 2, ["simple"]),
     "sequential_3": (_pattern_sequential_3, 3, ["simple", "moderate"]),
@@ -737,6 +791,7 @@ PATTERNS: dict[str, tuple[Any, int, list[str]]] = {
     "verifier": (_pattern_verifier, 4, ["moderate", "complex"]),
     "double_review": (_pattern_double_review, 5, ["moderate", "complex"]),
     "analyst_coder_tester": (_pattern_analyst_coder_tester, 4, ["moderate"]),
+    "hybrid_validator": (_pattern_hybrid_validator, 3, ["moderate", "complex"]),
 }
 
 

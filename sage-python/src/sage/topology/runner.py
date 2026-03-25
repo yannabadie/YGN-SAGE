@@ -98,10 +98,91 @@ class TopologyRunner:
                 context_parts.append(f"[{role}]: {output}")
         return "\n\n".join(context_parts)
 
+    async def _execute_code_node(
+        self, node_idx: int, task: str, context_override: str | None = None,
+    ) -> str:
+        """Execute a code node in sandbox (HyEvo v^Code deterministic execution).
+
+        Code nodes run synthesized Python in a restricted sandbox instead of
+        calling an LLM. This offloads deterministic work (validation, parsing,
+        computation) from expensive LLM inference.
+        """
+        import json
+        import time
+
+        node = self.graph.get_node(node_idx)
+        role = getattr(node, "role", f"node-{node_idx}")
+        code_spec = getattr(node, "code_spec", "") or getattr(node, "prompt", "")
+
+        if not code_spec:
+            _log.error("Code node %d (%s) has no code_spec", node_idx, role)
+            return f"ERROR: code node {node_idx} has no code_spec"
+
+        context = (
+            context_override
+            if context_override is not None
+            else self._gather_predecessor_context(node_idx)
+        )
+
+        t0 = time.monotonic()
+
+        # Build a self-contained script that receives task+context via globals
+        wrapped_code = (
+            f"_TASK = {json.dumps(task[:2000])}\n"
+            f"_CONTEXT = {json.dumps(context[:5000])}\n"
+            f"{code_spec}\n"
+        )
+
+        try:
+            from sage.sandbox.isolated_executor import run_isolated
+            result = run_isolated(wrapped_code, timeout_s=30)
+            output = result.get("stdout", "")
+            stderr = result.get("stderr", "")
+            exit_code = result.get("exit_code", -1)
+        except ImportError:
+            # Fallback: subprocess execution (no bwrap)
+            import subprocess
+            try:
+                proc = subprocess.run(
+                    ["python", "-c", wrapped_code],
+                    capture_output=True, text=True, timeout=30,
+                )
+                output = proc.stdout
+                stderr = proc.stderr
+                exit_code = proc.returncode
+            except subprocess.TimeoutExpired:
+                output = ""
+                stderr = "TIMEOUT"
+                exit_code = -1
+            except Exception as exc:
+                output = ""
+                stderr = str(exc)
+                exit_code = -1
+
+        latency_ms = (time.monotonic() - t0) * 1000
+
+        if stderr and exit_code != 0:
+            _log.warning(
+                "Code node %d (%s) failed (exit=%d, %.0fms): %s",
+                node_idx, role, exit_code, latency_ms, stderr[:200],
+            )
+        else:
+            _log.info(
+                "Code node %d (%s) completed (%.0fms, %d chars output)",
+                node_idx, role, latency_ms, len(output),
+            )
+
+        self._node_outputs[node_idx] = output
+        return output
+
     async def _execute_node(
         self, node_idx: int, task: str, context_override: str | None = None,
     ) -> str:
-        """Execute a single topology node as an LLM call.
+        """Execute a single topology node — LLM call or code sandbox.
+
+        HyEvo hybrid dispatch (arXiv 2603.19639):
+          - node_type="llm" → LLM inference via ProviderPool
+          - node_type="code" → deterministic sandbox execution
 
         Parameters
         ----------
@@ -110,6 +191,12 @@ class TopologyRunner:
             race conditions on ``_node_outputs`` during ``asyncio.gather``.
         """
         node = self.graph.get_node(node_idx)
+
+        # HyEvo code node dispatch: deterministic sandbox execution
+        node_type = getattr(node, "node_type", "llm")
+        if node_type == "code":
+            return await self._execute_code_node(node_idx, task, context_override)
+
         role = getattr(node, "role", f"node-{node_idx}")
         caps = getattr(node, "required_capabilities", [])
 

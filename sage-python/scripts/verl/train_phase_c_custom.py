@@ -61,6 +61,12 @@ log = logging.getLogger("phase_c_custom")
 from sage.verl.rewardflow import RewardFlowPropagator
 from sage.verl.edge_credit import compute_edge_advantages, parse_edges_from_yaml
 
+# HyEvo integration: reflect-then-generate + multi-island + cascaded eval
+from sage.verl.reflection import diagnose, format_reflection_prompt
+from sage.verl.multi_island import MultiIslandEvolver, IslandEntry
+from sage.verl.cascaded_eval import cascaded_evaluate
+from sage.verl.topology_schema import TopologySchema
+
 
 # ---------------------------------------------------------------------------
 # GiGPO advantage computation
@@ -367,6 +373,11 @@ def train_phase_c(
     env = SageTopologyEnv(config=env_config)
     log.info("SageTopologyEnv initialized (memory_db=%s)", memory_db or "none")
 
+    # ── HyEvo: Multi-island evolver (K=2, migration every 15 steps) ──
+    evolver = MultiIslandEvolver(k=2, migration_interval=15)
+    log.info("Multi-island evolver initialized (K=%d, migration=%d)",
+             evolver.k, evolver.migration_interval)
+
     # ── Training metrics ───────────────────────────────────────
     os.makedirs(output_dir, exist_ok=True)
     metrics_file = os.path.join(output_dir, "metrics.jsonl")
@@ -467,6 +478,39 @@ def train_phase_c(
                                     all_step_rewards[k_ec][0] += 0.1 * edge_bonus
                     except Exception as exc:
                         log.warning("Edge credit failed: %s", exc)
+
+                # ── HyEvo: Archive in multi-island + reflect on worst ────
+                try:
+                    for k_r, r in enumerate(rollout_results):
+                        yaml_text = r.get("topology_yaml", "")
+                        schema = TopologySchema.from_yaml(yaml_text)
+                        if schema:
+                            bd = schema.behavior_descriptor()
+                            island_id = k_r % evolver.k
+                            evolver.insert(island_id, bd, IslandEntry(
+                                yaml=yaml_text,
+                                score=r["total_reward"],
+                                metadata={"task_id": task_id, "step": global_step},
+                            ))
+
+                    # Reflect on worst rollout if top exemplar exists
+                    worst_r = min(rollout_results, key=lambda r: r["total_reward"])
+                    top_entry = evolver.global_best()
+                    if top_entry and worst_r["total_reward"] < top_entry.score * 0.5:
+                        diag = diagnose(
+                            parent_yaml=worst_r.get("topology_yaml", ""),
+                            parent_score=worst_r["total_reward"],
+                            parent_traces=worst_r.get("node_traces_for_rewardflow", []),
+                            top_yaml=top_entry.yaml,
+                            top_score=top_entry.score,
+                        )
+                        if diag.recommendations:
+                            log.info("HyEvo reflect: %s", diag.summary)
+                except Exception as exc:
+                    log.debug("HyEvo island/reflect: %s", exc)
+
+                # Multi-island migration check
+                evolver.maybe_migrate()
 
                 advantages = compute_gigpo_advantages(
                     all_step_rewards, all_anchor_keys, gamma=gamma,
