@@ -33,6 +33,40 @@ def _strip_code_fence(text: str) -> str:
     return text.strip()
 
 
+# ── Partial credit for truncated YAML (V5 reward shaping) ────
+
+def _partial_credit(text: str) -> float:
+    """Give partial credit for YAML-like text that failed to parse.
+
+    V5 fix: V4 had 97% reward=0 because truncated YAML scored -2.0.
+    This function detects YAML structure even in truncated output and
+    returns a gradient-friendly score instead of the cliff at -2.0.
+
+    Returns: [-2.0, -0.3] — always less than valid YAML (-0.25 min)
+    so the model still prefers complete YAML, but truncated attempts
+    get signal to keep generating YAML-like text.
+    """
+    text = _strip_code_fence(text)
+    score = -2.0
+
+    # Check for YAML-like structural markers
+    has_nodes_key = "nodes:" in text or "nodes :" in text
+    has_role = "role:" in text or "role :" in text
+    has_reasoning = "reasoning:" in text or "reasoning :" in text
+    has_yaml_list = "- " in text and ("role" in text or "name" in text)
+
+    if has_nodes_key:
+        score += 1.0  # -2.0 → -1.0 (major: knows the top-level key)
+    if has_role:
+        score += 0.3  # knows node structure
+    if has_yaml_list:
+        score += 0.2  # uses YAML list syntax
+    if has_reasoning:
+        score += 0.2  # includes reasoning field
+
+    return min(score, -0.3)  # cap below valid-but-empty-nodes (-0.25)
+
+
 # ── Format scoring ───────────────────────────────────────────
 
 def _score_format(text: str) -> float:
@@ -40,6 +74,12 @@ def _score_format(text: str) -> float:
 
     Accepts both YAML and JSON (yaml.safe_load handles valid JSON natively).
     Falls back to json.loads for JSON with trailing commas that YAML rejects.
+
+    V5 FIX: Partial credit for truncated-but-YAML-like text.
+    V4 had 97% reward=0 because max_response_length=512 truncated YAML mid-token.
+    Truncated YAML can't parse → -2.0 → no gradient signal.
+    Now: if text looks like YAML (starts with 'nodes:' or contains YAML structure)
+    but fails to parse, give partial credit instead of -2.0.
     """
     try:
         text = _strip_code_fence(text)
@@ -57,10 +97,9 @@ def _score_format(text: str) -> float:
         if not isinstance(nodes, list) or len(nodes) == 0:
             return -0.25
         return 1.0
-    except yaml.YAMLError:
-        return -2.0
-    except Exception:
-        return -2.0
+    except (yaml.YAMLError, Exception):
+        # V5: Reward shaping for truncated YAML (reduces sparsity)
+        return _partial_credit(text)
 
 
 # ── Structure scoring ────────────────────────────────────────

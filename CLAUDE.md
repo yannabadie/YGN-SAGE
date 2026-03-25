@@ -39,7 +39,7 @@ python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 ```
 
-## Current State (March 24, 2026)
+## Current State (March 25, 2026)
 
 - **Tests**: Python 1500+ passed / Rust 270+ passed / 0 failures (68 veRL-specific: env, reward, edge credit, execution). veRL training tests: 404 (357 Rust + 47 Python).
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
@@ -48,7 +48,13 @@ python -m sage.bench --type ablation --limit 50
 - **Providers**: 8 functional (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex)
 - **Models**: 20 in cards.toml (minimax-m2.7, gpt-5.4-mini/nano, qwen3.5-plus via OpenRouter)
 - **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (Phi-4-mini SFT V1, Nemotron-Orchestrator-8B GiGPO V2)
-- **GiGPO Training**: VeRLGIGPO branch ready for RunPod H100 (multi-step topology env, 8 providers, 1965 entries, GiGPO + Graph-GRPO edge credit). 12 audit fixes applied (bandit loop, predecessor context, upgrade resolution, fresh executor on reroute, real embeddings, trivial topology penalty, replay buffer, utility eviction, Wilcoxon validation).
+- **GiGPO Training (RunPod H100 NVL 94GB)**:
+  - SFT warmup: OK (118 steps, loss 2.87→1.30, YAML valide)
+  - Phase A V3: OOM (batch_size=64, 159/167 GB RAM)
+  - Phase A V4: 18/1152 steps, reward stalled at 0.02 (97% reward=0)
+  - **Root causes**: max_response_length=512 (truncation), lr=5e-5 (drift), no reward shaping
+  - **V5 ready**: max_response_length=1024, lr=1e-6, reward shaping (_partial_credit), ~29h H100
+  - See `TRAINING_LOG.md` for full post-mortem
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
 - **HuggingFace**: `yannabadie/sage-topology-policy-v2` — Nemotron-Orchestrator-8B GiGPO (V1 legacy: `yannabadie/sage-topology-policy` Phi-4-mini SFT)
 

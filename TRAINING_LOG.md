@@ -139,18 +139,101 @@ epochs: 3 (1152 total steps)
 
 ---
 
-## Plan de reprise (Phase A v5)
+## Root Cause Analysis approfondie (post-mortem V4)
 
-```bash
-# Changements critiques pour v5:
-max_response_length: 512 → 1024
-max_model_len: 1024 → 1536
-lr: 5e-5 → 1e-6
-# Optionnel: reward shaping pour réduire la sparsity
+### Cause racine 1: Boucle de mort truncation → reward=0 → pas de gradient
+
+La chaîne causale complète:
+1. `max_response_length=512` dans `train_topology_v3.sh` (ligne 130)
+2. Les YAML topology du SFT font 400-800 tokens (vérifié sur sft_warmup_v3)
+3. Le modèle génère du YAML structuré (grâce au SFT warmup), mais à 512 tokens il est coupé
+4. `response_length/mean: 509-512` et `clip_ratio: 0.97-1.0` — 97% des réponses tronquées
+5. `_score_format()` dans `reward.py` fait `yaml.safe_load(text)` → `YAMLError` sur YAML tronqué
+6. Score = -2.0 → normalisé à 0.0 → `reward/mean = 0.02`
+7. `actor/pg_loss ≈ 0` et `actor/grad_norm = 0.013-0.021` — pas de signal d'apprentissage
+
+**Le modèle SFT savait générer du YAML. Le RL l'a vu recevoir reward=0 pour du bon YAML tronqué, et a commencé à dériver.**
+
+### Cause racine 2: LR trop haute accélère la catastrophe
+
+- `train_topology_v3.sh` ligne 145: `lr=5e-5` (RUNPOD_PLAN disait 1e-6)
+- KL divergence: 0.0 → 0.020 en 18 steps (drift catastrophique)
+- En 18 steps à lr=5e-5, le modèle a déjà divergé du SFT warmup
+- À lr=1e-6 (50× plus bas), la même divergence prendrait ~900 steps
+- Combiné avec reward sparse: le modèle n'apprend rien d'utile ET oublie le SFT
+
+### Cause racine 3: V4 log termination
+
+Le log `train_phase_a_v4.log` s'arrête proprement à step 18/19 (pas de stack trace):
+```
+2%|▏ | 19/1152 [32:36<28:51:05, 91.67s/it]
+```
+Pas d'erreur OOM, pas de SIGKILL. Causes probables:
+- **Session SSH timeout** (RunPod ferme après inactivité)
+- **Arrêt manuel** (diagnostic en cours, pas de raison de continuer 28h avec reward=0)
+- **Pod termination** (quota ou maintenance RunPod)
+
+Le checkpoint a été sauvé à step 20 (26GB dans `/workspace/topology_verl_output/global_step_20/`).
+
+### Volume disque
+
+Le filesystem `/dev/mapper/ps1010x2` (28T, monté sur `/etc/hosts`) est à 82% (23T/28T).
+C'est un **stockage partagé RunPod** (NFS), pas spécifique à ce pod.
+L'espace workspace utilisé est 44 GB sur un overlay de 120 GB (37%).
+**Aucune erreur de disque plein dans les logs.** Le pod avait assez d'espace.
+
+### Métriques mémoire (V4 stable)
+
+```
+GPU: max_allocated=64.65 GB, max_reserved=76.18 GB (sur 94 GB H100 NVL)
+CPU: 406-408 GB stable (pas de fuite mémoire)
+Throughput: 1010-1067 tokens/sec, ~80-90s/step
+```
+V4 avait résolu le OOM de V3 (batch_size 64→32).
+
+---
+
+## Plan de reprise — Phase A V5
+
+### Script: `sage-python/scripts/verl/train_topology_v5.sh`
+
+### Changements critiques
+
+| Paramètre | V3/V4 | V5 | Raison |
+|-----------|-------|-----|--------|
+| `data.max_response_length` | 512 | **1024** | YAML topologies font 400-800 tokens |
+| `actor_rollout_ref.actor.optim.lr` | 5e-5 | **1e-6** | Préserver le SFT warmup (RUNPOD_PLAN) |
+| `actor_rollout_ref.rollout.max_model_len` | 1024 | **2048** | ≥ prompt(512) + response(1024) |
+| `actor_rollout_ref.rollout.max_num_batched_tokens` | 1024 | **2048** | Aligné sur max_model_len |
+| `actor_rollout_ref.rollout.gpu_memory_utilization` | 0.3 | **0.35** | Headroom pour séquences 2× plus longues |
+| `reward.py _score_format()` | -2.0 cliff | **partial credit** | Reward shaping pour YAML tronqué |
+
+### Reward shaping (nouvelle `_partial_credit()`)
+
+Pour les YAML qui échouent au parsing, score gradué au lieu de -2.0:
+- Contient `nodes:` → -1.0 (au lieu de -2.0)
+- Contient `role:` → +0.3
+- Contient liste YAML (`- role:`) → +0.2
+- Contient `reasoning:` → +0.2
+- Cap à -0.3 (toujours inférieur au YAML valide le plus bas = -0.25)
+
+Impact estimé: reward sparsity de ~97% → ~60% (le modèle reçoit du gradient même pour YAML tronqué).
+
+### Estimation durée
+
+```
+1152 steps × ~90s/step ÷ 3600 = ~29h sur 1× H100 NVL
+(~90s/step au lieu de ~80s: séquences 2× plus longues)
 ```
 
-**Estimation:** 1152 steps × ~80s/step ÷ 3600 = ~25h sur 1× H100 NVL
-Avec batch_size=32 et 3 epochs sur 12303 entries: 12303/32 × 3 = 1153 steps (correct)
+### Critères de succès
+
+| Métrique | V4 (baseline) | V5 cible | Seuil OK |
+|----------|---------------|----------|----------|
+| reward/mean | 0.02 | >0.3 | >0.1 à step 50 |
+| clip_ratio | 0.97 | <0.5 | <0.7 à step 20 |
+| KL divergence (step 100) | 0.020 (à step 18) | <0.01 | <0.05 |
+| YAML parse rate | ~3% | >50% | >20% à step 50 |
 
 ---
 
