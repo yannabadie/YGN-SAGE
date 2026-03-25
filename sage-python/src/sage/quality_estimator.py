@@ -1,7 +1,9 @@
 """Quality estimation via formal verification (Z3) or learned model (ONNX).
 
-Zero heuristics. Quality is either formally verified, model-predicted,
-or unknown (None — bandit abstains from recording).
+Quality is either formally verified (Z3 QualityLabeler), model-predicted
+(ONNX, not yet shipped), or unknown (None — bandit abstains from recording).
+When no backend is available, returns None. The controller uses a 0.5 default
+for decision-making (tracked via abstain_count).
 """
 from __future__ import annotations
 

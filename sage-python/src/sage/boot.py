@@ -248,9 +248,18 @@ class AgentSystem:
         elif self.topology_engine:
             try:
                 exploration_budget = EXPLORATION_BUDGET_LOW if system_num <= 2 else EXPLORATION_BUDGET_HIGH
+                # Compute real embedding for S-MMU semantic retrieval
+                task_embedding = None
+                try:
+                    from sage.memory.embedder import Embedder
+                    _emb = Embedder()
+                    if _emb.is_semantic:
+                        task_embedding = _emb.embed(task[:500])
+                except Exception:
+                    pass
                 topology_result = self.topology_engine.generate(
                     task,
-                    None,  # embedding (populated after first run)
+                    task_embedding,
                     system_num,
                     exploration_budget,
                 )
@@ -448,11 +457,20 @@ class AgentSystem:
             ))[:10]
 
             topology_id = topology_result.topology.id
+            # Compute real embedding for S-MMU record
+            outcome_embedding = None
+            try:
+                from sage.memory.embedder import Embedder
+                _emb = Embedder()
+                if _emb.is_semantic:
+                    outcome_embedding = _emb.embed(task[:500])
+            except Exception:
+                pass
             self.topology_engine.record_outcome(
                 topology_id,
                 task[:200],
                 keywords,
-                None,  # embedding (future: compute at learn time)
+                outcome_embedding,
                 quality,
                 cost,
                 latency_ms,

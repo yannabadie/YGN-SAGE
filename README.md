@@ -44,7 +44,7 @@ SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
    └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
                              ├─ MCTS search            └─ ProviderPool (8 providers)
                              ├─ LLM synthesis               ├─ CircuitBreaker
-                             ├─ Path 6: learned policy (Nemotron-Orchestrator-8B GiGPO V2)
+                             ├─ Path 6: learned policy (Nemotron-Orchestrator-8B, training in progress)
                              └─ Template fallback (x8)       └─ FrugalGPT cascade
 ```
 
@@ -80,8 +80,8 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 - **MAP-Elites + CMA-ME**: quality-diversity search over topology space
 - **Online evolution**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to archive
 - **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
-- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. V2: Nemotron-Orchestrator-8B GiGPO via veRL on RunPod H100. Auto-downloads from [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2). Enable with `SAGE_ENABLE_PATH6=1`.
-- **RLVR-Topology**: GiGPO with TopologyReward Rust (execution-based, not format-only) + Graph-GRPO edge credit
+- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. V2: Nemotron-Orchestrator-8B GRPO warm-up + Phase C multi-step GiGPO (training in progress on RunPod H100). Enable with `SAGE_ENABLE_PATH6=1`.
+- **RLVR-Topology**: Phase A/B GRPO structural warm-up + Phase C GiGPO multi-step with Graph-GRPO edge credit + RewardFlow per-node propagation
 
 ### 5. Strategy (Rust)
 - **S1/S2/S3 cognitive routing** (Kahneman dual-process): kNN (92% GT), SystemRouter (86% GT)
@@ -94,7 +94,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 - **OxiZ SmtVerifier**: sub-0.1ms formal proofs (memory safety, loop bounds, arithmetic, invariants, CEGAR synthesis)
 - **HybridVerifier**: 6 structural + 4 semantic checks on TopologyGraph, O(V+E)
 - **LtlVerifier**: 4 temporal property checks (reachability, safety, liveness, bounded liveness)
-- **QualityLabeler**: Z3-based quality scoring (zero heuristics)
+- **QualityLabeler**: Z3-based quality scoring (formal verification, abstains when unsure)
 - **TopologyDensity**: S_complex cost metric (AgentConductor Theorem 1) + N_max bounds
 - **TopologyReward**: multi-signal dense reward for RL topology training
 
@@ -105,8 +105,8 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 | **SA-1** | Runtime Agent Factory: custom TopologyNode prompts, LLM-generated agent specs | Phase 1+2 done |
 | **SA-3** | Online Evolution: `_auto_evolve=True`, pipeline records to MAP-Elites | Done |
 | **SA-4** | Z3 Quality Pipeline: QualityLabeler replaces heuristic, zero false signals | Done |
-| **Path 6** | Learned topology policy: V1 Phi-4-mini SFT (legacy), V2 Nemotron-Orchestrator-8B GiGPO | Done (opt-in) |
-| **RLVR-Topology** | GiGPO with TopologyReward Rust (execution-based reward) + Graph-GRPO edge credit | Training |
+| **Path 6** | Learned topology policy: V1 Phi-4-mini SFT (legacy), V2 Nemotron-Orchestrator-8B (GRPO warm-up done, Phase C in progress) | Training |
+| **RLVR-Topology** | Phase A GRPO structural + Phase C GiGPO multi-step with edge credit + RewardFlow | Training |
 
 ## Benchmark Results
 
@@ -121,7 +121,7 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 
 | Suite | Result |
 |-------|--------|
-| Python | **1500+ passed**, 0 failures (68 veRL/GiGPO-specific) |
+| Python | **1700+ passed**, 0 failures (68 veRL-specific, 13 Phase C multi-step) |
 | Rust | **270+ passed** (with smt, tool-executor, onnx features) |
 | veRL training | **404 passed** (357 Rust + 47 Python), 0 failures |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
@@ -180,7 +180,7 @@ YGN-SAGE/
 |       |-- memory/      # 4-tier: STM (Arrow), Episodic (SQLite), Semantic, ExoCortex
 |       |-- strategy/    # S1/S2/S3 routing, kNN, AdaptiveRouter
 |       |-- topology/    # TopologyRunner, LLM caller, TopologyController
-|       |-- pipeline.py  # 5-stage CognitiveOrchestrationPipeline (ONLY execution path)
+|       |-- pipeline.py  # 5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)
 |       +-- boot.py      # System bootstrap
 |-- sage-discover/       # Knowledge pipeline (arXiv -> ExoCortex)
 |-- Researches/          # 25+ research papers backing architecture decisions

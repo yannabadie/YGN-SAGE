@@ -685,7 +685,8 @@ class CognitiveOrchestrationPipeline:
             )
             result = await runner.run(ctx.task)
             if result == "__REROUTE__" and self.engine:
-                log.info("Topology reroute triggered — regenerating")
+                log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
+                self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
                 ctx = self._stage_select_topology(ctx)  # new topology
                 ctx = self._stage_assign_models(ctx)    # re-assign models
                 # Refresh bandit decision for the new topology

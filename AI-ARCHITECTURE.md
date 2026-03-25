@@ -1,6 +1,6 @@
 # YGN-SAGE -- Document d'Architecture Technique
 
-> **Genere le** : 2026-03-24 | **Branche** : `VeRLGIGPO` | **Commit HEAD** : `9832b7b`
+> **Genere le** : 2026-03-25 | **Branche** : `VeRLGIGPO` | **Commit HEAD** : `a018dca`
 > **Auteur** : Claude Opus 4.6 (1M context), architecte principal
 > **Methode** : Exploration exhaustive du code source. Le code prime sur la documentation.
 
