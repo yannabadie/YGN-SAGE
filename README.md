@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-1778%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1809%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -76,12 +76,18 @@ Topology graph: petgraph DiGraph with 3-flow edges (Control, Message, State).
 
 S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causal, entity) with ULID chunk IDs.
 
-### 4. Evolution (Rust)
-- **MAP-Elites + CMA-ME**: quality-diversity search over topology space
+### 4. Evolution (Rust + Python)
+- **MAP-Elites + CMA-ME**: quality-diversity search over topology space (single-archive, validated by GigaEvo 2511.17592)
 - **Online evolution**: `_auto_evolve=True`, pipeline Stage 5 records outcomes to archive
 - **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
-- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct on 2624 GPT-5.4 topologies, 70% YAML validity. V2: Nemotron-Orchestrator-8B GRPO warm-up + Phase C multi-step GiGPO (training in progress on RunPod H100). Enable with `SAGE_ENABLE_PATH6=1`.
-- **RLVR-Topology**: Phase A/B GRPO structural warm-up + Phase C GiGPO multi-step with Graph-GRPO edge credit + RewardFlow per-node propagation
+- **HyEvo hybrid nodes** (arXiv 2603.19639): `node_type="llm"` (probabilistic) or `"code"` (deterministic sandbox). Code nodes offload validation/computation from LLM inference (13-19x cost reduction on MBPP).
+- **Cascaded evaluation**: 4-stage filtering (schema → security → smoke → full) — 26-87% eval cost savings (Trust or Escalate ICLR'25)
+- **Reflect-then-generate**: diagnose execution traces → structured recommendations → improved candidate
+- **Path 6: Learned topology policy** — V1 (legacy): SFT Phi-4-mini-instruct. V2: Nemotron-Orchestrator-8B, training in progress. Enable with `SAGE_ENABLE_PATH6=1`.
+- **Training pipeline** (E2E reference: `bash scripts/verl/train_nemotron_e2e.sh`):
+  - Phase A/B: GRPO structural warm-up (single-turn, verl 0.7.1)
+  - Phase C: GiGPO multi-step with 4-state machine, checkpoints, Graph-GRPO edge credit + RewardFlow per-node propagation
+  - ToolOrchestra-inspired: homogeneity filtering, reward mode tracing
 
 ### 5. Strategy (Rust)
 - **S1/S2/S3 cognitive routing** (Kahneman dual-process): kNN (92% GT), SystemRouter (86% GT)
@@ -121,10 +127,9 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 
 | Suite | Result |
 |-------|--------|
-| Python | **1778 passed**, 0 failures (68 veRL-specific, 13 Phase C multi-step, 14 schema) |
+| Python | **1809 passed**, 0 failures (includes 77 veRL/HyEvo/Phase C/schema/E2E tests) |
 | Rust | **289 passed** (base), **373+** with smt, tool-executor, onnx, cognitive features |
-| veRL training | Included in Python count (topology_env, reward, edge_credit, rewardflow tests) |
-| CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
+| CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) — VeRLGIGPO branch protected |
 
 ## Quick Start
 
@@ -145,6 +150,13 @@ python -m sage.bench --type ablation --limit 50
 # APPS / LiveCodeBench (competition-level code)
 python -m sage.bench --type apps --limit 20
 python -m sage.bench --type livecodebench --limit 20
+
+# Training — Nemotron E2E pipeline (THE reference command)
+pip install -e ".[training]"
+bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
+bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
+# Stages: SFT warmup → merge → GRPO warm-up → Phase C multi-step → export
+# Flags: --skip-sft, --skip-grpo, --skip-phase-c, --skip-export, --smoke
 ```
 
 ## Use as a Library
@@ -180,6 +192,9 @@ YGN-SAGE/
 |       |-- memory/      # 4-tier: STM (Arrow), Episodic (SQLite), Semantic, ExoCortex
 |       |-- strategy/    # S1/S2/S3 routing, kNN, AdaptiveRouter
 |       |-- topology/    # TopologyRunner, LLM caller, TopologyController
+|       |-- verl/        # Training: topology_env (4-state), reward (5-signal), manifest,
+|       |                #   topology_schema (shared contract), cascaded_eval, reflection,
+|       |                #   edge_credit, rewardflow, training_memory (SQLite episodic)
 |       |-- pipeline.py  # 5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)
 |       +-- boot.py      # System bootstrap
 |-- sage-discover/       # Knowledge pipeline (arXiv -> ExoCortex)

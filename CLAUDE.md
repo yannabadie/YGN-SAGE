@@ -46,7 +46,7 @@ bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 
 ## Current State (March 25, 2026)
 
-- **Tests**: Python **1778 passed** / Rust **289 passed** (base), 373+ with features / 0 failures
+- **Tests**: Python **1809 passed** / Rust **289 passed** (base), 373+ with features / 0 failures
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
 - **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%

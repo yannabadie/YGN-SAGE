@@ -18,7 +18,7 @@ Tout ce qui est performance-critique est en Rust (sage-core, compilé via PyO3/m
 Les décisions critiques sont soit formellement vérifiées (Z3/OxiZ SMT), soit apprises (RL, bandit), soit backed par un papier. Les seuils d'adaptation (THETA_GOOD=0.7, THETA_CRITICAL=0.3) sont des priors calibrés, pas des constantes magiques. Le QualityEstimator retourne None (abstention) quand il ne peut pas évaluer — le contrôleur utilise un default 0.5 explicitement tracké. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
 
 **3. Evidence before assertions**
-On ne claim pas que ça marche — on prouve. 2067+ tests (1778 Python + 289 Rust base). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
+On ne claim pas que ça marche — on prouve. 2098+ tests (1809 Python + 289 Rust base). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
 
 ### Architecture : 5 piliers cognitifs
 
@@ -77,7 +77,7 @@ On ne claim pas que ça marche — on prouve. 2067+ tests (1778 Python + 289 Rus
 | Providers | Multi-model (GPT/Claude/Gemini) | **7 providers + Codex** câblés DANS le training |
 | Engine | Python pur | **Rust core** (PyO3, sub-ms latency) |
 | Self-programming | Agents créent des agents | **Idem** (`agent_mgmt.py`) + topologies apprises |
-| Code | 2067+ tests | **Open-source MIT** |
+| Code | 2098+ tests | **Open-source MIT** |
 | Protocol | Aucun standard | **A2A v1.0** (Google) |
 | Benchmark | SWE-bench Pro 59% | BigCodeBench Hard 37.8% (→ cible >40%) |
 
@@ -650,4 +650,18 @@ sage-core/src/topology/
 └── verifier.rs           # PyHybridVerifier (acyclicity, connectivity)
 ```
 
-## Tests : 2067+ (1778 Python + 289 Rust), 0 failures
+## Commande de référence E2E
+
+```bash
+# Smoke test (CPU, <2min — vérifie la plomberie)
+bash scripts/verl/train_nemotron_e2e.sh --smoke
+
+# Full pipeline (RunPod H100, ~30h)
+bash scripts/verl/train_nemotron_e2e.sh
+
+# Étapes individuelles
+bash scripts/verl/train_nemotron_e2e.sh --skip-sft --skip-grpo   # Phase C seule
+bash scripts/verl/train_nemotron_e2e.sh --skip-phase-c            # SFT + GRPO seuls
+```
+
+## Tests : 2098+ (1809 Python + 289 Rust), 0 failures
