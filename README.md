@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-1518%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1778%20passed-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -42,7 +42,7 @@ SystemRouter TaskPlanner TopologyEngine ModelAssigner TopologyRunner Bandit+
    ├─ kNN (92% GT)           ├─ S-MMU retrieval        ├─ Wasm WASI sandbox
    ├─ StructuralFeatures     ├─ MAP-Elites archive     ├─ tree-sitter validator
    └─ ContextualBandit       ├─ CMA-ME mutation        ├─ subprocess fallback
-                             ├─ MCTS search            └─ ProviderPool (8 providers)
+                             ├─ MCTS search            └─ ProviderPool (7 API providers + Codex)
                              ├─ LLM synthesis               ├─ CircuitBreaker
                              ├─ Path 6: learned policy (Nemotron-Orchestrator-8B, training in progress)
                              └─ Template fallback (x8)       └─ FrugalGPT cascade
@@ -121,9 +121,9 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 
 | Suite | Result |
 |-------|--------|
-| Python | **1700+ passed**, 0 failures (68 veRL-specific, 13 Phase C multi-step) |
-| Rust | **270+ passed** (with smt, tool-executor, onnx features) |
-| veRL training | **404 passed** (357 Rust + 47 Python), 0 failures |
+| Python | **1778 passed**, 0 failures (68 veRL-specific, 13 Phase C multi-step, 14 schema) |
+| Rust | **289 passed** (base), **373+** with smt, tool-executor, onnx, cognitive features |
+| veRL training | Included in Python count (topology_env, reward, edge_credit, rewardflow tests) |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 
 ## Quick Start
@@ -169,7 +169,7 @@ YGN-SAGE/
 |   |                    #   QualityLabeler, S-MMU, SmtVerifier, HybridVerifier, LtlVerifier,
 |   |                    #   WasmSandbox, ToolExecutor, ContextualBandit, MAP-Elites, CMA-ME,
 |   |                    #   MCTS, TopologyDensity, TopologyReward, RustEmbedder, RustKnnRouter
-|   +-- config/cards.toml  # Single source of truth for 20 model cards (8 providers)
+|   +-- config/cards.toml  # Single source of truth for 20 model cards (7 providers)
 |-- sage-python/         # Python SDK
 |   +-- src/sage/
 |       |-- agents/      # Sequential, Parallel, Loop, Handoff composition

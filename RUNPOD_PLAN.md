@@ -18,7 +18,7 @@ Tout ce qui est performance-critique est en Rust (sage-core, compilé via PyO3/m
 Les décisions critiques sont soit formellement vérifiées (Z3/OxiZ SMT), soit apprises (RL, bandit), soit backed par un papier. Les seuils d'adaptation (THETA_GOOD=0.7, THETA_CRITICAL=0.3) sont des priors calibrés, pas des constantes magiques. Le QualityEstimator retourne None (abstention) quand il ne peut pas évaluer — le contrôleur utilise un default 0.5 explicitement tracké. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
 
 **3. Evidence before assertions**
-On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
+On ne claim pas que ça marche — on prouve. 2067+ tests (1778 Python + 289 Rust base). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
 
 ### Architecture : 5 piliers cognitifs
 
@@ -34,7 +34,7 @@ On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). 
    Performance-critical          Orchestration                   Knowledge Pipeline
    ├── TopologyEngine            ├── Pipeline (5-stage)          ├── arXiv → ExoCortex
    │   ├── 6 paths generation    ├── AgentLoop                  └── 500+ papers RAG
-   │   ├── MAP-Elites + CMA-ME   ├── 8 Providers (LLM)
+   │   ├── MAP-Elites + CMA-ME   ├── 7 Providers + Codex
    │   ├── MCTS search           ├── Memory 4-tier
    │   └── Path 6: learned ←──── ├── verl/ (RL training)
    ├── SystemRouter (S1/S2/S3)   │   ├── topology_env.py (4-state machine)
@@ -62,7 +62,7 @@ On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). 
 2. DECOMPOSE — TaskPlanner → TaskDAG + features DAG (ω, δ, γ d'AdaptOrch)
 3. TOPOLOGY  — DynamicTopologyEngine choisit parmi 6 paths → TopologyGraph (Rust petgraph)
 4. ASSIGN    — ModelAssigner (Rust) : affinity 0.4 + domain 0.4 + cost 0.2 → model_id par nœud
-5. EXECUTE   — TopologyRunner + ProviderPool (8 providers) → exécution nœud par nœud
+5. EXECUTE   — TopologyRunner + ProviderPool (7 providers + Codex) → exécution nœud par nœud
 6. LEARN     — QualityEstimator Z3 → Bandit update + MAP-Elites archive + episodic memory
 ```
 
@@ -74,10 +74,10 @@ On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). 
 | Adaptation | Runtime prompting | **Apprise** (checkpoints, fallback_tier dans le YAML) |
 | Mémoire | Graph-based hierarchical | **4-tier** (STM → Episodic → Semantic → ExoCortex) + cross-episode training |
 | Verification | Aucune | **Formelle** (Rust SMT/LTL, QualityLabeler Z3) |
-| Providers | Multi-model (GPT/Claude/Gemini) | **8 providers** câblés DANS le training |
+| Providers | Multi-model (GPT/Claude/Gemini) | **7 providers + Codex** câblés DANS le training |
 | Engine | Python pur | **Rust core** (PyO3, sub-ms latency) |
 | Self-programming | Agents créent des agents | **Idem** (`agent_mgmt.py`) + topologies apprises |
-| Code | 404 (pas publié) | **Open-source MIT** |
+| Code | 2067+ tests | **Open-source MIT** |
 | Protocol | Aucun standard | **A2A v1.0** (Google) |
 | Benchmark | SWE-bench Pro 59% | BigCodeBench Hard 37.8% (→ cible >40%) |
 
@@ -122,7 +122,7 @@ Entraîner **nvidia/Nemotron-Orchestrator-8B** (NVIDIA Open Model License) via G
 - **AgentConductor** (2602.17100) — Qwen2.5-3B GRPO, density S_complex, CodeContests 38.8%. Pas open-source.
 - **CARD** (2603.01089, ICLR 2026) — GCN conditionnel, price penalty. Code MIT.
 
-**Différenciation SAGE :** Seul système open-source combinant RL topology + GiGPO multi-step micro-décisions + Rust formal verification + 8 providers + episodic memory + edge-level credit.
+**Différenciation SAGE :** Seul système open-source combinant RL topology + GiGPO multi-step micro-décisions + Rust formal verification + 7 providers + Codex + episodic memory + edge-level credit.
 
 ---
 
@@ -193,7 +193,7 @@ Durée estimée: ~29h H100
 
 ### Phase B — Execution (single-turn, ~$50-80 API)
 
-**Ce qu'on ajoute :** Le reward inclut maintenant l'exécution réelle. Chaque topologie est exécutée via `TopologyRunner` + `ProviderPool` avec les 8 providers LLM. Le code produit est testé en sandbox.
+**Ce qu'on ajoute :** Le reward inclut maintenant l'exécution réelle. Chaque topologie est exécutée via `TopologyRunner` + `ProviderPool` avec les 7 providers + Codex LLM. Le code produit est testé en sandbox.
 
 **Ce que le modèle apprend en plus :** Que `model_tier: reasoner` sur le planner + `fast` sur le coder produit de MEILLEURS résultats que tout en `budget`. Que certaines combinaisons de rôles fonctionnent et d'autres non. Le lien causal entre la topologie et le résultat.
 
@@ -206,7 +206,7 @@ R = 0.30 × R_structural           — format + density + verifier (identique Ph
 ```
 Le modèle voit la CONSÉQUENCE de ses choix de topologie.
 
-Refs : `evaluate_topology()` dans execution/__init__.py. `TopologyRunner` dans topology/runner.py. 8 providers dans config/cards.toml.
+Refs : `evaluate_topology()` dans execution/__init__.py. `TopologyRunner` dans topology/runner.py. 7 providers + Codex dans config/cards.toml.
 
 **Dataset :** ~600 curated (meilleur 27% du dataset, adaptatives prioritaires).
 
@@ -650,4 +650,4 @@ sage-core/src/topology/
 └── verifier.rs           # PyHybridVerifier (acyclicity, connectivity)
 ```
 
-## Tests : 404 (47 Python + 357 Rust), 0 failures
+## Tests : 2067+ (1778 Python + 289 Rust), 0 failures

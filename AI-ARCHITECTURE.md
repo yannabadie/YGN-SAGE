@@ -1,6 +1,6 @@
 # YGN-SAGE -- Document d'Architecture Technique
 
-> **Genere le** : 2026-03-25 | **Branche** : `VeRLGIGPO` | **Commit HEAD** : `a018dca`
+> **Genere le** : 2026-03-25 | **Branche** : `VeRLGIGPO` | **Commit HEAD** : `f01189b`
 > **Auteur** : Claude Opus 4.6 (1M context), architecte principal
 > **Methode** : Exploration exhaustive du code source. Le code prime sur la documentation.
 
@@ -80,7 +80,7 @@ CLASSIFY (kNN/SystemRouter) -> DECOMPOSE (TaskPlanner) -> SELECT TOPOLOGY (6-pat
 4. **Memory** : Working (Rust) + Episodic (SQLite) + Semantic (entity graph) + Causal (directed edges) + S-MMU (4-view petgraph)
 5. **Verification** : OxiZ SMT (QF_LIA) + HybridVerifier (structural) + LTL (temporal) + ProcessRewardModel
 6. **Evolution** : MAP-Elites archive + CMA-ME emitter + MCTS search + 7 mutation operators + TopologyPopulation
-7. **Providers** : 8 providers (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex) + ProviderPool + circuit breakers
+7. **Providers** : 7 providers + Codex (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex) + ProviderPool + circuit breakers
 8. **Training (experimental)** : SageTopologyEnv (GiGPO multi-step) + reward functions + edge credit + RewardFlow
 
 ---
@@ -300,7 +300,7 @@ graph LR
    - Rust TopologyEngine + ContextualBandit
    - Python AdaptiveRouter (kNN + structural)
    - CognitiveOrchestrationPipeline
-   - ProviderPool (8 providers)
+   - ProviderPool (7 providers + Codex)
 
 2. AgentSystem.run(task) ->
    if pipeline && !mock:
