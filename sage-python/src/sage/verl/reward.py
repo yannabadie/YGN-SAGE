@@ -104,53 +104,59 @@ def _score_format(text: str) -> float:
 
 # ── Structure scoring ────────────────────────────────────────
 
-# Valid model tiers — the policy must output these, not hallucinated names.
-# Maps to S1/S2/S3 cognitive systems via ModelAssigner.
-VALID_MODEL_TIERS = {"budget", "fast", "balanced", "reasoner", "strong"}
+# Use shared schema for validation constants
+from sage.verl.topology_schema import VALID_MODEL_TIERS, TopologySchema
 
 
 def _score_structure(text: str) -> float:
-    """Structural quality. Range: [0.0, 1.0]."""
+    """Structural quality. Range: [0.0, 1.2].
+
+    Uses TopologySchema for validation. Rewards:
+    - Valid node count (0.3), edges (0.2), roles (0.3), reasoning (0.2)
+    - Valid model_tier names (+0.1) — multi-model enters reward
+    - Adaptation/checkpoints (+0.1) — Phase C compatibility
+    - Provider hints (+0.05) — multi-provider enters reward
+    """
     try:
         text = _strip_code_fence(text)
-        data = yaml.safe_load(text)
-        if not isinstance(data, dict) or "nodes" not in data:
+        schema = TopologySchema.from_yaml(text)
+        if schema is None:
             return 0.0
-        nodes = data.get("nodes", [])
-        if not isinstance(nodes, list):
+        if not schema.nodes:
             return 0.0
+
         score = 0.0
-        if 1 <= len(nodes) <= 10:
+        n = len(schema.nodes)
+
+        if 1 <= n <= 10:
             score += 0.3
-        if data.get("edges"):
+        if schema.edges:
             score += 0.2
-        if all(isinstance(n, dict) and "role" in n for n in nodes):
+        if all(node.role for node in schema.nodes):
             score += 0.3
-        if data.get("reasoning"):
+        if schema.reasoning:
             score += 0.2
 
-        # Penalty for trivially small topologies (reward hacking mitigation)
-        difficulty = data.get("difficulty", "moderate")
+        # Penalty for trivially small topologies
         expected_min = {"simple": 1, "moderate": 2, "complex": 3}.get(
-            str(difficulty).lower(), 2
+            schema.difficulty.lower(), 2
         )
-        if len(nodes) < expected_min:
+        if n < expected_min:
             score *= 0.5
 
-        # Bonus for valid model_tier (multi-model dimension enters reward)
-        # The policy must learn to output meaningful tier names, not hallucinate.
-        tiers = [n.get("model_tier", "") for n in nodes if isinstance(n, dict)]
-        valid_tiers = [t for t in tiers if t.lower() in VALID_MODEL_TIERS]
-        if tiers:
-            tier_ratio = len(valid_tiers) / len(tiers)
-            score += 0.1 * tier_ratio  # up to +0.1 for all valid tiers
+        # Multi-model dimension: valid tier names
+        if schema.tier_ratio > 0:
+            score += 0.1 * schema.tier_ratio
 
-        # Bonus for adaptation metadata (Phase C multi-step)
-        adaptation = data.get("adaptation", {})
-        if isinstance(adaptation, dict) and adaptation.get("checkpoints"):
-            score += 0.1  # encourages Phase C-compatible topologies
+        # Phase C compatibility: adaptation/checkpoints
+        if schema.has_checkpoints:
+            score += 0.1
 
-        return min(score, 1.2)  # allow slight overflow for tier+adaptation bonus
+        # Multi-provider dimension: provider hints
+        if schema.has_provider_hints:
+            score += 0.05
+
+        return min(score, 1.2)
     except Exception:
         return 0.0
 
@@ -320,7 +326,9 @@ def compute_score(
     structural = (fmt_norm + struct + rust) / 3.0
 
     if not _is_exec_mode() or fmt < 0.0:
-        # Structural only (invalid YAML can't be executed)
+        # Structural only — log reason when exec mode is active but skipped
+        if _is_exec_mode() and fmt < 0.0:
+            log.info("SAGE_VERL_EXEC=1 but YAML invalid (fmt=%.2f) — using structural reward only", fmt)
         return float(structural)
 
     # Check provider availability BEFORE attempting execution

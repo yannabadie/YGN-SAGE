@@ -43,6 +43,7 @@ class PipelineContext:
     topology: Any = None
     topology_id: str = ""
     assignments: dict[int, str] = field(default_factory=dict)
+    provider_hints: dict[int, str] = field(default_factory=dict)  # node_idx -> provider_name
     result: str = ""
     latency_ms: float = 0.0
     cost: float = 0.0
@@ -232,7 +233,16 @@ class CognitiveOrchestrationPipeline:
         # Try DynamicTopologyEngine
         if self.engine:
             try:
-                result = self.engine.generate(ctx.task, None, ctx.system, ctx.budget)
+                # Compute real embedding for S-MMU semantic retrieval
+                task_embedding = None
+                try:
+                    from sage.memory.embedder import Embedder
+                    _emb = Embedder()
+                    if _emb.is_semantic:
+                        task_embedding = _emb.embed(ctx.task[:500])
+                except Exception:
+                    pass
+                result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):
                     ctx.topology = result.topology
                     if hasattr(result, "topology_id"):
@@ -284,9 +294,15 @@ class CognitiveOrchestrationPipeline:
                             topo.add_edge(i, i + 1, TopologyEdge("message"))
 
                     ctx.topology = topo
+                    # Store provider hints for Stage 3 (multi-provider dimension)
+                    ctx.provider_hints = {
+                        i: node_data.get("provider_hint", "")
+                        for i, node_data in enumerate(policy_result["nodes"])
+                        if node_data.get("provider_hint")
+                    }
                     log.info(
-                        "Stage 2 Path 6 (learned policy): %d nodes, %d edges",
-                        topo.node_count(), topo.edge_count(),
+                        "Stage 2 Path 6 (learned policy): %d nodes, %d edges, %d provider hints",
+                        topo.node_count(), topo.edge_count(), len(ctx.provider_hints),
                     )
                     self._check_topology_budget(ctx)
                     return ctx
