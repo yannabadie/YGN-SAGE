@@ -135,6 +135,8 @@ class AgentSystem:
     _rust_registry: Any = None
     # CognitiveOrchestrationPipeline (5-stage: classify->decompose->topology->assign->execute)
     pipeline: Any = None
+    # Execution path tracking (Issue A audit fix): set after each run()
+    _last_execution_path: str = ""
 
     @property
     def model_info(self) -> dict[str, str]:
@@ -162,11 +164,18 @@ class AgentSystem:
         if self.pipeline and self.agent_loop.config.llm.provider != "mock":
             try:
                 _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD / 2
-                return await self.pipeline.run(task, budget_usd=_budget)
+                result = await self.pipeline.run(task, budget_usd=_budget)
+                self._last_execution_path = "pipeline"
+                _log.info("Execution path: pipeline (5-stage)")
+                return result
             except Exception as exc:
-                _log.warning("Pipeline failed, falling back to legacy: %s", exc)
+                self._last_execution_path = "pipeline_fallback_legacy"
+                _log.warning("Pipeline FAILED — falling back to legacy path: %s", exc)
 
         _run_start = time.perf_counter()
+        if not self._last_execution_path:
+            self._last_execution_path = "legacy"
+            _log.info("Execution path: legacy (pipeline unavailable or mock mode)")
         self._last_decision = None  # Routing decision for telemetry feedback
         # Reset topology so each run generates a fresh one.
         # Externally-forced topologies (TopologyBench) are re-set by the caller
@@ -1093,6 +1102,17 @@ def boot_agent_system(
             pass
     if _pipeline and _pipeline_qe:
         _pipeline.quality_estimator = _pipeline_qe
+
+    # Log capability surface at boot (Issue E audit fix)
+    from sage.memory.working import get_memory_backend
+    _log.info("Memory backend: %s", get_memory_backend())
+    _log.info(
+        "Capabilities: pipeline=%s, quality=%s, bandit=%s, engine=%s",
+        _pipeline is not None,
+        _pipeline_qe is not None,
+        rust_bandit is not None,
+        rust_topology_engine is not None,
+    )
 
     return AgentSystem(
         agent_loop=loop,

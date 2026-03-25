@@ -257,41 +257,78 @@ async def synthesize_topology(
 
 
 # ---------------------------------------------------------------------------
-# SFT Policy Model (Path 6 in TopologyEngine)
+# Policy Model (Path 6 in TopologyEngine)
+# ---------------------------------------------------------------------------
+# V1: Phi-4-mini SFT (yannabadie/sage-topology-policy) — legacy
+# V2: Nemotron-Orchestrator-8B GRPO (yannabadie/sage-topology-policy-v2)
 # ---------------------------------------------------------------------------
 
-HF_POLICY_REPO = "yannabadie/sage-topology-policy"
+from dataclasses import dataclass as _dc
+
+
+@_dc
+class PolicyModelConfig:
+    """Configuration for a topology policy model variant."""
+    repo: str
+    base_model: str
+    chat_template: str  # "phi4" or "qwen3"
+    max_new_tokens: int
+    trust_remote_code: bool = True
+
+
+POLICY_V2 = PolicyModelConfig(
+    repo="yannabadie/sage-topology-policy-v2",
+    base_model="nvidia/Nemotron-Orchestrator-8B",
+    chat_template="qwen3",
+    max_new_tokens=512,
+    trust_remote_code=True,
+)
+
+POLICY_V1 = PolicyModelConfig(
+    repo="yannabadie/sage-topology-policy",
+    base_model="microsoft/Phi-4-mini-instruct",
+    chat_template="phi4",
+    max_new_tokens=256,
+    trust_remote_code=False,
+)
+
 _POLICY_CACHE_DIR = None  # Populated by download_policy_model()
+_ACTIVE_POLICY_CONFIG: PolicyModelConfig | None = None
 
 
-def download_policy_model(cache_dir: str | None = None) -> str | None:
-    """Download the SFT topology policy from HuggingFace Hub.
+def download_policy_model(cache_dir: str | None = None) -> tuple[str | None, PolicyModelConfig | None]:
+    """Download the topology policy from HuggingFace Hub.
 
-    Returns the local path to the adapter directory, or None if unavailable.
-    Falls back gracefully — the system uses templates if the policy is missing.
+    Tries V2 (Nemotron-8B GRPO) first, falls back to V1 (Phi-4-mini SFT).
+    Returns (local_path, config) or (None, None) if unavailable.
     """
-    global _POLICY_CACHE_DIR
-    if _POLICY_CACHE_DIR is not None:
-        return _POLICY_CACHE_DIR
+    global _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
+    if _POLICY_CACHE_DIR is not None and _ACTIVE_POLICY_CONFIG is not None:
+        return _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
 
     try:
         from huggingface_hub import snapshot_download
-
-        local_dir = snapshot_download(
-            repo_id=HF_POLICY_REPO,
-            cache_dir=cache_dir,
-            ignore_patterns=["*.md"],
-        )
-        _POLICY_CACHE_DIR = local_dir
-        _log.info("Topology policy downloaded: %s", local_dir)
-        return local_dir
     except ImportError:
         _log.debug("huggingface_hub not installed — topology policy unavailable")
-    except Exception as exc:
-        _log.info(
-            "Topology policy download failed (using templates): %s", str(exc)[:100]
-        )
-    return None
+        return None, None
+
+    # Try V2 first, fallback to V1
+    for config in [POLICY_V2, POLICY_V1]:
+        try:
+            local_dir = snapshot_download(
+                repo_id=config.repo,
+                cache_dir=cache_dir,
+                ignore_patterns=["*.md"],
+            )
+            _POLICY_CACHE_DIR = local_dir
+            _ACTIVE_POLICY_CONFIG = config
+            _log.info("Topology policy downloaded: %s (%s)", config.repo, local_dir)
+            return local_dir, config
+        except Exception as exc:
+            _log.debug("Policy %s unavailable: %s", config.repo, str(exc)[:80])
+
+    _log.info("No topology policy available (V2 and V1 both failed) — using templates")
+    return None, None
 
 
 # Lazy-loaded model + tokenizer (never loaded at boot)
@@ -299,46 +336,87 @@ _POLICY_MODEL = None
 _POLICY_TOKENIZER = None
 
 
-def generate_topology_from_policy(task: str) -> dict | None:
-    """Generate a topology using the learned SFT policy (Path 6).
+def _format_prompt(task: str, config: PolicyModelConfig) -> str:
+    """Format the generation prompt based on the model's chat template."""
+    system_msg = (
+        "You are a multi-agent topology designer for the YGN-SAGE framework. "
+        "Given a coding task, design an optimal agent topology as a YAML DAG. "
+        "Include: difficulty, reasoning, nodes (role + prompt + model_tier), "
+        "edges (from_idx + to_idx + flow_type). The LAST node must be a "
+        "synthesizer that returns the final answer."
+    )
+    if config.chat_template == "qwen3":
+        return (
+            f"<|im_start|>system\n{system_msg}<|im_end|>\n"
+            f"<|im_start|>user\n{task[:2000]}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+    else:  # phi4
+        return (
+            f"<|system|>{system_msg}<|end|>\n"
+            f"<|user|>{task[:2000]}<|end|>\n"
+            "<|assistant|>"
+        )
 
+
+def generate_topology_from_policy(task: str) -> dict | None:
+    """Generate a topology using the learned policy (Path 6).
+
+    Tries V2 (Nemotron-Orchestrator-8B GRPO) first, falls back to V1 (Phi-4-mini SFT).
     Lazy-loads the model on first call. Returns None if:
     - Model not available (no GPU, no download)
     - YAML/JSON parsing fails (fallback to templates)
     """
-    global _POLICY_MODEL, _POLICY_TOKENIZER
+    global _POLICY_MODEL, _POLICY_TOKENIZER, _ACTIVE_POLICY_CONFIG
 
     # Lazy load on first call only
     if _POLICY_MODEL is None:
-        adapter_path = download_policy_model()
-        if adapter_path is None:
+        adapter_path, config = download_policy_model()
+        if adapter_path is None or config is None:
             return None
         try:
             import torch
             from transformers import AutoModelForCausalLM, AutoTokenizer
-            from peft import PeftModel
 
             if not torch.cuda.is_available():
                 _log.debug("Path 6: no CUDA — skipping learned policy")
                 return None
 
-            _log.info("Path 6: loading topology policy (first call)...")
+            _log.info("Path 6: loading %s (first call)...", config.repo)
             tok = AutoTokenizer.from_pretrained(
-                adapter_path, trust_remote_code=False, local_files_only=True,
+                adapter_path, trust_remote_code=config.trust_remote_code,
+                local_files_only=True,
             )
-            base = AutoModelForCausalLM.from_pretrained(
-                "microsoft/Phi-4-mini-instruct",
-                trust_remote_code=False,
-                dtype=torch.float16,
-                device_map="cpu",
-                low_cpu_mem_usage=True,
-            )
-            model = PeftModel.from_pretrained(base, adapter_path)
+
+            # V2 (Nemotron/GRPO-merged): load directly, no LoRA adapter
+            # V1 (Phi-4-mini/SFT): load base + LoRA adapter
+            if config.chat_template == "qwen3":
+                # V2: merged model (GRPO output is already merged after post_training_pipeline.py)
+                model = AutoModelForCausalLM.from_pretrained(
+                    adapter_path,
+                    trust_remote_code=config.trust_remote_code,
+                    torch_dtype=torch.bfloat16,
+                    device_map="cpu",
+                    low_cpu_mem_usage=True,
+                )
+            else:
+                # V1: base + LoRA adapter
+                from peft import PeftModel
+                base = AutoModelForCausalLM.from_pretrained(
+                    config.base_model,
+                    trust_remote_code=config.trust_remote_code,
+                    dtype=torch.float16,
+                    device_map="cpu",
+                    low_cpu_mem_usage=True,
+                )
+                model = PeftModel.from_pretrained(base, adapter_path)
+
             model = model.to("cuda:0")
             model.eval()
             _POLICY_MODEL = model
             _POLICY_TOKENIZER = tok
-            _log.info("Path 6: topology policy loaded on %s", next(model.parameters()).device)
+            _ACTIVE_POLICY_CONFIG = config
+            _log.info("Path 6: %s loaded on %s", config.repo, next(model.parameters()).device)
         except Exception as exc:
             _log.info("Path 6: model load failed (using templates): %s", str(exc)[:100])
             return None
@@ -346,19 +424,14 @@ def generate_topology_from_policy(task: str) -> dict | None:
     # Generate
     import torch
 
-    prompt = (
-        "<|system|>You are a multi-agent topology designer. "
-        "Given a task, generate an optimal agent topology in YAML format.<|end|>\n"
-        f"<|user|>{task[:2000]}<|end|>\n"
-        "<|assistant|>"
-    )
+    prompt = _format_prompt(task, _ACTIVE_POLICY_CONFIG)
     inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
 
     try:
         with torch.no_grad():
             out = _POLICY_MODEL.generate(
                 **inputs,
-                max_new_tokens=256,
+                max_new_tokens=_ACTIVE_POLICY_CONFIG.max_new_tokens,
                 temperature=0.7,
                 do_sample=True,
                 pad_token_id=_POLICY_TOKENIZER.eos_token_id,
@@ -375,7 +448,12 @@ def generate_topology_from_policy(task: str) -> dict | None:
         import yaml
         data = yaml.safe_load(raw)
         if isinstance(data, dict) and "nodes" in data and len(data.get("nodes", [])) > 0:
-            _log.info("Path 6 (learned policy): %d nodes generated", len(data["nodes"]))
+            _log.info(
+                "Path 6 (%s): %d nodes, %d edges generated",
+                _ACTIVE_POLICY_CONFIG.repo,
+                len(data["nodes"]),
+                len(data.get("edges", [])),
+            )
             return data
         _log.debug("Path 6: parsed but no valid nodes")
     except Exception:

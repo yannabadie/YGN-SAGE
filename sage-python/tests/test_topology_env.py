@@ -35,9 +35,11 @@ class TestSageTopologyEnvReset:
     def test_reset_clears_state(self):
         env = SageTopologyEnv()
         env.reset("task 1", "t1")
-        env.step("nodes:\n- role: coder")  # partial step
+        env.step("nodes:\n- role: coder")  # run a topology
         env.reset("task 2", "t2")
-        assert env._current_step == 0
+        # V3 state machine: _state resets to "awaiting_yaml", _exec_cursor to 0
+        assert env._state == "awaiting_yaml"
+        assert env._exec_cursor == 0
         assert env._trace.prompt == "task 2"
 
 
@@ -64,7 +66,9 @@ class TestSageTopologyEnvStep0:
         assert done is True
         assert info["status"] == "EMPTY_TOPOLOGY"
 
-    def test_valid_topology_continues(self):
+    def test_valid_topology_executes_to_terminal(self):
+        """V3 state machine: without checkpoints, YAML step executes all nodes
+        and reaches terminal in a single step() call."""
         env = SageTopologyEnv()
         env.reset("test", "t/0")
         yaml_text = (
@@ -80,15 +84,16 @@ class TestSageTopologyEnvStep0:
             "difficulty: moderate"
         )
         obs, reward, done, info = env.step(yaml_text)
-        assert done is False  # should continue to node execution
-        assert reward > 0  # structural score
-        assert info["status"] == "TOPOLOGY_PARSED"
+        # Without checkpoints, the env executes all nodes immediately
+        assert done is True
         assert "anchor" in obs
+        # Trace should contain step 0 (topology) + per-node steps
+        assert len(env._trace.steps) >= 2
 
-    def test_structural_score_components(self):
+    def test_structural_score_in_trace(self):
+        """Structural score for YAML: nodes(0.3) + edges(0.2) + roles(0.3) + reasoning(0.2) = 1.0."""
         env = SageTopologyEnv()
         env.reset("test", "t/0")
-        # Full topology: nodes(0.3) + edges(0.2) + roles(0.3) + reasoning(0.2) = 1.0
         yaml_text = (
             "nodes:\n"
             "  - role: coder\n"
@@ -100,12 +105,15 @@ class TestSageTopologyEnvStep0:
             "difficulty: simple"
         )
         obs, reward, done, info = env.step(yaml_text)
-        assert reward == pytest.approx(1.0)
+        # Step 0 (topology_generator) structural reward is in the trace
+        step0 = env._trace.steps[0]
+        assert step0.role == "topology_generator"
+        assert step0.reward == pytest.approx(1.0)
 
 
 class TestSageTopologyEnvMultiStep:
-    def test_multi_step_episode(self):
-        """Full episode: YAML → N node steps → terminal."""
+    def test_full_episode_without_checkpoints(self):
+        """V3: without checkpoints, YAML step runs all nodes → terminal in one call."""
         env = SageTopologyEnv()
         env.reset("Write a sort function", "test/sort")
         yaml_text = (
@@ -121,24 +129,14 @@ class TestSageTopologyEnvMultiStep:
             "reasoning: Code then review"
         )
 
-        # Step 0: parse YAML
-        obs, r0, done, info = env.step(yaml_text)
-        assert not done
-        assert r0 > 0
+        obs, reward, done, info = env.step(yaml_text)
+        # Without checkpoints: all nodes executed in single step
+        assert done is True
+        # Trace: step 0 (topology) + 2 node steps + terminal
+        assert len(env._trace.steps) >= 3
 
-        # Steps 1..N: node results delivered
-        steps = [(r0, done)]
-        step = 1
-        while not done and step < 10:
-            obs, r, done, info = env.step("continue")
-            steps.append((r, done))
-            assert "anchor" in obs
-            step += 1
-
-        assert done is True  # should eventually terminate
-        assert len(steps) >= 2  # at least step 0 + terminal
-
-    def test_anchor_states_differ_by_role(self):
+    def test_anchor_states_differ_by_role_in_trace(self):
+        """V3: anchors are tracked in the trace (not via external step calls)."""
         env = SageTopologyEnv()
         env.reset("test", "t/0")
         yaml_text = (
@@ -149,18 +147,15 @@ class TestSageTopologyEnvMultiStep:
             "difficulty: moderate\n"
             "reasoning: Plan code synth"
         )
-        env.step(yaml_text)  # step 0
+        env.step(yaml_text)  # executes all nodes in one call
 
-        # Collect anchors from trace
+        # Collect anchors from the trace (not from step calls)
         anchors = set()
-        while True:
-            obs, r, done, info = env.step("continue")
-            anchors.add(obs["anchor"])
-            if done:
-                break
+        for step in env._trace.steps:
+            anchors.add(step.anchor_key)
 
-        # Should have different anchors for different roles
-        assert len(anchors) >= 2
+        # Step 0 has topology_generator anchor, each node has its role anchor
+        assert len(anchors) >= 2, f"Expected >=2 unique anchors, got {anchors}"
 
 
 class TestStepRewardVector:

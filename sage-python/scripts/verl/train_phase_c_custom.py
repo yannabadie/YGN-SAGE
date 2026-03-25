@@ -315,12 +315,24 @@ def train_phase_c(
     df = pd.read_parquet(data_path)
     log.info("Training data: %d entries from %s", len(df), data_path)
 
-    # Extract prompts - handle different column formats
+    # Extract prompts - handle verl parquet format where "prompt" is an
+    # array of message dicts [{role: system, content: ...}, {role: user, content: ...}]
+    all_prompts = []
     if "prompt" in df.columns:
-        all_prompts = df["prompt"].tolist()
+        for entry in df["prompt"]:
+            if isinstance(entry, (list, np.ndarray)):
+                # verl format: array of message dicts
+                for m in entry:
+                    if isinstance(m, dict) and m.get("role") == "user":
+                        all_prompts.append(m["content"])
+                        break
+                else:
+                    all_prompts.append(str(entry))
+            elif isinstance(entry, str):
+                all_prompts.append(entry)
+            else:
+                all_prompts.append(str(entry))
     elif "messages" in df.columns:
-        # verl format: extract user message from chat
-        all_prompts = []
         for msgs in df["messages"]:
             if isinstance(msgs, str):
                 msgs = json.loads(msgs)
@@ -334,7 +346,18 @@ def train_phase_c(
         log.error("No 'prompt' or 'messages' column in data")
         sys.exit(1)
 
-    task_ids = df["task_id"].tolist() if "task_id" in df.columns else [f"t/{i}" for i in range(len(df))]
+    # Extract task_ids from extra_info if present
+    task_ids = []
+    if "extra_info" in df.columns:
+        for info in df["extra_info"]:
+            if isinstance(info, dict):
+                task_ids.append(info.get("task_id", f"t/{len(task_ids)}"))
+            else:
+                task_ids.append(f"t/{len(task_ids)}")
+    elif "task_id" in df.columns:
+        task_ids = df["task_id"].tolist()
+    else:
+        task_ids = [f"t/{i}" for i in range(len(df))]
 
     # ── Environment ────────────────────────────────────────────
     from sage.verl.topology_env import SageTopologyEnv

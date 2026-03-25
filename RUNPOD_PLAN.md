@@ -14,8 +14,8 @@
 **1. Rust first, Python tolerant**
 Tout ce qui est performance-critique est en Rust (sage-core, compilé via PyO3/maturin) : TopologyGraph (petgraph), Density S_complex, HybridVerifier (SMT/LTL), QualityLabeler (tree-sitter + OxiZ), S-MMU (4-graph mémoire), ModelAssigner, SystemRouter, ContextualBandit. Python sert uniquement à l'orchestration (pipeline, agent loop, providers, training). Le coeur Rust garantit des latences sub-milliseconde pour le scoring et la vérification — critique pendant le training RL où chaque step est évalué.
 
-**2. Zero heuristics**
-Aucun seuil hardcodé. Chaque décision est soit formellement vérifiée (Z3/OxiZ SMT), soit apprise (ONNX, RL, bandit), soit backed par un papier de recherche. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
+**2. Minimal heuristics**
+Les décisions critiques sont soit formellement vérifiées (Z3/OxiZ SMT), soit apprises (RL, bandit), soit backed par un papier. Les seuils d'adaptation (THETA_GOOD=0.7, THETA_CRITICAL=0.3) sont des priors calibrés, pas des constantes magiques. Le QualityEstimator retourne None (abstention) quand il ne peut pas évaluer — le contrôleur utilise un default 0.5 explicitement tracké. Le QualityLabeler Rust utilise tree-sitter + Z3 — pas de "if len(output) > 10". Le routing utilise kNN sur arctic-embed-m (92% accuracy) — pas de regex sur des mots-clés. Les reward weights (0.20/0.35/0.20/0.15/0.10) sont des valeurs initiales sujettes à ablation, pas des constantes magiques.
 
 **3. Evidence before assertions**
 On ne claim pas que ça marche — on prouve. 404 tests (357 Rust + 47 Python). BigCodeBench Hard comme benchmark principal (pas HumanEval qui est saturé). Chaque décision architecturale a une référence papier (voir table en bas).
@@ -144,7 +144,7 @@ Le modèle doit apprendre à :
 
 ## Les 3 phases
 
-### Phase A — Structural (single-turn, $0 API)
+### Phase A — Structural warm-up (single-turn, $0 API)
 
 **Ce qu'on entraîne :** Le modèle génère du YAML en un shot. Pas d'interaction multi-step.
 
@@ -152,9 +152,9 @@ Le modèle doit apprendre à :
 
 **Ce que le modèle n'apprend PAS :** Compétence 5 (micro-décisions). Il ne voit jamais si ses topologies fonctionnent réellement. Le reward est purement structural.
 
-**Framework :** verl 0.7.1 (ou verl-agent) + GiGPO. Single-turn : le modèle génère, le reward évalue le YAML statiquement.
+**Framework :** verl 0.7.1 + GRPO. Single-turn : le modèle génère, le reward évalue le YAML statiquement.
 
-**GiGPO en Phase A :** Fonctionne via step advantages token-level — GiGPO assigne du crédit aux tokens du YAML qui contribuent au reward. Ce n'est PAS le multi-step anchor grouping (ça c'est Phase C). Mais c'est déjà mieux que GRPO flat.
+**GRPO en Phase A :** Pour du single-turn, GRPO est fonctionnellement équivalent à GiGPO (pas de multi-step à grouper). C'est un warm-up qui enseigne le format. La vraie Phase C dynamique utilise GiGPO avec des anchor states.
 
 **Reward :**
 ```
@@ -165,17 +165,19 @@ R = _score_format(yaml)           — YAML valide ? [-2.0, +1.0]
 ```
 Refs : `_score_format`, `_score_structure` dans reward.py. `TopologyDensity` dans sage-core/src/topology/density.rs. S_complex inspiré d'AgentConductor (2602.17100).
 
-**Dataset :** 2225 entries (11 sources, dont 260 adaptatives V2).
+**Dataset :** 12,303 entries (verl_topology_train.parquet).
 
 **Config :**
 ```
-Modèle: nvidia/Nemotron-Orchestrator-8B (patched tokenizer)
-Algorithme: GiGPO (adv_estimator=gigpo, params dynamiques depuis ppo_trainer.yaml)
+Modèle: nvidia/Nemotron-Orchestrator-8B (SFT-merged, patched tokenizer)
+Algorithme: GRPO via verl 0.7.1 (single-turn, warm-up pour Phase C)
 LoRA: r=64, alpha=32, all-linear
-Epochs: 5
-Batch: 64 (train), K=4 rollouts
+LR: 1e-6 (V5 fix, was 5e-5 in V3/V4)
+max_response_length: 1024 (V5 fix, was 512)
+Epochs: 3
+Batch: 32 (train), K=4 rollouts
 Coût API: $0
-Durée estimée: 1-2h H100
+Durée estimée: ~29h H100
 ```
 
 **Critères de succès Phase A :**
@@ -256,36 +258,33 @@ The model takes REAL actions at 2 types of steps:
 
 **GiGPO en Phase C :** Les VRAIS anchor states fonctionnent. `decision:coder:moderate:low` groupe toutes les trajectoires où le coder a produit du mauvais code. GiGPO compare les décisions upgrade vs continue pour ce même anchor. Step-level advantage réel.
 
-#### Deux approches (choisir au runtime)
+#### Approche retenue : Custom GiGPO loop (train_phase_c_custom.py)
 
-**Approach A: verl-agent multi-turn (preferred)**
-
-Le script `train_topology_phase_c.sh` utilise verl-agent avec `env.env_name=sage_topology` + `env.max_steps=10`. L'`env_register.py` monkey-patche `make_envs()` pour ajouter `SageTopologyEnvManager`. verl-agent gère le multi-turn rollout et le token masking automatique (mask=0 sur les observations, gradients uniquement sur les actions du modèle).
-
-```bash
-# Sur le pod, après Phase A/B :
-bash scripts/verl/train_topology_phase_c.sh 2>&1 | tee train_phase_c.log
-```
-
-**Avantages :** vLLM rollout (rapide), FSDP, token masking correct, metrics intégrées.
-**Risque :** verl-agent env_manager API peut diverger, requires `agent_system` package.
-
-**Approach B: Custom training loop (fallback)**
-
-Le script `train_phase_c_custom.py` implémente directement GiGPO avec PyTorch + PEFT, sans verl. Il utilise `SageTopologyEnv` directement : reset -> step(yaml) -> [step(decision) aux checkpoints] -> terminal. GiGPO advantages sont calculés par groupement d'anchor keys puis normalisation within-group.
+**Pourquoi pas verl-agent :** L'installation de verl-agent a échoué sur le pod (git auth).
+Le script `train_phase_c_custom.py` implémente GiGPO directement avec PyTorch + PEFT, sans dépendance externe. Il exerce la machine 4 états complète de `SageTopologyEnv`.
 
 ```bash
-# Si Approach A échoue :
+# Sur le pod, après Phase A convergée :
 python3 scripts/verl/train_phase_c_custom.py \
-    --model /workspace/patched_nemotron_orchestrator \
+    --model /workspace/sft_merged_model \
     --checkpoint /workspace/topology_verl_output \
-    --data data/verl_topology_curated.parquet \
-    --output /workspace/topology_verl_phase_c_custom \
-    --epochs 3 --lr 5e-7 --k 4 --batch-size 8
+    --data data/verl_topology_phase_c.parquet \
+    --output /workspace/topology_verl_phase_c \
+    --epochs 3 --lr 5e-7 --k 4 --batch-size 4 \
+    --memory-db /workspace/training_memory.db
 ```
+
+**Dataset Phase C :** `verl_topology_phase_c.parquet` — 12,303 entries dont 43% avec checkpoints (enrichi via `enrich_dataset_checkpoints.py`). Le mix single-turn/multi-step permet au modèle de consolider le format YAML tout en apprenant les micro-décisions.
+
+**Ce qui rend cette Phase C RÉELLEMENT dynamique :**
+1. Le modèle prend >1 décision par épisode (YAML + N checkpoint decisions)
+2. Les décisions sont groupées par anchor state → GiGPO normalise within-group
+3. Edge credit (Graph-GRPO) et RewardFlow (PageRank) distribuent le crédit par nœud/edge
+4. L'épisodic memory (SQLite) réinjecte les expériences passées dans les observations
+5. Le reward est majoritairement execution-based (35% exec + 20% rewardflow + 15% resilience)
 
 **Avantages :** Simple, pas de dépendance verl-agent, exerce la machine 4 états complète.
-**Inconvénients :** Plus lent (PyTorch generate au lieu de vLLM), pas de token masking (tout le contexte reçoit des gradients).
+**Inconvénients :** Plus lent (PyTorch generate au lieu de vLLM), pas de token masking.
 
 **Reward (5 signaux) :**
 ```

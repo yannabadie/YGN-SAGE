@@ -20,7 +20,7 @@ from a2a.server.apps import A2AStarletteApplication  # type: ignore[import-untyp
 from a2a.server.request_handlers import DefaultRequestHandler  # type: ignore[import-untyped]
 from a2a.server.tasks import InMemoryTaskStore  # type: ignore[import-untyped]
 from a2a.types import AgentCapabilities, AgentCard, AgentSkill  # type: ignore[import-untyped]
-from a2a.utils.helpers import new_agent_text_message  # type: ignore[import-untyped]
+from a2a.utils.helpers import build_text_artifact  # type: ignore[import-untyped]
 
 _log = logging.getLogger(__name__)
 
@@ -42,31 +42,31 @@ class SageAgentExecutor(AgentExecutor):
 
         if not task_text:
             await event_queue.enqueue_event(
-                new_agent_text_message("Error: empty task")
+                build_text_artifact("Error: empty task")
             )
             return
 
         if self._agent_loop is None:
             await event_queue.enqueue_event(
-                new_agent_text_message("Error: AgentLoop not configured")
+                build_text_artifact("Error: AgentLoop not configured")
             )
             return
 
         try:
             result = await self._agent_loop.run(task_text)
             text = result if isinstance(result, str) else str(result)
-            await event_queue.enqueue_event(new_agent_text_message(text))
+            await event_queue.enqueue_event(build_text_artifact(text))
         except Exception as exc:
             _log.error("A2A execution error: %s", exc)
             await event_queue.enqueue_event(
-                new_agent_text_message(f"Error: {exc}")
+                build_text_artifact(f"Error: {exc}")
             )
 
     async def cancel(self, context: Any, event_queue: Any) -> None:
         """Cancel not supported — return error message instead of raising."""
         _log.warning("A2A cancel requested but not supported")
         await event_queue.enqueue_event(
-            new_agent_text_message(
+            build_text_artifact(
                 "Error: task cancellation is not supported by this agent"
             )
         )
@@ -86,6 +86,9 @@ def build_agent_card(
             "4-tier memory, and 7-provider model selection."
         ),
         url=url,
+        version="0.1.0",
+        defaultInputModes=["text"],
+        defaultOutputModes=["text"],
         capabilities=AgentCapabilities(streaming=True),
         skills=[
             AgentSkill(

@@ -62,6 +62,16 @@ class TopologyController:
         self._node_qualities: dict[int, float] = {}
         self._reroute_count = 0
         self._spawn_count = 0
+        self._abstain_count = 0
+
+    def quality_stats(self) -> dict:
+        """Return quality tracking stats for diagnostics."""
+        return {
+            "abstain_count": self._abstain_count,
+            "node_qualities": dict(self._node_qualities),
+            "reroute_count": self._reroute_count,
+            "spawn_count": self._spawn_count,
+        }
 
     def _emit(self, event_type: str, data: dict) -> None:
         if self._event_bus and hasattr(self._event_bus, 'emit'):
@@ -192,6 +202,9 @@ class TopologyController:
 
         # If estimator abstained (None), default to 0.5 for controller decisions
         # (controller must always produce a float to make adaptation decisions)
+        if base_score is None:
+            self._abstain_count += 1
+            log.debug("QualityEstimator abstained for node %d, using default=0.5", node_idx)
         quality = base_score if base_score is not None else 0.5
 
         # PRM only for structured content (guard: -1.0 on plain text)

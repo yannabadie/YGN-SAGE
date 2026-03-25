@@ -39,15 +39,17 @@ class TestApplyQuirks:
         params = p._apply_quirks({"model": "deepseek-chat", "temperature": 0.7, "max_tokens": 4096})
         assert params["temperature"] == 0.7
 
-    def test_kimi_clamps_temperature(self):
+    def test_kimi_k25_strips_temperature(self):
+        """K2.5 has fixed temperature — API rejects any custom value."""
         p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-k2.5")
         params = p._apply_quirks({"model": "kimi-k2.5", "temperature": 1.5, "max_tokens": 4096})
-        assert params["temperature"] <= 1.0
+        assert "temperature" not in params
 
-    def test_kimi_keeps_low_temperature(self):
-        p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-k2.5")
-        params = p._apply_quirks({"model": "kimi-k2.5", "temperature": 0.3, "max_tokens": 4096})
-        assert params["temperature"] == 0.3
+    def test_kimi_non_k25_clamps_temperature(self):
+        """Non-K2.5 Kimi models clamp temperature to 1.0."""
+        p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-chat")
+        params = p._apply_quirks({"model": "kimi-chat", "temperature": 1.5, "max_tokens": 4096})
+        assert params["temperature"] <= 1.0
 
     def test_unknown_no_quirks(self):
         p = OpenAICompatProvider(api_key="k", model_id="test")

@@ -3,7 +3,7 @@
 # YGN-SAGE Topology Training V5 — Post-mortem fixes from V3/V4
 # ============================================================
 # Model: nvidia/Nemotron-Orchestrator-8B (SFT-merged)
-# Algorithm: GRPO via verl 0.7.1 (single-turn, GiGPO-equivalent)
+# Algorithm: GRPO via verl 0.7.1 (single-turn, NOT GiGPO — see TRAINING_LOG.md)
 # Hardware: 1x H100 NVL 94GB
 # ============================================================
 #
@@ -199,7 +199,7 @@ python3 -m verl.trainer.main_ppo \
     trainer.test_freq=5 \
     trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
-    trainer.experiment_name=gigpo_nemotron_orch_8b_v5 \
+    trainer.experiment_name=grpo_nemotron_orch_8b_v5 \
     trainer.default_local_dir="$OUTPUT" \
     'trainer.logger=["console"]'
 

@@ -1,4 +1,4 @@
-"""SageTopologyEnv — Multi-step environment for GiGPO topology training.
+"""SageTopologyEnv — Multi-step environment for topology training.
 
 Implements the verl-agent gym-style interface (reset/step) with a 4-state machine:
   AWAITING_YAML → EXECUTING → AWAITING_DECISION → EXECUTING → ... → TERMINAL
@@ -8,8 +8,10 @@ The model makes REAL decisions at checkpoint nodes:
   Checkpoint steps: Model decides continue/upgrade/reroute → step-level advantage
   Terminal: Code tested in sandbox → execution reward
 
-GiGPO computes step-level advantages on the model's actions at each step.
-Without real decisions at checkpoints, advantages degenerate to episode-level = GRPO.
+IMPORTANT: This environment requires verl-agent (not vanilla verl 0.7.1).
+Current training scripts (V3/V5) use vanilla verl with GRPO, NOT this env.
+This env is only used when verl-agent is installed and GiGPO multi-step
+training is active (Phase C / train_topology.sh, NOT train_topology_v5.sh).
 
 Reference: GiGPO (arXiv 2505.10978), verl-agent env_manager interface.
 """
@@ -109,7 +111,27 @@ class SageTopologyEnv:
         get_step_rewards() -> StepRewardVector (for GiGPO)
     """
 
+    _VERL_AGENT_AVAILABLE: bool | None = None
+
+    @classmethod
+    def _check_verl_agent(cls) -> bool:
+        """Check if verl-agent is installed. Cached after first call."""
+        if cls._VERL_AGENT_AVAILABLE is None:
+            try:
+                import agent_system.environments.env_manager  # noqa: F401
+                cls._VERL_AGENT_AVAILABLE = True
+            except ImportError:
+                cls._VERL_AGENT_AVAILABLE = False
+        return cls._VERL_AGENT_AVAILABLE
+
     def __init__(self, config: dict | None = None):
+        # Guard: fail explicitly outside tests if verl-agent is not installed
+        if not self._check_verl_agent() and not os.environ.get("SAGE_TESTING"):
+            raise RuntimeError(
+                "SageTopologyEnv requires verl-agent (pip install -e /workspace/verl-agent). "
+                "Current training uses GRPO via vanilla verl 0.7.1 (train_topology_v5.sh), "
+                "which does NOT use this environment. Set SAGE_TESTING=1 to bypass in tests."
+            )
         self._config = config or {}
         self._trace: EpisodeTrace | None = None
         self._topo_dict: dict | None = None

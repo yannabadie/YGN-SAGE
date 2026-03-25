@@ -104,6 +104,11 @@ def _score_format(text: str) -> float:
 
 # ── Structure scoring ────────────────────────────────────────
 
+# Valid model tiers — the policy must output these, not hallucinated names.
+# Maps to S1/S2/S3 cognitive systems via ModelAssigner.
+VALID_MODEL_TIERS = {"budget", "fast", "balanced", "reasoner", "strong"}
+
+
 def _score_structure(text: str) -> float:
     """Structural quality. Range: [0.0, 1.0]."""
     try:
@@ -125,15 +130,27 @@ def _score_structure(text: str) -> float:
             score += 0.2
 
         # Penalty for trivially small topologies (reward hacking mitigation)
-        # A moderate/complex task with 1 node is suspicious
         difficulty = data.get("difficulty", "moderate")
         expected_min = {"simple": 1, "moderate": 2, "complex": 3}.get(
             str(difficulty).lower(), 2
         )
         if len(nodes) < expected_min:
-            score *= 0.5  # halve the score for under-sized topologies
+            score *= 0.5
 
-        return score
+        # Bonus for valid model_tier (multi-model dimension enters reward)
+        # The policy must learn to output meaningful tier names, not hallucinate.
+        tiers = [n.get("model_tier", "") for n in nodes if isinstance(n, dict)]
+        valid_tiers = [t for t in tiers if t.lower() in VALID_MODEL_TIERS]
+        if tiers:
+            tier_ratio = len(valid_tiers) / len(tiers)
+            score += 0.1 * tier_ratio  # up to +0.1 for all valid tiers
+
+        # Bonus for adaptation metadata (Phase C multi-step)
+        adaptation = data.get("adaptation", {})
+        if isinstance(adaptation, dict) and adaptation.get("checkpoints"):
+            score += 0.1  # encourages Phase C-compatible topologies
+
+        return min(score, 1.2)  # allow slight overflow for tier+adaptation bonus
     except Exception:
         return 0.0
 
@@ -310,6 +327,7 @@ def compute_score(
     from sage.execution import _get_agent_provider
     provider, _ = _get_agent_provider()
     if provider is None:
+        log.warning("SAGE_VERL_EXEC=1 but no provider available — falling back to structural reward")
         return float(structural)
 
     # Execution mode: run the real multi-provider topology

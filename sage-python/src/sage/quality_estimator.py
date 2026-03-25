@@ -28,6 +28,15 @@ class QualityEstimator:
         else:
             log.warning("QualityEstimator: no backend available — will abstain")
 
+    @property
+    def backend_name(self) -> str:
+        """Return the active backend name for diagnostics."""
+        if self._learned:
+            return "onnx"
+        if self._labeler:
+            return "z3_labeler"
+        return "none"
+
     @staticmethod
     def _try_load_onnx():  # type: ignore[return]
         # Future capability: RustLearnedQualityEstimator from sage_core.

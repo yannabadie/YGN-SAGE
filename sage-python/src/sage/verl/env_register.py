@@ -67,10 +67,10 @@ def register_sage_topology_env() -> str:
     try:
         import agent_system.environments.env_manager as em
     except ImportError:
-        log.warning(
+        log.info(
             "verl-agent not installed (agent_system not found). "
-            "SageTopologyEnv registration skipped. "
-            "Install verl-agent: pip install -e /workspace/verl-agent"
+            "SageTopologyEnv registration skipped — using GRPO via vanilla verl, NOT GiGPO. "
+            "For GiGPO multi-step training: pip install -e /workspace/verl-agent"
         )
         return "skipped"
 

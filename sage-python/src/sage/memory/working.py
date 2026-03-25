@@ -30,6 +30,16 @@ try:
 except ImportError:
     _has_rust = False
 
+
+def get_memory_backend() -> str:
+    """Return the active memory backend: 'rust_smmu' or 'mock'.
+
+    Use this at boot to log which backend is active. Mock backend
+    returns empty/zero values for all S-MMU operations — this is
+    NOT equivalent to the real Rust 4-view graph memory.
+    """
+    return "rust_smmu" if _has_rust else "mock"
+
 if not _has_rust:
     # Pure-Python fallback when sage_core Rust extension isn't compiled.
     import types as _types
@@ -46,6 +56,17 @@ if not _has_rust:
 
     class _PyWorkingMemory:
         _mock_warned: set[str] = set()
+
+        @staticmethod
+        def capabilities() -> dict[str, bool]:
+            """Report which S-MMU capabilities are available. Mock: all False."""
+            return {
+                "compact_to_arrow": False,
+                "retrieve": False,
+                "graph_views": False,
+                "paging": False,
+                "eviction": False,
+            }
 
         def __init__(self, agent_id="", parent_id=None):
             self.agent_id = agent_id
