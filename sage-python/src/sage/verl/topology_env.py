@@ -125,12 +125,16 @@ class SageTopologyEnv:
         return cls._VERL_AGENT_AVAILABLE
 
     def __init__(self, config: dict | None = None):
-        # Guard: fail explicitly outside tests if verl-agent is not installed
-        if not self._check_verl_agent() and not os.environ.get("SAGE_TESTING"):
-            raise RuntimeError(
-                "SageTopologyEnv requires verl-agent (pip install -e /workspace/verl-agent). "
-                "Current training uses GRPO via vanilla verl 0.7.1 (train_topology_v5.sh), "
-                "which does NOT use this environment. Set SAGE_TESTING=1 to bypass in tests."
+        # Info: log which mode is active. SageTopologyEnv works in two modes:
+        # 1. Direct use (train_phase_c_custom.py) — no verl-agent needed
+        # 2. Via env_register.py + verl-agent — requires agent_system package
+        # The guard in env_register.py handles case 2. Direct use is always allowed.
+        if not self._check_verl_agent():
+            log.info(
+                "SageTopologyEnv: verl-agent not installed. "
+                "Direct use (train_phase_c_custom.py) works. "
+                "verl-agent integration (train_topology_phase_c.sh) requires: "
+                "pip install -e /workspace/verl-agent"
             )
         self._config = config or {}
         self._trace: EpisodeTrace | None = None

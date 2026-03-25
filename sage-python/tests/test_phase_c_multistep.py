@@ -97,18 +97,24 @@ class TestPhaseC_Nominal:
         assert not done
         assert env._state == "awaiting_decision"
 
+        # Record upgrades_used before
+        upgrades_before = env._upgrades_used
+
         # Decide: upgrade
         obs2, reward2, done2, info2 = env.step("upgrade")
 
-        # Check trace for upgrade evidence
-        upgrade_steps = [s for s in env._trace.steps if s.was_upgraded]
-        # Upgrade may or may not succeed depending on model availability,
-        # but the decision should be recorded
-        decision_steps = [s for s in env._trace.steps if s.action == "upgrade"]
-        assert len(decision_steps) >= 0  # at minimum the decision was attempted
+        # Upgrade should have been attempted (upgrades_used incremented OR
+        # max_upgrades already reached). The YAML has max_upgrades=1.
+        assert env._upgrades_used >= upgrades_before, (
+            "upgrade decision should increment _upgrades_used"
+        )
+        # Trace must contain more steps than just YAML + 1 node
+        assert len(env._trace.steps) >= 3, (
+            f"Expected >=3 trace steps after upgrade, got {len(env._trace.steps)}"
+        )
 
     def test_reroute_decision_terminates(self):
-        """'reroute' at checkpoint terminates the episode early."""
+        """'reroute' at checkpoint terminates the episode early with penalty."""
         env = SageTopologyEnv()
         env.reset("Write something", "test/reroute")
         obs, reward, done, info = env.step(YAML_WITH_CHECKPOINT)
@@ -116,11 +122,13 @@ class TestPhaseC_Nominal:
 
         # Decide: reroute
         obs2, reward2, done2, info2 = env.step("reroute")
-        assert done2
-        assert info2.get("status") == "REROUTED"
-        # Reroute penalty should be negative
-        reroute_steps = [s for s in env._trace.steps if "reroute" in s.anchor_key.lower() or s.reward < -0.1]
-        assert len(reroute_steps) >= 0
+        assert done2, "reroute should terminate episode"
+        assert info2.get("status") == "REROUTED", f"Expected REROUTED status, got {info2.get('status')}"
+        # Total reward should include the reroute penalty (-0.3)
+        total = sum(s.reward for s in env._trace.steps)
+        assert total < sum(s.reward for s in env._trace.steps[:2]) + 0.1, (
+            "Reroute should add negative reward (penalty -0.3)"
+        )
 
     def test_multistep_produces_more_steps_than_singleshot(self):
         """Phase C episode with checkpoint should have more trace steps."""

@@ -44,45 +44,42 @@ def test_v5_experiment_name_says_grpo():
     assert "gigpo" not in name.lower(), f"experiment_name should NOT contain 'gigpo', got: {name}"
 
 
-def test_topology_env_requires_verl_agent():
-    """SageTopologyEnv must fail explicitly when verl-agent is missing."""
-    # Clear cached check
+def test_topology_env_works_without_verl_agent():
+    """SageTopologyEnv must work without verl-agent (direct use mode).
+
+    train_phase_c_custom.py uses SageTopologyEnv directly, without verl-agent.
+    The env must NOT block this use case — only env_register.py guards
+    against verl-agent absence (for the verl-agent integration path).
+    """
     from sage.verl.topology_env import SageTopologyEnv
 
     SageTopologyEnv._VERL_AGENT_AVAILABLE = None
-
-    # Remove SAGE_TESTING if set, to test the guard
     old = os.environ.pop("SAGE_TESTING", None)
     try:
-        # verl-agent is not installed in test env
-        try:
-            import agent_system  # noqa: F401
-            pytest.skip("verl-agent is installed, guard test not applicable")
-        except ImportError:
-            pass
-
-        with pytest.raises(RuntimeError, match="requires verl-agent"):
-            SageTopologyEnv()
-    finally:
-        if old is not None:
-            os.environ["SAGE_TESTING"] = old
-        # Reset cached state
-        SageTopologyEnv._VERL_AGENT_AVAILABLE = None
-
-
-def test_topology_env_works_in_test_mode():
-    """SageTopologyEnv should work when SAGE_TESTING=1 (even without verl-agent)."""
-    from sage.verl.topology_env import SageTopologyEnv
-
-    SageTopologyEnv._VERL_AGENT_AVAILABLE = None
-    old = os.environ.get("SAGE_TESTING")
-    os.environ["SAGE_TESTING"] = "1"
-    try:
+        # Must NOT raise — direct use is always allowed
         env = SageTopologyEnv()
         assert env is not None
     finally:
-        if old is None:
-            os.environ.pop("SAGE_TESTING", None)
-        else:
+        if old is not None:
             os.environ["SAGE_TESTING"] = old
         SageTopologyEnv._VERL_AGENT_AVAILABLE = None
+
+
+def test_topology_env_logs_verl_agent_status(caplog):
+    """SageTopologyEnv should log verl-agent availability status."""
+    from sage.verl.topology_env import SageTopologyEnv
+    import logging
+
+    SageTopologyEnv._VERL_AGENT_AVAILABLE = None
+    with caplog.at_level(logging.INFO, logger="topology_env"):
+        env = SageTopologyEnv()
+    SageTopologyEnv._VERL_AGENT_AVAILABLE = None
+
+    # Should have logged something about verl-agent status
+    try:
+        import agent_system  # noqa: F401
+        # verl-agent installed — no warning expected
+    except ImportError:
+        assert any("verl-agent" in r.message for r in caplog.records), (
+            "Should log verl-agent availability when not installed"
+        )
