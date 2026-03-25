@@ -119,6 +119,55 @@ class TestComputeScore:
         assert type(result) is float
 
 
+class TestPartialCredit:
+    """V5 reward shaping: truncated YAML gets partial credit instead of -2.0."""
+
+    def test_pure_garbage_no_credit(self):
+        from sage.verl.reward import _partial_credit
+        assert _partial_credit("some random text about topology") == -2.0
+
+    def test_empty_string_no_credit(self):
+        from sage.verl.reward import _partial_credit
+        assert _partial_credit("") == -2.0
+
+    def test_only_nodes_key(self):
+        from sage.verl.reward import _partial_credit
+        assert _partial_credit("nodes:") == -1.0
+
+    def test_nodes_plus_role_plus_list(self):
+        from sage.verl.reward import _partial_credit
+        score = _partial_credit("nodes:\n- role: coder\n  model_tier: bud")
+        # nodes(+1.0) + role(+0.3) + yaml_list(+0.2) = -2.0+1.5 = -0.5
+        assert score == pytest.approx(-0.5)  # below cap, not capped
+
+    def test_all_markers_capped(self):
+        from sage.verl.reward import _partial_credit
+        score = _partial_credit("nodes:\n- role: coder\nreasoning: plan")
+        assert score == -0.3  # cap prevents exceeding valid YAML threshold
+
+    def test_never_exceeds_valid_yaml(self):
+        """Partial credit must always be < -0.25 (valid-but-empty-nodes score)."""
+        from sage.verl.reward import _partial_credit
+        score = _partial_credit("nodes:\n- role: x\n- role: y\nreasoning: z\nedges:\n- from: 0")
+        assert score <= -0.3
+
+    def test_format_delegates_to_partial_credit(self):
+        """_score_format uses _partial_credit for broken YAML with markers."""
+        from sage.verl.reward import _score_format
+        # Unbalanced flow mapping — definitely fails YAML parse
+        score = _score_format("nodes:\n- {role: coder, prompt: 'trunca")
+        assert -2.0 < score <= -0.3
+
+    def test_format_still_minus_2_for_no_markers(self):
+        from sage.verl.reward import _score_format
+        assert _score_format("not: [valid: yaml: {{") == -2.0
+
+    def test_code_fence_stripped_before_partial(self):
+        from sage.verl.reward import _partial_credit
+        score = _partial_credit("```yaml\nnodes:\n- role: coder")
+        assert score > -2.0  # fence stripped, markers detected
+
+
 class TestComputeScoreWithEdgeCredit:
     def test_passing_topology_gets_bonus(self):
         from sage.verl.reward import compute_score_with_edge_credit
