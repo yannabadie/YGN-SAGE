@@ -7,8 +7,15 @@ This module defines the contract between:
   - topology_env.py (multi-step env)
   - edge_credit.py / rewardflow.py (credit assignment)
   - Runtime TopologyGraph construction
+  - Cascaded evaluation (HyEvo-inspired)
 
 Every consumer of topology YAML should validate against this schema.
+
+HyEvo integration (arXiv 2603.19639):
+  - node_type: "llm" (probabilistic LLM inference) or "code" (deterministic execution)
+  - code_spec: source code for code nodes (v^Code = ⟨code_src, io_signature⟩)
+  - io_signature: input/output type description for code nodes
+  - deterministic: whether the node produces reproducible output
 """
 from __future__ import annotations
 
@@ -21,6 +28,9 @@ import yaml
 # Valid model tiers — maps to S1/S2/S3 via ModelAssigner
 VALID_MODEL_TIERS = frozenset({"budget", "fast", "balanced", "reasoner", "strong"})
 
+# Valid node types (HyEvo hybrid: LLM + code)
+VALID_NODE_TYPES = frozenset({"llm", "code"})
+
 # Valid flow types for edges
 VALID_FLOW_TYPES = frozenset({"message", "control", "state"})
 
@@ -30,18 +40,39 @@ VALID_DIFFICULTIES = frozenset({"simple", "moderate", "complex"})
 
 @dataclass
 class TopologyNodeSchema:
-    """Schema for a single node in the topology YAML."""
+    """Schema for a single node in the topology YAML.
+
+    HyEvo hybrid nodes:
+      - LLM node: v^LLM = ⟨model, prompt, temperature⟩
+        node_type="llm", uses model_tier + prompt for LLM inference
+      - Code node: v^Code = ⟨code_src, io_signature⟩
+        node_type="code", uses code_spec for deterministic execution
+    """
     role: str
-    model_tier: str = ""
-    prompt: str = ""
-    fallback_tier: str = ""
-    provider_hint: str = ""  # optional: preferred provider (e.g., "google", "deepseek")
+    node_type: str = "llm"           # "llm" or "code" (HyEvo hybrid)
+    model_tier: str = ""             # LLM nodes: budget/fast/balanced/reasoner/strong
+    prompt: str = ""                 # LLM nodes: instruction text
+    fallback_tier: str = ""          # LLM nodes: upgrade tier
+    provider_hint: str = ""          # LLM nodes: preferred provider
+    code_spec: str = ""              # Code nodes: source code to execute
+    io_signature: str = ""           # Code nodes: input/output type description
+    deterministic: bool = False      # Code nodes: reproducible output flag
+    temperature: float = 0.7         # LLM nodes: sampling temperature
+
+    @property
+    def is_code_node(self) -> bool:
+        return self.node_type == "code"
+
+    @property
+    def is_llm_node(self) -> bool:
+        return self.node_type != "code"
 
     def is_tier_valid(self) -> bool:
+        if self.is_code_node:
+            return True  # code nodes don't need tiers
         return self.model_tier.lower() in VALID_MODEL_TIERS if self.model_tier else True
 
     def is_provider_hint_valid(self) -> bool:
-        # Any non-empty string is accepted — runtime resolves via ProviderPool
         return True
 
 
@@ -125,10 +156,15 @@ class TopologySchema:
             if isinstance(n, dict):
                 nodes.append(TopologyNodeSchema(
                     role=n.get("role", "agent"),
+                    node_type=n.get("node_type", "llm"),
                     model_tier=n.get("model_tier", ""),
                     prompt=n.get("prompt", ""),
                     fallback_tier=n.get("fallback_tier", ""),
                     provider_hint=n.get("provider_hint", ""),
+                    code_spec=n.get("code_spec", ""),
+                    io_signature=n.get("io_signature", ""),
+                    deterministic=bool(n.get("deterministic", False)),
+                    temperature=float(n.get("temperature", 0.7)),
                 ))
 
         edges = []
@@ -167,9 +203,14 @@ class TopologySchema:
         for i, node in enumerate(self.nodes):
             if not node.role:
                 errors.append(f"Node {i}: missing role")
-            if node.model_tier and not node.is_tier_valid():
+            if node.node_type not in VALID_NODE_TYPES:
+                errors.append(f"Node {i}: invalid node_type '{node.node_type}' "
+                              f"(valid: {', '.join(sorted(VALID_NODE_TYPES))})")
+            if node.is_llm_node and node.model_tier and not node.is_tier_valid():
                 errors.append(f"Node {i}: invalid model_tier '{node.model_tier}' "
                               f"(valid: {', '.join(sorted(VALID_MODEL_TIERS))})")
+            if node.is_code_node and not node.code_spec:
+                errors.append(f"Node {i}: code node missing code_spec")
 
         for i, edge in enumerate(self.edges):
             if not edge.is_valid(len(self.nodes)):
@@ -195,9 +236,55 @@ class TopologySchema:
         return any(n.provider_hint for n in self.nodes)
 
     @property
+    def has_code_nodes(self) -> bool:
+        return any(n.is_code_node for n in self.nodes)
+
+    @property
     def tier_ratio(self) -> float:
-        """Fraction of nodes with valid model_tier."""
+        """Fraction of LLM nodes with valid model_tier."""
+        llm_nodes = [n for n in self.nodes if n.is_llm_node]
+        if not llm_nodes:
+            return 0.0
+        valid = sum(1 for n in llm_nodes if n.is_tier_valid() and n.model_tier)
+        return valid / len(llm_nodes)
+
+    # -- HyEvo-inspired behavior descriptors for multi-island evolution --
+
+    @property
+    def llm_ratio(self) -> float:
+        """Fraction of LLM nodes (HyEvo behavior descriptor)."""
         if not self.nodes:
             return 0.0
-        valid = sum(1 for n in self.nodes if n.is_tier_valid() and n.model_tier)
-        return valid / len(self.nodes)
+        return sum(1 for n in self.nodes if n.is_llm_node) / len(self.nodes)
+
+    @property
+    def code_ratio(self) -> float:
+        """Fraction of code nodes (HyEvo behavior descriptor)."""
+        if not self.nodes:
+            return 0.0
+        return sum(1 for n in self.nodes if n.is_code_node) / len(self.nodes)
+
+    @property
+    def provider_diversity(self) -> int:
+        """Number of distinct provider hints (multi-provider descriptor)."""
+        return len({n.provider_hint for n in self.nodes if n.provider_hint})
+
+    @property
+    def checkpoint_density(self) -> float:
+        """Fraction of nodes that are checkpoints (adaptation descriptor)."""
+        if not self.nodes:
+            return 0.0
+        return len(self.adaptation.checkpoints) / len(self.nodes)
+
+    def behavior_descriptor(self) -> tuple[int, float, float, int]:
+        """HyEvo multi-island behavior descriptor.
+
+        Returns (node_count, llm_ratio, code_ratio, provider_diversity).
+        Used for MAP-Elites archiving and multi-island migration.
+        """
+        return (
+            len(self.nodes),
+            self.llm_ratio,
+            self.code_ratio,
+            self.provider_diversity,
+        )

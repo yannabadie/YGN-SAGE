@@ -104,7 +104,7 @@ def _score_format(text: str) -> float:
 
 # ── Structure scoring ────────────────────────────────────────
 
-# Use shared schema for validation constants
+# Use shared schema for validation constants (HyEvo hybrid: LLM + code nodes)
 from sage.verl.topology_schema import VALID_MODEL_TIERS, TopologySchema
 
 
@@ -156,7 +156,12 @@ def _score_structure(text: str) -> float:
         if schema.has_provider_hints:
             score += 0.05
 
-        return min(score, 1.2)
+        # HyEvo hybrid bonus: topologies mixing LLM + code nodes
+        # Offloads deterministic work from LLM → reduces cost + latency
+        if schema.has_code_nodes and schema.llm_ratio > 0:
+            score += 0.1  # hybrid topology is more efficient (HyEvo 2603.19639)
+
+        return min(score, 1.3)
     except Exception:
         return 0.0
 
