@@ -37,6 +37,11 @@ cd sage-python && python -m pytest tests/ -v
 python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
 python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
+
+# Training (Nemotron E2E — THE reference command)
+pip install -e ".[training]"
+bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
+bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 ```
 
 ## Current State (March 25, 2026)

@@ -285,14 +285,24 @@ import os
 
 
 def _is_exec_mode() -> bool:
-    """Check execution mode dynamically (not frozen at import time).
-
-    train_topology.sh sets SAGE_VERL_EXEC=0 for Phase A, then SAGE_VERL_EXEC=1
-    for Phase B. Each phase is a SEPARATE python process, so module re-import
-    happens. But if somehow the module is cached, this function still reads
-    the current env var.
-    """
+    """Check execution mode dynamically (not frozen at import time)."""
     return os.environ.get("SAGE_VERL_EXEC", "0") == "1"
+
+
+# Reward mode tracing — records the mode used by the last compute_score call.
+# Training scripts can read this to log which mode was actually used per batch.
+# Thread-safe for single-threaded verl training (one call at a time).
+_last_reward_mode: str = "unknown"
+_last_reward_reason: str = ""
+
+
+def get_last_reward_mode() -> tuple[str, str]:
+    """Return (mode, reason) from the last compute_score call.
+
+    Modes: "structural", "exec_real", "exec_fallback_no_provider",
+           "exec_fallback_invalid_yaml", "exec_fallback_error"
+    """
+    return _last_reward_mode, _last_reward_reason
 
 
 def compute_score(
@@ -320,6 +330,8 @@ def compute_score(
         custom_reward_function.path=sage-python/src/sage/verl/reward.py
         custom_reward_function.name=compute_score
     """
+    global _last_reward_mode, _last_reward_reason
+
     if extra_info is None:
         extra_info = {}
 
@@ -331,23 +343,34 @@ def compute_score(
     structural = (fmt_norm + struct + rust) / 3.0
 
     if not _is_exec_mode() or fmt < 0.0:
-        # Structural only — log reason when exec mode is active but skipped
         if _is_exec_mode() and fmt < 0.0:
-            log.info("SAGE_VERL_EXEC=1 but YAML invalid (fmt=%.2f) — using structural reward only", fmt)
+            _last_reward_mode = "exec_fallback_invalid_yaml"
+            _last_reward_reason = f"fmt={fmt:.2f}"
+            log.info("SAGE_VERL_EXEC=1 but YAML invalid (fmt=%.2f) — structural only", fmt)
+        else:
+            _last_reward_mode = "structural"
+            _last_reward_reason = "SAGE_VERL_EXEC=0"
         return float(structural)
 
     # Check provider availability BEFORE attempting execution
     from sage.execution import _get_agent_provider
     provider, _ = _get_agent_provider()
     if provider is None:
-        log.warning("SAGE_VERL_EXEC=1 but no provider available — falling back to structural reward")
+        _last_reward_mode = "exec_fallback_no_provider"
+        _last_reward_reason = "no API provider configured"
+        log.warning("SAGE_VERL_EXEC=1 but no provider — structural fallback")
         return float(structural)
 
     # Execution mode: run the real multi-provider topology
     try:
-        return _compute_execution_reward(solution_str, extra_info, structural)
+        result = _compute_execution_reward(solution_str, extra_info, structural)
+        _last_reward_mode = "exec_real"
+        _last_reward_reason = "provider available, execution completed"
+        return result
     except Exception as exc:
-        log.warning("Execution reward failed, falling back to structural: %s", exc)
+        _last_reward_mode = "exec_fallback_error"
+        _last_reward_reason = str(exc)[:100]
+        log.warning("Execution reward failed, structural fallback: %s", exc)
         return float(structural)
 
 

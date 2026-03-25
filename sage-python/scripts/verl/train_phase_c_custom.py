@@ -423,6 +423,16 @@ def train_phase_c(
                     # Need at least 2 rollouts for GiGPO normalization
                     continue
 
+                # ── ToolOrchestra: homogeneity filtering ──────────────
+                # Skip batches where all rollouts have identical reward (zero signal).
+                # NVIDIA ToolOrchestra (arXiv 2511.21689) filters these to avoid
+                # wasting gradient steps on uninformative batches.
+                rewards_set = {round(r["total_reward"], 4) for r in rollout_results}
+                if len(rewards_set) == 1:
+                    log.debug("Homogeneous batch for %s (all reward=%.4f) — skipped",
+                              task_id, rollout_results[0]["total_reward"])
+                    continue
+
                 # Compute GiGPO advantages across K rollouts
                 all_step_rewards = [list(r["step_rewards"]) for r in rollout_results]
                 all_anchor_keys = [r["anchor_keys"] for r in rollout_results]
