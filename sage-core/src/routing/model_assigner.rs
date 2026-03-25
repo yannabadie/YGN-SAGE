@@ -31,6 +31,22 @@ impl ModelAssigner {
         task_domain: &str,
         budget_usd: f32,
     ) -> usize {
+        self.assign_models_with_hints_inner(graph, task_domain, budget_usd, &[])
+    }
+
+    /// Assign models with optional per-node provider hints.
+    ///
+    /// `provider_hints` is a slice of `(node_idx, provider_name)` pairs.
+    /// When a hint is present for a node, candidates from that provider get
+    /// a +0.15 scoring bonus (soft preference, not hard filter — if no
+    /// model from the hinted provider qualifies, the best alternative wins).
+    pub fn assign_models_with_hints_inner(
+        &self,
+        graph: &mut TopologyGraph,
+        task_domain: &str,
+        budget_usd: f32,
+        provider_hints: &[(usize, String)],
+    ) -> usize {
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
         let mut assigned = 0usize;
@@ -45,6 +61,12 @@ impl ModelAssigner {
             .iter()
             .map(|c| c.estimate_cost(1000, 500))
             .fold(0.001_f32, f32::max);
+
+        // Build provider hint lookup
+        let hint_map: std::collections::HashMap<usize, &str> = provider_hints
+            .iter()
+            .map(|(idx, prov)| (*idx, prov.as_str()))
+            .collect();
 
         for idx in 0..node_count {
             if remaining_budget < BUDGET_EPSILON {
@@ -72,6 +94,7 @@ impl ModelAssigner {
             let needs_tools = caps.iter().any(|c| c == "tools");
             let needs_json = caps.iter().any(|c| c == "json");
             let node_budget = node.max_cost_usd.min(remaining_budget);
+            let preferred_provider = hint_map.get(&idx).copied().unwrap_or("");
 
             let mut best_id: Option<String> = None;
             let mut best_score: f32 = f32::NEG_INFINITY;
@@ -91,9 +114,14 @@ impl ModelAssigner {
                 let affinity = self.registry.calibrated_affinity(&card.id, system);
                 let domain = card.domain_score(task_domain);
                 let cost_norm = est_cost / max_cost;
-                let score = WEIGHT_AFFINITY * affinity
+                let mut score = WEIGHT_AFFINITY * affinity
                     + WEIGHT_DOMAIN * domain
                     + WEIGHT_COST * (1.0 - cost_norm);
+
+                // Provider hint bonus: soft preference for the hinted provider
+                if !preferred_provider.is_empty() && card.provider == preferred_provider {
+                    score += 0.15;
+                }
 
                 if score > best_score {
                     best_score = score;
@@ -108,13 +136,24 @@ impl ModelAssigner {
                 let node_idx_pg = petgraph::graph::NodeIndex::new(idx);
                 if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg) {
                     node_mut.model_id = model_id.clone();
-                    info!(
-                        node = idx,
-                        role = %node_mut.role,
-                        model = %model_id,
-                        score = best_score,
-                        "model_assigned"
-                    );
+                    if !preferred_provider.is_empty() {
+                        info!(
+                            node = idx,
+                            role = %node_mut.role,
+                            model = %model_id,
+                            score = best_score,
+                            provider_hint = preferred_provider,
+                            "model_assigned (with provider hint)"
+                        );
+                    } else {
+                        info!(
+                            node = idx,
+                            role = %node_mut.role,
+                            model = %model_id,
+                            score = best_score,
+                            "model_assigned"
+                        );
+                    }
                 }
                 assigned += 1;
             } else {
@@ -188,13 +227,25 @@ impl ModelAssigner {
         Self::from_registry(registry)
     }
 
+    /// Assign models to all topology nodes. Optional provider_hints bias
+    /// the selection towards specific providers (soft preference, +0.15 bonus).
+    #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None))]
     fn assign_models(
         &self,
         graph: &mut TopologyGraph,
         task_domain: &str,
         budget_usd: f32,
+        provider_hints: Option<Vec<(usize, String)>>,
     ) -> PyResult<usize> {
-        Ok(self.assign_models_inner(graph, task_domain, budget_usd))
+        match provider_hints {
+            Some(hints) => Ok(self.assign_models_with_hints_inner(
+                graph,
+                task_domain,
+                budget_usd,
+                &hints,
+            )),
+            None => Ok(self.assign_models_inner(graph, task_domain, budget_usd)),
+        }
     }
 
     fn assign_single_node(
@@ -356,6 +407,84 @@ mod tests {
         let mut graph = two_node_graph();
         let n = assigner.assign_models_inner(&mut graph, "code", 0.0);
         assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_assign_with_provider_hint() {
+        // Two providers: "test-a" (cheap) and "test-b" (expensive)
+        let toml = r#"
+            [[models]]
+            id = "model-a"
+            provider = "provider-a"
+            family = "test"
+            code_score = 0.7
+            reasoning_score = 0.7
+            tool_use_score = 0.7
+            math_score = 0.7
+            formal_z3_strength = 0.5
+            cost_input_per_m = 1.0
+            cost_output_per_m = 3.0
+            latency_ttft_ms = 200.0
+            tokens_per_sec = 100.0
+            s1_affinity = 0.5
+            s2_affinity = 0.7
+            s3_affinity = 0.5
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.7
+
+            [[models]]
+            id = "model-b"
+            provider = "provider-b"
+            family = "test"
+            code_score = 0.75
+            reasoning_score = 0.75
+            tool_use_score = 0.75
+            math_score = 0.75
+            formal_z3_strength = 0.6
+            cost_input_per_m = 1.5
+            cost_output_per_m = 4.0
+            latency_ttft_ms = 300.0
+            tokens_per_sec = 80.0
+            s1_affinity = 0.5
+            s2_affinity = 0.75
+            s3_affinity = 0.6
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.75
+        "#;
+        let registry = ModelRegistry::from_toml_str(toml).unwrap();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        let n0 = TopologyNode::new("coder".into(), "".into(), 2, vec![], 0, 5.0, 60.0);
+        graph.add_node(n0);
+
+        // Without hint: record which model wins
+        let n_no_hint = assigner.assign_models_inner(&mut graph, "code", 10.0);
+        assert_eq!(n_no_hint, 1);
+        let assigned_no_hint = graph.try_get_node(0).unwrap().model_id.clone();
+
+        // With hint for the OTHER provider: the hint should flip the result
+        let other_provider = if assigned_no_hint == "model-a" { "provider-b" } else { "provider-a" };
+        let expected_with_hint = if other_provider == "provider-a" { "model-a" } else { "model-b" };
+        let mut graph2 = TopologyGraph::try_new("sequential").unwrap();
+        let n0b = TopologyNode::new("coder".into(), "".into(), 2, vec![], 0, 5.0, 60.0);
+        graph2.add_node(n0b);
+        let hints = vec![(0, other_provider.to_string())];
+        let n_with_hint = assigner.assign_models_with_hints_inner(&mut graph2, "code", 10.0, &hints);
+        assert_eq!(n_with_hint, 1);
+        let assigned_with_hint = graph2.try_get_node(0).unwrap().model_id.clone();
+        assert_eq!(assigned_with_hint, expected_with_hint,
+            "Provider hint for {} should flip selection from {} to {}",
+            other_provider, assigned_no_hint, expected_with_hint);
     }
 
     #[test]

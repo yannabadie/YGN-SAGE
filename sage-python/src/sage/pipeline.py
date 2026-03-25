@@ -431,14 +431,19 @@ class CognitiveOrchestrationPipeline:
             return ctx
 
         try:
+            # Pass provider hints from Path 6 policy output (multi-provider dimension)
+            hints_list = (
+                list(ctx.provider_hints.items()) if ctx.provider_hints else None
+            )
             n_assigned = self.assigner.assign_models(
-                ctx.topology, ctx.domain, ctx.budget
+                ctx.topology, ctx.domain, ctx.budget, hints_list
             )
             log.info(
-                "Assigned models to %d nodes (domain=%s, budget=%.2f)",
+                "Assigned models to %d nodes (domain=%s, budget=%.2f, provider_hints=%d)",
                 n_assigned,
                 ctx.domain,
                 ctx.budget,
+                len(ctx.provider_hints),
             )
 
             # Record assignments for observability

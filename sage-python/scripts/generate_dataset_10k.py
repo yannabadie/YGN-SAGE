@@ -1175,6 +1175,14 @@ def generate_entries(count: int, seed: int) -> tuple[list[dict], list[dict]]:
         # Generate reasoning
         reasoning = _generate_reasoning(difficulty, pattern_name, nodes)
 
+        # Inject provider_hint on ~30% of moderate/complex nodes
+        # Available providers from cards.toml (8 providers)
+        _PROVIDERS = ["google", "openai", "deepseek", "xai", "kimi", "minimax", "openrouter"]
+        if difficulty != "simple" and random.random() < 0.3:
+            for node in nodes:
+                if random.random() < 0.5:
+                    node["provider_hint"] = random.choice(_PROVIDERS)
+
         topology = {
             "reasoning": reasoning,
             "difficulty": difficulty,

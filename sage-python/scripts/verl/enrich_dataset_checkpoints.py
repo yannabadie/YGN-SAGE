@@ -102,6 +102,13 @@ def add_checkpoints_to_yaml(yaml_text: str, force: bool = False) -> str:
         "quality_threshold": 0.5,
     }
 
+    # Inject provider_hint on ~30% of moderate/complex nodes
+    providers = ["google", "openai", "deepseek", "xai", "kimi", "minimax", "openrouter"]
+    if difficulty in ("moderate", "complex") and np.random.random() < 0.3:
+        for node in nodes:
+            if np.random.random() < 0.5 and isinstance(node, dict):
+                node["provider_hint"] = np.random.choice(providers)
+
     return yaml.dump(data, default_flow_style=False, allow_unicode=True)
 
 
