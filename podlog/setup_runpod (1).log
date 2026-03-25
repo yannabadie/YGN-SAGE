@@ -1,0 +1,27 @@
+=== YGN-SAGE veRL Setup for RunPod H100 ===
+
+Loaded API keys from .env
+[1/9] Verifying GPU...
+GPU: NVIDIA H100 NVL (93 GB)
+OK
+[2/9] Checking vLLM...
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+ModuleNotFoundError: No module named 'vllm'
+vLLM missing. Installing...
+
+[notice] A new release of pip is available: 24.2 -> 26.0.1
+[notice] To update, run: python -m pip install --upgrade pip
+[3/9] Skipping flash-linear-attention (not needed for Qwen3/Nemotron — uses SDPA)
+[4/9] Installing verl + GiGPO...
+Installing verl from source...
+Cloning into 'verl-071'...
+Updating files:  11% (128/1134)Updating files:  12% (137/1134)Updating files:  13% (148/1134)Updating files:  14% (159/1134)Updating files:  15% (171/1134)Updating files:  16% (182/1134)Updating files:  17% (193/1134)Updating files:  18% (205/1134)Updating files:  19% (216/1134)Updating files:  20% (227/1134)Updating files:  21% (239/1134)Updating files:  21% (246/1134)Updating files:  22% (250/1134)Updating files:  23% (261/1134)Updating files:  24% (273/1134)Updating files:  25% (284/1134)Updating files:  26% (295/1134)Updating files:  27% (307/1134)Updating files:  28% (318/1134)Updating files:  29% (329/1134)Updating files:  30% (341/1134)Updating files:  31% (352/1134)Updating files:  32% (363/1134)Updating files:  32% (371/1134)Updating files:  33% (375/1134)Updating files:  34% (386/1134)Updating files:  35% (397/1134)Updating files:  36% (409/1134)Updating files:  37% (420/1134)Updating files:  38% (431/1134)Updating files:  39% (443/1134)Updating files:  40% (454/1134)Updating files:  41% (465/1134)Updating files:  42% (477/1134)Updating files:  42% (485/1134)Updating files:  43% (488/1134)Updating files:  44% (499/1134)Updating files:  45% (511/1134)Updating files:  46% (522/1134)Updating files:  47% (533/1134)Updating files:  48% (545/1134)Updating files:  49% (556/1134)Updating files:  50% (567/1134)Updating files:  51% (579/1134)Updating files:  52% (590/1134)Updating files:  52% (601/1134)Updating files:  53% (602/1134)Updating files:  54% (613/1134)Updating files:  55% (624/1134)Updating files:  56% (636/1134)Updating files:  57% (647/1134)Updating files:  58% (658/1134)Updating files:  59% (670/1134)Updating files:  60% (681/1134)Updating files:  61% (692/1134)Updating files:  62% (704/1134)Updating files:  63% (715/1134)Updating files:  63% (722/1134)Updating files:  64% (726/1134)Updating files:  65% (738/1134)Updating files:  66% (749/1134)Updating files:  67% (760/1134)Updating files:  68% (772/1134)Updating files:  69% (783/1134)Updating files:  70% (794/1134)Updating files:  71% (806/1134)Updating files:  72% (817/1134)Updating files:  73% (828/1134)Updating files:  74% (840/1134)Updating files:  74% (847/1134)Updating files:  75% (851/1134)Updating files:  76% (862/1134)Updating files:  77% (874/1134)Updating files:  78% (885/1134)Updating files:  79% (896/1134)Updating files:  80% (908/1134)Updating files:  81% (919/1134)Updating files:  82% (930/1134)Updating files:  83% (942/1134)Updating files:  84% (953/1134)Updating files:  85% (964/1134)Updating files:  85% (967/1134)Updating files:  86% (976/1134)Updating files:  87% (987/1134)Updating files:  88% (998/1134)Updating files:  89% (1010/1134)Updating files:  90% (1021/1134)Updating files:  91% (1032/1134)Updating files:  92% (1044/1134)Updating files:  93% (1055/1134)Updating files:  94% (1066/1134)Updating files:  95% (1078/1134)Updating files:  95% (1084/1134)Updating files:  96% (1089/1134)Updating files:  97% (1100/1134)Updating files:  98% (1112/1134)Updating files:  99% (1123/1134)Updating files: 100% (1134/1134)Updating files: 100% (1134/1134), done.
+ERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.
+opencv-python-headless 4.13.0.92 requires numpy>=2; python_version >= "3.9", but you have numpy 1.26.4 which is incompatible.
+
+[notice] A new release of pip is available: 24.2 -> 26.0.1
+[notice] To update, run: python -m pip install --upgrade pip
+Installing GiGPO plugin...
+Cloning into 'gigpo'...
+fatal: could not read Username for 'https://github.com': No such device or address

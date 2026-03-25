@@ -1,0 +1,8 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading base model...
+Loading checkpoint shards:   0%|          | 0/7 [00:00<?, ?it/s]Loading checkpoint shards:  14%|█▍        | 1/7 [00:03<00:20,  3.45s/it]Loading checkpoint shards:  29%|██▊       | 2/7 [00:08<00:20,  4.17s/it]Loading checkpoint shards:  43%|████▎     | 3/7 [00:12<00:17,  4.37s/it]Loading checkpoint shards:  57%|█████▋    | 4/7 [00:18<00:14,  4.82s/it]Loading checkpoint shards:  71%|███████▏  | 5/7 [00:23<00:09,  4.93s/it]Loading checkpoint shards:  86%|████████▌ | 6/7 [00:28<00:05,  5.06s/it]Loading checkpoint shards: 100%|██████████| 7/7 [00:30<00:00,  3.89s/it]Loading checkpoint shards: 100%|██████████| 7/7 [00:30<00:00,  4.31s/it]
+The tokenizer you are loading from '/workspace/patched_nemotron_orchestrator' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+Loading SFT LoRA adapters...
+Merging LoRA into base model...
+Saving merged model...
+Done! Merged model at /workspace/sft_merged_model

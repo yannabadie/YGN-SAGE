@@ -1,0 +1,38 @@
+2026-03-24 23:37:14,645 [SFT] Loading model from /workspace/patched_nemotron_orchestrator
+The tokenizer you are loading from '/workspace/patched_nemotron_orchestrator' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+`torch_dtype` is deprecated! Use `dtype` instead!
+2026-03-24 23:37:15,648 [SFT] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/7 [00:00<?, ?it/s]Loading checkpoint shards:  14%|█▍        | 1/7 [00:00<00:04,  1.22it/s]Loading checkpoint shards:  29%|██▊       | 2/7 [00:01<00:03,  1.27it/s]Loading checkpoint shards:  43%|████▎     | 3/7 [00:02<00:03,  1.27it/s]Loading checkpoint shards:  57%|█████▋    | 4/7 [00:03<00:02,  1.25it/s]Loading checkpoint shards:  71%|███████▏  | 5/7 [00:03<00:01,  1.27it/s]Loading checkpoint shards:  86%|████████▌ | 6/7 [00:04<00:00,  1.25it/s]Loading checkpoint shards: 100%|██████████| 7/7 [00:05<00:00,  1.38it/s]Loading checkpoint shards: 100%|██████████| 7/7 [00:05<00:00,  1.31it/s]
+2026-03-24 23:37:21,071 [SFT] Model loaded: qwen3
+2026-03-24 23:38:33,970 [SFT] Loaded 1880 SFT examples from data/topology_sft_v2_combined.jsonl
+2026-03-24 23:38:33,970 [SFT] Dataset: 1880 examples
+The model is already on multiple devices. Skipping the move to device specified in `args`.
+2026-03-24 23:38:34,354 [SFT] Starting SFT warmup training...
+trainable params: 174,587,904 || all params: 8,365,323,264 || trainable%: 2.0870
+  0%|          | 0/118 [00:00<?, ?it/s]`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`.
+/home/yann/.local/lib/python3.11/site-packages/torch/utils/checkpoint.py:232: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  check_backward_validity(args)
+Traceback (most recent call last):
+  File "/workspace/YGN-SAGE/sage-python/scripts/verl/sft_warmup.py", line 212, in <module>
+    main()
+  File "/workspace/YGN-SAGE/sage-python/scripts/verl/sft_warmup.py", line 177, in main
+    trainer.train()
+  File "/home/yann/.local/lib/python3.11/site-packages/transformers/trainer.py", line 2325, in train
+    return inner_training_loop(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/home/yann/.local/lib/python3.11/site-packages/transformers/trainer.py", line 2674, in _inner_training_loop
+    tr_loss_step = self.training_step(model, inputs, num_items_in_batch)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/yann/.local/lib/python3.11/site-packages/transformers/trainer.py", line 4071, in training_step
+    self.accelerator.backward(loss, **kwargs)
+  File "/home/yann/.local/lib/python3.11/site-packages/accelerate/accelerator.py", line 2838, in backward
+    loss.backward(**kwargs)
+  File "/home/yann/.local/lib/python3.11/site-packages/torch/_tensor.py", line 630, in backward
+    torch.autograd.backward(
+  File "/home/yann/.local/lib/python3.11/site-packages/torch/autograd/__init__.py", line 364, in backward
+    _engine_run_backward(
+  File "/home/yann/.local/lib/python3.11/site-packages/torch/autograd/graph.py", line 865, in _engine_run_backward
+    return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: element 0 of tensors does not require grad and does not have a grad_fn
+  0%|          | 0/118 [00:01<?, ?it/s]
