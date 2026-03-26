@@ -55,10 +55,12 @@ class OpenAICompatProvider:
             return "deepseek"
         if "x.ai" in url:
             return "xai"
-        if "minimaxi" in url:
+        if "minimax" in url:
             return "minimax"
         if "moonshot" in url:
             return "kimi"
+        if "bigmodel.cn" in url:
+            return "glm"
         if "openai.com" in url:
             return "openai"
         return ""

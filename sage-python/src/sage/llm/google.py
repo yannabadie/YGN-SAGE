@@ -69,7 +69,7 @@ class GoogleProvider:
                 pass
 
         # Default model
-        model = "gemini-3.1-pro-preview"
+        model = "gemini-2.5-pro"
         if config and config.model:
             model = config.model
             
@@ -194,7 +194,7 @@ class GoogleProvider:
         from sage.llm._ssl import patch_genai_ssl
         patch_genai_ssl(client)
 
-        model = "gemini-3.1-pro-preview"
+        model = "gemini-2.5-pro"
         if config and config.model:
             model = config.model
 

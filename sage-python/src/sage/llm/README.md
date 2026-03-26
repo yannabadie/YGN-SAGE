@@ -41,7 +41,7 @@ Provider for Google Gemini models (3.x series) via the `google-genai` SDK. Suppo
 
 ### `codex.py` -- CodexProvider
 
-Provider for OpenAI Codex CLI (`gpt-5.3-codex` default). Wraps `codex exec` for non-interactive agent calls. Supports structured JSON output via `--output-schema`. Falls back to `GoogleProvider` if the CLI is missing or fails.
+Provider for OpenAI Codex CLI (`gpt-4.1` default). Wraps `codex exec` for non-interactive agent calls. Supports structured JSON output via `--output-schema`. Falls back to `GoogleProvider` if the CLI is missing or fails.
 
 - **Key exports**: `CodexProvider`, `DEFAULT_MODEL`
 

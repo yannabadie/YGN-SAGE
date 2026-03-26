@@ -1,4 +1,4 @@
-"""OpenAI Codex CLI provider (gpt-5.3-codex default, configurable).
+"""OpenAI Codex CLI provider (gpt-4.1 default, configurable).
 
 Wraps the `codex exec` command for non-interactive agent calls.
 Supports structured JSON output via --output-schema.
@@ -22,7 +22,7 @@ from sage.llm.google import GoogleProvider
 logger = logging.getLogger(__name__)
 
 # Default model (matches ~/.codex/config.toml)
-DEFAULT_MODEL = "gpt-5.3-codex"
+DEFAULT_MODEL = "gpt-4.1"
 
 
 def _ensure_additional_properties_false(schema: dict) -> dict:
@@ -106,7 +106,7 @@ def _extract_text_from_jsonl(stdout: str) -> str:
 class CodexProvider:
     """LLMProvider using OpenAI Codex CLI (codex exec).
 
-    Default model: gpt-5.3-codex (from ~/.codex/config.toml).
+    Default model: gpt-4.1 (from ~/.codex/config.toml).
     Override via LLMConfig.model or the -m flag.
     """
 
@@ -313,13 +313,13 @@ class CodexExecProvider:
             except Exception as e:
                 self.logger.warning(f"Codex CLI review failed: {e}")
 
-        # Fallback to Gemini 3.1 Pro
+        # Fallback to Gemini 2.5 Pro
         try:
-            self.logger.info("Falling back to Gemini 3.1 Pro for review.")
+            self.logger.info("Falling back to Gemini 2.5 Pro for review.")
             provider = GoogleProvider()
             cfg = LLMConfig(
                 provider="google",
-                model="gemini-3.1-pro-preview",
+                model="gemini-2.5-pro",
                 temperature=0.1,
             )
             response = await provider.generate(
