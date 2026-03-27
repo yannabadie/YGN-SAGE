@@ -1,0 +1,17 @@
+`torch_dtype` is deprecated! Use `dtype` instead!
+Loading base model...
+Loading checkpoint shards:   0%|          | 0/7 [00:00<?, ?it/s]Loading checkpoint shards:  14%|█▍        | 1/7 [00:00<00:02,  2.83it/s]Loading checkpoint shards:  29%|██▊       | 2/7 [00:00<00:01,  3.08it/s]Loading checkpoint shards:  43%|████▎     | 3/7 [00:00<00:01,  3.19it/s]Loading checkpoint shards:  57%|█████▋    | 4/7 [00:01<00:00,  3.20it/s]Loading checkpoint shards:  71%|███████▏  | 5/7 [00:01<00:00,  3.27it/s]Loading checkpoint shards:  86%|████████▌ | 6/7 [00:01<00:00,  3.34it/s]Loading checkpoint shards: 100%|██████████| 7/7 [00:02<00:00,  3.88it/s]Loading checkpoint shards: 100%|██████████| 7/7 [00:02<00:00,  3.46it/s]
+Loading LoRA adapter...
+Merging LoRA into base model...
+Saving merged model to /workspace/sft_merged_model...
+Copying tokenizer...
+Verifying merged model generates YAML...
+Generated (2007 chars):
+<think>
+Okay, the user wants me to write a function that sorts a list of integers. Let me think about how to approach this.
+
+First, I need to make sure I understand the requirements. The function should take a list of integers and return them sorted. The user didn't specify the sorting order, so I should assume ascending order unless stated otherwise.
+
+Now, considering the programming language. The user didn't specify, but since they mentioned YAML DAG earlier, maybe they expect a Python functio
+WARNING: not valid YAML (may still work in training)
+Merged model saved to /workspace/sft_merged_model
