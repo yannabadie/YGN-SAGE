@@ -4,7 +4,7 @@
 # ============================================================
 # Model: nvidia/Nemotron-Orchestrator-8B (SFT-merged)
 # Algorithm: GRPO via verl 0.7.1 (single-turn, NOT GiGPO — see TRAINING_LOG.md)
-# Hardware: 1x H100 NVL 94GB
+# Hardware: 2x H100 NVL 94GB (adapted from 1x)
 # ============================================================
 #
 # FIXES FROM V3/V4 POST-MORTEM:
@@ -31,15 +31,21 @@
 #
 # KEPT FROM V3/V4:
 #   - batch_size=32 (stable, no OOM in V4)
-#   - param_offload=True, optimizer_offload=True (needed for 8B on single H100)
 #   - TORCH_SDPA backend (Qwen3 arch, no flashinfer)
+#
+# 2-GPU ADAPTATIONS:
+#   - trainer.n_gpus_per_node=2 (FSDP across both GPUs)
+#   - param_offload=False, optimizer_offload=True (activations need GPU RAM)
+#   - tensor_model_parallel_size=2 (vLLM uses both GPUs for rollout)
+#   - micro_batch_size_per_gpu=4 (conservative: 1024 response_len = large activations)
+#   - gpu_memory_utilization=0.35 (shared with FSDP actor)
 #   - rollout.n=4 (K=4 for GRPO grouping)
 #   - temperature=0.7 (diversity for grouping)
 #   - RAY memory guard disabled (container limit != real limit)
 #
 # ESTIMATED DURATION:
-#   1152 steps × ~90s/step ÷ 3600 = ~29h on 1x H100 NVL
-#   (longer per step due to 1024 max_response_length vs 512)
+#   ~576 steps × ~90s/step ÷ 3600 = ~14h on 2x H100 NVL
+#   (2x throughput: FSDP across 2 GPUs, no CPU offload needed)
 # ============================================================
 
 set -euo pipefail
@@ -81,6 +87,7 @@ echo "Model:    $MODEL (nvidia/Nemotron-Orchestrator-8B)"
 echo "Data:     $DATA_FULL"
 echo "Output:   $OUTPUT"
 echo "Fixes:    max_response_length=1024, lr=1e-6, reward shaping"
+echo "GPUs:     2x H100 NVL (FSDP, no CPU offload, TP=2 for vLLM)"
 echo ""
 
 # ── Step 0: Verify stack ────────────────────────────────────
@@ -166,20 +173,20 @@ python3 -m verl.trainer.main_ppo \
     \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.ppo_mini_batch_size=32 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=8 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.actor.use_kl_loss=True \
     actor_rollout_ref.actor.kl_loss_coef=0.001 \
     actor_rollout_ref.actor.kl_loss_type=low_var_kl \
     actor_rollout_ref.actor.entropy_coeff=0.001 \
-    actor_rollout_ref.actor.fsdp_config.param_offload=True \
+    actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
     \
     actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
-    actor_rollout_ref.ref.fsdp_config.param_offload=True \
+    actor_rollout_ref.ref.fsdp_config.param_offload=False \
     \
     actor_rollout_ref.rollout.name=vllm \
     actor_rollout_ref.rollout.gpu_memory_utilization=0.35 \
-    actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
+    actor_rollout_ref.rollout.tensor_model_parallel_size=2 \
     actor_rollout_ref.rollout.n=4 \
     actor_rollout_ref.rollout.temperature=0.7 \
     actor_rollout_ref.rollout.load_format=safetensors \
@@ -193,7 +200,7 @@ python3 -m verl.trainer.main_ppo \
     custom_reward_function.name=compute_score \
     \
     trainer.critic_warmup=0 \
-    trainer.n_gpus_per_node=1 \
+    trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
     trainer.test_freq=5 \
