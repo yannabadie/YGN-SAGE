@@ -79,14 +79,18 @@ class EmbeddingPipeline:
                 sparse_out = self._sparse.encode(text)
                 import torch
                 if isinstance(sparse_out, torch.Tensor):
-                    # SPLADE returns a 1D tensor of shape [vocab_size]
-                    if sparse_out.dim() == 1:
-                        nz_indices = sparse_out.nonzero(as_tuple=True)[0]
+                    # Force CPU + dense — SPLADE on CUDA returns sparse tensor
+                    t = sparse_out.cpu()
+                    if t.is_sparse:
+                        t = t.to_dense()
+                    if t.dim() == 1:
+                        nz_indices = t.nonzero(as_tuple=True)[0]
+                        vals_tensor = t[nz_indices]
                     else:
-                        nz_indices = sparse_out[0].nonzero(as_tuple=True)[0]
-                    indices = nz_indices.cpu().tolist()
-                    vals_tensor = sparse_out[0][nz_indices] if sparse_out.dim() > 1 else sparse_out[nz_indices]
-                    values = vals_tensor.cpu().tolist()
+                        nz_indices = t[0].nonzero(as_tuple=True)[0]
+                        vals_tensor = t[0][nz_indices]
+                    indices = nz_indices.tolist()
+                    values = vals_tensor.tolist()
                     sparse_dict = {"indices": indices, "values": values}
                 else:
                     nz = sparse_out.nonzero()
