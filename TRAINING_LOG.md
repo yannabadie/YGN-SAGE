@@ -1,11 +1,70 @@
-# Training Log — RunPod H100 NVL 94GB (March 24-25, 2026)
+# Training Log — RunPod 2x H100 NVL 94GB
 
-> Diagnostic des runs de training sur le pod RunPod.
-> Model: nvidia/Nemotron-Orchestrator-8B (Qwen3 arch)
+> Diagnostic de tous les runs de training.
+> Model: nvidia/Nemotron-Orchestrator-8B (Qwen3 arch, 8.19B params)
 
 ---
 
-## Chronologie
+## Session 2 — March 27, 2026 (2x H100 NVL, Claude Code supervised)
+
+### Chronologie Session 2
+
+| # | Étape | Durée | Résultat |
+|---|-------|-------|----------|
+| 1 | SFT warmup (GPU 0) | 14.5 min | **OK** — 118 steps, loss 2.87→1.39, YAML valide |
+| 2 | LoRA merge into base | ~1 min | **OK** — 16GB, 4 shards, tokenizer patché |
+| 3 | Phase A V5 (2 GPU, TP=2) | <1 min | **OOM** — micro_batch=16 trop gros (87/93 GB) |
+| 4 | Phase A V5 (2 GPU, TP=2, micro=4) | ~5 min | **CRASH** — vLLM TP=2 shared memory KeyError |
+| 5 | Phase A V5 (2 GPU, TP=1, micro=4) | 49 steps (~58 min) | **CRASH** — Disk quota exceeded (80GB workspace FUSE) |
+| 6 | Phase A V5 resumed from step 20 | 29 steps (~35 min) | **CRASH** — torch.save() corrupt on FUSE network storage |
+| 7 | Phase A V6 (lr=5e-6, KL=0, temp=1.0) | **EN COURS** | Running step 9+, checkpoints on local NVMe |
+
+### Root causes & fixes appliqués
+
+| Problème | Cause | Fix | Leçon |
+|----------|-------|-----|-------|
+| OOM backward | micro_batch=16 + seq=1536 → activations explosent | micro_batch=4 | Calculer VRAM AVANT de lancer |
+| vLLM TP=2 crash | vLLM 0.18 shared memory `/psm_*` KeyError | TP=1 (2 replicas indépendantes) | Tester TP=2 en isolation d'abord |
+| Disk quota exceeded | HF cache 31GB + checkpoints 34GB → 80GB workspace quota | HF cache → container disk, rotation checkpoints | Toujours mapper les quotas disque |
+| torch.save() corrupt | `/workspace` est FUSE NFS, pas fiable pour gros writes | Checkpoints → `/home/yann/` (overlay NVMe local) | NE JAMAIS sauver des checkpoints sur stockage réseau |
+| Reward plateau 0.065 | lr=1e-6 trop conservateur, K=4 insuffisant, temp=0.7 | V6: lr=5e-6, KL=0, temp=1.0 (params The Conductor) | S'aligner sur la littérature compétitive |
+
+### V5 Métriques (steps 1-49, avant crash)
+
+```
+reward/mean: 0.055-0.078 (FLAT, jamais >0.08)
+critic/score/max: 0.189 (plafond constant — aucun YAML valide produit)
+clip_ratio: 0.73-0.88 (amélioré vs V4 0.97, mais encore haut)
+KL: stable ~0.001 (lr=1e-6 préserve le SFT)
+memory: 38GB/93GB par GPU (stable)
+throughput: 70-75s/step, ~1000 tok/s
+```
+
+### V6 Config (en cours)
+
+| Paramètre | V5 | V6 | Justification |
+|-----------|----|----|---------------|
+| lr | 1e-6 | **5e-6** | V5 trop conservateur, The Conductor utilise 1e-6 mais sur modèle non-SFT |
+| KL | 0.001 | **0 (désactivé)** | The Conductor prouve que KL=0 converge pour topology training |
+| temperature | 0.7 | **1.0** | Plus de diversité pour baselines GRPO (tous les concurrents utilisent 1.0) |
+| entropy_coeff | 0.001 | **0.01** | Encourager l'exploration |
+| use_kl_loss | True | **False** | Cohérent avec KL=0 |
+| checkpoints | /workspace (FUSE) | **/home/yann/ (NVMe)** | Fix crash torch.save() |
+| save_freq | 20→50 | **100** | Moins de risques d'écriture |
+
+### Architecture disk
+
+```
+/workspace (80GB quota, FUSE NFS)  — données persistantes : modèle, code, data
+/home/yann (overlay NVMe, 105GB)   — éphémère : checkpoints, HF cache
+/dev/shm (176GB tmpfs)             — Ray IPC, vLLM KV cache
+```
+
+---
+
+## Session 1 — March 24-25, 2026 (1x H100 NVL)
+
+### Chronologie Session 1
 
 | # | Étape | Log | Durée | Résultat |
 |---|-------|-----|-------|----------|
