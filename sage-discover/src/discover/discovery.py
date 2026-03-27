@@ -227,7 +227,11 @@ async def discover_semantic_scholar(
                 except (AttributeError, TypeError):
                     continue
 
-            if pub_date < since:
+            # Normalize both to date for comparison
+            if hasattr(pub_date, 'date') and callable(pub_date.date):
+                pub_date = pub_date.date()
+            compare_since = since.date() if hasattr(since, 'date') and callable(since.date) else since
+            if pub_date < compare_since:
                 continue
 
             authors = []

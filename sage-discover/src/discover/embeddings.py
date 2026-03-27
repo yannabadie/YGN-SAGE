@@ -77,13 +77,25 @@ class EmbeddingPipeline:
         if self._sparse is not None:
             try:
                 sparse_out = self._sparse.encode(text)
-                nz = sparse_out.nonzero()
-                if len(nz) == 2:
-                    indices = nz[1].tolist() if hasattr(nz[1], 'tolist') else list(nz[1])
-                    values = [float(sparse_out[0, i]) for i in indices] if indices else []
+                import torch
+                if isinstance(sparse_out, torch.Tensor):
+                    # SPLADE returns a 1D tensor of shape [vocab_size]
+                    if sparse_out.dim() == 1:
+                        nz_indices = sparse_out.nonzero(as_tuple=True)[0]
+                    else:
+                        nz_indices = sparse_out[0].nonzero(as_tuple=True)[0]
+                    indices = nz_indices.cpu().tolist()
+                    vals_tensor = sparse_out[0][nz_indices] if sparse_out.dim() > 1 else sparse_out[nz_indices]
+                    values = vals_tensor.cpu().tolist()
                     sparse_dict = {"indices": indices, "values": values}
-            except Exception:
-                logger.warning("SPLADE encoding failed, using empty sparse vector")
+                else:
+                    nz = sparse_out.nonzero()
+                    if len(nz) == 2:
+                        indices = nz[1].tolist() if hasattr(nz[1], 'tolist') else list(nz[1])
+                        values = [float(sparse_out[0, i]) for i in indices] if indices else []
+                        sparse_dict = {"indices": indices, "values": values}
+            except Exception as exc:
+                logger.warning("SPLADE encoding failed: %s", exc)
 
         return dense, sparse_dict
 
