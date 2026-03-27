@@ -13,7 +13,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="YGN-SAGE Knowledge Pipeline")
     parser.add_argument(
         "--mode",
-        choices=["nightly", "on-demand", "migrate", "watch"],
+        choices=["nightly", "on-demand", "migrate", "watch", "mcp"],
         default="nightly",
     )
     parser.add_argument(
@@ -39,6 +39,14 @@ def main() -> None:
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
+
+    # --- MCP mode: start MCP server ---
+    if args.mode == "mcp":
+        from discover.mcp import create_mcp_server
+
+        server = create_mcp_server()
+        server.run()
+        return
 
     # --- Watch mode: detect new unprofiled models ---
     if args.mode == "watch":

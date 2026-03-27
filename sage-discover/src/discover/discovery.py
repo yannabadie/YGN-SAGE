@@ -84,6 +84,7 @@ class PaperCandidate:
     published: date
     pdf_url: str | None
     citation_count: int
+    influential_citation_count: int = 0
 
 
 # ---------------------------------------------------------------------------
