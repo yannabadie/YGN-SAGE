@@ -109,11 +109,12 @@ body {
 }
 
 .tab-panel {
-    display: none;
+    display: none !important;
 }
 
 .tab-panel.active {
-    display: flex;
+    display: flex !important;
+    flex-direction: column;
 }
 
 /* ----------------------------------------------------------------
