@@ -131,23 +131,24 @@
         });
     });
 
-    // WebSocket status + header stats
-    subscribe((state, patch) => {
+    // WebSocket status + header stats — subscribe receives (hint), read state via getState()
+    subscribe(() => {
+        const s = getState();
         const dot = document.getElementById('ws-dot');
         const label = document.getElementById('ws-label');
         if (dot && label) {
-            dot.className = `w-2 h-2 rounded-full ${state.wsConnected ? 'bg-green-500' : 'bg-red-500'}`;
-            label.textContent = state.wsConnected ? 'Connected' : 'Disconnected';
+            dot.className = `w-2 h-2 rounded-full ${s.wsConnected ? 'bg-green-500' : 'bg-red-500'}`;
+            label.textContent = s.wsConnected ? 'Connected' : 'Disconnected';
         }
         const $t = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
-        $t('hdr-step', state.stepCount);
-        $t('hdr-cost', state.totalCost.toFixed(4));
-        $t('hdr-model', state.lastModel || '--');
+        $t('hdr-step', s.stepCount);
+        $t('hdr-cost', s.totalCost.toFixed(4));
+        $t('hdr-model', s.lastModel || '--');
 
         ['s1-ind', 's2-ind', 's3-ind'].forEach((id, idx) => {
             const el = document.getElementById(id);
             if (!el) return;
-            if (state.lastSystem === idx + 1) {
+            if (s.lastSystem === idx + 1) {
                 el.classList.remove('opacity-40');
                 el.classList.add('opacity-100', 'running-glow');
                 el.style.borderColor = ['#22c55e', '#f59e0b', '#ef4444'][idx];

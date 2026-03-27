@@ -243,17 +243,17 @@ function _createRow(evt, type) {
     tr.className = `border-b border-sage-800/60 transition-colors ${style.row}`;
 
     tr.innerHTML = `
-        <td class="px-3 py-1.5 font-mono text-sage-400 whitespace-nowrap">${_fmtTime(ts)}</td>
-        <td class="px-3 py-1.5 font-mono text-sage-400 text-center">${step}</td>
+        <td class="px-3 py-1.5 font-mono text-sage-400 whitespace-nowrap">${_esc(_fmtTime(ts))}</td>
+        <td class="px-3 py-1.5 font-mono text-sage-400 text-center">${_esc(String(step))}</td>
         <td class="px-3 py-1.5">
             <span class="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded border text-[10px] font-semibold tracking-wide ${style.badge}">
                 <span class="w-1.5 h-1.5 rounded-full flex-shrink-0 ${style.dot}"></span>
-                ${_trunc(type || '?', 18)}
+                ${_esc(_trunc(type || '?', 18))}
             </span>
         </td>
-        <td class="px-3 py-1.5 font-mono text-sage-300 truncate max-w-[110px]" title="${_esc(model)}">${_trunc(model, 14)}</td>
-        <td class="px-3 py-1.5 font-mono text-sage-400 text-right whitespace-nowrap">${latency}</td>
-        <td class="px-3 py-1.5 text-sage-400 truncate max-w-[260px]" title="${_esc(details)}">${_trunc(details, 80)}</td>
+        <td class="px-3 py-1.5 font-mono text-sage-300 truncate max-w-[110px]" title="${_esc(model)}">${_esc(_trunc(model, 14))}</td>
+        <td class="px-3 py-1.5 font-mono text-sage-400 text-right whitespace-nowrap">${_esc(latency)}</td>
+        <td class="px-3 py-1.5 text-sage-400 truncate max-w-[260px]" title="${_esc(details)}">${_esc(_trunc(details, 80))}</td>
     `;
 
     return tr;

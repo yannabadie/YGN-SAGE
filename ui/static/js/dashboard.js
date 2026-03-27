@@ -455,6 +455,13 @@ function _renderRoutingPipeline(rp) {
 // ---------------------------------------------------------------
 // API actions
 // ---------------------------------------------------------------
+function _authHeaders(extra = {}) {
+    const h = { ...extra };
+    const token = localStorage.getItem('sage_token') || '';
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+}
+
 async function _runTask() {
     const input = _q('dash-task-input');
     if (!input) return;
@@ -464,7 +471,7 @@ async function _runTask() {
     try {
         const resp = await fetch('/api/task', {
             method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: _authHeaders({ 'Content-Type': 'application/json' }),
             body:    JSON.stringify({ task }),
         });
         const data = await resp.json();
@@ -480,7 +487,7 @@ async function _runTask() {
 
 async function _stopTask() {
     try {
-        await fetch('/api/stop', { method: 'POST' });
+        await fetch('/api/stop', { method: 'POST', headers: _authHeaders() });
         setState({ isRunning: false });
     } catch (e) {
         console.error('[dashboard] Stop failed:', e);
@@ -489,7 +496,7 @@ async function _stopTask() {
 
 async function _resetAll() {
     try {
-        await fetch('/api/reset', { method: 'POST' });
+        await fetch('/api/reset', { method: 'POST', headers: _authHeaders() });
         resetState();   // notifies all subscribers, including _render with hint.reset=true
     } catch (e) {
         console.error('[dashboard] Reset failed:', e);

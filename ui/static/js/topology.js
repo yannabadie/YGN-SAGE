@@ -90,6 +90,10 @@ export function mount(el) {
     _pollTimer = setInterval(() => _fetchAndRender(), POLL_INTERVAL);
 
     _unsub = subscribe((hint) => {
+        if (hint && hint.reset) {
+            if (_cy) _cy.elements().remove();
+            return;
+        }
         const evt = hint && hint.newEvent;
         if (evt && (evt.type || '').toUpperCase() === 'TOPOLOGY_UPDATE') {
             _fetchAndRender();
