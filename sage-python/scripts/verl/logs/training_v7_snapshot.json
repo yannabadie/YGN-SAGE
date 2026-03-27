@@ -1,0 +1,78 @@
+{
+  "timestamp": "2026-03-27T19:17:42.029540",
+  "version": "V7",
+  "config": "think-ban(logit_bias=-100) + reward_v7(-3.0) + lr=5e-6 + KL=0 + temp=1.0",
+  "model": "nvidia/Nemotron-Orchestrator-8B (SFT-merged)",
+  "hardware": "2x H100 NVL 94GB",
+  "total_steps": 1152,
+  "steps_logged": 11,
+  "breakthrough": "Max reward 0.833 \u2014 valid YAML produced (was 0.189 in V5/V6)",
+  "metrics": [
+    {
+      "step": 1,
+      "reward": 0.16171874105930328,
+      "max_reward": 0.8333333134651184,
+      "clip_ratio": 0.578125
+    },
+    {
+      "step": 2,
+      "reward": 0.14121094346046448,
+      "max_reward": 0.5,
+      "clip_ratio": 0.6796875
+    },
+    {
+      "step": 3,
+      "reward": 0.1490885466337204,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.5625
+    },
+    {
+      "step": 4,
+      "reward": 0.15781249105930328,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.5703125
+    },
+    {
+      "step": 5,
+      "reward": 0.142578125,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.609375
+    },
+    {
+      "step": 6,
+      "reward": 0.1572265475988388,
+      "max_reward": 0.6666666865348816,
+      "clip_ratio": 0.6484375
+    },
+    {
+      "step": 7,
+      "reward": 0.14570312201976776,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.5625
+    },
+    {
+      "step": 8,
+      "reward": 0.13951823115348816,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.6640625
+    },
+    {
+      "step": 9,
+      "reward": 0.1510416716337204,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.6171875
+    },
+    {
+      "step": 10,
+      "reward": 0.15807290375232697,
+      "max_reward": 0.8333333134651184,
+      "clip_ratio": 0.6015625
+    },
+    {
+      "step": 11,
+      "reward": 0.14993488788604736,
+      "max_reward": 0.22499999403953552,
+      "clip_ratio": 0.578125
+    }
+  ]
+}
