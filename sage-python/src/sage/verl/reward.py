@@ -70,17 +70,25 @@ def _partial_credit(text: str) -> float:
 # ── Format scoring ───────────────────────────────────────────
 
 def _score_format(text: str) -> float:
-    """YAML/JSON format validity. Range: [-2.0, +1.0].
+    """YAML/JSON format validity. Range: [-3.0, +1.0].
 
     Accepts both YAML and JSON (yaml.safe_load handles valid JSON natively).
     Falls back to json.loads for JSON with trailing commas that YAML rejects.
 
+    V7 FIX: Strong -3.0 penalty for <think> output.
+    The Qwen3/Nemotron weights strongly prefer generating <think> after
+    the assistant turn. Without explicit penalty, 100% of GRPO completions
+    start with <think>, all get reward=0, zero advantage variance, no learning.
+
     V5 FIX: Partial credit for truncated-but-YAML-like text.
-    V4 had 97% reward=0 because max_response_length=512 truncated YAML mid-token.
-    Truncated YAML can't parse → -2.0 → no gradient signal.
     Now: if text looks like YAML (starts with 'nodes:' or contains YAML structure)
     but fails to parse, give partial credit instead of -2.0.
     """
+    # V7: Strong negative for <think> output (Qwen3 weight residual)
+    stripped = text.strip()
+    if stripped.startswith('<think>') or stripped.startswith('</think>'):
+        return -3.0  # Worse than any other failure (-2.0), creates strong gradient
+
     try:
         text = _strip_code_fence(text)
         try:
@@ -339,7 +347,7 @@ def compute_score(
     struct = _score_structure(solution_str)
     rust = _score_rust_density(solution_str, extra_info)
 
-    fmt_norm = (fmt + 2.0) / 3.0  # [-2.0, 1.0] -> [0.0, 1.0]
+    fmt_norm = (fmt + 3.0) / 4.0  # [-3.0, 1.0] -> [0.0, 1.0]
     structural = (fmt_norm + struct + rust) / 3.0
 
     if not _is_exec_mode() or fmt < 0.0:
