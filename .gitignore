@@ -42,6 +42,7 @@ docker-compose.override.yml
 *.db
 neo4j-data/
 qdrant-data/
+.qdrant_store/
 
 # Auto-generated evolution logs (keep .md files)
 research_journal/H*.json
