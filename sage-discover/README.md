@@ -87,6 +87,8 @@ MCP Server (5 tools)
 
 ## Source Modules (`src/discover/`)
 
+For detailed code documentation (data flow diagrams, method signatures, algorithm explanations), see [`src/discover/README.md`](src/discover/README.md).
+
 | Module | Lines | Purpose |
 |--------|-------|---------|
 | `pipeline.py` | 118 | Orchestrator — wires discovery → curation → ingestion. Supports Qdrant (primary) and ExoCortex (legacy fallback) |

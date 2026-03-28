@@ -72,7 +72,7 @@ Topology graph: petgraph DiGraph with 3-flow edges (Control, Message, State).
 - **Tier 0**: Working memory (Rust Arrow, zero-copy, SIMD)
 - **Tier 1**: Episodic (SQLite, cross-session)
 - **Tier 2**: Semantic (entity-relation graph)
-- **Tier 3**: ExoCortex (Google File Search RAG, 500+ research sources)
+- **Tier 3**: ExoCortex (Google File Search RAG, 500+ research sources) + Qdrant local (SPECTER2+SPLADE hybrid search, sage-discover)
 
 S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causal, entity) with ULID chunk IDs.
 
@@ -130,6 +130,32 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 | Python | **1809 passed**, 0 failures (includes 77 veRL/HyEvo/Phase C/schema/E2E tests) |
 | Rust | **289 passed** (base), **373+** with smt, tool-executor, onnx, cognitive features |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) — VeRLGIGPO branch protected |
+
+## sage-discover — Knowledge Discovery Engine
+
+Autonomous research discovery pipeline with 3 innovations:
+
+1. **ClaimGraph + OxiZ SMT** — extracts scientific claims from papers via LLM, classifies relations (supports/extends/refutes/qualifies), then verifies logical consistency of quantitative claims using the Rust SMT solver. Detects contradictions like "X achieves 92% on B" vs "X achieves 45% on B".
+
+2. **MAP-Elites Frontier Explorer** — evolutionary search over a 4D grid (domain, recency, citation velocity, novelty) with 240 cells. Each generation identifies under-covered research regions, generates targeted queries via LLM, discovers papers, and inserts the best into the archive. Maximizes *diversity* of coverage, not just relevance.
+
+3. **Adaptive Curation** — fuses 3 signals (kNN learned preferences, LLM relevance score, heuristic filter) via a LinUCB contextual bandit. Learns from user feedback to optimize curation weights over time.
+
+```bash
+cd sage-discover && pip install -e ".[dev]"
+
+# Run pipeline
+python -m discover.pipeline --mode nightly
+python -m discover.pipeline --mode on-demand --query "multi-agent RL"
+
+# Start MCP server (exposes 5 tools to any agent)
+python -m discover.mcp
+
+# Run tests (95 tests)
+python -m pytest tests/ -v
+```
+
+Storage: Qdrant local (SPECTER2 768d dense + SPLADE sparse, hybrid search via RRF + cross-encoder reranking). Legacy ExoCortex preserved as optional sync. See [`sage-discover/README.md`](sage-discover/README.md) for full documentation.
 
 ## Quick Start
 
@@ -197,7 +223,21 @@ YGN-SAGE/
 |       |                #   edge_credit, rewardflow, training_memory (SQLite episodic)
 |       |-- pipeline.py  # 5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)
 |       +-- boot.py      # System bootstrap
-|-- sage-discover/       # Knowledge pipeline (arXiv -> ExoCortex)
+|-- sage-discover/       # Knowledge Discovery Engine
+|   +-- src/discover/
+|       |-- store.py          # Qdrant local: papers + claims, dense + sparse vectors
+|       |-- embeddings.py     # SPECTER2 (768d) + SPLADE (sparse) + cross-encoder reranker
+|       |-- extractor.py      # Docling PDF -> structured markdown (sections, tables)
+|       |-- citation_graph.py # NetworkX DiGraph: PageRank, Louvain, betweenness
+|       |-- claim_graph.py    # Claim extraction + relation classification + OxiZ SMT verification
+|       |-- adaptive_curator.py # kNN learned + LinUCB bandit curation (Innovation #3)
+|       |-- rag.py            # Hybrid search (RRF dense+sparse+rerank) + LLM RAG
+|       |-- frontier.py       # MAP-Elites 4D frontier explorer (Innovation #2)
+|       |-- mcp.py            # FastMCP server: 5 tools for any agent
+|       |-- pipeline.py       # Orchestrator: discover -> curate -> ingest
+|       |-- discovery.py      # arXiv + Semantic Scholar + HuggingFace paper discovery
+|       |-- curator.py        # Legacy heuristic + LLM curation
+|       +-- ingestion.py      # Qdrant upsert + legacy ExoCortex upload
 |-- Researches/          # 25+ research papers backing architecture decisions
 +-- docs/                # Specs, plans, benchmarks
 ```
