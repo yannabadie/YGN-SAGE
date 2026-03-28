@@ -74,8 +74,9 @@ exec python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=50 \
+    trainer.save_freq=100 \
     trainer.test_freq=10 \
+    trainer.max_actor_ckpt_to_keep=1 \
     trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
     trainer.experiment_name=grpo_v6_aggressive \
