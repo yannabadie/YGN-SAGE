@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-03-27T15:20:02.335556",
+  "timestamp": "2026-03-28T08:22:44.954620",
   "model": "nvidia/Nemotron-Orchestrator-8B",
   "hardware": "2x H100 NVL 94GB",
   "config": "V5: lr=1e-6, max_response_length=1024, reward_shaping, n_gpus=2, TP=2",
   "total_steps": 1152,
-  "steps_logged": 35,
+  "steps_logged": 38,
   "metrics": [
     {
       "step": 1,
@@ -215,6 +215,24 @@
       "reward": 0.06059028208255768,
       "clip_ratio": 0.8515625,
       "kl_loss": 0.0011735345233319094
+    },
+    {
+      "step": 36,
+      "reward": 0.07178819924592972,
+      "clip_ratio": 0.78125,
+      "kl_loss": 0.0011014342089765705
+    },
+    {
+      "step": 37,
+      "reward": 0.06041667237877846,
+      "clip_ratio": 0.8125,
+      "kl_loss": 0.0011507104318297934
+    },
+    {
+      "step": 38,
+      "reward": 0.0720486119389534,
+      "clip_ratio": 0.7421875,
+      "kl_loss": 0.0011615766561590135
     }
   ]
 }
