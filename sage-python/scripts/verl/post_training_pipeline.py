@@ -32,66 +32,90 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)
 log = logging.getLogger("post_train")
 
 # --- Config ---
-BASE_MODEL = "nvidia/Nemotron-Orchestrator-8B"
+BASE_MODEL = "/workspace/sft_merged_model"  # Local SFT-merged Nemotron (avoids re-download)
+BASE_MODEL_HF = "nvidia/Nemotron-Orchestrator-8B"  # HF ID for fallback
 HF_REPO = "yannabadie/sage-topology-policy-v2"
 GGUF_QUANT = "Q8_0"  # Q8_0 for 12GB GPU (~8.5GB for 8B model, fits RTX 3500 Ada)
 
-CHECKPOINT_DIR = "models/topology_verl_gigpo/"
+# Checkpoint search paths (verl saves to different locations)
+CHECKPOINT_SEARCH = [
+    "/home/yann/verl_checkpoints",
+    "/workspace/topology_verl_output",
+    "/workspace/topology_verl_phase_c",
+]
 LORA_DIR = "models/topology_verl_lora/"
 MERGED_DIR = "models/topology_verl_merged/"
 GGUF_DIR = "models/topology_verl_gguf/"
+
+
+def _find_latest_checkpoint():
+    """Find the latest global_step_N checkpoint across all search paths."""
+    best_step = -1
+    best_path = None
+    for search_dir in CHECKPOINT_SEARCH:
+        p = Path(search_dir)
+        if not p.exists():
+            continue
+        for ckpt in p.glob("global_step_*"):
+            if not ckpt.is_dir():
+                continue
+            try:
+                step = int(ckpt.name.split("_")[-1])
+            except ValueError:
+                continue
+            if step > best_step:
+                best_step = step
+                best_path = ckpt
+    return best_path, best_step
 
 
 def step_export():
     """Extract LoRA adapter from veRL checkpoint."""
     log.info("=== STEP 1: Export LoRA from veRL checkpoint ===")
 
-    ckpt = Path(CHECKPOINT_DIR)
     out = Path(LORA_DIR)
     out.mkdir(parents=True, exist_ok=True)
 
-    # Find latest checkpoint
-    step_dirs = sorted(ckpt.glob("global_step_*"), key=lambda p: int(p.name.split("_")[-1]))
-    if step_dirs:
-        latest = step_dirs[-1]
-        log.info("Latest checkpoint: %s", latest)
-    else:
-        latest = ckpt
-        log.info("Using checkpoint dir: %s", latest)
+    latest, step = _find_latest_checkpoint()
+    if latest is None:
+        log.error("No checkpoint found in %s", CHECKPOINT_SEARCH)
+        sys.exit(1)
+    log.info("Latest checkpoint: %s (step %d)", latest, step)
 
-    # veRL saves actor model separately
-    actor_dir = latest / "actor"
-    model_path = actor_dir if actor_dir.exists() else latest
+    # veRL saves LoRA adapter in actor/lora_adapter/
+    lora_src = latest / "actor" / "lora_adapter"
+    hf_src = latest / "actor" / "huggingface"
 
     # Copy adapter files
     copied = 0
-    for f in ["adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"]:
-        src = model_path / f
-        if src.exists():
-            shutil.copy2(src, out / f)
-            log.info("Copied %s (%.1f MB)", f, src.stat().st_size / 1e6)
+    if lora_src.exists():
+        for f in lora_src.iterdir():
+            shutil.copy2(f, out / f.name)
+            log.info("Copied %s (%.1f MB)", f.name, f.stat().st_size / 1e6)
             copied += 1
+    else:
+        # Fallback: look in actor/ root
+        actor_dir = latest / "actor"
+        for name in ["adapter_config.json", "adapter_model.safetensors", "adapter_model.bin"]:
+            src = actor_dir / name
+            if src.exists():
+                shutil.copy2(src, out / src.name)
+                log.info("Copied %s (%.1f MB)", src.name, src.stat().st_size / 1e6)
+                copied += 1
 
-    # Copy tokenizer
+    # Copy tokenizer from checkpoint or base model
+    tok_src = hf_src if hf_src and hf_src.exists() else Path(BASE_MODEL)
     for f in ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json",
-              "tokenizer.model", "chat_template.jinja"]:
-        src = model_path / f
-        if not src.exists():
-            # Try base model cache
-            from huggingface_hub import hf_hub_download
-            try:
-                downloaded = hf_hub_download(BASE_MODEL, f)
-                shutil.copy2(downloaded, out / f)
-            except Exception:
-                pass
-        else:
+              "chat_template.jinja", "added_tokens.json", "vocab.json", "merges.txt"]:
+        src = tok_src / f
+        if src.exists():
             shutil.copy2(src, out / f)
 
     if copied == 0:
-        log.error("No adapter files found in %s", model_path)
+        log.error("No adapter files found in %s", latest)
         sys.exit(1)
 
-    log.info("LoRA exported to %s", out)
+    log.info("LoRA exported to %s (%d files)", out, copied)
 
 
 def step_merge():
@@ -106,10 +130,12 @@ def step_merge():
     out = Path(MERGED_DIR)
     out.mkdir(parents=True, exist_ok=True)
 
-    log.info("Loading base model %s...", BASE_MODEL)
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL, trust_remote_code=True)
+    # Use local SFT-merged model if available, else download from HF
+    base = BASE_MODEL if Path(BASE_MODEL).exists() else BASE_MODEL_HF
+    log.info("Loading base model %s...", base)
+    tokenizer = AutoTokenizer.from_pretrained(base, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL,
+        base,
         torch_dtype=torch.float16,
         device_map="auto",
         trust_remote_code=True,
@@ -130,10 +156,16 @@ def step_merge():
 
 
 def step_push():
-    """Push merged model to HuggingFace Hub."""
+    """Push merged model + GGUF to HuggingFace Hub.
+
+    Final HF repo layout:
+        /                           — full precision merged model (~16GB safetensors)
+        /gguf/                      — quantized GGUF for local inference
+        /sft_merged/                — preserved: SFT base model (for reproducibility)
+    """
     log.info("=== STEP 3: Push to HuggingFace %s ===", HF_REPO)
 
-    from huggingface_hub import HfApi, create_repo
+    from huggingface_hub import CommitOperationDelete, HfApi, create_repo
 
     token = os.environ.get("HF_TOKEN")
     if not token:
@@ -149,29 +181,48 @@ def step_push():
     except Exception as e:
         log.warning("create_repo: %s", e)
 
-    # Upload merged model
+    # Clean up training checkpoints from HF (phase_a_step_*, etc.)
+    try:
+        existing = list(api.list_repo_tree(HF_REPO, repo_type="model", recursive=True))
+        old_files = [
+            f.rfilename for f in existing
+            if hasattr(f, "rfilename") and f.rfilename.startswith("phase_a_step_")
+        ]
+        if old_files:
+            ops = [CommitOperationDelete(path_in_repo=p) for p in old_files]
+            api.create_commit(
+                repo_id=HF_REPO,
+                operations=ops,
+                commit_message="cleanup: remove training checkpoints (final model uploaded)",
+            )
+            log.info("Cleaned up %d training checkpoint files from HF", len(old_files))
+    except Exception as e:
+        log.warning("Cleanup failed (non-fatal): %s", e)
+
+    # Upload full precision merged model to repo root
     merged = Path(MERGED_DIR)
     if merged.exists():
-        log.info("Uploading merged model (this may take a while)...")
+        log.info("Uploading full precision merged model (~16GB)...")
         api.upload_folder(
             folder_path=str(merged),
             repo_id=HF_REPO,
-            commit_message="feat: SAGE V2 topology policy — Nemotron-Orchestrator-8B GiGPO trained",
+            commit_message="feat: SAGE V2 topology policy — Nemotron-Orchestrator-8B (full precision float16)",
         )
-        log.info("Merged model pushed to %s", HF_REPO)
+        log.info("Full precision model pushed to %s", HF_REPO)
     else:
-        # Upload LoRA only
+        # Upload LoRA as fallback
         lora = Path(LORA_DIR)
-        log.info("No merged model found, uploading LoRA adapter...")
-        api.upload_folder(
-            folder_path=str(lora),
-            repo_id=HF_REPO,
-            path_in_repo="lora/",
-            commit_message="feat: SAGE V2 LoRA adapter — Nemotron-Orchestrator-8B GiGPO",
-        )
-        log.info("LoRA adapter pushed to %s/lora/", HF_REPO)
+        if lora.exists():
+            log.warning("No merged model — uploading LoRA adapter instead")
+            api.upload_folder(
+                folder_path=str(lora),
+                repo_id=HF_REPO,
+                path_in_repo="lora/",
+                commit_message="feat: SAGE V2 LoRA adapter — Nemotron-Orchestrator-8B GiGPO",
+            )
+            log.info("LoRA adapter pushed to %s/lora/", HF_REPO)
 
-    # Upload GGUF if available
+    # Upload GGUF quantized model
     gguf = Path(GGUF_DIR)
     if gguf.exists() and list(gguf.glob("*.gguf")):
         log.info("Uploading GGUF quantized model...")
@@ -179,9 +230,11 @@ def step_push():
             folder_path=str(gguf),
             repo_id=HF_REPO,
             path_in_repo="gguf/",
-            commit_message=f"feat: {GGUF_QUANT} GGUF quantization for local inference",
+            commit_message=f"feat: {GGUF_QUANT} GGUF quantization for local inference (~8.5GB)",
         )
         log.info("GGUF uploaded to %s/gguf/", HF_REPO)
+    else:
+        log.warning("No GGUF found at %s — run 'quantize' first", gguf)
 
 
 def step_quantize():
@@ -260,6 +313,8 @@ def step_quantize():
 
 
 def main():
+    global BASE_MODEL, BASE_MODEL_HF, HF_REPO, GGUF_QUANT
+
     parser = argparse.ArgumentParser(description="Post-training pipeline")
     parser.add_argument("step", choices=["export", "merge", "push", "quantize", "all"],
                         help="Pipeline step to run")
@@ -268,7 +323,6 @@ def main():
     parser.add_argument("--quant", default=GGUF_QUANT, choices=["Q4_K_M", "Q5_K_M", "Q8_0", "F16"])
     args = parser.parse_args()
 
-    global BASE_MODEL, HF_REPO, GGUF_QUANT
     BASE_MODEL = args.base_model
     HF_REPO = args.hf_repo
     GGUF_QUANT = args.quant

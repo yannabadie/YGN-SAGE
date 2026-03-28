@@ -1,27 +1,54 @@
 #!/bin/bash
-# Rotate checkpoints: keep only the latest one to stay within 80GB quota
-# Run this after each checkpoint is saved (save_freq=50)
+# Rotate checkpoints across both storage locations.
+# Keeps only the latest N checkpoints (default: 1) globally.
+# Safe to run from cron or manually.
+#
+# Usage:
+#   bash rotate_checkpoints.sh          # keep 1
+#   bash rotate_checkpoints.sh 2        # keep 2
 
-CKPT_DIR="/workspace/topology_verl_output"
-MAX_KEEP=1  # Keep only the latest checkpoint
+set -euo pipefail
 
-# Find all checkpoint dirs sorted by step number
-CKPTS=$(find "$CKPT_DIR" -maxdepth 1 -name "global_step_*" -type d | sort -t_ -k3 -n)
-NUM_CKPTS=$(echo "$CKPTS" | grep -c "global_step_")
+MAX_KEEP=${1:-1}
+CKPT_DIRS=("/home/yann/verl_checkpoints" "/workspace/topology_verl_output")
 
-if [ "$NUM_CKPTS" -le "$MAX_KEEP" ]; then
-    echo "[$(date)] $NUM_CKPTS checkpoints, nothing to rotate"
+# Collect all checkpoints across both dirs, sorted by step number
+ALL_CKPTS=""
+for dir in "${CKPT_DIRS[@]}"; do
+    if [ -d "$dir" ]; then
+        for ckpt in "$dir"/global_step_*/; do
+            [ -d "$ckpt" ] && ALL_CKPTS="$ALL_CKPTS $ckpt"
+        done
+    fi
+done
+
+if [ -z "$ALL_CKPTS" ]; then
+    echo "[$(date)] No checkpoints found"
     exit 0
 fi
 
-# Delete all but the latest
-TO_DELETE=$(echo "$CKPTS" | head -n -"$MAX_KEEP")
+# Sort by step number (extract number from path)
+SORTED=$(echo "$ALL_CKPTS" | tr ' ' '\n' | grep -v '^$' | \
+    awk -F'global_step_' '{print $2 " " $0}' | sed 's|/ | |' | \
+    sort -n | awk '{print $2}')
+
+NUM=$(echo "$SORTED" | wc -l)
+
+if [ "$NUM" -le "$MAX_KEEP" ]; then
+    echo "[$(date)] $NUM checkpoint(s), keeping all (max=$MAX_KEEP)"
+    exit 0
+fi
+
+# Delete all but the latest MAX_KEEP
+TO_DELETE=$(echo "$SORTED" | head -n -"$MAX_KEEP")
+KEPT=$(echo "$SORTED" | tail -n "$MAX_KEEP")
+
 for ckpt in $TO_DELETE; do
     STEP=$(basename "$ckpt" | grep -oP '\d+')
-    SIZE=$(du -sh "$ckpt" | cut -f1)
-    echo "[$(date)] Deleting old checkpoint step $STEP ($SIZE)"
+    SIZE=$(du -sh "$ckpt" 2>/dev/null | cut -f1)
+    echo "[$(date)] Deleting step $STEP ($SIZE) from $(dirname "$ckpt")"
     rm -rf "$ckpt"
 done
 
-echo "[$(date)] Kept: $(find "$CKPT_DIR" -maxdepth 1 -name "global_step_*" -type d | sort -t_ -k3 -n | tail -1)"
-echo "[$(date)] Workspace usage: $(du -sh /workspace/ | cut -f1) / 80GB"
+echo "[$(date)] Kept: $KEPT"
+echo "[$(date)] Disk: NVMe=$(df -h / | tail -1 | awk '{print $3"/"$2}') | Workspace=$(df -h /workspace | tail -1 | awk '{print $3"/"$2}')"

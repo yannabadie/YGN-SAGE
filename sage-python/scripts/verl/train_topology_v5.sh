@@ -203,7 +203,9 @@ python3 -m verl.trainer.main_ppo \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
     trainer.save_freq=20 \
-    trainer.test_freq=5 \
+    trainer.test_freq=20 \
+    trainer.resume_mode=resume_path \
+    trainer.resume_from_path="/home/yann/verl_checkpoints/global_step_150" \
     trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
     trainer.experiment_name=grpo_nemotron_orch_8b_v5 \
