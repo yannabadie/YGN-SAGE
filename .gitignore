@@ -97,3 +97,7 @@ sage-python/output/
 docs/VeRLGIGPO_README.md
 memory-bank/
 sage-python/models/topology_grpo*
+
+# Local training outputs (regenerate via scripts/train_local_qwen3_4b.py)
+sage-python/models/local_qwen3_4b_grpo/
+sage-python/unsloth_compiled_cache/

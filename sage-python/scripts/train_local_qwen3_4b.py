@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Local training: Qwen3-4B GRPO via Unsloth on RTX 3500 Ada (12 GB).
+"""Local training: Qwen3-4B GRPO via TRL+PEFT+bitsandbytes on RTX 3500 Ada (12 GB).
 
-Uses Unsloth for 80% less VRAM + FP8/4-bit quantization.
+Uses bitsandbytes NF4 quantization + PEFT LoRA + TRL GRPOTrainer.
+No Unsloth/triton (incompatible on Windows).
 Same reward function as the pod (compute_score from reward.py).
 Same dataset (verl_topology_train.parquet).
 
@@ -9,9 +10,8 @@ This is a fast iteration loop for testing reward/data changes
 before deploying to the H100 pod.
 
 Usage:
-    pip install unsloth vllm
-    python scripts/train_local_qwen3_4b.py
     python scripts/train_local_qwen3_4b.py --smoke  # 2 steps, tiny batch
+    python scripts/train_local_qwen3_4b.py           # full training
 """
 from __future__ import annotations
 
@@ -20,6 +20,8 @@ import json
 import logging
 import os
 import sys
+
+import torch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("local_training")
@@ -68,7 +70,7 @@ def build_reward_fn():
     from sage.verl.reward import compute_score
 
     def reward_func(prompts, completions, **kwargs):
-        """Unsloth/TRL reward function signature."""
+        """TRL GRPO reward function signature."""
         rewards = []
         for prompt, completion in zip(prompts, completions):
             # Extract text from completion
@@ -89,8 +91,8 @@ def build_reward_fn():
 def main():
     parser = argparse.ArgumentParser(description="Local Qwen3-4B GRPO training")
     parser.add_argument("--smoke", action="store_true", help="Smoke test: 2 steps")
-    parser.add_argument("--model", default="unsloth/Qwen3-4B-Base",
-                        help="Model name (default: unsloth/Qwen3-4B-Base)")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B",
+                        help="Model name (default: Qwen/Qwen3-4B)")
     parser.add_argument("--data", default="data/verl_topology_train.parquet")
     parser.add_argument("--output", default="models/local_qwen3_4b_grpo")
     parser.add_argument("--max-samples", type=int, default=0,
@@ -102,6 +104,9 @@ def main():
     parser.add_argument("--max-seq-length", type=int, default=1536)
     parser.add_argument("--num-generations", type=int, default=4,
                         help="K rollouts per prompt for GRPO")
+    parser.add_argument("--max-completion-length", type=int, default=1024,
+                        help="Max tokens per completion")
+    parser.add_argument("--grad-accum", type=int, default=4)
     args = parser.parse_args()
 
     if args.smoke:
@@ -110,32 +115,41 @@ def main():
         args.num_generations = 2
         log.info("=== SMOKE MODE ===")
 
-    # ── Load model with Unsloth ─────────────────────────────────
-    log.info("Loading %s with Unsloth (4-bit, LoRA rank %d)...", args.model, args.lora_rank)
+    # ── Load model with bitsandbytes 4-bit + PEFT LoRA ─────────
+    log.info("Loading %s with bitsandbytes NF4 + LoRA rank %d...", args.model, args.lora_rank)
 
-    os.environ["UNSLOTH_VLLM_STANDBY"] = "1"
-    from unsloth import FastLanguageModel
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.model,
-        max_seq_length=args.max_seq_length,
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
-        fast_inference=True,
-        max_lora_rank=args.lora_rank,
-        gpu_memory_utilization=0.85,
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_use_double_quant=True,
     )
 
-    model = FastLanguageModel.get_peft_model(
-        model,
+    model = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        quantization_config=bnb_config,
+        device_map="auto",
+        dtype=torch.bfloat16,
+        attn_implementation="sdpa",
+    )
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+
+    model = prepare_model_for_kbit_training(model)
+
+    lora_config = LoraConfig(
         r=args.lora_rank,
+        lora_alpha=args.lora_rank * 2,
         target_modules=[
             "q_proj", "k_proj", "v_proj", "o_proj",
             "gate_proj", "up_proj", "down_proj",
         ],
-        lora_alpha=args.lora_rank * 2,
-        use_gradient_checkpointing="unsloth",
-        random_state=42,
+        lora_dropout=0.0,
+        task_type="CAUSAL_LM",
     )
+    model = get_peft_model(model, lora_config)
 
     # ── Set chat template for topology generation ───────────────
     tokenizer.chat_template = (
@@ -177,7 +191,28 @@ def main():
     reward_fn = build_reward_fn()
 
     # ── GRPO Training ───────────────────────────────────────────
+    from transformers import TrainerCallback
     from trl import GRPOConfig, GRPOTrainer
+
+    metrics_file = os.path.join(args.output, "live_metrics.jsonl")
+
+    class LogAndCleanCallback(TrainerCallback):
+        """Log rewards to file + clear CUDA cache to prevent fragmentation."""
+        def on_log(self, _args, state, control, logs=None, **kwargs):
+            if logs and "reward" in logs:
+                entry = {
+                    "step": state.global_step,
+                    "reward": logs["reward"],
+                    "loss": logs.get("loss", 0),
+                    "grad_norm": logs.get("grad_norm", 0),
+                    "step_time": logs.get("step_time", 0),
+                    "clipped_ratio": logs.get("completions/clipped_ratio", 0),
+                }
+                with open(metrics_file, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
+
+        def on_step_end(self, _args, state, control, **kwargs):
+            torch.cuda.empty_cache()
 
     os.makedirs(args.output, exist_ok=True)
 
@@ -186,10 +221,11 @@ def main():
         learning_rate=args.lr,
         num_train_epochs=args.epochs,
         per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=4,
+        gradient_accumulation_steps=args.grad_accum,
+        gradient_checkpointing=True,
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         num_generations=args.num_generations,
-        max_completion_length=1024,
-        max_prompt_length=512,
+        max_completion_length=args.max_completion_length,
         temperature=0.7,
         beta=0.0,  # No KL (Conductor-style)
         logging_steps=1,
@@ -198,14 +234,16 @@ def main():
         report_to="none",
         optim="adamw_8bit",
         bf16=True,
+        disable_tqdm=True,
     )
 
     trainer = GRPOTrainer(
         model=model,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         reward_funcs=[reward_fn],
         args=training_args,
         train_dataset=dataset,
+        callbacks=[LogAndCleanCallback()],
     )
 
     log.info("Starting GRPO training: %d samples, %d epochs, K=%d, lr=%s",
@@ -229,7 +267,7 @@ def main():
         output_path=args.output,
         dataset=args.data,
         dataset_size=len(dataset),
-        algorithm="grpo_unsloth",
+        algorithm="grpo_trl_peft",
         lr=args.lr,
         epochs=args.epochs,
     )
