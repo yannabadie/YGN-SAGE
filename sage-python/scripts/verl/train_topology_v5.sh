@@ -68,7 +68,10 @@ export RAY_memory_monitor_refresh_ms=0
 export RAY_memory_usage_threshold=0.99
 
 # ── Config ───────────────────────────────────────────────────
-if [ -d "/workspace/sft_merged_model" ]; then
+if [ -d "/workspace/sft_merged_model_v2" ]; then
+    MODEL="/workspace/sft_merged_model_v2"
+    echo "Using SFT+RL-merged model v2 (step 160 LoRA baked in)"
+elif [ -d "/workspace/sft_merged_model" ]; then
     MODEL="/workspace/sft_merged_model"
     echo "Using SFT-merged model (YAML-aware base)"
 else
@@ -202,14 +205,13 @@ python3 -m verl.trainer.main_ppo \
     trainer.critic_warmup=0 \
     trainer.n_gpus_per_node=2 \
     trainer.nnodes=1 \
-    trainer.save_freq=20 \
+    trainer.save_freq=50 \
     trainer.test_freq=20 \
-    trainer.resume_mode=resume_path \
-    trainer.resume_from_path="/home/yann/verl_checkpoints/global_step_150" \
+    trainer.max_actor_ckpt_to_keep=1 \
     trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
-    trainer.experiment_name=grpo_nemotron_orch_8b_v5 \
-    trainer.default_local_dir="$OUTPUT" \
+    trainer.experiment_name=grpo_nemotron_orch_8b_v5_r2 \
+    trainer.default_local_dir="/home/yann/verl_checkpoints" \
     'trainer.logger=["console"]'
 
 echo ""

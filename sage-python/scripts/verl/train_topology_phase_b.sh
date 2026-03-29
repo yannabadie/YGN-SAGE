@@ -56,14 +56,15 @@ else
     done
 fi
 
-if [ -z "$CHECKPOINT" ] || [ ! -d "$CHECKPOINT" ]; then
-    echo "ERROR: No Phase A checkpoint found. Run Phase A first."
-    exit 1
+# Checkpoint is optional now (Phase A LoRA is baked into the merged model)
+if [ -n "$CHECKPOINT" ] && [ -d "$CHECKPOINT" ]; then
+    STEP=$(basename "$CHECKPOINT" | grep -oP '\d+')
+    echo "  Resume checkpoint: $CHECKPOINT (step $STEP)"
+else
+    echo "  No resume — starting fresh with Phase A LoRA baked into base model"
 fi
 
-STEP=$(basename "$CHECKPOINT" | grep -oP '\d+')
 echo "=== Phase B: Execution Reward (single-turn) ==="
-echo "  Checkpoint: $CHECKPOINT (step $STEP)"
 echo "  Mode: SAGE_VERL_EXEC=1 (real API execution)"
 echo "  Dataset: data/verl_topology_curated.parquet (498 entries)"
 echo "  LR: 1e-6 (preserve Phase A structural knowledge)"
@@ -84,7 +85,17 @@ else:
     print(f'  + {len(optional)} optional providers')
 "
 
-MODEL="/workspace/sft_merged_model"
+# Use the latest merged model (Phase A LoRA baked in)
+if [ -d "/workspace/sft_merged_model_v3" ]; then
+    MODEL="/workspace/sft_merged_model_v3"
+    echo "Using Phase A merged model v3 (step 1050 LoRA baked in)"
+elif [ -d "/workspace/sft_merged_model_v2" ]; then
+    MODEL="/workspace/sft_merged_model_v2"
+    echo "Using Phase A merged model v2 (step 160 LoRA baked in)"
+else
+    MODEL="/workspace/sft_merged_model"
+    echo "Using SFT base model"
+fi
 OUTPUT="/home/yann/verl_checkpoints"
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 
@@ -151,8 +162,6 @@ python3 -m verl.trainer.main_ppo \
     trainer.save_freq=15 \
     trainer.test_freq=10 \
     trainer.max_actor_ckpt_to_keep=1 \
-    trainer.resume_mode=resume_path \
-    trainer.resume_from_path="$CHECKPOINT" \
     trainer.total_epochs=3 \
     trainer.project_name=sage_topology \
     trainer.experiment_name=grpo_phase_b_exec \
