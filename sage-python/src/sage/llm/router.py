@@ -16,13 +16,13 @@ Tier = Literal[
 ]
 
 _HARDCODED = {
-    "codex": "gpt-4.1",
-    "codex_max": "grok-4.20-beta",
-    "fast": "gpt-4.1-nano",
-    "mutator": "gpt-4.1-mini",
-    "reasoner": "grok-4-1-fast-reasoning",
-    "budget": "gpt-4.1-nano",
-    "fallback": "MiniMax-Text-01",
+    "codex": "gpt-5.4",
+    "codex_max": "gpt-5.4-pro",
+    "fast": "gemini-3.1-flash-lite-preview",
+    "mutator": "gpt-5.4-mini",
+    "reasoner": "gemini-3.1-pro-preview",
+    "budget": "deepseek-chat",
+    "fallback": "deepseek-chat",
 }
 
 _MAX_TOKENS = {

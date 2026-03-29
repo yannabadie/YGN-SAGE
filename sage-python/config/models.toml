@@ -1,12 +1,12 @@
 # YGN-SAGE Model Configuration
 # Override per-tier model IDs here or via env vars (SAGE_MODEL_FAST, etc.)
-# Updated: 2026-03-14 — real models verified via API discovery
+# Updated: 2026-03-29 — verified via Context7 + API discovery
 
 [tiers]
-fast = "gpt-4.1-nano"
-mutator = "gpt-4.1-mini"
-reasoner = "grok-4-1-fast-reasoning"
-codex = "gpt-4.1"
-codex_max = "grok-4.20-beta"
-budget = "gpt-4.1-nano"
-fallback = "MiniMax-Text-01"
+fast = "gemini-3.1-flash-lite-preview"
+mutator = "gpt-5.4-mini"
+reasoner = "gemini-3.1-pro-preview"
+codex = "gpt-5.4"
+codex_max = "gpt-5.4-pro"
+budget = "deepseek-chat"
+fallback = "deepseek-chat"
