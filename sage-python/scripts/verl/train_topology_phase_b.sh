@@ -85,17 +85,10 @@ else:
     print(f'  + {len(optional)} optional providers')
 "
 
-# Use the latest merged model (Phase A LoRA baked in)
-if [ -d "/workspace/sft_merged_model_v3" ]; then
-    MODEL="/workspace/sft_merged_model_v3"
-    echo "Using Phase A merged model v3 (step 1050 LoRA baked in)"
-elif [ -d "/workspace/sft_merged_model_v2" ]; then
-    MODEL="/workspace/sft_merged_model_v2"
-    echo "Using Phase A merged model v2 (step 160 LoRA baked in)"
-else
-    MODEL="/workspace/sft_merged_model"
-    echo "Using SFT base model"
-fi
+# Use the original SFT-merged model (verl applies LoRA on top)
+# DO NOT use v2/v3 (double-merged LoRA degrades YAML quality)
+MODEL="/workspace/sft_merged_model"
+echo "Using SFT base model (verl will apply fresh LoRA)"
 OUTPUT="/home/yann/verl_checkpoints"
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 

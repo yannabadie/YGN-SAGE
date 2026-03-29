@@ -354,7 +354,6 @@ def compute_score(
         if _is_exec_mode() and fmt < 0.0:
             _last_reward_mode = "exec_fallback_invalid_yaml"
             _last_reward_reason = f"fmt={fmt:.2f}"
-            log.info("SAGE_VERL_EXEC=1 but YAML invalid (fmt=%.2f) — structural only", fmt)
         else:
             _last_reward_mode = "structural"
             _last_reward_reason = "SAGE_VERL_EXEC=0"
@@ -371,14 +370,20 @@ def compute_score(
 
     # Execution mode: run the real multi-provider topology
     try:
+        import time as _t
+        _t0 = _t.time()
         result = _compute_execution_reward(solution_str, extra_info, structural)
+        _elapsed = _t.time() - _t0
         _last_reward_mode = "exec_real"
-        _last_reward_reason = "provider available, execution completed"
+        _last_reward_reason = f"provider available, execution completed in {_elapsed:.1f}s"
+        log.info("EXEC_REAL: score=%.4f, time=%.1fs", result, _elapsed)
         return result
     except Exception as exc:
         _last_reward_mode = "exec_fallback_error"
-        _last_reward_reason = str(exc)[:100]
-        log.warning("Execution reward failed, structural fallback: %s", exc)
+        _last_reward_reason = str(exc)[:200]
+        log.error("EXEC_FALLBACK_ERROR: %s: %s", type(exc).__name__, str(exc)[:200])
+        import traceback
+        log.error("EXEC_TRACEBACK: %s", traceback.format_exc()[-500:])
         return float(structural)
 
 
