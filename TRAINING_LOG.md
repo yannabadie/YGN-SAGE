@@ -395,3 +395,41 @@ topology:
 ```
 
 Le SFT a bien appris le format YAML. Le problème est que le RL (Phase A) perd cette capacité trop vite (LR trop haute + response trop courte).
+
+## MASBENCH Validation — March 29, 2026
+
+### Pilot Results (10 tasks, 2 axes)
+
+| Axis | Bare (DeepSeek) | SAGE Full | Delta |
+|------|----------------|-----------|-------|
+| depth | 1/5 (20%) | 3/5 (60%) | **+40pp** |
+| breadth | 2/5 (40%) | 2/5 (40%) | +0pp |
+| **TOTAL** | **3/10 (30%)** | **5/10 (50%)** | **+20pp** |
+
+### Full Results — Bare Model Baseline (50 tasks, 5 axes)
+
+| Axis | Bare (DeepSeek) | Description |
+|------|----------------|-------------|
+| depth | 1/10 (10%) | Chain reasoning — hardest |
+| breadth | 6/10 (60%) | Parallel sub-tasks |
+| horizon | 0/10 (0%) | Multi-step planning |
+| parallel | 6/10 (60%) | Concurrent work |
+| robustness | 0/10 (0%) | Error tolerance |
+| **TOTAL** | **13/50 (26%)** | |
+
+SAGE full engine results pending (~2h runtime).
+
+### Strategic Implications
+
+1. **depth (10%) and horizon (0%) and robustness (0%)** are where topology should help most
+2. **breadth (60%) and parallel (60%)** are already solved by bare model — topology overhead may hurt
+3. **Nemotron-8B training should target depth/horizon/robustness** — not all task types
+4. This aligns with AdaptOrch (arXiv 2602.16873): "topology matters when base accuracy is 60-80%"
+   - Below 60%: topology helps (depth, horizon, robustness)
+   - Above 60%: topology overhead hurts (breadth, parallel)
+
+### Bugs Fixed During Validation
+- gpt-4.1 → gpt-5.4 (models.toml, router.py, codex.py)
+- snowflake-arctic-embed-m → Snowflake/snowflake-arctic-embed-m (embedder.py)
+- OpenAI max_tokens → max_completion_tokens for GPT-5+ (openai_compat.py)
+- MiniMax fallback provider routing (fallback now deepseek-chat)
