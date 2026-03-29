@@ -5,6 +5,61 @@
 
 ---
 
+## Session 3 — March 29, 2026 (Combined Training)
+
+### Combined Training (Phase A reward + execution reward)
+
+**Script:** `train_topology_combined.sh`
+**Start:** 2026-03-29 13:48 UTC
+**Config:** 10 epochs, 12K dataset, SAGE_TRAINING_PHASE=A + SAGE_VERL_EXEC=1, lr=1e-6, K=4
+
+| Step | Reward | Best Max | Exec Hits | Note |
+|------|--------|----------|-----------|------|
+| 1 | 0.188 | 0.667 | 1/1 (100%) | Exec hit dès le step 1 |
+| 32 | 0.180 | 0.667 | 4/32 (12%) | Stabilisation |
+| 62 | 0.207 | 0.831 | 10/62 (16%) | Reward en hausse |
+| 88 | 0.216 | 0.831 | 13/88 (15%) | |
+| 110 | 0.215 | 0.831 | 15/110 (14%) | Premier checkpoint FSDP sauvé (step 100) |
+| 142 | 0.215 | **0.864** | 17/142 (12%) | Nouveau best exec score |
+| 158 | 0.220 | 0.864 | 17/158 (11%) | Reward continue de monter |
+
+**Base model:** sft_merged_model_phase_a (SFT + Phase A step 1050 LoRA, single merge)
+**Checkpoints:** NVMe /home/yann/verl_checkpoints, FSDP complete, max_keep=2
+**HF backup:** Full FSDP uploaded to yannabadie/sage-topology-policy-v2/checkpoints/
+
+### Leçons Session 3
+
+| Problème | Cause | Fix | Leçon |
+|----------|-------|-----|-------|
+| 20h Phase A perdues | Double-merge LoRA détruit la qualité YAML | Single merge + JAMAIS merger pendant le training | verl charge le LoRA dynamiquement |
+| Phase B 0% exec hits | Modèle mergé ne produit pas de YAML valide dans verl | Utiliser le modèle SFT+LoRA merged comme BASE, LoRA frais par verl | Le merge altère les poids subtilment |
+| Phase B epoch counter bug | resume_from_path porte le compteur d'epochs | Ne pas utiliser resume, repartir fresh avec modèle merged | Tester les scripts avant de lancer |
+| Phase C lancée prématurément | Monitor détecte fin Phase B (0 steps) et lance Phase C | Tuer les processus zombie, relancer manuellement | Ajouter une vérification de reward minimum |
+| sage_core manquant | Rust pas installé sur le pod | maturin build --release --features smt,tool-executor | Vérifier TOUTES les dépendances avant Phase B |
+| Checkpoints FSDP non sauvés sur HF | upload_checkpoint.py n'uploadait que le LoRA | Upload FSDP complet (~34GB) à chaque save_freq | LoRA seul ne permet pas de resume |
+
+### Timeline détaillée Session 3
+
+```
+09:11  Phase B v1 lancée (resume step 1050 → 0 steps, epoch counter bug)
+09:22  Phase B v2 (pas de resume, modèle SFT base → reward 0.14, 10% exec)
+09:41  sage_core installé (Rust + maturin build)
+09:42  bigcodebench installé
+09:42  Phase C lancée prématurément par le monitor (zombie)
+10:00  Phase B v4 (SFT base, 30 steps, 20% exec hits, best 0.776)
+10:30  Debug logging ajouté à reward.py → diagnostic: fmt=-0.30 sur 100%
+11:12  Phase B v6 relancée avec debug → confirmation: YAML invalide
+11:22  Phase B v7 (SFT base pur, fresh LoRA) → reward 0.14, 16% exec
+12:00  Phase B v8 (Phase A single merge) → 0% exec (même problème)
+13:15  Single merge testé: génère <think> en HF mais OK dans verl
+13:48  Combined training lancé (10 epochs, 12K, Phase A reward + exec)
+14:00  Step 2: exec hit 0.667 → la stratégie fonctionne
+15:48  Step 100: checkpoint FSDP complet sauvé + uploadé HF (34GB)
+16:30  Step 158: reward 0.220, best 0.864, tendance positive
+```
+
+---
+
 ## Session 2 — March 27, 2026 (2x H100 NVL, Claude Code supervised)
 
 ### Chronologie Session 2
