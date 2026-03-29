@@ -18,6 +18,61 @@ from discover.curator import CuratedPaper
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Qdrant-based ingestion
+# ---------------------------------------------------------------------------
+
+
+async def ingest_to_store(paper: CuratedPaper, store, embedder) -> bool:
+    """Ingest a curated paper into the Qdrant KnowledgeStore."""
+    pid = paper.candidate.paper_id
+    existing = store.get_paper(pid)
+    if existing is not None:
+        return False
+
+    pdf_path = paper.pdf_path
+    if pdf_path is None and paper.candidate.pdf_url:
+        pdf_path = DEFAULT_PAPERS_DIR / f"{pid.replace('/', '_')}.pdf"
+        downloaded = await download_pdf(paper.candidate.pdf_url, pdf_path)
+        if not downloaded:
+            pdf_path = None
+
+    dense, sparse = embedder.embed_paper(paper.candidate.title, paper.candidate.abstract)
+
+    payload = {
+        "title": paper.candidate.title,
+        "authors": paper.candidate.authors,
+        "abstract": paper.candidate.abstract,
+        "domain": paper.candidate.domain,
+        "source": paper.candidate.source,
+        "year": paper.candidate.published.year,
+        "citation_count": paper.candidate.citation_count,
+        "relevance_score": paper.relevance_score,
+        "reason": paper.reason,
+        "key_insights": paper.key_insights,
+        "pdf_url": paper.candidate.pdf_url,
+        "pdf_path": str(pdf_path) if pdf_path else None,
+        "ingested_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    store.upsert_paper(pid, dense, sparse, payload)
+    logger.info("Ingested paper %s: %s", pid, paper.candidate.title)
+    return True
+
+
+async def ingest_all_to_store(papers: list[CuratedPaper], store, embedder) -> int:
+    """Ingest all curated papers into the store. Returns count of newly ingested."""
+    count = 0
+    for paper in papers:
+        try:
+            if await ingest_to_store(paper, store, embedder):
+                count += 1
+        except Exception as e:
+            logger.warning("Failed to ingest %s: %s", paper.candidate.paper_id, e)
+    return count
+
+
 # ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------

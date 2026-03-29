@@ -1,10 +1,4 @@
-"""Pipeline orchestrator: ties discovery, curation, ingestion, and migration together.
-
-Supports three modes:
-- ``nightly``: scan all domains for recent papers, curate, and ingest.
-- ``on-demand``: targeted search with a specific query.
-- ``migrate``: bootstrap ExoCortex from NotebookLM markdown exports.
-"""
+"""src/discover/pipeline.py -- Knowledge discovery pipeline orchestrator."""
 from __future__ import annotations
 
 import logging
@@ -15,28 +9,57 @@ from typing import Any
 
 from discover.discovery import discover
 from discover.curator import curate, heuristic_filter, CuratedPaper
-from discover.ingestion import ingest_all
+from discover.ingestion import ingest_all, ingest_all_to_store
 from discover.migration import migrate_notebooks
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Report dataclass
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class PipelineReport:
     """Summary of a pipeline run."""
-
     discovered: int = 0
     curated: int = 0
     ingested: int = 0
 
 
-# ---------------------------------------------------------------------------
-# Main entry point
-# ---------------------------------------------------------------------------
+def _try_init_store():
+    try:
+        from discover.store import KnowledgeStore
+        return KnowledgeStore()
+    except Exception as e:
+        logger.info("KnowledgeStore not available: %s", e)
+        return None
+
+
+def _try_init_embedder():
+    try:
+        from discover.embeddings import EmbeddingPipeline
+        return EmbeddingPipeline()
+    except Exception as e:
+        logger.info("EmbeddingPipeline not available: %s", e)
+        return None
+
+
+def _try_init_exocortex():
+    store_name = os.environ.get("SAGE_EXOCORTEX_STORE")
+    if not store_name:
+        return None
+    try:
+        from sage.memory.remote_rag import ExoCortex
+        return ExoCortex()
+    except Exception:
+        return None
+
+
+def _try_init_llm(llm=None):
+    if llm is not None:
+        return llm
+    try:
+        from sage.llm.google import GoogleProvider
+        return GoogleProvider()
+    except Exception:
+        return None
 
 
 async def run_pipeline(
@@ -46,100 +69,59 @@ async def run_pipeline(
     domains: list[str] | None = None,
     exocortex: Any = None,
     llm: Any = None,
+    store: Any = None,
+    embedder: Any = None,
 ) -> PipelineReport:
-    """Run the knowledge pipeline end-to-end.
+    """Run the knowledge discovery pipeline."""
+    report = PipelineReport()
 
-    Parameters
-    ----------
-    mode : str
-        One of ``"nightly"``, ``"on-demand"``, ``"migrate"``.
-    query : str | None
-        Free-text search query (used in on-demand mode).
-    since : date | None
-        Only include papers published on or after this date.
-        Defaults to yesterday for nightly/on-demand modes.
-    domains : list[str] | None
-        Subset of domain keys to scan. Defaults to all 5 domains.
-    exocortex : Any
-        ExoCortex instance. If None, attempts to create from env var.
-    llm : Any
-        LLM provider for curation. If None, attempts to create GoogleProvider.
-
-    Returns
-    -------
-    PipelineReport
-        Summary with discovered, curated, and ingested counts.
-    """
-    # --- Resolve ExoCortex ---
-    if exocortex is None:
-        store = os.environ.get("SAGE_EXOCORTEX_STORE")
-        if store:
-            try:
-                from sage.memory.remote_rag import ExoCortex
-
-                exocortex = ExoCortex()
-                logger.info("Created ExoCortex from SAGE_EXOCORTEX_STORE=%s", store)
-            except (ImportError, Exception) as exc:
-                logger.warning("Could not create ExoCortex: %s", exc)
-        else:
-            logger.warning("No ExoCortex provided and SAGE_EXOCORTEX_STORE not set")
-
-    # --- Migrate mode ---
     if mode == "migrate":
+        exocortex = exocortex or _try_init_exocortex()
         if exocortex is None:
-            logger.error("Cannot migrate without ExoCortex")
-            return PipelineReport()
+            logger.warning("No ExoCortex configured for migration")
+            return report
         count = await migrate_notebooks(exocortex)
-        return PipelineReport(ingested=count)
+        report.ingested = count
+        return report
 
-    # --- Resolve LLM ---
-    if llm is None:
-        try:
-            from sage.llm.google import GoogleProvider
+    # Initialize components
+    llm = _try_init_llm(llm)
+    store = store or _try_init_store()
+    embedder = embedder or (None if store is None else _try_init_embedder())
 
-            llm = GoogleProvider()
-            logger.info("Created GoogleProvider for curation")
-        except Exception as exc:
-            logger.warning("Could not create LLM provider: %s", exc)
-
-    # --- Default since ---
-    if since is None:
-        since = date.today() - timedelta(days=1)
-
-    # --- Discovery ---
+    # Discovery
+    since = since or (date.today() - timedelta(days=1))
     candidates = await discover(since=since, query=query or "", domains=domains)
-    report = PipelineReport(discovered=len(candidates))
-    logger.info("Discovered %d candidates", report.discovered)
+    report.discovered = len(candidates)
+    logger.info("Discovered %d papers", report.discovered)
 
     if not candidates:
         return report
 
-    # --- Curation ---
-    if llm is not None:
-        curated = await curate(candidates, llm)
+    # Curation -- prefer adaptive, fall back to legacy
+    if llm:
+        try:
+            from discover.adaptive_curator import adaptive_curate
+            curated = await adaptive_curate(candidates, llm, embedder=embedder)
+        except Exception:
+            curated = await curate(candidates, llm)
     else:
-        # Heuristic-only fallback: apply heuristic filter, assign neutral score
         filtered = heuristic_filter(candidates)
-        curated = [
-            CuratedPaper(
-                candidate=c,
-                relevance_score=5,
-                reason="Heuristic-only (no LLM available)",
-            )
-            for c in filtered
-        ]
+        curated = [CuratedPaper(candidate=c, relevance_score=5, reason="heuristic") for c in filtered]
+
     report.curated = len(curated)
     logger.info("Curated %d papers", report.curated)
 
     if not curated:
         return report
 
-    # --- Ingestion ---
-    if exocortex is not None:
-        count = await ingest_all(curated, exocortex)
-        report.ingested = count
-        logger.info("Ingested %d papers", report.ingested)
+    # Ingestion -- prefer Qdrant store, fall back to ExoCortex
+    if store and embedder:
+        report.ingested = await ingest_all_to_store(curated, store, embedder)
     else:
-        logger.warning("No ExoCortex available -- skipping ingestion")
+        exocortex = exocortex or _try_init_exocortex()
+        if exocortex:
+            report.ingested = await ingest_all(curated, exocortex)
 
+    logger.info("Ingested %d papers", report.ingested)
     return report

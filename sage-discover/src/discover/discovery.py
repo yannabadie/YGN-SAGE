@@ -84,6 +84,7 @@ class PaperCandidate:
     published: date
     pdf_url: str | None
     citation_count: int
+    influential_citation_count: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -199,10 +200,10 @@ async def discover_semantic_scholar(
     query = " ".join(domain_info["keywords"][:2])
 
     def _fetch() -> list[PaperCandidate]:
-        sch = SemanticScholar()
+        sch = SemanticScholar(timeout=10, retry=False)
         results: list[PaperCandidate] = []
         try:
-            papers = sch.search_paper(query, limit=max_results)
+            papers = sch.search_paper(query, limit=min(max_results, 20))
         except Exception as exc:
             logger.error("Semantic Scholar search failed: %s", exc)
             return []
@@ -226,7 +227,11 @@ async def discover_semantic_scholar(
                 except (AttributeError, TypeError):
                     continue
 
-            if pub_date < since:
+            # Normalize both to date for comparison
+            if hasattr(pub_date, 'date') and callable(pub_date.date):
+                pub_date = pub_date.date()
+            compare_since = since.date() if hasattr(since, 'date') and callable(since.date) else since
+            if pub_date < compare_since:
                 continue
 
             authors = []
