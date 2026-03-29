@@ -39,8 +39,10 @@ training = [
     "torch>=2.4",
     "transformers>=4.45",
     "peft>=0.13",
+    "trl>=0.15",
     "datasets>=3.0",
     "accelerate>=1.0",
+    "bitsandbytes>=0.44",
     "pandas>=2.0",
     "pyarrow>=18",
 ]
