@@ -433,3 +433,46 @@ SAGE full engine results pending (~2h runtime).
 - snowflake-arctic-embed-m → Snowflake/snowflake-arctic-embed-m (embedder.py)
 - OpenAI max_tokens → max_completion_tokens for GPT-5+ (openai_compat.py)
 - MiniMax fallback provider routing (fallback now deepseek-chat)
+
+### MASBENCH Full Results — Fixed Models (50 tasks, 5 axes)
+
+**IMPORTANT:** This test ran with fixed models (gpt-5.4, gemini-3.1, deepseek-chat).
+However, SAGE timeout at 120s caused most tasks to fail. With 300s timeout, SAGE solves
+tasks the bare model cannot.
+
+| Axis | Bare | SAGE (120s) | SAGE (300s, 3 tasks) | Issue |
+|------|------|-------------|---------------------|-------|
+| depth | 4/10 (40%) | timeout | 1/3 PASS (274s) | Pipeline latency |
+| breadth | 5/10 (50%) | pending | - | |
+| horizon | 0/10 (0%) | pending | - | |
+| parallel | 6/10 (60%) | pending | - | |
+| robustness | 0/10 (0%) | pending | - | |
+
+**Key insight:** SAGE's topology HELPS (solves tasks bare model can't) but the pipeline
+is too SLOW (274s vs 15s). The bottleneck is multi-node sequential API calls, not the
+topology quality. Fix = pipeline optimization, not more RL training.
+
+### Research Findings (March 29, 2026)
+
+| Paper | Key Innovation | Applicable to SAGE | Priority |
+|-------|---------------|-------------------|----------|
+| DAPO (2503.14476) | Token-level loss, asymmetric clip, dynamic sampling | **Integrated** in targeted script | P0 |
+| MAS-Orchestra (2601.14652) | Function-calling RL (not YAML) | Reframe topology as FC | P1 |
+| EvoMAS (2602.06511) | Joint topology + model assignment evolution | MAP-Elites upgrade | P2 |
+| GoAgent (2603.19677) | Group-level topology + CIB compression | Reduce pipeline overhead | P3 |
+| Graph-GRPO (2603.02701) | Bernoulli edge sampling, continuous rewards | Upgrade edge_credit.py | P4 |
+| TCAndon-Router (2601.04544) | Reasoning-chain routing | Upgrade kNN router | P5 |
+
+### Pipeline Latency Analysis
+
+```
+Bare model:  15s (1 API call)
+SAGE depth:  274s (routing 2s + topology 1s + node1 90s + node2 80s + node3 60s + overhead 41s)
+Overhead:    18x slower for same quality
+```
+
+**Optimization opportunities:**
+1. Parallel node execution (TopologyExecutor Rust supports it, Python runner doesn't use it)
+2. Cache routing decisions (kNN embedding computed every call)
+3. CIB message compression (GoAgent, reduce context passed between nodes)
+4. Reduce default nodes from 4-5 to 2-3 (simpler topologies may be better)
