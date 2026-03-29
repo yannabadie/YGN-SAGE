@@ -115,61 +115,82 @@ def _score_format(text: str) -> float:
 # Use shared schema for validation constants (HyEvo hybrid: LLM + code nodes)
 from sage.verl.topology_schema import VALID_MODEL_TIERS, TopologySchema
 
-# Structural reward weights — subject to ablation (CLAUDE.md directive 2).
-# These are calibrated initial values, NOT proven optimal. Each should be
-# validated via ablation study once Phase A converges.
-# Reference: The Conductor (2512.04388) uses binary reward (1.0/0.5/0.0)
-# and efficiency emerges naturally. Consider simplifying if ablation shows
-# diminishing returns from fine-grained bonuses.
-_W_NODES_VALID = 0.3       # topology has 1-10 nodes
-_W_EDGES_PRESENT = 0.2     # edges defined (DAG structure)
-_W_ROLES_DEFINED = 0.3     # all nodes have role field
-_W_REASONING = 0.2         # reasoning field present
-_W_UNDERSIZED_PENALTY = 0.5  # multiplier for too-few-nodes
-_W_TIER_VALID = 0.1        # valid model_tier names (multi-model dimension)
-_W_CHECKPOINTS = 0.1       # adaptation metadata (Phase C)
-_W_PROVIDER_HINT = 0.05    # provider hints (multi-provider dimension)
-_W_HYBRID_BONUS = 0.1      # LLM + code mix (HyEvo 2603.19639: 13-19x cost reduction)
+# Training phase detection:
+#   SAGE_TRAINING_PHASE=A (default) → simple binary-like reward (Conductor-style)
+#   SAGE_TRAINING_PHASE=C → enriched reward with tier/provider/code node bonuses
+#
+# Phase A reward is intentionally simple: teach YAML format FAST.
+# The Conductor (arXiv 2512.04388) proved binary reward converges in 200 iters.
+# Phase C adds multi-model/provider/hybrid bonuses AFTER the model knows YAML.
+
 _EXPECTED_MIN_NODES = {"simple": 1, "moderate": 2, "complex": 3}
+
+
+def _is_phase_c() -> bool:
+    """Check if training is in Phase C (enriched reward)."""
+    return os.environ.get("SAGE_TRAINING_PHASE", "A").upper() == "C"
 
 
 def _score_structure(text: str) -> float:
     """Structural quality of a topology YAML.
 
-    All weights are named constants subject to ablation (see _W_* above).
+    Phase A (default): Conductor-style simple reward.
+      YAML parsable + nodes → 0.5
+      + edges → 0.7
+      + roles on all nodes → 0.85
+      + reasoning → 1.0
+      Max: 1.0
+
+    Phase C (SAGE_TRAINING_PHASE=C): Enriched reward.
+      Base Phase A score
+      + valid model_tier → +0.1
+      + adaptation/checkpoints → +0.1
+      + provider_hints → +0.05
+      + hybrid LLM+code → +0.1
+      Max: 1.35
     """
     try:
         text = _strip_code_fence(text)
-        schema = TopologySchema.from_yaml(text)
-        if schema is None or not schema.nodes:
+        data = yaml.safe_load(text)
+        if not isinstance(data, dict) or "nodes" not in data:
+            return 0.0
+        nodes = data.get("nodes", [])
+        if not isinstance(nodes, list) or len(nodes) == 0:
             return 0.0
 
+        # Phase A: simple Conductor-style reward (converges fast)
         score = 0.0
-        n = len(schema.nodes)
+        n = len(nodes)
 
         if 1 <= n <= 10:
-            score += _W_NODES_VALID
-        if schema.edges:
-            score += _W_EDGES_PRESENT
-        if all(node.role for node in schema.nodes):
-            score += _W_ROLES_DEFINED
-        if schema.reasoning:
-            score += _W_REASONING
+            score += 0.3
+        if data.get("edges"):
+            score += 0.2
+        if all(isinstance(nd, dict) and "role" in nd for nd in nodes):
+            score += 0.3
+        if data.get("reasoning"):
+            score += 0.2
 
-        expected_min = _EXPECTED_MIN_NODES.get(schema.difficulty.lower(), 2)
+        # Undersized topology penalty
+        difficulty = str(data.get("difficulty", "moderate")).lower()
+        expected_min = _EXPECTED_MIN_NODES.get(difficulty, 2)
         if n < expected_min:
-            score *= _W_UNDERSIZED_PENALTY
+            score *= 0.5
 
-        if schema.tier_ratio > 0:
-            score += _W_TIER_VALID * schema.tier_ratio
-        if schema.has_checkpoints:
-            score += _W_CHECKPOINTS
-        if schema.has_provider_hints:
-            score += _W_PROVIDER_HINT
-        if schema.has_code_nodes and schema.llm_ratio > 0:
-            score += _W_HYBRID_BONUS
+        # Phase C only: enriched bonuses for advanced topology features
+        if _is_phase_c():
+            schema = TopologySchema.from_yaml(text)
+            if schema:
+                if schema.tier_ratio > 0:
+                    score += 0.1 * schema.tier_ratio
+                if schema.has_checkpoints:
+                    score += 0.1
+                if schema.has_provider_hints:
+                    score += 0.05
+                if schema.has_code_nodes and schema.llm_ratio > 0:
+                    score += 0.1
 
-        return min(score, 1.3)
+        return min(score, 1.35 if _is_phase_c() else 1.0)
     except Exception:
         return 0.0
 

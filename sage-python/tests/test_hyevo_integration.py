@@ -200,6 +200,9 @@ class TestReflection:
 
 class TestRewardHybridBonus:
     def test_hybrid_topology_scores_higher(self):
+        """Phase C reward gives bonus for hybrid LLM+code topologies."""
+        import os
+        os.environ["SAGE_TRAINING_PHASE"] = "C"
         from sage.verl.reward import _score_structure
 
         hybrid = YAML_HYBRID

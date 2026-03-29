@@ -269,7 +269,10 @@ class TestRewardTierValidation:
         score = _score_structure(yaml_valid)
         assert score > 0.0
 
-    def test_invalid_tiers_no_bonus(self):
+    def test_invalid_tiers_no_bonus_phase_c(self):
+        """Phase C: valid tiers score higher than invalid."""
+        import os
+        os.environ["SAGE_TRAINING_PHASE"] = "C"
         yaml_invalid = (
             "nodes:\n"
             "  - role: coder\n"
@@ -291,8 +294,12 @@ class TestRewardTierValidation:
         assert score_valid > score_invalid, (
             f"Valid tiers ({score_valid}) should score higher than invalid ({score_invalid})"
         )
+        os.environ["SAGE_TRAINING_PHASE"] = "A"
 
-    def test_adaptation_field_gets_bonus(self):
+    def test_adaptation_field_gets_bonus_phase_c(self):
+        """Phase C: adaptation/checkpoints get bonus."""
+        import os
+        os.environ["SAGE_TRAINING_PHASE"] = "C"
         yaml_with = (
             "nodes:\n"
             "  - role: coder\n"
@@ -311,3 +318,4 @@ class TestRewardTierValidation:
         assert score_with > score_without, (
             f"With adaptation ({score_with}) should score higher than without ({score_without})"
         )
+        os.environ["SAGE_TRAINING_PHASE"] = "A"

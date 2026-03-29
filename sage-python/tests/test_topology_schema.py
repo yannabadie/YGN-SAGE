@@ -136,17 +136,23 @@ class TestSchemaProperties:
 
 
 class TestSchemaUsedByReward:
-    """Verify reward.py uses the shared schema for scoring."""
+    """Verify reward.py uses the shared schema for scoring in Phase C."""
 
     def test_reward_respects_schema_tiers(self):
+        """Phase C rewards valid model_tier names."""
+        import os
+        os.environ["SAGE_TRAINING_PHASE"] = "C"
         from sage.verl.reward import _score_structure
 
-        # Valid tiers → higher score
         valid = "nodes:\n  - role: coder\n    model_tier: reasoner\nreasoning: test\n"
         invalid = "nodes:\n  - role: coder\n    model_tier: skynet\nreasoning: test\n"
         assert _score_structure(valid) > _score_structure(invalid)
+        os.environ["SAGE_TRAINING_PHASE"] = "A"
 
     def test_reward_respects_provider_hint(self):
+        """Phase C rewards provider_hint presence."""
+        import os
+        os.environ["SAGE_TRAINING_PHASE"] = "C"
         from sage.verl.reward import _score_structure
 
         with_hint = (
@@ -163,6 +169,7 @@ class TestSchemaUsedByReward:
             "reasoning: test\n"
         )
         assert _score_structure(with_hint) > _score_structure(without_hint)
+        os.environ["SAGE_TRAINING_PHASE"] = "A"
 
 
 class TestSchemaContractConsistency:
