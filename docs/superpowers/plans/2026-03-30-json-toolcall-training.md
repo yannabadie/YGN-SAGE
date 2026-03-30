@@ -330,7 +330,7 @@ The key change: pass the Pydantic JSON schema to vLLM for constrained decoding d
 
 - [ ] **Step 1: Write the training script**
 
-Based on `train_topology_targeted.sh` but with:
+Based on `train_topology_targeted.sh` but with original NVIDIA weights + JSON format:
 - JSON dataset (`verl_topology_train_json.parquet`)
 - `SAGE_TRAINING_PHASE=A` (simple reward + exec)
 - `SAGE_VERL_EXEC=1` (execution reward)
@@ -351,9 +351,13 @@ export SAGE_VERL_EXEC=1
 DATA="data/verl_topology_train_json.parquet"
 VAL="data/verl_topology_curated_json.parquet"
 
-# ... rest of verl config (same as train_topology_targeted.sh)
-# Key difference: the dataset has JSON ground truth
-# The model's native JSON bias + JSON training data = valid output
+# BASE MODEL: original NVIDIA weights (NOT sft_merged)
+MODEL="/workspace/patched_nemotron_orchestrator"
+# No SFT warmup needed — model already knows tool-calling natively
+# Key differences vs previous scripts:
+#   1. Original NVIDIA weights (tool-calling preserved)
+#   2. JSON dataset (not YAML)
+#   3. <tool_call> format matches model's pretraining
 ```
 
 - [ ] **Step 2: Test smoke run (2 steps)**
@@ -438,7 +442,7 @@ Both are native JSON tool-calls — Nemotron's native format.
 ```bash
 export SAGE_TRAINING_PHASE=C
 python3 scripts/verl/train_phase_c_custom.py \
-    --model /workspace/sft_merged_model \
+    --model /workspace/patched_nemotron_orchestrator \
     --checkpoint /home/yann/verl_checkpoints \
     --data data/verl_topology_train_json.parquet \
     --output /home/yann/verl_checkpoints_phase_c \
