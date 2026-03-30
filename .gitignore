@@ -98,3 +98,6 @@ sage-python/output/
 docs/VeRLGIGPO_README.md
 memory-bank/
 sage-python/models/topology_grpo*
+env.txt
+.ipynb_checkpoints/
+untitled.txt

@@ -1,25 +1,27 @@
 #!/bin/bash
 # ============================================================
-# YGN-SAGE JSON Tool-Call Training — Nemotron Native Format
+# YGN-SAGE Tool-Call Training — Nemotron Native Format V2
 # ============================================================
-# BREAKTHROUGH: Nemotron-Orchestrator-8B is a JSON tool-caller,
-# not a YAML generator. Previous YAML training caused 91% malformation.
-# This script uses the model's native <tool_call> JSON format.
+# Nemotron-Orchestrator-8B is a native JSON tool-caller.
+# <tool_call> token id=151657, </tool_call> id=151658.
+# <think> token id=151667 (BANNED via logit_bias in verl).
+#
+# V2 improvements over V1:
+#   - Tool definitions baked into system prompt (triggers <tool_call>)
+#   - 7 SAGE tools: create_topology, route_task, assign_models,
+#     verify_topology, adapt_topology, execute_code, manage_memory
+#   - 13K examples (5K simple + 5K moderate + 3K complex)
+#   - max_prompt_length=2048 (tool schemas need ~1800 tokens)
+#   - max_model_len=4096 (prompt + response fits)
+#   - <think> banned via logit_bias in verl vllm_async_server.py
 #
 # Base model: nvidia/Nemotron-Orchestrator-8B (ORIGINAL weights)
 #   - NOT sft_merged_model (YAML-damaged by SFT warmup)
-#   - Token <tool_call> id=151657, </tool_call> id=151658
-#   - GRPO-trained by NVIDIA for JSON tool orchestration (ToolOrchestra)
+#   - GRPO-trained by NVIDIA for JSON tool orchestration
 #
-# Training: DAPO token-level loss (fixes GRPO entropy collapse)
-#   - Dataset: JSON format (converted from YAML)
+# Training: DAPO token-level loss
 #   - No SFT warmup needed (model already knows tool-calling)
-#   - Expected: 0% malformation (JSON native) → 100% exec hits
-#
-# References:
-#   - ToolOrchestra (arXiv 2511.21689): NVIDIA's training framework
-#   - DAPO (arXiv 2503.14476): token-level loss, asymmetric clipping
-#   - Nemotron-Orchestrator-8B: HF nvidia/Nemotron-Orchestrator-8B
+#   - Reward: format (tool_call tags) + structure (valid topology)
 #
 # HuggingFace:
 #   - Model: yannabadie/sage-topology-orchestrator
@@ -45,13 +47,11 @@ export SAGE_TRAINING_PHASE=A
 export SAGE_VERL_EXEC=1
 
 # ── CRITICAL: Use ORIGINAL NVIDIA weights ──
-# The SFT warmup overwrote the tool-calling capability.
-# These are the untouched NVIDIA GRPO weights with <tool_call> support.
-MODEL="/workspace/patched_nemotron_orchestrator"
+MODEL="/home/yann/nemotron_original"
 
-# JSON dataset (converted from YAML)
-DATA="data/verl_topology_train_json.parquet"
-VAL="data/verl_topology_curated_json.parquet"
+# V2 tool-call dataset (generated from scratch with SAGE tools)
+DATA="data/verl_topology_train_toolcall.parquet"
+VAL="data/verl_topology_curated_toolcall.parquet"
 
 OUTPUT="/home/yann/verl_checkpoints"
 REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
@@ -59,14 +59,13 @@ REWARD_SCRIPT="/workspace/YGN-SAGE/sage-python/src/sage/verl/reward.py"
 mkdir -p "$OUTPUT"
 
 echo "============================================================"
-echo "  JSON Tool-Call Training — Nemotron Native Format"
+echo "  Tool-Call Training V2 — Nemotron Native + SAGE Tools"
 echo "============================================================"
 echo "  Model:   $MODEL (ORIGINAL NVIDIA weights)"
-echo "  Dataset: $DATA (JSON, not YAML)"
-echo "  Reward:  Phase A (simple) + execution"
+echo "  Dataset: $DATA (13K examples, 7 SAGE tools)"
+echo "  Reward:  Phase A + tool_call format bonus"
 echo "  Loss:    DAPO token-level"
-echo "  Output:  $OUTPUT (NVMe, FSDP, keep=2)"
-echo "  HF:      yannabadie/sage-topology-orchestrator"
+echo "  Output:  $OUTPUT"
 echo "============================================================"
 echo ""
 
@@ -79,16 +78,16 @@ python3 -m verl.trainer.main_ppo \
     \
     data.train_files="$DATA" \
     data.val_files="$VAL" \
-    data.train_batch_size=32 \
-    data.val_batch_size=16 \
-    data.max_prompt_length=512 \
+    data.train_batch_size=16 \
+    data.val_batch_size=8 \
+    data.max_prompt_length=2048 \
     data.max_response_length=1024 \
     data.filter_overlong_prompts=True \
     data.truncation=error \
     data.return_raw_chat=True \
     \
     actor_rollout_ref.model.path="$MODEL" \
-    actor_rollout_ref.model.use_shm=True \
+    actor_rollout_ref.model.use_shm=False \
     actor_rollout_ref.model.use_remove_padding=False \
     actor_rollout_ref.model.enable_gradient_checkpointing=True \
     actor_rollout_ref.model.lora_rank=64 \
@@ -98,8 +97,8 @@ python3 -m verl.trainer.main_ppo \
     +actor_rollout_ref.model.override_config.attn_implementation=sdpa \
     \
     actor_rollout_ref.actor.optim.lr=1e-6 \
-    actor_rollout_ref.actor.ppo_mini_batch_size=32 \
-    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=4 \
+    actor_rollout_ref.actor.ppo_mini_batch_size=16 \
+    actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=2 \
     actor_rollout_ref.actor.use_kl_loss=False \
     actor_rollout_ref.actor.kl_loss_coef=0.0 \
     actor_rollout_ref.actor.entropy_coeff=0.01 \
@@ -107,7 +106,7 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.actor.fsdp_config.param_offload=False \
     actor_rollout_ref.actor.fsdp_config.optimizer_offload=True \
     \
-    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=8 \
+    actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.ref.fsdp_config.param_offload=False \
     \
     actor_rollout_ref.rollout.name=vllm \
@@ -116,10 +115,10 @@ python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.n=4 \
     actor_rollout_ref.rollout.temperature=0.7 \
     actor_rollout_ref.rollout.load_format=safetensors \
-    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=8 \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=4 \
     actor_rollout_ref.rollout.layered_summon=True \
-    actor_rollout_ref.rollout.max_model_len=2048 \
-    actor_rollout_ref.rollout.max_num_batched_tokens=2048 \
+    actor_rollout_ref.rollout.max_model_len=4096 \
+    actor_rollout_ref.rollout.max_num_batched_tokens=4096 \
     actor_rollout_ref.rollout.enable_chunked_prefill=False \
     \
     custom_reward_function.path="$REWARD_SCRIPT" \
@@ -133,10 +132,10 @@ python3 -m verl.trainer.main_ppo \
     trainer.max_actor_ckpt_to_keep=2 \
     trainer.total_epochs=5 \
     trainer.project_name=sage_topology \
-    trainer.experiment_name=json_toolcall_v1 \
+    trainer.experiment_name=toolcall_v2 \
     trainer.default_local_dir="$OUTPUT" \
     'trainer.logger=["console"]'
 
 echo ""
-echo "=== JSON training complete ==="
+echo "=== Tool-call training V2 complete ==="
 echo "Next: Phase C (train_phase_c_custom.py) or post_training_pipeline.py all"
