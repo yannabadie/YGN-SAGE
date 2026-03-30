@@ -402,11 +402,15 @@ def main():
     args = parser.parse_args()
 
     # ── Load config if provided ────────────────────────────────
-    if hasattr(args, 'config') and args.config:
+    if args.config:
         config = load_config(args.config)
+        # Compare against argparse defaults to detect explicit CLI overrides
+        defaults = {a.dest: a.default for a in parser._actions if a.dest != "help"}
         for key, value in config.items():
             key_attr = key.replace("-", "_")
-            if not getattr(args, key_attr, None):  # CLI args take precedence
+            current = getattr(args, key_attr, None)
+            default = defaults.get(key_attr)
+            if current == default:  # User didn't explicitly override on CLI
                 setattr(args, key_attr, value)
         log.info("Loaded config from %s", args.config)
 
