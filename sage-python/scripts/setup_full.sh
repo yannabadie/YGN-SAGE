@@ -53,17 +53,26 @@ echo "[3] Building sage-core..."
 source "$HOME/.cargo/env" 2>/dev/null
 cd sage-core
 
-# Try with all features first, fallback without onnx if pkg-config missing
-if maturin develop --features smt,onnx,cognitive,tool-executor 2>/dev/null; then
-    echo "[3] sage-core built with ALL features (smt,onnx,cognitive,tool-executor)"
-elif maturin develop --features smt,tool-executor 2>/dev/null; then
-    echo "[3] sage-core built (smt,tool-executor) — onnx/cognitive need pkg-config/libssl-dev"
+# Build with ALL features — Rust first, no compromises
+# smt: Z3 SMT solver, cognitive: S-MMU + HybridVerifier + TemplateStore,
+# tool-executor: tree-sitter + subprocess, sandbox: WASM WASI (wasmtime),
+# onnx: ONNX Runtime embeddings (needs libssl-dev + pkg-config)
+ALL_FEATURES="smt,cognitive,tool-executor,sandbox"
+FULL_FEATURES="$ALL_FEATURES,onnx"
+
+if maturin build --release --features "$FULL_FEATURES" 2>/dev/null; then
+    echo "[3] sage-core built with ALL features ($FULL_FEATURES)"
+elif maturin build --release --features "$ALL_FEATURES" 2>/dev/null; then
+    echo "[3] sage-core built ($ALL_FEATURES) — onnx needs pkg-config/libssl-dev"
 else
-    # Last resort: build wheel and install
     maturin build --release --features smt,tool-executor 2>&1 | tail -3
-    pip install "$SAGE_DIR"/target/wheels/sage_core-*.whl --force-reinstall 2>&1 | tail -3
-    echo "[3] sage-core installed from wheel (smt,tool-executor)"
+    echo "[3] sage-core built (smt,tool-executor) — minimal"
 fi
+pip install "$SAGE_DIR"/target/wheels/sage_core-*.whl --force-reinstall 2>&1 | tail -3
+# Clean build artifacts (saves ~1GB)
+rm -rf "$SAGE_DIR/target/release/incremental" "$SAGE_DIR/target/release/.fingerprint" \
+       "$SAGE_DIR/target/release/build" "$SAGE_DIR/target/release/deps" 2>/dev/null
+echo "[3] Build artifacts cleaned"
 cd "$SAGE_DIR"
 
 # ── 4. Download embedding model ───────────────────────────
