@@ -364,7 +364,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Two-phase local training: SFT warmup → GRPO")
     parser.add_argument("--smoke", action="store_true", help="Smoke test")
-    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B")
     # SFT args
     parser.add_argument("--sft-data", default=None,
                         help="SFT JSONL path (enables Phase 1)")

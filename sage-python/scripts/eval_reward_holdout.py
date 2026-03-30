@@ -127,7 +127,7 @@ def evaluate(model, tokenizer, prompts: list[dict], max_new_tokens: int = 512,
 
 def main():
     parser = argparse.ArgumentParser(description="N1 Evaluator: Reward on holdout")
-    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B")
     parser.add_argument("--adapter", required=True, help="LoRA adapter path")
     parser.add_argument("--holdout", default=HOLDOUT_PATH)
     parser.add_argument("--max-new-tokens", type=int, default=512)
