@@ -44,26 +44,31 @@ bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
 bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 ```
 
-## Current State (March 25, 2026)
+## Current State (March 30, 2026)
 
 - **Tests**: Python **1809 passed** / Rust **289 passed** (base), 373+ with features / 0 failures
+- **MASBENCH depth**: **SAGE 67% vs bare model 40% (+27pp)** — first empirical proof topology helps
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
 - **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%
-- **Providers**: 7 in cards.toml (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter) + Codex (4 Python classes, 8 API endpoints)
-- **Models**: 20 in cards.toml (minimax-m2.7, gpt-5.4-mini/nano, qwen3.5-plus via OpenRouter)
-- **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (V1 legacy: Phi-4-mini SFT, V2: Nemotron-Orchestrator-8B, training in progress)
-- **Training (RunPod H100 NVL 94GB)**:
-  - SFT warmup: OK (118 steps, loss 2.87→1.30, YAML valide)
-  - Phase A V3: OOM (batch_size=64, 159/167 GB RAM)
-  - Phase A V4: 18/1152 steps, reward stalled at 0.02 (97% reward=0)
-  - **Root causes**: max_response_length=512 (truncation), lr=5e-5 (drift), no reward shaping
-  - **V5 script ready** (not yet executed): max_response_length=1024, lr=1e-6, reward shaping, ~29h H100
-  - **Phase C script ready** (train_phase_c_custom.py): multi-step GiGPO, 4-state machine, 12303 entries (43% checkpoints, 16% provider_hints)
-  - Phase A/B use GRPO (single-turn warm-up). Phase C uses GiGPO (multi-step, the real dynamic training).
-  - See `TRAINING_LOG.md` for full post-mortem
+- **Providers**: 7 providers (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter). Models updated March 29: gpt-5.4, gemini-3.1-pro-preview, deepseek-chat
+- **Models**: 20 in cards.toml. Tiers: fast=gemini-3.1-flash-lite, budget=deepseek-chat, reasoner=gemini-3.1-pro-preview, codex=gpt-5.4
+- **Self-Adaptive**: SA-1, SA-3, SA-4 + Path 6 (V2: Nemotron-Orchestrator-8B, DAPO training in progress)
+- **Training (RunPod 2x H100 NVL 94GB)**:
+  - SFT warmup: OK (118 steps, loss 2.87→1.30)
+  - Phase A: Done (step 1050, reward 0.225, structural ceiling)
+  - **DAPO targeted training**: IN PROGRESS (step 104/1920, reward 0.184, DAPO token-level loss)
+  - Phase C: Scripts ready, pending Phase A+B convergence
+  - **Key lessons**: never merge LoRA during training, save FSDP complete, DAPO > GRPO, MASBENCH validates topology
+  - See `TRAINING_LOG.md` for full history, `RUNPOD_PLAN.md` for updated plan
+- **Pipeline fixes (March 29-30)**:
+  - DeepSeek fallback (was sending wrong models to Gemini → 404)
+  - Per-node timeout 60s (was no timeout → 274s per task)
+  - Models updated: gpt-4.1 → gpt-5.4, embedder model name fixed
+  - Result: +27pp on MASBENCH depth after fixes
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
-- **HuggingFace**: `yannabadie/sage-topology-policy-v2` — Nemotron-Orchestrator-8B (no checkpoint pushed yet). V1 legacy: `yannabadie/sage-topology-policy` Phi-4-mini SFT
+- **HuggingFace**: `yannabadie/sage-topology-policy-v2` — FSDP checkpoint (34GB) + LoRA + SFT merged (16GB)
+- **Research (March 29)**: DAPO, MAS-Orchestra, EvoMAS, GoAgent, Graph-GRPO analyzed. See TRAINING_LOG.md
 
 ## Detailed rules in .claude/rules/
 
