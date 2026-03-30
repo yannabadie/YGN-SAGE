@@ -11,8 +11,8 @@ import sys
 random.seed(42)
 
 TARGET = {"simple": 15, "moderate": 20, "complex": 15}
-OUTPUT = "experiments/holdout_50.json"
-SFT_DATA = "data/topology_sft_v2_combined.jsonl"
+OUTPUT = "experiments/holdout_50_toolcall.json"
+SFT_DATA = "data/topology_sft_v2_toolcall.jsonl"
 
 
 def main():
@@ -29,6 +29,7 @@ def main():
                 "prompt": entry["prompt"],
                 "difficulty": diff,
                 "reference_yaml": entry.get("topology_yaml", ""),
+                "reference_toolcall": entry.get("topology_toolcall", ""),
             })
 
     holdout = []
