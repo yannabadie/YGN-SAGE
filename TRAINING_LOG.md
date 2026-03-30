@@ -610,3 +610,33 @@ called by the pipeline. All benchmarks ran with 34% routing accuracy.
 - More epochs on same dataset (V6 proved 1050 steps of structural plateau)
 - Higher LR (V3/V4 proved drift at lr=5e-5)
 - Merging LoRA (proven to destroy YAML quality)
+
+### Training Philosophy Insight (March 30, 2026)
+
+**Key realization:** Nemotron-8B must learn to work WITHIN YGN-SAGE, not just generate YAML.
+
+The model must learn to produce topologies that work with:
+- TopologyExecutor (Rust) — node scheduling
+- ModelAssigner (Rust) — model_tier → real model via cards.toml
+- HybridVerifier (Rust) — DAG validation
+- ProviderPool — 7 providers routing
+- TopologyRunner — multi-node execution with predecessor context
+- TopologyController (Phase C) — runtime micro-decisions
+
+Current problem: 91% of generated topologies have invalid YAML → execution reward
+never fires → the model never learns what works IN SAGE.
+
+Potential solutions:
+1. Function-calling format (MAS-Orchestra) — lower malformation rate
+2. Increase K from 4 to 16+ — more variance for GRPO signal
+3. Better SFT warmup focused on SAGE-compatible YAML patterns
+4. Curriculum: start with 2-node topologies, then increase complexity
+
+### MASBENCH kNN Routing Issue (March 30, 2026)
+
+The 50 kNN exemplars don't cover MASBENCH task types. All MASBENCH tasks
+route to S3 (conf=1.0) → full topology pipeline → 170-300s per task.
+S1 fast path never activates for MASBENCH.
+
+Fix: add MASBENCH-style tasks to kNN exemplar bank, or use task features
+(not just embedding similarity) for routing.
