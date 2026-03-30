@@ -288,3 +288,44 @@ class TopologySchema:
             self.code_ratio,
             self.provider_diversity,
         )
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models — JSON-native schema for Phase C / Nemotron output
+# ---------------------------------------------------------------------------
+
+from typing import Optional
+
+from pydantic import BaseModel
+
+
+class TopologyNodeModel(BaseModel):
+    """Pydantic schema for a topology node (JSON-native)."""
+    role: str
+    model_tier: str
+    prompt: str
+
+
+class TopologyEdgeModel(BaseModel):
+    """Pydantic schema for a topology edge (JSON-native)."""
+    from_idx: int
+    to_idx: int
+    flow_type: str = "message"
+
+
+class TopologyOutput(BaseModel):
+    """Pydantic schema for complete topology output (JSON-native).
+
+    Used by Phase C training where Nemotron outputs JSON directly.
+    """
+    difficulty: str = "moderate"
+    reasoning: str = ""
+    nodes: list[TopologyNodeModel] = []
+    edges: list[TopologyEdgeModel] = []
+
+
+class CheckpointDecision(BaseModel):
+    """Pydantic schema for checkpoint decisions (continue/upgrade/reroute)."""
+    action: str  # continue, upgrade, reroute
+    node_idx: Optional[int] = None
+    new_tier: Optional[str] = None

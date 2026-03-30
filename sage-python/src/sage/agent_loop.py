@@ -30,6 +30,7 @@ from sage.constants import (
     RELEVANCE_GATE_THRESHOLD,
     S3_MAX_RETRIES,
     DEFAULT_COST_PER_1K,
+    CONSOLIDATION_INTERVAL_STEPS,
 )
 
 log = logging.getLogger(__name__)
@@ -220,6 +221,7 @@ class AgentLoop:
         self.memory_agent: Any = None       # MemoryAgent for entity extraction
         self.semantic_memory: Any = None    # SemanticMemory entity graph
         self.causal_memory: Any = None      # CausalMemory for causal relations (injected by boot.py)
+        self.consolidator: Any = None       # MemoryConsolidator for episodic->semantic consolidation
         self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
         self.topology_engine: Any = None  # Injected by boot.py (Rust TopologyEngine)
         self._current_topology: Any = None  # Set by boot.py before each run
@@ -255,6 +257,7 @@ class AgentLoop:
         self._cb_episodic = CircuitBreaker("episodic_store")
         self._cb_entity = CircuitBreaker("entity_extraction")
         self._cb_evo = CircuitBreaker("evolution_stats")
+        self._cb_causal = CircuitBreaker("causal_memory")
 
         # Drift detection — monitors latency/error/cost trends
         self._drift_monitor = DriftMonitor()
@@ -698,6 +701,22 @@ class AgentLoop:
             except Exception as e:
                 self._cb_semantic.record_failure(e)
 
+        # Causal memory context injection (directed cause-effect chains)
+        if self.causal_memory and not self._cb_causal.should_skip() and not self._skip_memory:
+            try:
+                causal_context = self.causal_memory.get_context_for(task)
+                if causal_context and self._relevance_gate.is_relevant(task, causal_context):
+                    messages.insert(
+                        min(2, len(messages)),
+                        Message(
+                            role=Role.SYSTEM,
+                            content=f"Causal relationships from previous interactions:\n{causal_context}",
+                        ),
+                    )
+                self._cb_causal.record_success()
+            except Exception as e:
+                self._cb_causal.record_failure(e)
+
         # S-MMU context injection (graph-based retrieval from compacted chunks)
         if not self._cb_smmu.should_skip() and not self._skip_memory:
             try:
@@ -1004,6 +1023,18 @@ class AgentLoop:
                     extraction = await self.memory_agent.extract(content[:1000])
                     if extraction.entities:
                         self.semantic_memory.add_extraction(extraction)
+                        # Feed causal memory: consecutive entities form causal edges
+                        # AMA-Bench (2602.22769): memory without causality fails
+                        if self.causal_memory and len(extraction.entities) >= 2 and not self._cb_causal.should_skip():
+                            try:
+                                for i in range(len(extraction.entities) - 1):
+                                    src, tgt = extraction.entities[i], extraction.entities[i + 1]
+                                    self.causal_memory.add_entity(src)
+                                    self.causal_memory.add_entity(tgt)
+                                    self.causal_memory.add_causal_edge(src, tgt, cause_type="enabled")
+                                self._cb_causal.record_success()
+                            except Exception as exc:
+                                self._cb_causal.record_failure(exc)
                     self._cb_entity.record_success()
                 except Exception as e:
                     self._cb_entity.record_failure(e)
@@ -1024,6 +1055,17 @@ class AgentLoop:
                     role=Role.TOOL, content=output,
                     tool_call_id=tc.id, name=tc.name,
                 ))
+                # Causal edge: tool invocation "triggered" its output entity
+                if self.causal_memory and not self._cb_causal.should_skip() and not self._skip_memory:
+                    try:
+                        tool_entity = f"tool:{tc.name}"
+                        output_entity = f"result:{tc.name}:{self.step_count}"
+                        self.causal_memory.add_entity(tool_entity)
+                        self.causal_memory.add_entity(output_entity)
+                        self.causal_memory.add_causal_edge(tool_entity, output_entity, cause_type="triggered")
+                        self._cb_causal.record_success()
+                    except Exception as exc:
+                        self._cb_causal.record_failure(exc)
 
             if len(messages) > MAX_MESSAGES:
                 messages = messages[:2] + messages[-(MAX_MESSAGES - 2):]
@@ -1044,6 +1086,10 @@ class AgentLoop:
             if self.semantic_memory:
                 learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
 
+            if self.causal_memory:
+                learn_meta["causal_entities"] = self.causal_memory.entity_count()
+                learn_meta["causal_edges"] = len(self.causal_memory._causal_edges)
+
             if self._auto_evolve and self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
                 try:
                     cells = []
@@ -1058,9 +1104,16 @@ class AgentLoop:
                 except Exception as e:
                     self._cb_evo.record_failure(e)
 
-            # SA-3: Online Evolution — report Rust TopologyEngine archive stats
+            # SA-3: Online Evolution — run evolve() when should_evolve() triggers
             if self._auto_evolve and self.topology_engine and not self._cb_evo.should_skip():
                 try:
+                    if hasattr(self.topology_engine, 'should_evolve') and self.topology_engine.should_evolve():
+                        from sage.constants import EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS
+                        self.topology_engine.evolve(
+                            pop_size=EVOLUTION_ONLINE_POP_SIZE,
+                            generations=EVOLUTION_ONLINE_GENERATIONS,
+                        )
+                        learn_meta["evo_online_run"] = True
                     if hasattr(self.topology_engine, 'archive_cell_count'):
                         learn_meta["evo_archive_cells"] = self.topology_engine.archive_cell_count()
                         learn_meta["evo_archive_coverage"] = round(
@@ -1069,6 +1122,16 @@ class AgentLoop:
                     self._cb_evo.record_success()
                 except Exception as e:
                     self._cb_evo.record_failure(e)
+
+            # Inter-tier consolidation: episodic -> semantic -> causal
+            if self.consolidator and self.step_count % CONSOLIDATION_INTERVAL_STEPS == 0 and not self._skip_memory:
+                try:
+                    consolidation_result = await self.consolidator.consolidate()
+                    if consolidation_result.processed > 0:
+                        learn_meta["consolidation_processed"] = consolidation_result.processed
+                        learn_meta["consolidation_entities"] = consolidation_result.entities_added
+                except Exception:
+                    pass  # Best-effort, never blocks the loop
 
             self._emit(LoopPhase.LEARN, **learn_meta)
 

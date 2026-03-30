@@ -32,13 +32,29 @@ High-level orchestrator that wires the evolution loop into the agent system. Coo
 
 Experimental evaluator using eBPF sandbox (via `sage-core` SnapBPF). Provides CoW memory snapshots for safe mutation rollback.
 
+## Online Evolution (SA-3)
+
+The evolution engine runs **online** during task execution, not just offline. The pipeline wiring:
+
+1. **Stage 5 (LEARN)**: `pipeline.py` calls `engine.record_outcome()` with real quality scores
+2. **Agent loop**: When `should_evolve()` returns true (Rust, gated on outcome count + archive coverage), calls `engine.evolve(pop_size=5, generations=2)` — a lightweight pass (~10ms in Rust)
+3. **Archive persists**: MAP-Elites archive saved/loaded via SQLite at boot/shutdown
+
+`should_evolve()` (Rust) gates on: min_outcomes >= 5, cooldown >= 3 new outcomes, coverage < 80%.
+
+## AdaptiveMutator (ShinkaEvolve, arXiv 2509.19349)
+
+Thompson sampling bandit over LLM tiers for mutation selection. Each tier (budget, fast, mutator, reasoner) has a Beta posterior updated by mutation success/failure. The bandit converges toward the tier that produces the most improving mutations.
+
 ## Architecture
 
 ```
 EvolutionEngine
   |-- SAMPO action selection (5 actions)
   |-- LLMMutator (propose candidates)
-  |-- Evaluator (score fitness)
+  |-- AdaptiveMutator (Thompson sampling tier selection)
+  |-- Evaluator (score fitness + Wilcoxon validation)
   |-- Population (MAP-Elites grid)
+  |-- Rust TopologyEngine.should_evolve() → evolve()
   \-- SnapBPF (rollback on failure)
 ```

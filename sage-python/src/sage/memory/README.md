@@ -80,8 +80,18 @@ Autonomous entity/relation extraction agent. Runs during the LEARN phase of the 
 
 - **Key exports**: `MemoryAgent`, `ExtractionResult`
 
-### `write_gate.py` -- WriteGate
+### `write_gate.py` -- WriteGate / CompositeWriteGate
 
-Confidence-based write gating with deduplication. Rejects low-confidence writes (below configurable threshold) and duplicate content. Uses bounded `OrderedDict` for seen-content tracking.
+Two write gates available:
 
-- **Key exports**: `WriteGate`, `WriteDecision`
+- **WriteGate** (legacy): Simple confidence threshold + exact dedup. Fast, no ML dependency.
+- **CompositeWriteGate** (SOTA, arXiv 2603.15994): 5-signal composite salience scoring — confidence (25%), novelty via cosine distance (30%), reliability per source tier (20%), recency time decay (10%), task relevance (15%). Near-duplicate detection via embedding similarity (threshold 0.9). Rust acceleration available via `RustCompositeWriteGate` in sage-core.
+- **`create_composite_write_gate()`**: Factory that selects Rust when available, Python fallback otherwise.
+
+- **Key exports**: `WriteGate`, `CompositeWriteGate`, `WriteDecision`, `create_composite_write_gate`
+
+### `consolidator.py` -- MemoryConsolidator
+
+Inter-tier consolidation pipeline (MAGMA, arXiv 2601.03236). Periodically mines unconsolidated episodic entries, runs entity extraction via `MemoryAgent`, feeds results into `SemanticMemory` and `CausalMemory`. Creates cross-step causal edges between sequential episodes. Marks entries as consolidated to ensure idempotency. Triggered every `CONSOLIDATION_INTERVAL_STEPS` in the agent loop.
+
+- **Key exports**: `MemoryConsolidator`, `ConsolidationResult`

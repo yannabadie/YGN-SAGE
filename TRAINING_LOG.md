@@ -578,3 +578,169 @@ called by the pipeline. All benchmarks ran with 34% routing accuracy.
 - Memory: Episodic + Entity OK, S-MMU constructor needs update
 - Training: DAPO step 204/1920, reward 0.205
 - Benchmarks: MASBENCH + GAIA adapters ready
+
+### DAPO Training Analysis (March 30, 2026, Step 299)
+
+| Run | Steps | Reward Start→End | Best | Exec Hits | K | Loss |
+|-----|-------|-----------------|------|-----------|---|------|
+| Phase A V4 | 18 | 0.014→0.023 | 0.055 | 0% | 4 | GRPO seq-mean |
+| Phase A V5 | 49 | 0.055→0.078 | 0.189 | 0% | 4 | GRPO seq-mean |
+| Phase A V6 | 1050 | 0.225→0.225 | 0.225 | 0% | 4 | GRPO seq-mean |
+| Combined A+B | 158 | 0.188→0.220 | 0.864 | 11% | 4 | GRPO seq-mean |
+| **DAPO targeted** | **299** | **0.176→0.219** | **0.987** | **9%** | **4** | **DAPO token-mean** |
+
+**Key observations:**
+1. **Best score 0.987** — highest ever. The model CAN produce near-perfect topologies.
+2. **But 91% of topologies have invalid YAML** — exec reward rarely fires.
+3. **Reward progression: +0.043 in 299 steps** — slow but no plateau (unlike V6 which plateaued immediately at 0.225).
+4. **DAPO token-level loss works** — prevents reward hacking on length. But doesn't solve YAML malformation.
+5. **K=4 is the bottleneck** — The Conductor uses K=64 (16x more variance). With K=4, GRPO signal is too noisy for complex structured generation.
+
+**Projected convergence at current rate:**
+- Step 500: reward ~0.25
+- Step 1000: reward ~0.32
+- Step 1920: reward ~0.40
+
+**What would help:**
+- K=8 or K=16 (requires gradient accumulation or VRAM optimization)
+- Dynamic sampling (DAPO feature: skip batches where all K rollouts have same reward)
+- Function-calling format instead of YAML (MAS-Orchestra approach — lower malformation rate)
+
+**What won't help:**
+- More epochs on same dataset (V6 proved 1050 steps of structural plateau)
+- Higher LR (V3/V4 proved drift at lr=5e-5)
+- Merging LoRA (proven to destroy YAML quality)
+
+### Training Philosophy Insight (March 30, 2026)
+
+**Key realization:** Nemotron-8B must learn to work WITHIN YGN-SAGE, not just generate YAML.
+
+The model must learn to produce topologies that work with:
+- TopologyExecutor (Rust) — node scheduling
+- ModelAssigner (Rust) — model_tier → real model via cards.toml
+- HybridVerifier (Rust) — DAG validation
+- ProviderPool — 7 providers routing
+- TopologyRunner — multi-node execution with predecessor context
+- TopologyController (Phase C) — runtime micro-decisions
+
+Current problem: 91% of generated topologies have invalid YAML → execution reward
+never fires → the model never learns what works IN SAGE.
+
+Potential solutions:
+1. Function-calling format (MAS-Orchestra) — lower malformation rate
+2. Increase K from 4 to 16+ — more variance for GRPO signal
+3. Better SFT warmup focused on SAGE-compatible YAML patterns
+4. Curriculum: start with 2-node topologies, then increase complexity
+
+### MASBENCH kNN Routing Issue (March 30, 2026)
+
+The 50 kNN exemplars don't cover MASBENCH task types. All MASBENCH tasks
+route to S3 (conf=1.0) → full topology pipeline → 170-300s per task.
+S1 fast path never activates for MASBENCH.
+
+Fix: add MASBENCH-style tasks to kNN exemplar bank, or use task features
+(not just embedding similarity) for routing.
+
+### BREAKTHROUGH INSIGHT: Nemotron-8B is a JSON tool-caller, not a YAML generator (March 30, 2026)
+
+**Root cause of all training failures identified.**
+
+Nemotron-Orchestrator-8B was trained by NVIDIA via GRPO specifically to:
+1. Read instructions
+2. Generate chain-of-thought reasoning
+3. **Emit structured JSON tool calls**
+
+We have been asking it to generate **free-form YAML** — a task it was NEVER trained for.
+This explains:
+- 91% YAML malformation (the model doesn't know YAML syntax)
+- SFT warmup insufficient (118 steps can't overcome GRPO pretraining bias)
+- <think> token generation (the model's native CoT before tool calls)
+- Structural plateau at 0.225 (the model memorized some YAML patterns but can't generalize)
+
+**The fix:** Reframe topology generation as **tool calling in JSON format**.
+
+Define topology actions as tools:
+```
+add_node(role, model_tier, prompt)
+add_edge(from_idx, to_idx)
+set_reasoning(text)
+set_difficulty(level)
+```
+
+The model generates JSON tool calls (its native format), which are converted
+to TopologyGraph by the SAGE pipeline. vLLM constrained decoding guarantees
+valid JSON → 0% malformation → 100% exec reward signal.
+
+**Expected impact:**
+- Malformation: 91% → 0% (constrained decoding)
+- Exec hits: 9% → 100% (every topology is valid)
+- Reward signal: sparse → dense (gradient on every sample)
+- Convergence: 1000+ steps → ~200 steps (matching The Conductor)
+
+**References:**
+- [ToolOrchestra (NVIDIA)](https://github.com/NVlabs/ToolOrchestra) — the original training framework
+- [Nemotron-Orchestrator-8B](https://huggingface.co/nvidia/Nemotron-Orchestrator-8B) — native JSON tool caller
+- [vLLM Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/)
+- [TRL GRPO + JSON Schema](https://github.com/huggingface/trl/issues/5154)
+
+### JSON Format Validation (March 30, 2026)
+
+**SAGE already accepts JSON topologies — no code change needed.**
+
+| Format | format_score | structure_score | total_score |
+|--------|-------------|-----------------|-------------|
+| YAML | 1.00 | 1.00 | 0.9848 |
+| JSON | 1.00 | 1.00 | 0.9848 |
+
+The reward function (`_score_format`) calls `yaml.safe_load()` which parses
+valid JSON natively. Fallback `json.loads()` catches JSON with trailing commas.
+The execution path (`execution/__init__.py`) tries `json.loads()` FIRST.
+
+**What needs to change for JSON tool-calling training:**
+
+1. **Dataset conversion** (YAML → JSON):
+   - Convert 12,303 training entries from YAML ground truth to JSON
+   - Change system prompt from "design as YAML DAG" to "emit JSON tool calls"
+   - Script: `convert_sft_to_json.py`
+
+2. **Reward function** — already works, no change needed
+
+3. **Execution path** — already works, JSON is tried first
+
+4. **Phase C tool-call format**:
+   - Step 0 (generate topology): `{"nodes": [...], "edges": [...], "reasoning": "..."}`
+   - Checkpoint decisions: `{"action": "continue"}` or `{"action": "upgrade", "node": 2, "new_tier": "reasoner"}`
+   - Both are native JSON — perfect for Nemotron's tool-calling training
+   - `SageTopologyEnv` needs a JSON parser for tool_calls → TopologyGraph
+
+5. **vLLM constrained decoding**:
+   - Define Pydantic schema for TopologyOutput
+   - Pass to verl rollout config as `guided_json`
+   - Guarantees 100% valid output → 100% exec reward signal
+
+**Impact:** Training pivots from "teach YAML syntax" to "teach topology QUALITY" —
+the model's native JSON ability handles the format, RL handles the substance.
+
+### Model Reset: Use Original NVIDIA Weights (March 30, 2026)
+
+**Critical change:** Training must use `/workspace/patched_nemotron_orchestrator`
+(original NVIDIA weights) — NOT `sft_merged_model` (YAML-damaged by SFT warmup).
+
+**Evidence:**
+- `<tool_call>` token 151657 present in vocab
+- `</tool_call>` token 151658 present in vocab
+- Patched tokenizer removes `<think>` from template but preserves tool-calling
+- Original weights have GRPO pretraining for JSON tool-calling (ToolOrchestra)
+- SFT warmup (118 steps YAML) overwrote this capability → caused 91% malformation
+
+**Training data (NVIDIA ToolOrchestra):**
+- 552 problems, 1296 prompts (very small, yet Nemotron beats GPT-5 on HLE)
+- GRPO with accuracy + cost + preference rewards
+- Tools defined as JSON schemas in system prompt
+- Model emits `<tool_call>{"name":"...","parameters":{...}}</tool_call>`
+
+**Our approach must match this:**
+- Same JSON tool-call format
+- Same GRPO/DAPO training loop
+- SAGE modules defined as tools in system prompt
+- No SFT warmup needed — model already knows tool-calling

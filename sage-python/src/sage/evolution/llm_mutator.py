@@ -1,9 +1,15 @@
-"""LLM-based code mutator using Gemini/Codex with structured JSON output."""
+"""LLM-based code mutator using Gemini/Codex with structured JSON output.
+
+Includes AdaptiveMutator (ShinkaEvolve-inspired, arXiv 2509.19349):
+Thompson sampling over LLM tiers for mutation selection.
+"""
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
+import numpy as np
 from pydantic import BaseModel
 
 from sage.llm.base import Message, Role
@@ -93,3 +99,56 @@ class LLMMutator:
             if start >= 0 and end > start:
                 return MutationResponse.model_validate_json(text[start:end])
             raise
+
+
+class AdaptiveMutator:
+    """Bandit-based LLM ensemble for mutations (ShinkaEvolve, arXiv 2509.19349).
+
+    Maintains a Thompson sampling bandit over LLM tiers, selecting the tier
+    most likely to produce improving mutations based on historical success rates.
+    """
+
+    def __init__(self, tiers: list[str] | None = None) -> None:
+        self.tiers = tiers or ["budget", "fast", "mutator", "reasoner"]
+        # Beta distribution priors: successes (alpha) and failures (beta)
+        self._successes: dict[str, float] = {t: 1.0 for t in self.tiers}
+        self._failures: dict[str, float] = {t: 1.0 for t in self.tiers}
+        self._total_selections: dict[str, int] = {t: 0 for t in self.tiers}
+
+    def select_tier(self) -> str:
+        """Thompson sampling: sample from Beta(successes, failures) for each tier."""
+        samples = {
+            t: np.random.beta(self._successes[t], self._failures[t])
+            for t in self.tiers
+        }
+        selected = max(samples, key=samples.get)
+        self._total_selections[selected] += 1
+        return selected
+
+    def record(self, tier: str, improved: bool) -> None:
+        """Update posterior for the selected tier based on mutation outcome."""
+        if tier not in self._successes:
+            self._successes[tier] = 1.0
+            self._failures[tier] = 1.0
+        if improved:
+            self._successes[tier] += 1.0
+        else:
+            self._failures[tier] += 1.0
+
+    def success_rate(self, tier: str) -> float:
+        """Estimated success rate for a tier (mean of Beta posterior)."""
+        a = self._successes.get(tier, 1.0)
+        b = self._failures.get(tier, 1.0)
+        return a / (a + b)
+
+    def stats(self) -> dict[str, Any]:
+        """Return bandit statistics for all tiers."""
+        return {
+            tier: {
+                "successes": self._successes[tier],
+                "failures": self._failures[tier],
+                "selections": self._total_selections[tier],
+                "success_rate": round(self.success_rate(tier), 3),
+            }
+            for tier in self.tiers
+        }

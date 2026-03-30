@@ -1,0 +1,59 @@
+{
+  "benchmark": "MASBENCH",
+  "date": "2026-03-30",
+  "tasks_per_axis": 10,
+  "bare": {
+    "depth": {
+      "passed": 3,
+      "total": 10,
+      "rate": 0.3
+    },
+    "breadth": {
+      "passed": 6,
+      "total": 10,
+      "rate": 0.6
+    },
+    "horizon": {
+      "passed": 0,
+      "total": 10,
+      "rate": 0.0
+    },
+    "parallel": {
+      "passed": 7,
+      "total": 10,
+      "rate": 0.7
+    },
+    "robustness": {
+      "passed": 0,
+      "total": 10,
+      "rate": 0.0
+    }
+  },
+  "sage": {
+    "depth": {
+      "passed": 2,
+      "total": 10,
+      "rate": 0.2
+    },
+    "breadth": {
+      "passed": 7,
+      "total": 10,
+      "rate": 0.7
+    },
+    "horizon": {
+      "passed": 2,
+      "total": 10,
+      "rate": 0.2
+    },
+    "parallel": {
+      "passed": 7,
+      "total": 10,
+      "rate": 0.7
+    },
+    "robustness": {
+      "passed": 0,
+      "total": 10,
+      "rate": 0.0
+    }
+  }
+}

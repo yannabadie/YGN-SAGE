@@ -159,6 +159,19 @@ impl PyTopologyEngine {
         );
     }
 
+    /// Determine whether online evolution should run.
+    ///
+    /// Returns True when the archive has enough data and enough new outcomes
+    /// have been recorded since the last evolution pass.
+    ///
+    /// Args:
+    ///     min_outcomes: Minimum archive entries before first evolution (default 5).
+    ///     cooldown_outcomes: Minimum new outcomes between evolution runs (default 3).
+    #[pyo3(signature = (min_outcomes=5, cooldown_outcomes=3))]
+    pub fn should_evolve(&self, min_outcomes: usize, cooldown_outcomes: usize) -> bool {
+        self.inner.should_evolve(min_outcomes, cooldown_outcomes)
+    }
+
     /// Run a synchronous evolution loop on the MAP-Elites archive.
     ///
     /// Args:

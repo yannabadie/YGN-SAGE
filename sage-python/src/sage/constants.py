@@ -101,6 +101,43 @@ MEMORY_COMPRESSION_THRESHOLD = 20  # Events before compression trigger
 MEMORY_KEEP_RECENT = 5             # Recent events preserved after compression
 RELEVANCE_GATE_THRESHOLD = 0.30    # [BENCH] CRAG gate, Sprint 3 evidence (2026-03)
 
+# -- Composite write gate (arXiv 2603.15994) -----------------------------------
+# [PAPER] Salience gate weights, subject to ablation
+SALIENCE_WEIGHT_CONFIDENCE = 0.25   # Model confidence in the content
+SALIENCE_WEIGHT_NOVELTY = 0.30      # 1 - max_similarity to existing entries
+SALIENCE_WEIGHT_RELIABILITY = 0.20  # Source tier reputation score
+SALIENCE_WEIGHT_RECENCY = 0.10      # Time decay since task start
+SALIENCE_WEIGHT_RELEVANCE = 0.15    # Task-content overlap (RelevanceGate)
+SALIENCE_NOVELTY_SIM_THRESHOLD = 0.90  # Near-duplicate if cosine > this
+SALIENCE_DEFAULT_THRESHOLD = 0.35   # [PAPER] Composite gate threshold
+
+# -- Online evolution gating (SA-3) --------------------------------------------
+# [ENG] Calibrated initial values, subject to ablation
+EVOLUTION_MIN_OUTCOMES = 5          # Minimum outcomes before first evolution
+EVOLUTION_COOLDOWN_OUTCOMES = 3     # Min new outcomes between evolution runs
+EVOLUTION_SATURATION_THRESHOLD = 0.80  # Stop evolving when archive is this full
+EVOLUTION_ONLINE_POP_SIZE = 5       # Population size for online evolution pass
+EVOLUTION_ONLINE_GENERATIONS = 2    # Generations per online evolution pass
+
+# -- Extended drift monitor / Agent Stability Index (arXiv 2601.04170) ----------
+# [PAPER] 12-dimension ASI. The first 3 reuse the legacy signals via DriftMonitor.
+# These 9 new dimensions are added by ExtendedDriftMonitor. Subject to ablation.
+ASI_WEIGHT_SEMANTIC = 0.08         # Embedding distance between consecutive outputs
+ASI_WEIGHT_BEHAVIORAL = 0.10       # Action sequence variance
+ASI_WEIGHT_TOPIC = 0.05            # Keyword overlap between task and response
+ASI_WEIGHT_REASONING_DEPTH = 0.04  # Chain-of-thought length trend
+ASI_WEIGHT_MEMORY_UTIL = 0.03      # S-MMU retrieval hit rate trend
+ASI_WEIGHT_TOOL_DIVERSITY = 0.03   # Shannon entropy of tool usage
+ASI_WEIGHT_OUTPUT_STABILITY = 0.02 # Coefficient of variation of response lengths
+ASI_WEIGHT_CONFIDENCE_TREND = 0.02 # Write gate confidence trend
+ASI_WEIGHT_COORDINATION = 0.01     # Sub-agent spawn/complete ratio
+ASI_BEHAVIORAL_WINDOW = 10         # Sliding window for behavior consistency
+
+# -- Consolidation pipeline ----------------------------------------------------
+# [ENG] Inter-tier memory consolidation
+CONSOLIDATION_INTERVAL_STEPS = 10   # Consolidation runs every N agent loop steps
+CONSOLIDATION_BATCH_SIZE = 20       # Max episodic entries to consolidate per pass
+
 # -- Topology limits ----------------------------------------------------------
 MAX_TOPOLOGY_AGENTS = 4         # [ENG] Max agents in LLM-synthesized topology
 LLM_SYNTHESIS_MIN_SYSTEM = 2    # [ENG] Only attempt LLM topology for S2/S3
