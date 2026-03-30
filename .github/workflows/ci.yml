@@ -15,7 +15,7 @@ jobs:
         working-directory: sage-core
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install maturin
@@ -36,7 +36,7 @@ jobs:
         working-directory: sage-core
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install maturin
@@ -64,7 +64,7 @@ jobs:
         working-directory: sage-python
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e ".[all,dev]"
@@ -80,7 +80,7 @@ jobs:
         working-directory: sage-discover
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install -e "../sage-python[all,dev]"
@@ -94,7 +94,7 @@ jobs:
       HF_HUB_OFFLINE: "1"
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
@@ -125,7 +125,7 @@ jobs:
       REQUESTS_CA_BUNDLE: ""
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - run: pip install -e ".[all,dev]"
