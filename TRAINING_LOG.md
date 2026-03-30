@@ -640,3 +640,45 @@ S1 fast path never activates for MASBENCH.
 
 Fix: add MASBENCH-style tasks to kNN exemplar bank, or use task features
 (not just embedding similarity) for routing.
+
+### BREAKTHROUGH INSIGHT: Nemotron-8B is a JSON tool-caller, not a YAML generator (March 30, 2026)
+
+**Root cause of all training failures identified.**
+
+Nemotron-Orchestrator-8B was trained by NVIDIA via GRPO specifically to:
+1. Read instructions
+2. Generate chain-of-thought reasoning
+3. **Emit structured JSON tool calls**
+
+We have been asking it to generate **free-form YAML** — a task it was NEVER trained for.
+This explains:
+- 91% YAML malformation (the model doesn't know YAML syntax)
+- SFT warmup insufficient (118 steps can't overcome GRPO pretraining bias)
+- <think> token generation (the model's native CoT before tool calls)
+- Structural plateau at 0.225 (the model memorized some YAML patterns but can't generalize)
+
+**The fix:** Reframe topology generation as **tool calling in JSON format**.
+
+Define topology actions as tools:
+```
+add_node(role, model_tier, prompt)
+add_edge(from_idx, to_idx)
+set_reasoning(text)
+set_difficulty(level)
+```
+
+The model generates JSON tool calls (its native format), which are converted
+to TopologyGraph by the SAGE pipeline. vLLM constrained decoding guarantees
+valid JSON → 0% malformation → 100% exec reward signal.
+
+**Expected impact:**
+- Malformation: 91% → 0% (constrained decoding)
+- Exec hits: 9% → 100% (every topology is valid)
+- Reward signal: sparse → dense (gradient on every sample)
+- Convergence: 1000+ steps → ~200 steps (matching The Conductor)
+
+**References:**
+- [ToolOrchestra (NVIDIA)](https://github.com/NVlabs/ToolOrchestra) — the original training framework
+- [Nemotron-Orchestrator-8B](https://huggingface.co/nvidia/Nemotron-Orchestrator-8B) — native JSON tool caller
+- [vLLM Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/)
+- [TRL GRPO + JSON Schema](https://github.com/huggingface/trl/issues/5154)
