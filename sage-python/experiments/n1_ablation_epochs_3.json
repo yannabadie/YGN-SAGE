@@ -1,0 +1,24 @@
+{
+  "n1_reward_avg": 0.16266669686635335,
+  "n1_reward_max": 0.9720751762390137,
+  "n1_reward_min": 0.08333333333333333,
+  "n1_above_03": 0.06,
+  "n1_clipped_ratio": 0.76,
+  "n1_count": 50,
+  "per_difficulty": {
+    "simple": {
+      "avg": 0.301666767332289,
+      "count": 15
+    },
+    "moderate": {
+      "avg": 0.11708333333333334,
+      "count": 20
+    },
+    "complex": {
+      "avg": 0.08444444444444445,
+      "count": 15
+    }
+  },
+  "eval_time_sec": 2816.4792037010193,
+  "adapter": "models/ablation/epochs_3/sft_checkpoint"
+}
