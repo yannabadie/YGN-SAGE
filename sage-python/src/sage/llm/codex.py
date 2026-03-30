@@ -22,7 +22,7 @@ from sage.llm.google import GoogleProvider
 logger = logging.getLogger(__name__)
 
 # Default model (matches ~/.codex/config.toml)
-DEFAULT_MODEL = "gpt-4.1"
+DEFAULT_MODEL = "gpt-5.4"
 
 
 def _ensure_additional_properties_false(schema: dict) -> dict:

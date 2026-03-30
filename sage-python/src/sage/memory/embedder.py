@@ -167,7 +167,7 @@ class _SentenceTransformerEmbedder:
     Outputs are L2-normalized (unit vectors) for cosine similarity.
     """
 
-    _MODEL_NAME = "snowflake-arctic-embed-m"
+    _MODEL_NAME = "Snowflake/snowflake-arctic-embed-m"
 
     def __init__(self) -> None:
         self._model: Any = None  # lazy; SentenceTransformer once loaded

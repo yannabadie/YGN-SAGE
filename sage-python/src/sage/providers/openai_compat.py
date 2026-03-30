@@ -80,6 +80,11 @@ class OpenAICompatProvider:
         """Apply provider-specific parameter quirks before API call."""
         model = params.get("model", self.model_id).lower()
 
+        # OpenAI GPT-5+ models require max_completion_tokens instead of max_tokens
+        if self.provider_name == "openai" and "max_tokens" in params:
+            if any(tag in model for tag in ("gpt-5", "o1", "o3", "o4")):
+                params["max_completion_tokens"] = params.pop("max_tokens")
+
         if self.provider_name == "deepseek":
             if "reasoner" in model and "temperature" in params:
                 del params["temperature"]

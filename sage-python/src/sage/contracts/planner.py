@@ -133,7 +133,8 @@ class TaskPlanner:
         )
 
         try:
-            config = LLMConfig(provider="google", model="gemini-2.5-flash")
+            # Use None config — let the provider use its default model
+            config = None
             response = await provider.generate(
                 messages=[
                     Message(role=Role.SYSTEM, content="You are a task decomposition assistant. Output only valid JSON."),

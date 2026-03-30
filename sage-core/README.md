@@ -20,6 +20,10 @@ Built as both `cdylib` (for PyO3/maturin) and `rlib` (for Rust consumers).
 ## Build Commands
 
 ```bash
+# RECOMMENDED: build with ALL features (RunPod / Linux production)
+maturin build --release --features smt,cognitive,tool-executor,sandbox,cranelift
+pip install target/wheels/sage_core-*.whl
+
 # Default build (no optional features)
 cargo build
 

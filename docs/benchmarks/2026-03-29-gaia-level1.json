@@ -1,0 +1,388 @@
+{
+  "benchmark": "gaia-level1",
+  "date": "2026-03-29",
+  "tasks_evaluated": 20,
+  "tasks_total_level1": 53,
+  "notes": "File-dependent tasks skipped. Exact match + standalone token scoring.",
+  "bare_model": {
+    "model": "deepseek-chat",
+    "pass_rate": 55.0,
+    "passed": 11,
+    "total": 20,
+    "total_cost_usd": 0.0021
+  },
+  "sage_pipeline": {
+    "model": "gemini-3.1-flash-lite-preview",
+    "tier": "fast",
+    "pass_rate": 55.0,
+    "passed": 11,
+    "total": 20
+  },
+  "delta_pp": 0.0,
+  "bare_results": [
+    {
+      "task_id": "e1fc63a2-da7a-432f-be78-7c4a95598703",
+      "level": "1",
+      "passed": true,
+      "expected": "17",
+      "response": "Eliud Kipchoge's marathon world record is 2:01:09 for 42.195 km.  \n\nFirst, convert his time to hours:  \n2 hours + 1 minute + 9 seconds = 2 + 1/60 + 9/3600 = 2 + 0.0166667 + 0.0025 = 2.0191667 hours.  \n\nPace = distance / time = 42.195 km / 2.0191667 h \u2248 20.896 km/h.  \n\nFrom Wikipedia, the Moon\u2019s minimum perigee (closest approach) is 356,500 km.  \n\nTime to run that distance = 356,500 km / 20.896 km/h \u2248 17,061.6 hours.  \n\nRounded to the nearest 1000 hours: 17,000 hours.  \n\nFINAL ANSWER: 17000",
+      "latency_s": 7.38,
+      "cost_usd": 0.000114
+    },
+    {
+      "task_id": "8e867cd7-cff9-4e6c-867a-ff5ddc2550be",
+      "level": "1",
+      "passed": true,
+      "expected": "3",
+      "response": "Mercedes Sosa released three studio albums between 2000 and 2009:  \n- *Misa Criolla* (2000)  \n- *Ac\u00fastico* (2002)  \n- *Cantora 1* (2009)  \n\nFINAL ANSWER: 3",
+      "latency_s": 3.47,
+      "cost_usd": 4.6e-05
+    },
+    {
+      "task_id": "ec09fa32-d03f-4bf8-84b0-1f16922c3ae4",
+      "level": "1",
+      "passed": true,
+      "expected": "3",
+      "response": "Let\u2019s break this down.  \n\nWe have 100 balls in order 1\u2013100.  \nThe platform starts with balls 1, 2, 3.  \n\nAt each stage, one piston fires at position 1, 2, or 3 on the platform (random, equally likely 1/3 each).  \nThe rules describe what happens:  \n\n---\n\n**Case 1: Piston hits position 1 ball**  \n- That ball is ejected (wins if it\u2019s your pick).  \n- Balls in positions 2 and 3 move to positions 1 and 2.  \n- Next ball from ramp (lowest not yet on platform) moves to position 3.  \n\nSo after this:  \nOld",
+      "latency_s": 17.3,
+      "cost_usd": 0.000352
+    },
+    {
+      "task_id": "5d0080cb-90d7-4712-bc33-848150e917d3",
+      "level": "1",
+      "passed": false,
+      "expected": "0.1777",
+      "response": "The fish bag volume calculated in the University of Leicester paper was approximately **0.084 m\u00b3**.  \n\nFINAL ANSWER: 0.084 m\u00b3",
+      "latency_s": 2.57,
+      "cost_usd": 3.5e-05
+    },
+    {
+      "task_id": "a1e91b78-d3d8-4675-bb8d-62741b4b68a6",
+      "level": "1",
+      "passed": false,
+      "expected": "3",
+      "response": "The highest number of bird species visible at once in the video is 8 species. \n\nFINAL ANSWER: 8",
+      "latency_s": 2.21,
+      "cost_usd": 3.1e-05
+    },
+    {
+      "task_id": "46719c30-f4c3-4cad-be07-d5cb21eee6bb",
+      "level": "1",
+      "passed": false,
+      "expected": "Mapping Human Oriented Information to Software Agents for Online Systems Usage",
+      "response": "To answer this, I need to identify the authors of the paper \"Pie Menus or Linear Menus, Which Is Better?\" from 2015, determine which one had authored prior papers, and then find the title of the first paper by that author.\n\nFirst, I'll search for the paper \"Pie Menus or Linear Menus, Which Is Better?\" from 2015. The authors are likely to be researchers in human-computer interaction. A quick search in my knowledge base indicates that this paper was authored by **J\u00e9r\u00e9mie Melchior** and **Donatien ",
+      "latency_s": 10.85,
+      "cost_usd": 0.000156
+    },
+    {
+      "task_id": "4b6bb5f7-f634-410e-815d-e673ab7f8632",
+      "level": "1",
+      "passed": true,
+      "expected": "THE CASTLE",
+      "response": "In the official script for \"Doctor Who\" Series 9, Episode 11 (\"Heaven Sent\"), the first scene heading describes the location as: \"EXT. CASTLE GROUNDS - DAY\". However, the ever-shifting maze itself is specifically called the \"CASTLE\" in the script, with the shifting rooms and corridors being part of its interior. The exact setting as it appears in the first scene heading is \"EXT. CASTLE GROUNDS - DAY\", but the maze-like interior is later detailed as various rooms and corridors within the Castle.\n",
+      "latency_s": 5.41,
+      "cost_usd": 7.8e-05
+    },
+    {
+      "task_id": "2d83110e-a098-4ebb-9987-066c06fa42d0",
+      "level": "1",
+      "passed": true,
+      "expected": "Right",
+      "response": "If you understand this sentence, write the opposite of the word \"left\" as the answer.\n\nThe opposite of \"left\" is \"right.\"\n\nFINAL ANSWER: right",
+      "latency_s": 2.56,
+      "cost_usd": 3.7e-05
+    },
+    {
+      "task_id": "27d5d136-8563-469e-92bf-fd103c28b57c",
+      "level": "1",
+      "passed": true,
+      "expected": "(\u00acA \u2192 B) \u2194 (A \u2228 \u00acB)",
+      "response": "Let's examine each logical equivalence:\n\n1. \u00ac(A \u2227 B) \u2194 (\u00acA \u2228 \u00acB) \u2014 This is De Morgan\u2019s law (valid).\n2. \u00ac(A \u2228 B) \u2194 (\u00acA \u2227 \u00acB) \u2014 This is De Morgan\u2019s law (valid).\n3. (A \u2192 B) \u2194 (\u00acB \u2192 \u00acA) \u2014 This is contrapositive (valid).\n4. (A \u2192 B) \u2194 (\u00acA \u2228 B) \u2014 This is material implication (valid).\n5. (\u00acA \u2192 B) \u2194 (A \u2228 \u00acB) \u2014 Let's check:  \n   \u00acA \u2192 B \u2261 \u00ac(\u00acA) \u2228 B \u2261 A \u2228 B, not A \u2228 \u00acB.  \n   So this one is **incorrect**.\n6. \u00ac(A \u2192 B) \u2194 (A \u2227 \u00acB) \u2014 This is negation of implication (valid).\n\nThe fifth statement is not a valid eq",
+      "latency_s": 8.64,
+      "cost_usd": 0.000136
+    },
+    {
+      "task_id": "dc28cf18-6431-458b-83ef-64b3ce566c10",
+      "level": "1",
+      "passed": true,
+      "expected": "2",
+      "response": "Let's count the attendees and calculate the potato needs.\n\n**Family members:**\n- Me (adult)\n- Married mother and father \u2192 2 adults\n- Twin brother and his family: brother (adult), his spouse (adult), 2 children (kids) \u2192 2 adults, 2 kids\n- Aunt and her family: aunt (adult), her spouse (adult), 1 six-year-old (kid) \u2192 2 adults, 1 kid\n- Grandma and her brother: grandma (adult), her brother (adult) \u2192 2 adults\n- Her brother\u2019s daughter (adult) and his daughter\u2019s family: she is married, so her spouse (ad",
+      "latency_s": 16.61,
+      "cost_usd": 0.000283
+    },
+    {
+      "task_id": "b816bfce-3d80-4913-a07d-69b752ce6377",
+      "level": "1",
+      "passed": false,
+      "expected": "fluffy",
+      "response": "The word quoted from two different authors in distaste for dragon depictions was \"monster.\" \n\nFINAL ANSWER: monster",
+      "latency_s": 2.36,
+      "cost_usd": 3.5e-05
+    },
+    {
+      "task_id": "72e110e7-464c-453c-a309-90a95aed6538",
+      "level": "1",
+      "passed": false,
+      "expected": "Guatemala",
+      "response": "The article in DDC 633 on BASE from Bielefeld University Library, as of 2020, with an unknown language and a unique flag, was from **Indonesia**.  \n\nFINAL ANSWER: Indonesia",
+      "latency_s": 3.64,
+      "cost_usd": 3.9e-05
+    },
+    {
+      "task_id": "42576abe-0deb-4869-8c63-225c2d75a95a",
+      "level": "1",
+      "passed": false,
+      "expected": "Maktay mato apple",
+      "response": "In Tizin, \"I like apples\" uses the verb \"Maktay\" (present tense), with the direct object being \"Mato\" (me, accusative) and the subject being \"Zapple\" (apples, accusative form because it's the subject in this structure). The sentence order is Verb + Direct Object + Subject.\n\nSo, the translation is: Maktay Mato Zapple.\n\nFINAL ANSWER: Maktay Mato Zapple",
+      "latency_s": 4.65,
+      "cost_usd": 0.00012
+    },
+    {
+      "task_id": "b415aba4-4b68-4fc6-9b89-2c812e55a3e1",
+      "level": "1",
+      "passed": false,
+      "expected": "diamond",
+      "response": "The article studied a gold-silica compound, specifically gold-silica core-shell nanoparticles, but without using the prefix \"nano.\"  \n\nFINAL ANSWER: gold-silica",
+      "latency_s": 2.8,
+      "cost_usd": 4e-05
+    },
+    {
+      "task_id": "935e2cff-ae78-4218-b3f5-115589b19dae",
+      "level": "1",
+      "passed": true,
+      "expected": "research",
+      "response": "The three core content policies on Wikipedia are \"Neutral point of view,\" \"No original research,\" and \"Verifiability.\" \"R\" stands for \"No original **research**.\" \n\nFINAL ANSWER: No original research",
+      "latency_s": 2.97,
+      "cost_usd": 4.3e-05
+    },
+    {
+      "task_id": "4fc2f1ae-8625-45b5-ab34-ad4433bc21f8",
+      "level": "1",
+      "passed": false,
+      "expected": "FunkMonk",
+      "response": "The only Featured Article on English Wikipedia about a dinosaur promoted in November 2016 is \"Spinosaurus.\" It was nominated by the user **Casliber**. \n\nFINAL ANSWER: Casliber",
+      "latency_s": 2.81,
+      "cost_usd": 3.4e-05
+    },
+    {
+      "task_id": "5188369a-3bbe-43d8-8b94-11558f909a08",
+      "level": "1",
+      "passed": false,
+      "expected": "Annie Levin",
+      "response": "The writer quoted by Merriam-Webster for the Word of the Day on June 27, 2022 was **Maya Angelou**. \n\nFINAL ANSWER: Maya Angelou",
+      "latency_s": 2.91,
+      "cost_usd": 3.3e-05
+    },
+    {
+      "task_id": "6f37996b-2ac7-44b0-8e68-6d28256631b4",
+      "level": "1",
+      "passed": true,
+      "expected": "b, e",
+      "response": "To check commutativity, we need to see if \\( x*y = y*x \\) for all \\( x, y \\in S \\).  \nIf \\( x*y \\neq y*x \\), then both \\( x \\) and \\( y \\) are involved in a counterexample.\n\nChecking the table systematically:\n\n- \\( a*b = b \\) vs \\( b*a = b \\) \u2192 equal  \n- \\( a*c = c \\) vs \\( c*a = c \\) \u2192 equal  \n- \\( a*d = b \\) vs \\( d*a = b \\) \u2192 equal  \n- \\( a*e = d \\) vs \\( e*a = d \\) \u2192 equal  \n- \\( b*c = a \\) vs \\( c*b = a \\) \u2192 equal  \n- \\( b*d = e \\) vs \\( d*b = e \\) \u2192 equal  \n- \\( b*e = c \\) vs \\( e*b = b \\)",
+      "latency_s": 10.04,
+      "cost_usd": 0.00017
+    },
+    {
+      "task_id": "4b650a35-8529-4695-89ed-8dc7a500a498",
+      "level": "1",
+      "passed": true,
+      "expected": "Guava",
+      "response": "Guava",
+      "latency_s": 1.65,
+      "cost_usd": 3.2e-05
+    },
+    {
+      "task_id": "c714ab3a-da30-4603-bacd-d008800188b9",
+      "level": "1",
+      "passed": true,
+      "expected": "100",
+      "response": "Let's break this down.  \n\nWe know:  \n- Humans always tell the truth.  \n- Vampires always lie.  \n- There are 100 residents.  \n- Everyone says: \"At least one of us is a human.\"  \n\n---\n\n**Step 1: Consider the statement's truth value in different scenarios**  \n\nIf there were **0 humans** (i.e., all 100 are vampires), then the statement \"At least one of us is a human\" is **false**.  \nVampires must lie, so they would say something false \u2014 but here, they'd be saying a false statement, which is consiste",
+      "latency_s": 17.68,
+      "cost_usd": 0.000311
+    }
+  ],
+  "sage_results": [
+    {
+      "task_id": "e1fc63a2-da7a-432f-be78-7c4a95598703",
+      "level": "1",
+      "passed": true,
+      "expected": "17",
+      "response": "To calculate the time required, we follow these steps:\n\n1.  **Identify the constants:**\n    *   **Eliud Kipchoge's marathon record pace:** Kipchoge set a world record of 2:01:09 (121.15 minutes) for 42.195 kilometers.\n        *   Speed = 42.195 km / 2.0191667 hours \u2248 20.90 km/h.\n    *   **Moon's minimum perigee distance:** According to Wikipedia, the Moon's perigee is approximately 363104 km.\n\n2.  **Calculate the time in hours:**\n    *   Time = Distance / Speed\n    *   Time = 363104 km / 20.90 k",
+      "latency_s": 12.89,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "8e867cd7-cff9-4e6c-867a-ff5ddc2550be",
+      "level": "1",
+      "passed": true,
+      "expected": "3",
+      "response": "To determine the number of studio albums released by Mercedes Sosa between 2000 and 2009, we examine her discography:\n\n1.  **Misa Criolla** (2000) - Studio album.\n2.  **Ac\u00fastico** (2002) - Live album.\n3.  **Argentina quiere cantar** (2003) - Live album (with Le\u00f3n Gieco and V\u00edctor Heredia).\n4.  **Coraz\u00f3n libre** (2005) - Studio album.\n5.  **Cantora 1** (2009) - Studio album.\n6.  **Cantora 2** (2009) - Studio album.\n\n*Note: Live albums and compilations are excluded.*\n\nThe studio albums are:\n*   *M",
+      "latency_s": 10.23,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "ec09fa32-d03f-4bf8-84b0-1f16922c3ae4",
+      "level": "1",
+      "passed": true,
+      "expected": "3",
+      "response": "To maximize your odds of winning, let's analyze the mechanics of the platform:\n\n1.  **Initial State:** Balls 1, 2, and 3 are on the platform.\n2.  **Piston 1 fires:** Ball 1 is ejected. Ball 2 moves to pos 1, Ball 3 moves to pos 2, and Ball 4 enters pos 3.\n3.  **Piston 2 fires:** Ball 2 is ejected. Ball 1 (already gone) is irrelevant. Ball 3 moves to pos 1, and Balls 4 and 5 enter pos 2 and 3.\n4.  **Piston 3 fires:** Ball 3 is ejected. Ball 1 (already gone) is irrelevant. Ball 2 moves to pos 1, a",
+      "latency_s": 12.76,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "5d0080cb-90d7-4712-bc33-848150e917d3",
+      "level": "1",
+      "passed": false,
+      "expected": "0.1777",
+      "response": "To determine the volume of the fish bag calculated in the University of Leicester paper \"Can Hiccup Supply Enough Fish to Maintain a Dragon\u2019s Diet?\", we follow these steps:\n\n1.  **Identify the dragon's daily energy requirement:** The paper estimates that a dragon (specifically Toothless) requires approximately 480,000 kcal per day to maintain its metabolic needs.\n2.  **Determine the energy density of fish:** The paper uses an average energy density for fish of approximately 1,000 kcal per kilogr",
+      "latency_s": 10.2,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "a1e91b78-d3d8-4675-bb8d-62741b4b68a6",
+      "level": "1",
+      "passed": true,
+      "expected": "3",
+      "response": "To determine the highest number of bird species on camera simultaneously in the video (a compilation of bird feeders), we observe the segments:\n\n1.  **Analysis**: The video displays various bird feeders featuring multiple species at once. \n2.  **Key moment**: At approximately 3:05, there is a cluster of birds on a large hanging feeder and the surrounding ground. We can identify:\n    *   Northern Cardinal\n    *   Blue Jay\n    *   Mourning Dove\n    *   American Goldfinch\n    *   Black-capped Chick",
+      "latency_s": 10.88,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "46719c30-f4c3-4cad-be07-d5cb21eee6bb",
+      "level": "1",
+      "passed": false,
+      "expected": "Mapping Human Oriented Information to Software Agents for Online Systems Usage",
+      "response": "Step 1: Identify the authors of the paper \"Pie Menus or Linear Menus, Which Is Better?\" (2015).\nThe authors are:\n1. Aur\u00e9lien Tabard\n2. Sylvain Malacria\n3. G\u00e9ry Casiez\n4. Nicolas Roussel\n5. Daniel Vogel\n\nStep 2: Determine which of these authors had authored papers prior to 2015.\n- All listed authors (Tabard, Malacria, Casiez, Roussel, and Vogel) have publication histories dating back well before 2015.\n\nStep 3: Identify the \"first\" author in the list (Aur\u00e9lien Tabard) and find their earliest publi",
+      "latency_s": 10.7,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "4b6bb5f7-f634-410e-815d-e673ab7f8632",
+      "level": "1",
+      "passed": false,
+      "expected": "THE CASTLE",
+      "response": "To determine the location name:\n\n1.  The episode is \"Heaven Sent\" (Series 9, Episode 11).\n2.  The episode opens with the Doctor arriving in a mysterious castle.\n3.  The first scene heading in the official shooting script for this episode is: \"INT. CASTLE - DAY\".\n\nFINAL ANSWER: INT. CASTLE - DAY",
+      "latency_s": 12.39,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "2d83110e-a098-4ebb-9987-066c06fa42d0",
+      "level": "1",
+      "passed": true,
+      "expected": "Right",
+      "response": "1. The input sentence is written in reverse: \"If you understand this sentence, write the opposite of the word 'left' as the answer.\"\n2. The word \"left\" refers to a direction.\n3. The opposite of \"left\" is \"right\".\n\nFINAL ANSWER: right",
+      "latency_s": 14.05,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "27d5d136-8563-469e-92bf-fd103c28b57c",
+      "level": "1",
+      "passed": true,
+      "expected": "(\u00acA \u2192 B) \u2194 (A \u2228 \u00acB)",
+      "response": "To determine which statement is not logically equivalent to the rest, we evaluate the logical status of each:\n\n1.  **\u00ac(A \u2227 B) \u2194 (\u00acA \u2228 \u00acB)**: This is **De Morgan\u2019s Law**. It is a **tautology** (always true).\n2.  **\u00ac(A \u2228 B) \u2194 (\u00acA \u2227 \u00acB)**: This is **De Morgan\u2019s Law**. It is a **tautology**.\n3.  **(A \u2192 B) \u2194 (\u00acB \u2192 \u00acA)**: This is the **Law of Contraposition**. It is a **tautology**.\n4.  **(A \u2192 B) \u2194 (\u00acA \u2228 B)**: This is the **Material Implication** definition. It is a **tautology**.\n5.  **(\u00acA \u2192 B) \u2194 (A ",
+      "latency_s": 14.52,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "dc28cf18-6431-458b-83ef-64b3ce566c10",
+      "level": "1",
+      "passed": true,
+      "expected": "2",
+      "response": "1. **Identify the attendees:**\n   - Parents: 2 adults\n   - You: 1 adult\n   - Twin brother + wife: 2 adults\n   - Twin brother's kids: 2 kids\n   - Aunt + husband: 2 adults\n   - Aunt's kid: 1 kid\n   - Grandma: 1 adult\n   - Grandma's brother: 1 adult\n   - Grandma's brother's wife: 1 adult (living spouse)\n   - Grandma's brother's daughter: 1 adult\n   - Grandma's brother's daughter's husband: 1 adult\n   - Grandma's brother's daughter's kids: 3 kids (no carbs)\n\n2. **Categorize by consumption:**\n   - To",
+      "latency_s": 11.51,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "b816bfce-3d80-4913-a07d-69b752ce6377",
+      "level": "1",
+      "passed": false,
+      "expected": "fluffy",
+      "response": "",
+      "error": "contents are required.",
+      "latency_s": 18.25,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "72e110e7-464c-453c-a309-90a95aed6538",
+      "level": "1",
+      "passed": false,
+      "expected": "Guatemala",
+      "response": "To determine the origin of the unknown language article under DDC 633 in the BASE (Bielefeld Academic Search Engine) dataset as of 2020:\n\n1.  **Context**: The BASE dataset is a massive repository of academic records. DDC 633 covers \"Field crops.\"\n2.  **Analysis**: In the specific subset of the BASE data often analyzed for metadata anomalies (such as language classification errors and flag icons), there is a notable entry indexed under DDC 633 that is labeled with an \"unknown\" language code.\n3.  ",
+      "latency_s": 17.05,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "42576abe-0deb-4869-8c63-225c2d75a95a",
+      "level": "1",
+      "passed": true,
+      "expected": "Maktay mato apple",
+      "response": "To translate \"I like apples\" into Tizin, we follow these steps:\n\n1.  **Analyze the Verb Logic**: The prompt states \"Maktay\" means \"is pleasing to.\" Therefore, the structure \"I like apples\" translates to \"Apples are pleasing to me.\"\n2.  **Identify Roles**:\n    *   **Verb**: \"Maktay\" (present tense).\n    *   **Subject (the thing doing the pleasing)**: \"Apple\" (nominative: \"Apple\").\n    *   **Direct Object (the one being pleased)**: \"I\" (accusative: \"Mato\").\n3.  **Apply Syntax (Verb-Object-Subject)",
+      "latency_s": 11.6,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "b415aba4-4b68-4fc6-9b89-2c812e55a3e1",
+      "level": "1",
+      "passed": false,
+      "expected": "diamond",
+      "response": "To identify the specific article and compound:\n\n1.  **Search Criteria:** The target is an article published in *Scientific Reports* in 2012 that does not mention \"plasmons\" or \"plasmonics.\"\n2.  **Context:** *Scientific Reports* is a journal, not a conference proceeding, but many papers from 2012 are indexed in databases. A prominent 2012 *Scientific Reports* paper involving a specific compound often studied in that era is the study regarding \"Graphene oxide\" used for water purification or struct",
+      "latency_s": 17.11,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "935e2cff-ae78-4218-b3f5-115589b19dae",
+      "level": "1",
+      "passed": true,
+      "expected": "research",
+      "response": "To determine the answer, we look at the history of the Wikipedia page for \"Legume\" and the core policies governing content violations:\n\n1.  **Context:** The three core content policies of Wikipedia are **N**eutral point of view (NPOV), **V**erifiability (V), and **N**o original research (NOR). However, the question asks for a term where \"R\" is a central component of the policy set often cited in content disputes or logs.\n2.  **Policy Identification:** In the context of Wikipedia's core content p",
+      "latency_s": 12.87,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "4fc2f1ae-8625-45b5-ab34-ad4433bc21f8",
+      "level": "1",
+      "passed": false,
+      "expected": "FunkMonk",
+      "response": "1. Identify the Featured Articles (FA) on English Wikipedia about dinosaurs promoted in November 2016.\n2. Searching the Wikipedia Featured Article log for November 2016: The article *Diplodocus* was promoted to Featured Article status on November 15, 2016.\n3. Review the nomination history for *Diplodocus*: The nomination was initiated by user \"IJReid\".\n\nFINAL ANSWER: IJReid",
+      "latency_s": 9.03,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "5188369a-3bbe-43d8-8b94-11558f909a08",
+      "level": "1",
+      "passed": false,
+      "expected": "Annie Levin",
+      "response": "1. Identify the Merriam-Webster \"Word of the Day\" for June 27, 2022.\n2. The word for that date was **\"gossamer.\"**\n3. Locate the quote provided in the Merriam-Webster entry for \"gossamer\" on that date.\n4. The entry quotes the writer **William Shakespeare** from his play *Romeo and Juliet*: \"A lover may bestride the gossamer / That idles in the wanton summer air.\"\n\nFINAL ANSWER: William Shakespeare",
+      "latency_s": 10.2,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "6f37996b-2ac7-44b0-8e68-6d28256631b4",
+      "level": "1",
+      "passed": true,
+      "expected": "b, e",
+      "response": "To determine if the operation $*$ is commutative, we must check if $x * y = y * x$ for all $x, y \\in S$. If $x * y \\neq y * x$, the pair $\\{x, y\\}$ constitutes a counter-example.\n\n1.  **Check pairs (alphabetical order):**\n    *   {a, b}: $a * b = b$, $b * a = b$. (Equal)\n    *   {a, c}: $a * c = c$, $c * a = c$. (Equal)\n    *   **{a, d}:** $a * d = b$, $d * a = b$. (Equal)\n    *   **{a, e}:** $a * e = d$, $e * a = d$. (Equal)\n    *   **{b, c}:** $b * c = a$, $c * b = a$. (Equal)\n    *   **{b, d}",
+      "latency_s": 10.07,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "4b650a35-8529-4695-89ed-8dc7a500a498",
+      "level": "1",
+      "passed": false,
+      "expected": "Guava",
+      "response": "",
+      "error": "contents are required.",
+      "latency_s": 13.43,
+      "cost_usd": 0.0
+    },
+    {
+      "task_id": "c714ab3a-da30-4603-bacd-d008800188b9",
+      "level": "1",
+      "passed": true,
+      "expected": "100",
+      "response": "To determine the number of vampires in \u0218irnea, we analyze the statement provided by every resident: \"At least one of us is a human.\"\n\n1.  **Analyze the truthfulness of the statement:**\n    *   If a resident is a **human**, they must tell the truth. For the statement \"At least one of us is a human\" to be true, there must indeed be at least one human in the village. Since the speaker is a human, this condition is satisfied.\n    *   If a resident is a **vampire**, they must lie. For the statement \"",
+      "latency_s": 12.12,
+      "cost_usd": 0.0
+    }
+  ]
+}

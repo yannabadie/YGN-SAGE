@@ -334,23 +334,60 @@ Durée estimée: 2-3h H100
 
 ---
 
-## Progression réaliste
+## Progression réaliste (MISE À JOUR 30 Mars 2026)
+
+### Résultats acquis
 
 ```
-Phase A (maintenant) → Fondation structurelle
-  ✓ YAML valide, model_tiers, checkpoints, fallbacks, reasoning
-  ✗ Pas d'exécution, pas de micro-décisions
-  Comparable à : AgentConductor (structural)
-
-Phase B (après A) → Exécution réelle
-  ✓ Le modèle voit si ses topologies marchent
-  ✗ Pas de micro-décisions temps réel
-  Comparable à : AgentConductor + multi-provider
-
-Phase C (après B) → SOTA complet
-  ✓ Micro-décisions, mémoire, edge credit, 5 signaux
-  Supérieur à : The Conductor, CARD, AgentConductor
+SFT warmup        ✓ loss 2.87→1.30, YAML valide
+Phase A (1050 steps) ✓ reward 0.225 (structural ceiling)
+Phase A+B combiné   ✓ 158 steps, reward 0.220, 11% exec hits, best 0.864
+Pipeline fixes      ✓ SAGE bat bare model de +27pp sur MASBENCH depth (67% vs 40%)
+MASBENCH validation ✓ Premier benchmark reconnu validant la thèse topologique
 ```
+
+### Découvertes clés (non prévues dans le plan initial)
+
+1. **Le merge LoRA détruit la qualité** — verl charge le LoRA dynamiquement, le merge n'est nécessaire que pour l'inférence finale
+2. **Le pipeline est le bottleneck** — 18x plus lent qu'un appel direct (274s vs 15s). Fix fallback + timeout par noeud → 191s, +27pp depth
+3. **DAPO > GRPO** — token-level loss, asymmetric clip, dynamic sampling corrigent les problèmes de convergence Phase A
+4. **MASBENCH valide la thèse** — la topologie aide quand base accuracy < 60% (depth 10%, horizon 0%, robustness 0%)
+5. **MAS-Orchestra function-calling** — alternative au YAML libre qui leverages le FC training existant du modèle
+
+### Plan révisé
+
+```
+Phase A+B DAPO (en cours) → Fondation + exécution combinées
+  Script: train_topology_targeted.sh
+  DAPO token-level loss + simple Conductor reward + execution reward
+  Dataset: 12K entries, 5 epochs (~1920 steps)
+  Step 104/1920, reward 0.184, 60s/step
+  Comparable à : The Conductor (avec DAPO au lieu de GRPO vanilla)
+
+Phase C (après A+B) → Micro-décisions runtime (LE différenciateur)
+  Script: train_phase_c_custom.py
+  GiGPO multi-step, SageTopologyEnv 4-state machine
+  upgrade/continue/reroute aux checkpoints
+  Target: MASBENCH robustness > 10% (base 0%), step_advantage non-nul
+  Supérieur à : The Conductor, CARD, AgentConductor, MAS-Orchestra
+
+Post-training → Publication
+  merge LoRA (PAS pendant le training, seulement à la fin)
+  HuggingFace: full precision + GGUF Q8_0
+  Benchmarks: MASBENCH 5 axes + GAIA Level 1+2
+  Path 6 enabled: SAGE_ENABLE_PATH6=1
+```
+
+### Recherche supplémentaire intégrée (Mars 2026)
+
+| Papier | Innovation | Statut SAGE |
+|--------|-----------|-------------|
+| DAPO (2503.14476) | Token-level loss, clip asymétrique | **Intégré** dans train_topology_targeted.sh |
+| MAS-Orchestra (2601.14652) | Topology = function-calling | Planifié (P1) |
+| EvoMAS (2602.06511) | Joint topology + model assignment | Planifié (P4) |
+| GoAgent (2603.19677) | CIB message compression | Planifié (P3) |
+| MASBENCH (Salesforce) | 5-axis MAS evaluation | **Validé** (+27pp depth) |
+| AdaptOrch (2602.16873) | Topology matters < 60% accuracy | **Confirmé** par MASBENCH |
 
 ---
 

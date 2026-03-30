@@ -181,7 +181,24 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
     def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 0: Classify task complexity and domain."""
+        """Stage 0: Classify task complexity and domain.
+
+        Priority: Rust kNN (92%) > AdaptiveRouter kNN > heuristic (34%).
+        """
+        # Priority 1: kNN router (92% accuracy, Rust-accelerated)
+        if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
+            try:
+                knn_result = self.router._knn.route(ctx.task)
+                if knn_result is not None:
+                    ctx.system = knn_result.system
+                    log.info("Stage 0: kNN routing → S%d (conf=%.2f, %s)",
+                             knn_result.system, knn_result.confidence, knn_result.method)
+                    ctx.domain = _infer_domain(ctx.task)
+                    return ctx
+            except Exception as exc:
+                log.debug("Stage 0: kNN failed (%s), falling back", exc)
+
+        # Priority 2: AdaptiveRouter / ComplexityRouter
         if self.router:
             try:
                 profile = self.router.assess_complexity(ctx.task)
@@ -224,7 +241,19 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 2: Select Topology ────────────────────────────────────────────
 
     def _stage_select_topology(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 2: Select optimal topology."""
+        """Stage 2: Select optimal topology.
+
+        S1 (simple) tasks skip topology entirely — direct single-agent call
+        is faster AND equally effective (confirmed by MASBENCH: topology helps
+        only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
+        """
+        # S1 fast path: skip topology, use direct single-agent call
+        # This reduces latency from ~200s (multi-node) to ~15s (direct)
+        if ctx.system == 1:
+            ctx.topology = None
+            log.debug("S1 task: skipping topology (direct single-agent)")
+            return ctx
+
         # Path 0: AdaptOrch heuristic for macro topology hint
         hint = "sequential"
         if ctx.dag_features:
