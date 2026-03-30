@@ -552,8 +552,44 @@ def boot_agent_system(
             from sage.llm.codex import CodexProvider
             provider = CodexProvider()
         else:
-            from sage.llm.google import GoogleProvider
-            provider = GoogleProvider()
+            # Route to correct provider based on model_id
+            # Rust-first: model_id determines provider, not hardcoded Google
+            from sage.providers.openai_compat import OpenAICompatProvider
+            model_id = llm_config.model or ""
+            if "deepseek" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
+                    base_url="https://api.deepseek.com/v1",
+                    provider_name="deepseek",
+                )
+            elif "gpt-" in model_id or "o1" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("OPENAI_API_KEY", ""),
+                    base_url="https://api.openai.com/v1",
+                    provider_name="openai",
+                )
+            elif "grok" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("GROK_API_KEY", ""),
+                    base_url="https://api.x.ai/v1",
+                    provider_name="xai",
+                )
+            elif "gemini" in model_id:
+                from sage.llm.google import GoogleProvider
+                provider = GoogleProvider()
+            else:
+                # Default: Google if available, else DeepSeek
+                if os.environ.get("GOOGLE_API_KEY"):
+                    from sage.llm.google import GoogleProvider
+                    provider = GoogleProvider()
+                elif os.environ.get("DEEPSEEK_API_KEY"):
+                    provider = OpenAICompatProvider(
+                        api_key=os.environ["DEEPSEEK_API_KEY"],
+                        base_url="https://api.deepseek.com/v1",
+                        provider_name="deepseek",
+                    )
+                else:
+                    raise RuntimeError("No LLM provider available.")
 
     # Components
     tool_registry = ToolRegistry()
