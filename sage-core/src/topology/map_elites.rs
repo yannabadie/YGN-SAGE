@@ -16,6 +16,28 @@ use crate::topology::verifier::HybridVerifier;
 
 use petgraph::visit::EdgeRef;
 
+// ── RawBehaviorFeatures ────────────────────────────────────────────────────
+
+/// Raw continuous behavior features extracted from a TopologyGraph.
+///
+/// These are the pre-bucketing values useful for Python-side analysis,
+/// evolution operators, and hybrid descriptors that combine with Python's
+/// role-based features (llm_ratio, code_ratio).
+#[derive(Debug, Clone)]
+pub struct RawBehaviorFeatures {
+    /// Number of agents (nodes) in the topology.
+    pub agent_count: u32,
+    /// Longest path in the DAG (graph depth).
+    pub max_depth: u32,
+    /// Total cost in USD.
+    pub total_cost: f32,
+    /// Fraction of unique model IDs among all nodes [0.0, 1.0].
+    pub model_diversity: f32,
+    /// Number of distinct providers (unique model_id prefixes before '/').
+    /// Falls back to unique model_id count if no '/' separator found.
+    pub provider_count: u32,
+}
+
 // ── BehaviorDescriptor ──────────────────────────────────────────────────────
 
 /// 4-dimensional behavior descriptor bucketing a topology into a grid cell.
@@ -43,11 +65,15 @@ impl BehaviorDescriptor {
     /// Computes agent count, max depth (longest path in the DAG via control edges),
     /// and model diversity (fraction of unique models) from the graph structure.
     pub fn from_topology(graph: &TopologyGraph, total_cost: f32) -> Self {
-        let agent_count = graph.node_count() as u32;
-        let max_depth = compute_max_depth(graph);
-        let model_diversity = compute_model_diversity(graph);
+        let raw = RawBehaviorFeatures::from_topology(graph, total_cost);
+        Self::from_raw(raw.agent_count, raw.max_depth, total_cost, raw.model_diversity)
+    }
 
-        Self::from_raw(agent_count, max_depth, total_cost, model_diversity)
+    /// Extract both bucketed descriptor and raw continuous features in one pass.
+    pub fn from_topology_with_raw(graph: &TopologyGraph, total_cost: f32) -> (Self, RawBehaviorFeatures) {
+        let raw = RawBehaviorFeatures::from_topology(graph, total_cost);
+        let desc = Self::from_raw(raw.agent_count, raw.max_depth, total_cost, raw.model_diversity);
+        (desc, raw)
     }
 
     /// Create a descriptor from raw feature values, applying bucketing logic.
@@ -68,6 +94,24 @@ impl BehaviorDescriptor {
             self.cost_bucket,
             self.model_diversity_bucket,
         )
+    }
+}
+
+impl RawBehaviorFeatures {
+    /// Extract raw behavior features from a topology graph and measured cost.
+    pub fn from_topology(graph: &TopologyGraph, total_cost: f32) -> Self {
+        let agent_count = graph.node_count() as u32;
+        let max_depth = compute_max_depth(graph);
+        let model_diversity = compute_model_diversity(graph);
+        let provider_count = compute_provider_count(graph);
+
+        Self {
+            agent_count,
+            max_depth,
+            total_cost,
+            model_diversity,
+            provider_count,
+        }
     }
 }
 
@@ -122,7 +166,7 @@ fn bucket_model_diversity(diversity: f32) -> u8 {
 /// Traverses ALL edge types (control, message, state) since pipeline depth
 /// reflects the full data flow, not just control ordering. For cyclic graphs
 /// (e.g., AVR with back-edges), falls back to node count as an upper bound.
-fn compute_max_depth(graph: &TopologyGraph) -> u32 {
+pub fn compute_max_depth(graph: &TopologyGraph) -> u32 {
     let inner = graph.inner_graph();
     if inner.node_count() == 0 {
         return 0;
@@ -180,7 +224,7 @@ fn compute_max_depth(graph: &TopologyGraph) -> u32 {
 ///
 /// Returns 0.0 for empty graphs, 1.0 / count for single-model graphs,
 /// and up to 1.0 for fully diverse graphs.
-fn compute_model_diversity(graph: &TopologyGraph) -> f32 {
+pub fn compute_model_diversity(graph: &TopologyGraph) -> f32 {
     let inner = graph.inner_graph();
     let count = inner.node_count();
     if count == 0 {
@@ -191,6 +235,30 @@ fn compute_model_diversity(graph: &TopologyGraph) -> f32 {
         inner.node_weights().map(|n| n.model_id.as_str()).collect();
 
     unique_models.len() as f32 / count as f32
+}
+
+/// Compute provider diversity as the count of distinct providers.
+///
+/// Uses model_id to infer provider: if model_id contains '/', takes the prefix
+/// (e.g., "google/gemini-flash" → "google"). Otherwise counts distinct model_ids.
+/// Returns 0 for empty graphs.
+pub fn compute_provider_count(graph: &TopologyGraph) -> u32 {
+    let inner = graph.inner_graph();
+    if inner.node_count() == 0 {
+        return 0;
+    }
+
+    let unique_providers: std::collections::HashSet<&str> = inner
+        .node_weights()
+        .map(|n| {
+            n.model_id
+                .split('/')
+                .next()
+                .unwrap_or(n.model_id.as_str())
+        })
+        .collect();
+
+    unique_providers.len() as u32
 }
 
 // ── EliteEntry ──────────────────────────────────────────────────────────────
@@ -989,5 +1057,73 @@ mod tests {
         let diversity = compute_model_diversity(&graph);
         // Single model => 1/5 = 0.2.
         assert!((diversity - 0.2).abs() < f32::EPSILON);
+    }
+
+    // -- Test 15: RawBehaviorFeatures extraction --------------------------------
+
+    #[test]
+    fn test_raw_behavior_features_from_topology() {
+        let graph = make_multi_model_graph();
+        let raw = RawBehaviorFeatures::from_topology(&graph, 0.05);
+
+        assert_eq!(raw.agent_count, 3);
+        assert!(raw.max_depth >= 2, "chain of 3 should have depth >= 2");
+        assert!((raw.total_cost - 0.05).abs() < f32::EPSILON);
+        // 3 unique models / 3 nodes = 1.0
+        assert!((raw.model_diversity - 1.0).abs() < f32::EPSILON);
+        // 3 different model_ids with no '/' separator => 3 unique "providers"
+        assert_eq!(raw.provider_count, 3);
+    }
+
+    // -- Test 16: from_topology_with_raw returns consistent data ---------------
+
+    #[test]
+    fn test_from_topology_with_raw_consistent() {
+        let graph = make_valid_graph("sequential", "model-a");
+        let (desc, raw) = BehaviorDescriptor::from_topology_with_raw(&graph, 0.005);
+
+        // Bucketed descriptor should match raw values
+        assert_eq!(desc.agent_count_bucket, bucket_agent_count(raw.agent_count));
+        assert_eq!(desc.max_depth_bucket, bucket_max_depth(raw.max_depth));
+        assert_eq!(desc.cost_bucket, bucket_cost(raw.total_cost));
+        assert_eq!(
+            desc.model_diversity_bucket,
+            bucket_model_diversity(raw.model_diversity)
+        );
+    }
+
+    // -- Test 17: Provider count with slash-separated model_ids ----------------
+
+    #[test]
+    fn test_provider_count_with_slashes() {
+        let mut g = TopologyGraph::try_new("sequential").unwrap();
+        g.add_node(TopologyNode::new(
+            "coder".into(), "google/gemini-flash".into(), 1, vec![], 0, 1.0, 60.0,
+        ));
+        g.add_node(TopologyNode::new(
+            "reviewer".into(), "google/gemini-pro".into(), 2, vec![], 0, 1.0, 60.0,
+        ));
+        g.add_node(TopologyNode::new(
+            "formatter".into(), "openai/gpt-5".into(), 1, vec![], 0, 1.0, 60.0,
+        ));
+        g.try_add_edge(0, 1, TopologyEdge::control()).unwrap();
+        g.try_add_edge(1, 2, TopologyEdge::control()).unwrap();
+
+        // 2 providers: "google" and "openai"
+        assert_eq!(compute_provider_count(&g), 2);
+        // 3 unique model_ids => diversity = 1.0
+        assert!((compute_model_diversity(&g) - 1.0).abs() < f32::EPSILON);
+    }
+
+    // -- Test 18: Empty graph raw features ------------------------------------
+
+    #[test]
+    fn test_raw_features_empty_graph() {
+        let g = TopologyGraph::try_new("sequential").unwrap();
+        let raw = RawBehaviorFeatures::from_topology(&g, 0.0);
+        assert_eq!(raw.agent_count, 0);
+        assert_eq!(raw.max_depth, 0);
+        assert_eq!(raw.provider_count, 0);
+        assert!((raw.model_diversity - 0.0).abs() < f32::EPSILON);
     }
 }

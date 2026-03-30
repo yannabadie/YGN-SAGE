@@ -20,7 +20,7 @@ use tracing::{debug, info, info_span, warn};
 use crate::memory::smmu::MultiViewMMU;
 use crate::routing::bandit::ContextualBandit;
 
-use super::cma_me::CmaEmitter;
+use super::cma_me::{CmaEmitter, DimensionBounds};
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mcts::MctsSearcher;
@@ -106,7 +106,16 @@ impl TopologyEngine {
             verifier: HybridVerifier::new(),
             synthesizer: TopologySynthesizer::new(),
             bandit: ContextualBandit::create(0.995, 0.1),
-            cma_emitter: CmaEmitter::new(3, 0.3),
+            cma_emitter: CmaEmitter::with_bounds(
+                3,
+                0.3,
+                vec![
+                    DimensionBounds::new(0.001, 5.0),   // max_cost_usd
+                    DimensionBounds::new(1.0, 300.0),    // max_wall_time_s
+                    DimensionBounds::new(0.1, 5.0),      // edge_weight
+                ],
+                0.99, // sigma decay — subject to ablation
+            ),
             topology_cache: HashMap::new(),
             last_decision_id: None,
             outcomes_since_last_evolve: 0,
@@ -529,31 +538,24 @@ impl TopologyEngine {
         )
         .entered();
 
-        // Extract structural features from cached topology (or use defaults)
-        let (agent_count, max_depth, model_diversity, template) =
+        // Extract structural features from cached topology (or use defaults).
+        // Compute descriptor + raw features ONCE, reuse for S-MMU bridge and archive.
+        let (agent_count, max_depth, model_diversity, template, descriptor) =
             if let Some(graph) = self.topology_cache.get(topology_id) {
-                let desc = BehaviorDescriptor::from_topology(graph, cost);
+                let (desc, raw) = BehaviorDescriptor::from_topology_with_raw(graph, cost);
                 (
-                    graph.node_count() as u32,
-                    desc.max_depth_bucket as u32,
-                    {
-                        let inner = graph.inner_graph();
-                        let mut unique_models: Vec<&str> = inner
-                            .node_weights()
-                            .map(|n| n.model_id.as_str())
-                            .collect();
-                        unique_models.sort_unstable();
-                        unique_models.dedup();
-                        unique_models.len() as f32 / graph.node_count().max(1) as f32
-                    },
+                    raw.agent_count,
+                    raw.max_depth,
+                    raw.model_diversity,
                     graph.template_type.clone(),
+                    Some(desc),
                 )
             } else {
                 debug!(
                     topology_id = topology_id,
                     "topology_not_in_cache_using_defaults"
                 );
-                (1u32, 1u32, 0.0, "sequential".to_string())
+                (1u32, 1u32, 0.0, "sequential".to_string(), None)
             };
 
         // 1. Feed S-MMU bridge
@@ -572,9 +574,10 @@ impl TopologyEngine {
         };
         self.bridge.record_outcome(smmu, outcome);
 
-        // 2. Feed MAP-Elites archive
-        if let Some(graph) = self.topology_cache.get(topology_id) {
-            let descriptor = BehaviorDescriptor::from_topology(graph, cost);
+        // 2. Feed MAP-Elites archive (reuses pre-computed descriptor)
+        if let (Some(descriptor), Some(graph)) =
+            (descriptor, self.topology_cache.get(topology_id))
+        {
             let inserted =
                 self.archive
                     .insert(&descriptor, graph.clone(), quality, cost, latency_ms);
@@ -761,24 +764,21 @@ impl TopologyEngine {
                 let (_, base_entry) = &cma_entries[i % cma_entries.len()];
                 let mut graph = base_entry.graph.clone();
 
-                // Apply CMA-sampled continuous params to the first node
+                // Apply CMA-sampled continuous params to ALL nodes (uniform scaling).
+                // Per-node differentiation is a Phase C improvement.
                 let inner = graph.inner_graph_mut();
-                if let Some(first_node) = inner.node_weight_mut(petgraph::graph::NodeIndex::new(0))
-                {
-                    first_node.max_cost_usd = params[0] as f32;
-                    first_node.max_wall_time_s = params[1] as f32;
+                for node in inner.node_weights_mut() {
+                    node.max_cost_usd = params[0] as f32;
+                    node.max_wall_time_s = params[1] as f32;
                 }
 
-                // Apply edge weight to the first edge
-                if let Some(first_edge) = inner.edge_weights_mut().next() {
-                    first_edge.weight = params[2] as f32;
+                // Apply edge weight to ALL edges (uniform scaling)
+                for edge in inner.edge_weights_mut() {
+                    edge.weight = params[2] as f32;
                 }
 
-                // Fitness: base quality scaled by parameter reasonableness
-                // (penalise extreme costs and times)
-                let cost_penalty = if params[0] > 5.0 { 0.8 } else { 1.0 };
-                let time_penalty = if params[1] > 5.0 { 0.9 } else { 1.0 };
-                let fitness = base_entry.quality as f64 * cost_penalty * time_penalty;
+                // Fitness: base quality (bounds already enforced by CmaEmitter)
+                let fitness = base_entry.quality as f64;
 
                 cma_fitnesses.push(fitness);
                 cma_graphs.push(graph);

@@ -268,17 +268,17 @@ impl MultiViewMMU {
         let to_evict: HashSet<String> = chunk_ids.into_iter().take(count).collect();
         let evict_count = to_evict.len();
 
-        // Remove nodes one at a time, looking up the current index each time
-        // because petgraph swap-removes may invalidate prior indices.
-        for id in &to_evict {
-            // Find current NodeIndex by scanning (chunk_map may be stale after prior remove)
-            let node_idx = self
-                .graph
-                .node_indices()
-                .find(|&idx| self.graph[idx].chunk_id == *id);
-            if let Some(idx) = node_idx {
-                self.graph.remove_node(idx);
-            }
+        // Collect NodeIndex values from chunk_map (O(1) lookup each) and sort
+        // descending by index. Removing highest-index first avoids petgraph's
+        // swap-remove invalidating indices we still need to process.
+        let mut indices_to_remove: Vec<NodeIndex> = to_evict
+            .iter()
+            .filter_map(|id| self.chunk_map.get(id).copied())
+            .collect();
+        indices_to_remove.sort_by_key(|idx| std::cmp::Reverse(idx.index()));
+
+        for idx in indices_to_remove {
+            self.graph.remove_node(idx);
         }
 
         // Rebuild chunk_map from surviving graph nodes
@@ -317,8 +317,9 @@ impl MultiViewMMU {
             None => return Vec::new(),
         };
 
-        // BFS up to max_hops, accumulating scores.
-        let mut scores: HashMap<String, f32> = HashMap::new();
+        // BFS up to max_hops, accumulating scores keyed by NodeIndex (avoids
+        // String cloning on every edge traversal).
+        let mut scores: HashMap<NodeIndex, f32> = HashMap::new();
         let mut visited: HashSet<NodeIndex> = HashSet::new();
         let mut frontier: Vec<(NodeIndex, f32, usize)> = vec![(start_idx, 1.0, 0)];
         visited.insert(start_idx);
@@ -337,9 +338,8 @@ impl MultiViewMMU {
                     EdgeKind::Entity => weights[3],
                 };
                 let propagated = incoming_score * me.weight * view_weight;
-                let target_cid = &self.graph[target].chunk_id;
-                if target_cid != active_chunk_id {
-                    *scores.entry(target_cid.clone()).or_insert(0.0) += propagated;
+                if target != start_idx {
+                    *scores.entry(target).or_insert(0.0) += propagated;
                 }
                 if !visited.contains(&target) {
                     visited.insert(target);
@@ -348,7 +348,11 @@ impl MultiViewMMU {
             }
         }
 
-        let mut result: Vec<(String, f32)> = scores.into_iter().collect();
+        // Convert NodeIndex → chunk_id and sort by score descending
+        let mut result: Vec<(String, f32)> = scores
+            .into_iter()
+            .map(|(idx, score)| (self.graph[idx].chunk_id.clone(), score))
+            .collect();
         result.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         // Increment access_count on all retrieved chunks
@@ -398,15 +402,17 @@ impl MultiViewMMU {
         let to_evict: HashSet<String> = scored.into_iter().take(count).map(|(id, _)| id).collect();
         let evict_count = to_evict.len();
 
-        // Remove nodes one at a time
-        for id in &to_evict {
-            let node_idx = self
-                .graph
-                .node_indices()
-                .find(|&idx| self.graph[idx].chunk_id == *id);
-            if let Some(idx) = node_idx {
-                self.graph.remove_node(idx);
-            }
+        // Collect NodeIndex values from chunk_map (O(1) lookup each) and sort
+        // descending. Removing highest-index first avoids petgraph's swap-remove
+        // invalidating indices we still need to process.
+        let mut indices_to_remove: Vec<NodeIndex> = to_evict
+            .iter()
+            .filter_map(|id| self.chunk_map.get(id).copied())
+            .collect();
+        indices_to_remove.sort_by_key(|idx| std::cmp::Reverse(idx.index()));
+
+        for idx in indices_to_remove {
+            self.graph.remove_node(idx);
         }
 
         // Rebuild chunk_map from surviving graph nodes

@@ -437,6 +437,12 @@ impl SmtVerificationResult {
 #[pyclass]
 pub struct SmtVerifier;
 
+impl Default for SmtVerifier {
+    fn default() -> Self {
+        Self
+    }
+}
+
 #[pymethods]
 impl SmtVerifier {
     #[new]
@@ -718,6 +724,7 @@ impl SmtVerifier {
     /// providers: list of (provider_name, provided_capabilities, exclusion_pairs)
     #[instrument(skip(self))]
     #[pyo3(signature = (nodes, providers))]
+    #[allow(clippy::type_complexity)] // PyO3 signature mirrors Python API
     pub fn verify_provider_assignment(
         &self,
         nodes: Vec<(String, Vec<String>)>,

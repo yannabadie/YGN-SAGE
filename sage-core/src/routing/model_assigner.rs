@@ -7,21 +7,55 @@ use super::model_card::CognitiveSystem;
 use super::model_registry::ModelRegistry;
 use crate::topology::topology_graph::TopologyGraph;
 
-const WEIGHT_AFFINITY: f32 = 0.4;
-const WEIGHT_DOMAIN: f32 = 0.4;
-const WEIGHT_COST: f32 = 0.2;
+/// Default scoring weights — subject to ablation (see CLAUDE.md §2).
+const DEFAULT_WEIGHT_AFFINITY: f32 = 0.4;
+const DEFAULT_WEIGHT_DOMAIN: f32 = 0.4;
+const DEFAULT_WEIGHT_COST: f32 = 0.2;
 const BUDGET_EPSILON: f32 = 0.01;
+
+/// Provider hint scoring bonus — subject to ablation.
+const PROVIDER_HINT_BONUS: f32 = 0.15;
+
+/// Fixed token estimate for cost normalization (input, output).
+const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct ModelAssigner {
     registry: ModelRegistry,
+    /// Weight for cognitive system affinity (S1/S2/S3 match) — subject to ablation.
+    weight_affinity: f32,
+    /// Weight for task domain score — subject to ablation.
+    weight_domain: f32,
+    /// Weight for cost efficiency (lower cost = higher score) — subject to ablation.
+    weight_cost: f32,
 }
 
 impl ModelAssigner {
     pub fn from_registry(registry: &ModelRegistry) -> Self {
         Self {
             registry: registry.clone(),
+            weight_affinity: DEFAULT_WEIGHT_AFFINITY,
+            weight_domain: DEFAULT_WEIGHT_DOMAIN,
+            weight_cost: DEFAULT_WEIGHT_COST,
+        }
+    }
+
+    /// Create an assigner with custom scoring weights.
+    /// Weights are normalized to sum to 1.0 internally.
+    pub fn with_weights(
+        registry: &ModelRegistry,
+        weight_affinity: f32,
+        weight_domain: f32,
+        weight_cost: f32,
+    ) -> Self {
+        let total = weight_affinity + weight_domain + weight_cost;
+        let norm = if total > 0.0 { total } else { 1.0 };
+        Self {
+            registry: registry.clone(),
+            weight_affinity: weight_affinity / norm,
+            weight_domain: weight_domain / norm,
+            weight_cost: weight_cost / norm,
         }
     }
 
@@ -57,10 +91,13 @@ impl ModelAssigner {
             return 0;
         }
 
-        let max_cost = all_models
+        // Pre-compute cost estimates once (avoids repeated calls per node).
+        let (input_tok, output_tok) = COST_ESTIMATE_TOKENS;
+        let model_costs: Vec<f32> = all_models
             .iter()
-            .map(|c| c.estimate_cost(1000, 500))
-            .fold(0.001_f32, f32::max);
+            .map(|c| c.estimate_cost(input_tok, output_tok))
+            .collect();
+        let max_cost = model_costs.iter().fold(0.001_f32, |a, &b| a.max(b));
 
         // Build provider hint lookup
         let hint_map: std::collections::HashMap<usize, &str> = provider_hints
@@ -99,14 +136,14 @@ impl ModelAssigner {
             let mut best_id: Option<String> = None;
             let mut best_score: f32 = f32::NEG_INFINITY;
 
-            for card in &all_models {
+            for (card_idx, card) in all_models.iter().enumerate() {
                 if needs_tools && !card.supports_tools {
                     continue;
                 }
                 if needs_json && !card.supports_json_mode {
                     continue;
                 }
-                let est_cost = card.estimate_cost(1000, 500);
+                let est_cost = model_costs[card_idx];
                 if est_cost > node_budget {
                     continue;
                 }
@@ -114,13 +151,13 @@ impl ModelAssigner {
                 let affinity = self.registry.calibrated_affinity(&card.id, system);
                 let domain = card.domain_score(task_domain);
                 let cost_norm = est_cost / max_cost;
-                let mut score = WEIGHT_AFFINITY * affinity
-                    + WEIGHT_DOMAIN * domain
-                    + WEIGHT_COST * (1.0 - cost_norm);
+                let mut score = self.weight_affinity * affinity
+                    + self.weight_domain * domain
+                    + self.weight_cost * (1.0 - cost_norm);
 
                 // Provider hint bonus: soft preference for the hinted provider
                 if !preferred_provider.is_empty() && card.provider == preferred_provider {
-                    score += 0.15;
+                    score += PROVIDER_HINT_BONUS;
                 }
 
                 if score > best_score {
@@ -130,12 +167,14 @@ impl ModelAssigner {
             }
 
             if let Some(model_id) = best_id {
-                if let Some(card) = self.registry.get(&model_id) {
-                    remaining_budget -= card.estimate_cost(1000, 500);
-                }
+                remaining_budget -= self
+                    .registry
+                    .get(&model_id)
+                    .map(|c| c.estimate_cost(input_tok, output_tok))
+                    .unwrap_or(0.0);
                 let node_idx_pg = petgraph::graph::NodeIndex::new(idx);
                 if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg) {
-                    node_mut.model_id = model_id.clone();
+                    node_mut.model_id.clone_from(&model_id);
                     if !preferred_provider.is_empty() {
                         info!(
                             node = idx,
@@ -182,28 +221,32 @@ impl ModelAssigner {
         let needs_tools = caps.iter().any(|c| c == "tools");
         let needs_json = caps.iter().any(|c| c == "json");
         let all_models = self.registry.all_models();
-        let max_cost = all_models
+        let (input_tok, output_tok) = COST_ESTIMATE_TOKENS;
+        let model_costs: Vec<f32> = all_models
             .iter()
-            .map(|c| c.estimate_cost(1000, 500))
-            .fold(0.001_f32, f32::max);
+            .map(|c| c.estimate_cost(input_tok, output_tok))
+            .collect();
+        let max_cost = model_costs.iter().fold(0.001_f32, |a, &b| a.max(b));
 
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
-        for card in &all_models {
+        for (card_idx, card) in all_models.iter().enumerate() {
             if needs_tools && !card.supports_tools {
                 continue;
             }
             if needs_json && !card.supports_json_mode {
                 continue;
             }
-            if card.estimate_cost(1000, 500) > budget_usd {
+            let est_cost = model_costs[card_idx];
+            if est_cost > budget_usd {
                 continue;
             }
             let affinity = self.registry.calibrated_affinity(&card.id, system);
             let domain = card.domain_score(task_domain);
-            let cost_norm = card.estimate_cost(1000, 500) / max_cost;
-            let score =
-                WEIGHT_AFFINITY * affinity + WEIGHT_DOMAIN * domain + WEIGHT_COST * (1.0 - cost_norm);
+            let cost_norm = est_cost / max_cost;
+            let score = self.weight_affinity * affinity
+                + self.weight_domain * domain
+                + self.weight_cost * (1.0 - cost_norm);
             if score > best_score {
                 best_score = score;
                 best_id = Some(card.id.clone());
@@ -222,9 +265,21 @@ impl ModelAssigner {
 
 #[pymethods]
 impl ModelAssigner {
+    /// Create a ModelAssigner with optional scoring weights.
+    /// Weights default to 0.4/0.4/0.2 (affinity/domain/cost) — subject to ablation.
+    /// If provided, weights are normalized to sum to 1.0.
     #[new]
-    fn py_new(registry: &ModelRegistry) -> Self {
-        Self::from_registry(registry)
+    #[pyo3(signature = (registry, weight_affinity=None, weight_domain=None, weight_cost=None))]
+    fn py_new(
+        registry: &ModelRegistry,
+        weight_affinity: Option<f32>,
+        weight_domain: Option<f32>,
+        weight_cost: Option<f32>,
+    ) -> Self {
+        match (weight_affinity, weight_domain, weight_cost) {
+            (Some(wa), Some(wd), Some(wc)) => Self::with_weights(registry, wa, wd, wc),
+            _ => Self::from_registry(registry),
+        }
     }
 
     /// Assign models to all topology nodes. Optional provider_hints bias
@@ -498,5 +553,55 @@ mod tests {
             graph.try_get_node(1).unwrap().model_id,
             model_id.unwrap()
         );
+    }
+
+    #[test]
+    fn test_custom_weights_cost_heavy() {
+        // With cost weight dominating (0.0/0.0/1.0), cheap-fast should win
+        // for a node that doesn't require tools (reviewer, S3).
+        let registry = test_registry();
+        let assigner = ModelAssigner::with_weights(&registry, 0.0, 0.0, 1.0);
+        let mut g = TopologyGraph::try_new("sequential").unwrap();
+        let n = TopologyNode::new("reviewer".into(), "".into(), 3, vec![], 0, 5.0, 60.0);
+        g.add_node(n);
+        assigner.assign_models_inner(&mut g, "code", 10.0);
+        assert_eq!(
+            g.try_get_node(0).unwrap().model_id, "cheap-fast",
+            "cost-heavy weights should prefer cheap-fast"
+        );
+    }
+
+    #[test]
+    fn test_custom_weights_affinity_heavy() {
+        // With affinity weight dominating (1.0/0.0/0.0) for S3, expensive-smart should win.
+        let registry = test_registry();
+        let assigner = ModelAssigner::with_weights(&registry, 1.0, 0.0, 0.0);
+        let mut g = TopologyGraph::try_new("sequential").unwrap();
+        let n = TopologyNode::new("reviewer".into(), "".into(), 3, vec![], 0, 5.0, 60.0);
+        g.add_node(n);
+        assigner.assign_models_inner(&mut g, "code", 10.0);
+        assert_eq!(
+            g.try_get_node(0).unwrap().model_id, "expensive-smart",
+            "affinity-heavy weights for S3 should prefer expensive-smart"
+        );
+    }
+
+    #[test]
+    fn test_weights_normalized() {
+        // with_weights normalizes to sum=1.0
+        let registry = test_registry();
+        let a = ModelAssigner::with_weights(&registry, 4.0, 4.0, 2.0);
+        assert!((a.weight_affinity - 0.4).abs() < 1e-6);
+        assert!((a.weight_domain - 0.4).abs() < 1e-6);
+        assert!((a.weight_cost - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_default_weights_unchanged() {
+        let registry = test_registry();
+        let a = ModelAssigner::from_registry(&registry);
+        assert!((a.weight_affinity - 0.4).abs() < 1e-6);
+        assert!((a.weight_domain - 0.4).abs() < 1e-6);
+        assert!((a.weight_cost - 0.2).abs() < 1e-6);
     }
 }

@@ -213,13 +213,19 @@ pub struct QualityLabeler {
     verifier: SmtVerifier,
 }
 
+impl Default for QualityLabeler {
+    fn default() -> Self {
+        Self {
+            verifier: SmtVerifier::new(),
+        }
+    }
+}
+
 #[pymethods]
 impl QualityLabeler {
     #[new]
     pub fn new() -> Self {
-        Self {
-            verifier: SmtVerifier::new(),
-        }
+        Self::default()
     }
 
     /// Label the quality of an LLM response for a given task.

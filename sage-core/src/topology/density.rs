@@ -72,11 +72,17 @@ impl DensityScore {
 #[pyclass]
 pub struct TopologyDensity;
 
+impl Default for TopologyDensity {
+    fn default() -> Self {
+        Self
+    }
+}
+
 #[pymethods]
 impl TopologyDensity {
     #[new]
     pub fn new() -> Self {
-        TopologyDensity
+        Self
     }
 
     /// Compute S_complex density score for a topology graph.

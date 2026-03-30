@@ -31,7 +31,8 @@ enum EdgeKind {
     Semantic(String),
     /// Causal directed edge: (relation_label, confidence ∈ [0,1]).
     Causal(String, f32),
-    /// Temporal ordering (reserved for future use).
+    /// Temporal ordering (reserved for Phase C integration).
+    #[allow(dead_code)]
     Temporal,
 }
 
@@ -40,6 +41,7 @@ enum EdgeKind {
 struct EntityNode {
     name: String,
     entity_type: String,
+    #[allow(dead_code)] // Phase C: metadata used for entity attributes in BFS queries
     metadata: HashMap<String, String>,
 }
 
