@@ -536,3 +536,45 @@ Built with `smt+cognitive+tool-executor`:
 bash sage-python/scripts/setup_full.sh
 # Verifies: Rust core (54 exports), Python deps, embeddings, kNN, API keys
 ```
+
+### Critical Fix: kNN Rust Router Activated in Pipeline (March 30, 2026)
+
+**Root cause of ALL previous MASBENCH failures:**
+The pipeline Stage 0 (classify) was using the ComplexityRouter heuristic (34% accuracy)
+instead of the kNN Rust router (92% accuracy). The kNN was loaded at boot but NEVER
+called by the pipeline. All benchmarks ran with 34% routing accuracy.
+
+**Impact:**
+- Simple tasks (S1) misrouted to S2/S3 → 200s topology instead of 6s direct call
+- Complex tasks (S3) misrouted to S2 → wrong topology template
+- MASBENCH results were measuring routing failures, not topology quality
+
+**Fix stack (13 commits in Session 3-4):**
+
+| # | Fix | Commit | Impact |
+|---|-----|--------|--------|
+| 1 | gpt-4.1 → gpt-5.4 | 6933718 | Eliminated 404s |
+| 2 | Embedder model name | ca15f4d | Enabled sentence-transformers |
+| 3 | OpenAI max_completion_tokens | ca15f4d | GPT-5+ models work |
+| 4 | DeepSeek fallback in runner | b6aeea8 | No wrong-provider 404s |
+| 5 | Per-node 60s timeout | b6aeea8 | No single-node blocking |
+| 6 | ProviderPool model→provider | b5ef00c | Correct provider routing |
+| 7 | S1 skip topology fast path | 3efdabf | 200s → 6s for simple tasks |
+| 8 | Rebuild routing exemplars | ee91133 | Rust kNN activated |
+| 9 | sage-core cognitive feature | ec9e601 | HybridVerifier + TemplateStore |
+| 10 | Boot provider by model_id | a80b379 | DeepSeek not sent to Gemini |
+| 11 | ModelRouter provider inference | 51c39a6 | All tiers route correctly |
+| 12 | models.toml + 7 providers | a07a0a4 | All models verified |
+| **13** | **kNN in pipeline Stage 0** | **50ab910** | **92% routing (was 34%)** |
+
+**Before all fixes:** SAGE -10pp vs bare model (broken pipeline)
+**After fix #7 (3 tasks):** SAGE +27pp on depth
+**After ALL fixes:** Not yet tested — this will be the definitive benchmark.
+
+**System verification (E2E test):**
+- Rust core: 18/18 components operational (54 exports)
+- Routing: kNN Rust 92% → S1=6s, S2=14s, S3=TBD
+- Providers: 7/7 OK (DeepSeek, OpenAI, Google, xAI, MiniMax, Kimi, OpenRouter)
+- Memory: Episodic + Entity OK, S-MMU constructor needs update
+- Training: DAPO step 204/1920, reward 0.205
+- Benchmarks: MASBENCH + GAIA adapters ready
