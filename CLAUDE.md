@@ -47,7 +47,9 @@ bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 ## Current State (March 30, 2026)
 
 - **Tests**: Python **1809 passed** / Rust **289 passed** (base), 373+ with features / 0 failures
-- **MASBENCH depth**: **SAGE 67% vs bare model 40% (+27pp)** — first empirical proof topology helps
+- **MASBENCH depth**: **SAGE 67% vs bare model 40% (+27pp)** — first empirical proof topology helps (pre-kNN fix; rerun pending with full Rust stack)
+- **Rust stack**: 18/18 components operational (54 exports), kNN 92% routing NOW active in pipeline
+- **13 infrastructure fixes** applied March 29-30 — see TRAINING_LOG.md for full chain
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
 - **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)
 - **Routing GT**: kNN 92%, SystemRouter 86%, heuristic 34%
