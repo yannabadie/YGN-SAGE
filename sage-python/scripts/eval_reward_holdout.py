@@ -17,6 +17,8 @@ import logging
 import os
 import time
 
+os.environ.setdefault("HF_HUB_OFFLINE", "1")  # Use cached models only
+
 import torch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")

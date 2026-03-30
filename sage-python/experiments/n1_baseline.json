@@ -1,0 +1,24 @@
+{
+  "n1_reward_avg": 0.3912280921141306,
+  "n1_reward_max": 0.9866055846214294,
+  "n1_reward_min": 0.08333333333333333,
+  "n1_above_03": 0.26,
+  "n1_clipped_ratio": 0.42,
+  "n1_count": 50,
+  "per_difficulty": {
+    "simple": {
+      "avg": 0.56734684281879,
+      "count": 15
+    },
+    "moderate": {
+      "avg": 0.4413100981712342,
+      "count": 20
+    },
+    "complex": {
+      "avg": 0.14833333333333334,
+      "count": 15
+    }
+  },
+  "eval_time_sec": 2471.3060665130615,
+  "adapter": "models/local_qwen3_4b_grpo/sft_checkpoint"
+}

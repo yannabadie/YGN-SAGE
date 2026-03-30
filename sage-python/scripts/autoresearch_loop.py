@@ -18,6 +18,8 @@ import datetime
 import json
 import logging
 import os
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")  # Use cached models only
 import subprocess
 import sys
 import time
