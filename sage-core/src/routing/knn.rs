@@ -122,13 +122,13 @@ impl RustKnnRouter {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
 
-        // Sort the top-k slice descending by similarity
-        let mut top_k: Vec<usize> = indices[..k].to_vec();
-        top_k.sort_by(|&a, &b| {
+        // Sort the top-k slice in-place (avoids extra Vec allocation)
+        indices[..k].sort_by(|&a, &b| {
             similarities[b]
                 .partial_cmp(&similarities[a])
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
+        let top_k = &indices[..k];
 
         // OOD rejection: nearest neighbor must exceed threshold
         let nearest_dist = similarities[top_k[0]];
@@ -138,7 +138,7 @@ impl RustKnnRouter {
 
         // Distance-weighted majority vote (only positive similarities count)
         let mut votes: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
-        for &idx in &top_k {
+        for &idx in top_k {
             let weight = similarities[idx].max(0.0);
             let label = self.labels[idx];
             *votes.entry(label).or_insert(0.0) += weight;
