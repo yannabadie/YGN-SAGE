@@ -1,0 +1,9 @@
+{
+  "model": "Qwen/Qwen3-4B",
+  "sft_data": "experiments/data/sft_complex_heavy_json.jsonl",
+  "sft_epochs": 2,
+  "sft_lr": 2e-5,
+  "sft_max_samples": 0,
+  "output": "models/ablation/json_complex_full",
+  "lora_rank": 32
+}

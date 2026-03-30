@@ -59,7 +59,10 @@ SYSTEM_PROMPT = (
 # ════════════════════════════════════════════════════════════════
 
 def load_sft_dataset(path: str, max_samples: int = 0):
-    """Load SFT data from JSONL → messages format for TRL SFTTrainer."""
+    """Load SFT data from JSONL → messages format for TRL SFTTrainer.
+
+    Supports both YAML (topology_yaml field) and JSON (topology_json field).
+    """
     from datasets import Dataset
 
     messages = []
@@ -67,13 +70,14 @@ def load_sft_dataset(path: str, max_samples: int = 0):
         for line in f:
             entry = json.loads(line)
             prompt = entry.get("prompt", "")
-            yaml_text = entry.get("topology_yaml", "")
-            if not prompt or not yaml_text:
+            # Prefer JSON, fall back to YAML
+            topology_text = entry.get("topology_json") or entry.get("topology_yaml", "")
+            if not prompt or not topology_text:
                 continue
             messages.append([
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
-                {"role": "assistant", "content": yaml_text},
+                {"role": "assistant", "content": topology_text},
             ])
 
     if max_samples > 0:
