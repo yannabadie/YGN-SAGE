@@ -227,12 +227,12 @@ class TopologyRunner:
         else:
             provider, config = self._llm, self._config
 
-        # Per-node resilience: retry with fallback provider on failure
+        # Per-node resilience: timeout + retry with fallback provider
         output = ""
         try:
-            response = await provider.generate(
-                messages=messages,
-                config=config,
+            response = await asyncio.wait_for(
+                provider.generate(messages=messages, config=config),
+                timeout=60.0,  # 60s per node, not per topology
             )
             output = response.content or ""
             # Record success in circuit breaker
@@ -248,17 +248,31 @@ class TopologyRunner:
                 "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
                 node_idx, role, provider_name, str(exc)[:150],
             )
-            # Fallback to default provider
+            # Fallback to DeepSeek (most reliable, no rate limits)
             if provider is not self._llm:
                 try:
-                    fallback_config = self._config or LLMConfig(provider="default", model="default")
-                    response = await self._llm.generate(
-                        messages=messages,
-                        config=fallback_config,
-                    )
+                    import os
+                    from sage.providers.openai_compat import OpenAICompatProvider
+                    ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
+                    if ds_key:
+                        fallback_provider = OpenAICompatProvider(
+                            api_key=ds_key,
+                            base_url="https://api.deepseek.com/v1",
+                            provider_name="deepseek",
+                        )
+                        fallback_config = LLMConfig(provider="deepseek", model="deepseek-chat")
+                        response = await fallback_provider.generate(
+                            messages=messages,
+                            config=fallback_config,
+                        )
+                    else:
+                        response = await self._llm.generate(
+                            messages=messages,
+                            config=self._config or LLMConfig(provider="default", model="default"),
+                        )
                     output = response.content or ""
                     log.info(
-                        "[TopologyRunner] node %d (%s) succeeded with fallback provider",
+                        "[TopologyRunner] node %d (%s) succeeded with fallback (deepseek)",
                         node_idx, role,
                     )
                 except Exception as fallback_exc:
