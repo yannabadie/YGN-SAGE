@@ -578,3 +578,35 @@ called by the pipeline. All benchmarks ran with 34% routing accuracy.
 - Memory: Episodic + Entity OK, S-MMU constructor needs update
 - Training: DAPO step 204/1920, reward 0.205
 - Benchmarks: MASBENCH + GAIA adapters ready
+
+### DAPO Training Analysis (March 30, 2026, Step 299)
+
+| Run | Steps | Reward Start→End | Best | Exec Hits | K | Loss |
+|-----|-------|-----------------|------|-----------|---|------|
+| Phase A V4 | 18 | 0.014→0.023 | 0.055 | 0% | 4 | GRPO seq-mean |
+| Phase A V5 | 49 | 0.055→0.078 | 0.189 | 0% | 4 | GRPO seq-mean |
+| Phase A V6 | 1050 | 0.225→0.225 | 0.225 | 0% | 4 | GRPO seq-mean |
+| Combined A+B | 158 | 0.188→0.220 | 0.864 | 11% | 4 | GRPO seq-mean |
+| **DAPO targeted** | **299** | **0.176→0.219** | **0.987** | **9%** | **4** | **DAPO token-mean** |
+
+**Key observations:**
+1. **Best score 0.987** — highest ever. The model CAN produce near-perfect topologies.
+2. **But 91% of topologies have invalid YAML** — exec reward rarely fires.
+3. **Reward progression: +0.043 in 299 steps** — slow but no plateau (unlike V6 which plateaued immediately at 0.225).
+4. **DAPO token-level loss works** — prevents reward hacking on length. But doesn't solve YAML malformation.
+5. **K=4 is the bottleneck** — The Conductor uses K=64 (16x more variance). With K=4, GRPO signal is too noisy for complex structured generation.
+
+**Projected convergence at current rate:**
+- Step 500: reward ~0.25
+- Step 1000: reward ~0.32
+- Step 1920: reward ~0.40
+
+**What would help:**
+- K=8 or K=16 (requires gradient accumulation or VRAM optimization)
+- Dynamic sampling (DAPO feature: skip batches where all K rollouts have same reward)
+- Function-calling format instead of YAML (MAS-Orchestra approach — lower malformation rate)
+
+**What won't help:**
+- More epochs on same dataset (V6 proved 1050 steps of structural plateau)
+- Higher LR (V3/V4 proved drift at lr=5e-5)
+- Merging LoRA (proven to destroy YAML quality)
