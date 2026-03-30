@@ -496,3 +496,43 @@ Latency reduced: 241s avg → 191s avg (-21%)
 Script: `train_topology_targeted.sh`
 Config: DAPO token-level loss, 5 epochs, full 12K dataset, SFT base model
 Step 104/1920 | reward=0.184 | 60s/step | GPUs 100%
+
+### Stack Audit & Fixes (March 30, 2026)
+
+#### Rust sage-core: 100% operational (54 exports)
+
+Built with `smt+cognitive+tool-executor`:
+```
+✓ TopologyGraph, TopologyExecutor, TopologyEngine
+✓ RustKnnRouter (92% accuracy, 50 exemplars)
+✓ PyHybridVerifier (6 structural + 4 semantic checks)
+✓ PyTemplateStore (8 templates)
+✓ SmtVerifier, LtlVerifier
+✓ QualityLabeler, ModelAssigner, SystemRouter
+✓ ContextualBandit, MultiViewMMU
+✓ ToolExecutor (sandbox)
+```
+
+#### Fixes applied in Session 3-4
+
+| Fix | Impact | Commit |
+|-----|--------|--------|
+| gpt-4.1 → gpt-5.4 (all model tiers) | Eliminated 404 errors on OpenAI | 6933718 |
+| Embedder model name fix | Enabled sentence-transformers backend | ca15f4d |
+| OpenAI max_completion_tokens | GPT-5+ models work | ca15f4d |
+| DeepSeek fallback in TopologyRunner | No more wrong-provider 404s | b6aeea8 |
+| Per-node 60s timeout | Prevents single-node blocking | b6aeea8 |
+| ProviderPool model_id→provider inference | deepseek-chat routes to DeepSeek, not Gemini | b5ef00c |
+| S1 skip topology (fast path) | Simple tasks: 200s → 15s | 3efdabf |
+| Rebuild routing_exemplars.npz | Rust kNN router activated | ee91133 |
+| sage-core cognitive feature | HybridVerifier + TemplateStore available | ec9e601 |
+| requirements-runpod.txt | One-command pod setup | e05e335 |
+| setup_full.sh | Automated verification of complete stack | ec9e601 |
+
+#### Setup automation
+
+```bash
+# One-command setup on new RunPod:
+bash sage-python/scripts/setup_full.sh
+# Verifies: Rust core (54 exports), Python deps, embeddings, kNN, API keys
+```
