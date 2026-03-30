@@ -95,7 +95,7 @@ def run_n1(adapter_path: str) -> dict | None:
            "--adapter", adapter_path, "--output", output]
 
     log.info("N1 eval: %s", adapter_path)
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)
 
     if result.returncode != 0:
         log.error("N1 failed: %s", result.stderr[-300:] if result.stderr else "")
