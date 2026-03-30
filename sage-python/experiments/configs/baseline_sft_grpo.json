@@ -1,0 +1,17 @@
+{
+  "model": "Qwen/Qwen3-4B",
+  "sft_data": "data/topology_sft_v2_combined.jsonl",
+  "sft_epochs": 2,
+  "sft_lr": 2e-5,
+  "sft_max_samples": 0,
+  "data": "data/verl_topology_train.parquet",
+  "output": "models/local_qwen3_4b_grpo",
+  "epochs": 1,
+  "lr": 5e-6,
+  "batch_size": 1,
+  "lora_rank": 32,
+  "num_generations": 2,
+  "max_completion_length": 512,
+  "grad_accum": 2,
+  "max_samples": 40
+}

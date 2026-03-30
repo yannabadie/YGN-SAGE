@@ -37,6 +37,13 @@ import torch
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("local_training")
 
+
+def load_config(path: str) -> dict:
+    """Load experiment config JSON. CLI args override config values."""
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 # YGN-SAGE topology system prompt (same as pod training)
 SYSTEM_PROMPT = (
     "You are a multi-agent topology designer for the YGN-SAGE framework. "
@@ -391,7 +398,17 @@ def main():
                         help="K rollouts per prompt for GRPO")
     parser.add_argument("--max-completion-length", type=int, default=1024)
     parser.add_argument("--grad-accum", type=int, default=4)
+    parser.add_argument("--config", default=None, help="JSON config file (CLI args override)")
     args = parser.parse_args()
+
+    # ── Load config if provided ────────────────────────────────
+    if hasattr(args, 'config') and args.config:
+        config = load_config(args.config)
+        for key, value in config.items():
+            key_attr = key.replace("-", "_")
+            if not getattr(args, key_attr, None):  # CLI args take precedence
+                setattr(args, key_attr, value)
+        log.info("Loaded config from %s", args.config)
 
     if args.smoke:
         args.sft_max_samples = 16
