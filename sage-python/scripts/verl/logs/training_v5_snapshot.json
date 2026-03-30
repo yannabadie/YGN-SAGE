@@ -1,82 +1,12 @@
 {
-  "timestamp": "2026-03-30T06:36:43.055638",
+  "timestamp": "2026-03-30T06:46:43.997628",
   "model": "nvidia/Nemotron-Orchestrator-8B",
   "hardware": "2x H100 NVL 94GB",
   "config": "V5+V6: lr=5e-6, KL=0, temp=1.0, max_response_length=1024",
   "total_steps": 1152,
-  "latest_step": 124,
-  "latest_reward": 0.1884765475988388,
+  "latest_step": 134,
+  "latest_reward": 0.19720050692558289,
   "metrics": [
-    {
-      "step": 105,
-      "reward": 0.17732593417167664,
-      "clip_ratio": 0.546875,
-      "kl_loss": 0.0,
-      "grad_norm": 0.030022354796528816
-    },
-    {
-      "step": 106,
-      "reward": 0.1705729067325592,
-      "clip_ratio": 0.5546875,
-      "kl_loss": 0.0,
-      "grad_norm": 0.02180572785437107
-    },
-    {
-      "step": 107,
-      "reward": 0.18658852577209473,
-      "clip_ratio": 0.46875,
-      "kl_loss": 0.0,
-      "grad_norm": 0.02047322876751423
-    },
-    {
-      "step": 108,
-      "reward": 0.18157550692558289,
-      "clip_ratio": 0.4453125,
-      "kl_loss": 0.0,
-      "grad_norm": 0.0232278760522604
-    },
-    {
-      "step": 109,
-      "reward": 0.18155772984027863,
-      "clip_ratio": 0.5,
-      "kl_loss": 0.0,
-      "grad_norm": 0.12021397054195404
-    },
-    {
-      "step": 110,
-      "reward": 0.18557243049144745,
-      "clip_ratio": 0.4453125,
-      "kl_loss": 0.0,
-      "grad_norm": 0.026909735053777695
-    },
-    {
-      "step": 111,
-      "reward": 0.18105466663837433,
-      "clip_ratio": 0.4609375,
-      "kl_loss": 0.0,
-      "grad_norm": 0.03252023831009865
-    },
-    {
-      "step": 112,
-      "reward": 0.18170571327209473,
-      "clip_ratio": 0.4140625,
-      "kl_loss": 0.0,
-      "grad_norm": 0.020782925188541412
-    },
-    {
-      "step": 113,
-      "reward": 0.18813323974609375,
-      "clip_ratio": 0.515625,
-      "kl_loss": 0.0,
-      "grad_norm": 0.021080855280160904
-    },
-    {
-      "step": 114,
-      "reward": 0.18509113788604736,
-      "clip_ratio": 0.453125,
-      "kl_loss": 0.0,
-      "grad_norm": 0.02232223190367222
-    },
     {
       "step": 115,
       "reward": 0.17343750596046448,
@@ -146,6 +76,76 @@
       "clip_ratio": 0.40625,
       "kl_loss": 0.0,
       "grad_norm": 0.05535784736275673
+    },
+    {
+      "step": 125,
+      "reward": 0.1943359375,
+      "clip_ratio": 0.4609375,
+      "kl_loss": 0.0,
+      "grad_norm": 0.031028680503368378
+    },
+    {
+      "step": 126,
+      "reward": 0.1966145783662796,
+      "clip_ratio": 0.3828125,
+      "kl_loss": 0.0,
+      "grad_norm": 0.016056109219789505
+    },
+    {
+      "step": 127,
+      "reward": 0.185546875,
+      "clip_ratio": 0.3828125,
+      "kl_loss": 0.0,
+      "grad_norm": 0.01472905557602644
+    },
+    {
+      "step": 128,
+      "reward": 0.17727863788604736,
+      "clip_ratio": 0.390625,
+      "kl_loss": 0.0,
+      "grad_norm": 0.01940828189253807
+    },
+    {
+      "step": 129,
+      "reward": 0.19212238490581512,
+      "clip_ratio": 0.4609375,
+      "kl_loss": 0.0,
+      "grad_norm": 0.018357230350375175
+    },
+    {
+      "step": 130,
+      "reward": 0.19615885615348816,
+      "clip_ratio": 0.4453125,
+      "kl_loss": 0.0,
+      "grad_norm": 0.01392142940312624
+    },
+    {
+      "step": 131,
+      "reward": 0.19095051288604736,
+      "clip_ratio": 0.484375,
+      "kl_loss": 0.0,
+      "grad_norm": 0.018931977450847626
+    },
+    {
+      "step": 132,
+      "reward": 0.17916665971279144,
+      "clip_ratio": 0.3984375,
+      "kl_loss": 0.0,
+      "grad_norm": 0.0192803293466568
+    },
+    {
+      "step": 133,
+      "reward": 0.1803385317325592,
+      "clip_ratio": 0.4609375,
+      "kl_loss": 0.0,
+      "grad_norm": 0.017372023314237595
+    },
+    {
+      "step": 134,
+      "reward": 0.19720050692558289,
+      "clip_ratio": 0.3671875,
+      "kl_loss": 0.0,
+      "grad_norm": 0.013663984835147858
     }
   ]
 }
