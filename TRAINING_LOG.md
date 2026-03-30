@@ -682,3 +682,41 @@ valid JSON → 0% malformation → 100% exec reward signal.
 - [Nemotron-Orchestrator-8B](https://huggingface.co/nvidia/Nemotron-Orchestrator-8B) — native JSON tool caller
 - [vLLM Structured Outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/)
 - [TRL GRPO + JSON Schema](https://github.com/huggingface/trl/issues/5154)
+
+### JSON Format Validation (March 30, 2026)
+
+**SAGE already accepts JSON topologies — no code change needed.**
+
+| Format | format_score | structure_score | total_score |
+|--------|-------------|-----------------|-------------|
+| YAML | 1.00 | 1.00 | 0.9848 |
+| JSON | 1.00 | 1.00 | 0.9848 |
+
+The reward function (`_score_format`) calls `yaml.safe_load()` which parses
+valid JSON natively. Fallback `json.loads()` catches JSON with trailing commas.
+The execution path (`execution/__init__.py`) tries `json.loads()` FIRST.
+
+**What needs to change for JSON tool-calling training:**
+
+1. **Dataset conversion** (YAML → JSON):
+   - Convert 12,303 training entries from YAML ground truth to JSON
+   - Change system prompt from "design as YAML DAG" to "emit JSON tool calls"
+   - Script: `convert_sft_to_json.py`
+
+2. **Reward function** — already works, no change needed
+
+3. **Execution path** — already works, JSON is tried first
+
+4. **Phase C tool-call format**:
+   - Step 0 (generate topology): `{"nodes": [...], "edges": [...], "reasoning": "..."}`
+   - Checkpoint decisions: `{"action": "continue"}` or `{"action": "upgrade", "node": 2, "new_tier": "reasoner"}`
+   - Both are native JSON — perfect for Nemotron's tool-calling training
+   - `SageTopologyEnv` needs a JSON parser for tool_calls → TopologyGraph
+
+5. **vLLM constrained decoding**:
+   - Define Pydantic schema for TopologyOutput
+   - Pass to verl rollout config as `guided_json`
+   - Guarantees 100% valid output → 100% exec reward signal
+
+**Impact:** Training pivots from "teach YAML syntax" to "teach topology QUALITY" —
+the model's native JSON ability handles the format, RL handles the substance.
