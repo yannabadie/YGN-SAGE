@@ -164,6 +164,7 @@ pub struct TopologyNode {
 impl TopologyNode {
     #[new]
     #[pyo3(signature = (role, model_id, system=1, required_capabilities=vec![], security_label=0, max_cost_usd=1.0, max_wall_time_s=60.0, prompt=String::new(), fallback_tier=String::new(), is_checkpoint=false, max_retries=0))]
+    #[allow(clippy::too_many_arguments)] // PyO3 constructor mirrors Python __init__ signature
     pub fn py_new(
         role: String,
         model_id: String,

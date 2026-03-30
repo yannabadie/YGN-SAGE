@@ -8,6 +8,24 @@
 //!
 //! Uses a simplified diagonal covariance (no full matrix needed for 3D).
 
+/// Per-dimension bounds for clamping samples.
+#[derive(Debug, Clone)]
+pub struct DimensionBounds {
+    pub min: f64,
+    pub max: f64,
+}
+
+impl DimensionBounds {
+    pub fn new(min: f64, max: f64) -> Self {
+        Self { min, max }
+    }
+
+    /// Clamp a value to this dimension's bounds.
+    pub fn clamp(&self, v: f64) -> f64 {
+        v.clamp(self.min, self.max)
+    }
+}
+
 /// CMA-ME emitter — samples continuous parameter vectors and adapts the
 /// search distribution based on elite fitness feedback.
 pub struct CmaEmitter {
@@ -16,6 +34,11 @@ pub struct CmaEmitter {
     sigma: f64,
     /// Diagonal covariance (simplified — no full matrix needed for 3D).
     cov_diag: Vec<f64>,
+    /// Per-dimension bounds for clamping.
+    bounds: Vec<DimensionBounds>,
+    /// Sigma decay factor applied after each generation — subject to ablation.
+    /// 1.0 = no decay (default). <1.0 decays sigma over time to refine search.
+    sigma_decay: f64,
     pub generation: u32,
 }
 
@@ -23,13 +46,54 @@ impl CmaEmitter {
     /// Create a new emitter with `dim` dimensions and initial step size `initial_sigma`.
     ///
     /// Mean is initialised at `[0.5; dim]`, covariance diagonal at `[1.0; dim]`.
+    /// Bounds default to `[0.01, 10.0]` per dimension.
     pub fn new(dim: usize, initial_sigma: f64) -> Self {
         Self {
             dim,
             mean: vec![0.5; dim],
             sigma: initial_sigma,
             cov_diag: vec![1.0; dim],
+            bounds: vec![DimensionBounds::new(0.01, 10.0); dim],
+            sigma_decay: 1.0,
             generation: 0,
+        }
+    }
+
+    /// Create an emitter with per-dimension bounds and optional sigma decay.
+    ///
+    /// For topology parameters: dim 0 = max_cost_usd [0.001, 5.0],
+    /// dim 1 = max_wall_time_s [1.0, 300.0], dim 2 = edge_weight [0.1, 5.0].
+    pub fn with_bounds(
+        dim: usize,
+        initial_sigma: f64,
+        bounds: Vec<DimensionBounds>,
+        sigma_decay: f64,
+    ) -> Self {
+        assert_eq!(bounds.len(), dim, "bounds length must match dim");
+        // Initialize mean at the center of each dimension's range.
+        let mean: Vec<f64> = bounds
+            .iter()
+            .map(|b| (b.min + b.max) / 2.0)
+            .collect();
+        Self {
+            dim,
+            mean,
+            sigma: initial_sigma,
+            cov_diag: vec![1.0; dim],
+            bounds,
+            sigma_decay: sigma_decay.clamp(0.9, 1.0),
+            generation: 0,
+        }
+    }
+
+    /// Warm-start the emitter mean from observed elite values.
+    ///
+    /// Useful at small scale (<1000 archives) to avoid wasting early
+    /// generations exploring around an arbitrary initial mean.
+    pub fn warm_start(&mut self, center: &[f64]) {
+        assert_eq!(center.len(), self.dim, "center length must match dim");
+        for (j, &c) in center.iter().enumerate().take(self.dim) {
+            self.mean[j] = self.bounds[j].clamp(c);
         }
     }
 
@@ -43,11 +107,16 @@ impl CmaEmitter {
         &self.mean
     }
 
+    /// Current sigma (step size).
+    pub fn sigma(&self) -> f64 {
+        self.sigma
+    }
+
     /// Sample `n` parameter vectors from `N(mean, sigma^2 * diag(cov_diag))`.
     ///
     /// Uses Box-Muller transform to sample from a Gaussian distribution
     /// centered on `mean` with variance `sigma^2 * cov_diag[j]`.
-    /// All values are clamped to `[0.01, 10.0]`.
+    /// Values are clamped to per-dimension bounds.
     pub fn ask(&self, n: usize) -> Vec<Vec<f64>> {
         use rand::Rng;
         let mut rng = rand::rng();
@@ -60,7 +129,7 @@ impl CmaEmitter {
                         let u2: f64 = rng.random::<f64>();
                         let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
                         let v = self.mean[j] + self.sigma * self.cov_diag[j].sqrt() * z;
-                        v.clamp(0.01, 10.0)
+                        self.bounds[j].clamp(v)
                     })
                     .collect()
             })
@@ -72,6 +141,7 @@ impl CmaEmitter {
     /// Sorts by fitness (descending), takes the top `μ = n/2` elites, then:
     /// - Updates `mean` as the weighted average of elites.
     /// - Updates `cov_diag` from the elite variance.
+    /// - Applies sigma decay.
     /// - Increments `generation`.
     pub fn tell(&mut self, samples: &[Vec<f64>], fitnesses: &[f64]) {
         assert_eq!(
@@ -125,6 +195,7 @@ impl CmaEmitter {
 
         self.mean = new_mean;
         self.cov_diag = new_cov;
+        self.sigma *= self.sigma_decay;
         self.generation += 1;
     }
 }
@@ -140,6 +211,7 @@ mod tests {
         let e = CmaEmitter::new(3, 0.3);
         assert_eq!(e.dimension(), 3);
         assert_eq!(e.mean(), &[0.5, 0.5, 0.5]);
+        assert!((e.sigma() - 0.3).abs() < 1e-10);
     }
 
     #[test]
@@ -196,5 +268,89 @@ mod tests {
         }
         // Mean should be closer to 2.0 than initial 0.5
         assert!((e.mean()[0] - 2.0).abs() < (0.5_f64 - 2.0).abs());
+    }
+
+    #[test]
+    fn test_with_bounds_topology_params() {
+        // Topology CMA-ME: cost [0.001, 5.0], time [1.0, 300.0], weight [0.1, 5.0]
+        let bounds = vec![
+            DimensionBounds::new(0.001, 5.0),
+            DimensionBounds::new(1.0, 300.0),
+            DimensionBounds::new(0.1, 5.0),
+        ];
+        let e = CmaEmitter::with_bounds(3, 0.3, bounds, 0.99);
+        // Mean should be centered in each range
+        assert!((e.mean()[0] - 2.5005).abs() < 0.01);
+        assert!((e.mean()[1] - 150.5).abs() < 0.01);
+        assert!((e.mean()[2] - 2.55).abs() < 0.01);
+
+        let samples = e.ask(10);
+        for s in &samples {
+            assert!(s[0] >= 0.001 && s[0] <= 5.0, "cost out of bounds: {}", s[0]);
+            assert!(s[1] >= 1.0 && s[1] <= 300.0, "time out of bounds: {}", s[1]);
+            assert!(s[2] >= 0.1 && s[2] <= 5.0, "weight out of bounds: {}", s[2]);
+        }
+    }
+
+    #[test]
+    fn test_sigma_decay() {
+        let bounds = vec![DimensionBounds::new(0.0, 10.0); 3];
+        let mut e = CmaEmitter::with_bounds(3, 1.0, bounds, 0.95);
+        let samples = e.ask(4);
+        let fitnesses = vec![0.1, 0.5, 0.9, 0.3];
+        e.tell(&samples, &fitnesses);
+        assert!((e.sigma() - 0.95).abs() < 1e-10, "sigma should decay by 0.95");
+        // After 10 generations
+        for _ in 0..9 {
+            let s = e.ask(4);
+            e.tell(&s, &fitnesses);
+        }
+        assert!(e.sigma() < 0.65, "sigma should have decayed after 10 gens: {}", e.sigma());
+    }
+
+    #[test]
+    fn test_warm_start() {
+        let mut e = CmaEmitter::new(3, 0.3);
+        assert_eq!(e.mean(), &[0.5, 0.5, 0.5]);
+        e.warm_start(&[2.0, 3.0, 1.5]);
+        assert!((e.mean()[0] - 2.0).abs() < 1e-10);
+        assert!((e.mean()[1] - 3.0).abs() < 1e-10);
+        assert!((e.mean()[2] - 1.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_warm_start_clamps_to_bounds() {
+        let bounds = vec![
+            DimensionBounds::new(0.001, 5.0),
+            DimensionBounds::new(1.0, 300.0),
+            DimensionBounds::new(0.1, 5.0),
+        ];
+        let mut e = CmaEmitter::with_bounds(3, 0.3, bounds, 1.0);
+        e.warm_start(&[100.0, -50.0, 3.0]); // extreme values should be clamped
+        assert!((e.mean()[0] - 5.0).abs() < 1e-10, "should clamp to max");
+        assert!((e.mean()[1] - 1.0).abs() < 1e-10, "should clamp to min");
+        assert!((e.mean()[2] - 3.0).abs() < 1e-10, "within bounds, unchanged");
+    }
+
+    #[test]
+    fn test_small_scale_convergence() {
+        // Simulate CMA-ME at small scale: only 4 samples per generation,
+        // 5 generations. Should still converge toward target.
+        let bounds = vec![DimensionBounds::new(0.0, 5.0)];
+        let mut e = CmaEmitter::with_bounds(1, 0.5, bounds, 0.98);
+        e.warm_start(&[1.0]); // start near target
+
+        // Target: peak fitness at x=2.0
+        for _ in 0..5 {
+            let samples = e.ask(4); // small population
+            let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
+            e.tell(&samples, &fitnesses);
+        }
+        // Should be closer to 2.0 than initial 1.0
+        assert!(
+            (e.mean()[0] - 2.0).abs() < (1.0_f64 - 2.0).abs(),
+            "CMA should converge toward 2.0 even at small scale, got {}",
+            e.mean()[0]
+        );
     }
 }
