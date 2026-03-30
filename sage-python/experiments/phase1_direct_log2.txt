@@ -1,0 +1,67 @@
+GPU clocks set to "(gpuClkMin 3105, gpuClkMax 3105)" for GPU 00000000:01:00.0
+All done.
+=== Phase 1 Direct Runner: 8 experiments ===
+Start: lun. 30 mars 2026 17:01:07
+
+============================================
+=== ablation_epochs_3 ===
+=== lun. 30 mars 2026 17:01:07 ===
+============================================
+--- SFT training: experiments/configs/ablation_epochs_3.json ---
+2026-03-30 17:01:09,680 [local_training] Loaded config from experiments/configs/ablation_epochs_3.json
+2026-03-30 17:01:09,681 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 32)...
+2026-03-30 17:01:17,796 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.71s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.78s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.66s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.22s/it]
+2026-03-30 17:01:28,433 [local_training] Parameters: 66060288 trainable / 2271870464 total (2.91%)
+2026-03-30 17:01:28,550 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 17:01:29,025 [local_training] Loaded 400 SFT examples from data/topology_sft_v2_combined.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  19%|#9        | 77/400 [00:00<00:00, 749.46 examples/s]Tokenizing train dataset:  42%|####2     | 169/400 [00:00<00:00, 841.29 examples/s]Tokenizing train dataset:  66%|######6   | 266/400 [00:00<00:00, 896.75 examples/s]Tokenizing train dataset:  90%|######### | 362/400 [00:00<00:00, 918.98 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 825.66 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 85576.21 examples/s]
+2026-03-30 17:01:31,610 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 17:01:31,610 [local_training] Dataset: 400 examples, lr=2.0e-05, epochs=3
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.6955, 'grad_norm': 3.1875, 'learning_rate': 1e-05, 'entropy': 1.0765700474381448, 'num_tokens': 21939.0, 'mean_token_accuracy': 0.5260336518287658, 'epoch': 0.1}
+{'loss': 2.5202, 'grad_norm': 1.6875, 'learning_rate': 1.9997552766852434e-05, 'entropy': 1.218260307610035, 'num_tokens': 42955.0, 'mean_token_accuracy': 0.5310582324862481, 'epoch': 0.2}
+{'loss': 2.3145, 'grad_norm': 1.078125, 'learning_rate': 1.9912025308994146e-05, 'entropy': 1.4265898555517196, 'num_tokens': 66939.0, 'mean_token_accuracy': 0.5477687746286393, 'epoch': 0.3}
+{'loss': 2.0975, 'grad_norm': 0.87109375, 'learning_rate': 1.9705331351235673e-05, 'entropy': 1.6189120948314666, 'num_tokens': 89902.0, 'mean_token_accuracy': 0.5646611705422402, 'epoch': 0.4}
+{'loss': 1.9451, 'grad_norm': 0.7109375, 'learning_rate': 1.9379997560189677e-05, 'entropy': 1.807745784521103, 'num_tokens': 112178.0, 'mean_token_accuracy': 0.579806524515152, 'epoch': 0.5}
+{'loss': 1.8711, 'grad_norm': 0.70703125, 'learning_rate': 1.8940000878562758e-05, 'entropy': 1.9212303072214127, 'num_tokens': 134692.0, 'mean_token_accuracy': 0.585691225528717, 'epoch': 0.6}
+{'loss': 1.7206, 'grad_norm': 0.67578125, 'learning_rate': 1.8390719910244487e-05, 'entropy': 1.850338339805603, 'num_tokens': 157161.0, 'mean_token_accuracy': 0.6170149937272071, 'epoch': 0.7}
+{'loss': 1.6425, 'grad_norm': 0.65625, 'learning_rate': 1.773886917122107e-05, 'entropy': 1.7850433737039566, 'num_tokens': 179554.0, 'mean_token_accuracy': 0.6364037439227104, 'epoch': 0.8}
+{'loss': 1.5371, 'grad_norm': 0.8046875, 'learning_rate': 1.6992417010043144e-05, 'entropy': 1.5842881470918655, 'num_tokens': 202566.0, 'mean_token_accuracy': 0.6556746453046799, 'epoch': 0.9}
+{'loss': 1.4433, 'grad_norm': 0.73046875, 'learning_rate': 1.6160488201203643e-05, 'entropy': 1.2929772287607193, 'num_tokens': 224242.0, 'mean_token_accuracy': 0.675809745490551, 'epoch': 1.0}
+{'loss': 1.3452, 'grad_norm': 0.63671875, 'learning_rate': 1.5253252402142989e-05, 'entropy': 1.2426349923014641, 'num_tokens': 247727.0, 'mean_token_accuracy': 0.6940154880285263, 'epoch': 1.1}
+{'loss': 1.2863, 'grad_norm': 0.6015625, 'learning_rate': 1.4281799837404553e-05, 'entropy': 1.2598076969385148, 'num_tokens': 269538.0, 'mean_token_accuracy': 0.7033998355269432, 'epoch': 1.2}
+{'loss': 1.2505, 'grad_norm': 0.5625, 'learning_rate': 1.3258005729601178e-05, 'entropy': 1.241957002878189, 'num_tokens': 292882.0, 'mean_token_accuracy': 0.7069160789251328, 'epoch': 1.3}
+{'loss': 1.1693, 'grad_norm': 0.5703125, 'learning_rate': 1.2194385134414608e-05, 'entropy': 1.1827905654907227, 'num_tokens': 314169.0, 'mean_token_accuracy': 0.7223570212721825, 'epoch': 1.4}
+{'loss': 1.1927, 'grad_norm': 0.67578125, 'learning_rate': 1.11039399541527e-05, 'entropy': 1.165087527036667, 'num_tokens': 335273.0, 'mean_token_accuracy': 0.7209738582372666, 'epoch': 1.5}
+{'loss': 1.1879, 'grad_norm': 0.55859375, 'learning_rate': 1e-05, 'entropy': 1.1809970915317536, 'num_tokens': 356786.0, 'mean_token_accuracy': 0.7172794550657272, 'epoch': 1.6}
+{'loss': 1.1624, 'grad_norm': 0.5390625, 'learning_rate': 8.896060045847305e-06, 'entropy': 1.162496304512024, 'num_tokens': 379491.0, 'mean_token_accuracy': 0.7232761040329934, 'epoch': 1.7}
+{'loss': 1.1863, 'grad_norm': 0.59375, 'learning_rate': 7.805614865585397e-06, 'entropy': 1.1641662165522575, 'num_tokens': 401543.0, 'mean_token_accuracy': 0.7193912670016289, 'epoch': 1.8}
+{'loss': 1.0939, 'grad_norm': 0.625, 'learning_rate': 6.741994270398826e-06, 'entropy': 1.0852238938212395, 'num_tokens': 423875.0, 'mean_token_accuracy': 0.7370579153299331, 'epoch': 1.9}
+{'loss': 1.1688, 'grad_norm': 0.50390625, 'learning_rate': 5.718200162595449e-06, 'entropy': 1.1339785113930703, 'num_tokens': 448484.0, 'mean_token_accuracy': 0.7249728575348854, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+{'loss': 1.1033, 'grad_norm': 0.59765625, 'learning_rate': 4.746747597857014e-06, 'entropy': 1.0623068168759346, 'num_tokens': 470274.0, 'mean_token_accuracy': 0.737737825512886, 'epoch': 2.1}
+{'loss': 1.1441, 'grad_norm': 0.52734375, 'learning_rate': 3.839511798796357e-06, 'entropy': 1.122108355164528, 'num_tokens': 492548.0, 'mean_token_accuracy': 0.7276353225111961, 'epoch': 2.2}
+{'loss': 1.0651, 'grad_norm': 0.546875, 'learning_rate': 3.00758298995686e-06, 'entropy': 1.0828450217843055, 'num_tokens': 515328.0, 'mean_token_accuracy': 0.7430180385708809, 'epoch': 2.3}
+{'loss': 1.113, 'grad_norm': 0.5390625, 'learning_rate': 2.2611308287789347e-06, 'entropy': 1.11958389878273, 'num_tokens': 538019.0, 'mean_token_accuracy': 0.7341781377792358, 'epoch': 2.4}
+{'loss': 1.0773, 'grad_norm': 0.57421875, 'learning_rate': 1.609280089755515e-06, 'entropy': 1.0757872462272644, 'num_tokens': 559202.0, 'mean_token_accuracy': 0.739337007701397, 'epoch': 2.5}
+{'loss': 1.069, 'grad_norm': 0.54296875, 'learning_rate': 1.059999121437243e-06, 'entropy': 1.0597321465611458, 'num_tokens': 581164.0, 'mean_token_accuracy': 0.7428141549229622, 'epoch': 2.6}
+{'loss': 1.0756, 'grad_norm': 0.515625, 'learning_rate': 6.200024398103255e-07, 'entropy': 1.078710687160492, 'num_tokens': 603613.0, 'mean_token_accuracy': 0.7326928585767746, 'epoch': 2.7}
+{'loss': 1.1443, 'grad_norm': 0.5390625, 'learning_rate': 2.94668648764328e-07, 'entropy': 1.122564335167408, 'num_tokens': 626598.0, 'mean_token_accuracy': 0.7259920999407768, 'epoch': 2.8}
+{'loss': 1.1193, 'grad_norm': 0.60546875, 'learning_rate': 8.797469100585432e-08, 'entropy': 1.0949021726846695, 'num_tokens': 649494.0, 'mean_token_accuracy': 0.7302131444215775, 'epoch': 2.9}
+{'loss': 1.1906, 'grad_norm': 0.53515625, 'learning_rate': 2.447233147570005e-09, 'entropy': 1.1542839989066125, 'num_tokens': 672726.0, 'mean_token_accuracy': 0.7198246955871582, 'epoch': 3.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+{'train_runtime': 3155.4403, 'train_samples_per_second': 0.38, 'train_steps_per_second': 0.048, 'train_loss': 1.431071538925171, 'epoch': 3.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+2026-03-30 17:54:08,087 [local_training] SFT complete in 52.6 min. Adapter saved to models/ablation/epochs_3\sft_checkpoint
+2026-03-30 17:54:08,089 [local_training] === SFT-only mode. Done. ===
+--- N1 eval: models/ablation/epochs_3/sft_checkpoint ---
+2026-03-30 17:54:22,183 [eval_n1] Loading model Qwen/Qwen3-4B + adapter models/ablation/epochs_3/sft_checkpoint...
+2026-03-30 17:54:25,899 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:07<00:15,  7.82s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:16<00:08,  8.45s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:16<00:00,  4.69s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:16<00:00,  5.64s/it]
+2026-03-30 17:54:44,870 [eval_n1] Evaluating 50 holdout prompts...
+Error unknown error at line 81 in file D:\a\bitsandbytes\bitsandbytes\csrc\ops.cu

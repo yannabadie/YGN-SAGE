@@ -1,75 +1,105 @@
-# local — Training local sur RTX 3500 Ada 12 GB
+# local — Training local Qwen3-4B sur RTX 3500 Ada 12 GB
 
 ## Scope
-Training Qwen3-4B avec TRL+PEFT+bitsandbytes GRPO sur GPU local.
-Itération rapide pour tester reward/data avant déploiement pod H100.
-
-**PAS d'Unsloth** — triton incompatible Windows (feedback_training_issues.md).
+Training Qwen3-4B comme Path 6 du TopologyEngine SAGE.
+Le modèle apprend à orchestrer le pipeline Rust+Python complet via `<tool_call>` JSON.
+Itération rapide avant déploiement pod H100.
 
 ## Stack
-- **Model**: Qwen/Qwen3-4B (base, 4-bit NF4 via bitsandbytes)
-- **LoRA**: rank 32, alpha 64, target all attention + MLP projections
-- **Trainer**: TRL GRPOTrainer 0.29.1 + PEFT 0.18.1
-- **Reward**: `sage.verl.reward.compute_score` (Phase A = binary YAML checks)
-- **Data**: `data/verl_topology_train.parquet` (12303 entries)
+- **Model**: Qwen/Qwen3-4B (base, 4-bit NF4, tool-call natif via chat template Hermes)
+- **Format**: `<tool_call>` JSON — pas YAML (91% malformation YAML historique, +1.0 reward bonus)
+- **LoRA**: rank 32, alpha 64, cibles attention + MLP
+- **Trainer**: TRL 0.29.1 SFTTrainer + GRPOTrainer, PEFT, bitsandbytes
+- **Reward**: `sage.verl.reward.compute_score` — scores tool_call +1.0, JSON +0.5, YAML +0.5
+- **Outils**: 2 tools seulement (create_topology + adapt_topology). Les 5 autres (routing, assignment, verification, execution, memory) sont gérés par Rust.
 
 ## Key Files
-- `sage-python/scripts/train_local_qwen3_4b.py` — Script principal
-- `sage-python/src/sage/verl/reward.py` — Reward function (SAGE_TRAINING_PHASE=A)
-- `sage-python/data/verl_topology_train.parquet` — 12303 entries
-- `sage-python/models/local_qwen3_4b_grpo/live_metrics.jsonl` — Metrics temps réel
+- `scripts/train_local_qwen3_4b.py` — Pipeline SFT → GRPO
+- `scripts/sage_tool_schemas.py` — 2 tool definitions + system prompt
+- `scripts/eval_reward_holdout.py` — N1 evaluator (batched, ~10 min)
+- `scripts/autoresearch_loop.py` — Boucle expérimentale autonome
+- `scripts/convert_sft_to_toolcall.py` — Conversion YAML → tool-call JSON
+- `scripts/enrich_topologies_adaptive.py` — Enrichissement adaptation/checkpoints
+- `scripts/generate_expert_topologies.py` — Distillation Claude Opus 4.6
+
+## Données
+| Fichier | Entrées | Format | Usage |
+|---------|---------|--------|-------|
+| `topology_sft_v2_toolcall.jsonl` | 1880 | `<tool_call>` JSON | Phase A SFT |
+| `topology_sft_v2_adaptive.jsonl` | 1880 (83% checkpoints) | `<tool_call>` JSON + adaptation | Phase C |
+| `expert_topologies.jsonl` | 8 | `<tool_call>` JSON, 63% complex | Distillation haute qualité |
+| `verl_topology_train.parquet` | 12303 | Prompts | Phase B GRPO |
+| `holdout_50_toolcall.json` | 50 | `<tool_call>` JSON | Évaluation N1 |
 
 ## Commands
 ```bash
-# Prerequisites (one-time)
-nvidia-smi -lgc 3105                    # Lock GPU clocks to max (CRITICAL)
-powercfg //setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  # High Performance
+# Prerequisites
+nvidia-smi -lgc 3105                    # Lock GPU clocks (CRITIQUE)
+powercfg //setactive 8c5e7fda-...       # High Performance
 
-# Smoke test (2 steps, ~5 min)
-cd sage-python && python scripts/train_local_qwen3_4b.py --smoke
+# Phase A: SFT warmup (~60 min)
+cd sage-python
+HF_HUB_OFFLINE=1 python -u scripts/train_local_qwen3_4b.py \
+  --config experiments/configs/toolcall_sft_full.json --sft-only
 
-# Training rapide (20 samples, ~25 min)
-python scripts/train_local_qwen3_4b.py --max-samples 20 --num-generations 2 \
-  --max-completion-length 512 --grad-accum 2
+# Phase B: GRPO structural
+HF_HUB_OFFLINE=1 python -u scripts/train_local_qwen3_4b.py \
+  --adapter models/toolcall_qwen3_4b/sft_checkpoint \
+  --max-samples 40 --num-generations 2 --max-completion-length 512
 
-# Training complet (12303 samples — LENT, ~40h sans vLLM)
-python scripts/train_local_qwen3_4b.py
+# N1 Eval (batched, ~10 min)
+HF_HUB_OFFLINE=1 python -u scripts/eval_reward_holdout.py \
+  --adapter models/toolcall_qwen3_4b/sft_checkpoint
 
-# Monitor en temps réel
-cat models/local_qwen3_4b_grpo/live_metrics.jsonl
+# Autoresearch loop
+python scripts/autoresearch_loop.py --eval-only \
+  --adapter models/toolcall_qwen3_4b/sft_checkpoint
 ```
 
-## Hardware
-- GPU: NVIDIA RTX 3500 Ada (12 GB VRAM), Ada Lovelace
-- VRAM usage: ~5.7 GB idle, ~6 GB generation, ~12 GB backward pass
-- **CRITIQUE**: `nvidia-smi -lgc 3105` obligatoire — sans ça le GPU tourne à 300 MHz (10% vitesse)
+## Résultats (2026-03-30)
 
-## Contraintes Windows
-1. **Pas de triton/Unsloth** — utiliser TRL+PEFT+bitsandbytes directement
-2. **Pas de vLLM** — generation autoregressive native (lent)
-3. **WDDM mode** — GPU scheduling overhead, utilization % trompeuse
-4. **Power management** — lock clocks + High Performance power plan obligatoire
-5. **gradient_checkpointing** dans GRPOConfig gère le KV cache toggle automatiquement
+### YAML baseline (abandonné)
+- SFT loss: 2.74 → 0.92 (470 steps, 56 min)
+- GRPO post-SFT: avg reward 0.40, max 0.93
+- Problème: 91% malformation YAML, signal discret
 
-## Résultats actuels (2026-03-29)
-- **Smoke test**: OK (reward 0.19 en 2 steps)
-- **20 samples run**: avg reward 0.134, max 0.225, step time ~77s
-- **Plateau**: reward ~0.13-0.15 (Phase A = checks binaires, signal discret)
-- **clipped_ratio=1.0**: le modèle ne génère jamais EOS
+### JSON Tool-Call (en cours)
+- SFT loss: 1.59 → 0.30 (80 steps, ~20 min) — 2.4x plus rapide que YAML
+- Format natif Qwen3 → le modèle apprend le CONTENU, pas le FORMAT
+- Training en cours, Phase A
 
-## Diagnostic reward Phase A
-La reward function Phase A (`_score_structure`) utilise des checks binaires:
-- nodes présents? +0.3
-- edges présents? +0.2
-- roles corrects? +0.3
-- reasoning? +0.2
-→ Seulement ~21 valeurs uniques possibles.
-Toutes les rewards observées (0.08-0.22) = YAML invalide.
+## Architecture des outils
+```
+Qwen3-4B (learned)          Rust pipeline (hardcoded)
+├── create_topology  ──────→ TopologyEngine (6 paths)
+│   (DAG design)             ├── ModelAssigner (cards.toml)
+│                            ├── SystemRouter + kNN (92%)
+└── adapt_topology   ──────→ ├── HybridVerifier (Z3/OxiZ)
+    (upgrade/reroute)        ├── TopologyRunner + ProviderPool
+                             └── S-MMU (Arrow + SQLite)
+```
 
-**Pour dépasser 0.3**: besoin que le modèle génère du YAML valide avec nodes+edges.
-Options: plus de samples, SFT warmup, ou passer à Phase C (SAGE_TRAINING_PHASE=C).
+## Roadmap
+- Phase 0: Autoresearch infrastructure DONE
+- Phase A: SFT tool-call warmup IN PROGRESS (loss 0.30)
+- Phase B: GRPO structural reward (pending)
+- Phase C: Execution reward + adaptation (pending)
+- Phase 4: Deploy Path 6 + BigCodeBench proof (pending)
 
-## Espace disque
-- Cache HF: `~/.cache/huggingface/hub/` — Qwen3-4B = 7.6 GB
-- **Nemotron-8B SUPPRIMÉ** du cache local (31 GB récupérés) — c'est pour le pod H100
-- Garder ≥20 GB libres sur C: pour les checkpoints
+## Décisions clés (avec justification)
+1. **JSON tool-call > YAML** — LLMs ont 100x plus de JSON en pretraining, reward +1.0 vs +0.5
+2. **2 outils > 7** — Les 5 modules Rust surpassent le 4B (kNN 92%). Economise ~500 tokens context
+3. **Qwen3-4B base** — A déjà tool-call natif (chat template Hermes 4168 chars). Pas de variante Instruct séparée
+4. **SFT avant GRPO** — Prouvé mathématiquement: P(JSON valide | pi_base) = 0 → GRPO advantage = 0
+
+## Contraintes hardware
+- RTX 3500 Ada 12 GB VRAM, WDDM, Windows
+- `nvidia-smi -lgc 3105` obligatoire (sinon GPU à 300 MHz)
+- HF_HUB_OFFLINE=1 (SSL issues avec HuggingFace)
+- Garder >=15 GB libres sur C: pour checkpoints
+
+## Références
+- RL-Struct (arXiv 2512.00319) — GRPO + JSON, Qwen3-4B, 89.7% accuracy
+- DAPO (arXiv 2503.14476) — Token-level loss, KL=0
+- The Conductor (arXiv 2512.04388) — SFT → GRPO for topology
+- AgentConductor (arXiv 2602.17100) — 97.5% HumanEval with 3B

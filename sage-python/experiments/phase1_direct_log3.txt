@@ -1,0 +1,422 @@
+GPU clocks set to "(gpuClkMin 3105, gpuClkMax 3105)" for GPU 00000000:01:00.0
+All done.
+=== Phase 1 Direct Runner: 8 experiments ===
+Start: lun. 30 mars 2026 18:01:35
+
+============================================
+=== ablation_epochs_3 ===
+=== lun. 30 mars 2026 18:01:35 ===
+============================================
+--- SFT checkpoint exists, skipping training ---
+--- GPU cooldown 10s ---
+--- N1 eval: models/ablation/epochs_3/sft_checkpoint ---
+2026-03-30 18:01:52,291 [eval_n1] Loading model Qwen/Qwen3-4B + adapter models/ablation/epochs_3/sft_checkpoint...
+2026-03-30 18:01:55,582 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:08,  4.48s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.71s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.62s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.16s/it]
+2026-03-30 18:02:06,173 [eval_n1] Evaluating 50 holdout prompts...
+2026-03-30 18:11:28,040 [eval_n1]   10/50 | avg reward=0.2164
+2026-03-30 18:21:27,537 [eval_n1]   20/50 | avg reward=0.1603
+2026-03-30 18:30:57,380 [eval_n1]   30/50 | avg reward=0.1732
+2026-03-30 18:39:25,617 [eval_n1]   40/50 | avg reward=0.1561
+2026-03-30 18:49:02,652 [eval_n1]   50/50 | avg reward=0.1627
+2026-03-30 18:49:02,653 [eval_n1] === N1 Results (2816.5s) ===
+2026-03-30 18:49:02,657 [eval_n1]   avg reward: 0.1627
+2026-03-30 18:49:02,657 [eval_n1]   max reward: 0.9721
+2026-03-30 18:49:02,657 [eval_n1]   P(r>0.3):   6.0%
+2026-03-30 18:49:02,657 [eval_n1]   clipped:    76.0%
+2026-03-30 18:49:02,657 [eval_n1]   simple: avg=0.3017 (n=15)
+2026-03-30 18:49:02,657 [eval_n1]   moderate: avg=0.1171 (n=20)
+2026-03-30 18:49:02,657 [eval_n1]   complex: avg=0.0844 (n=15)
+2026-03-30 18:49:02,659 [eval_n1] Saved to experiments/n1_ablation_epochs_3.json
+--- N1 result ---
+  avg=0.1627 max=0.9721 P>0.3=6%
+--- ablation_epochs_3 done: lun. 30 mars 2026 18:49:04 ---
+
+============================================
+=== ablation_lr_1e5 ===
+=== lun. 30 mars 2026 18:49:04 ===
+============================================
+--- SFT training: experiments/configs/ablation_lr_1e5.json ---
+2026-03-30 18:49:06,040 [local_training] Loaded config from experiments/configs/ablation_lr_1e5.json
+2026-03-30 18:49:06,040 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 32)...
+2026-03-30 18:49:13,677 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:08,  4.32s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:08<00:04,  4.25s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:08<00:00,  2.36s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:08<00:00,  2.88s/it]
+2026-03-30 18:49:23,198 [local_training] Parameters: 66060288 trainable / 2271870464 total (2.91%)
+2026-03-30 18:49:23,314 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 18:49:23,901 [local_training] Loaded 400 SFT examples from data/topology_sft_v2_combined.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  24%|##4       | 98/400 [00:00<00:00, 966.71 examples/s]Tokenizing train dataset:  51%|#####1    | 204/400 [00:00<00:00, 1011.88 examples/s]Tokenizing train dataset:  80%|########  | 320/400 [00:00<00:00, 1075.60 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 963.88 examples/s] 
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 112485.52 examples/s]
+2026-03-30 18:49:26,530 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 18:49:26,530 [local_training] Dataset: 400 examples, lr=1.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.6993, 'grad_norm': 3.1875, 'learning_rate': 8.000000000000001e-06, 'entropy': 1.0740462750196458, 'num_tokens': 21939.0, 'mean_token_accuracy': 0.5255440540611744, 'epoch': 0.1}
+{'loss': 2.5638, 'grad_norm': 2.03125, 'learning_rate': 9.956320346634877e-06, 'entropy': 1.1785004645586015, 'num_tokens': 42955.0, 'mean_token_accuracy': 0.5289691753685475, 'epoch': 0.2}
+{'loss': 2.4482, 'grad_norm': 1.4765625, 'learning_rate': 9.780178907671788e-06, 'entropy': 1.2722654402256013, 'num_tokens': 66939.0, 'mean_token_accuracy': 0.5402139037847519, 'epoch': 0.3}
+{'loss': 2.3058, 'grad_norm': 1.2421875, 'learning_rate': 9.473646649103819e-06, 'entropy': 1.3571605443954469, 'num_tokens': 89902.0, 'mean_token_accuracy': 0.5474951595067978, 'epoch': 0.4}
+{'loss': 2.2084, 'grad_norm': 1.0625, 'learning_rate': 9.045084971874738e-06, 'entropy': 1.468086513876915, 'num_tokens': 112178.0, 'mean_token_accuracy': 0.5537390045821666, 'epoch': 0.5}
+{'loss': 2.169, 'grad_norm': 0.9609375, 'learning_rate': 8.506183921362445e-06, 'entropy': 1.56032837331295, 'num_tokens': 134692.0, 'mean_token_accuracy': 0.553042484819889, 'epoch': 0.6}
+{'loss': 2.0464, 'grad_norm': 0.87109375, 'learning_rate': 7.871643313414718e-06, 'entropy': 1.5694221675395965, 'num_tokens': 157161.0, 'mean_token_accuracy': 0.5785447672009468, 'epoch': 0.7}
+{'loss': 2.0061, 'grad_norm': 0.796875, 'learning_rate': 7.158771761692464e-06, 'entropy': 1.6415909200906753, 'num_tokens': 179554.0, 'mean_token_accuracy': 0.5772412165999412, 'epoch': 0.8}
+{'loss': 1.9492, 'grad_norm': 0.71875, 'learning_rate': 6.387014543809224e-06, 'entropy': 1.663996860384941, 'num_tokens': 202566.0, 'mean_token_accuracy': 0.5836170867085457, 'epoch': 0.9}
+{'loss': 1.9528, 'grad_norm': 0.69140625, 'learning_rate': 5.577423184847932e-06, 'entropy': 1.717626193165779, 'num_tokens': 224242.0, 'mean_token_accuracy': 0.579433836042881, 'epoch': 1.0}
+{'loss': 1.8675, 'grad_norm': 0.68359375, 'learning_rate': 4.752081226633888e-06, 'entropy': 1.6929922461509705, 'num_tokens': 247727.0, 'mean_token_accuracy': 0.5901772245764733, 'epoch': 1.1}
+{'loss': 1.8806, 'grad_norm': 0.72265625, 'learning_rate': 3.9335018462812664e-06, 'entropy': 1.7336228758096695, 'num_tokens': 269538.0, 'mean_token_accuracy': 0.588044773042202, 'epoch': 1.2}
+{'loss': 1.8054, 'grad_norm': 0.6171875, 'learning_rate': 3.1440137554088957e-06, 'entropy': 1.6691962361335755, 'num_tokens': 292882.0, 'mean_token_accuracy': 0.5998570956289768, 'epoch': 1.3}
+{'loss': 1.7812, 'grad_norm': 0.66796875, 'learning_rate': 2.4051521310939258e-06, 'entropy': 1.6736905217170714, 'num_tokens': 314169.0, 'mean_token_accuracy': 0.6012911230325699, 'epoch': 1.4}
+{'loss': 1.8183, 'grad_norm': 0.859375, 'learning_rate': 1.7370711923791567e-06, 'entropy': 1.7035942673683167, 'num_tokens': 335273.0, 'mean_token_accuracy': 0.5982282340526581, 'epoch': 1.5}
+{'loss': 1.8159, 'grad_norm': 0.73046875, 'learning_rate': 1.157994445715706e-06, 'entropy': 1.7148177951574326, 'num_tokens': 356786.0, 'mean_token_accuracy': 0.5935862272977829, 'epoch': 1.6}
+{'loss': 1.7783, 'grad_norm': 0.703125, 'learning_rate': 6.837175952121305e-07, 'entropy': 1.6714136391878127, 'num_tokens': 379491.0, 'mean_token_accuracy': 0.6027408421039582, 'epoch': 1.7}
+{'loss': 1.8213, 'grad_norm': 0.703125, 'learning_rate': 3.271776770026963e-07, 'entropy': 1.7039103835821152, 'num_tokens': 401543.0, 'mean_token_accuracy': 0.5969979673624038, 'epoch': 1.8}
+Traceback (most recent call last):
+  File "C:\Code\worktrees\local\sage-python\scripts\train_local_qwen3_4b.py", line 473, in <module>
+    main()
+    ~~~~^^
+object address  : 00--- GPU cooldown 10s ---
+ERROR: No checkpoint at models/ablation/lr_1e5/sft_checkpoint
+--- ablation_lr_1e5 done: lun. 30 mars 2026 19:00:58 ---
+
+============================================
+=== ablation_lr_5e5 ===
+=== lun. 30 mars 2026 19:00:58 ===
+============================================
+--- SFT training: experiments/configs/ablation_lr_5e5.json ---
+2026-03-30 19:01:00,785 [local_training] Loaded config from experiments/configs/ablation_lr_5e5.json
+2026-03-30 19:01:00,786 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 32)...
+2026-03-30 19:01:09,962 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:05<00:11,  5.94s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:11<00:05,  5.66s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.14s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.85s/it]
+2026-03-30 19:01:23,012 [local_training] Parameters: 66060288 trainable / 2271870464 total (2.91%)
+2026-03-30 19:01:23,131 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 19:01:23,630 [local_training] Loaded 400 SFT examples from data/topology_sft_v2_combined.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  15%|#5        | 61/400 [00:00<00:00, 599.12 examples/s]Tokenizing train dataset:  37%|###7      | 149/400 [00:00<00:00, 577.48 examples/s]Tokenizing train dataset:  58%|#####8    | 232/400 [00:00<00:00, 559.53 examples/s]Tokenizing train dataset:  74%|#######4  | 298/400 [00:00<00:00, 589.20 examples/s]Tokenizing train dataset:  90%|######### | 361/400 [00:00<00:00, 597.06 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 552.53 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 79982.91 examples/s]
+2026-03-30 19:01:27,007 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 19:01:27,007 [local_training] Dataset: 400 examples, lr=5.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.643, 'grad_norm': 2.140625, 'learning_rate': 4e-05, 'entropy': 1.1169773399829865, 'num_tokens': 21939.0, 'mean_token_accuracy': 0.5276156894862651, 'epoch': 0.1}
+{'loss': 2.2105, 'grad_norm': 0.90234375, 'learning_rate': 4.978160173317438e-05, 'entropy': 1.583100262284279, 'num_tokens': 42955.0, 'mean_token_accuracy': 0.5500433623790741, 'epoch': 0.2}
+{'loss': 1.911, 'grad_norm': 0.78515625, 'learning_rate': 4.8900894538358944e-05, 'entropy': 2.0615899354219436, 'num_tokens': 66939.0, 'mean_token_accuracy': 0.5858186528086662, 'epoch': 0.3}
+{'loss': 1.6303, 'grad_norm': 0.703125, 'learning_rate': 4.736823324551909e-05, 'entropy': 1.9233639299869538, 'num_tokens': 89902.0, 'mean_token_accuracy': 0.6343962177634239, 'epoch': 0.4}
+{'loss': 1.3912, 'grad_norm': 0.71484375, 'learning_rate': 4.522542485937369e-05, 'entropy': 1.475022268295288, 'num_tokens': 112178.0, 'mean_token_accuracy': 0.6860944285988808, 'epoch': 0.5}
+{'loss': 1.3005, 'grad_norm': 1.390625, 'learning_rate': 4.2530919606812216e-05, 'entropy': 1.1530946373939515, 'num_tokens': 134692.0, 'mean_token_accuracy': 0.6989879503846168, 'epoch': 0.6}
+{'loss': 1.1737, 'grad_norm': 0.63671875, 'learning_rate': 3.935821656707359e-05, 'entropy': 1.120753674209118, 'num_tokens': 157161.0, 'mean_token_accuracy': 0.728385579586029, 'epoch': 0.7}
+{'loss': 1.141, 'grad_norm': 0.55859375, 'learning_rate': 3.579385880846232e-05, 'entropy': 1.180677306652069, 'num_tokens': 179554.0, 'mean_token_accuracy': 0.7284960329532624, 'epoch': 0.8}
+{'loss': 1.1062, 'grad_norm': 0.53125, 'learning_rate': 3.1935072719046115e-05, 'entropy': 1.0903101935982704, 'num_tokens': 202566.0, 'mean_token_accuracy': 0.7338589325547218, 'epoch': 0.9}
+{'loss': 1.0769, 'grad_norm': 0.51953125, 'learning_rate': 2.788711592423966e-05, 'entropy': 1.0357742786407471, 'num_tokens': 224242.0, 'mean_token_accuracy': 0.7443654164671898, 'epoch': 1.0}
+{'loss': 1.0312, 'grad_norm': 0.494140625, 'learning_rate': 2.3760406133169443e-05, 'entropy': 1.0411642625927926, 'num_tokens': 247727.0, 'mean_token_accuracy': 0.7443325981497765, 'epoch': 1.1}
+{'loss': 0.9793, 'grad_norm': 0.5234375, 'learning_rate': 1.9667509231406334e-05, 'entropy': 1.0034594252705573, 'num_tokens': 269538.0, 'mean_token_accuracy': 0.7570212215185166, 'epoch': 1.2}
+{'loss': 1.0121, 'grad_norm': 0.49609375, 'learning_rate': 1.5720068777044476e-05, 'entropy': 0.9664743661880493, 'num_tokens': 292882.0, 'mean_token_accuracy': 0.750028669834137, 'epoch': 1.3}
+{'loss': 0.9356, 'grad_norm': 0.486328125, 'learning_rate': 1.202576065546963e-05, 'entropy': 0.9093778774142265, 'num_tokens': 314169.0, 'mean_token_accuracy': 0.7648117363452911, 'epoch': 1.4}
+{'loss': 0.9708, 'grad_norm': 0.625, 'learning_rate': 8.685355961895784e-06, 'entropy': 0.9272887378931045, 'num_tokens': 335273.0, 'mean_token_accuracy': 0.7657272621989251, 'epoch': 1.5}
+{'loss': 0.9791, 'grad_norm': 0.51953125, 'learning_rate': 5.78997222857853e-06, 'entropy': 0.9673294827342034, 'num_tokens': 356786.0, 'mean_token_accuracy': 0.7571192428469657, 'epoch': 1.6}
+{'loss': 0.9698, 'grad_norm': 0.5234375, 'learning_rate': 3.418587976060653e-06, 'entropy': 0.9650607302784919, 'num_tokens': 379491.0, 'mean_token_accuracy': 0.7592598855495453, 'epoch': 1.7}
+{'loss': 1.0053, 'grad_norm': 0.55859375, 'learning_rate': 1.6358883850134816e-06, 'entropy': 0.9793642804026603, 'num_tokens': 401543.0, 'mean_token_accuracy': 0.7526924356818199, 'epoch': 1.8}
+{'loss': 0.9205, 'grad_norm': 0.59375, 'learning_rate': 4.905008531297661e-07, 'entropy': 0.9229639589786529, 'num_tokens': 423875.0, 'mean_token_accuracy': 0.7675876617431641, 'epoch': 1.9}
+{'loss': 1.0092, 'grad_norm': 0.50390625, 'learning_rate': 1.3668566476848777e-08, 'entropy': 0.978884969651699, 'num_tokens': 448484.0, 'mean_token_accuracy': 0.7530376970767975, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+{'train_runtime': 826.8147, 'train_samples_per_second': 0.968, 'train_steps_per_second': 0.121, 'train_loss': 1.2698628950119017, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+2026-03-30 19:15:14,616 [local_training] SFT complete in 13.8 min. Adapter saved to models/ablation/lr_5e5\sft_checkpoint
+2026-03-30 19:15:14,619 [local_training] === SFT-only mode. Done. ===
+--- GPU cooldown 10s ---
+--- N1 eval: models/ablation/lr_5e5/sft_checkpoint ---
+2026-03-30 19:15:33,765 [eval_n1] Loading model Qwen/Qwen3-4B + adapter models/ablation/lr_5e5/sft_checkpoint...
+2026-03-30 19:15:37,166 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.78s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.89s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.72s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.30s/it]
+2026-03-30 19:15:48,274 [eval_n1] Evaluating 50 holdout prompts...
+2026-03-30 19:17:08,553 [eval_n1]   8/50 | avg reward=0.2216
+2026-03-30 19:18:37,585 [eval_n1]   16/50 | avg reward=0.1790
+2026-03-30 19:19:55,958 [eval_n1]   24/50 | avg reward=0.1859
+2026-03-30 19:21:20,985 [eval_n1]   32/50 | avg reward=0.1777
+2026-03-30 19:22:41,405 [eval_n1]   40/50 | avg reward=0.1711
+2026-03-30 19:24:12,802 [eval_n1]   48/50 | avg reward=0.1641
+2026-03-30 19:25:41,973 [eval_n1]   50/50 | avg reward=0.1637
+2026-03-30 19:25:41,973 [eval_n1] === N1 Results (593.7s) ===
+2026-03-30 19:25:41,974 [eval_n1]   avg reward: 0.1637
+2026-03-30 19:25:41,974 [eval_n1]   max reward: 0.7727
+2026-03-30 19:25:41,974 [eval_n1]   P(r>0.3):   4.0%
+2026-03-30 19:25:41,974 [eval_n1]   clipped:    100.0%
+2026-03-30 19:25:41,974 [eval_n1]   simple: avg=0.2403 (n=15)
+2026-03-30 19:25:41,974 [eval_n1]   moderate: avg=0.1438 (n=20)
+2026-03-30 19:25:41,974 [eval_n1]   complex: avg=0.1139 (n=15)
+2026-03-30 19:25:41,975 [eval_n1] Saved to experiments/n1_ablation_lr_5e5.json
+--- N1 result ---
+  avg=0.1637 max=0.7727 P>0.3=4%
+--- ablation_lr_5e5 done: lun. 30 mars 2026 19:25:43 ---
+
+============================================
+=== ablation_mix_code ===
+=== lun. 30 mars 2026 19:25:43 ===
+============================================
+--- SFT training: experiments/configs/ablation_mix_code.json ---
+2026-03-30 19:25:45,937 [local_training] Loaded config from experiments/configs/ablation_mix_code.json
+2026-03-30 19:25:45,938 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 32)...
+2026-03-30 19:25:55,817 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:05<00:10,  5.33s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:10<00:05,  5.51s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.06s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.71s/it]
+2026-03-30 19:26:08,061 [local_training] Parameters: 66060288 trainable / 2271870464 total (2.91%)
+2026-03-30 19:26:08,187 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 19:26:08,805 [local_training] Loaded 400 SFT examples from experiments/data/sft_code_only.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  19%|#8        | 75/400 [00:00<00:00, 729.07 examples/s]Tokenizing train dataset:  38%|###8      | 154/400 [00:00<00:00, 756.15 examples/s]Tokenizing train dataset:  58%|#####8    | 234/400 [00:00<00:00, 772.46 examples/s]Tokenizing train dataset:  78%|#######8  | 314/400 [00:00<00:00, 778.23 examples/s]Tokenizing train dataset:  99%|#########8| 395/400 [00:00<00:00, 785.64 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 719.55 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 54452.03 examples/s]
+2026-03-30 19:26:11,551 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 19:26:11,552 [local_training] Dataset: 400 examples, lr=2.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.6662, 'grad_norm': 2.578125, 'learning_rate': 1.6000000000000003e-05, 'entropy': 1.0604841113090515, 'num_tokens': 24744.0, 'mean_token_accuracy': 0.5350882954895496, 'epoch': 0.1}
+{'loss': 2.5418, 'grad_norm': 1.390625, 'learning_rate': 1.9912640693269754e-05, 'entropy': 1.2644674271345138, 'num_tokens': 48230.0, 'mean_token_accuracy': 0.5274585597217083, 'epoch': 0.2}
+{'loss': 2.206, 'grad_norm': 1.0, 'learning_rate': 1.9560357815343577e-05, 'entropy': 1.4617867529392243, 'num_tokens': 74480.0, 'mean_token_accuracy': 0.5602654717862606, 'epoch': 0.3}
+{'loss': 2.0834, 'grad_norm': 0.80859375, 'learning_rate': 1.8947293298207637e-05, 'entropy': 1.6939683198928832, 'num_tokens': 98475.0, 'mean_token_accuracy': 0.5676922053098679, 'epoch': 0.4}
+{'loss': 1.9791, 'grad_norm': 0.62109375, 'learning_rate': 1.8090169943749477e-05, 'entropy': 1.8759194523096085, 'num_tokens': 123240.0, 'mean_token_accuracy': 0.5786107867956162, 'epoch': 0.5}
+{'loss': 1.8647, 'grad_norm': 0.59765625, 'learning_rate': 1.701236784272489e-05, 'entropy': 1.9627459347248077, 'num_tokens': 148094.0, 'mean_token_accuracy': 0.5928928032517433, 'epoch': 0.6}
+{'loss': 1.7648, 'grad_norm': 0.625, 'learning_rate': 1.5743286626829437e-05, 'entropy': 1.8774445205926895, 'num_tokens': 172581.0, 'mean_token_accuracy': 0.607352440059185, 'epoch': 0.7}
+{'loss': 1.708, 'grad_norm': 0.60546875, 'learning_rate': 1.4317543523384928e-05, 'entropy': 1.8215099543333053, 'num_tokens': 197989.0, 'mean_token_accuracy': 0.623546053469181, 'epoch': 0.8}
+{'loss': 1.5276, 'grad_norm': 0.75390625, 'learning_rate': 1.2774029087618448e-05, 'entropy': 1.597523707151413, 'num_tokens': 220959.0, 'mean_token_accuracy': 0.6540166079998017, 'epoch': 0.9}
+{'loss': 1.5007, 'grad_norm': 0.796875, 'learning_rate': 1.1154846369695864e-05, 'entropy': 1.4645170599222184, 'num_tokens': 245631.0, 'mean_token_accuracy': 0.658594460785389, 'epoch': 1.0}
+{'loss': 1.4107, 'grad_norm': 0.77734375, 'learning_rate': 9.504162453267776e-06, 'entropy': 1.262063917517662, 'num_tokens': 269967.0, 'mean_token_accuracy': 0.6751826971769332, 'epoch': 1.1}
+{'loss': 1.3324, 'grad_norm': 0.6484375, 'learning_rate': 7.867003692562533e-06, 'entropy': 1.2365252062678338, 'num_tokens': 294458.0, 'mean_token_accuracy': 0.6915206015110016, 'epoch': 1.2}
+{'loss': 1.3477, 'grad_norm': 0.6171875, 'learning_rate': 6.2880275108177915e-06, 'entropy': 1.246530655026436, 'num_tokens': 318104.0, 'mean_token_accuracy': 0.6899975374341011, 'epoch': 1.3}
+{'loss': 1.2876, 'grad_norm': 0.60546875, 'learning_rate': 4.8103042621878515e-06, 'entropy': 1.2405426979064942, 'num_tokens': 341903.0, 'mean_token_accuracy': 0.7002902284264565, 'epoch': 1.4}
+{'loss': 1.3526, 'grad_norm': 0.578125, 'learning_rate': 3.4741423847583134e-06, 'entropy': 1.306194980442524, 'num_tokens': 366768.0, 'mean_token_accuracy': 0.6915338069200516, 'epoch': 1.5}
+{'loss': 1.2739, 'grad_norm': 0.55859375, 'learning_rate': 2.315988891431412e-06, 'entropy': 1.2697740077972413, 'num_tokens': 391350.0, 'mean_token_accuracy': 0.7021352291107178, 'epoch': 1.6}
+{'loss': 1.2791, 'grad_norm': 0.58984375, 'learning_rate': 1.367435190424261e-06, 'entropy': 1.262947605550289, 'num_tokens': 416626.0, 'mean_token_accuracy': 0.6997815787792205, 'epoch': 1.7}
+{'loss': 1.2876, 'grad_norm': 0.58203125, 'learning_rate': 6.543553540053926e-07, 'entropy': 1.2807172745466233, 'num_tokens': 440752.0, 'mean_token_accuracy': 0.6983488991856575, 'epoch': 1.8}
+{'loss': 1.2697, 'grad_norm': 0.5859375, 'learning_rate': 1.9620034125190645e-07, 'entropy': 1.2636956408619882, 'num_tokens': 466475.0, 'mean_token_accuracy': 0.6989246547222138, 'epoch': 1.9}
+{'loss': 1.2695, 'grad_norm': 0.58203125, 'learning_rate': 5.467426590739511e-09, 'entropy': 1.2442341819405556, 'num_tokens': 491262.0, 'mean_token_accuracy': 0.7000790998339653, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+{'train_runtime': 735.786, 'train_samples_per_second': 1.087, 'train_steps_per_second': 0.136, 'train_loss': 1.6476489877700806, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+2026-03-30 19:38:28,037 [local_training] SFT complete in 12.3 min. Adapter saved to models/ablation/mix_code\sft_checkpoint
+2026-03-30 19:38:28,039 [local_training] === SFT-only mode. Done. ===
+--- GPU cooldown 10s ---
+--- N1 eval: models/ablation/mix_code/sft_checkpoint ---
+2026-03-30 19:38:45,704 [eval_n1] Loading model Qwen/Qwen3-4B + adapter models/ablation/mix_code/sft_checkpoint...
+2026-03-30 19:38:48,941 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.72s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.79s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.66s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.23s/it]
+2026-03-30 19:38:59,820 [eval_n1] Evaluating 50 holdout prompts...
+2026-03-30 19:40:19,465 [eval_n1]   8/50 | avg reward=0.1125
+2026-03-30 19:41:51,060 [eval_n1]   16/50 | avg reward=0.1120
+2026-03-30 19:43:13,616 [eval_n1]   24/50 | avg reward=0.1076
+2026-03-30 19:44:37,009 [eval_n1]   32/50 | avg reward=0.1044
+2026-03-30 19:45:59,887 [eval_n1]   40/50 | avg reward=0.1058
+--- N1 result ---
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json; d=json.load(open('experiments/n1_ablation_mix_code.json')); print(f'  avg={d["n1_reward_avg"]:.4f} max={d["n1_reward_max"]:.4f} P>0.3={d["n1_above_03"]*100:.0f}%')
+                             ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'experiments/n1_ablation_mix_code.json'
+--- ablation_mix_code done: lun. 30 mars 2026 19:46:16 ---
+
+============================================
+=== ablation_mix_complex ===
+=== lun. 30 mars 2026 19:46:16 ===
+============================================
+--- SFT training: experiments/configs/ablation_mix_complex.json ---
+2026-03-30 19:46:19,204 [local_training] Loaded config from experiments/configs/ablation_mix_complex.json
+2026-03-30 19:46:19,205 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 32)...
+2026-03-30 19:46:28,586 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.76s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.83s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.69s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.26s/it]
+2026-03-30 19:46:39,497 [local_training] Parameters: 66060288 trainable / 2271870464 total (2.91%)
+2026-03-30 19:46:39,650 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 19:46:40,401 [local_training] Loaded 400 SFT examples from experiments/data/sft_complex_heavy.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  14%|#3        | 55/400 [00:00<00:00, 535.20 examples/s]Tokenizing train dataset:  30%|###       | 122/400 [00:00<00:00, 608.48 examples/s]Tokenizing train dataset:  46%|####6     | 186/400 [00:00<00:00, 617.37 examples/s]Tokenizing train dataset:  64%|######4   | 258/400 [00:00<00:00, 654.32 examples/s]Tokenizing train dataset:  85%|########5 | 340/400 [00:00<00:00, 711.83 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 619.52 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 71098.94 examples/s]
+2026-03-30 19:46:44,210 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 19:46:44,210 [local_training] Dataset: 400 examples, lr=2.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.4457, 'grad_norm': 2.296875, 'learning_rate': 1.6000000000000003e-05, 'entropy': 1.03923319876194, 'num_tokens': 25703.0, 'mean_token_accuracy': 0.5669641077518464, 'epoch': 0.1}
+{'loss': 2.4176, 'grad_norm': 1.265625, 'learning_rate': 1.9912640693269754e-05, 'entropy': 1.2284337058663368, 'num_tokens': 51119.0, 'mean_token_accuracy': 0.5522118359804153, 'epoch': 0.2}
+{'loss': 2.1414, 'grad_norm': 0.93359375, 'learning_rate': 1.9560357815343577e-05, 'entropy': 1.465077893435955, 'num_tokens': 75404.0, 'mean_token_accuracy': 0.5717143811285496, 'epoch': 0.3}
+{'loss': 2.0472, 'grad_norm': 0.62109375, 'learning_rate': 1.8947293298207637e-05, 'entropy': 1.6968716830015182, 'num_tokens': 101867.0, 'mean_token_accuracy': 0.5813602715730667, 'epoch': 0.4}
+{'loss': 1.885, 'grad_norm': 0.58984375, 'learning_rate': 1.8090169943749477e-05, 'entropy': 1.8259353995323182, 'num_tokens': 125506.0, 'mean_token_accuracy': 0.5897193506360054, 'epoch': 0.5}
+{'loss': 1.7788, 'grad_norm': 0.53125, 'learning_rate': 1.701236784272489e-05, 'entropy': 1.8530153632164001, 'num_tokens': 152613.0, 'mean_token_accuracy': 0.6140114933252334, 'epoch': 0.6}
+{'loss': 1.6892, 'grad_norm': 0.53125, 'learning_rate': 1.5743286626829437e-05, 'entropy': 1.7867996990680695, 'num_tokens': 179820.0, 'mean_token_accuracy': 0.6292602062225342, 'epoch': 0.7}
+{'loss': 1.6851, 'grad_norm': 0.59765625, 'learning_rate': 1.4317543523384928e-05, 'entropy': 1.7794338762760162, 'num_tokens': 205451.0, 'mean_token_accuracy': 0.6290268197655677, 'epoch': 0.8}
+{'loss': 1.6137, 'grad_norm': 0.65625, 'learning_rate': 1.2774029087618448e-05, 'entropy': 1.6761492028832436, 'num_tokens': 230752.0, 'mean_token_accuracy': 0.6442125901579857, 'epoch': 0.9}
+{'loss': 1.5144, 'grad_norm': 2.1875, 'learning_rate': 1.1154846369695864e-05, 'entropy': 1.461368103325367, 'num_tokens': 256263.0, 'mean_token_accuracy': 0.6607550621032715, 'epoch': 1.0}
+{'loss': 1.4872, 'grad_norm': 0.7578125, 'learning_rate': 9.504162453267776e-06, 'entropy': 1.334953860938549, 'num_tokens': 283871.0, 'mean_token_accuracy': 0.6706582427024841, 'epoch': 1.1}
+{'loss': 1.3742, 'grad_norm': 0.70703125, 'learning_rate': 7.867003692562533e-06, 'entropy': 1.2578946962952613, 'num_tokens': 308531.0, 'mean_token_accuracy': 0.6908482357859611, 'epoch': 1.2}
+{'loss': 1.444, 'grad_norm': 0.58984375, 'learning_rate': 6.2880275108177915e-06, 'entropy': 1.3656190097332002, 'num_tokens': 334685.0, 'mean_token_accuracy': 0.6806149959564209, 'epoch': 1.3}
+{'loss': 1.3724, 'grad_norm': 0.55859375, 'learning_rate': 4.8103042621878515e-06, 'entropy': 1.28458164781332, 'num_tokens': 359560.0, 'mean_token_accuracy': 0.6931855902075768, 'epoch': 1.4}
+{'loss': 1.3475, 'grad_norm': 0.5625, 'learning_rate': 3.4741423847583134e-06, 'entropy': 1.2767784118652343, 'num_tokens': 384243.0, 'mean_token_accuracy': 0.6962323054671288, 'epoch': 1.5}
+{'loss': 1.2955, 'grad_norm': 0.5078125, 'learning_rate': 2.315988891431412e-06, 'entropy': 1.2624553874135018, 'num_tokens': 408674.0, 'mean_token_accuracy': 0.7007768154144287, 'epoch': 1.6}
+{'loss': 1.3552, 'grad_norm': 0.5234375, 'learning_rate': 1.367435190424261e-06, 'entropy': 1.3300791561603547, 'num_tokens': 436180.0, 'mean_token_accuracy': 0.6922481015324593, 'epoch': 1.7}
+{'loss': 1.3205, 'grad_norm': 0.515625, 'learning_rate': 6.543553540053926e-07, 'entropy': 1.2642193123698235, 'num_tokens': 461830.0, 'mean_token_accuracy': 0.7042272686958313, 'epoch': 1.8}
+{'loss': 1.3527, 'grad_norm': 0.515625, 'learning_rate': 1.9620034125190645e-07, 'entropy': 1.310226856172085, 'num_tokens': 488298.0, 'mean_token_accuracy': 0.6949079141020775, 'epoch': 1.9}
+{'loss': 1.3265, 'grad_norm': 0.54296875, 'learning_rate': 5.467426590739511e-09, 'entropy': 1.293293859064579, 'num_tokens': 512526.0, 'mean_token_accuracy': 0.6982878595590591, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+{'train_runtime': 762.7392, 'train_samples_per_second': 1.049, 'train_steps_per_second': 0.131, 'train_loss': 1.6446882057189942, 'epoch': 2.0}
+C:\ProgramData\miniforge3\Lib\site-packages\peft\utils\save_and_load.py:295: UserWarning: Could not find a config file in Qwen/Qwen3-4B - will assume that the vocabulary was not modified.
+  warnings.warn(
+2026-03-30 19:59:27,677 [local_training] SFT complete in 12.7 min. Adapter saved to models/ablation/mix_complex\sft_checkpoint
+2026-03-30 19:59:27,680 [local_training] === SFT-only mode. Done. ===
+--- GPU cooldown 10s ---
+--- N1 eval: models/ablation/mix_complex/sft_checkpoint ---
+2026-03-30 19:59:46,985 [eval_n1] Loading model Qwen/Qwen3-4B + adapter models/ablation/mix_complex/sft_checkpoint...
+2026-03-30 19:59:50,402 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.72s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:09<00:04,  4.77s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  2.65s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:09<00:00,  3.22s/it]
+2026-03-30 20:00:01,235 [eval_n1] Evaluating 50 holdout prompts...
+2026-03-30 20:01:21,460 [eval_n1]   8/50 | avg reward=0.0927
+2026-03-30 20:02:46,216 [eval_n1]   16/50 | avg reward=0.0979
+--- N1 result ---
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json; d=json.load(open('experiments/n1_ablation_mix_complex.json')); print(f'  avg={d["n1_reward_avg"]:.4f} max={d["n1_reward_max"]:.4f} P>0.3={d["n1_above_03"]*100:.0f}%')
+                             ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'experiments/n1_ablation_mix_complex.json'
+--- ablation_mix_complex done: lun. 30 mars 2026 20:03:43 ---
+
+============================================
+=== ablation_rank_16 ===
+=== lun. 30 mars 2026 20:03:43 ===
+============================================
+--- SFT training: experiments/configs/ablation_rank_16.json ---
+2026-03-30 20:03:46,066 [local_training] Loaded config from experiments/configs/ablation_rank_16.json
+2026-03-30 20:03:46,067 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 16)...
+2026-03-30 20:03:55,670 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:03<00:07,  3.95s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:11<00:05,  5.80s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.25s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:11<00:00,  3.75s/it]
+2026-03-30 20:04:08,442 [local_training] Parameters: 33030144 trainable / 2238840320 total (1.48%)
+2026-03-30 20:04:08,584 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 20:04:09,658 [local_training] Loaded 400 SFT examples from data/topology_sft_v2_combined.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:  12%|#1        | 47/400 [00:00<00:00, 460.67 examples/s]Tokenizing train dataset:  24%|##3       | 95/400 [00:00<00:00, 461.23 examples/s]Tokenizing train dataset:  37%|###7      | 149/400 [00:00<00:00, 488.71 examples/s]Tokenizing train dataset:  51%|#####     | 203/400 [00:00<00:00, 504.51 examples/s]Tokenizing train dataset:  65%|######5   | 260/400 [00:00<00:00, 524.19 examples/s]Tokenizing train dataset:  80%|#######9  | 319/400 [00:00<00:00, 538.99 examples/s]Tokenizing train dataset:  98%|#########7| 391/400 [00:00<00:00, 508.05 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:00<00:00, 472.00 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 43211.29 examples/s]
+2026-03-30 20:04:14,599 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 20:04:14,599 [local_training] Dataset: 400 examples, lr=2.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 2.699, 'grad_norm': 2.34375, 'learning_rate': 1.6000000000000003e-05, 'entropy': 1.0740441411733628, 'num_tokens': 21939.0, 'mean_token_accuracy': 0.5253949984908104, 'epoch': 0.1}
+{'loss': 2.5575, 'grad_norm': 1.5078125, 'learning_rate': 1.9912640693269754e-05, 'entropy': 1.1848287224769591, 'num_tokens': 42955.0, 'mean_token_accuracy': 0.5294784486293793, 'epoch': 0.2}
+{'loss': 2.4266, 'grad_norm': 1.1171875, 'learning_rate': 1.9560357815343577e-05, 'entropy': 1.2988969296216966, 'num_tokens': 66939.0, 'mean_token_accuracy': 0.5407987959682942, 'epoch': 0.3}
+{'loss': 2.2664, 'grad_norm': 0.953125, 'learning_rate': 1.8947293298207637e-05, 'entropy': 1.414789229631424, 'num_tokens': 89902.0, 'mean_token_accuracy': 0.5503216855227947, 'epoch': 0.4}
+{'loss': 2.1506, 'grad_norm': 0.8125, 'learning_rate': 1.8090169943749477e-05, 'entropy': 1.5664556503295899, 'num_tokens': 112178.0, 'mean_token_accuracy': 0.5574377216398716, 'epoch': 0.5}
+{'loss': 2.097, 'grad_norm': 1.40625, 'learning_rate': 1.701236784272489e-05, 'entropy': 1.7013988107442857, 'num_tokens': 134692.0, 'mean_token_accuracy': 0.5587837167084218, 'epoch': 0.6}
+{'loss': 1.9652, 'grad_norm': 0.625, 'learning_rate': 1.5743286626829437e-05, 'entropy': 1.733491650223732, 'num_tokens': 157161.0, 'mean_token_accuracy': 0.5840199872851372, 'epoch': 0.7}
+{'loss': 1.9225, 'grad_norm': 0.5859375, 'learning_rate': 1.4317543523384928e-05, 'entropy': 1.8259311646223069, 'num_tokens': 179554.0, 'mean_token_accuracy': 0.5827416926622391, 'epoch': 0.8}
+{'loss': 1.8609, 'grad_norm': 0.53125, 'learning_rate': 1.2774029087618448e-05, 'entropy': 1.8342041343450546, 'num_tokens': 202566.0, 'mean_token_accuracy': 0.5906507968902588, 'epoch': 0.9}
+{'loss': 1.8532, 'grad_norm': 0.53125, 'learning_rate': 1.1154846369695864e-05, 'entropy': 1.870693388581276, 'num_tokens': 224242.0, 'mean_token_accuracy': 0.5908505111932755, 'epoch': 1.0}
+--- GPU cooldown 10s ---
+ERROR: No checkpoint at models/ablation/rank_16/sft_checkpoint
+--- ablation_rank_16 done: lun. 30 mars 2026 20:11:18 ---
+
+============================================
+=== ablation_rank_64 ===
+=== lun. 30 mars 2026 20:11:18 ===
+============================================
+--- SFT training: experiments/configs/ablation_rank_64.json ---
+2026-03-30 20:11:20,327 [local_training] Loaded config from experiments/configs/ablation_rank_64.json
+2026-03-30 20:11:20,327 [local_training] Loading Qwen/Qwen3-4B (4-bit NF4, LoRA rank 64)...
+2026-03-30 20:11:29,321 [accelerate.utils.modeling] We will use 90% of the memory on device 0 for storing the model, and 10% for the buffer to avoid OOM. You can set `max_memory` in to a higher value to use more memory (at your own risk).
+Loading checkpoint shards:   0%|          | 0/3 [00:00<?, ?it/s]Loading checkpoint shards:  33%|###3      | 1/3 [00:04<00:09,  4.98s/it]Loading checkpoint shards:  67%|######6   | 2/3 [00:10<00:05,  5.21s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:10<00:00,  2.90s/it]Loading checkpoint shards: 100%|##########| 3/3 [00:10<00:00,  3.50s/it]
+2026-03-30 20:11:41,246 [local_training] Parameters: 132120576 trainable / 2337930752 total (5.65%)
+2026-03-30 20:11:41,399 [local_training] GPU: NVIDIA RTX 3500 Ada Generation Laptop GPU, 12282 MiB
+2026-03-30 20:11:42,012 [local_training] Loaded 400 SFT examples from data/topology_sft_v2_combined.jsonl
+Tokenizing train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Tokenizing train dataset:   6%|6         | 24/400 [00:00<00:01, 227.79 examples/s]Tokenizing train dataset:  14%|#3        | 55/400 [00:00<00:01, 269.56 examples/s]Tokenizing train dataset:  22%|##1       | 86/400 [00:00<00:01, 284.01 examples/s]Tokenizing train dataset:  29%|##9       | 116/400 [00:00<00:00, 287.99 examples/s]Tokenizing train dataset:  37%|###6      | 147/400 [00:00<00:00, 290.98 examples/s]Tokenizing train dataset:  48%|####7     | 191/400 [00:00<00:00, 288.56 examples/s]Tokenizing train dataset:  55%|#####5    | 221/400 [00:00<00:00, 291.30 examples/s]Tokenizing train dataset:  64%|######3   | 254/400 [00:00<00:00, 299.90 examples/s]Tokenizing train dataset:  75%|#######4  | 299/400 [00:01<00:00, 297.94 examples/s]Tokenizing train dataset:  82%|########2 | 330/400 [00:01<00:00, 296.14 examples/s]Tokenizing train dataset:  93%|#########3| 373/400 [00:01<00:00, 289.14 examples/s]Tokenizing train dataset: 100%|##########| 400/400 [00:01<00:00, 270.79 examples/s]
+Truncating train dataset:   0%|          | 0/400 [00:00<?, ? examples/s]Truncating train dataset: 100%|##########| 400/400 [00:00<00:00, 55417.90 examples/s]
+2026-03-30 20:11:45,465 [local_training] === PHASE 1: SFT WARMUP ===
+2026-03-30 20:11:45,465 [local_training] Dataset: 400 examples, lr=2.0e-05, epochs=2
+The tokenizer has new PAD/BOS/EOS tokens that differ from the model config and generation config. The model config and generation config were aligned accordingly, being updated with the tokenizer's values. Updated tokens: {'bos_token_id': None, 'pad_token_id': 151643}.
+{'loss': 0.9986, 'grad_norm': 1.1875, 'learning_rate': 1.6000000000000003e-05, 'entropy': 0.5208457469940185, 'num_tokens': 30720.0, 'mean_token_accuracy': 0.8232073068618775, 'epoch': 0.1}
+--- GPU cooldown 10s ---
+ERROR: No checkpoint at models/ablation/rank_64/sft_checkpoint
+--- ablation_rank_64 done: lun. 30 mars 2026 20:13:18 ---
+
+============================================
+=== ablation_model_instruct ===
+=== lun. 30 mars 2026 20:13:18 ===
+============================================
+--- SFT training: experiments/configs/ablation_model_instruct.json ---
+2026-03-30 20:13:20,323 [local_training] Loaded config from experiments/configs/ablation_model_instruct.json
+2026-03-30 20:13:20,323 [local_training] Loading Qwen/Qwen3-4B-Instruct (4-bit NF4, LoRA rank 32)...
+Traceback (most recent call last):
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\utils\hub.py", line 479, in cached_files
+    hf_hub_download(
+    ~~~~~~~~~~~~~~~^
+        path_or_repo_id,
+        ^^^^^^^^^^^^^^^^
+    ...<10 lines>...
+        local_files_only=local_files_only,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\huggingface_hub\utils\_validators.py", line 114, in _inner_fn
+    return fn(*args, **kwargs)
+  File "C:\ProgramData\miniforge3\Lib\site-packages\huggingface_hub\file_download.py", line 1014, in hf_hub_download
+    return _hf_hub_download_to_cache_dir(
+        # Destination
+    ...<14 lines>...
+        force_download=force_download,
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\huggingface_hub\file_download.py", line 1121, in _hf_hub_download_to_cache_dir
+    _raise_on_head_call_error(head_call_error, force_download, local_files_only)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\huggingface_hub\file_download.py", line 1653, in _raise_on_head_call_error
+    raise LocalEntryNotFoundError(
+    ...<2 lines>...
+    )
+huggingface_hub.errors.LocalEntryNotFoundError: Cannot find the requested files in the disk cache and outgoing traffic has been disabled. To enable hf.co look-ups and downloads online, set 'local_files_only' to False.
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Code\worktrees\local\sage-python\scripts\train_local_qwen3_4b.py", line 462, in <module>
+    main()
+    ~~~~^^
+  File "C:\Code\worktrees\local\sage-python\scripts\train_local_qwen3_4b.py", line 419, in main
+    model, tokenizer = load_model(args.model, args.lora_rank, args.adapter)
+                       ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\worktrees\local\sage-python\scripts\train_local_qwen3_4b.py", line 139, in load_model
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+    ...<3 lines>...
+        attn_implementation="sdpa",
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\models\auto\auto_factory.py", line 549, in from_pretrained
+    config, kwargs = AutoConfig.from_pretrained(
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        pretrained_model_name_or_path,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        **kwargs,
+        ^^^^^^^^^
+    )
+    ^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\models\auto\configuration_auto.py", line 1332, in from_pretrained
+    config_dict, unused_kwargs = PretrainedConfig.get_config_dict(pretrained_model_name_or_path, **kwargs)
+                                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\configuration_utils.py", line 662, in get_config_dict
+    config_dict, kwargs = cls._get_config_dict(pretrained_model_name_or_path, **kwargs)
+                          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\configuration_utils.py", line 721, in _get_config_dict
+    resolved_config_file = cached_file(
+        pretrained_model_name_or_path,
+    ...<10 lines>...
+        _commit_hash=commit_hash,
+    )
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\utils\hub.py", line 322, in cached_file
+    file = cached_files(path_or_repo_id=path_or_repo_id, filenames=[filename], **kwargs)
+  File "C:\ProgramData\miniforge3\Lib\site-packages\transformers\utils\hub.py", line 553, in cached_files
+    raise OSError(
+    ...<3 lines>...
+    ) from e
+OSError: We couldn't connect to 'https://huggingface.co' to load the files, and couldn't find them in the cached files.
+Check your internet connection or see how to run the library in offline mode at 'https://huggingface.co/docs/transformers/installation#offline-mode'.
+--- GPU cooldown 10s ---
+ERROR: No checkpoint at models/ablation/model_instruct/sft_checkpoint
+--- ablation_model_instruct done: lun. 30 mars 2026 20:13:35 ---
+
+=== Phase 1 complete: lun. 30 mars 2026 20:13:35 ===
+Results:
+  ablation_epochs_3: avg=0.1627 P>0.3=6%
+  ablation_lr_1e5: NO RESULT
+  ablation_lr_5e5: avg=0.1637 P>0.3=4%
+  ablation_mix_code: NO RESULT
+  ablation_mix_complex: NO RESULT
+  ablation_rank_16: NO RESULT
+  ablation_rank_64: NO RESULT
+  ablation_model_instruct: NO RESULT
+[local 6099335] metrics: Phase 1 SFT ablation — 8 experiments complete
+ 3 files changed, 72 insertions(+)
+ create mode 100644 sage-python/experiments/n1_ablation_epochs_3.json
+ create mode 100644 sage-python/experiments/n1_ablation_lr_5e5.json
+ create mode 100644 sage-python/experiments/n1_sft_checkpoint.json

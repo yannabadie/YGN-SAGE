@@ -1,0 +1,29 @@
+GPU clocks set to "(gpuClkMin 3105, gpuClkMax 3105)" for GPU 00000000:01:00.0
+All done.
+=== Phase 1: SFT Ablation (8 experiments) ===
+Start: lun. 30 mars 2026 15:26:32
+2026-03-30 15:26:32,776 [autoresearch] === Experiment exp-005 ===
+2026-03-30 15:26:32,776 [autoresearch] Hypothesis: 1 SFT epoch (vs baseline 2): faster but may underfit YAML format
+2026-03-30 15:26:32,776 [autoresearch] Config: experiments/configs/ablation_epochs_1.json
+2026-03-30 15:26:32,776 [autoresearch] Best N1 so far: 0.4000
+2026-03-30 15:26:32,776 [autoresearch] Training: C:\ProgramData\miniforge3\python.exe scripts/train_local_qwen3_4b.py --config experiments/configs/ablation_epochs_1.json --sft-only (budget 60 min)
+Traceback (most recent call last):
+  File "C:\Code\worktrees\local\sage-python\scripts\autoresearch_loop.py", line 240, in <module>
+    main()
+    ~~~~^^
+  File "C:\Code\worktrees\local\sage-python\scripts\autoresearch_loop.py", line 236, in main
+    run_experiment(args)
+    ~~~~~~~~~~~~~~^^^^^^
+  File "C:\Code\worktrees\local\sage-python\scripts\autoresearch_loop.py", line 176, in run_experiment
+    adapter_path = run_training(args.config, args.budget, sft_only=args.sft_only)
+  File "C:\Code\worktrees\local\sage-python\scripts\autoresearch_loop.py", line 76, in run_training
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+  File "C:\ProgramData\miniforge3\Lib\subprocess.py", line 556, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\subprocess.py", line 1222, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\subprocess.py", line 1665, in _communicate
+    raise TimeoutExpired(self.args, orig_timeout)
+subprocess.TimeoutExpired: Command '['C:\\ProgramData\\miniforge3\\python.exe', 'scripts/train_local_qwen3_4b.py', '--config', 'experiments/configs/ablation_epochs_1.json', '--sft-only']' timed out after 3720 seconds
