@@ -84,7 +84,9 @@ class TopologyRunner:
             if output:
                 node = self.graph.get_node(idx)
                 role = getattr(node, "role", f"node-{idx}")
-                context_parts.append(f"[{role}]: {output}")
+                # Truncate per-predecessor output to reduce prompt size and API latency
+                truncated = output[:1000] + "..." if len(output) > 1000 else output
+                context_parts.append(f"[{role}]: {truncated}")
         return "\n\n".join(context_parts)
 
     def _gather_all_context(self) -> str:
@@ -95,7 +97,9 @@ class TopologyRunner:
             if output:
                 node = self.graph.get_node(idx)
                 role = getattr(node, "role", f"node-{idx}")
-                context_parts.append(f"[{role}]: {output}")
+                # Truncate per-predecessor output to reduce prompt size and API latency
+                truncated = output[:1000] + "..." if len(output) > 1000 else output
+                context_parts.append(f"[{role}]: {truncated}")
         return "\n\n".join(context_parts)
 
     async def _execute_code_node(

@@ -13,6 +13,7 @@ Falls back to None when:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -25,6 +26,11 @@ if TYPE_CHECKING:
 import numpy as np
 
 from sage.constants import KNN_K, KNN_DISTANCE_THRESHOLD
+
+# Module-level embedding cache: hash(task) → embedding vector.
+# Avoids re-computing embeddings for identical task strings.
+_EMBED_CACHE: dict[str, list[float]] = {}
+_EMBED_CACHE_MAXSIZE = 256
 
 _log = logging.getLogger(__name__)
 
@@ -136,6 +142,19 @@ class KnnRouter:
             return "none"
         return getattr(emb, '_backend', 'unknown')
 
+    def _cached_embed(self, task: str) -> list[float]:
+        """Embed task string with LRU-style dict cache (maxsize=256)."""
+        key = hashlib.sha256(task.encode("utf-8", errors="replace")).hexdigest()
+        if key in _EMBED_CACHE:
+            return _EMBED_CACHE[key]
+        emb = self._get_embedder()
+        vec = emb.embed(task)
+        # Evict oldest entry if cache is full
+        if len(_EMBED_CACHE) >= _EMBED_CACHE_MAXSIZE:
+            _EMBED_CACHE.pop(next(iter(_EMBED_CACHE)))
+        _EMBED_CACHE[key] = vec
+        return vec
+
     def route(self, task: str) -> KnnRoutingResult | None:
         """Route a task using kNN on embeddings.
 
@@ -155,7 +174,7 @@ class KnnRouter:
         # Rust hot-path: try RustKnnRouter first (avoids Python numpy overhead)
         if self._rust_knn is not None and self._rust_knn.has_exemplars():
             try:
-                query_vec = np.array(emb.embed(task), dtype=np.float32)
+                query_vec = np.array(self._cached_embed(task), dtype=np.float32)
                 norm = np.linalg.norm(query_vec)
                 if norm > 0:
                     query_vec /= norm
@@ -173,7 +192,7 @@ class KnnRouter:
 
         # Embed the query task (Python fallback path)
         try:
-            query_vec = np.array(emb.embed(task), dtype=np.float32)
+            query_vec = np.array(self._cached_embed(task), dtype=np.float32)
         except Exception as exc:
             _log.warning("kNN embed failed: %s", exc)
             return None
