@@ -57,7 +57,7 @@ cd sage-core
 # smt: Z3 SMT solver, cognitive: S-MMU + HybridVerifier + TemplateStore,
 # tool-executor: tree-sitter + subprocess, sandbox: WASM WASI (wasmtime),
 # onnx: ONNX Runtime embeddings (needs libssl-dev + pkg-config)
-ALL_FEATURES="smt,cognitive,tool-executor,sandbox"
+ALL_FEATURES="smt,cognitive,tool-executor,sandbox,cranelift"
 FULL_FEATURES="$ALL_FEATURES,onnx"
 
 if maturin build --release --features "$FULL_FEATURES" 2>/dev/null; then

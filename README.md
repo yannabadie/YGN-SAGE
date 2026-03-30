@@ -111,17 +111,20 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 | **SA-1** | Runtime Agent Factory: custom TopologyNode prompts, LLM-generated agent specs | Phase 1+2 done |
 | **SA-3** | Online Evolution: `_auto_evolve=True`, pipeline records to MAP-Elites | Done |
 | **SA-4** | Z3 Quality Pipeline: QualityLabeler replaces heuristic, zero false signals | Done |
-| **Path 6** | Learned topology policy: V1 Phi-4-mini SFT (legacy), V2 Nemotron-Orchestrator-8B (GRPO warm-up done, Phase C in progress) | Training |
-| **RLVR-Topology** | Phase A GRPO structural + Phase C GiGPO multi-step with edge credit + RewardFlow | Training |
+| **Path 6** | Learned topology policy: Nemotron-Orchestrator-8B. DAPO training step 237/1920, reward 0.215 | Training |
+| **RLVR-Topology** | Phase A+B DAPO (running) → Phase C GiGPO multi-step. 13 infrastructure fixes applied. | Training |
+| **MASBENCH** | First empirical validation: topology +27pp on depth tasks (base < 60%) | Validated |
 
 ## Benchmark Results
 
 | Benchmark | Score | Notes |
 |-----------|-------|-------|
+| **MASBENCH depth** | **SAGE 67% vs bare 40% (+27pp)** | First proof topology helps (Salesforce MASBENCH, March 2026) |
+| **GAIA Level 1** | **55%** (bare=55%) | Topology doesn't help on easy tasks (AdaptOrch confirmed) |
 | **HumanEval+ pipeline** | **89.6%** (147/164) | +5.5pp over pre-pipeline (84.1%). Budget model. |
 | **BigCodeBench Hard Instruct** | **37.8%** (56/148) | Budget model. Leaderboard SOTA 33.1% (stale, Apr 2025). |
-| **kNN routing GT** | **92%** (46/50) | arXiv 2505.12601, arctic-embed-m |
-| **Rust SystemRouter GT** | **86%** (43/50) | Domain scoring from cards.toml |
+| **kNN routing GT (Rust)** | **92%** (46/50) | arXiv 2505.12601, Snowflake/snowflake-arctic-embed-m |
+| **Rust SystemRouter GT** | **86%** (43/50) | Domain scoring from cards.toml (20 models, 7 providers) |
 
 ### Tests
 
@@ -134,8 +137,11 @@ S-MMU (Semantic Memory Management Unit): 4-view graph (temporal, semantic, causa
 ## Quick Start
 
 ```bash
-# Build
-cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor
+# One-command setup (RunPod H100 or any Linux with GPU)
+bash setup.sh
+
+# Or manual build:
+cd sage-core && maturin develop --features smt,cognitive,tool-executor,sandbox,cranelift
 cd sage-python && pip install -e ".[all,dev]"
 
 # Test
