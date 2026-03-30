@@ -81,27 +81,35 @@ from sage.llm.model_registry import ModelCardCatalog as PyModelCardCatalog  # no
 def _check_sandbox_availability() -> bool:
     """Check if any code execution sandbox is available. Warns if not."""
     has_wasm = False
+    has_subprocess = False
     has_docker = False
 
     try:
         from sage_core import ToolExecutor
         te = ToolExecutor()
         has_wasm = te.has_wasm() or te.has_wasi()
+        # tree-sitter + subprocess are always available when ToolExecutor loads
+        has_subprocess = True
     except Exception:
         pass
 
-    if not has_wasm:
+    if not has_subprocess:
         try:
             import shutil
             has_docker = shutil.which("docker") is not None
         except Exception:
             pass
 
-    available = has_wasm or has_docker
+    available = has_wasm or has_subprocess or has_docker
     if not available:
         _log.warning(
-            "Code execution sandbox unavailable (no Wasm, no Docker). "
+            "Code execution unavailable (no sage_core, no Docker). "
             "Tool execution will fail unless allow_local=True."
+        )
+    elif not has_wasm:
+        _log.info(
+            "Sandbox: tree-sitter + subprocess (no Wasm component loaded). "
+            "Load a .wasm module via ToolExecutor.load_component() for full isolation."
         )
     return available
 
@@ -560,18 +568,21 @@ def boot_agent_system(
                 provider = OpenAICompatProvider(
                     api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
                     base_url="https://api.deepseek.com/v1",
+                    model_id=model_id,
                     provider_name="deepseek",
                 )
             elif "gpt-" in model_id or "o1" in model_id:
                 provider = OpenAICompatProvider(
                     api_key=os.environ.get("OPENAI_API_KEY", ""),
                     base_url="https://api.openai.com/v1",
+                    model_id=model_id,
                     provider_name="openai",
                 )
             elif "grok" in model_id:
                 provider = OpenAICompatProvider(
                     api_key=os.environ.get("GROK_API_KEY", ""),
                     base_url="https://api.x.ai/v1",
+                    model_id=model_id,
                     provider_name="xai",
                 )
             elif "gemini" in model_id:
@@ -586,6 +597,7 @@ def boot_agent_system(
                     provider = OpenAICompatProvider(
                         api_key=os.environ["DEEPSEEK_API_KEY"],
                         base_url="https://api.deepseek.com/v1",
+                        model_id="deepseek-chat",
                         provider_name="deepseek",
                     )
                 else:

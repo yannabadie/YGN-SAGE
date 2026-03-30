@@ -286,36 +286,7 @@ formal = 0.35
 creative = 0.50
 factual = 0.70
 
-[[models]]
-id = "gpt-5.3-codex"
-provider = "openai"
-family = "gpt-5.3"
-code_score = 0.85
-reasoning_score = 0.93
-tool_use_score = 0.90
-math_score = 0.84
-formal_z3_strength = 0.65
-cost_input_per_m = 2.00
-cost_output_per_m = 10.0
-latency_ttft_ms = 4000.0
-tokens_per_sec = 100.0
-s1_affinity = 0.10
-s2_affinity = 0.90
-s3_affinity = 0.90
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = false
-context_window = 1000000
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.84
-code = 0.85
-reasoning = 0.93
-tool_use = 0.90
-formal = 0.65
-creative = 0.72
-factual = 0.34
+# gpt-5.3-codex removed — not a chat model, use gpt-5.4 instead
 
 # --- xAI models ---
 
