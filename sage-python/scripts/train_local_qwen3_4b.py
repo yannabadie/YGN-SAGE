@@ -44,14 +44,10 @@ def load_config(path: str) -> dict:
         return json.load(f)
 
 
-# YGN-SAGE topology system prompt (same as pod training)
-SYSTEM_PROMPT = (
-    "You are a multi-agent topology designer for the YGN-SAGE framework. "
-    "Given a coding task, design an optimal agent topology as a YAML DAG. "
-    "Include: difficulty, reasoning, nodes (role + prompt + model_tier), "
-    "edges (from_idx + to_idx + flow_type). The LAST node must be a "
-    "synthesizer that returns the final answer."
-)
+# System prompt with 7 SAGE tool definitions for tool-call format
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from sage_tool_schemas import TOOLCALL_SYSTEM_PROMPT as SYSTEM_PROMPT
 
 
 # ════════════════════════════════════════════════════════════════
@@ -70,12 +66,16 @@ def load_sft_dataset(path: str, max_samples: int = 0):
         for line in f:
             entry = json.loads(line)
             prompt = entry.get("prompt", "")
-            # Prefer JSON, fall back to YAML
-            topology_text = entry.get("topology_json") or entry.get("topology_yaml", "")
+            # Prefer tool-call format, fall back to JSON, then YAML
+            topology_text = (entry.get("topology_toolcall")
+                           or entry.get("topology_json")
+                           or entry.get("topology_yaml", ""))
+            # Use entry's system_prompt if available (has tool definitions baked in)
+            sys_prompt = entry.get("system_prompt", SYSTEM_PROMPT)
             if not prompt or not topology_text:
                 continue
             messages.append([
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": sys_prompt},
                 {"role": "user", "content": prompt},
                 {"role": "assistant", "content": topology_text},
             ])
@@ -163,24 +163,9 @@ def load_model(model_name: str, lora_rank: int, adapter_path: str | None = None)
         )
         model = get_peft_model(model, lora_config)
 
-    # Set chat template
-    tokenizer.chat_template = (
-        "{% if messages[0]['role'] == 'system' %}"
-        "{{ messages[0]['content'] + eos_token }}"
-        "{% set loop_messages = messages[1:] %}"
-        "{% else %}"
-        f"{{ '{SYSTEM_PROMPT}' + eos_token }}"
-        "{% set loop_messages = messages %}"
-        "{% endif %}"
-        "{% for message in loop_messages %}"
-        "{% if message['role'] == 'user' %}"
-        "{{ message['content'] }}"
-        "{% elif message['role'] == 'assistant' %}"
-        "{{ message['content'] + eos_token }}"
-        "{% endif %}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}{{ '' }}{% endif %}"
-    )
+    # Qwen3-4B-Instruct has native tool-call chat template — do NOT override
+    if tokenizer.chat_template is None:
+        log.warning("No chat template found, model may not support tool-call format")
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
@@ -379,7 +364,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="Two-phase local training: SFT warmup → GRPO")
     parser.add_argument("--smoke", action="store_true", help="Smoke test")
-    parser.add_argument("--model", default="Qwen/Qwen3-4B")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct")
     # SFT args
     parser.add_argument("--sft-data", default=None,
                         help="SFT JSONL path (enables Phase 1)")
