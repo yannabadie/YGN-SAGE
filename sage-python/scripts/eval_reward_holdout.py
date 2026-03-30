@@ -41,45 +41,68 @@ def load_holdout(path: str = HOLDOUT_PATH) -> list[dict]:
     return data["prompts"]
 
 
-def evaluate(model, tokenizer, prompts: list[dict], max_new_tokens: int = 512) -> dict:
-    """Generate topologies and score them."""
+def evaluate(model, tokenizer, prompts: list[dict], max_new_tokens: int = 512,
+             batch_size: int = 8) -> dict:
+    """Generate topologies in batches and score them.
+
+    Batched generation uses left-padding for causal LMs.
+    GPU utilization: ~60-80% (vs ~20% sequential).
+    """
     os.environ.setdefault("SAGE_VERL_EXEC", "0")
     os.environ.setdefault("SAGE_TRAINING_PHASE", "A")
     from sage.verl.reward import compute_score
 
+    # Left-pad for batched causal generation
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
     results = []
-    for i, p in enumerate(prompts):
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": p["prompt"]},
-        ]
-        input_text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(input_text, return_tensors="pt").to(model.device)
+    for batch_start in range(0, len(prompts), batch_size):
+        batch = prompts[batch_start:batch_start + batch_size]
+
+        # Tokenize batch
+        texts = []
+        for p in batch:
+            messages = [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": p["prompt"]},
+            ]
+            texts.append(tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True))
+
+        inputs = tokenizer(texts, return_tensors="pt", padding=True,
+                           truncation=True, max_length=512).to(model.device)
+        prompt_lengths = inputs["attention_mask"].sum(dim=1)
 
         with torch.no_grad():
-            output = model.generate(
+            outputs = model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 temperature=0.7,
                 do_sample=True,
-                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id,
+                pad_token_id=tokenizer.pad_token_id,
             )
 
-        generated = tokenizer.decode(output[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-        clipped = len(output[0]) - inputs["input_ids"].shape[1] >= max_new_tokens
+        # Decode each sample in batch
+        for j, (p, output, plen) in enumerate(zip(batch, outputs, prompt_lengths)):
+            generated = tokenizer.decode(output[plen:], skip_special_tokens=True)
+            gen_len = len(output) - plen
+            clipped = gen_len >= max_new_tokens
 
-        reward = float(compute_score("sage_topology", generated, "", {}))
-        results.append({
-            "task_id": p.get("task_id", f"holdout_{i}"),
-            "difficulty": p["difficulty"],
-            "reward": reward,
-            "clipped": clipped,
-            "gen_length": len(generated),
-        })
+            reward = float(compute_score("sage_topology", generated, "", {}))
+            idx = batch_start + j
+            results.append({
+                "task_id": p.get("task_id", f"holdout_{idx}"),
+                "difficulty": p["difficulty"],
+                "reward": reward,
+                "clipped": bool(clipped),
+                "gen_length": len(generated),
+            })
 
-        if (i + 1) % 10 == 0:
-            avg_so_far = sum(r["reward"] for r in results) / len(results)
-            log.info("  %d/%d | avg reward=%.4f", i + 1, len(prompts), avg_so_far)
+        done = min(batch_start + batch_size, len(prompts))
+        avg_so_far = sum(r["reward"] for r in results) / len(results)
+        log.info("  %d/%d | avg reward=%.4f", done, len(prompts), avg_so_far)
 
     rewards = [r["reward"] for r in results]
     clipped_count = sum(1 for r in results if r["clipped"])
@@ -111,6 +134,8 @@ def main():
     parser.add_argument("--holdout", default=HOLDOUT_PATH)
     parser.add_argument("--max-new-tokens", type=int, default=512)
     parser.add_argument("--output", default=None, help="Save metrics JSON to file")
+    parser.add_argument("--batch-size", type=int, default=8,
+                        help="Batch size for generation (higher=faster, more VRAM)")
     args = parser.parse_args()
 
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
@@ -155,7 +180,7 @@ def main():
     log.info("Evaluating %d holdout prompts...", len(prompts))
 
     t0 = time.time()
-    metrics = evaluate(model, tokenizer, prompts, args.max_new_tokens)
+    metrics = evaluate(model, tokenizer, prompts, args.max_new_tokens, args.batch_size)
     elapsed = time.time() - t0
 
     metrics["eval_time_sec"] = elapsed
