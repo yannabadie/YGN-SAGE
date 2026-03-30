@@ -6,7 +6,7 @@
 # models, and verifies the complete stack.
 #
 # Usage:
-#   bash sage-python/scripts/setup_full.sh
+#   bash setup.sh
 #
 # Prerequisites:
 #   - RunPod with 2x H100 NVL 94GB
