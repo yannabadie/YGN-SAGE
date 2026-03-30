@@ -14,6 +14,7 @@ pub mod paging;
 pub mod rag_cache;
 pub mod relevance_gate;
 pub mod smmu;
+pub mod write_gate;
 
 // Re-export public types so that `memory::MemoryEvent` and `memory::WorkingMemory`
 // continue to work without changing import paths.

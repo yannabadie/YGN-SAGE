@@ -1031,6 +1031,16 @@ def boot_agent_system(
         causal_memory = CausalMemory()
     loop.causal_memory = causal_memory
 
+    # Inter-tier consolidation: episodic -> semantic -> causal (MAGMA 2601.03236)
+    from sage.memory.consolidator import MemoryConsolidator
+    consolidator = MemoryConsolidator(
+        episodic=episodic_memory,
+        semantic=semantic_memory,
+        causal=causal_memory,
+        memory_agent=memory_agent,
+    )
+    loop.consolidator = consolidator
+
     # ToolExecutor for S2 AVR code validation (Rust tree-sitter + subprocess)
     try:
         from sage_core import ToolExecutor as RustToolExecutor
@@ -1049,8 +1059,8 @@ def boot_agent_system(
         loop._auto_evolve = True
         _log.info("Online evolution enabled (Rust TopologyEngine available)")
 
-    # AgeMem: 7 memory tools (3 STM + 4 LTM)
-    for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor):
+    # AgeMem: 8 memory tools (3 STM + 4 LTM + 1 Causal)
+    for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor, causal_memory=causal_memory):
         tool_registry.register(tool)
 
     # ExoCortex tools (search)
