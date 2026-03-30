@@ -1,0 +1,9 @@
+{
+  "model": "Qwen/Qwen3-4B",
+  "sft_data": "data/topology_sft_v2_toolcall.jsonl",
+  "sft_epochs": 2,
+  "sft_lr": 2e-5,
+  "sft_max_samples": 0,
+  "output": "models/toolcall_qwen3_4b",
+  "lora_rank": 32
+}
