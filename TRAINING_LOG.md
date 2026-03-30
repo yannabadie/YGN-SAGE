@@ -476,3 +476,23 @@ Overhead:    18x slower for same quality
 2. Cache routing decisions (kNN embedding computed every call)
 3. CIB message compression (GoAgent, reduce context passed between nodes)
 4. Reduce default nodes from 4-5 to 2-3 (simpler topologies may be better)
+
+### Runner Fix Impact (March 30, 2026)
+
+After fixing DeepSeek fallback + 60s per-node timeout:
+
+| Task | Before fix | After fix |
+|------|-----------|-----------|
+| depth task 1 (gt=9) | PASS 274s | PASS 197s |
+| depth task 2 (gt=16) | FAIL 263s | FAIL 154s |
+| depth task 3 (gt=18) | FAIL 186s | **PASS 222s** |
+| **Total** | **1/3 (33%)** | **2/3 (67%)** |
+
+**SAGE now beats bare model on depth: 67% vs 40%** (+27pp)
+Latency reduced: 241s avg → 191s avg (-21%)
+
+### DAPO Targeted Training (launched March 30, 2026)
+
+Script: `train_topology_targeted.sh`
+Config: DAPO token-level loss, 5 epochs, full 12K dataset, SFT base model
+Step 104/1920 | reward=0.184 | 60s/step | GPUs 100%
