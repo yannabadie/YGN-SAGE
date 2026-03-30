@@ -224,7 +224,19 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 2: Select Topology ────────────────────────────────────────────
 
     def _stage_select_topology(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 2: Select optimal topology."""
+        """Stage 2: Select optimal topology.
+
+        S1 (simple) tasks skip topology entirely — direct single-agent call
+        is faster AND equally effective (confirmed by MASBENCH: topology helps
+        only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
+        """
+        # S1 fast path: skip topology, use direct single-agent call
+        # This reduces latency from ~200s (multi-node) to ~15s (direct)
+        if ctx.system == 1:
+            ctx.topology = None
+            log.debug("S1 task: skipping topology (direct single-agent)")
+            return ctx
+
         # Path 0: AdaptOrch heuristic for macro topology hint
         hint = "sequential"
         if ctx.dag_features:
