@@ -70,7 +70,7 @@ def evaluate(model, tokenizer, prompts: list[dict], max_new_tokens: int = 512,
                 messages, tokenize=False, add_generation_prompt=True))
 
         inputs = tokenizer(texts, return_tensors="pt", padding=True,
-                           truncation=True, max_length=512).to(model.device)
+                           truncation=True, max_length=1024).to(model.device)
         prompt_lengths = inputs["attention_mask"].sum(dim=1)
 
         with torch.no_grad():
