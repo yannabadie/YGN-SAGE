@@ -16,13 +16,13 @@ Tier = Literal[
 ]
 
 _HARDCODED = {
-    "codex": "gpt-4.1",
-    "codex_max": "grok-4.20-beta",
-    "fast": "gpt-4.1-nano",
-    "mutator": "gpt-4.1-mini",
-    "reasoner": "grok-4-1-fast-reasoning",
-    "budget": "gpt-4.1-nano",
-    "fallback": "MiniMax-Text-01",
+    "codex": "gpt-5.4",
+    "codex_max": "gpt-5.4-pro",
+    "fast": "gemini-3.1-flash-lite-preview",
+    "mutator": "gpt-5.4-mini",
+    "reasoner": "gemini-3.1-pro-preview",
+    "budget": "deepseek-chat",
+    "fallback": "deepseek-chat",
 }
 
 _MAX_TOKENS = {
@@ -67,8 +67,27 @@ class ModelRouter:
 
         lookup_tier = "reasoner" if tier == "critical" else tier
         model = ModelRouter.MODELS.get(lookup_tier, _HARDCODED.get(lookup_tier, _HARDCODED["fast"]))
-        provider = "codex" if tier in _CODEX_TIERS else "google"
         max_tokens = _MAX_TOKENS.get(tier, 4096)
+
+        # Infer provider from model_id (Rust-first: model determines provider)
+        if tier in _CODEX_TIERS:
+            provider = "codex"
+        elif "deepseek" in model:
+            provider = "deepseek"
+        elif "gpt-" in model or "o1" in model or "o3" in model:
+            provider = "openai"
+        elif "grok" in model:
+            provider = "xai"
+        elif "gemini" in model:
+            provider = "google"
+        elif "minimax" in model.lower():
+            provider = "minimax"
+        elif "moonshot" in model or "kimi" in model:
+            provider = "kimi"
+        elif "qwen" in model:
+            provider = "openrouter"
+        else:
+            provider = "google"  # fallback
 
         extra: dict = {}
         if tier == "codex_max":

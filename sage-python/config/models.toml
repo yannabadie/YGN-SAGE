@@ -1,12 +1,21 @@
 # YGN-SAGE Model Configuration
 # Override per-tier model IDs here or via env vars (SAGE_MODEL_FAST, etc.)
-# Updated: 2026-03-14 — real models verified via API discovery
+# Updated: 2026-03-30 — all 7 providers verified via API
 
 [tiers]
-fast = "gpt-4.1-nano"
-mutator = "gpt-4.1-mini"
-reasoner = "grok-4-1-fast-reasoning"
-codex = "gpt-4.1"
-codex_max = "grok-4.20-beta"
-budget = "gpt-4.1-nano"
-fallback = "MiniMax-Text-01"
+fast = "gemini-3.1-flash-lite-preview"      # Google — low latency, $0.25/$1.50
+mutator = "gpt-5.4-mini"                     # OpenAI — budget frontier, $0.75/$4.50
+reasoner = "gemini-3.1-pro-preview"          # Google — complex evaluation, $2/$12
+codex = "gpt-5.4"                            # OpenAI — SOTA coding
+codex_max = "gpt-5.4-pro"                    # OpenAI — max quality
+budget = "deepseek-chat"                     # DeepSeek — best cost/quality, $0.28/$0.42
+fallback = "deepseek-chat"                   # DeepSeek — no rate limits, reliable
+
+# Providers available for topology multi-node execution:
+#   DeepSeek:    deepseek-chat, deepseek-reasoner
+#   OpenAI:      gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.4-pro
+#   Google:      gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview, gemini-3-flash-preview
+#   xAI:         grok-4-1-fast-reasoning, grok-3-mini, grok-3
+#   MiniMax:     MiniMax-M2.7, MiniMax-M2.5
+#   Kimi:        kimi-k2.5
+#   OpenRouter:  qwen/qwen3.5-plus-02-15

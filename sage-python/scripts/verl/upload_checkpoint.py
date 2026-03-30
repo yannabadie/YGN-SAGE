@@ -117,8 +117,28 @@ def parse_training_metrics_from_ray():
     return sorted(metrics, key=lambda m: m["step"])
 
 
+def upload_fsdp_checkpoint(checkpoint_path, step, token):
+    """Upload FULL FSDP checkpoint to HF (for resume capability)."""
+    from huggingface_hub import HfApi
+
+    api = HfApi(token=token)
+    print(f"[upload] Uploading FULL FSDP checkpoint step {step} (~34GB)...")
+    try:
+        api.upload_folder(
+            folder_path=str(checkpoint_path),
+            repo_id=REPO_ID,
+            path_in_repo=f"checkpoints/combined_step_{step}",
+            commit_message=f"backup: FULL FSDP checkpoint step {step} (for verl resume)",
+        )
+        print(f"[upload] FSDP checkpoint step {step} uploaded")
+        return True
+    except Exception as e:
+        print(f"[upload] FSDP upload failed: {e}")
+        return False
+
+
 def upload_lora_checkpoint(checkpoint_path, step, token):
-    """Upload ONLY LoRA adapter + tokenizer to HF. Delete previous checkpoint from HF."""
+    """Upload LoRA adapter + tokenizer + FSDP checkpoint to HF."""
     from huggingface_hub import CommitOperationDelete, HfApi
 
     api = HfApi(token=token)
@@ -168,7 +188,11 @@ def upload_lora_checkpoint(checkpoint_path, step, token):
             commit_message=f"checkpoint: tokenizer step {step}",
         )
 
-    print(f"[upload] Step {step} uploaded to {REPO_ID}")
+    print(f"[upload] LoRA step {step} uploaded to {REPO_ID}")
+
+    # Also upload FULL FSDP checkpoint (for resume capability)
+    upload_fsdp_checkpoint(checkpoint_path, step, token)
+
     return True
 
 

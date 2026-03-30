@@ -1,0 +1,16 @@
+{
+  "benchmark": "MASBENCH (Salesforce)",
+  "date": "2026-03-29",
+  "axes": ["depth", "breadth"],
+  "tasks_per_axis": 5,
+  "total_tasks": 10,
+  "bare_model": "deepseek-chat (V3.2)",
+  "sage_config": "full pipeline, tier=budget, kNN routing (heuristic fallback), sentence-transformers embedder",
+  "results": {
+    "depth": {"bare": {"passed": 1, "total": 5, "rate": 0.20}, "sage": {"passed": 3, "total": 5, "rate": 0.60}, "delta_pp": 40},
+    "breadth": {"bare": {"passed": 2, "total": 5, "rate": 0.40}, "sage": {"passed": 2, "total": 5, "rate": 0.40}, "delta_pp": 0}
+  },
+  "total": {"bare": {"passed": 3, "total": 10, "rate": 0.30}, "sage": {"passed": 5, "total": 10, "rate": 0.50}, "delta_pp": 20},
+  "known_issues": ["MiniMax provider timeout", "gpt-4.1-nano fallback to Gemini (404)", "kNN using heuristic (not semantic)"],
+  "notes": "First empirical evidence of SAGE topology value on recognized benchmark. Depth axis shows +40pp delta."
+}

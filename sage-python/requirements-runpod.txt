@@ -1,0 +1,44 @@
+# YGN-SAGE RunPod H100 requirements
+# Install: pip install -r requirements-runpod.txt
+# Then: cd sage-core && maturin develop --features smt,tool-executor
+#
+# Updated: 2026-03-30
+
+# === Core (already in pyproject.toml) ===
+httpx>=0.28
+pydantic>=2.10
+rich>=13
+anyio>=4
+aiosqlite>=0.20
+numpy>=1.26,<2.0
+
+# === Providers ===
+openai>=1.50,<2
+google-genai>=1.20,<2
+google-generativeai>=0.8    # Legacy fallback for metacognition routing
+
+# === Embeddings (Rust first, sentence-transformers fallback) ===
+sentence-transformers>=5.0
+onnxruntime>=1.18            # For Rust ONNX embedder (if pkg-config available)
+
+# === Training (verl 0.7.1 on RunPod) ===
+torch>=2.4
+transformers>=4.45
+peft>=0.13
+datasets>=3.0
+accelerate>=1.0
+pandas>=2.0
+pyarrow>=18
+
+# === Benchmarks ===
+bigcodebench>=0.2
+evalplus>=0.3.1
+
+# === Memory & Verification ===
+z3-solver>=4.13
+
+# === Build (Rust sage-core) ===
+maturin>=1.5
+
+# === Not needed on pod (local dev only) ===
+# fastapi, uvicorn, mcp, a2a-sdk

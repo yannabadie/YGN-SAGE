@@ -103,6 +103,29 @@ class ProviderPool:
             )
 
             if profile is None:
+                # Try to infer provider from model_id prefix before falling back
+                _PROVIDER_HINTS = {
+                    "deepseek": "deepseek",
+                    "gpt-": "openai",
+                    "gemini": "google",
+                    "grok": "xai",
+                    "minimax": "minimax",
+                    "moonshot": "kimi",
+                    "qwen": "openrouter",
+                }
+                inferred = None
+                for hint, pname in _PROVIDER_HINTS.items():
+                    if hint in model_id.lower():
+                        inferred = self._providers.get(pname)
+                        if inferred is not None:
+                            log.debug(
+                                "ProviderPool: inferred provider=%s for model_id=%s",
+                                pname, model_id,
+                            )
+                            result = (inferred, LLMConfig(provider=pname, model=model_id))
+                            self._cache[model_id] = result
+                            return result
+
                 log.debug(
                     "ProviderPool: model_id=%s not found in registry, using default",
                     model_id,
