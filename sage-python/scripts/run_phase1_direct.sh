@@ -5,7 +5,8 @@
 #
 # Usage: cd sage-python && bash scripts/run_phase1_direct.sh
 
-set -euo pipefail
+set -uo pipefail
+# No set -e: continue even if one experiment fails
 export HF_HUB_OFFLINE=1
 export PYTHONUNBUFFERED=1
 
@@ -36,9 +37,17 @@ for cfg in "${CONFIGS[@]}"; do
   OUTPUT_DIR=$(python -c "import json; print(json.load(open('$CONFIG_FILE'))['output'])")
   SFT_CHECKPOINT="${OUTPUT_DIR}/sft_checkpoint"
 
-  # Step 1: SFT training
-  echo "--- SFT training: $CONFIG_FILE ---"
-  python -u scripts/train_local_qwen3_4b.py --config "$CONFIG_FILE" --sft-only
+  # Step 1: SFT training (skip if checkpoint exists)
+  if [ -f "${SFT_CHECKPOINT}/adapter_config.json" ]; then
+    echo "--- SFT checkpoint exists, skipping training ---"
+  else
+    echo "--- SFT training: $CONFIG_FILE ---"
+    python -u scripts/train_local_qwen3_4b.py --config "$CONFIG_FILE" --sft-only
+  fi
+
+  # GPU cooldown (prevent CUDA errors from memory pressure)
+  echo "--- GPU cooldown 10s ---"
+  sleep 10
 
   # Step 2: N1 eval
   if [ -f "${SFT_CHECKPOINT}/adapter_config.json" ]; then
