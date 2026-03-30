@@ -92,6 +92,9 @@ pub struct TopologyEngine {
     topology_cache: HashMap<String, TopologyGraph>,
     /// Last bandit decision_id from generate(), used by record_outcome() to update posteriors.
     last_decision_id: Option<String>,
+    /// Number of outcomes recorded since the last `evolve()` call.
+    /// Used by `should_evolve()` to enforce a cooldown between evolution passes.
+    outcomes_since_last_evolve: usize,
 }
 
 impl TopologyEngine {
@@ -106,6 +109,7 @@ impl TopologyEngine {
             cma_emitter: CmaEmitter::new(3, 0.3),
             topology_cache: HashMap::new(),
             last_decision_id: None,
+            outcomes_since_last_evolve: 0,
         }
     }
 
@@ -593,13 +597,41 @@ impl TopologyEngine {
             self.bandit.add_arm("observed", &template);
         }
 
+        self.outcomes_since_last_evolve += 1;
+
         info!(
             topology_id = topology_id,
             quality = quality,
             cost = cost,
             latency_ms = latency_ms,
+            outcomes_since_last_evolve = self.outcomes_since_last_evolve,
             "outcome_recorded"
         );
+    }
+
+    // ── Evolution gating ──────────────────────────────────────────────────
+
+    /// Determine whether online evolution should run.
+    ///
+    /// Returns `true` when all conditions are met:
+    /// 1. Archive has >= `min_outcomes` recorded entries (enough data)
+    /// 2. At least `cooldown_outcomes` new outcomes since last evolution
+    /// 3. Archive coverage < 0.80 (diminishing returns above saturation)
+    ///
+    /// These thresholds are calibrated initial values, subject to ablation.
+    pub fn should_evolve(&self, min_outcomes: usize, cooldown_outcomes: usize) -> bool {
+        let cell_count = self.archive.cell_count();
+        if cell_count < min_outcomes {
+            return false;
+        }
+        if self.outcomes_since_last_evolve < cooldown_outcomes {
+            return false;
+        }
+        // Coverage saturation check — stop evolving when archive is mostly full
+        if self.archive.coverage() >= 0.80 {
+            return false;
+        }
+        true
     }
 
     // ── Evolution ─────────────────────────────────────────────────────────
@@ -618,6 +650,9 @@ impl TopologyEngine {
             generations = generations,
         )
         .entered();
+
+        // Reset cooldown counter
+        self.outcomes_since_last_evolve = 0;
 
         if self.archive.cell_count() == 0 {
             debug!("evolve_skip_empty_archive");

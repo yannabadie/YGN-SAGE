@@ -1,9 +1,10 @@
-"""AgeMem memory tools: 7 learnable actions for STM + LTM management.
+"""AgeMem memory tools: 8 learnable actions for STM + LTM + Causal management.
 
 Research basis:
 - AgeMem: Unified tool-based memory policy (RETRIEVE/SUMMARY/FILTER + ADD/UPDATE/DELETE)
 - NotebookLM Technical: Two-stage provenance-aware retrieval
 - MEM1: Rolling internal state via compressor
+- AMA-Bench (2602.22769): Causal memory for provenance tracking
 """
 from __future__ import annotations
 
@@ -46,11 +47,13 @@ def create_memory_tools(
     working_memory: WorkingMemory,
     episodic: EpisodicMemory,
     compressor: Any | None = None,
+    causal_memory: Any | None = None,
 ) -> list[Tool]:
-    """Create all 7 AgeMem memory tools bound to the memory instances.
+    """Create all 8 AgeMem memory tools bound to the memory instances.
 
     STM (Working Memory): retrieve_context, summarize_context, filter_context
     LTM (Episodic): search_memory, store_memory, update_memory, delete_memory
+    Causal: search_causal_chain
     """
     tools: list[Tool] = []
 
@@ -188,5 +191,46 @@ def create_memory_tools(
         return f"Memory '{key}' not found."
 
     tools.append(delete_memory)
+
+    # --- Causal Memory Tools ---
+
+    if causal_memory is not None:
+
+        @Tool.define(
+            name="search_causal_chain",
+            description=(
+                "Trace causal chains in memory. Given an entity, find what it caused "
+                "(forward chain) or what caused it (ancestors). Use for provenance "
+                "tracking and understanding cause-effect relationships."
+            ),
+            parameters={
+                "type": "object",
+                "properties": {
+                    "entity": {
+                        "type": "string",
+                        "description": "The entity to trace causal chains for",
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["forward", "backward"],
+                        "description": "forward = what this entity caused; backward = what caused this entity",
+                        "default": "forward",
+                    },
+                },
+                "required": ["entity"],
+            },
+        )
+        async def search_causal_chain(entity: str, direction: str = "forward") -> str:
+            if direction == "backward":
+                chain = causal_memory.get_causal_ancestors(entity)
+                label = "Ancestors (what caused this)"
+            else:
+                chain = causal_memory.get_causal_chain(entity)
+                label = "Causal chain (what this caused)"
+            if not chain:
+                return f"No causal chain found for '{entity}'."
+            return f"{label}: {' -> '.join(chain)}"
+
+        tools.append(search_causal_chain)
 
     return tools

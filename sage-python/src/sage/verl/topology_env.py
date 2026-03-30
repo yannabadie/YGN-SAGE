@@ -233,20 +233,32 @@ class SageTopologyEnv:
     # ------------------------------------------------------------------
 
     def _handle_yaml(self, yaml_text: str) -> tuple[dict, float, bool, dict]:
-        """Step 0: parse YAML, setup incremental execution, run until
+        """Step 0: parse YAML/JSON, setup incremental execution, run until
         first checkpoint or end."""
         self._trace.topology_yaml = yaml_text
 
-        # Parse YAML
+        # Try JSON first (Nemotron native format for Phase C)
+        import json
+        topo = None
         try:
-            topo = yaml.safe_load(yaml_text)
+            topo = json.loads(yaml_text.strip())
             if not isinstance(topo, dict) or "nodes" not in topo:
-                return self._terminal(-1.0, "INVALID_YAML", "Invalid topology: missing 'nodes' key.")
-            nodes = topo.get("nodes", [])
-            if not isinstance(nodes, list) or len(nodes) == 0:
-                return self._terminal(-0.5, "EMPTY_TOPOLOGY", "Empty topology: no nodes.")
-        except yaml.YAMLError:
-            return self._terminal(-2.0, "YAML_ERROR", "YAML parse error.")
+                topo = None  # fall through to YAML
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+        # Fall back to YAML
+        if topo is None:
+            try:
+                topo = yaml.safe_load(yaml_text)
+                if not isinstance(topo, dict) or "nodes" not in topo:
+                    return self._terminal(-1.0, "INVALID_YAML", "Invalid topology: missing 'nodes' key.")
+            except yaml.YAMLError:
+                return self._terminal(-2.0, "YAML_ERROR", "YAML parse error.")
+
+        nodes = topo.get("nodes", [])
+        if not isinstance(nodes, list) or len(nodes) == 0:
+            return self._terminal(-0.5, "EMPTY_TOPOLOGY", "Empty topology: no nodes.")
 
         self._topo_dict = topo
         self._difficulty = topo.get("difficulty", "moderate")
@@ -576,7 +588,17 @@ class SageTopologyEnv:
         return 0.4
 
     def _parse_decision(self, text: str) -> str:
-        t = text.strip().lower()
+        text = text.strip()
+        # JSON format: {"action": "continue"}
+        try:
+            import json
+            data = json.loads(text)
+            if isinstance(data, dict):
+                return data.get("action", "continue")
+        except Exception:
+            pass
+        # Text fallback
+        t = text.lower()
         if "upgrade" in t:
             return "upgrade"
         elif "reroute" in t:

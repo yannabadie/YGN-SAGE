@@ -36,78 +36,157 @@ def _strip_code_fence(text: str) -> str:
 # ── Partial credit for truncated YAML (V5 reward shaping) ────
 
 def _partial_credit(text: str) -> float:
-    """Give partial credit for YAML-like text that failed to parse.
+    """Give partial credit for topology-like text that failed to parse.
 
-    V5 fix: V4 had 97% reward=0 because truncated YAML scored -2.0.
-    This function detects YAML structure even in truncated output and
-    returns a gradient-friendly score instead of the cliff at -2.0.
-
-    Returns: [-2.0, -0.3] — always less than valid YAML (-0.25 min)
-    so the model still prefers complete YAML, but truncated attempts
-    get signal to keep generating YAML-like text.
+    V8: Detects both YAML and JSON/tool_call structural markers.
+    Returns: [-2.0, -0.3] — always less than valid output (-0.25 min).
     """
     text = _strip_code_fence(text)
     score = -2.0
 
-    # Check for YAML-like structural markers
-    has_nodes_key = "nodes:" in text or "nodes :" in text
-    has_role = "role:" in text or "role :" in text
-    has_reasoning = "reasoning:" in text or "reasoning :" in text
+    # Check for tool_call markers (Nemotron native)
+    has_tool_call_tag = '<tool_call>' in text
+    has_tool_call_close = '</tool_call>' in text
+
+    # Check for JSON structural markers
+    has_json_nodes = '"nodes"' in text
+    has_json_role = '"role"' in text
+    has_json_brace = text.strip().startswith('{') or '<tool_call>' in text
+
+    # Check for YAML structural markers
+    has_yaml_nodes = "nodes:" in text or "nodes :" in text
+    has_yaml_role = "role:" in text or "role :" in text
     has_yaml_list = "- " in text and ("role" in text or "name" in text)
 
-    if has_nodes_key:
-        score += 1.0  # -2.0 → -1.0 (major: knows the top-level key)
-    if has_role:
-        score += 0.3  # knows node structure
-    if has_yaml_list:
-        score += 0.2  # uses YAML list syntax
-    if has_reasoning:
-        score += 0.2  # includes reasoning field
+    # Tool call format (strong signal)
+    if has_tool_call_tag:
+        score += 1.2  # -2.0 → -0.8 (major: using native format)
+    if has_tool_call_close:
+        score += 0.2
+
+    # Topology structure markers (JSON or YAML)
+    if has_json_nodes or has_yaml_nodes:
+        score += 0.5  # knows the top-level key
+    if has_json_role or has_yaml_role:
+        score += 0.2  # knows node structure
+    if has_json_brace or has_yaml_list:
+        score += 0.1
+
+    # Reasoning/difficulty fields
+    if "reasoning" in text or '"reasoning"' in text:
+        score += 0.1
+    if "create_topology" in text:
+        score += 0.2  # knows the function name
 
     return min(score, -0.3)  # cap below valid-but-empty-nodes (-0.25)
 
 
 # ── Format scoring ───────────────────────────────────────────
 
-def _score_format(text: str) -> float:
-    """YAML/JSON format validity. Range: [-3.0, +1.0].
+def _extract_topology_data(text: str) -> dict | None:
+    """Extract topology data from any format: <tool_call>, JSON, or YAML.
 
-    Accepts both YAML and JSON (yaml.safe_load handles valid JSON natively).
-    Falls back to json.loads for JSON with trailing commas that YAML rejects.
-
-    V7 FIX: Strong -3.0 penalty for <think> output.
-    The Qwen3/Nemotron weights strongly prefer generating <think> after
-    the assistant turn. Without explicit penalty, 100% of GRPO completions
-    start with <think>, all get reward=0, zero advantage variance, no learning.
-
-    V5 FIX: Partial credit for truncated-but-YAML-like text.
-    Now: if text looks like YAML (starts with 'nodes:' or contains YAML structure)
-    but fails to parse, give partial credit instead of -2.0.
+    Priority: <tool_call> (Nemotron native) > raw JSON > YAML.
+    Returns the topology dict or None if unparseable.
     """
-    # V7: Strong negative for <think> output (Qwen3 weight residual)
-    stripped = text.strip()
-    if stripped.startswith('<think>') or stripped.startswith('</think>'):
-        return -3.0  # Worse than any other failure (-2.0), creates strong gradient
+    import json as _json
 
+    stripped = text.strip()
+
+    # 1. <tool_call> format (Nemotron native)
+    if '<tool_call>' in stripped:
+        tc_match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', stripped, re.DOTALL)
+        if tc_match:
+            try:
+                call = _json.loads(tc_match.group(1))
+                if isinstance(call, dict):
+                    # Tool call with arguments containing topology
+                    args = call.get('arguments', call)
+                    if isinstance(args, dict) and 'nodes' in args:
+                        return args
+                    # Tool call for create_topology
+                    if call.get('name') == 'create_topology' and isinstance(args, dict):
+                        return args
+                    return call
+            except Exception:
+                pass
+        # Try extracting JSON between tags even if malformed
+        tc_content = re.search(r'<tool_call>(.*?)(?:</tool_call>|$)', stripped, re.DOTALL)
+        if tc_content:
+            try:
+                return _json.loads(tc_content.group(1).strip())
+            except Exception:
+                pass
+
+    # 2. Raw JSON
     try:
-        text = _strip_code_fence(text)
-        try:
-            data = yaml.safe_load(text)
-        except yaml.YAMLError:
-            # Fallback: try json.loads for JSON with trailing commas
-            import json
-            data = json.loads(text)
-        if not isinstance(data, dict):
-            return -1.5
-        if "nodes" not in data:
-            return -0.5
-        nodes = data["nodes"]
-        if not isinstance(nodes, list) or len(nodes) == 0:
-            return -0.25
-        return 1.0
-    except (yaml.YAMLError, Exception):
-        # V5: Reward shaping for truncated YAML (reduces sparsity)
-        return _partial_credit(text)
+        data = _json.loads(stripped)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    # 3. YAML
+    try:
+        text_clean = _strip_code_fence(stripped)
+        data = yaml.safe_load(text_clean)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+
+    return None
+
+
+def _score_format(text: str) -> float:
+    """Format validity. Range: [-3.0, +1.0].
+
+    V8: Supports <tool_call> (Nemotron native), JSON, and YAML.
+    Priority: <tool_call> with valid JSON > raw JSON > YAML.
+
+    -3.0: <think> output (Qwen3 residual, must be eliminated)
+    -2.0: Unparseable garbage (partial credit for structure markers)
+    -1.5: Parseable but not a dict
+    -0.5: Dict but no "nodes" key
+    -0.25: Has "nodes" but empty
+    +0.5: Valid topology (any format)
+    +1.0: Valid <tool_call> wrapped topology (native format bonus)
+    """
+    stripped = text.strip()
+
+    # Strong negative for <think> output (Qwen3 weight residual)
+    if stripped.startswith('<think>') or stripped.startswith('</think>'):
+        return -3.0
+
+    # Check for <tool_call> format (Nemotron native — bonus!)
+    has_tool_call = '<tool_call>' in stripped
+
+    data = _extract_topology_data(stripped)
+
+    if data is None:
+        # Partial credit for attempts
+        return _partial_credit(stripped)
+
+    if not isinstance(data, dict):
+        return -1.5
+
+    # Check for topology structure
+    # Accept both direct topology (nodes key) and tool call wrapper
+    topo = data
+    if 'arguments' in data and isinstance(data['arguments'], dict):
+        topo = data['arguments']
+    if 'name' in data and data.get('name') == 'create_topology':
+        topo = data.get('arguments', data)
+
+    if 'nodes' not in topo:
+        return -0.5
+
+    nodes = topo['nodes']
+    if not isinstance(nodes, list) or len(nodes) == 0:
+        return -0.25
+
+    # Valid topology — bonus for using native <tool_call> format
+    return 1.0 if has_tool_call else 0.5
 
 
 # ── Structure scoring ────────────────────────────────────────
@@ -132,14 +211,18 @@ def _is_phase_c() -> bool:
 
 
 def _score_structure(text: str) -> float:
-    """Structural quality of a topology YAML.
+    """Structural quality of a topology.
+
+    V8: Accepts <tool_call>, JSON, and YAML via _extract_topology_data.
 
     Phase A (default): Conductor-style simple reward.
-      YAML parsable + nodes → 0.5
-      + edges → 0.7
-      + roles on all nodes → 0.85
+      Parsable + nodes → 0.3
+      + edges → 0.5
+      + roles on all nodes → 0.8
       + reasoning → 1.0
-      Max: 1.0
+      + template_type → +0.1 bonus
+      + model_tier on all nodes → +0.1 bonus
+      Max: 1.2
 
     Phase C (SAGE_TRAINING_PHASE=C): Enriched reward.
       Base Phase A score
@@ -147,14 +230,23 @@ def _score_structure(text: str) -> float:
       + adaptation/checkpoints → +0.1
       + provider_hints → +0.05
       + hybrid LLM+code → +0.1
-      Max: 1.35
+      Max: 1.55
     """
     try:
-        text = _strip_code_fence(text)
-        data = yaml.safe_load(text)
-        if not isinstance(data, dict) or "nodes" not in data:
+        data = _extract_topology_data(text)
+        if data is None:
             return 0.0
-        nodes = data.get("nodes", [])
+
+        # Extract topology from tool call wrapper
+        topo = data
+        if 'arguments' in data and isinstance(data['arguments'], dict):
+            topo = data['arguments']
+        if 'name' in data and data.get('name') == 'create_topology':
+            topo = data.get('arguments', data)
+
+        if 'nodes' not in topo:
+            return 0.0
+        nodes = topo.get("nodes", [])
         if not isinstance(nodes, list) or len(nodes) == 0:
             return 0.0
 
@@ -164,33 +256,42 @@ def _score_structure(text: str) -> float:
 
         if 1 <= n <= 10:
             score += 0.3
-        if data.get("edges"):
+        if topo.get("edges"):
             score += 0.2
         if all(isinstance(nd, dict) and "role" in nd for nd in nodes):
             score += 0.3
-        if data.get("reasoning"):
+        if topo.get("reasoning"):
             score += 0.2
 
+        # V8 bonuses: template_type and model_tier
+        if topo.get("template_type") in ("sequential", "parallel", "avr", "selfmoa", "hierarchical", "hub", "debate", "brainstorming"):
+            score += 0.1
+        if all(isinstance(nd, dict) and nd.get("model_tier") in VALID_MODEL_TIERS for nd in nodes):
+            score += 0.1
+
         # Undersized topology penalty
-        difficulty = str(data.get("difficulty", "moderate")).lower()
+        difficulty = str(topo.get("difficulty", "moderate")).lower()
         expected_min = _EXPECTED_MIN_NODES.get(difficulty, 2)
         if n < expected_min:
             score *= 0.5
 
-        # Phase C only: enriched bonuses for advanced topology features
+        # Phase C only: enriched bonuses
         if _is_phase_c():
-            schema = TopologySchema.from_yaml(text)
-            if schema:
-                if schema.tier_ratio > 0:
-                    score += 0.1 * schema.tier_ratio
-                if schema.has_checkpoints:
-                    score += 0.1
-                if schema.has_provider_hints:
-                    score += 0.05
-                if schema.has_code_nodes and schema.llm_ratio > 0:
-                    score += 0.1
+            try:
+                schema = TopologySchema.from_yaml(text)
+                if schema:
+                    if schema.tier_ratio > 0:
+                        score += 0.1 * schema.tier_ratio
+                    if schema.has_checkpoints:
+                        score += 0.1
+                    if schema.has_provider_hints:
+                        score += 0.05
+                    if schema.has_code_nodes and schema.llm_ratio > 0:
+                        score += 0.1
+            except Exception:
+                pass
 
-        return min(score, 1.35 if _is_phase_c() else 1.0)
+        return min(score, 1.55 if _is_phase_c() else 1.2)
     except Exception:
         return 0.0
 
@@ -200,9 +301,18 @@ def _score_structure(text: str) -> float:
 def _score_rust_density(text: str, extra_info: dict) -> float:
     """Rust TopologyReward + TopologyDensity. Fallback: 0.5 for valid topology."""
     try:
-        text = _strip_code_fence(text)
-        data = yaml.safe_load(text)
-        if not isinstance(data, dict) or "nodes" not in data:
+        data = _extract_topology_data(text)
+        if data is None:
+            return 0.0
+
+        # Extract topology from tool call wrapper
+        topo = data
+        if 'arguments' in data and isinstance(data['arguments'], dict):
+            topo = data['arguments']
+        if 'name' in data and data.get('name') == 'create_topology':
+            topo = data.get('arguments', data)
+
+        if 'nodes' not in topo:
             return 0.0
 
         try:
@@ -211,10 +321,10 @@ def _score_rust_density(text: str, extra_info: dict) -> float:
                 TopologyNode, TopologyEdge, PyHybridVerifier,
             )
         except ImportError:
-            return 0.5 if isinstance(data.get("nodes"), list) and len(data["nodes"]) > 0 else 0.0
+            return 0.5 if isinstance(topo.get("nodes"), list) and len(topo["nodes"]) > 0 else 0.0
 
-        nodes = data.get("nodes", [])
-        difficulty = data.get("difficulty", extra_info.get("difficulty", "moderate"))
+        nodes = topo.get("nodes", [])
+        difficulty = topo.get("difficulty", extra_info.get("difficulty", "moderate"))
         system = {"simple": 1, "moderate": 2, "complex": 3}.get(str(difficulty).lower(), 2)
 
         graph = TopologyGraph("sequential")
@@ -227,7 +337,7 @@ def _score_rust_density(text: str, extra_info: dict) -> float:
                     prompt=nd.get("prompt", ""),
                 ))
 
-        for ed in data.get("edges", []):
+        for ed in topo.get("edges", []):
             if isinstance(ed, dict):
                 fi, ti = ed.get("from_idx", 0), ed.get("to_idx", 0)
                 if 0 <= fi < graph.node_count() and 0 <= ti < graph.node_count():

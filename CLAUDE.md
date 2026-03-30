@@ -71,6 +71,13 @@ bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
 - **HuggingFace**: `yannabadie/sage-topology-policy-v2` — FSDP checkpoint (34GB) + LoRA + SFT merged (16GB)
 - **Research (March 29)**: DAPO, MAS-Orchestra, EvoMAS, GoAgent, Graph-GRPO analyzed. See TRAINING_LOG.md
+- **Memory-Evolution (March 30)**: 5 phases merged:
+  - Causal memory wired into agent loop (AMA-Bench 2602.22769: memory fails without causality)
+  - Episodic→Semantic→Causal consolidation pipeline (MAGMA 2601.03236: +45.5% reasoning)
+  - Composite 5-signal write gate (arXiv 2603.15994: 100% vs 13% accuracy) — Rust `RustCompositeWriteGate` + Python fallback
+  - Online evolution: `should_evolve()` in Rust + `evolve()` wired in agent loop (SA-3 complete)
+  - 12-dimension Agent Stability Index (arXiv 2601.04170) + BehaviorTracker + AdaptiveMutator (ShinkaEvolve)
+  - 81 new tests, 0 regressions
 
 ## Detailed rules in .claude/rules/
 

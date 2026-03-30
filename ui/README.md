@@ -1,6 +1,6 @@
-# Dashboard
+# YGN-SAGE Agent UI
 
-Real-time control dashboard for YGN-SAGE agent monitoring. Built with FastAPI (backend) and a single-file HTML frontend.
+Real-time cognitive agent interface for YGN-SAGE. Built with FastAPI (backend) and modular vanilla JS (frontend).
 
 ## Quick Start
 
@@ -8,30 +8,64 @@ Real-time control dashboard for YGN-SAGE agent monitoring. Built with FastAPI (b
 python ui/app.py    # Starts on http://localhost:8000
 ```
 
-## Components
+## Architecture
 
-### `app.py` -- FastAPI Backend
+**Backend** (`app.py`): FastAPI with 15 REST/SSE endpoints + WebSocket event stream.
 
-REST API and WebSocket server for the dashboard.
+**Frontend** (`static/`): Modular ES modules, zero build step. Tailwind CSS CDN + Chart.js + Cytoscape.js + ELK.js + Marked.js.
 
-- **WebSocket `/ws`** -- Pushes all `AgentEvent` instances from the EventBus in real-time. Authenticated via bearer token when `SAGE_DASHBOARD_TOKEN` is set. Binds to localhost only (audit fix A2).
-- **REST API** -- Endpoints for querying agent state, benchmark results, and configuration. Protected by HTTPBearer authentication when token is configured.
-- **DashboardState** -- In-memory state tracking for active agents, routing statistics, and guardrail outcomes.
-- **Open dev mode** -- When no `SAGE_DASHBOARD_TOKEN` is set, the dashboard runs without authentication for local development.
+### Tabs
 
-### `static/index.html` -- Frontend Dashboard
+| Tab | Module | Description |
+|-----|--------|-------------|
+| **Chat** | `js/chat.js` | Conversational interface with SSE streaming, markdown rendering, multi-turn history |
+| **Dashboard** | `js/dashboard.js` | Control panel: task input, response, memory tiers, guardrails, routing pipeline, stats |
+| **Topology** | `js/topology.js` | Interactive DAG graph (Cytoscape.js + ELK.js) with 3-flow edge model (Control/Message/State) |
+| **Providers** | `js/providers.js` | Provider health cards with circuit breaker state, latency, error rates |
 
-Single-file dark-theme dashboard built with Tailwind CSS and Chart.js.
+### Always Visible
 
-**Sections:**
+| Component | Module | Description |
+|-----------|--------|-------------|
+| **Event Stream** | `js/events.js` | Real-time event log from WebSocket, filterable by phase |
+| **Header** | `index.html` | S1/S2/S3 indicators, step count, cost, model, WebSocket status |
 
-- **Routing S1/S2/S3** -- Live distribution of task complexity tiers with bar charts.
-- **Response** -- Current agent response and metadata.
-- **Memory 4-tier** -- Status of Working Memory (Tier 0), Episodic (Tier 1), Semantic (Tier 2), and ExoCortex (Tier 3).
-- **Guardrails** -- Real-time guardrail check results and block events.
-- **Events** -- Scrolling event log fed by the WebSocket connection.
-- **Benchmarks** -- Latest benchmark results (HumanEval pass@1, routing accuracy).
+### Shared Infrastructure
+
+| Module | Purpose |
+|--------|---------|
+| `js/state.js` | Reactive pub/sub state store — all modules subscribe |
+| `js/ws.js` | WebSocket manager with auto-reconnect |
+| `css/sage.css` | Shared styles, animations, component classes |
+
+## API Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Serve the SPA shell |
+| GET | `/api/state` | Dashboard summary stats |
+| POST | `/api/task` | Submit task to queue |
+| GET | `/api/tasks` | List task history |
+| POST | `/api/stop` | Cancel current task |
+| POST | `/api/reset` | Reset all state |
+| GET | `/api/providers` | List available models |
+| POST | `/api/benchmark` | Launch benchmark |
+| GET | `/api/memory/stats` | 4-tier memory stats |
+| GET | `/api/topology` | Agent pool topology |
+| GET | `/api/evolution` | MAP-Elites evolution state |
+| POST | `/api/chat/stream` | SSE streaming chat response |
+| GET | `/api/topology/graph` | Cytoscape.js-compatible topology graph |
+| GET | `/api/providers/health` | Provider health + circuit breaker |
+| GET | `/api/routing/pipeline` | 4-stage routing pipeline state |
+
+## Research Backing
+
+- **3-flow edge model**: MASFactory (arXiv 2603.06007) — Control + Message + State edge types
+- **ELK Sugiyama layout**: Hierarchical DAG rendering for agent pipelines
+- **Causal event tracing**: AgentTrace (arXiv 2603.14688) — event linking in stream
+- **kNN routing visualization**: arXiv 2505.12601 — 92% GT accuracy, 4-stage pipeline
+- **Streaming-first**: Vercel AI SDK 6 pattern — SSE for chat, WebSocket for events
 
 ## Authentication
 
-Set the `SAGE_DASHBOARD_TOKEN` environment variable to enable authentication. Both REST and WebSocket endpoints require the token. Without it, the dashboard runs in open dev mode.
+Set `SAGE_DASHBOARD_TOKEN` env var. Both REST and WebSocket require the token. Without it: open dev mode.

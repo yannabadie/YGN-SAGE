@@ -3,12 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YGN-SAGE v2 | Control Dashboard</title>
+    <title>YGN-SAGE | Agent UI</title>
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- CDN libs (loaded before modules) -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/cytoscape@3/dist/cytoscape.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/elkjs@0.9/lib/elk.bundled.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+    <!-- Tailwind config -->
     <script>
         tailwind.config = {
             theme: {
@@ -18,103 +24,28 @@
                         mono: ['JetBrains Mono', 'Consolas', 'monospace'],
                     },
                     colors: {
-                        sage: {
-                            950: '#020617',
-                            900: '#0f172a',
-                            800: '#1e293b',
-                            750: '#263348',
-                            700: '#334155',
-                            600: '#475569',
-                            500: '#64748b',
-                            400: '#94a3b8',
-                        },
-                        s1: '#22c55e',
-                        s2: '#f59e0b',
-                        s3: '#ef4444',
-                        phase: {
-                            perceive: '#818cf8',
-                            think: '#38bdf8',
-                            act: '#f59e0b',
-                            learn: '#10b981',
-                        }
+                        sage: { 950:'#020617', 900:'#0f172a', 800:'#1e293b', 750:'#263348', 700:'#334155', 600:'#475569', 500:'#64748b', 400:'#94a3b8' },
+                        s1: '#22c55e', s2: '#f59e0b', s3: '#ef4444',
                     }
                 }
             }
         }
     </script>
-    <style>
-        * { box-sizing: border-box; }
-
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            background: #0f172a;
-            color: #f8fafc;
-            margin: 0;
-            padding: 0;
-            min-height: 100vh;
-        }
-
-        /* Scrollbar styling */
-        ::-webkit-scrollbar { width: 6px; height: 6px; }
-        ::-webkit-scrollbar-track { background: #1e293b; }
-        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
-
-        /* Animations */
-        @keyframes pulse-glow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.3); }
-            50% { box-shadow: 0 0 12px 4px rgba(56, 189, 248, 0.15); }
-        }
-        .running-glow { animation: pulse-glow 2s infinite; }
-
-        @keyframes fade-in {
-            from { opacity: 0; transform: translateY(-4px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .event-row-new { animation: fade-in 0.3s ease-out; }
-
-        /* Bar fill animation */
-        .bar-fill { transition: width 0.5s ease-out; }
-
-        /* Phase indicator dot */
-        @keyframes blink {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.3; }
-        }
-        .phase-active { animation: blink 1s infinite; }
-
-        /* Code block inside response */
-        .response-code {
-            background: #0f172a;
-            border: 1px solid #334155;
-            border-radius: 6px;
-            padding: 12px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            overflow-x: auto;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-    </style>
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/sage.css">
 </head>
 <body class="bg-sage-900 text-white">
-<div id="auth-banner" style="display:none; background: #f59e0b; color: #000; text-align: center; padding: 8px; font-weight: 600;">
-  Warning: No authentication configured. Set SAGE_DASHBOARD_TOKEN for production use.
-</div>
-<script>
-  fetch('/api/state').then(r => r.json()).then(data => {
-    if (!data.auth_enabled) document.getElementById('auth-banner').style.display = 'block';
-  }).catch(() => {});
-</script>
 
-<!-- ============================================================ -->
-<!-- HEADER                                                        -->
-<!-- ============================================================ -->
+<!-- Auth Banner (hidden by default, shown if no token) -->
+<div id="auth-banner" style="display:none; background:#f59e0b; color:#000; text-align:center; padding:8px; font-weight:600;">
+    Warning: No authentication configured. Set SAGE_DASHBOARD_TOKEN for production use.
+</div>
+
+<!-- Header -->
 <header class="bg-sage-800 border-b border-sage-700 px-6 py-3 flex items-center justify-between">
     <div class="flex items-center gap-4">
         <h1 class="text-lg font-bold tracking-tight">
             <span class="text-sage-400">YGN</span><span class="text-white">-SAGE</span>
-            <span class="text-sage-500 text-sm font-normal ml-2">v2 Control Dashboard</span>
         </h1>
         <div id="ws-status" class="flex items-center gap-1.5 text-xs">
             <span id="ws-dot" class="w-2 h-2 rounded-full bg-red-500"></span>
@@ -122,694 +53,102 @@
         </div>
     </div>
 
-    <!-- Cognitive System Indicators -->
+    <!-- Tabs -->
+    <nav class="flex items-center gap-1">
+        <button class="tab-btn active px-3 py-1.5 text-sm font-medium" data-tab="chat">Chat</button>
+        <button class="tab-btn px-3 py-1.5 text-sm font-medium" data-tab="dashboard">Dashboard</button>
+        <button class="tab-btn px-3 py-1.5 text-sm font-medium" data-tab="topology">Topology</button>
+        <button class="tab-btn px-3 py-1.5 text-sm font-medium" data-tab="providers">Providers</button>
+    </nav>
+
+    <!-- Status indicators -->
     <div class="flex items-center gap-3">
         <div class="flex items-center gap-2 text-xs">
-            <span class="text-sage-500 mr-1">Routing:</span>
-            <div id="s1-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
-                <span class="w-2 h-2 rounded-full bg-s1"></span>
-                <span class="font-medium">S1</span>
-            </div>
-            <div id="s2-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
-                <span class="w-2 h-2 rounded-full bg-s2"></span>
-                <span class="font-medium">S2</span>
-            </div>
-            <div id="s3-bar" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40 transition-all">
-                <span class="w-2 h-2 rounded-full bg-s3"></span>
-                <span class="font-medium">S3</span>
-            </div>
+            <div id="s1-ind" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40"><span class="w-2 h-2 rounded-full bg-s1"></span><span class="font-medium">S1</span></div>
+            <div id="s2-ind" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40"><span class="w-2 h-2 rounded-full bg-s2"></span><span class="font-medium">S2</span></div>
+            <div id="s3-ind" class="flex items-center gap-1 px-2 py-1 rounded border border-sage-700 opacity-40"><span class="w-2 h-2 rounded-full bg-s3"></span><span class="font-medium">S3</span></div>
         </div>
         <div class="h-6 w-px bg-sage-700"></div>
         <div class="text-xs text-sage-400">
-            Step <span id="hdr-step" class="text-white font-mono">0</span>
-            &middot;
-            $<span id="hdr-cost" class="text-white font-mono">0.0000</span>
-            &middot;
+            Step <span id="hdr-step" class="text-white font-mono">0</span> &middot;
+            $<span id="hdr-cost" class="text-white font-mono">0.0000</span> &middot;
             <span id="hdr-model" class="text-sage-400 font-mono">--</span>
         </div>
     </div>
 </header>
 
-<!-- ============================================================ -->
-<!-- MAIN GRID                                                     -->
-<!-- ============================================================ -->
-<main class="grid grid-cols-[1fr_300px] grid-rows-[auto_1fr_auto] gap-3 p-4 h-[calc(100vh-52px)]" style="max-height: calc(100vh - 52px);">
-
-    <!-- ---------------------------------------------------------- -->
-    <!-- LEFT COLUMN: Task Input + Response                        -->
-    <!-- ---------------------------------------------------------- -->
-    <div class="flex flex-col gap-3 min-h-0">
-
-        <!-- Task Input -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-2 block">Task Input</label>
-            <textarea
-                id="task-input"
-                class="w-full bg-sage-900 border border-sage-700 rounded-md px-3 py-2 text-sm font-mono text-white placeholder-sage-600 resize-none focus:outline-none focus:border-sky-500 transition-colors"
-                rows="3"
-                placeholder="Enter a task for YGN-SAGE..."
-            ></textarea>
-            <div class="flex items-center gap-2 mt-2">
-                <button id="btn-run" onclick="submitTask()"
-                    class="px-4 py-1.5 bg-sky-600 hover:bg-sky-500 text-white text-sm font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                    Run
-                </button>
-                <button id="btn-stop" onclick="stopTask()"
-                    class="px-4 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-sm font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    disabled>
-                    Stop
-                </button>
-                <button id="btn-reset" onclick="resetAll()"
-                    class="px-4 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-sm font-medium rounded-md transition-colors">
-                    Reset
-                </button>
-                <div id="status-badge" class="ml-auto text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400">
-                    idle
-                </div>
-            </div>
-        </div>
-
-        <!-- Response Pane -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-1 min-h-0 flex flex-col overflow-hidden">
-            <div class="flex items-center justify-between mb-2 flex-shrink-0">
-                <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Response</label>
-                <span id="response-system" class="text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400">--</span>
-            </div>
-            <div id="response-pane" class="flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-sage-400">
-                Waiting for task...
-            </div>
-        </div>
+<!-- Main content -->
+<main class="h-[calc(100vh-52px)] flex flex-col">
+    <!-- Tab panels (stacked, only active one visible) -->
+    <div class="flex-1 min-h-0 relative">
+        <div id="panel-chat" class="tab-panel active absolute inset-0"></div>
+        <div id="panel-dashboard" class="tab-panel absolute inset-0"></div>
+        <div id="panel-topology" class="tab-panel absolute inset-0"></div>
+        <div id="panel-providers" class="tab-panel absolute inset-0"></div>
     </div>
-
-    <!-- ---------------------------------------------------------- -->
-    <!-- RIGHT COLUMN: Memory + Guardrails                         -->
-    <!-- ---------------------------------------------------------- -->
-    <div class="flex flex-col gap-3 min-h-0">
-
-        <!-- Memory Tiers -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Memory Tiers</label>
-            <div class="space-y-2.5">
-                <div>
-                    <div class="flex justify-between text-xs mb-1">
-                        <span class="text-sage-400">STM (Working)</span>
-                        <span id="mem-stm-val" class="font-mono text-white">0</span>
-                    </div>
-                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
-                        <div id="mem-stm-bar" class="bar-fill h-full bg-sky-500 rounded-full" style="width: 0%"></div>
-                    </div>
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-1">
-                        <span class="text-sage-400">Episodic</span>
-                        <span id="mem-ep-val" class="font-mono text-white">0</span>
-                    </div>
-                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
-                        <div id="mem-ep-bar" class="bar-fill h-full bg-purple-500 rounded-full" style="width: 0%"></div>
-                    </div>
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-1">
-                        <span class="text-sage-400">Semantic</span>
-                        <span id="mem-sem-val" class="font-mono text-white">0</span>
-                    </div>
-                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
-                        <div id="mem-sem-bar" class="bar-fill h-full bg-amber-500 rounded-full" style="width: 0%"></div>
-                    </div>
-                </div>
-                <div>
-                    <div class="flex justify-between text-xs mb-1">
-                        <span class="text-sage-400">ExoCortex</span>
-                        <span id="mem-exo-val" class="font-mono text-white">0</span>
-                    </div>
-                    <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
-                        <div id="mem-exo-bar" class="bar-fill h-full bg-emerald-500 rounded-full" style="width: 0%"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Guardrails -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Guardrails</label>
-            <div class="space-y-1.5 text-xs">
-                <div id="guard-cot" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>Chain-of-Thought</span>
-                </div>
-                <div id="guard-sandbox" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>Sandbox Execution</span>
-                </div>
-                <div id="guard-z3" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>Z3 Formal Proof</span>
-                </div>
-                <div id="guard-avr" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>AVR Loop</span>
-                </div>
-                <div id="guard-cgrs" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>CGRS Self-Brake</span>
-                </div>
-                <div id="guard-episodic" class="flex items-center gap-2 text-sage-500">
-                    <span class="w-4 text-center">--</span>
-                    <span>Episodic Memory</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Agent Topology -->
-        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
-            <h3 class="text-sm font-semibold text-sage-400 mb-3">AGENT TOPOLOGY</h3>
-            <div id="topology-list" class="space-y-1 text-xs text-sage-500">
-                <div class="text-sage-600 italic">No agents active</div>
-            </div>
-        </div>
-
-        <!-- Evolution -->
-        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
-            <h3 class="text-sm font-semibold text-sage-400 mb-3">EVOLUTION</h3>
-            <div class="grid grid-cols-2 gap-2 text-xs">
-                <div>Gen: <span id="evo-gen" class="text-sage-200">0</span></div>
-                <div>Pop: <span id="evo-pop" class="text-sage-200">0</span></div>
-                <div>Best: <span id="evo-best" class="text-sage-200">0.0</span></div>
-                <div>Cells: <span id="evo-cells" class="text-sage-200">0</span></div>
-            </div>
-        </div>
-
-        <!-- Active Model -->
-        <div class="bg-sage-900/50 rounded-xl p-4 border border-sage-800/50 flex-shrink-0">
-            <h3 class="text-sm font-semibold text-sage-400 mb-3">ACTIVE MODEL</h3>
-            <div id="active-model" class="text-sm text-sage-200 font-mono">&mdash;</div>
-            <div id="active-provider" class="text-xs text-sage-500 mt-1">&mdash;</div>
-        </div>
-
-        <!-- Stats -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-3 block">Statistics</label>
-            <div class="grid grid-cols-2 gap-x-4 gap-y-2 text-xs">
-                <div class="text-sage-500">Steps</div>
-                <div id="stat-steps" class="text-right font-mono">0</div>
-                <div class="text-sage-500">LLM Calls</div>
-                <div id="stat-llm" class="text-right font-mono">0</div>
-                <div class="text-sage-500">Cost (USD)</div>
-                <div id="stat-cost" class="text-right font-mono">$0.0000</div>
-                <div class="text-sage-500">Latency</div>
-                <div id="stat-latency" class="text-right font-mono">--</div>
-                <div class="text-sage-500">Z3 Pass/Fail</div>
-                <div id="stat-z3" class="text-right font-mono">0 / 0</div>
-                <div class="text-sage-500">Total Events</div>
-                <div id="stat-events" class="text-right font-mono">0</div>
-            </div>
-        </div>
-
-        <!-- Latency Chart -->
-        <div class="bg-sage-800 border border-sage-700 rounded-lg p-4 flex-1 min-h-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider mb-2 block">Latency (ms)</label>
-            <div class="h-[120px]">
-                <canvas id="latency-chart"></canvas>
-            </div>
-        </div>
-    </div>
-
-    <!-- ---------------------------------------------------------- -->
-    <!-- BOTTOM: Event Stream                                       -->
-    <!-- ---------------------------------------------------------- -->
-    <div class="col-span-2 bg-sage-800 border border-sage-700 rounded-lg flex flex-col min-h-0" style="max-height: 260px;">
-        <div class="flex items-center justify-between px-4 py-2 border-b border-sage-700 flex-shrink-0">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Event Stream</label>
-            <div class="flex items-center gap-2">
-                <select id="event-filter" onchange="applyFilter()"
-                    class="bg-sage-900 border border-sage-700 rounded text-xs text-sage-400 px-2 py-1 focus:outline-none">
-                    <option value="ALL">All Events</option>
-                    <option value="PERCEIVE">Perceive</option>
-                    <option value="THINK">Think</option>
-                    <option value="ACT">Act</option>
-                    <option value="LEARN">Learn</option>
-                    <option value="ERROR">Error</option>
-                </select>
-                <span id="event-count" class="text-xs text-sage-500 font-mono">0 events</span>
-            </div>
-        </div>
-        <div class="overflow-y-auto flex-1 px-2" id="event-scroll">
-            <table class="w-full text-xs">
-                <thead class="sticky top-0 bg-sage-800">
-                    <tr class="text-sage-500 border-b border-sage-700">
-                        <th class="text-left py-1 px-2 font-medium w-[90px]">Time</th>
-                        <th class="text-left py-1 px-2 font-medium w-[70px]">Step</th>
-                        <th class="text-left py-1 px-2 font-medium w-[90px]">Type</th>
-                        <th class="text-left py-1 px-2 font-medium w-[80px]">Model</th>
-                        <th class="text-left py-1 px-2 font-medium w-[80px]">Latency</th>
-                        <th class="text-left py-1 px-2 font-medium">Details</th>
-                    </tr>
-                </thead>
-                <tbody id="event-tbody">
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- ---------------------------------------------------------- -->
-    <!-- BOTTOM ROW 2: Benchmarks                                   -->
-    <!-- ---------------------------------------------------------- -->
-    <div class="col-span-2 bg-sage-800 border border-sage-700 rounded-lg p-4 flex-shrink-0">
-        <div class="flex items-center justify-between mb-2">
-            <label class="text-xs font-medium text-sage-400 uppercase tracking-wider">Benchmarks</label>
-        </div>
-        <div class="flex items-center gap-3">
-            <button id="btn-routing" onclick="runBenchmark('routing')"
-                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                Run Routing
-            </button>
-            <button id="btn-humaneval" onclick="runBenchmark('humaneval')"
-                class="px-3 py-1.5 bg-sage-700 hover:bg-sage-600 text-sage-300 text-xs font-medium rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-                Run HumanEval
-            </button>
-            <div class="flex-1 mx-3">
-                <div class="h-2 bg-sage-900 rounded-full overflow-hidden">
-                    <div id="bench-bar" class="bar-fill h-full bg-sky-500 rounded-full" style="width: 0%"></div>
-                </div>
-            </div>
-            <span id="bench-result" class="text-xs font-mono text-sage-500">--</span>
-        </div>
+    <!-- Event stream bar (always visible, resizable) -->
+    <div id="events-bar" class="flex-shrink-0 bg-sage-800 border-t border-sage-700" style="height:220px; min-height:80px; resize:vertical; overflow:hidden;">
+        <div id="events-container" class="h-full"></div>
     </div>
 </main>
 
-<!-- ============================================================ -->
-<!-- JAVASCRIPT                                                    -->
-<!-- ============================================================ -->
-<script>
-(function() {
-    'use strict';
+<!-- Module loader -->
+<script type="module">
+    import { getState, setState, subscribe, resetState } from '/static/js/state.js';
+    import { connectWebSocket } from '/static/js/ws.js';
+    import * as chat from '/static/js/chat.js';
+    import * as dashboard from '/static/js/dashboard.js';
+    import * as topology from '/static/js/topology.js';
+    import * as providers from '/static/js/providers.js';
+    import * as events from '/static/js/events.js';
 
-    // ---------------------------------------------------------------
-    // State
-    // ---------------------------------------------------------------
-    let ws = null;
-    let reconnectTimer = null;
-    const RECONNECT_DELAY = 2000;
-    const MAX_VISIBLE_EVENTS = 200;
+    const modules = { chat, dashboard, topology, providers };
+    let activeTab = 'chat';
 
-    let allEvents = [];   // All received events (up to MAX_VISIBLE_EVENTS)
-    let currentFilter = 'ALL';
-    let isRunning = false;
+    // Mount event stream (always visible)
+    events.mount(document.getElementById('events-container'));
 
-    // Stats tracked from events
-    let stats = {
-        stepCount: 0,
-        llmCalls: 0,
-        totalCost: 0.0,
-        lastSystem: 0,
-        lastModel: null,
-        lastResponse: '',
-        lastPhase: null,
-        memoryEvents: 0,
-        z3Pass: 0,
-        z3Fail: 0,
-        lastLatency: 0,
-        totalEvents: 0,
-        // Memory tiers
-        memSTM: 0,
-        memEpisodic: 0,
-        memSemantic: 0,
-        memExoCortex: 0,
-        // Guardrails
-        cotActive: false,
-        sandboxActive: false,
-        z3Active: false,
-        avrActive: false,
-        cgrsActive: false,
-        episodicActive: false,
-    };
+    // Mount initial tab
+    chat.mount(document.getElementById('panel-chat'));
 
-    // Latency history for chart
-    let latencyHistory = [];
-    let latencyChart = null;
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tab = btn.dataset.tab;
+            if (tab === activeTab) return;
 
-    // ---------------------------------------------------------------
-    // DOM refs
-    // ---------------------------------------------------------------
-    const $id = (id) => document.getElementById(id);
+            // Unmount old
+            modules[activeTab]?.unmount();
+            document.getElementById(`panel-${activeTab}`).classList.remove('active');
+            document.querySelector(`.tab-btn[data-tab="${activeTab}"]`).classList.remove('active');
 
-    // ---------------------------------------------------------------
-    // Chart.js setup
-    // ---------------------------------------------------------------
-    function initChart() {
-        const ctx = $id('latency-chart').getContext('2d');
-        latencyChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    data: [],
-                    borderColor: '#38bdf8',
-                    backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                    borderWidth: 1.5,
-                    pointRadius: 2,
-                    pointBackgroundColor: '#38bdf8',
-                    fill: true,
-                    tension: 0.3,
-                }],
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: {
-                        display: false,
-                    },
-                    y: {
-                        beginAtZero: true,
-                        ticks: { color: '#64748b', font: { size: 10 } },
-                        grid: { color: '#1e293b' },
-                    }
-                },
-                animation: { duration: 300 },
-            },
+            // Mount new
+            activeTab = tab;
+            const panel = document.getElementById(`panel-${tab}`);
+            panel.classList.add('active');
+            btn.classList.add('active');
+            modules[tab]?.mount(panel);
         });
-    }
+    });
 
-    function pushLatency(ms) {
-        if (ms <= 0) return;
-        latencyHistory.push(ms);
-        if (latencyHistory.length > 30) latencyHistory.shift();
-
-        latencyChart.data.labels = latencyHistory.map((_, i) => i + 1);
-        latencyChart.data.datasets[0].data = latencyHistory;
-        latencyChart.update('none');
-    }
-
-    // ---------------------------------------------------------------
-    // WebSocket
-    // ---------------------------------------------------------------
-    function connectWebSocket() {
-        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-            return;
+    // WebSocket status + header stats — subscribe receives (hint), read state via getState()
+    subscribe(() => {
+        const s = getState();
+        const dot = document.getElementById('ws-dot');
+        const label = document.getElementById('ws-label');
+        if (dot && label) {
+            dot.className = `w-2 h-2 rounded-full ${s.wsConnected ? 'bg-green-500' : 'bg-red-500'}`;
+            label.textContent = s.wsConnected ? 'Connected' : 'Disconnected';
         }
+        const $t = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+        $t('hdr-step', s.stepCount);
+        $t('hdr-cost', s.totalCost.toFixed(4));
+        $t('hdr-model', s.lastModel || '--');
 
-        const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${proto}//${location.host}/ws`;
-
-        ws = new WebSocket(url);
-
-        ws.onopen = () => {
-            // First-Message auth: send token as first message (not query param)
-            const token = localStorage.getItem('sage_token') || '';
-            if (token) {
-                ws.send(JSON.stringify({action: 'auth', token: token}));
-            }
-            $id('ws-dot').className = 'w-2 h-2 rounded-full bg-green-500';
-            $id('ws-label').textContent = 'Connected';
-            if (reconnectTimer) {
-                clearTimeout(reconnectTimer);
-                reconnectTimer = null;
-            }
-        };
-
-        ws.onmessage = (msg) => {
-            try {
-                const evt = JSON.parse(msg.data);
-                handleEvent(evt);
-            } catch (e) {
-                console.warn('Failed to parse event:', e);
-            }
-        };
-
-        ws.onclose = () => {
-            $id('ws-dot').className = 'w-2 h-2 rounded-full bg-red-500';
-            $id('ws-label').textContent = 'Disconnected';
-            scheduleReconnect();
-        };
-
-        ws.onerror = () => {
-            ws.close();
-        };
-    }
-
-    function scheduleReconnect() {
-        if (reconnectTimer) return;
-        reconnectTimer = setTimeout(() => {
-            reconnectTimer = null;
-            connectWebSocket();
-        }, RECONNECT_DELAY);
-    }
-
-    // ---------------------------------------------------------------
-    // Event handling
-    // ---------------------------------------------------------------
-    function handleEvent(evt) {
-        allEvents.unshift(evt);
-        if (allEvents.length > MAX_VISIBLE_EVENTS) {
-            allEvents.pop();
-        }
-
-        updateStats(evt);
-        renderEventRow(evt);
-        updateDashboard();
-    }
-
-    function updateStats(evt) {
-        const type = (evt.type || '').toUpperCase();
-        const meta = evt.meta || {};
-
-        stats.totalEvents++;
-        stats.stepCount = Math.max(stats.stepCount, evt.step || 0);
-
-        if (evt.cost_usd != null) {
-            stats.totalCost = Math.max(stats.totalCost, evt.cost_usd);
-        }
-        if (evt.system != null && evt.system > 0) {
-            stats.lastSystem = evt.system;
-        }
-        if (evt.model) {
-            stats.lastModel = evt.model;
-        }
-        if (evt.latency_ms != null && evt.latency_ms > 0) {
-            stats.lastLatency = evt.latency_ms;
-            pushLatency(evt.latency_ms);
-        }
-
-        // Phase tracking
-        if (['PERCEIVE', 'THINK', 'ACT', 'LEARN'].includes(type)) {
-            stats.lastPhase = type.toLowerCase();
-        }
-
-        // THINK: content for response pane
-        if (type === 'THINK') {
-            if (evt.model) stats.llmCalls++;
-            if (meta.content) {
-                stats.lastResponse = meta.content;
-                stats.cotActive = true;
-            }
-            if (meta.entropy !== undefined) {
-                stats.cgrsActive = meta.brake === true;
-            }
-            // AVR
-            if (evt.validation === 's2_avr_pass' || evt.validation === 's2_avr_fail') {
-                stats.avrActive = true;
-                stats.sandboxActive = true;
-            }
-            // Z3
-            if (meta.r_path !== undefined) {
-                stats.z3Active = true;
-                if (meta.r_path >= 0) stats.z3Pass++;
-                else stats.z3Fail++;
-            }
-        }
-
-        // PERCEIVE: routing info
-        if (type === 'PERCEIVE') {
-            if (meta.system) stats.lastSystem = meta.system;
-            if (meta.validation_level >= 2) stats.sandboxActive = true;
-            if (meta.validation_level >= 3) stats.z3Active = true;
-        }
-
-        // LEARN: memory stats
-        if (type === 'LEARN') {
-            if (meta.events !== undefined) stats.memSTM = meta.events;
-            if (meta.memory_tiers) {
-                const t = meta.memory_tiers;
-                stats.memSTM = t.stm || stats.memSTM;
-                stats.memEpisodic = t.episodic || 0;
-                stats.memSemantic = t.semantic || 0;
-                stats.memExoCortex = t.exocortex || 0;
-            }
-            if (meta.events) stats.memoryEvents = meta.events;
-            stats.episodicActive = stats.memEpisodic > 0;
-        }
-
-        // ACT: tool execution
-        if (type === 'ACT' && meta.tool) {
-            if (meta.tool.includes('exocortex') || meta.tool.includes('search_exocortex')) {
-                stats.memExoCortex++;
-            }
-            if (meta.tool.includes('episodic') || meta.tool.includes('recall') || meta.tool.includes('store_episode')) {
-                stats.memEpisodic++;
-                stats.episodicActive = true;
-            }
-        }
-
-        // ORCHESTRATOR: update active model display
-        if (type === 'ORCHESTRATOR') {
-            const modelEl = document.getElementById('active-model');
-            if (modelEl) modelEl.textContent = evt.model || '\u2014';
-            const sysEl = document.getElementById('active-provider');
-            if (sysEl) sysEl.textContent = `S${evt.system || '?'} | ${evt.latency_ms || 0}ms`;
-        }
-
-        // BENCH_SUMMARY: update benchmark results
-        if (type === 'BENCH_SUMMARY') {
-            const m = evt.meta || {};
-            const benchResult = document.getElementById('bench-result');
-            if (benchResult) {
-                benchResult.textContent =
-                    `${m.benchmark || '?'}: ${((m.pass_rate || 0)*100).toFixed(1)}% (${m.passed || 0}/${m.total || 0}) | ${(m.avg_latency_ms || 0).toFixed(0)}ms avg`;
-            }
-            const benchBar = document.getElementById('bench-bar');
-            if (benchBar) benchBar.style.width = `${(m.pass_rate || 0)*100}%`;
-            // Re-enable benchmark buttons
-            const btnR = document.getElementById('btn-routing');
-            const btnH = document.getElementById('btn-humaneval');
-            if (btnR) btnR.disabled = false;
-            if (btnH) btnH.disabled = false;
-        }
-
-        // Completion
-        if (meta.result === 'complete') {
-            isRunning = false;
-            stats.lastPhase = null;
-            if (meta.response_text) stats.lastResponse = meta.response_text;
-        }
-
-        // Cost from meta
-        if (meta.cost_usd !== undefined) {
-            stats.totalCost = Math.max(stats.totalCost, meta.cost_usd);
-        }
-    }
-
-    // ---------------------------------------------------------------
-    // Rendering
-    // ---------------------------------------------------------------
-
-    const PHASE_COLORS = {
-        PERCEIVE: 'text-purple-400',
-        THINK: 'text-sky-400',
-        ACT: 'text-amber-400',
-        LEARN: 'text-emerald-400',
-        ERROR: 'text-red-400',
-    };
-
-    const PHASE_BG = {
-        PERCEIVE: 'bg-purple-500/10',
-        THINK: 'bg-sky-500/10',
-        ACT: 'bg-amber-500/10',
-        LEARN: 'bg-emerald-500/10',
-        ERROR: 'bg-red-500/10',
-    };
-
-    function formatTime(ts) {
-        if (!ts) return '--:--:--';
-        const d = new Date(ts * 1000);
-        return d.toLocaleTimeString('en-US', { hour12: false });
-    }
-
-    function truncate(s, n) {
-        if (!s) return '';
-        s = String(s);
-        return s.length > n ? s.slice(0, n) + '...' : s;
-    }
-
-    function eventDetails(evt) {
-        const meta = evt.meta || {};
-        const parts = [];
-
-        if (evt.validation) parts.push(evt.validation);
-        if (meta.task) parts.push('task: ' + truncate(meta.task, 60));
-        if (meta.tool) parts.push('tool: ' + meta.tool);
-        if (meta.content) parts.push(truncate(meta.content, 80));
-        if (meta.result) parts.push('result: ' + meta.result);
-        if (meta.error) parts.push('error: ' + meta.error);
-        if (meta.escalation) parts.push('escalation: ' + meta.escalation);
-        if (meta.complexity !== undefined) parts.push('complexity: ' + meta.complexity);
-        if (meta.aio_ratio !== undefined) parts.push('AIO: ' + meta.aio_ratio.toFixed(2));
-        if (meta.entropy !== undefined) parts.push('entropy: ' + meta.entropy);
-        if (meta.r_path !== undefined) parts.push('r_path: ' + meta.r_path.toFixed(2));
-
-        return parts.join(' | ') || '--';
-    }
-
-    function renderEventRow(evt) {
-        const type = (evt.type || '').toUpperCase();
-
-        // Check filter
-        if (currentFilter !== 'ALL' && type !== currentFilter) return;
-
-        const tbody = $id('event-tbody');
-        const tr = document.createElement('tr');
-        tr.className = `border-b border-sage-700/50 event-row-new ${PHASE_BG[type] || ''}`;
-        tr.innerHTML = `
-            <td class="py-1 px-2 font-mono text-sage-500">${formatTime(evt.timestamp)}</td>
-            <td class="py-1 px-2 font-mono text-sage-400">${evt.step || 0}</td>
-            <td class="py-1 px-2 font-medium ${PHASE_COLORS[type] || 'text-sage-400'}">${type}</td>
-            <td class="py-1 px-2 font-mono text-sage-500">${truncate(evt.model || '--', 20)}</td>
-            <td class="py-1 px-2 font-mono text-sage-500">${evt.latency_ms ? evt.latency_ms.toFixed(0) + 'ms' : '--'}</td>
-            <td class="py-1 px-2 text-sage-400 truncate max-w-[400px]">${eventDetails(evt)}</td>
-        `;
-
-        // Prepend (newest first)
-        if (tbody.firstChild) {
-            tbody.insertBefore(tr, tbody.firstChild);
-        } else {
-            tbody.appendChild(tr);
-        }
-
-        // Limit visible rows
-        while (tbody.children.length > MAX_VISIBLE_EVENTS) {
-            tbody.removeChild(tbody.lastChild);
-        }
-
-        $id('event-count').textContent = `${stats.totalEvents} events`;
-    }
-
-    function applyFilter() {
-        currentFilter = $id('event-filter').value;
-        const tbody = $id('event-tbody');
-        tbody.innerHTML = '';
-
-        // Re-render visible events with filter
-        const filtered = currentFilter === 'ALL'
-            ? allEvents
-            : allEvents.filter(e => (e.type || '').toUpperCase() === currentFilter);
-
-        filtered.slice(0, MAX_VISIBLE_EVENTS).forEach(evt => {
-            const type = (evt.type || '').toUpperCase();
-            const tr = document.createElement('tr');
-            tr.className = `border-b border-sage-700/50 ${PHASE_BG[type] || ''}`;
-            tr.innerHTML = `
-                <td class="py-1 px-2 font-mono text-sage-500">${formatTime(evt.timestamp)}</td>
-                <td class="py-1 px-2 font-mono text-sage-400">${evt.step || 0}</td>
-                <td class="py-1 px-2 font-medium ${PHASE_COLORS[type] || 'text-sage-400'}">${type}</td>
-                <td class="py-1 px-2 font-mono text-sage-500">${truncate(evt.model || '--', 20)}</td>
-                <td class="py-1 px-2 font-mono text-sage-500">${evt.latency_ms ? evt.latency_ms.toFixed(0) + 'ms' : '--'}</td>
-                <td class="py-1 px-2 text-sage-400 truncate max-w-[400px]">${eventDetails(evt)}</td>
-            `;
-            tbody.appendChild(tr);
-        });
-    }
-
-    function updateDashboard() {
-        // Header stats
-        $id('hdr-step').textContent = stats.stepCount;
-        $id('hdr-cost').textContent = stats.totalCost.toFixed(4);
-        $id('hdr-model').textContent = stats.lastModel || '--';
-
-        // S1/S2/S3 indicators
-        ['s1-bar', 's2-bar', 's3-bar'].forEach((id, idx) => {
-            const el = $id(id);
-            if (stats.lastSystem === idx + 1) {
+        ['s1-ind', 's2-ind', 's3-ind'].forEach((id, idx) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (s.lastSystem === idx + 1) {
                 el.classList.remove('opacity-40');
                 el.classList.add('opacity-100', 'running-glow');
                 el.style.borderColor = ['#22c55e', '#f59e0b', '#ef4444'][idx];
@@ -819,238 +158,15 @@
                 el.style.borderColor = '';
             }
         });
-
-        // Status badge
-        const badge = $id('status-badge');
-        if (isRunning) {
-            badge.textContent = stats.lastPhase || 'running';
-            badge.className = 'ml-auto text-xs px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400 phase-active';
-        } else {
-            badge.textContent = 'idle';
-            badge.className = 'ml-auto text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400';
-        }
-
-        // Buttons
-        $id('btn-run').disabled = isRunning;
-        $id('btn-stop').disabled = !isRunning;
-
-        // Response pane
-        if (stats.lastResponse) {
-            const pane = $id('response-pane');
-            pane.textContent = stats.lastResponse;
-            pane.className = 'flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-white';
-        }
-
-        // Response system label
-        const sysLabel = $id('response-system');
-        if (stats.lastSystem === 1) {
-            sysLabel.textContent = 'S1 Fast';
-            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s1/20 text-s1';
-        } else if (stats.lastSystem === 2) {
-            sysLabel.textContent = 'S2 Empirical';
-            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s2/20 text-s2';
-        } else if (stats.lastSystem === 3) {
-            sysLabel.textContent = 'S3 Formal';
-            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-s3/20 text-s3';
-        } else {
-            sysLabel.textContent = '--';
-            sysLabel.className = 'text-xs px-2 py-0.5 rounded-full bg-sage-700 text-sage-400';
-        }
-
-        // Memory bars (max reference: 100 for STM, 50 for others)
-        setBar('mem-stm', stats.memSTM, 100);
-        setBar('mem-ep', stats.memEpisodic, 50);
-        setBar('mem-sem', stats.memSemantic, 50);
-        setBar('mem-exo', stats.memExoCortex, 50);
-
-        // Guardrails
-        setGuard('guard-cot', stats.cotActive);
-        setGuard('guard-sandbox', stats.sandboxActive);
-        setGuard('guard-z3', stats.z3Active);
-        setGuard('guard-avr', stats.avrActive);
-        setGuard('guard-cgrs', stats.cgrsActive);
-        setGuard('guard-episodic', stats.episodicActive);
-
-        // Stats panel
-        $id('stat-steps').textContent = stats.stepCount;
-        $id('stat-llm').textContent = stats.llmCalls;
-        $id('stat-cost').textContent = '$' + stats.totalCost.toFixed(4);
-        $id('stat-latency').textContent = stats.lastLatency > 0 ? stats.lastLatency.toFixed(0) + 'ms' : '--';
-        $id('stat-z3').textContent = `${stats.z3Pass} / ${stats.z3Fail}`;
-        $id('stat-events').textContent = stats.totalEvents;
-    }
-
-    function setBar(prefix, value, max) {
-        const pct = Math.min(100, (value / Math.max(1, max)) * 100);
-        $id(prefix + '-val').textContent = value;
-        $id(prefix + '-bar').style.width = pct + '%';
-    }
-
-    function setGuard(id, active) {
-        const el = $id(id);
-        const icon = el.querySelector('span:first-child');
-        if (active) {
-            icon.textContent = '\u2713';
-            el.className = 'flex items-center gap-2 text-emerald-400';
-        } else {
-            icon.textContent = '--';
-            el.className = 'flex items-center gap-2 text-sage-500';
-        }
-    }
-
-    // ---------------------------------------------------------------
-    // API calls
-    // ---------------------------------------------------------------
-    window.submitTask = async function() {
-        const input = $id('task-input');
-        const task = input.value.trim();
-        if (!task) return;
-
-        try {
-            const resp = await fetch('/api/task', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task }),
-            });
-            const data = await resp.json();
-            if (resp.ok) {
-                isRunning = true;
-                updateDashboard();
-            } else {
-                alert(data.error || 'Failed to submit task');
-            }
-        } catch (e) {
-            alert('Network error: ' + e.message);
-        }
-    };
-
-    window.stopTask = async function() {
-        try {
-            await fetch('/api/stop', { method: 'POST' });
-            isRunning = false;
-            updateDashboard();
-        } catch (e) {
-            console.error('Stop failed:', e);
-        }
-    };
-
-    window.resetAll = async function() {
-        try {
-            await fetch('/api/reset', { method: 'POST' });
-            // Reset local state
-            allEvents = [];
-            latencyHistory = [];
-            isRunning = false;
-            Object.assign(stats, {
-                stepCount: 0, llmCalls: 0, totalCost: 0, lastSystem: 0,
-                lastModel: null, lastResponse: '', lastPhase: null,
-                memoryEvents: 0, z3Pass: 0, z3Fail: 0, lastLatency: 0,
-                totalEvents: 0, memSTM: 0, memEpisodic: 0, memSemantic: 0,
-                memExoCortex: 0, cotActive: false, sandboxActive: false,
-                z3Active: false, avrActive: false, cgrsActive: false,
-                episodicActive: false,
-            });
-            $id('event-tbody').innerHTML = '';
-            $id('response-pane').textContent = 'Waiting for task...';
-            $id('response-pane').className = 'flex-1 overflow-y-auto bg-sage-900 border border-sage-700 rounded-md p-3 text-sm font-mono leading-relaxed whitespace-pre-wrap text-sage-400';
-
-            // Reset chart
-            latencyChart.data.labels = [];
-            latencyChart.data.datasets[0].data = [];
-            latencyChart.update('none');
-
-            updateDashboard();
-        } catch (e) {
-            console.error('Reset failed:', e);
-        }
-    };
-
-    window.runBenchmark = async function(type) {
-        const btn = document.getElementById('btn-' + type);
-        if (btn) btn.disabled = true;
-        try {
-            const limit = type === 'humaneval' ? 20 : null;
-            const resp = await fetch('/api/benchmark', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({type, limit}),
-            });
-            const data = await resp.json();
-            document.getElementById('bench-result').textContent = `${type} started...`;
-        } catch(e) {
-            document.getElementById('bench-result').textContent = 'Error: ' + e.message;
-        }
-    };
-
-    window.applyFilter = applyFilter;
-
-    // Keyboard shortcut: Ctrl+Enter to submit
-    $id('task-input').addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-            e.preventDefault();
-            submitTask();
-        }
     });
 
-    // ---------------------------------------------------------------
-    // Periodic polling for memory/topology/evolution stats
-    // ---------------------------------------------------------------
-    setInterval(async () => {
-        try {
-            const [mem, topo, evo] = await Promise.all([
-                fetch('/api/memory/stats').then(r => r.json()),
-                fetch('/api/topology').then(r => r.json()),
-                fetch('/api/evolution').then(r => r.json()),
-            ]);
+    // Auth check
+    fetch('/api/state').then(r => r.json()).then(d => {
+        if (!d.auth_enabled) document.getElementById('auth-banner').style.display = 'block';
+    }).catch(() => {});
 
-            // Update memory stats from REST (supplement WebSocket events)
-            if (mem) {
-                stats.memSTM = mem.stm || stats.memSTM;
-                stats.memEpisodic = mem.episodic || stats.memEpisodic;
-                stats.memSemantic = mem.semantic || stats.memSemantic;
-                if (mem.exocortex) stats.memExoCortex = Math.max(stats.memExoCortex, 1);
-            }
-
-            // Update topology list
-            const topoList = document.getElementById('topology-list');
-            if (topoList && topo && topo.agents) {
-                if (topo.agents.length === 0) {
-                    topoList.innerHTML = '<div class="text-sage-600 italic">No agents active</div>';
-                } else {
-                    topoList.innerHTML = topo.agents.map(a => {
-                        const name = typeof a === 'string' ? a : (a.name || a.id || JSON.stringify(a));
-                        return `<div class="flex items-center gap-2"><span class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span class="text-sage-300">${name}</span></div>`;
-                    }).join('');
-                }
-            }
-
-            // Update evolution stats
-            if (evo) {
-                const genEl = document.getElementById('evo-gen');
-                const popEl = document.getElementById('evo-pop');
-                const bestEl = document.getElementById('evo-best');
-                const cellsEl = document.getElementById('evo-cells');
-                if (genEl) genEl.textContent = evo.generation || 0;
-                if (popEl) popEl.textContent = evo.population_size || 0;
-                if (bestEl) bestEl.textContent = (evo.best_score || 0).toFixed(1);
-                if (cellsEl) cellsEl.textContent = (evo.cells || []).length;
-            }
-
-            // Refresh dashboard display
-            updateDashboard();
-        } catch(e) {
-            // Silent fail -- polling is supplementary
-        }
-    }, 3000);
-
-    // ---------------------------------------------------------------
-    // Init
-    // ---------------------------------------------------------------
-    initChart();
+    // Start
     connectWebSocket();
-    updateDashboard();
-
-})();
 </script>
 </body>
 </html>
