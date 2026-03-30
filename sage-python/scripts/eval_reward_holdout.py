@@ -24,15 +24,13 @@ import torch
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
 log = logging.getLogger("eval_n1")
 
-SYSTEM_PROMPT = (
-    "You are a multi-agent topology designer for the YGN-SAGE framework. "
-    "Given a coding task, design an optimal agent topology as a YAML DAG. "
-    "Include: difficulty, reasoning, nodes (role + prompt + model_tier), "
-    "edges (from_idx + to_idx + flow_type). The LAST node must be a "
-    "synthesizer that returns the final answer."
-)
+# System prompt with 7 SAGE tool definitions for tool-call format
+import sys as _sys
+import os as _os
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+from sage_tool_schemas import TOOLCALL_SYSTEM_PROMPT as SYSTEM_PROMPT
 
-HOLDOUT_PATH = "experiments/holdout_50.json"
+HOLDOUT_PATH = "experiments/holdout_50_toolcall.json"
 
 
 def load_holdout(path: str = HOLDOUT_PATH) -> list[dict]:
@@ -129,7 +127,7 @@ def evaluate(model, tokenizer, prompts: list[dict], max_new_tokens: int = 512,
 
 def main():
     parser = argparse.ArgumentParser(description="N1 Evaluator: Reward on holdout")
-    parser.add_argument("--model", default="Qwen/Qwen3-4B")
+    parser.add_argument("--model", default="Qwen/Qwen3-4B-Instruct")
     parser.add_argument("--adapter", required=True, help="LoRA adapter path")
     parser.add_argument("--holdout", default=HOLDOUT_PATH)
     parser.add_argument("--max-new-tokens", type=int, default=512)
@@ -158,23 +156,7 @@ def main():
     model = PeftModel.from_pretrained(model, args.adapter, is_trainable=False)
     model.eval()
 
-    tokenizer.chat_template = (
-        "{% if messages[0]['role'] == 'system' %}"
-        "{{ messages[0]['content'] + eos_token }}"
-        "{% set loop_messages = messages[1:] %}"
-        "{% else %}"
-        f"{{ '{SYSTEM_PROMPT}' + eos_token }}"
-        "{% set loop_messages = messages %}"
-        "{% endif %}"
-        "{% for message in loop_messages %}"
-        "{% if message['role'] == 'user' %}"
-        "{{ message['content'] }}"
-        "{% elif message['role'] == 'assistant' %}"
-        "{{ message['content'] + eos_token }}"
-        "{% endif %}"
-        "{% endfor %}"
-        "{% if add_generation_prompt %}{{ '' }}{% endif %}"
-    )
+    # Qwen3-4B-Instruct has native tool-call chat template — do NOT override
 
     prompts = load_holdout(args.holdout)
     log.info("Evaluating %d holdout prompts...", len(prompts))
