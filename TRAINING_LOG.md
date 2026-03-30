@@ -720,3 +720,27 @@ The execution path (`execution/__init__.py`) tries `json.loads()` FIRST.
 
 **Impact:** Training pivots from "teach YAML syntax" to "teach topology QUALITY" —
 the model's native JSON ability handles the format, RL handles the substance.
+
+### Model Reset: Use Original NVIDIA Weights (March 30, 2026)
+
+**Critical change:** Training must use `/workspace/patched_nemotron_orchestrator`
+(original NVIDIA weights) — NOT `sft_merged_model` (YAML-damaged by SFT warmup).
+
+**Evidence:**
+- `<tool_call>` token 151657 present in vocab
+- `</tool_call>` token 151658 present in vocab
+- Patched tokenizer removes `<think>` from template but preserves tool-calling
+- Original weights have GRPO pretraining for JSON tool-calling (ToolOrchestra)
+- SFT warmup (118 steps YAML) overwrote this capability → caused 91% malformation
+
+**Training data (NVIDIA ToolOrchestra):**
+- 552 problems, 1296 prompts (very small, yet Nemotron beats GPT-5 on HLE)
+- GRPO with accuracy + cost + preference rewards
+- Tools defined as JSON schemas in system prompt
+- Model emits `<tool_call>{"name":"...","parameters":{...}}</tool_call>`
+
+**Our approach must match this:**
+- Same JSON tool-call format
+- Same GRPO/DAPO training loop
+- SAGE modules defined as tools in system prompt
+- No SFT warmup needed — model already knows tool-calling
