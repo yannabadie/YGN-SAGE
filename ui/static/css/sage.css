@@ -1,0 +1,224 @@
+/* ================================================================
+   sage.css — YGN-SAGE v2 shared stylesheet
+   Extracted from index.html <style> block (lines 45-98) and
+   extended with tab, chat, topology graph, provider card, and
+   edge-animation styles for the modular UI.
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   Base
+   ---------------------------------------------------------------- */
+* { box-sizing: border-box; }
+
+body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: #0f172a;
+    color: #f8fafc;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+}
+
+/* ----------------------------------------------------------------
+   Scrollbar
+   ---------------------------------------------------------------- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1e293b; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* ----------------------------------------------------------------
+   Animations
+   ---------------------------------------------------------------- */
+@keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.3); }
+    50%       { box-shadow: 0 0 12px 4px rgba(56, 189, 248, 0.15); }
+}
+
+@keyframes fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+}
+
+@keyframes edge-flow {
+    0%   { stroke-dashoffset: 24; }
+    100% { stroke-dashoffset: 0; }
+}
+
+/* ----------------------------------------------------------------
+   Utility classes (originally in index.html)
+   ---------------------------------------------------------------- */
+
+/* S1/S2/S3 routing indicator pulse */
+.running-glow { animation: pulse-glow 2s infinite; }
+
+/* New-event row fade-in */
+.event-row-new { animation: fade-in 0.3s ease-out; }
+
+/* Memory / benchmark bar smooth transition */
+.bar-fill { transition: width 0.5s ease-out; }
+
+/* Phase indicator dot blink */
+.phase-active { animation: blink 1s infinite; }
+
+/* Code block inside response / assistant bubble */
+.response-code {
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* ----------------------------------------------------------------
+   Tab system
+   ---------------------------------------------------------------- */
+.tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #64748b;          /* sage-500 */
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tab-btn:hover {
+    color: #94a3b8;          /* sage-400 */
+}
+
+.tab-btn.active {
+    color: #38bdf8;          /* sky-400 */
+    border-bottom-color: #38bdf8;
+}
+
+.tab-panel {
+    display: none !important;
+}
+
+.tab-panel.active {
+    display: flex !important;
+    flex-direction: column;
+}
+
+/* ----------------------------------------------------------------
+   Chat
+   ---------------------------------------------------------------- */
+.chat-msg {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    animation: fade-in 0.2s ease-out;
+    max-width: 85%;
+}
+
+.chat-user {
+    align-self: flex-end;
+    background: #1e40af;      /* blue-800 */
+    color: #bfdbfe;           /* blue-200 */
+    border-radius: 12px 12px 2px 12px;
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.chat-assistant {
+    align-self: flex-start;
+    background: #1e293b;      /* sage-800 */
+    color: #e2e8f0;           /* slate-200 */
+    border-radius: 2px 12px 12px 12px;
+    border: 1px solid #334155; /* sage-700 */
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* Blinking cursor during streaming */
+.chat-streaming-cursor::after {
+    content: '▋';
+    display: inline-block;
+    animation: blink 0.8s step-start infinite;
+    color: #38bdf8;
+    margin-left: 2px;
+}
+
+/* ----------------------------------------------------------------
+   Topology graph container (Cytoscape.js target)
+   ---------------------------------------------------------------- */
+#cy-container {
+    width: 100%;
+    height: 100%;
+    background: #020617;      /* sage-950 */
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Animated edges rendered as SVG paths via Cytoscape canvas overlay */
+.cy-edge-animated {
+    stroke-dasharray: 6 6;
+    animation: edge-flow 0.6s linear infinite;
+}
+
+/* ----------------------------------------------------------------
+   Provider cards
+   ---------------------------------------------------------------- */
+.provider-card {
+    background: #1e293b;      /* sage-800 */
+    border: 1px solid #334155; /* sage-700 */
+    border-radius: 8px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.provider-card:hover {
+    border-color: #475569;    /* sage-600 */
+}
+
+/* Status variants */
+.provider-card.healthy {
+    border-color: #16a34a;    /* green-700 */
+    box-shadow: 0 0 0 1px rgba(34, 197, 94, 0.15);
+}
+
+.provider-card.degraded {
+    border-color: #b45309;    /* amber-700 */
+    box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.15);
+}
+
+.provider-card.down {
+    border-color: #b91c1c;    /* red-700 */
+    box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.15);
+    opacity: 0.7;
+}
+
+/* Status dot inside provider card header */
+.provider-card .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.provider-card.healthy  .status-dot { background: #22c55e; }  /* green-500 */
+.provider-card.degraded .status-dot { background: #f59e0b; }  /* amber-500 */
+.provider-card.down     .status-dot { background: #ef4444; }  /* red-500 */

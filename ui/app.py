@@ -83,6 +83,7 @@ if "sage_core" not in sys.modules:
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Depends, HTTPException, Security
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -553,6 +554,242 @@ async def get_evolution():
     except Exception:
         pass
     return JSONResponse(evo)
+
+
+@app.post("/api/chat/stream", dependencies=[Depends(verify_token)])
+async def chat_stream(request: Request):
+    """SSE streaming chat response."""
+    body = await request.json()
+    message = body.get("message", "")
+    if not message or not message.strip():
+        return JSONResponse({"error": "message is required"}, status_code=400)
+
+    async def _generate():
+        try:
+            _boot_system()
+            model = None
+            try:
+                model = getattr(_state.system, "last_model", None)
+                if model is None and hasattr(_state.system, "registry"):
+                    cards = _state.system.registry.list_available()
+                    model = cards[0].id if cards else "unknown"
+            except Exception:
+                model = "unknown"
+
+            start_event = json.dumps({"type": "start", "model": model})
+            yield f"data: {start_event}\n\n"
+
+            result = await _state.system.run(message)
+            result_text = result if isinstance(result, str) else str(result)
+
+            chunk_size = 80
+            for i in range(0, len(result_text), chunk_size):
+                chunk = result_text[i:i + chunk_size]
+                delta_event = json.dumps({"type": "delta", "content": chunk})
+                yield f"data: {delta_event}\n\n"
+
+            system_val = None
+            try:
+                events = _state.event_bus.query(last_n=10)
+                if events:
+                    system_val = events[-1].system
+            except Exception:
+                pass
+
+            done_event = json.dumps({"type": "done", "system": system_val})
+            yield f"data: {done_event}\n\n"
+
+        except Exception as exc:
+            error_event = json.dumps({"type": "error", "content": str(exc)})
+            yield f"data: {error_event}\n\n"
+
+    return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
+@app.get("/api/topology/graph", dependencies=[Depends(verify_token)])
+async def topology_graph():
+    """Return Cytoscape.js-compatible graph of the active topology."""
+    _TEMPLATE_LIBRARY = [
+        "sequential", "avr", "debate", "parallel",
+        "hierarchical", "hub", "brainstorming", "self_moa",
+    ]
+
+    nodes = []
+    edges = []
+    source = "fallback"
+    confidence = 0.0
+
+    try:
+        if _state.system and hasattr(_state.system, "topology_engine"):
+            engine = _state.system.topology_engine
+            last_result = getattr(engine, "_last_result", None)
+            if last_result is not None:
+                source = "topology_engine"
+                confidence = float(getattr(last_result, "confidence", 0.0))
+                raw_nodes = getattr(last_result, "nodes", []) or []
+                for n in raw_nodes:
+                    nodes.append({
+                        "id": str(getattr(n, "id", "")),
+                        "role": str(getattr(n, "role", "")),
+                        "model_tier": str(getattr(n, "model_tier", "")),
+                        "node_type": str(getattr(n, "node_type", "")),
+                        "prompt": str(getattr(n, "prompt", "")),
+                    })
+                raw_edges = getattr(last_result, "edges", []) or []
+                for idx, e in enumerate(raw_edges):
+                    edges.append({
+                        "id": str(getattr(e, "id", f"e{idx}")),
+                        "source": str(getattr(e, "source", "")),
+                        "target": str(getattr(e, "target", "")),
+                        "flow_type": str(getattr(e, "flow_type", "control")),
+                    })
+    except Exception:
+        pass
+
+    # Fallback: extract from agent pool
+    if not nodes:
+        try:
+            if _state.system and hasattr(_state.system, "agent_loop"):
+                pool = getattr(_state.system.agent_loop, "agent_pool", None)
+                if pool and hasattr(pool, "list_agents"):
+                    agent_list = pool.list_agents()
+                    for a in agent_list:
+                        if isinstance(a, dict):
+                            nodes.append({
+                                "id": str(a.get("id", "")),
+                                "role": str(a.get("role", "")),
+                                "model_tier": str(a.get("model_tier", "")),
+                                "node_type": str(a.get("node_type", "agent")),
+                                "prompt": str(a.get("prompt", "")),
+                            })
+                        else:
+                            nodes.append({
+                                "id": str(getattr(a, "id", "")),
+                                "role": str(getattr(a, "role", "")),
+                                "model_tier": str(getattr(a, "model_tier", "")),
+                                "node_type": str(getattr(a, "node_type", "agent")),
+                                "prompt": str(getattr(a, "prompt", "")),
+                            })
+                    source = "agent_pool"
+        except Exception:
+            pass
+
+    return JSONResponse({
+        "nodes": nodes,
+        "edges": edges,
+        "source": source,
+        "confidence": confidence,
+        "template_library": _TEMPLATE_LIBRARY,
+    })
+
+
+@app.get("/api/providers/health", dependencies=[Depends(verify_token)])
+async def providers_health():
+    """Return provider health with circuit breaker state."""
+    providers = []
+
+    try:
+        if _state.system and hasattr(_state.system, "registry") and _state.system.registry:
+            available = _state.system.registry.list_available()
+            for p in available[:20]:
+                providers.append({
+                    "id": str(getattr(p, "id", "")),
+                    "provider": str(getattr(p, "provider", "")),
+                    "available": bool(getattr(p, "available", False)),
+                    "code_score": float(getattr(p, "code_score", 0.0)),
+                    "reasoning_score": float(getattr(p, "reasoning_score", 0.0)),
+                    "cost_input": float(getattr(p, "cost_input", 0.0)),
+                    "cost_output": float(getattr(p, "cost_output", 0.0)),
+                    "circuit_state": str(getattr(p, "circuit_state", "closed")),
+                    "latency_p50_ms": float(getattr(p, "latency_p50_ms", 0.0)),
+                    "latency_p99_ms": float(getattr(p, "latency_p99_ms", 0.0)),
+                    "error_rate_1h": float(getattr(p, "error_rate_1h", 0.0)),
+                })
+            if providers:
+                return JSONResponse(providers)
+    except Exception:
+        pass
+
+    # Fallback: detect codex/gemini availability
+    codex_ok = shutil.which("codex") is not None
+    gemini_ok = bool(os.environ.get("GOOGLE_API_KEY"))
+    return JSONResponse([
+        {
+            "id": "gemini-3.1-pro-preview",
+            "provider": "google",
+            "available": gemini_ok,
+            "code_score": 0.88,
+            "reasoning_score": 0.95,
+            "cost_input": 2.0,
+            "cost_output": 12.0,
+            "circuit_state": "closed",
+            "latency_p50_ms": 0.0,
+            "latency_p99_ms": 0.0,
+            "error_rate_1h": 0.0,
+        },
+        {
+            "id": "gpt-5.3-codex",
+            "provider": "openai",
+            "available": codex_ok,
+            "code_score": 0.96,
+            "reasoning_score": 0.90,
+            "cost_input": 0.0,
+            "cost_output": 0.0,
+            "circuit_state": "closed",
+            "latency_p50_ms": 0.0,
+            "latency_p99_ms": 0.0,
+            "error_rate_1h": 0.0,
+        },
+    ])
+
+
+@app.get("/api/routing/pipeline", dependencies=[Depends(verify_token)])
+async def routing_pipeline():
+    """Return routing pipeline stages and last routing decision."""
+    stages = [
+        {
+            "name": "Structural Features",
+            "order": 1,
+            "method": "heuristic",
+            "description": "Task length, keyword presence, code indicators",
+        },
+        {
+            "name": "kNN Embeddings",
+            "order": 2,
+            "method": "knn",
+            "description": "92% GT accuracy — arXiv 2505.12601, arctic-embed-m distance-weighted majority vote",
+        },
+        {
+            "name": "ONNX BERT",
+            "order": 3,
+            "method": "onnx",
+            "description": "Fine-tuned BERT classifier for system routing",
+        },
+        {
+            "name": "Entropy Probe",
+            "order": 4,
+            "method": "entropy",
+            "description": "Uncertainty estimation; abstains when entropy exceeds threshold",
+        },
+    ]
+
+    last_decision = None
+    try:
+        if _state.system and hasattr(_state.system, "metacognition"):
+            mc = _state.system.metacognition
+            result = getattr(mc, "_last_result", None)
+            if result is not None:
+                last_decision = {
+                    "system": int(getattr(result, "system", 0)),
+                    "stage": str(getattr(result, "stage", "")),
+                    "confidence": float(getattr(result, "confidence", 0.0)),
+                    "method": str(getattr(result, "method", "")),
+                    "llm_tier": str(getattr(result, "llm_tier", "")),
+                }
+    except Exception:
+        pass
+
+    return JSONResponse({"stages": stages, "last_decision": last_decision})
 
 
 # ---------------------------------------------------------------------------
