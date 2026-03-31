@@ -6,7 +6,9 @@
 
 ## Goal
 
-Train Qwen3-4B-Instruct to orchestrate the full SAGE Rust+Python pipeline via `<tool_call>` JSON, using all 7 SAGE tools. Deploy as Path 6 in TopologyEngine.
+Train Qwen3-4B (base, has native tool-call support) to orchestrate the SAGE pipeline via `<tool_call>` JSON, using 2 tools: `create_topology` + `adapt_topology`. The other 5 SAGE modules are handled by Rust. Deploy as Path 6 in TopologyEngine.
+
+**Status (March 31)**: Phase A+C SFT done (avg 0.922). MASBENCH + deployment pending.
 
 ## Key Decision: Why Tool-Call JSON
 
