@@ -182,7 +182,7 @@ class CognitiveOrchestrationPipeline:
             except Exception:
                 pass
 
-    async def run(self, task: str, budget_usd: float = 5.0) -> str:
+    async def run(self, task: str, budget_usd: float = 10.0) -> str:
         """Execute the full 5-stage pipeline."""
         t0 = time.monotonic()
         ctx = PipelineContext(task=task, budget=budget_usd)

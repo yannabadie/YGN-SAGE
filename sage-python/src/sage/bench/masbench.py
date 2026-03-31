@@ -180,14 +180,16 @@ class MASBenchAblation:
 
         # Use first available provider (connector.py = source of truth)
         available = get_available_providers()
-        cfg = next((c for c in available if c.get("sdk") != "google-genai"), None)
-        if not cfg:
-            raise RuntimeError("No OpenAI-compatible provider available for bare benchmark")
+        if not available:
+            raise RuntimeError("No provider available for bare benchmark")
+        cfg = available[0]
         provider = OpenAICompatProvider(
             api_key=os.environ.get(cfg["api_key_env"], ""),
             base_url=cfg["base_url"],
             provider_name=cfg["provider"],
         )
+        bare_model = cfg.get("default_model", "deepseek-chat")
+        log.info("Bare model: %s via %s", bare_model, cfg["provider"])
 
         results = []
         for i, item in enumerate(tasks):
@@ -196,7 +198,7 @@ class MASBenchAblation:
             try:
                 response = await provider.chat(
                     messages=[{"role": "user", "content": question}],
-                    model="deepseek-chat",
+                    model=bare_model,
                     max_tokens=256,
                 )
                 content = response.get("content", str(response))

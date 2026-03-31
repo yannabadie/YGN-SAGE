@@ -107,7 +107,9 @@ class TopologyController:
                 log.warning("Max reroute limit reached (count=%d), forcing continue", self._reroute_count)
 
         # Compute quality (80% heuristic + 20% PRM if structured content)
+        _abstain_before = self._abstain_count
         quality = self._compute_quality(node_idx, result, task, ctx)
+        _quality_is_known = self._abstain_count == _abstain_before  # True if estimator gave a real score
         self._node_qualities[node_idx] = quality
 
         # Decision cascade
@@ -165,10 +167,8 @@ class TopologyController:
                     reason=f"consistency={consistency:.2f} < {self.THETA_CONSISTENCY}",
                 )
 
-        # 4. Low importance -> prune
-        if parallel_outputs:
-            importance = self.compute_importance_score(node_idx, result, parallel_outputs)
-            if importance < self.THETA_PRUNE:
+        # 4. Low importance -> prune (only when quality is KNOWN, not abstained)
+        if parallel_outputs and _quality_is_known:
                 self._emit("PRUNE_NODE", {"node": node_idx, "importance": importance})
                 return AdaptationDecision(
                     action="prune_node",
