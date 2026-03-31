@@ -72,8 +72,8 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
     {
         "provider": "google",
         "api_key_env": "GOOGLE_API_KEY",
-        "base_url": None,  # Uses native google-genai SDK
-        "sdk": "google-genai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+        "sdk": "openai",
         "default_model": "gemini-3.1-flash-lite-preview",
     },
     {

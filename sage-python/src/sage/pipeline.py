@@ -265,6 +265,47 @@ class CognitiveOrchestrationPipeline:
         if ctx.dag_features:
             hint = select_macro_topology(ctx.dag_features)
 
+        # Path 6: Learned topology policy (local Qwen3-4B or HF Nemotron-8B)
+        # Takes priority when enabled — it's the trained model we want to evaluate
+        if os.environ.get("SAGE_ENABLE_PATH6"):
+            try:
+                from sage.topology.llm_caller import generate_topology_from_policy
+
+                policy_result = generate_topology_from_policy(ctx.task)
+                if policy_result and "nodes" in policy_result:
+                    from sage_core import TopologyGraph, TopologyNode, TopologyEdge  # type: ignore[import-not-found]
+
+                    topo = TopologyGraph("learned_policy")
+                    for node_data in policy_result["nodes"]:
+                        model_tier = node_data.get("model_tier", "")
+                        node = TopologyNode(
+                            role=node_data.get("role", "agent"),
+                            model_id=model_tier,
+                            system=ctx.system,
+                            prompt=node_data.get("prompt", ""),
+                        )
+                        topo.add_node(node)
+
+                    for edge_data in policy_result.get("edges", []):
+                        if isinstance(edge_data, dict):
+                            edge = TopologyEdge(
+                                from_idx=edge_data.get("from_idx", 0),
+                                to_idx=edge_data.get("to_idx", 0),
+                                flow_type=edge_data.get("flow_type", "message"),
+                            )
+                            topo.add_edge(edge)
+
+                    ctx.topology = topo
+                    ctx.topology_id = "path6_learned"
+                    log.info(
+                        "Stage 2: Path 6 learned policy → %d nodes, %d edges",
+                        topo.node_count(), topo.edge_count(),
+                    )
+                    self._check_topology_budget(ctx)
+                    return ctx
+            except Exception as exc:
+                log.warning("Path 6 failed: %s — falling back to engine/template", exc)
+
         # Try DynamicTopologyEngine
         if self.engine:
             try:
@@ -292,57 +333,6 @@ class CognitiveOrchestrationPipeline:
                 log.warning(
                     "Stage 2 topology engine failed: %s, using template", exc
                 )
-
-        # Path 6: Learned topology policy (Nemotron-8B V2 or Phi-4-mini V1)
-        # Only enable when explicitly opted in (heavy: loads 8B model on GPU)
-        if os.environ.get("SAGE_ENABLE_PATH6"):
-            try:
-                from sage.topology.llm_caller import generate_topology_from_policy
-
-                policy_result = generate_topology_from_policy(ctx.task)
-                if policy_result and "nodes" in policy_result:
-                    from sage_core import TopologyGraph, TopologyNode, TopologyEdge  # type: ignore[import-not-found]
-
-                    topo = TopologyGraph("learned_policy")
-                    for node_data in policy_result["nodes"]:
-                        model_tier = node_data.get("model_tier", "")
-                        node = TopologyNode(
-                            role=node_data.get("role", "agent"),
-                            model_id=model_tier,
-                            system=ctx.system,
-                            prompt=node_data.get("prompt", ""),
-                        )
-                        topo.add_node(node)
-
-                    # Parse edges from policy output (V2 produces edges)
-                    for edge_data in policy_result.get("edges", []):
-                        if isinstance(edge_data, dict):
-                            fi = edge_data.get("from_idx", 0)
-                            ti = edge_data.get("to_idx", 0)
-                            if 0 <= fi < topo.node_count() and 0 <= ti < topo.node_count():
-                                flow = edge_data.get("flow_type", "message")
-                                topo.add_edge(fi, ti, TopologyEdge(flow))
-
-                    # Add sequential edges if policy didn't provide any
-                    if topo.edge_count() == 0 and topo.node_count() > 1:
-                        for i in range(topo.node_count() - 1):
-                            topo.add_edge(i, i + 1, TopologyEdge("message"))
-
-                    ctx.topology = topo
-                    # Store provider hints for Stage 3 (multi-provider dimension)
-                    ctx.provider_hints = {
-                        i: node_data.get("provider_hint", "")
-                        for i, node_data in enumerate(policy_result["nodes"])
-                        if node_data.get("provider_hint")
-                    }
-                    log.info(
-                        "Stage 2 Path 6 (learned policy): %d nodes, %d edges, %d provider hints",
-                        topo.node_count(), topo.edge_count(), len(ctx.provider_hints),
-                    )
-                    self._check_topology_budget(ctx)
-                    return ctx
-            except Exception as exc:
-                log.debug("Path 6 failed: %s", str(exc)[:100])
 
         # Fallback: create topology from template
         try:

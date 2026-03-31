@@ -48,23 +48,26 @@ class GoogleProvider:
         from sage.llm._ssl import ssl_verify
         client = genai.Client(api_key=self.api_key)
         if not ssl_verify():
-            # google-genai uses aiohttp internally — patch SSL at every level
+            # google-genai uses aiohttp/httpx internally — patch SSL context factories
             import ssl as _ssl
             _no_verify = _ssl.create_default_context()
             _no_verify.check_hostname = False
             _no_verify.verify_mode = _ssl.CERT_NONE
+            ac = client._api_client
+            # Override SSL context factories (the SDK calls these lazily)
+            ac._ensure_aiohttp_ssl_ctx = lambda: _no_verify
+            ac._ensure_httpx_ssl_ctx = lambda: False
+            # Also patch pre-created clients if any
             try:
                 import httpx
-                client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
-                if hasattr(client._api_client, '_async_httpx_client'):
-                    client._api_client._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
+                ac._httpx_client = httpx.Client(verify=False, timeout=60)
+                ac._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
             except Exception:
                 pass
-            # Patch the aiohttp session with no-verify connector
             try:
                 import aiohttp
                 connector = aiohttp.TCPConnector(ssl=_no_verify)
-                client._api_client._aiohttp_session = aiohttp.ClientSession(connector=connector)
+                ac._aiohttp_session = aiohttp.ClientSession(connector=connector)
             except Exception:
                 pass
 

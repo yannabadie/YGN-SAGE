@@ -54,30 +54,37 @@ def _probe_ssl() -> bool:
 
 
 def patch_genai_ssl(client) -> None:
-    """Patch a genai.Client for SSL bypass (sync httpx + async aiohttp)."""
+    """Patch a genai.Client for SSL bypass (sync httpx + async aiohttp).
+
+    The google-genai SDK lazily creates HTTP clients using _ensure_*_ssl_ctx()
+    factory methods. Patching the client objects alone is insufficient because
+    the SDK recreates them. We must override the factories.
+    """
     if ssl_verify():
         return
+
+    no_verify_ctx = ssl.create_default_context()
+    no_verify_ctx.check_hostname = False
+    no_verify_ctx.verify_mode = ssl.CERT_NONE
+    ac = client._api_client
+
+    # Override SSL context factory methods (the SDK calls these lazily)
+    if hasattr(ac, '_ensure_aiohttp_ssl_ctx'):
+        ac._ensure_aiohttp_ssl_ctx = lambda: no_verify_ctx
+    if hasattr(ac, '_ensure_httpx_ssl_ctx'):
+        ac._ensure_httpx_ssl_ctx = lambda: False
+
+    # Also patch pre-created clients
     try:
         import httpx
-        client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
-        # Also patch async httpx client if it exists
-        if hasattr(client._api_client, '_async_httpx_client'):
-            client._api_client._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
+        ac._httpx_client = httpx.Client(verify=False, timeout=60)
+        ac._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
     except Exception:
         _log.debug("Failed to patch genai httpx client for SSL bypass", exc_info=True)
 
-    # google-genai async uses aiohttp internally — patch SSL context
     try:
         import aiohttp
-        no_verify_ctx = ssl.create_default_context()
-        no_verify_ctx.check_hostname = False
-        no_verify_ctx.verify_mode = ssl.CERT_NONE
         connector = aiohttp.TCPConnector(ssl=no_verify_ctx)
-        if hasattr(client._api_client, '_async_client'):
-            client._api_client._async_client = aiohttp.ClientSession(connector=connector)
-        # Also set on the module-level default
-        import google.genai._api_client as _gc
-        if hasattr(_gc, '_DEFAULT_CONNECTOR'):
-            _gc._DEFAULT_CONNECTOR = connector
+        ac._aiohttp_session = aiohttp.ClientSession(connector=connector)
     except Exception:
         _log.debug("Failed to patch genai aiohttp for SSL bypass", exc_info=True)

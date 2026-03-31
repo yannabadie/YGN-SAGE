@@ -479,6 +479,37 @@ factual = 0.54
 # --- MiniMax models ---
 
 [[models]]
+id = "minimax-m2.7"
+provider = "minimax"
+family = "minimax-m2.7"
+code_score = 0.82
+reasoning_score = 0.88
+tool_use_score = 0.82
+math_score = 0.80
+formal_z3_strength = 0.61
+cost_input_per_m = 0.30
+cost_output_per_m = 1.20
+latency_ttft_ms = 2000.0
+tokens_per_sec = 50.0
+s1_affinity = 0.45
+s2_affinity = 0.88
+s3_affinity = 0.50
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 1000000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.80
+code = 0.82
+reasoning = 0.88
+tool_use = 0.82
+formal = 0.61
+creative = 0.70
+factual = 0.55
+
+[[models]]
 id = "MiniMax-M2.5"
 provider = "minimax"
 family = "minimax-m2.5"
@@ -572,3 +603,36 @@ tool_use = 0.80
 formal = 0.62
 creative = 0.69
 factual = 0.32
+
+# --- OpenRouter models ---
+
+[[models]]
+id = "qwen/qwen3.5-plus-02-15"
+provider = "openrouter"
+family = "qwen3.5"
+code_score = 0.82
+reasoning_score = 0.88
+tool_use_score = 0.80
+math_score = 0.80
+formal_z3_strength = 0.60
+cost_input_per_m = 0.26
+cost_output_per_m = 1.56
+latency_ttft_ms = 2000.0
+tokens_per_sec = 80.0
+s1_affinity = 0.45
+s2_affinity = 0.88
+s3_affinity = 0.50
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 131072
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.80
+code = 0.82
+reasoning = 0.88
+tool_use = 0.80
+formal = 0.60
+creative = 0.68
+factual = 0.55
