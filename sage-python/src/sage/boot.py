@@ -574,7 +574,6 @@ def boot_agent_system(
                 "kimi": ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi"),
                 "minimax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
                 "MiniMax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
-                "abab": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
                 "qwen": ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter"),
             }
 
