@@ -420,15 +420,31 @@ def gigpo_step(
             })
 
     # 2. Compute per-group advantages
+    # If anchor groups are too small (K=2, same reward), fall back to
+    # episode-level reward comparison to avoid zero gradients.
     turn_advantages: list[tuple[dict, float]] = []  # (turn, advantage)
+
+    # First: compute episode-level advantages as fallback
+    episode_rewards = [r.reward_total for r in rollouts]
+    ep_mean = sum(episode_rewards) / len(episode_rewards)
+    ep_std = max(1e-4, (sum((r - ep_mean) ** 2 for r in episode_rewards) / len(episode_rewards)) ** 0.5)
+    ep_advantages = {i: (r - ep_mean) / ep_std for i, r in enumerate(episode_rewards)}
 
     for anchor_key, group in anchor_groups.items():
         rewards = [item["reward"] for item in group]
         mean_r = sum(rewards) / len(rewards)
-        std_r = max(1e-6, (sum((r - mean_r) ** 2 for r in rewards) / len(rewards)) ** 0.5)
+        variance = sum((r - mean_r) ** 2 for r in rewards) / len(rewards)
+        std_r = max(1e-6, variance ** 0.5)
+
+        # If all rewards in group are identical (variance < 1e-8),
+        # use episode-level advantage instead (GiGPO → GRPO fallback)
+        use_episode_fallback = variance < 1e-8
 
         for item in group:
-            adv = (item["reward"] - mean_r) / std_r
+            if use_episode_fallback:
+                adv = ep_advantages.get(item["rollout_idx"], 0.0)
+            else:
+                adv = (item["reward"] - mean_r) / std_r
             turn_advantages.append((item["turn"], adv))
 
     # 3. Apply advantages to log_probs
