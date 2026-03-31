@@ -71,11 +71,17 @@ impl RewardScore {
 #[pyclass]
 pub struct TopologyReward;
 
+impl Default for TopologyReward {
+    fn default() -> Self {
+        Self
+    }
+}
+
 #[pymethods]
 impl TopologyReward {
     #[new]
     pub fn new() -> Self {
-        TopologyReward
+        Self
     }
 
     /// Compute verified dense reward for a topology execution.
