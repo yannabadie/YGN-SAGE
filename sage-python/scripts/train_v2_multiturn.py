@@ -278,12 +278,13 @@ def run_episode(
 
         turn_idx += 1
 
-    # Collect traces
+    # Collect traces (needed for GiGPO anchor-based advantages)
     trace = env._trace if hasattr(env, "_trace") else None
     if trace:
         rollout.node_traces = trace.node_traces_for_rewardflow
         rollout.outcome = trace.status
         rollout.cost_usd = sum(s.latency * 0.00001 for s in trace.steps)  # rough estimate
+    rollout._trace = trace  # Keep full trace for GiGPO step-level advantages
 
     return rollout
 
@@ -357,61 +358,114 @@ def compute_rewardflow_batch(rollouts: list[Rollout]) -> None:
             r.reward_rewardflow = 0.0
 
 
-def grpo_step(
+def gigpo_step(
     model, tokenizer, optimizer,
     rollouts: list[Rollout],
     clip_eps: float = 0.2,
     max_grad_norm: float = 1.0,
 ) -> dict:
-    """One GRPO update step across K rollouts for one prompt.
+    """One GiGPO update step — step-level advantages grouped by anchor.
 
-    GRPO advantage: A_i = (R_i - mean(R)) / (std(R) + eps)
-    Loss: -sum(A_i * sum(log_prob(token_j))) for each rollout i
+    Unlike GRPO (one advantage per episode), GiGPO computes advantages
+    PER STEP, grouped by anchor state. The topology generation step is
+    compared against other topology generations; the upgrade decision step
+    is compared against other upgrade decisions.
+
+    Reference: GiGPO (arXiv 2505.10978), Section 3.
+
+    Algorithm:
+    1. Collect (anchor, step_reward, turn) triples from all K rollouts
+    2. Group by anchor key
+    3. Within each group: advantage = (reward - group_mean) / group_std
+    4. Apply per-turn advantage to the corresponding log_probs
     """
-    rewards = [r.reward_total for r in rollouts]
-    mean_r = sum(rewards) / len(rewards)
-    std_r = max(1e-6, (sum((r - mean_r) ** 2 for r in rewards) / len(rewards)) ** 0.5)
-    advantages = [(r - mean_r) / std_r for r in rewards]
+    from collections import defaultdict
 
+    # 1. Collect all (anchor, reward, turn_data, rollout_idx) triples
+    anchor_groups: dict[str, list[dict]] = defaultdict(list)
+
+    for r_idx, rollout in enumerate(rollouts):
+        trace = rollout._trace if hasattr(rollout, '_trace') else None
+        steps = trace.steps if trace else []
+
+        for t_idx, turn in enumerate(rollout.turns):
+            # Match turn to step via index
+            step_reward = 0.0
+            anchor_key = f"turn_{t_idx}"
+
+            if t_idx < len(steps):
+                step_reward = steps[t_idx].reward
+                anchor_key = steps[t_idx].anchor_key
+            elif t_idx == 0:
+                # Turn 0 is topology generation
+                step_reward = rollout.reward_structural
+                anchor_key = f"topology_generator:{rollout.difficulty}"
+            else:
+                # Adaptation turns get resilience credit
+                step_reward = rollout.reward_resilience / max(1, len(rollout.turns) - 1)
+                anchor_key = f"adaptation:{rollout.difficulty}"
+
+            anchor_groups[anchor_key].append({
+                "reward": step_reward,
+                "turn": turn,
+                "rollout_idx": r_idx,
+                "turn_idx": t_idx,
+            })
+
+    # 2. Compute per-group advantages
+    turn_advantages: list[tuple[dict, float]] = []  # (turn, advantage)
+
+    for anchor_key, group in anchor_groups.items():
+        rewards = [item["reward"] for item in group]
+        mean_r = sum(rewards) / len(rewards)
+        std_r = max(1e-6, (sum((r - mean_r) ** 2 for r in rewards) / len(rewards)) ** 0.5)
+
+        for item in group:
+            adv = (item["reward"] - mean_r) / std_r
+            turn_advantages.append((item["turn"], adv))
+
+    # 3. Apply advantages to log_probs
     total_loss = torch.tensor(0.0, device=model.device, requires_grad=True)
     n_tokens = 0
 
-    for rollout, advantage in zip(rollouts, advantages):
+    for turn, advantage in turn_advantages:
         if abs(advantage) < 1e-8:
-            continue  # Skip zero-advantage rollouts
+            continue
 
-        for turn in rollout.turns:
-            prompt_text = turn.get("prompt", "")
-            completion = turn.get("content", "")
-            if not prompt_text or not completion:
-                continue
+        prompt_text = turn.get("prompt", "")
+        completion = turn.get("content", "")
+        if not prompt_text or not completion:
+            continue
 
-            token_log_probs, _ = compute_logprobs_for_text(
-                model, tokenizer, prompt_text, completion,
-            )
+        token_log_probs, _ = compute_logprobs_for_text(
+            model, tokenizer, prompt_text, completion,
+        )
 
-            # GRPO loss: -advantage * sum(log_probs)
-            # Clip advantage for stability (DAPO-style asymmetric)
-            clipped_adv = max(-clip_eps, min(clip_eps, advantage))
-            turn_loss = -clipped_adv * token_log_probs.sum()
-            total_loss = total_loss + turn_loss
-            n_tokens += len(token_log_probs)
+        # Clip advantage (DAPO-style)
+        clipped_adv = max(-clip_eps, min(clip_eps, advantage))
+        turn_loss = -clipped_adv * token_log_probs.sum()
+        total_loss = total_loss + turn_loss
+        n_tokens += len(token_log_probs)
 
     if n_tokens > 0:
-        # Normalize by total tokens across all turns
         normalized_loss = total_loss / n_tokens
         normalized_loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
         optimizer.zero_grad()
 
+    # Metrics
+    all_rewards = [r.reward_total for r in rollouts]
+    mean_r = sum(all_rewards) / len(all_rewards)
+
     return {
         "loss": total_loss.item() / max(1, n_tokens),
         "reward_mean": mean_r,
-        "reward_std": std_r,
-        "advantages": advantages,
+        "reward_std": max(1e-6, (sum((r - mean_r) ** 2 for r in all_rewards) / len(all_rewards)) ** 0.5),
         "n_tokens": n_tokens,
         "n_turns": sum(len(r.turns) for r in rollouts),
+        "n_anchor_groups": len(anchor_groups),
+        "anchor_groups": {k: len(v) for k, v in anchor_groups.items()},
     }
 
 
@@ -529,8 +583,12 @@ def main():
             for rollout in rollouts:
                 compute_5signal_reward(rollout)
 
-            # ── GRPO update ──
-            metrics = grpo_step(model, tokenizer, optimizer, rollouts)
+            # ── GiGPO update (step-level advantages by anchor group) ──
+            # Attach env trace to rollouts for anchor extraction
+            for rollout in rollouts:
+                if not hasattr(rollout, '_trace'):
+                    rollout._trace = None
+            metrics = gigpo_step(model, tokenizer, optimizer, rollouts)
 
             # ── Store to episodic memory ──
             if training_memory:
@@ -581,6 +639,7 @@ def main():
                 "reward_breakdown": reward_breakdown,
                 "step_time_s": round(step_time, 1),
                 "difficulty": prompt_data["difficulty"],
+                "n_anchor_groups": metrics.get("n_anchor_groups", 0),
             }
 
             with open(metrics_path, "a") as f:
