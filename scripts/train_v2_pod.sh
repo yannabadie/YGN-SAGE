@@ -194,73 +194,34 @@ if [ "${SKIP_GRPO}" = false ] && [ "${EVAL_ONLY}" = false ]; then
     echo "[$(ts)] PHASE 2: GRPO (5-signal execution reward)"
     echo "============================================================"
 
-    # Enable execution reward for GRPO
+    # V2 Multi-Turn GRPO with 5-signal reward
+    # Uses train_v2_multiturn.py (custom loop with SageTopologyEnv + RewardFlow)
     export SAGE_VERL_EXEC=1
     export SAGE_TRAINING_PHASE=C
 
     cd "${SAGE_PYTHON}"
 
-    # Convert SFT data to GRPO prompts (parquet format)
-    echo "[$(ts)] Converting SFT data to GRPO prompts..."
-    python3 -c "
-import json
-import pandas as pd
+    # Memory DB for episodic learning across training
+    MEMORY_DB="${TRAINING_DIR}/episodic_memory.db"
 
-prompts = []
-with open('${SFT_DATA}', encoding='utf-8') as f:
-    for line in f:
-        entry = json.loads(line)
-        # Extract user prompt (first user turn)
-        if 'turns' in entry and isinstance(entry['turns'], list):
-            for turn in entry['turns']:
-                if turn.get('role') == 'user':
-                    prompts.append({
-                        'prompt': [
-                            {'role': 'system', 'content': entry.get('system_prompt', '')},
-                            {'role': 'user', 'content': turn['content']},
-                        ],
-                        'task_id': entry.get('task_id', ''),
-                        'difficulty': entry.get('difficulty', 'moderate'),
-                    })
-                    break
-        elif 'prompt' in entry:
-            prompts.append({
-                'prompt': [
-                    {'role': 'system', 'content': entry.get('system_prompt', '')},
-                    {'role': 'user', 'content': entry['prompt']},
-                ],
-                'task_id': entry.get('task_id', ''),
-                'difficulty': entry.get('difficulty', 'moderate'),
-            })
-
-max_samples = ${GRPO_MAX_SAMPLES}
-if max_samples > 0:
-    prompts = prompts[:max_samples]
-
-df = pd.DataFrame(prompts)
-out_path = '${TRAINING_DIR}/grpo_prompts.parquet'
-df.to_parquet(out_path)
-print(f'Saved {len(df)} GRPO prompts to {out_path}')
-"
-
-    python3 scripts/train_local_qwen3_4b.py \
+    python3 scripts/train_v2_multiturn.py \
         --model "${BASE_MODEL}" \
         --adapter "${SFT_OUTPUT}" \
-        --data "${TRAINING_DIR}/grpo_prompts.parquet" \
-        --output "${TRAINING_DIR}" \
+        --data "${SFT_DATA}" \
+        --output "${GRPO_OUTPUT}" \
         --epochs ${GRPO_EPOCHS} \
+        --k ${GRPO_NUM_GEN} \
         --lr ${GRPO_LR} \
-        --batch-size 1 \
-        --lora-rank 32 \
-        --num-generations ${GRPO_NUM_GEN} \
-        --max-completion-length ${GRPO_MAX_COMP} \
-        --grad-accum ${GRPO_GRAD_ACCUM} \
+        --max-new-tokens ${GRPO_MAX_COMP} \
         --max-samples ${GRPO_MAX_SAMPLES} \
+        --memory-db "${MEMORY_DB}" \
+        --log-interval 5 \
+        --save-interval 50 \
         2>&1 | tee "${LOG_DIR}/phase2_grpo.log"
 
     # Copy metrics
-    if [ -f "${TRAINING_DIR}/grpo_metrics.jsonl" ]; then
-        cp "${TRAINING_DIR}/grpo_metrics.jsonl" "${METRICS_DIR}/"
+    if [ -f "${GRPO_OUTPUT}/grpo_v2_metrics.jsonl" ]; then
+        cp "${GRPO_OUTPUT}/grpo_v2_metrics.jsonl" "${METRICS_DIR}/"
     fi
 
     # Disable execution mode after GRPO
