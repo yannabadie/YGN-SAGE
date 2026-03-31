@@ -256,7 +256,7 @@ def run_episode(
     # Turns 1..N: Execute + decide at checkpoints
     turn_idx = 1
     while not done and turn_idx < 10:  # safety limit
-        if obs.get("text", "").startswith("Checkpoint"):
+        if "[CHECKPOINT]" in obs.get("text", ""):
             # Model decides: continue or upgrade
             decision_prompt = format_prompt(system_prompt, obs["text"], tokenizer)
             decision_text, lp_d, _ = generate_with_logprobs(
@@ -468,8 +468,9 @@ def main():
     # Use the first entry's system_prompt (they're all the same)
     system_prompt = prompts[0].get("system_prompt", "") if prompts else ""
     if not system_prompt:
-        from scripts.sage_tool_schemas import TOOLCALL_SYSTEM_PROMPT
-        system_prompt = TOOLCALL_SYSTEM_PROMPT
+        # Import from llm_caller where the prompt is defined
+        from sage.topology.llm_caller import _TOOLCALL_SYSTEM_PROMPT
+        system_prompt = _TOOLCALL_SYSTEM_PROMPT
 
     # ── Output dirs ──
     output_dir = Path(args.output)

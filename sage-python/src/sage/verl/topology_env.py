@@ -237,15 +237,34 @@ class SageTopologyEnv:
         first checkpoint or end."""
         self._trace.topology_yaml = yaml_text
 
-        # Try JSON first (Nemotron native format for Phase C)
+        # Parse topology from model output
+        # Supports: <tool_call>{...}</tool_call>, raw JSON, YAML
         import json
+        import re
         topo = None
-        try:
-            topo = json.loads(yaml_text.strip())
-            if not isinstance(topo, dict) or "nodes" not in topo:
-                topo = None  # fall through to YAML
-        except (json.JSONDecodeError, ValueError):
-            pass
+
+        # Try <tool_call> format first (Qwen3-4B local model)
+        tc_match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', yaml_text, re.DOTALL)
+        if not tc_match:
+            tc_match = re.search(r'<tool_call>\s*(\{.*)', yaml_text, re.DOTALL)
+        if tc_match:
+            try:
+                call = json.loads(tc_match.group(1))
+                if call.get("name") == "create_topology" and "arguments" in call:
+                    topo = call["arguments"]
+                elif "nodes" in call:
+                    topo = call
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Try raw JSON
+        if topo is None:
+            try:
+                topo = json.loads(yaml_text.strip())
+                if not isinstance(topo, dict) or "nodes" not in topo:
+                    topo = None
+            except (json.JSONDecodeError, ValueError):
+                pass
 
         # Fall back to YAML
         if topo is None:
@@ -589,14 +608,29 @@ class SageTopologyEnv:
 
     def _parse_decision(self, text: str) -> str:
         text = text.strip()
-        # JSON format: {"action": "continue"}
+        import json
+        import re
+
+        # <tool_call> format: {"name": "adapt_topology", "arguments": {"action": "upgrade"}}
+        tc_match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', text, re.DOTALL)
+        if not tc_match:
+            tc_match = re.search(r'<tool_call>\s*(\{.*)', text, re.DOTALL)
+        if tc_match:
+            try:
+                call = json.loads(tc_match.group(1))
+                args = call.get("arguments", call)
+                return args.get("action", "continue")
+            except (json.JSONDecodeError, ValueError):
+                pass
+
+        # Raw JSON format: {"action": "continue"}
         try:
-            import json
             data = json.loads(text)
             if isinstance(data, dict):
-                return data.get("action", "continue")
+                return data.get("action", data.get("arguments", {}).get("action", "continue"))
         except Exception:
             pass
+
         # Text fallback
         t = text.lower()
         if "upgrade" in t:
