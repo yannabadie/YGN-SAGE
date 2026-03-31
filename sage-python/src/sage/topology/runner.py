@@ -246,12 +246,15 @@ class TopologyRunner:
                 self._provider_pool.record_success(provider_name)
         except Exception as exc:
             provider_name = getattr(config, "provider", "unknown")
+            model_id = getattr(config, "model", "unknown")
             # Record failure in circuit breaker
             if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
                 self._provider_pool.record_failure(provider_name, exc)
             log.warning(
-                "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
-                node_idx, role, provider_name, str(exc)[:150],
+                "[TopologyRunner] node %d (%s) failed with %s provider (model=%s): %s(%s) — retrying with default",
+                node_idx, role, provider_name, model_id,
+                type(exc).__name__, str(exc)[:200],
+                exc_info=True,
             )
             # Fallback to first available provider (connector.py = source of truth)
             if provider is not self._llm:

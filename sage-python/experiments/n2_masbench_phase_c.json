@@ -1,0 +1,19 @@
+{
+  "bare": {
+    "pass_rate": 0.0,
+    "passed": 0,
+    "total": 10,
+    "avg_latency_ms": 0.001320000046689529
+  },
+  "sage_full": {
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 394352.2328700003
+  },
+  "topology_delta_pp": 40.0,
+  "axis": "depth",
+  "limit": 10,
+  "elapsed_sec": 3945.9,
+  "path6_adapter": "models/toolcall_qwen3_4b_phase_c/sft_checkpoint"
+}
