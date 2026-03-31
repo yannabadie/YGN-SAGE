@@ -510,8 +510,42 @@ class SageTopologyEnv:
     # _execute_single_node — one node at a time
     # ------------------------------------------------------------------
 
+    # ── Multi-provider tier→provider mapping ──
+    # Maps model_tier from training data to real provider configs.
+    # Each tier maps to a different provider for true multi-provider execution.
+    _TIER_PROVIDER_MAP = {
+        "budget": "deepseek",      # $0.28/M — cheapest
+        "fast": "google",          # Gemini Flash — lowest latency
+        "balanced": "xai",         # Grok — 2M context, mid-tier
+        "reasoner": "openai",      # GPT-5.4 — strong reasoning
+        "codex": "openai",         # GPT-5.4 — best coding
+    }
+    # Fallback order if preferred provider unavailable
+    _PROVIDER_FALLBACK = ["deepseek", "google", "openai", "xai", "kimi", "minimax", "openrouter"]
+
+    def _resolve_provider_for_tier(self, model_tier: str):
+        """Resolve model_tier to (provider, model_id, base_url, api_key)."""
+        from sage.providers.connector import PROVIDER_CONFIGS
+        import os
+
+        # Preferred provider for this tier
+        preferred = self._TIER_PROVIDER_MAP.get(model_tier, "deepseek")
+        order = [preferred] + [p for p in self._PROVIDER_FALLBACK if p != preferred]
+
+        for prov_name in order:
+            cfg = next((c for c in PROVIDER_CONFIGS if c["provider"] == prov_name), None)
+            if cfg is None:
+                continue
+            api_key = os.environ.get(cfg["api_key_env"], "")
+            if not api_key:
+                continue
+            model_id = cfg.get("default_model", "")
+            return cfg["provider"], model_id, cfg["base_url"], api_key
+
+        return None, None, None, None
+
     def _execute_single_node(self, node_idx: int, node_dict: dict) -> dict:
-        """Execute a single node (API call in exec mode, structural stub otherwise)."""
+        """Execute a single node — MULTI-PROVIDER based on model_tier."""
         role = node_dict.get("role", f"node-{node_idx}")
         exec_mode = os.environ.get("SAGE_VERL_EXEC", "0") == "1"
 
@@ -524,14 +558,20 @@ class SageTopologyEnv:
                 "model_id": node_dict.get("model_tier", ""),
             }
 
-        # Real execution mode: LLM call
+        # Real execution: resolve tier → provider
+        model_tier = node_dict.get("model_tier", "budget")
         try:
-            from sage.execution import _get_agent_provider
+            prov_name, model_id, base_url, api_key = self._resolve_provider_for_tier(model_tier)
+            if prov_name is None:
+                log.warning("No provider for tier=%s, structural fallback", model_tier)
+                return self._structural_stub(node_idx, role, node_dict)
+
+            from sage.providers.openai_compat import OpenAICompatProvider
             from sage.llm.base import LLMConfig, Message, Role
 
-            provider, model = _get_agent_provider()
-            if provider is None:
-                return self._structural_stub(node_idx, role, node_dict)
+            provider = OpenAICompatProvider(
+                api_key=api_key, base_url=base_url, provider_name=prov_name,
+            )
 
             # Build prompt from role + predecessor context
             predecessors = self._predecessor_map.get(node_idx, [])
@@ -549,7 +589,7 @@ class SageTopologyEnv:
                 messages.append(Message(role=Role.SYSTEM, content=f"Context from previous agents:\n{context}"))
             messages.append(Message(role=Role.USER, content=self._trace.prompt[:2000]))
 
-            config = LLMConfig(provider="agent", model=model)
+            config = LLMConfig(provider=prov_name, model=model_id)
 
             t0 = time.time()
             import concurrent.futures
@@ -560,15 +600,20 @@ class SageTopologyEnv:
             output = response.content or ""
             latency = time.time() - t0
 
+            log.debug("Node %d (%s) tier=%s → %s/%s (%.1fs)",
+                      node_idx, role, model_tier, prov_name, model_id, latency)
+
             return {
                 "node_idx": node_idx,
                 "role": role,
                 "output": output,
                 "latency": latency,
-                "model_id": node_dict.get("_assigned_model_id", node_dict.get("model_tier", "")),
+                "model_id": f"{prov_name}/{model_id}",
+                "provider": prov_name,
+                "cost": latency * 0.00002 if prov_name == "openai" else latency * 0.000005,
             }
         except Exception as exc:
-            log.warning("Node %d execution failed: %s", node_idx, exc)
+            log.warning("Node %d (%s) tier=%s exec failed: %s", node_idx, role, model_tier, exc)
             return self._structural_stub(node_idx, role, node_dict)
 
     def _structural_stub(self, node_idx: int, role: str, node_dict: dict) -> dict:
