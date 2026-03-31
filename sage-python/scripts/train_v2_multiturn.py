@@ -251,7 +251,9 @@ def run_episode(
 
     # Step env with topology
     obs, reward, done, info = env.step(topology_text)
-    rollout.reward_structural = reward
+    # Note: reward here is the LAST step's reward if env auto-executes to terminal.
+    # The real structural reward is in trace.steps[0].reward (topology_generator).
+    # We'll extract it from the trace after the episode completes.
 
     # Turns 1..N: Execute + decide at checkpoints
     turn_idx = 1
@@ -283,7 +285,12 @@ def run_episode(
     if trace:
         rollout.node_traces = trace.node_traces_for_rewardflow
         rollout.outcome = trace.status
-        rollout.cost_usd = sum(s.latency * 0.00001 for s in trace.steps)  # rough estimate
+        rollout.cost_usd = sum(s.latency * 0.00001 for s in trace.steps)
+        # Fix: use the TOTAL episode reward, not the last step's reward
+        # The env's step() returns the last step's reward (terminal=0.0),
+        # but the real structural reward is in the trace (topology_generator step)
+        if trace.steps:
+            rollout.reward_structural = trace.steps[0].reward  # topology_generator step
     rollout._trace = trace  # Keep full trace for GiGPO step-level advantages
 
     return rollout
