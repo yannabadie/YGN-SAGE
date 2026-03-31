@@ -15,6 +15,79 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
+# ── Tool-call system prompt (must match training in sage_tool_schemas.py) ──
+_SAGE_TOOLS_JSON = json.dumps([
+    {
+        "type": "function",
+        "function": {
+            "name": "create_topology",
+            "description": "Design a multi-agent DAG topology to solve a coding task.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "difficulty": {"type": "string", "enum": ["simple", "moderate", "complex"]},
+                    "reasoning": {"type": "string"},
+                    "nodes": {"type": "array", "items": {"type": "object", "properties": {
+                        "role": {"type": "string"},
+                        "model_tier": {"type": "string", "enum": ["budget", "fast", "balanced", "reasoner", "codex"]},
+                        "prompt": {"type": "string"},
+                    }, "required": ["role", "model_tier", "prompt"]}},
+                    "edges": {"type": "array", "items": {"type": "object", "properties": {
+                        "from_idx": {"type": "integer"}, "to_idx": {"type": "integer"},
+                        "flow_type": {"type": "string", "enum": ["message", "control", "state"]},
+                    }, "required": ["from_idx", "to_idx", "flow_type"]}},
+                },
+                "required": ["difficulty", "reasoning", "nodes", "edges"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "adapt_topology",
+            "description": "Runtime adaptation: upgrade, reroute, or continue at a checkpoint.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["continue", "upgrade", "reroute"]},
+                    "node_idx": {"type": "integer"},
+                    "reason": {"type": "string"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+], indent=2)
+
+_TOOLCALL_SYSTEM_PROMPT = (
+    "You are a multi-agent topology designer for the YGN-SAGE framework. "
+    "You design optimal agent DAG topologies and make runtime adaptation decisions.\n\n"
+    f"<tools>\n{_SAGE_TOOLS_JSON}\n</tools>\n\n"
+    "For each task, call create_topology with a JSON topology. "
+    "Use <tool_call> format."
+)
+
+
+def _parse_toolcall(raw: str) -> dict | None:
+    """Parse <tool_call>...</tool_call> output from the local model."""
+    match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', raw, re.DOTALL)
+    if not match:
+        # Try without tags (sometimes model omits closing tag)
+        match = re.search(r'<tool_call>\s*(\{.*)', raw, re.DOTALL)
+    if not match:
+        return None
+    try:
+        call = json.loads(match.group(1))
+        if call.get("name") == "create_topology" and "arguments" in call:
+            return call["arguments"]
+        # Direct topology dict (no wrapper)
+        if "nodes" in call:
+            return call
+    except json.JSONDecodeError:
+        pass
+    return None
+
+
 VALID_TEMPLATES = [
     "sequential", "parallel", "avr", "self_moa",
     "hierarchical", "hub", "debate", "brainstorming",
@@ -276,6 +349,14 @@ class PolicyModelConfig:
     trust_remote_code: bool = True
 
 
+POLICY_LOCAL = PolicyModelConfig(
+    repo="yannabadie/sage-topology-policy-local",
+    base_model="Qwen/Qwen3-4B",
+    chat_template="toolcall",  # <tool_call> JSON format
+    max_new_tokens=1024,
+    trust_remote_code=True,
+)
+
 POLICY_V2 = PolicyModelConfig(
     repo="yannabadie/sage-topology-policy-v2",
     base_model="nvidia/Nemotron-Orchestrator-8B",
@@ -297,13 +378,27 @@ _ACTIVE_POLICY_CONFIG: PolicyModelConfig | None = None
 
 
 def download_policy_model(cache_dir: str | None = None) -> tuple[str | None, PolicyModelConfig | None]:
-    """Download the topology policy from HuggingFace Hub.
+    """Download or locate the topology policy model.
 
-    Tries V2 (Nemotron-8B GRPO) first, falls back to V1 (Phi-4-mini SFT).
+    Priority:
+    1. SAGE_PATH6_ADAPTER env var → local adapter path (Qwen3-4B tool-call)
+    2. V2 from HuggingFace (Nemotron-8B GRPO)
+    3. V1 from HuggingFace (Phi-4-mini SFT)
+
     Returns (local_path, config) or (None, None) if unavailable.
     """
     global _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
     if _POLICY_CACHE_DIR is not None and _ACTIVE_POLICY_CONFIG is not None:
+        return _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
+
+    import os
+
+    # Priority 1: Local adapter path (for local Qwen3-4B training)
+    local_adapter = os.environ.get("SAGE_PATH6_ADAPTER")
+    if local_adapter and os.path.isdir(local_adapter):
+        _POLICY_CACHE_DIR = os.path.abspath(local_adapter)
+        _ACTIVE_POLICY_CONFIG = POLICY_LOCAL
+        _log.info("Path 6: using local adapter at %s", _POLICY_CACHE_DIR)
         return _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
 
     try:
@@ -312,7 +407,7 @@ def download_policy_model(cache_dir: str | None = None) -> tuple[str | None, Pol
         _log.debug("huggingface_hub not installed — topology policy unavailable")
         return None, None
 
-    # Try V2 first, fallback to V1
+    # Priority 2-3: HuggingFace (V2 then V1)
     for config in [POLICY_V2, POLICY_V1]:
         try:
             local_dir = snapshot_download(
@@ -327,7 +422,7 @@ def download_policy_model(cache_dir: str | None = None) -> tuple[str | None, Pol
         except Exception as exc:
             _log.debug("Policy %s unavailable: %s", config.repo, str(exc)[:80])
 
-    _log.info("No topology policy available (V2 and V1 both failed) — using templates")
+    _log.info("No topology policy available — using templates")
     return None, None
 
 
@@ -338,6 +433,15 @@ _POLICY_TOKENIZER = None
 
 def _format_prompt(task: str, config: PolicyModelConfig) -> str:
     """Format the generation prompt based on the model's chat template."""
+    if config.chat_template == "toolcall":
+        # Local Qwen3-4B: uses <tool_call> JSON format with 2 SAGE tools
+        # System prompt must match training exactly (sage_tool_schemas.py)
+        return (
+            f"<|im_start|>system\n{_TOOLCALL_SYSTEM_PROMPT}<|im_end|>\n"
+            f"<|im_start|>user\n{task[:2000]}<|im_end|>\n"
+            "<|im_start|>assistant\n"
+        )
+
     system_msg = (
         "You are a multi-agent topology designer for the YGN-SAGE framework. "
         "Given a coding task, design an optimal agent topology as a YAML DAG. "
@@ -388,10 +492,25 @@ def generate_topology_from_policy(task: str) -> dict | None:
                 local_files_only=True,
             )
 
-            # V2 (Nemotron/GRPO-merged): load directly, no LoRA adapter
-            # V1 (Phi-4-mini/SFT): load base + LoRA adapter
-            if config.chat_template == "qwen3":
-                # V2: merged model (GRPO output is already merged after post_training_pipeline.py)
+            if config.chat_template == "toolcall":
+                # Local Qwen3-4B: base model in 4-bit NF4 + LoRA adapter
+                from peft import PeftModel
+                from transformers import BitsAndBytesConfig
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.bfloat16,
+                )
+                base = AutoModelForCausalLM.from_pretrained(
+                    config.base_model,
+                    quantization_config=bnb_config,
+                    trust_remote_code=config.trust_remote_code,
+                    device_map="auto",
+                    local_files_only=True,
+                )
+                model = PeftModel.from_pretrained(base, adapter_path)
+            elif config.chat_template == "qwen3":
+                # V2: merged model (GRPO output is already merged)
                 model = AutoModelForCausalLM.from_pretrained(
                     adapter_path,
                     trust_remote_code=config.trust_remote_code,
@@ -399,6 +518,7 @@ def generate_topology_from_policy(task: str) -> dict | None:
                     device_map="cpu",
                     low_cpu_mem_usage=True,
                 )
+                model = model.to("cuda:0")
             else:
                 # V1: base + LoRA adapter
                 from peft import PeftModel
@@ -410,8 +530,7 @@ def generate_topology_from_policy(task: str) -> dict | None:
                     low_cpu_mem_usage=True,
                 )
                 model = PeftModel.from_pretrained(base, adapter_path)
-
-            model = model.to("cuda:0")
+                model = model.to("cuda:0")
             model.eval()
             _POLICY_MODEL = model
             _POLICY_TOKENIZER = tok
@@ -443,20 +562,27 @@ def generate_topology_from_policy(task: str) -> dict | None:
         _log.debug("Path 6: generation failed: %s", str(exc)[:100])
         return None
 
-    # Parse YAML (superset of JSON — handles both)
-    try:
-        import yaml
-        data = yaml.safe_load(raw)
-        if isinstance(data, dict) and "nodes" in data and len(data.get("nodes", [])) > 0:
-            _log.info(
-                "Path 6 (%s): %d nodes, %d edges generated",
-                _ACTIVE_POLICY_CONFIG.repo,
-                len(data["nodes"]),
-                len(data.get("edges", [])),
-            )
-            return data
-        _log.debug("Path 6: parsed but no valid nodes")
-    except Exception:
-        _log.debug("Path 6: YAML parse failed — fallback to template")
+    # Parse output based on format
+    data = None
+    if _ACTIVE_POLICY_CONFIG.chat_template == "toolcall":
+        data = _parse_toolcall(raw)
+        if data is None:
+            _log.debug("Path 6: <tool_call> parse failed — fallback to template")
+    else:
+        # Legacy: YAML (superset of JSON — handles both)
+        try:
+            import yaml
+            data = yaml.safe_load(raw)
+        except Exception:
+            _log.debug("Path 6: YAML parse failed — fallback to template")
 
+    if isinstance(data, dict) and "nodes" in data and len(data.get("nodes", [])) > 0:
+        _log.info(
+            "Path 6 (%s): %d nodes, %d edges generated",
+            _ACTIVE_POLICY_CONFIG.repo,
+            len(data["nodes"]),
+            len(data.get("edges", [])),
+        )
+        return data
+    _log.debug("Path 6: parsed but no valid nodes")
     return None
