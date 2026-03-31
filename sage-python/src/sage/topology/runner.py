@@ -252,19 +252,22 @@ class TopologyRunner:
                 "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
                 node_idx, role, provider_name, str(exc)[:150],
             )
-            # Fallback to DeepSeek (most reliable, no rate limits)
+            # Fallback to first available provider (connector.py = source of truth)
             if provider is not self._llm:
                 try:
                     import os
+                    from sage.providers.connector import get_available_providers
                     from sage.providers.openai_compat import OpenAICompatProvider
-                    ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
-                    if ds_key:
+                    fallback_cfgs = get_available_providers()
+                    fallback_cfg = fallback_cfgs[0] if fallback_cfgs else None
+                    if fallback_cfg and fallback_cfg.get("sdk") != "google-genai":
                         fallback_provider = OpenAICompatProvider(
-                            api_key=ds_key,
-                            base_url="https://api.deepseek.com/v1",
-                            provider_name="deepseek",
+                            api_key=os.environ.get(fallback_cfg["api_key_env"], ""),
+                            base_url=fallback_cfg["base_url"],
+                            provider_name=fallback_cfg["provider"],
                         )
-                        fallback_config = LLMConfig(provider="deepseek", model="deepseek-chat")
+                        fallback_model = fallback_cfg.get("default_model", "")
+                        fallback_config = LLMConfig(provider=fallback_cfg["provider"], model=fallback_model)
                         response = await fallback_provider.generate(
                             messages=messages,
                             config=fallback_config,
@@ -276,8 +279,8 @@ class TopologyRunner:
                         )
                     output = response.content or ""
                     log.info(
-                        "[TopologyRunner] node %d (%s) succeeded with fallback (deepseek)",
-                        node_idx, role,
+                        "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
+                        node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
                     )
                 except Exception as fallback_exc:
                     log.error(
