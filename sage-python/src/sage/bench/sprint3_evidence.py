@@ -19,6 +19,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
+from sage._python import PYTHON
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger(__name__)
 
@@ -455,7 +457,7 @@ async def run_evolution_validation(
             tmp = f.name
         try:
             result = subprocess.run(
-                ["python", tmp], capture_output=True, text=True, timeout=5
+                [PYTHON, tmp], capture_output=True, text=True, timeout=5
             )
             if result.returncode == 0:
                 score = 0.8 + 0.2 * (len(code) < 500)  # Bonus for conciseness

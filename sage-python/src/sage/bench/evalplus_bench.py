@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sage._python import PYTHON
 from sage.bench.humaneval import extract_code
 from sage.bench.runner import BenchReport, TaskResult
 from sage.bench.truth_pack import BenchmarkManifest, TaskTrace
@@ -379,7 +380,7 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
 
         try:
             proc = subprocess.run(
-                ["python", tmp_path],
+                [PYTHON, tmp_path],
                 input=json.dumps(inputs),
                 capture_output=True,
                 text=True,
@@ -517,7 +518,7 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
 
         # 3. Sanitize
         sanitize_result = subprocess.run(
-            ["python", "-m", "evalplus.sanitize", "--samples", str(samples_path)],
+            [PYTHON, "-m", "evalplus.sanitize", "--samples", str(samples_path)],
             capture_output=True, text=True, timeout=120,
         )
         if sanitize_result.returncode != 0:
@@ -529,7 +530,7 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
 
         # 4. Evaluate
         eval_result = subprocess.run(
-            ["python", "-m", "evalplus.evaluate",
+            [PYTHON, "-m", "evalplus.evaluate",
              "--dataset", self.dataset,
              "--samples", eval_samples],
             capture_output=True, text=True, timeout=600,

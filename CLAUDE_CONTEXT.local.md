@@ -21,6 +21,16 @@ CognitiveOrchestrationPipeline, TopologyRunner, TopologyController, boot.py, age
 - _last_execution_path tracking (pipeline/legacy/mock)
 - MASBENCH: SAGE 67% vs bare 40% (+27pp)
 
+## Pipeline Hardening (March 31, 2026)
+- Fixed `_log` NameError in runner.py code node execution
+- Cross-platform `sys.executable` (sage/_python.py PYTHON constant)
+- Memory consolidation + causal wiring now active in pipeline path (was legacy-only)
+- FrugalGPT cascade: exclude_ids + budget 1.5x escalation (Rust + Python)
+- Bandit periodic persistence every 10 tasks in _stage_learn
+- OxiZ verification_passed flag in PipelineContext
+- ToolForge: autonomous tool synthesis (gap_detector.py + forge.py)
+- 100 tests (71 existing + 29 new), 0 failures
+
 ## Commands
 ```bash
 cd sage-python && python -m pytest tests/test_boot_topology.py tests/test_execution_path.py tests/test_e2e_integration.py -v

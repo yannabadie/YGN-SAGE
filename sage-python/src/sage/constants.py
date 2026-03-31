@@ -137,6 +137,8 @@ ASI_BEHAVIORAL_WINDOW = 10         # Sliding window for behavior consistency
 # [ENG] Inter-tier memory consolidation
 CONSOLIDATION_INTERVAL_STEPS = 10   # Consolidation runs every N agent loop steps
 CONSOLIDATION_BATCH_SIZE = 20       # Max episodic entries to consolidate per pass
+BANDIT_FLUSH_INTERVAL = 10          # [ENG] Persist bandit+archive state every N pipeline tasks
+MAX_TOOL_CREATIONS_PER_RUN = 2      # [ENG] ToolForge: max tools created per pipeline run
 
 # -- Topology limits ----------------------------------------------------------
 MAX_TOPOLOGY_AGENTS = 4         # [ENG] Max agents in LLM-synthesized topology

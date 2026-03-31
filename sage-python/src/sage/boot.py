@@ -174,6 +174,7 @@ class AgentSystem:
                 _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD / 2
                 result = await self.pipeline.run(task, budget_usd=_budget)
                 self._last_execution_path = "pipeline"
+                await self._persist_memory()
                 _log.info("Execution path: pipeline (5-stage)")
                 return result
             except Exception as exc:
@@ -1138,6 +1139,7 @@ def boot_agent_system(
                 event_bus=event_bus,
                 llm_provider=provider,
                 llm_config=llm_config,
+                consolidator=consolidator,  # Inter-tier memory consolidation (MAGMA)
             )
             _log.info("CognitiveOrchestrationPipeline initialized")
         except Exception as exc:
@@ -1190,6 +1192,22 @@ def boot_agent_system(
             pass
     if _pipeline and _pipeline_qe:
         _pipeline.quality_estimator = _pipeline_qe
+
+    # ToolForge: autonomous tool synthesis (UCT + SMITH pattern)
+    _tool_forge = None
+    if _pipeline and provider and tool_registry:
+        try:
+            from sage.tools.forge import ToolForge
+            _tool_forge = ToolForge(
+                registry=tool_registry,
+                llm_provider=provider,
+                llm_config=llm_config,
+                event_bus=event_bus,
+            )
+            _pipeline.tool_forge = _tool_forge
+            _log.info("ToolForge initialized (autonomous tool synthesis)")
+        except Exception as exc:
+            _log.debug("ToolForge init failed: %s", exc)
 
     # Log capability surface at boot (Issue E audit fix)
     from sage.memory.working import get_memory_backend

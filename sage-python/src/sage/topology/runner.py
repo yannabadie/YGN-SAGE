@@ -14,6 +14,7 @@ import asyncio
 import logging
 from typing import Any
 
+from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 
 log = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class TopologyRunner:
         code_spec = getattr(node, "code_spec", "") or getattr(node, "prompt", "")
 
         if not code_spec:
-            _log.error("Code node %d (%s) has no code_spec", node_idx, role)
+            log.error("Code node %d (%s) has no code_spec", node_idx, role)
             return f"ERROR: code node {node_idx} has no code_spec"
 
         context = (
@@ -146,7 +147,7 @@ class TopologyRunner:
             import subprocess
             try:
                 proc = subprocess.run(
-                    ["python", "-c", wrapped_code],
+                    [PYTHON, "-c", wrapped_code],
                     capture_output=True, text=True, timeout=30,
                 )
                 output = proc.stdout
@@ -164,12 +165,12 @@ class TopologyRunner:
         latency_ms = (time.monotonic() - t0) * 1000
 
         if stderr and exit_code != 0:
-            _log.warning(
+            log.warning(
                 "Code node %d (%s) failed (exit=%d, %.0fms): %s",
                 node_idx, role, exit_code, latency_ms, stderr[:200],
             )
         else:
-            _log.info(
+            log.info(
                 "Code node %d (%s) completed (%.0fms, %d chars output)",
                 node_idx, role, latency_ms, len(output),
             )
