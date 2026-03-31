@@ -196,12 +196,13 @@ class MASBenchAblation:
             question, ground_truth = _parse_task(item)
             t0 = time.perf_counter()
             try:
-                response = await provider.chat(
-                    messages=[{"role": "user", "content": question}],
-                    model=bare_model,
-                    max_tokens=256,
+                from sage.llm.base import Message, Role, LLMConfig
+                bare_config = LLMConfig(provider=cfg["provider"], model=bare_model, max_tokens=256)
+                response = await provider.generate(
+                    messages=[Message(role=Role.USER, content=question)],
+                    config=bare_config,
                 )
-                content = response.get("content", str(response))
+                content = response.content or ""
                 latency_ms = (time.perf_counter() - t0) * 1000
                 passed = _check_answer(content, ground_truth)
                 error = "" if passed else f"expected={ground_truth}"
