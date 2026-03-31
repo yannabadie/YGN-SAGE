@@ -561,80 +561,58 @@ def boot_agent_system(
             provider = CodexProvider()
         else:
             # Route to correct provider based on model_id
-            # All 7 providers from .env are supported (OpenAI-compatible where possible)
+            # All URLs from connector.py (single source of truth)
+            from sage.providers.connector import (
+                get_provider_for_model, get_provider_config,
+                get_available_providers, PROVIDER_CONFIGS,
+            )
             from sage.providers.openai_compat import OpenAICompatProvider
-
-            # Provider registry: model_id prefix → (env_key, base_url, provider_name)
-            # Provider registry: model_id prefix → (env_key, base_url, provider_name)
-            # Updated March 31, 2026 — all 7 providers from .env
-            _PROVIDER_MAP = {
-                "deepseek": ("DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "deepseek"),
-                "gpt-": ("OPENAI_API_KEY", "https://api.openai.com/v1", "openai"),
-                "grok": ("GROK_API_KEY", "https://api.x.ai/v1", "xai"),
-                "kimi": ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi"),
-                "minimax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
-                "MiniMax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
-                "qwen": ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter"),
-            }
 
             model_id = llm_config.model or ""
             matched = False
 
-            # Match by model_id prefix
-            for prefix, (env_key, base_url, prov_name) in _PROVIDER_MAP.items():
-                if prefix in model_id:
-                    api_key = os.environ.get(env_key, "")
+            # Match by model_id → provider via connector registry
+            prov_name = get_provider_for_model(model_id)
+            if prov_name:
+                cfg = get_provider_config(prov_name)
+                if cfg and cfg.get("sdk") == "google-genai":
+                    from sage.llm.google import GoogleProvider
+                    provider = GoogleProvider()
+                    matched = True
+                elif cfg:
+                    api_key = os.environ.get(cfg["api_key_env"], "")
                     if api_key:
                         provider = OpenAICompatProvider(
                             api_key=api_key,
-                            base_url=base_url,
+                            base_url=cfg["base_url"],
                             model_id=model_id,
                             provider_name=prov_name,
                         )
                         matched = True
-                        break
 
-            # Gemini uses native Google SDK (not OpenAI-compatible)
-            if not matched and "gemini" in model_id:
-                from sage.llm.google import GoogleProvider
-                provider = GoogleProvider()
-                matched = True
-
-            # Fallback: try providers in priority order
+            # Fallback: try available providers in connector config order
             if not matched:
-                # Fallback priority: cheapest/most reliable first
-                # Models updated March 31, 2026
-                _FALLBACK_ORDER = [
-                    ("DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "deepseek", "deepseek-chat"),
-                    ("GOOGLE_API_KEY", None, "google", None),
-                    ("OPENAI_API_KEY", "https://api.openai.com/v1", "openai", "gpt-5.4"),
-                    ("GROK_API_KEY", "https://api.x.ai/v1", "xai", "grok-4-1-fast-reasoning"),
-                    ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi", "kimi-k2.5"),
-                    ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax", "minimax-m2.7"),
-                    ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter", "qwen/qwen3.5-plus-02-15"),
-                ]
-                for env_key, base_url, prov_name, default_model in _FALLBACK_ORDER:
-                    api_key = os.environ.get(env_key, "")
-                    if api_key:
-                        if prov_name == "google":
-                            from sage.llm.google import GoogleProvider
-                            provider = GoogleProvider()
-                        else:
-                            provider = OpenAICompatProvider(
-                                api_key=api_key,
-                                base_url=base_url,
-                                model_id=default_model,
-                                provider_name=prov_name,
-                            )
-                        matched = True
-                        _log.info("Provider fallback: %s (%s)", prov_name, default_model or "native")
-                        break
+                for cfg in get_available_providers():
+                    api_key = os.environ.get(cfg["api_key_env"], "")
+                    if cfg.get("sdk") == "google-genai":
+                        from sage.llm.google import GoogleProvider
+                        provider = GoogleProvider()
+                    else:
+                        provider = OpenAICompatProvider(
+                            api_key=api_key,
+                            base_url=cfg["base_url"],
+                            model_id=cfg.get("default_model", ""),
+                            provider_name=cfg["provider"],
+                        )
+                    matched = True
+                    _log.info("Provider fallback: %s (%s)",
+                              cfg["provider"], cfg.get("default_model", "native"))
+                    break
 
                 if not matched:
                     raise RuntimeError(
                         "No LLM provider available. Set at least one API key: "
-                        "DEEPSEEK_API_KEY, GOOGLE_API_KEY, OPENAI_API_KEY, GROK_API_KEY, "
-                        "KIMI_API_KEY, MINIMAX_API_KEY, or OPEN_ROUTER_API_KEY"
+                        + ", ".join(c["api_key_env"] for c in PROVIDER_CONFIGS)
                     )
 
     # Components

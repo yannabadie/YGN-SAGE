@@ -56,43 +56,54 @@ def _write_cache(
 # sdk: "google-genai" uses the google.genai client; "openai" uses openai.OpenAI.
 # hardcoded_models: skip API discovery and use these model IDs instead.
 
+# ── SINGLE SOURCE OF TRUTH for all provider configurations ──────────────────
+# Every file that needs provider URLs, API key env vars, or default models
+# MUST import from here. Do NOT hardcode URLs elsewhere.
+# Updated: March 31, 2026
+
 PROVIDER_CONFIGS: list[dict[str, Any]] = [
+    {
+        "provider": "deepseek",
+        "api_key_env": "DEEPSEEK_API_KEY",
+        "base_url": "https://api.deepseek.com/v1",
+        "sdk": "openai",
+        "default_model": "deepseek-chat",
+    },
     {
         "provider": "google",
         "api_key_env": "GOOGLE_API_KEY",
-        "base_url": None,
+        "base_url": None,  # Uses native google-genai SDK
         "sdk": "google-genai",
+        "default_model": "gemini-3.1-flash-lite-preview",
     },
     {
         "provider": "openai",
         "api_key_env": "OPENAI_API_KEY",
         "base_url": "https://api.openai.com/v1",
         "sdk": "openai",
+        "default_model": "gpt-5.4",
     },
     {
         "provider": "xai",
         "api_key_env": "GROK_API_KEY",
         "base_url": "https://api.x.ai/v1",
         "sdk": "openai",
-    },
-    {
-        "provider": "deepseek",
-        "api_key_env": "DEEPSEEK_API_KEY",
-        "base_url": "https://api.deepseek.com",
-        "sdk": "openai",
-    },
-    {
-        "provider": "minimax",
-        "api_key_env": "MINIMAX_API_KEY",
-        "base_url": "https://api.minimaxi.chat/v1",
-        "sdk": "openai",
-        "hardcoded_models": ["minimax-m2.7", "MiniMax-M2.5", "MiniMax-M2.5-highspeed"],
+        "default_model": "grok-4-1-fast-reasoning",
     },
     {
         "provider": "kimi",
         "api_key_env": "KIMI_API_KEY",
         "base_url": "https://api.moonshot.ai/v1",
         "sdk": "openai",
+        "default_model": "kimi-k2.5",
+    },
+    {
+        "provider": "minimax",
+        "api_key_env": "MINIMAX_API_KEY",
+        "base_url": "https://api.minimax.io/v1",
+        "sdk": "openai",
+        "default_model": "minimax-m2.7",
+        "hardcoded_models": ["minimax-m2.7"],
     },
     {
         "provider": "openrouter",
@@ -102,6 +113,63 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "hardcoded_models": ["qwen/qwen3.5-plus-02-15"],
     },
 ]
+
+# ── Helper functions — USE THESE instead of hardcoding URLs ────────────────
+
+_CONFIG_BY_PROVIDER: dict[str, dict[str, Any]] = {
+    cfg["provider"]: cfg for cfg in PROVIDER_CONFIGS
+}
+
+# Model prefix → provider name (for routing by model_id)
+_MODEL_PREFIX_TO_PROVIDER: dict[str, str] = {
+    "deepseek": "deepseek",
+    "gpt-": "openai",
+    "grok": "xai",
+    "gemini": "google",
+    "kimi": "kimi",
+    "minimax": "minimax",
+    "MiniMax": "minimax",
+    "qwen": "openrouter",
+}
+
+
+def get_provider_config(provider: str) -> dict[str, Any] | None:
+    """Get config for a provider by name. Returns None if unknown."""
+    return _CONFIG_BY_PROVIDER.get(provider)
+
+
+def get_provider_for_model(model_id: str) -> str | None:
+    """Infer provider name from model_id prefix. Returns None if unknown."""
+    for prefix, provider in _MODEL_PREFIX_TO_PROVIDER.items():
+        if prefix in model_id:
+            return provider
+    return None
+
+
+def get_base_url(provider: str) -> str | None:
+    """Get the API base URL for a provider. None for Google (native SDK)."""
+    cfg = _CONFIG_BY_PROVIDER.get(provider)
+    return cfg["base_url"] if cfg else None
+
+
+def get_api_key_env(provider: str) -> str | None:
+    """Get the env var name for a provider's API key."""
+    cfg = _CONFIG_BY_PROVIDER.get(provider)
+    return cfg["api_key_env"] if cfg else None
+
+
+def get_default_model(provider: str) -> str | None:
+    """Get the default model for a provider."""
+    cfg = _CONFIG_BY_PROVIDER.get(provider)
+    return cfg.get("default_model") if cfg else None
+
+
+def get_available_providers() -> list[dict[str, Any]]:
+    """Return configs for all providers that have an API key set."""
+    return [
+        cfg for cfg in PROVIDER_CONFIGS
+        if os.environ.get(cfg["api_key_env"])
+    ]
 
 
 @dataclass
