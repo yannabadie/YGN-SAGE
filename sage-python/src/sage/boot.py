@@ -561,47 +561,82 @@ def boot_agent_system(
             provider = CodexProvider()
         else:
             # Route to correct provider based on model_id
-            # Rust-first: model_id determines provider, not hardcoded Google
+            # All 7 providers from .env are supported (OpenAI-compatible where possible)
             from sage.providers.openai_compat import OpenAICompatProvider
+
+            # Provider registry: model_id prefix → (env_key, base_url, provider_name)
+            # Provider registry: model_id prefix → (env_key, base_url, provider_name)
+            # Updated March 31, 2026 — all 7 providers from .env
+            _PROVIDER_MAP = {
+                "deepseek": ("DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "deepseek"),
+                "gpt-": ("OPENAI_API_KEY", "https://api.openai.com/v1", "openai"),
+                "grok": ("GROK_API_KEY", "https://api.x.ai/v1", "xai"),
+                "kimi": ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi"),
+                "minimax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
+                "MiniMax": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
+                "abab": ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax"),
+                "qwen": ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter"),
+            }
+
             model_id = llm_config.model or ""
-            if "deepseek" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-                    base_url="https://api.deepseek.com/v1",
-                    model_id=model_id,
-                    provider_name="deepseek",
-                )
-            elif "gpt-" in model_id or "o1" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("OPENAI_API_KEY", ""),
-                    base_url="https://api.openai.com/v1",
-                    model_id=model_id,
-                    provider_name="openai",
-                )
-            elif "grok" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("GROK_API_KEY", ""),
-                    base_url="https://api.x.ai/v1",
-                    model_id=model_id,
-                    provider_name="xai",
-                )
-            elif "gemini" in model_id:
+            matched = False
+
+            # Match by model_id prefix
+            for prefix, (env_key, base_url, prov_name) in _PROVIDER_MAP.items():
+                if prefix in model_id:
+                    api_key = os.environ.get(env_key, "")
+                    if api_key:
+                        provider = OpenAICompatProvider(
+                            api_key=api_key,
+                            base_url=base_url,
+                            model_id=model_id,
+                            provider_name=prov_name,
+                        )
+                        matched = True
+                        break
+
+            # Gemini uses native Google SDK (not OpenAI-compatible)
+            if not matched and "gemini" in model_id:
                 from sage.llm.google import GoogleProvider
                 provider = GoogleProvider()
-            else:
-                # Default: Google if available, else DeepSeek
-                if os.environ.get("GOOGLE_API_KEY"):
-                    from sage.llm.google import GoogleProvider
-                    provider = GoogleProvider()
-                elif os.environ.get("DEEPSEEK_API_KEY"):
-                    provider = OpenAICompatProvider(
-                        api_key=os.environ["DEEPSEEK_API_KEY"],
-                        base_url="https://api.deepseek.com/v1",
-                        model_id="deepseek-chat",
-                        provider_name="deepseek",
+                matched = True
+
+            # Fallback: try providers in priority order
+            if not matched:
+                # Fallback priority: cheapest/most reliable first
+                # Models updated March 31, 2026
+                _FALLBACK_ORDER = [
+                    ("DEEPSEEK_API_KEY", "https://api.deepseek.com/v1", "deepseek", "deepseek-chat"),
+                    ("GOOGLE_API_KEY", None, "google", None),
+                    ("OPENAI_API_KEY", "https://api.openai.com/v1", "openai", "gpt-5.4"),
+                    ("GROK_API_KEY", "https://api.x.ai/v1", "xai", "grok-4-1-fast-reasoning"),
+                    ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi", "kimi-k2.5"),
+                    ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax", "MiniMax-Text-01"),
+                    ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter", "qwen/qwen3.5-plus-02-15"),
+                ]
+                for env_key, base_url, prov_name, default_model in _FALLBACK_ORDER:
+                    api_key = os.environ.get(env_key, "")
+                    if api_key:
+                        if prov_name == "google":
+                            from sage.llm.google import GoogleProvider
+                            provider = GoogleProvider()
+                        else:
+                            provider = OpenAICompatProvider(
+                                api_key=api_key,
+                                base_url=base_url,
+                                model_id=default_model,
+                                provider_name=prov_name,
+                            )
+                        matched = True
+                        _log.info("Provider fallback: %s (%s)", prov_name, default_model or "native")
+                        break
+
+                if not matched:
+                    raise RuntimeError(
+                        "No LLM provider available. Set at least one API key: "
+                        "DEEPSEEK_API_KEY, GOOGLE_API_KEY, OPENAI_API_KEY, GROK_API_KEY, "
+                        "KIMI_API_KEY, MINIMAX_API_KEY, or OPEN_ROUTER_API_KEY"
                     )
-                else:
-                    raise RuntimeError("No LLM provider available.")
 
     # Components
     tool_registry = ToolRegistry()
