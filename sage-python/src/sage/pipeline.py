@@ -91,6 +91,8 @@ class CognitiveOrchestrationPipeline:
         controller: Any = None,
         smmu: Any = None,
         consolidator: Any = None,
+        working_memory: Any = None,
+        episodic_memory: Any = None,
         tool_forge: Any = None,
     ) -> None:
         self.router = router
@@ -106,8 +108,62 @@ class CognitiveOrchestrationPipeline:
         self.controller = controller
         self._smmu = smmu
         self.consolidator = consolidator
+        self.working_memory = working_memory
+        self.episodic_memory = episodic_memory
         self.tool_forge = tool_forge
         self._task_count = 0
+
+    def _record_to_memory(self, ctx: PipelineContext) -> None:
+        """Write execution trace to Tier 0 (working memory) and Tier 1 (episodic).
+
+        This closes the gap where the pipeline bypassed memory entirely.
+        The consolidator (Stage 5) then migrates episodic→semantic→causal.
+        """
+        # Tier 0: Working memory S-MMU events
+        if self.working_memory:
+            try:
+                self.working_memory.add_event("TASK", ctx.task[:500])
+                self.working_memory.add_event(
+                    "TOPOLOGY",
+                    f"system=S{ctx.system}, nodes={ctx.topology.node_count() if ctx.topology and hasattr(ctx.topology, 'node_count') else 0}, "
+                    f"assignments={ctx.assignments}",
+                )
+                self.working_memory.add_event(
+                    "RESULT",
+                    ctx.result[:500] if ctx.result else "empty",
+                )
+                self.working_memory.add_event(
+                    "METRICS",
+                    f"latency={ctx.latency_ms:.0f}ms, cost={ctx.cost:.4f}, path={getattr(self, '_last_path', 'pipeline')}",
+                )
+                # Compact to Arrow chunk for S-MMU graph storage
+                if self.working_memory.event_count() >= 4:
+                    self.working_memory.compact_to_arrow()
+            except Exception as exc:
+                log.debug("Memory write (Tier 0) failed: %s", exc)
+
+        # Tier 1: Episodic memory (persistent SQLite)
+        if self.episodic_memory:
+            try:
+                import asyncio
+                entry = {
+                    "task": ctx.task[:200],
+                    "system": ctx.system,
+                    "topology_nodes": ctx.topology.node_count() if ctx.topology and hasattr(ctx.topology, 'node_count') else 0,
+                    "assignments": str(ctx.assignments),
+                    "result_len": len(ctx.result) if ctx.result else 0,
+                    "latency_ms": ctx.latency_ms,
+                    "cost": ctx.cost,
+                }
+                import json
+                content = json.dumps(entry, default=str)
+                # Use sync add if available, else async
+                if hasattr(self.episodic_memory, 'add'):
+                    self.episodic_memory.add(key=f"pipeline-{self._task_count}", content=content)
+                elif hasattr(self.episodic_memory, 'add_episode'):
+                    self.episodic_memory.add_episode(key=f"pipeline-{self._task_count}", content=content)
+            except Exception as exc:
+                log.debug("Memory write (Tier 1) failed: %s", exc)
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available."""
@@ -177,6 +233,9 @@ class CognitiveOrchestrationPipeline:
         # Stage 4: EXECUTE
         ctx = await self._stage_execute(ctx)
         ctx.latency_ms = (time.monotonic() - t0) * 1000
+
+        # Write execution trace to memory (Tier 0 + Tier 1)
+        self._record_to_memory(ctx)
 
         # Stage 5: LEARN
         await self._stage_learn(ctx)

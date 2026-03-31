@@ -1,0 +1,9 @@
+sage-python/models/toolcall_qwen3_4b/sft_checkpoint/checkpoint-*/
+sage-python/models/toolcall_qwen3_4b_phase_c/sft_checkpoint/checkpoint-*/
+*.pt
+# Model checkpoints (on HuggingFace, not GitHub)
+sage-python/models/toolcall_qwen3_4b/
+sage-python/models/toolcall_qwen3_4b_phase_c/
+*.safetensors
+*.pt
+*.pth

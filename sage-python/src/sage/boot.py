@@ -1140,6 +1140,8 @@ def boot_agent_system(
                 llm_provider=provider,
                 llm_config=llm_config,
                 consolidator=consolidator,  # Inter-tier memory consolidation (MAGMA)
+                working_memory=loop.working_memory,  # Tier 0: S-MMU events
+                episodic_memory=episodic_memory,      # Tier 1: cross-session persistence
             )
             _log.info("CognitiveOrchestrationPipeline initialized")
         except Exception as exc:

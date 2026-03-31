@@ -12,34 +12,34 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// Build a sequential pipeline: input_processor -> worker -> output_formatter.
-///
-/// Each node gets a different cognitive system tier so ModelAssigner
-/// picks diverse models/providers (S1=fast, S2=deliberate, S1=fast).
 pub fn sequential(model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
 
+    // Each node has a different system tier so ModelAssigner picks different
+    // models/providers → real multi-provider execution.
+    // model_id="" forces ModelAssigner to assign based on system tier.
     let n0 = TopologyNode::new(
-        "input_processor".into(),
-        model_id.into(),
-        1, // S1: fast preprocessing
+        "planner".into(),
+        "".into(),  // ModelAssigner will assign based on system=1 (fast/budget)
+        1,
         vec!["text_processing".into()],
         0,
         0.5,
         60.0,
     );
     let n1 = TopologyNode::new(
-        "worker".into(),
-        model_id.into(),
-        2, // S2: deliberate reasoning
-        vec!["reasoning".into()],
+        "coder".into(),
+        "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
+        2,
+        vec!["reasoning".into(), "tools".into()],
         0,
         1.0,
         120.0,
     );
     let n2 = TopologyNode::new(
-        "output_formatter".into(),
-        model_id.into(),
-        1, // S1: fast formatting
+        "synthesizer".into(),
+        "".into(),  // ModelAssigner will assign based on system=1 (fast)
+        1,
         vec!["text_processing".into()],
         0,
         0.5,
@@ -126,24 +126,23 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
 /// Forward path: actor -> verifier -> output (control edges).
 /// Back-edge: verifier -> actor (control, gate=Closed) for repair.
 /// Message edge: actor -> verifier with {"code" -> "review_input"}.
-///
-/// Differentiated tiers: actor=S2 (codex), verifier=S3 (formal), output=S1 (fast).
 pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("avr").unwrap();
 
+    // Actor (S3 reasoner) and verifier (S2 fast) get different models/providers
     let actor = TopologyNode::new(
         "actor".into(),
-        actor_model.into(),
-        2, // S2: deliberate code generation
-        vec!["code_generation".into()],
+        "".into(),  // ModelAssigner: S3 → reasoner model
+        3,
+        vec!["code_generation".into(), "tools".into()],
         0,
         1.5,
         120.0,
     );
     let verifier = TopologyNode::new(
         "verifier".into(),
-        reviewer_model.into(),
-        3, // S3: formal verification/review
+        "".into(),  // ModelAssigner: S2 → fast model
+        2,
         vec!["code_review".into()],
         0,
         1.0,
@@ -151,8 +150,8 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     );
     let output = TopologyNode::new(
         "output".into(),
-        actor_model.into(),
-        1, // S1: fast formatting
+        "".into(),  // ModelAssigner: S1 → budget model
+        1,
         vec!["text_processing".into()],
         0,
         0.5,
@@ -354,14 +353,13 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
 ///
 /// topic_setter fans out to debater_a and debater_b in parallel,
 /// both send their arguments to a judge node.
-/// Differentiated tiers: topic=S1, debaters=S2, judge=S3.
 pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("debate").unwrap();
 
     let topic = TopologyNode::new(
         "topic_setter".into(),
         debater_model.into(),
-        1, // S1: fast setup
+        1,
         vec!["text_processing".into()],
         0,
         0.5,
@@ -370,7 +368,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let debater_a = TopologyNode::new(
         "debater_a".into(),
         debater_model.into(),
-        2, // S2: deliberate reasoning
+        2,
         vec!["reasoning".into()],
         0,
         1.0,
@@ -379,7 +377,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let debater_b = TopologyNode::new(
         "debater_b".into(),
         debater_model.into(),
-        2, // S2: deliberate reasoning
+        2,
         vec!["reasoning".into()],
         0,
         1.0,
@@ -388,7 +386,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let judge = TopologyNode::new(
         "judge".into(),
         judge_model.into(),
-        3, // S3: formal evaluation
+        2,
         vec!["evaluation".into()],
         0,
         1.0,
