@@ -78,8 +78,30 @@ class MemoryAgent:
         config = ModelRouter.get_config(
             self.llm_tier, temperature=0.1, json_schema=KGExtraction,
         )
+        # Fix: ensure provider matches config.model (Bug #2: was sending
+        # deepseek-chat to Google endpoint → 404).
+        # Use ProviderPool resolution if available, else match provider to model.
         if self._llm_provider is not None:
-            provider = self._llm_provider
+            from sage.providers.connector import get_provider_for_model, get_provider_config
+            inferred_prov = get_provider_for_model(config.model or "")
+            if inferred_prov and inferred_prov != getattr(self._llm_provider, 'provider_name', ''):
+                # Model doesn't match default provider → resolve correctly
+                cfg = get_provider_config(inferred_prov)
+                if cfg and cfg.get("sdk") != "google-genai":
+                    import os
+                    from sage.providers.openai_compat import OpenAICompatProvider
+                    api_key = os.environ.get(cfg["api_key_env"], "")
+                    if api_key:
+                        provider = OpenAICompatProvider(
+                            api_key=api_key, base_url=cfg["base_url"],
+                            provider_name=inferred_prov,
+                        )
+                    else:
+                        provider = self._llm_provider
+                else:
+                    provider = self._llm_provider
+            else:
+                provider = self._llm_provider
         else:
             try:
                 from sage.llm.google import GoogleProvider
