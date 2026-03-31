@@ -511,36 +511,63 @@ class SageTopologyEnv:
     # ------------------------------------------------------------------
 
     # ── Multi-provider tier→provider mapping ──
-    # Maps model_tier from training data to real provider configs.
-    # Each tier maps to a different provider for true multi-provider execution.
-    _TIER_PROVIDER_MAP = {
-        "budget": "deepseek",      # $0.28/M — cheapest
-        "fast": "google",          # Gemini Flash — lowest latency
-        "balanced": "xai",         # Grok — 2M context, mid-tier
-        "reasoner": "openai",      # GPT-5.4 — strong reasoning
-        "codex": "openai",         # GPT-5.4 — best coding
+    # Each tier has a RANKED list of (provider, model) pairs.
+    # First available provider (with API key set) is used.
+    # This ensures all 7 providers and 20+ models are leveraged.
+    _TIER_PROVIDERS = {
+        "budget": [
+            ("deepseek", "deepseek-chat"),          # $0.28/M
+            ("kimi", "kimi-k2.5"),                   # $0.60/M
+            ("minimax", "minimax-m2.7"),              # $0.30/M
+            ("openrouter", "qwen/qwen3.5-plus-02-15"),  # $0.26/M
+        ],
+        "fast": [
+            ("google", "gemini-3.1-flash-lite-preview"),  # $0.025/M, 379 tok/s
+            ("google", "gemini-2.5-flash"),                # $0.015/M
+            ("deepseek", "deepseek-chat"),                  # fast fallback
+            ("xai", "grok-4-1-fast-reasoning"),            # $0.20/M
+        ],
+        "balanced": [
+            ("xai", "grok-4-1-fast-reasoning"),     # $0.20/M, 2M ctx
+            ("minimax", "minimax-m2.7"),              # $0.30/M, self-evolving
+            ("openrouter", "qwen/qwen3.5-plus-02-15"),  # $0.26/M
+            ("kimi", "kimi-k2.5"),                   # $0.60/M, strong reasoning
+            ("deepseek", "deepseek-chat"),            # fallback
+        ],
+        "reasoner": [
+            ("openai", "gpt-5.4"),                   # $2.50/M, SOTA reasoning
+            ("google", "gemini-3.1-pro-preview"),     # $1.25/M, strong
+            ("kimi", "kimi-k2.5"),                   # $0.60/M, reasoning tier
+            ("deepseek", "deepseek-reasoner"),        # $0.28/M, R1-style
+            ("xai", "grok-4-1-fast-reasoning"),      # fallback
+        ],
+        "codex": [
+            ("openai", "gpt-5.4"),                   # SOTA coding
+            ("google", "gemini-3.1-pro-preview"),     # strong code
+            ("xai", "grok-code-fast-1"),             # code-specific
+            ("deepseek", "deepseek-chat"),            # good at code
+        ],
     }
-    # Fallback order if preferred provider unavailable
-    _PROVIDER_FALLBACK = ["deepseek", "google", "openai", "xai", "kimi", "minimax", "openrouter"]
 
     def _resolve_provider_for_tier(self, model_tier: str):
-        """Resolve model_tier to (provider, model_id, base_url, api_key)."""
+        """Resolve model_tier to (provider, model_id, base_url, api_key).
+
+        Tries each provider in the tier's ranked list until one with
+        a valid API key is found. Returns (None, None, None, None) if none available.
+        """
         from sage.providers.connector import PROVIDER_CONFIGS
         import os
 
-        # Preferred provider for this tier
-        preferred = self._TIER_PROVIDER_MAP.get(model_tier, "deepseek")
-        order = [preferred] + [p for p in self._PROVIDER_FALLBACK if p != preferred]
+        candidates = self._TIER_PROVIDERS.get(model_tier, self._TIER_PROVIDERS["budget"])
 
-        for prov_name in order:
+        for prov_name, model_id in candidates:
             cfg = next((c for c in PROVIDER_CONFIGS if c["provider"] == prov_name), None)
             if cfg is None:
                 continue
             api_key = os.environ.get(cfg["api_key_env"], "")
             if not api_key:
                 continue
-            model_id = cfg.get("default_model", "")
-            return cfg["provider"], model_id, cfg["base_url"], api_key
+            return prov_name, model_id, cfg["base_url"], api_key
 
         return None, None, None, None
 
