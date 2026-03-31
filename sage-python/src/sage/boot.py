@@ -561,47 +561,59 @@ def boot_agent_system(
             provider = CodexProvider()
         else:
             # Route to correct provider based on model_id
-            # Rust-first: model_id determines provider, not hardcoded Google
+            # All URLs from connector.py (single source of truth)
+            from sage.providers.connector import (
+                get_provider_for_model, get_provider_config,
+                get_available_providers, PROVIDER_CONFIGS,
+            )
             from sage.providers.openai_compat import OpenAICompatProvider
+
             model_id = llm_config.model or ""
-            if "deepseek" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-                    base_url="https://api.deepseek.com/v1",
-                    model_id=model_id,
-                    provider_name="deepseek",
-                )
-            elif "gpt-" in model_id or "o1" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("OPENAI_API_KEY", ""),
-                    base_url="https://api.openai.com/v1",
-                    model_id=model_id,
-                    provider_name="openai",
-                )
-            elif "grok" in model_id:
-                provider = OpenAICompatProvider(
-                    api_key=os.environ.get("GROK_API_KEY", ""),
-                    base_url="https://api.x.ai/v1",
-                    model_id=model_id,
-                    provider_name="xai",
-                )
-            elif "gemini" in model_id:
-                from sage.llm.google import GoogleProvider
-                provider = GoogleProvider()
-            else:
-                # Default: Google if available, else DeepSeek
-                if os.environ.get("GOOGLE_API_KEY"):
+            matched = False
+
+            # Match by model_id → provider via connector registry
+            prov_name = get_provider_for_model(model_id)
+            if prov_name:
+                cfg = get_provider_config(prov_name)
+                if cfg and cfg.get("sdk") == "google-genai":
                     from sage.llm.google import GoogleProvider
                     provider = GoogleProvider()
-                elif os.environ.get("DEEPSEEK_API_KEY"):
-                    provider = OpenAICompatProvider(
-                        api_key=os.environ["DEEPSEEK_API_KEY"],
-                        base_url="https://api.deepseek.com/v1",
-                        model_id="deepseek-chat",
-                        provider_name="deepseek",
+                    matched = True
+                elif cfg:
+                    api_key = os.environ.get(cfg["api_key_env"], "")
+                    if api_key:
+                        provider = OpenAICompatProvider(
+                            api_key=api_key,
+                            base_url=cfg["base_url"],
+                            model_id=model_id,
+                            provider_name=prov_name,
+                        )
+                        matched = True
+
+            # Fallback: try available providers in connector config order
+            if not matched:
+                for cfg in get_available_providers():
+                    api_key = os.environ.get(cfg["api_key_env"], "")
+                    if cfg.get("sdk") == "google-genai":
+                        from sage.llm.google import GoogleProvider
+                        provider = GoogleProvider()
+                    else:
+                        provider = OpenAICompatProvider(
+                            api_key=api_key,
+                            base_url=cfg["base_url"],
+                            model_id=cfg.get("default_model", ""),
+                            provider_name=cfg["provider"],
+                        )
+                    matched = True
+                    _log.info("Provider fallback: %s (%s)",
+                              cfg["provider"], cfg.get("default_model", "native"))
+                    break
+
+                if not matched:
+                    raise RuntimeError(
+                        "No LLM provider available. Set at least one API key: "
+                        + ", ".join(c["api_key_env"] for c in PROVIDER_CONFIGS)
                     )
-                else:
-                    raise RuntimeError("No LLM provider available.")
 
     # Components
     tool_registry = ToolRegistry()
