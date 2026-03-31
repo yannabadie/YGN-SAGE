@@ -78,6 +78,15 @@ bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
   - Online evolution: `should_evolve()` in Rust + `evolve()` wired in agent loop (SA-3 complete)
   - 12-dimension Agent Stability Index (arXiv 2601.04170) + BehaviorTracker + AdaptiveMutator (ShinkaEvolve)
   - 81 new tests, 0 regressions
+- **Runtime Pipeline Hardening (March 31)**: 7-axis improvement — see `docs/superpowers/specs/2026-03-31-runtime-pipeline-hardening-design.md`
+  - Fixed `_log` NameError in TopologyRunner code node execution (3 lines)
+  - Cross-platform `sys.executable` fix (8 files, was `"python3"` hardcoded — broken on Windows)
+  - Memory consolidation + causal wiring + persistence now active in pipeline path (was legacy-only)
+  - FrugalGPT cascade now actually upgrades models (exclude_ids + budget escalation, Rust + Python)
+  - Bandit + MAP-Elites state periodic persistence every 10 tasks (was atexit-only)
+  - OxiZ SAT verification warning flag in PipelineContext for Stage 4 observability
+  - **ToolForge**: autonomous tool synthesis — GapDetector + BuildLoop + DualGate (UCT/SMITH pattern, 12 papers)
+  - 29 new tests (100 total with existing 71), 0 regressions
 
 ## Detailed rules in .claude/rules/
 

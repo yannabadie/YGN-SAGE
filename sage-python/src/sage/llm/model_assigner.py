@@ -74,8 +74,22 @@ class ModelAssigner:
                            idx, getattr(node, "role", "?"))
         return assigned
 
-    def assign_single_node(self, graph: Any, node_idx: int, task_domain: str, budget_usd: float) -> str:
-        """Assign a single node. Returns model_id or raises ValueError."""
+    def assign_single_node(
+        self,
+        graph: Any,
+        node_idx: int,
+        task_domain: str,
+        budget_usd: float,
+        exclude_model_ids: list[str] | None = None,
+    ) -> str:
+        """Assign a single node. Returns model_id or raises ValueError.
+
+        Parameters
+        ----------
+        exclude_model_ids : list[str], optional
+            Model IDs to exclude from selection (e.g. for FrugalGPT cascade
+            retry — exclude the model that produced low-quality output).
+        """
         node = graph.get_node(node_idx) if hasattr(graph, 'get_node') else None
         if node is None:
             raise ValueError(f"Node index {node_idx} out of range")
@@ -87,9 +101,12 @@ class ModelAssigner:
         needs_tools = "tools" in caps
         needs_json = "json" in caps
         system = getattr(node, "system", 1)
+        _excluded = set(exclude_model_ids) if exclude_model_ids else set()
 
         best_id, best_score = None, float("-inf")
         for card in cards:
+            if card.id in _excluded:
+                continue
             if needs_tools and not card.supports_tools:
                 continue
             if needs_json and not card.supports_json_mode:

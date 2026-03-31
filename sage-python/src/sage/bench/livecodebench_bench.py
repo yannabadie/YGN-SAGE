@@ -19,6 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from sage._python import PYTHON
 from sage.bench.runner import BenchReport, TaskResult
 
 log = logging.getLogger(__name__)
@@ -307,7 +308,7 @@ class LiveCodeBenchBench:
                 tmp_path = f.name
 
             result = subprocess.run(
-                ["python", tmp_path],
+                [PYTHON, tmp_path],
                 input=inp,
                 capture_output=True,
                 text=True,

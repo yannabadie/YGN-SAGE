@@ -367,39 +367,33 @@ def _get_agent_provider():
     if _AGENT_PROVIDER is not None:
         return _AGENT_PROVIDER, _AGENT_MODEL
 
+    from sage.providers.connector import get_available_providers
     from sage.providers.openai_compat import OpenAICompatProvider
 
-    # Primary: DeepSeek Chat (V3.2, no CoT overhead, no rate limits)
-    key = os.environ.get("DEEPSEEK_API_KEY", "")
-    if key:
+    # Try providers in connector config order (single source of truth)
+    for cfg in get_available_providers():
         try:
-            _AGENT_PROVIDER = OpenAICompatProvider(
-                api_key=key,
-                base_url="https://api.deepseek.com/v1",
-                provider_name="deepseek",
-            )
-            _AGENT_MODEL = "deepseek-chat"
-            log.info("Agent provider: DeepSeek Chat V3.2 (primary, no CoT overhead)")
+            if cfg.get("sdk") == "google-genai":
+                # Google via OpenAI-compat endpoint for execution
+                _AGENT_PROVIDER = OpenAICompatProvider(
+                    api_key=os.environ.get(cfg["api_key_env"], ""),
+                    base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                    provider_name="google",
+                )
+                _AGENT_MODEL = cfg.get("default_model", "gemini-3.1-flash-lite-preview")
+            else:
+                _AGENT_PROVIDER = OpenAICompatProvider(
+                    api_key=os.environ.get(cfg["api_key_env"], ""),
+                    base_url=cfg["base_url"],
+                    provider_name=cfg["provider"],
+                )
+                _AGENT_MODEL = cfg.get("default_model", "")
+            log.info("Agent provider: %s (%s)", cfg["provider"], _AGENT_MODEL)
             return _AGENT_PROVIDER, _AGENT_MODEL
         except Exception:
-            pass
+            continue
 
-    # Fallback: Gemini 3 Flash (rate-limited but fast per call)
-    key = os.environ.get("GOOGLE_API_KEY", "")
-    if key:
-        try:
-            _AGENT_PROVIDER = OpenAICompatProvider(
-                api_key=key,
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-                provider_name="google",
-            )
-            _AGENT_MODEL = "gemini-3-flash-preview"
-            log.info("Agent provider: Gemini 3 Flash (fallback)")
-            return _AGENT_PROVIDER, _AGENT_MODEL
-        except Exception:
-            pass
-
-    log.error("No agent provider available (need DEEPSEEK_API_KEY or GOOGLE_API_KEY)")
+    log.error("No agent provider available — set at least one API key")
     return None, ""
 
 
@@ -409,22 +403,34 @@ _FALLBACK_MODEL = ""
 
 
 def _get_fallback_provider():
-    """Gemini 3 Flash as runtime fallback when DeepSeek fails mid-training."""
+    """Runtime fallback when primary provider fails mid-execution."""
     global _FALLBACK_PROVIDER, _FALLBACK_MODEL
     if _FALLBACK_PROVIDER is not None:
         return _FALLBACK_PROVIDER, _FALLBACK_MODEL
-    key = os.environ.get("GOOGLE_API_KEY", "")
-    if not key:
-        return None, ""
+
+    from sage.providers.connector import get_available_providers
     from sage.providers.openai_compat import OpenAICompatProvider
+
+    # Pick second available provider (first is likely the primary that failed)
+    available = get_available_providers()
+    if len(available) < 2:
+        return None, ""
+    cfg = available[1]
     try:
-        _FALLBACK_PROVIDER = OpenAICompatProvider(
-            api_key=key,
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
-            provider_name="google",
-        )
-        _FALLBACK_MODEL = "gemini-3-flash-preview"
-        log.info("Fallback provider: Gemini 3 Flash")
+        if cfg.get("sdk") == "google-genai":
+            _FALLBACK_PROVIDER = OpenAICompatProvider(
+                api_key=os.environ.get(cfg["api_key_env"], ""),
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+                provider_name="google",
+            )
+        else:
+            _FALLBACK_PROVIDER = OpenAICompatProvider(
+                api_key=os.environ.get(cfg["api_key_env"], ""),
+                base_url=cfg["base_url"],
+                provider_name=cfg["provider"],
+            )
+        _FALLBACK_MODEL = cfg.get("default_model", "")
+        log.info("Fallback provider: %s (%s)", cfg["provider"], _FALLBACK_MODEL)
         return _FALLBACK_PROVIDER, _FALLBACK_MODEL
     except Exception:
         return None, ""

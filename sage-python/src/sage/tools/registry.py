@@ -9,6 +9,7 @@ class ToolRegistry:
 
     def __init__(self) -> None:
         self._tools: dict[str, Tool] = {}
+        self._usage: dict[str, dict] = {}  # name -> {usage_count, success_count, source}
 
     def register(self, tool: Tool) -> None:
         """Register a tool."""
@@ -37,3 +38,24 @@ class ToolRegistry:
         if names is None:
             return [t.spec for t in self._tools.values()]
         return [self._tools[n].spec for n in names if n in self._tools]
+
+    # ── Usage tracking (ToolForge axis) ────────────────────────────────────
+
+    def record_usage(self, name: str, success: bool = True) -> None:
+        """Record a tool invocation for usage tracking."""
+        if name not in self._usage:
+            self._usage[name] = {"usage_count": 0, "success_count": 0, "source": "builtin"}
+        self._usage[name]["usage_count"] += 1
+        if success:
+            self._usage[name]["success_count"] += 1
+
+    def get_usage(self, name: str) -> dict:
+        """Get usage stats for a tool. Returns default dict if unknown."""
+        return self._usage.get(name, {"usage_count": 0, "success_count": 0, "source": "builtin"})
+
+    def mark_source(self, name: str, source: str) -> None:
+        """Mark the origin of a tool (builtin, forged, user)."""
+        if name not in self._usage:
+            self._usage[name] = {"usage_count": 0, "success_count": 0, "source": source}
+        else:
+            self._usage[name]["source"] = source

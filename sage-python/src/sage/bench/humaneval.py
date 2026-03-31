@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from sage._python import PYTHON
 from sage.bench.runner import BenchReport, TaskResult
 from sage.bench.truth_pack import BenchmarkManifest, TaskTrace
 
@@ -90,7 +91,7 @@ def run_test(
 
     try:
         result = subprocess.run(
-            ["python", tmp_path],
+            [PYTHON, tmp_path],
             capture_output=True,
             text=True,
             timeout=timeout,

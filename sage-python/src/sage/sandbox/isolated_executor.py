@@ -13,6 +13,8 @@ import shutil
 import subprocess
 import tempfile
 
+from sage._python import PYTHON
+
 log = logging.getLogger("isolated_executor")
 
 BWRAP_AVAILABLE = platform.system() == "Linux" and shutil.which("bwrap") is not None
@@ -52,11 +54,11 @@ def execute_isolated(code: str, timeout: int = 30) -> tuple[str, str, int]:
                 "--dev", "/dev",        # Mount /dev
                 "--die-with-parent",    # Kill if parent dies
                 "--",
-                "python3", script_path,
+                PYTHON, script_path,
             ]
             log.debug("Executing in bwrap sandbox: %s", script_path)
         else:
-            cmd = ["python3", script_path]
+            cmd = [PYTHON, script_path]
             if not hasattr(execute_isolated, "_warned"):
                 log.warning(
                     "bwrap not available on %s — running without OS-level isolation",

@@ -14,6 +14,7 @@ import asyncio
 import logging
 from typing import Any
 
+from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 
 log = logging.getLogger(__name__)
@@ -119,7 +120,7 @@ class TopologyRunner:
         code_spec = getattr(node, "code_spec", "") or getattr(node, "prompt", "")
 
         if not code_spec:
-            _log.error("Code node %d (%s) has no code_spec", node_idx, role)
+            log.error("Code node %d (%s) has no code_spec", node_idx, role)
             return f"ERROR: code node {node_idx} has no code_spec"
 
         context = (
@@ -146,7 +147,7 @@ class TopologyRunner:
             import subprocess
             try:
                 proc = subprocess.run(
-                    ["python", "-c", wrapped_code],
+                    [PYTHON, "-c", wrapped_code],
                     capture_output=True, text=True, timeout=30,
                 )
                 output = proc.stdout
@@ -164,12 +165,12 @@ class TopologyRunner:
         latency_ms = (time.monotonic() - t0) * 1000
 
         if stderr and exit_code != 0:
-            _log.warning(
+            log.warning(
                 "Code node %d (%s) failed (exit=%d, %.0fms): %s",
                 node_idx, role, exit_code, latency_ms, stderr[:200],
             )
         else:
-            _log.info(
+            log.info(
                 "Code node %d (%s) completed (%.0fms, %d chars output)",
                 node_idx, role, latency_ms, len(output),
             )
@@ -252,19 +253,22 @@ class TopologyRunner:
                 "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
                 node_idx, role, provider_name, str(exc)[:150],
             )
-            # Fallback to DeepSeek (most reliable, no rate limits)
+            # Fallback to first available provider (connector.py = source of truth)
             if provider is not self._llm:
                 try:
                     import os
+                    from sage.providers.connector import get_available_providers
                     from sage.providers.openai_compat import OpenAICompatProvider
-                    ds_key = os.environ.get("DEEPSEEK_API_KEY", "")
-                    if ds_key:
+                    fallback_cfgs = get_available_providers()
+                    fallback_cfg = fallback_cfgs[0] if fallback_cfgs else None
+                    if fallback_cfg and fallback_cfg.get("sdk") != "google-genai":
                         fallback_provider = OpenAICompatProvider(
-                            api_key=ds_key,
-                            base_url="https://api.deepseek.com/v1",
-                            provider_name="deepseek",
+                            api_key=os.environ.get(fallback_cfg["api_key_env"], ""),
+                            base_url=fallback_cfg["base_url"],
+                            provider_name=fallback_cfg["provider"],
                         )
-                        fallback_config = LLMConfig(provider="deepseek", model="deepseek-chat")
+                        fallback_model = fallback_cfg.get("default_model", "")
+                        fallback_config = LLMConfig(provider=fallback_cfg["provider"], model=fallback_model)
                         response = await fallback_provider.generate(
                             messages=messages,
                             config=fallback_config,
@@ -276,8 +280,8 @@ class TopologyRunner:
                         )
                     output = response.content or ""
                     log.info(
-                        "[TopologyRunner] node %d (%s) succeeded with fallback (deepseek)",
-                        node_idx, role,
+                        "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
+                        node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
                     )
                 except Exception as fallback_exc:
                     log.error(

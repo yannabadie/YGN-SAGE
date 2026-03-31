@@ -423,6 +423,13 @@ class AgentLoop:
         """Execute a tool call with argument validation."""
         tool = self._tools.get(tc.name)
         if tool is None:
+            # Emit TOOL_GAP for ToolForge gap detection
+            self._emit(
+                LoopPhase.ACT,
+                tool_gap=True,
+                tool_name=tc.name,
+                tool_args=tc.arguments,
+            )
             return f"Error: Unknown tool '{tc.name}'"
         kwargs = tc.arguments
         if not isinstance(kwargs, dict):

@@ -48,6 +48,7 @@ class PipelineContext:
     latency_ms: float = 0.0
     cost: float = 0.0
     bandit_decision_id: str | None = None
+    verification_passed: bool = True
 
 
 class CognitiveOrchestrationPipeline:
@@ -89,6 +90,8 @@ class CognitiveOrchestrationPipeline:
         prm: Any = None,
         controller: Any = None,
         smmu: Any = None,
+        consolidator: Any = None,
+        tool_forge: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -102,6 +105,9 @@ class CognitiveOrchestrationPipeline:
         self.prm = prm
         self.controller = controller
         self._smmu = smmu
+        self.consolidator = consolidator
+        self.tool_forge = tool_forge
+        self._task_count = 0
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available."""
@@ -173,7 +179,7 @@ class CognitiveOrchestrationPipeline:
         ctx.latency_ms = (time.monotonic() - t0) * 1000
 
         # Stage 5: LEARN
-        self._stage_learn(ctx)
+        await self._stage_learn(ctx)
         self._emit("LEARN", {"latency_ms": ctx.latency_ms})
 
         return ctx.result
@@ -650,6 +656,7 @@ class CognitiveOrchestrationPipeline:
             return
 
         if not verdict.satisfied:
+            ctx.verification_passed = False
             log.warning(
                 "Stage 3 formal provider assignment verification FAILED "
                 "(non-blocking): %s",
@@ -691,6 +698,10 @@ class CognitiveOrchestrationPipeline:
                 ctx.bandit_decision_id = decision.decision_id
             except Exception:
                 pass
+
+        if not ctx.verification_passed:
+            log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
+            self._emit("EXECUTE_UNVERIFIED", {"reason": "SAT check failed in Stage 3"})
 
         # Single-agent mode (no topology or single node)
         if ctx.topology is None or (
@@ -778,14 +789,20 @@ class CognitiveOrchestrationPipeline:
                 quality = self.quality_estimator.estimate(ctx.task, result)
                 if quality is not None and quality < 0.3 and self.assigner:
                     log.info("Stage 4: quality=%.2f < 0.3, triggering FrugalGPT cascade retry", quality)
-                    # Reassign with higher budget models
+                    # Reassign with upgraded models (exclude current + budget escalation)
                     try:
                         if hasattr(ctx.topology, 'node_count'):
                             for i in range(ctx.topology.node_count()):
                                 if self.assigner and hasattr(self.assigner, 'assign_single_node'):
-                                    self.assigner.assign_single_node(
-                                        ctx.topology, i, ctx.domain, ctx.budget
-                                    )
+                                    current_model = ctx.assignments.get(i, "")
+                                    try:
+                                        self.assigner.assign_single_node(
+                                            ctx.topology, i, ctx.domain,
+                                            ctx.budget * 1.5,  # Budget escalation
+                                            exclude_model_ids=[current_model] if current_model else None,
+                                        )
+                                    except (ValueError, Exception):
+                                        pass  # Keep current model if no upgrade available
                         # Re-execute with upgraded models
                         from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                         executor2 = _TE(ctx.topology)
@@ -827,7 +844,7 @@ class CognitiveOrchestrationPipeline:
 
     # ── Stage 5: Learn ──────────────────────────────────────────────────────
 
-    def _stage_learn(self, ctx: PipelineContext) -> None:
+    async def _stage_learn(self, ctx: PipelineContext) -> None:
         """Stage 5: Record outcome for learning.
 
         Quality signal for bandit feedback (ETH-SRI ICLR '25, PILOT 2508.21141):
@@ -907,3 +924,33 @@ class CognitiveOrchestrationPipeline:
                     )
             except Exception as exc:
                 log.debug("Evolution feedback failed: %s", exc)
+
+        # ── Periodic maintenance ───────────────────────────────────────────
+        self._task_count += 1
+
+        # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
+        from sage.constants import CONSOLIDATION_INTERVAL_STEPS
+        if (self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
+                and self.consolidator is not None):
+            try:
+                consolidation_result = await self.consolidator.consolidate()
+                if hasattr(consolidation_result, 'processed') and consolidation_result.processed > 0:
+                    log.debug(
+                        "Pipeline consolidation: %d episodes → %d entities",
+                        consolidation_result.processed,
+                        getattr(consolidation_result, 'entities_added', 0),
+                    )
+            except Exception:
+                pass  # Best-effort, never blocks pipeline
+
+        # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
+        from sage.constants import BANDIT_FLUSH_INTERVAL
+        if (self._task_count % BANDIT_FLUSH_INTERVAL == 0
+                and self.engine and hasattr(self.engine, 'save_state')):
+            try:
+                from pathlib import Path
+                state_dir = str(Path.home() / ".sage")
+                self.engine.save_state(state_dir)
+                log.debug("Periodic state flush (%d tasks)", self._task_count)
+            except Exception:
+                pass  # Best-effort, never blocks pipeline

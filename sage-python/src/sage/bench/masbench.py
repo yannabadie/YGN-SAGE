@@ -174,13 +174,19 @@ class MASBenchAblation:
 
     async def _run_bare(self, tasks: list) -> list[TaskResult]:
         """Run tasks with bare LLM (no SAGE pipeline)."""
+        from sage.providers.connector import get_available_providers
         from sage.providers.openai_compat import OpenAICompatProvider
         import os
 
+        # Use first available provider (connector.py = source of truth)
+        available = get_available_providers()
+        cfg = next((c for c in available if c.get("sdk") != "google-genai"), None)
+        if not cfg:
+            raise RuntimeError("No OpenAI-compatible provider available for bare benchmark")
         provider = OpenAICompatProvider(
-            api_key=os.environ.get("DEEPSEEK_API_KEY", ""),
-            base_url="https://api.deepseek.com/v1",
-            provider_name="deepseek",
+            api_key=os.environ.get(cfg["api_key_env"], ""),
+            base_url=cfg["base_url"],
+            provider_name=cfg["provider"],
         )
 
         results = []

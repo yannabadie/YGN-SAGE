@@ -209,6 +209,7 @@ impl ModelAssigner {
         node_idx: usize,
         task_domain: &str,
         budget_usd: f32,
+        exclude_ids: Option<&[String]>,
     ) -> Option<String> {
         let node = graph.try_get_node(node_idx).ok()?;
         let system = match node.system {
@@ -231,6 +232,12 @@ impl ModelAssigner {
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
+            // FrugalGPT cascade: skip excluded models (Cascade Routing, arXiv 2410.10347)
+            if let Some(excluded) = exclude_ids {
+                if excluded.iter().any(|e| e == &card.id) {
+                    continue;
+                }
+            }
             if needs_tools && !card.supports_tools {
                 continue;
             }
@@ -303,15 +310,22 @@ impl ModelAssigner {
         }
     }
 
+    /// Assign a model to a single node. Optional ``exclude_model_ids`` skips
+    /// specific models (used by FrugalGPT cascade to force an upgrade).
+    #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None))]
     fn assign_single_node(
         &self,
         graph: &mut TopologyGraph,
         node_idx: usize,
         task_domain: &str,
         budget_usd: f32,
+        exclude_model_ids: Option<Vec<String>>,
     ) -> PyResult<String> {
-        self.assign_single_node_inner(graph, node_idx, task_domain, budget_usd)
-            .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
+        self.assign_single_node_inner(
+            graph, node_idx, task_domain, budget_usd,
+            exclude_model_ids.as_deref(),
+        )
+        .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
     }
 }
 
@@ -547,12 +561,33 @@ mod tests {
         let registry = test_registry();
         let assigner = ModelAssigner::from_registry(&registry);
         let mut graph = two_node_graph();
-        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0);
+        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None);
         assert!(model_id.is_some());
         assert_eq!(
             graph.try_get_node(1).unwrap().model_id,
             model_id.unwrap()
         );
+    }
+
+    #[test]
+    fn test_assign_single_node_with_exclusion() {
+        let registry = test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = two_node_graph();
+        // First assign without exclusion
+        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None);
+        assert!(model_id.is_some());
+        let first_model = model_id.unwrap();
+
+        // Now assign with that model excluded — should pick a different one
+        let mut graph2 = two_node_graph();
+        let model_id2 = assigner.assign_single_node_inner(
+            &mut graph2, 1, "math", 10.0, Some(&[first_model.clone()]),
+        );
+        if let Some(ref m) = model_id2 {
+            assert_ne!(m, &first_model, "Excluded model should not be reassigned");
+        }
+        // Either different model or None (all excluded) — both are correct
     }
 
     #[test]

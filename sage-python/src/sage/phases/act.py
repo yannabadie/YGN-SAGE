@@ -221,6 +221,23 @@ async def act(
             extraction = await loop.memory_agent.extract(content[:1000])
             if extraction.entities:
                 loop.semantic_memory.add_extraction(extraction)
+                # Causal edges: consecutive entities form causal chains
+                # AMA-Bench (2602.22769): memory without causality fails
+                if (loop.causal_memory
+                        and len(extraction.entities) >= 2
+                        and not loop._cb_causal.should_skip()):
+                    try:
+                        for i in range(len(extraction.entities) - 1):
+                            src = extraction.entities[i]
+                            tgt = extraction.entities[i + 1]
+                            loop.causal_memory.add_entity(src)
+                            loop.causal_memory.add_entity(tgt)
+                            loop.causal_memory.add_causal_edge(
+                                src, tgt, cause_type="enabled",
+                            )
+                        loop._cb_causal.record_success()
+                    except Exception as exc:
+                        loop._cb_causal.record_failure(exc)
             loop._cb_entity.record_success()
         except Exception as e:
             loop._cb_entity.record_failure(e)
@@ -239,6 +256,21 @@ async def act(
         loop.working_memory.add_event("TOOL", f"{tc.name} -> {output}")
         messages.append(Message(role=Role.TOOL, content=output,
                                 tool_call_id=tc.id, name=tc.name))
+        # Causal edge: tool invocation "triggered" its output entity
+        if (loop.causal_memory
+                and not loop._cb_causal.should_skip()
+                and not loop._skip_memory):
+            try:
+                tool_entity = f"tool:{tc.name}"
+                output_entity = f"result:{tc.name}:{loop.step_count}"
+                loop.causal_memory.add_entity(tool_entity)
+                loop.causal_memory.add_entity(output_entity)
+                loop.causal_memory.add_causal_edge(
+                    tool_entity, output_entity, cause_type="triggered",
+                )
+                loop._cb_causal.record_success()
+            except Exception as exc:
+                loop._cb_causal.record_failure(exc)
 
     # Trim messages to prevent unbounded growth
     if len(messages) > MAX_MESSAGES:
