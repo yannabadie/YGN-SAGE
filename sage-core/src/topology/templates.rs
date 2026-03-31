@@ -15,9 +15,12 @@ use std::collections::HashMap;
 pub fn sequential(model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
 
+    // Each node has a different system tier so ModelAssigner picks different
+    // models/providers → real multi-provider execution.
+    // model_id="" forces ModelAssigner to assign based on system tier.
     let n0 = TopologyNode::new(
-        "input_processor".into(),
-        model_id.into(),
+        "planner".into(),
+        "".into(),  // ModelAssigner will assign based on system=1 (fast/budget)
         1,
         vec!["text_processing".into()],
         0,
@@ -25,17 +28,17 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         60.0,
     );
     let n1 = TopologyNode::new(
-        "worker".into(),
-        model_id.into(),
+        "coder".into(),
+        "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
         2,
-        vec!["reasoning".into()],
+        vec!["reasoning".into(), "tools".into()],
         0,
         1.0,
         120.0,
     );
     let n2 = TopologyNode::new(
-        "output_formatter".into(),
-        model_id.into(),
+        "synthesizer".into(),
+        "".into(),  // ModelAssigner will assign based on system=1 (fast)
         1,
         vec!["text_processing".into()],
         0,
@@ -126,18 +129,19 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
 pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("avr").unwrap();
 
+    // Actor (S3 reasoner) and verifier (S2 fast) get different models/providers
     let actor = TopologyNode::new(
         "actor".into(),
-        actor_model.into(),
-        2,
-        vec!["code_generation".into()],
+        "".into(),  // ModelAssigner: S3 → reasoner model
+        3,
+        vec!["code_generation".into(), "tools".into()],
         0,
         1.5,
         120.0,
     );
     let verifier = TopologyNode::new(
         "verifier".into(),
-        reviewer_model.into(),
+        "".into(),  // ModelAssigner: S2 → fast model
         2,
         vec!["code_review".into()],
         0,
@@ -146,7 +150,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     );
     let output = TopologyNode::new(
         "output".into(),
-        actor_model.into(),
+        "".into(),  // ModelAssigner: S1 → budget model
         1,
         vec!["text_processing".into()],
         0,

@@ -489,17 +489,20 @@ impl TopologyEngine {
     fn template_fallback(&self, system: u8) -> GenerateResult {
         let _span = info_span!("topology_engine.template_fallback", system = system).entered();
 
-        let default_model = "gemini-2.5-flash";
+        // Empty model_id forces ModelAssigner to pick real models per-node
+        // based on each node's system tier → multi-provider execution.
+        // Previously hardcoded "gemini-2.5-flash" → all nodes same provider.
+        let empty = "";
         let topology = match system {
-            1 => templates::sequential(default_model),
-            2 => templates::avr(default_model, default_model),
-            3 => templates::debate(default_model, default_model),
+            1 => templates::sequential(empty),
+            2 => templates::avr(empty, empty),
+            3 => templates::debate(empty, empty),
             _ => {
                 warn!(
                     system = system,
                     "unknown_system_tier_defaulting_to_sequential"
                 );
-                templates::sequential(default_model)
+                templates::sequential(empty)
             }
         };
 
