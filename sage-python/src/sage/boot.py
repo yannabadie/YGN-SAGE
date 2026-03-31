@@ -610,7 +610,7 @@ def boot_agent_system(
                     ("OPENAI_API_KEY", "https://api.openai.com/v1", "openai", "gpt-5.4"),
                     ("GROK_API_KEY", "https://api.x.ai/v1", "xai", "grok-4-1-fast-reasoning"),
                     ("KIMI_API_KEY", "https://api.moonshot.ai/v1", "kimi", "kimi-k2.5"),
-                    ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax", "MiniMax-Text-01"),
+                    ("MINIMAX_API_KEY", "https://api.minimax.io/v1", "minimax", "minimax-m2.7"),
                     ("OPEN_ROUTER_API_KEY", "https://openrouter.ai/api/v1", "openrouter", "qwen/qwen3.5-plus-02-15"),
                 ]
                 for env_key, base_url, prov_name, default_model in _FALLBACK_ORDER:
