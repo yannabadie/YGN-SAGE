@@ -12,13 +12,16 @@ use std::collections::HashMap;
 // ---------------------------------------------------------------------------
 
 /// Build a sequential pipeline: input_processor -> worker -> output_formatter.
+///
+/// Each node gets a different cognitive system tier so ModelAssigner
+/// picks diverse models/providers (S1=fast, S2=deliberate, S1=fast).
 pub fn sequential(model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
 
     let n0 = TopologyNode::new(
         "input_processor".into(),
         model_id.into(),
-        1,
+        1, // S1: fast preprocessing
         vec!["text_processing".into()],
         0,
         0.5,
@@ -27,7 +30,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     let n1 = TopologyNode::new(
         "worker".into(),
         model_id.into(),
-        2,
+        2, // S2: deliberate reasoning
         vec!["reasoning".into()],
         0,
         1.0,
@@ -36,7 +39,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     let n2 = TopologyNode::new(
         "output_formatter".into(),
         model_id.into(),
-        1,
+        1, // S1: fast formatting
         vec!["text_processing".into()],
         0,
         0.5,
@@ -123,13 +126,15 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
 /// Forward path: actor -> verifier -> output (control edges).
 /// Back-edge: verifier -> actor (control, gate=Closed) for repair.
 /// Message edge: actor -> verifier with {"code" -> "review_input"}.
+///
+/// Differentiated tiers: actor=S2 (codex), verifier=S3 (formal), output=S1 (fast).
 pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("avr").unwrap();
 
     let actor = TopologyNode::new(
         "actor".into(),
         actor_model.into(),
-        2,
+        2, // S2: deliberate code generation
         vec!["code_generation".into()],
         0,
         1.5,
@@ -138,7 +143,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     let verifier = TopologyNode::new(
         "verifier".into(),
         reviewer_model.into(),
-        2,
+        3, // S3: formal verification/review
         vec!["code_review".into()],
         0,
         1.0,
@@ -147,7 +152,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     let output = TopologyNode::new(
         "output".into(),
         actor_model.into(),
-        1,
+        1, // S1: fast formatting
         vec!["text_processing".into()],
         0,
         0.5,
@@ -349,13 +354,14 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
 ///
 /// topic_setter fans out to debater_a and debater_b in parallel,
 /// both send their arguments to a judge node.
+/// Differentiated tiers: topic=S1, debaters=S2, judge=S3.
 pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("debate").unwrap();
 
     let topic = TopologyNode::new(
         "topic_setter".into(),
         debater_model.into(),
-        1,
+        1, // S1: fast setup
         vec!["text_processing".into()],
         0,
         0.5,
@@ -364,7 +370,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let debater_a = TopologyNode::new(
         "debater_a".into(),
         debater_model.into(),
-        2,
+        2, // S2: deliberate reasoning
         vec!["reasoning".into()],
         0,
         1.0,
@@ -373,7 +379,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let debater_b = TopologyNode::new(
         "debater_b".into(),
         debater_model.into(),
-        2,
+        2, // S2: deliberate reasoning
         vec!["reasoning".into()],
         0,
         1.0,
@@ -382,7 +388,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
     let judge = TopologyNode::new(
         "judge".into(),
         judge_model.into(),
-        2,
+        3, // S3: formal evaluation
         vec!["evaluation".into()],
         0,
         1.0,
