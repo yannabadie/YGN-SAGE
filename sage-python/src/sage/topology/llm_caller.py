@@ -431,14 +431,18 @@ _POLICY_MODEL = None
 _POLICY_TOKENIZER = None
 
 
-def _format_prompt(task: str, config: PolicyModelConfig) -> str:
+def _format_prompt(task: str, config: PolicyModelConfig, system: int = 2) -> str:
     """Format the generation prompt based on the model's chat template."""
     if config.chat_template == "toolcall":
         # Local Qwen3-4B: uses <tool_call> JSON format with 2 SAGE tools
         # System prompt must match training exactly (sage_tool_schemas.py)
+        # Prepend kNN classification so model knows task complexity
+        system_hint = {1: "simple", 2: "moderate", 3: "complex"}
+        complexity = system_hint.get(system, "moderate")
+        user_msg = f"[Complexity: {complexity} (S{system})]\n\n{task[:2000]}"
         return (
             f"<|im_start|>system\n{_TOOLCALL_SYSTEM_PROMPT}<|im_end|>\n"
-            f"<|im_start|>user\n{task[:2000]}<|im_end|>\n"
+            f"<|im_start|>user\n{user_msg}<|im_end|>\n"
             "<|im_start|>assistant\n"
         )
 
@@ -463,7 +467,7 @@ def _format_prompt(task: str, config: PolicyModelConfig) -> str:
         )
 
 
-def generate_topology_from_policy(task: str) -> dict | None:
+def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
     """Generate a topology using the learned policy (Path 6).
 
     Tries V2 (Nemotron-Orchestrator-8B GRPO) first, falls back to V1 (Phi-4-mini SFT).
@@ -543,7 +547,7 @@ def generate_topology_from_policy(task: str) -> dict | None:
     # Generate
     import torch
 
-    prompt = _format_prompt(task, _ACTIVE_POLICY_CONFIG)
+    prompt = _format_prompt(task, _ACTIVE_POLICY_CONFIG, system)
     inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
 
     try:

@@ -330,17 +330,24 @@ class CognitiveOrchestrationPipeline:
             try:
                 from sage.topology.llm_caller import generate_topology_from_policy
 
-                policy_result = generate_topology_from_policy(ctx.task)
+                policy_result = generate_topology_from_policy(ctx.task, system=ctx.system)
                 if policy_result and "nodes" in policy_result:
                     from sage_core import TopologyGraph, TopologyNode, TopologyEdge  # type: ignore[import-not-found]
 
+                    # Map model_tier to cognitive system for diverse provider assignment
+                    _TIER_TO_SYSTEM = {
+                        "fast": 1, "budget": 1,
+                        "balanced": 2,
+                        "reasoner": 3, "codex": 3,
+                    }
                     topo = TopologyGraph("learned_policy")
                     for node_data in policy_result["nodes"]:
                         model_tier = node_data.get("model_tier", "")
+                        node_system = _TIER_TO_SYSTEM.get(model_tier, ctx.system)
                         node = TopologyNode(
                             role=node_data.get("role", "agent"),
                             model_id=model_tier,
-                            system=ctx.system,
+                            system=node_system,
                             prompt=node_data.get("prompt", ""),
                         )
                         topo.add_node(node)
