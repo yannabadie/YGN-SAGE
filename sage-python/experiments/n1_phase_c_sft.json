@@ -1,0 +1,24 @@
+{
+  "n1_reward_avg": 0.9216385356585185,
+  "n1_reward_max": 1.0236145774523417,
+  "n1_reward_min": 0.0,
+  "n1_above_03": 0.98,
+  "n1_clipped_ratio": 0.52,
+  "n1_count": 50,
+  "per_difficulty": {
+    "simple": {
+      "avg": 0.9301902304755317,
+      "count": 15
+    },
+    "moderate": {
+      "avg": 0.966210382183393,
+      "count": 20
+    },
+    "complex": {
+      "avg": 0.8536577121416727,
+      "count": 15
+    }
+  },
+  "eval_time_sec": 673.3132569789886,
+  "adapter": "models/toolcall_qwen3_4b_phase_c/sft_checkpoint"
+}

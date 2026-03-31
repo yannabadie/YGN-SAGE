@@ -1,0 +1,9 @@
+{
+  "model": "Qwen/Qwen3-4B",
+  "sft_data": "data/phase_c_combined.jsonl",
+  "sft_epochs": 1,
+  "sft_lr": 1e-5,
+  "sft_max_samples": 3000,
+  "output": "models/toolcall_qwen3_4b_phase_c",
+  "lora_rank": 32
+}

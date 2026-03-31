@@ -1,0 +1,24 @@
+{
+  "n1_reward_avg": 0.8488688762187958,
+  "n1_reward_max": 1.0236145774523417,
+  "n1_reward_min": 0.0,
+  "n1_above_03": 0.86,
+  "n1_clipped_ratio": 0.62,
+  "n1_count": 50,
+  "per_difficulty": {
+    "simple": {
+      "avg": 0.7784363979763456,
+      "count": 15
+    },
+    "moderate": {
+      "avg": 0.93242932677269,
+      "count": 20
+    },
+    "complex": {
+      "avg": 0.8078874203893874,
+      "count": 15
+    }
+  },
+  "eval_time_sec": 609.2425782680511,
+  "adapter": "models/local_qwen3_4b_grpo/grpo_checkpoint"
+}

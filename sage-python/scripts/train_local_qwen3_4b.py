@@ -32,6 +32,9 @@ import os
 import sys
 import time
 
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", "..", ".env"), override=True)
+
 import torch
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
@@ -258,8 +261,11 @@ def run_sft(model, tokenizer, dataset, args):
 
 def build_reward_fn():
     """Build reward function wrapping SAGE's compute_score."""
-    os.environ.setdefault("SAGE_VERL_EXEC", "0")
-    os.environ.setdefault("SAGE_TRAINING_PHASE", "A")
+    # SAGE_VERL_EXEC=1 enables real execution reward (API calls)
+    # SAGE_TRAINING_PHASE=C enables continuous bonuses (tier, checkpoints, providers)
+    # Set via env or CLI before calling this script
+    os.environ.setdefault("SAGE_VERL_EXEC", os.environ.get("SAGE_VERL_EXEC", "0"))
+    os.environ.setdefault("SAGE_TRAINING_PHASE", os.environ.get("SAGE_TRAINING_PHASE", "A"))
 
     from sage.verl.reward import compute_score
 
@@ -422,7 +428,9 @@ def main():
              .read().strip())
 
     # ── Phase 1: SFT Warmup ───────────────────────────────────
-    if args.sft_data and not args.adapter:
+    # Runs SFT if sft_data is provided. With --adapter, this is "continued SFT"
+    # (fine-tunes the existing adapter on new data). Without --adapter, fresh LoRA.
+    if args.sft_data:
         sft_dataset = load_sft_dataset(args.sft_data, args.sft_max_samples)
         sft_path = run_sft(model, tokenizer, sft_dataset, args)
 

@@ -585,6 +585,27 @@ def boot_agent_system(
                     model_id=model_id,
                     provider_name="xai",
                 )
+            elif "kimi" in model_id or "moonshot" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("KIMI_API_KEY", ""),
+                    base_url="https://api.moonshot.ai/v1",
+                    model_id=model_id,
+                    provider_name="kimi",
+                )
+            elif "minimax" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("MINIMAX_API_KEY", ""),
+                    base_url="https://api.minimax.io/v1",
+                    model_id=model_id,
+                    provider_name="minimax",
+                )
+            elif "qwen" in model_id:
+                provider = OpenAICompatProvider(
+                    api_key=os.environ.get("OPEN_ROUTER_API_KEY", ""),
+                    base_url="https://openrouter.ai/api/v1",
+                    model_id=model_id,
+                    provider_name="openrouter",
+                )
             elif "gemini" in model_id:
                 from sage.llm.google import GoogleProvider
                 provider = GoogleProvider()
