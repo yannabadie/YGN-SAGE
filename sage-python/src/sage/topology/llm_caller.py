@@ -491,10 +491,19 @@ def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
                 return None
 
             _log.info("Path 6: loading %s (first call)...", config.repo)
-            tok = AutoTokenizer.from_pretrained(
-                adapter_path, trust_remote_code=config.trust_remote_code,
-                local_files_only=True,
-            )
+            # Load tokenizer from base model (adapter tokenizer may have
+            # broken extra_special_tokens on different transformers versions)
+            import os as _os
+            base_tok_path = _os.environ.get("SAGE_PATH6_MODEL", config.base_model)
+            try:
+                tok = AutoTokenizer.from_pretrained(
+                    base_tok_path, trust_remote_code=config.trust_remote_code,
+                )
+            except Exception:
+                tok = AutoTokenizer.from_pretrained(
+                    adapter_path, trust_remote_code=config.trust_remote_code,
+                    local_files_only=True,
+                )
 
             if config.chat_template == "toolcall":
                 # Local Qwen3-4B: base model in 4-bit NF4 + LoRA adapter
