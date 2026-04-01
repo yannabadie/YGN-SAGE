@@ -83,6 +83,9 @@ pub enum TopologyTemplate {
     Hub,
     Debate,
     Brainstorming,
+    Robust,
+    HorizonPipeline,
+    ParallelFanout,
 }
 
 impl TopologyTemplate {
@@ -97,6 +100,13 @@ impl TopologyTemplate {
             "hub" => Some(Self::Hub),
             "debate" => Some(Self::Debate),
             "brainstorming" => Some(Self::Brainstorming),
+            "robust" => Some(Self::Robust),
+            "horizon_pipeline" | "horizon-pipeline" | "horizonpipeline" => {
+                Some(Self::HorizonPipeline)
+            }
+            "parallel_fanout" | "parallel-fanout" | "parallelfanout" => {
+                Some(Self::ParallelFanout)
+            }
             _ => None,
         }
     }
@@ -111,6 +121,9 @@ impl TopologyTemplate {
             Self::Hub => "hub",
             Self::Debate => "debate",
             Self::Brainstorming => "brainstorming",
+            Self::Robust => "robust",
+            Self::HorizonPipeline => "horizon_pipeline",
+            Self::ParallelFanout => "parallel_fanout",
         }
     }
 }
@@ -589,7 +602,7 @@ impl TopologyGraph {
     pub fn try_new(template_type: &str) -> Result<Self, String> {
         let template = TopologyTemplate::parse(template_type).ok_or_else(|| {
             format!(
-                "Unknown topology template '{}'. Valid: sequential, parallel, avr, selfmoa, hierarchical, hub, debate, brainstorming",
+                "Unknown topology template '{}'. Valid: sequential, parallel, avr, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout",
                 template_type
             )
         })?;
@@ -778,6 +791,9 @@ mod tests {
             TopologyTemplate::Hub,
             TopologyTemplate::Debate,
             TopologyTemplate::Brainstorming,
+            TopologyTemplate::Robust,
+            TopologyTemplate::HorizonPipeline,
+            TopologyTemplate::ParallelFanout,
         ];
         for t in templates {
             let s = t.as_str();

@@ -138,15 +138,46 @@ _THETA_GAMMA = 0.6  # coupling threshold
 _THETA_DELTA = 5    # depth threshold
 
 
-def select_macro_topology(features: DAGFeatures) -> str:
-    """AdaptOrch-inspired heuristic: map DAG features to topology template hint.
+def select_macro_topology(features: DAGFeatures, system: int = 2, domain: str = "") -> str:
+    """Map DAG structural features to topology template.
 
-    Returns: "sequential", "parallel", "hierarchical", or "hybrid"
+    Uses omega (parallelism), delta (depth), gamma (coupling) from
+    AdaptOrch (arXiv 2602.16873) to select the best-fit template.
+    Returns one of the 11 registered template names.
+
+    Selection logic:
+    - Deep sequential chains (delta high, omega low) → horizon_pipeline
+      for step-by-step reasoning where each step builds on the prior.
+    - Wide parallel (omega high, gamma low) → parallel_fanout
+      for independent sub-tasks solved concurrently with diverse models.
+    - High coupling + moderate width (needs redundancy) → robust
+      for tasks where cross-validation via majority voting adds value.
+    - The original 4 categories remain as fallbacks.
     """
+    # Deep sequential chain: many dependent steps, no parallelism
+    # → horizon_pipeline excels at chaining intermediate results
+    if features.delta > _THETA_DELTA and features.omega <= 1:
+        return "horizon_pipeline"
+
+    # Wide parallel + low coupling: independent sub-tasks
+    # → parallel_fanout with diverse S1/S2/S3 workers
+    if features.omega >= 3 and features.gamma < 0.3:
+        return "parallel_fanout"
+
+    # Moderate parallelism + high coupling: tasks benefit from redundancy
+    # → robust template with majority voting for error resilience
+    if features.omega >= 2 and features.gamma >= _THETA_GAMMA:
+        return "robust"
+
+    # S3 (formal reasoning) + moderate complexity → robust for cross-validation
+    if system == 3 and features.omega >= 2:
+        return "robust"
+
+    # Original AdaptOrch categories
     if features.omega <= 1 and features.delta <= _THETA_DELTA:
         return "sequential"
     if features.gamma >= _THETA_GAMMA:
         return "hierarchical"
     if features.omega >= 2 and features.gamma < _THETA_GAMMA:
         return "parallel"
-    return "hybrid"
+    return "sequential"

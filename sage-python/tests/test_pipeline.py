@@ -603,8 +603,8 @@ class TestTopologySelection:
     def test_parallel_wide(self):
         assert select_macro_topology(DAGFeatures(omega=4, delta=1, gamma=0.3)) == "parallel"
 
-    def test_hierarchical_dense(self):
-        assert select_macro_topology(DAGFeatures(omega=2, delta=2, gamma=0.8)) == "hierarchical"
+    def test_coupled_parallel_robust(self):
+        assert select_macro_topology(DAGFeatures(omega=2, delta=2, gamma=0.8)) == "robust"
 
     def test_sequential_moderate_depth(self):
         assert select_macro_topology(DAGFeatures(omega=1, delta=2, gamma=0.1)) == "sequential"

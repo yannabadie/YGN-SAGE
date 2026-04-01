@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -49,6 +50,7 @@ class PipelineContext:
     cost: float = 0.0
     bandit_decision_id: str | None = None
     verification_passed: bool = True
+    axis_hint: str = ""  # MASBENCH axis hint for topology selection
 
 
 class CognitiveOrchestrationPipeline:
@@ -303,6 +305,21 @@ class CognitiveOrchestrationPipeline:
 
         return ctx
 
+    # ── Structure-driven topology selection ──────────────────────────────
+
+    def _build_topology_from_hint(self, hint: str) -> Any | None:
+        """Create a topology from a template hint using Rust TemplateStore.
+
+        No hardcoded prompts — nodes use their role-based defaults.
+        The runner builds system prompts from each node's role field.
+        """
+        try:
+            from sage_core import PyTemplateStore  # type: ignore[import-not-found]
+            store = PyTemplateStore()
+            return store.create(hint, "")
+        except (ImportError, ValueError):
+            return None
+
     # ── Stage 2: Select Topology ────────────────────────────────────────────
 
     def _stage_select_topology(self, ctx: PipelineContext) -> PipelineContext:
@@ -319,10 +336,28 @@ class CognitiveOrchestrationPipeline:
             log.debug("S1 task: skipping topology (direct single-agent)")
             return ctx
 
-        # Path 0: AdaptOrch heuristic for macro topology hint
+        # Structure-driven template selection from DAG decomposition
+        # Uses omega (parallelism), delta (depth), gamma (coupling) —
+        # no regex heuristics, purely structural signals from Stage 1.
         hint = "sequential"
         if ctx.dag_features:
-            hint = select_macro_topology(ctx.dag_features)
+            hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
+
+        # If DAG analysis selected a specialized template, try to build it
+        # before falling through to the TopologyEngine 6-path.
+        if hint in ("robust", "horizon_pipeline", "parallel_fanout"):
+            topo = self._build_topology_from_hint(hint)
+            if topo:
+                ctx.topology = topo
+                log.info(
+                    "Stage 2: DAG-driven template=%s (%d nodes, omega=%s delta=%s gamma=%s)",
+                    hint, topo.node_count(),
+                    ctx.dag_features.omega if ctx.dag_features else "?",
+                    ctx.dag_features.delta if ctx.dag_features else "?",
+                    f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
+                )
+                self._check_topology_budget(ctx)
+                return ctx
 
         # Try DynamicTopologyEngine
         if self.engine:
@@ -802,6 +837,7 @@ class CognitiveOrchestrationPipeline:
                 llm_config=self.llm_config,
                 provider_pool=self.provider_pool,
                 controller=self.controller,  # Phase C
+                axis_hint=ctx.axis_hint,
             )
             result = await runner.run(ctx.task)
             if result == "__REROUTE__" and self.engine:

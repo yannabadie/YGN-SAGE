@@ -57,6 +57,7 @@ class TopologyRunner:
         *,
         provider_pool: Any | None = None,
         controller: Any | None = None,
+        axis_hint: str = "",
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -64,6 +65,7 @@ class TopologyRunner:
         self._config = llm_config
         self._provider_pool = provider_pool
         self._controller = controller
+        self._axis_hint = axis_hint
         self._node_outputs: dict[int, str] = {}
 
     def _gather_predecessor_context(self, node_idx: int) -> str:
@@ -374,6 +376,7 @@ class TopologyRunner:
                         "latency_ms": _latency_ms,
                         "model_id": getattr(self.graph.get_node(node_idx), "model_id", ""),
                         "output_length": len(result),
+                        "axis_hint": self._axis_hint,
                     }
                     decision = self._controller.evaluate_and_decide(
                         node_idx, result, task, self.graph, node_ctx,

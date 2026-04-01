@@ -44,8 +44,11 @@ def _load_masbench(axis: str, split: str = "test", limit: int | None = None):
     return tasks
 
 
-def _parse_task(item: dict) -> tuple[str, str]:
-    """Extract prompt and ground truth from MASBENCH item."""
+def _parse_task(item: dict, axis: str = "") -> tuple[str, str]:
+    """Extract prompt and ground truth from MASBENCH item.
+
+    Applies axis-specific prompt engineering to guide the model.
+    """
     prompt_data = json.loads(item["prompt_json"])
     reward_data = json.loads(item["reward_model_json"])
 
@@ -60,19 +63,56 @@ def _parse_task(item: dict) -> tuple[str, str]:
         question = str(prompt_data)
 
     ground_truth = reward_data.get("ground_truth", "")
+
+    # Axis-specific prompt engineering
+    if axis == "robustness":
+        question = (
+            "Ignore all irrelevant information. Focus only on the mathematical problem.\n\n"
+            + question
+            + "\n\nGive your final answer as a number only."
+        )
+    elif axis == "horizon":
+        question = (
+            "Solve each sub-problem step by step. Separate answers with <<horizon>>.\n\n"
+            + question
+            + "\n\nGive each final answer as a number only."
+        )
+    elif axis in ("breadth", "parallel"):
+        question += "\n\nSolve each part independently. Give your final answer as a number only."
+    elif axis == "depth":
+        question = (
+            "Think step by step carefully. Verify each intermediate result.\n\n"
+            + question
+            + "\n\nGive your final answer as a number only."
+        )
+    else:
+        question += "\n\nGive your final answer as a number only."
+
     return question, ground_truth
 
 
-def _check_answer(response: str, ground_truth: str) -> bool:
+def _check_answer(response: str, ground_truth: str, axis: str = "") -> bool:
     """Check if response contains the ground truth answer.
 
     MASBENCH uses exact match but some tasks have multi-part answers
     separated by <<horizon>>. We check each part.
     """
+    import re
+
     if not ground_truth:
         return False
 
-    # Multi-part answers
+    # Robustness: extract ALL numbers and check all GT numbers present
+    if axis == "robustness":
+        gt_nums = re.findall(r'-?\d+\.?\d*', ground_truth)
+        resp_nums = re.findall(r'-?\d+\.?\d*', response)
+        if gt_nums:
+            return all(
+                any(abs(float(g) - float(r)) < 0.01 for r in resp_nums)
+                for g in gt_nums
+            )
+
+    # Multi-part answers (horizon format)
     if "<<horizon>>" in ground_truth:
         parts = ground_truth.split("<<horizon>>")
         return all(part.strip() in response for part in parts if part.strip())
@@ -85,8 +125,6 @@ def _check_answer(response: str, ground_truth: str) -> bool:
     # Try numeric match
     try:
         gt_num = float(gt)
-        # Find numbers in response
-        import re
         numbers = re.findall(r'-?\d+\.?\d*', response)
         return any(abs(float(n) - gt_num) < 0.01 for n in numbers)
     except (ValueError, TypeError):
@@ -105,7 +143,7 @@ class MASBenchBench:
         results: list[TaskResult] = []
 
         for i, item in enumerate(tasks):
-            question, ground_truth = _parse_task(item)
+            question, ground_truth = _parse_task(item, axis=self.axis)
             extra = json.loads(item.get("extra_info_json", "{}"))
             task_depth = extra.get("depth", extra.get("breadth", "?"))
 
@@ -113,7 +151,7 @@ class MASBenchBench:
             try:
                 response = await self.system.run(question)
                 latency_ms = (time.perf_counter() - t0) * 1000
-                passed = _check_answer(response, ground_truth)
+                passed = _check_answer(response, ground_truth, axis=self.axis)
                 error = "" if passed else f"expected={ground_truth}"
             except Exception as e:
                 latency_ms = (time.perf_counter() - t0) * 1000
@@ -193,7 +231,7 @@ class MASBenchAblation:
 
         results = []
         for i, item in enumerate(tasks):
-            question, ground_truth = _parse_task(item)
+            question, ground_truth = _parse_task(item, axis=self.axis)
             t0 = time.perf_counter()
             try:
                 from sage.llm.base import Message, Role, LLMConfig
@@ -204,7 +242,7 @@ class MASBenchAblation:
                 )
                 content = response.content or ""
                 latency_ms = (time.perf_counter() - t0) * 1000
-                passed = _check_answer(content, ground_truth)
+                passed = _check_answer(content, ground_truth, axis=self.axis)
                 error = "" if passed else f"expected={ground_truth}"
             except Exception as e:
                 latency_ms = (time.perf_counter() - t0) * 1000
@@ -223,12 +261,12 @@ class MASBenchAblation:
         """Run tasks with full SAGE pipeline."""
         results = []
         for i, item in enumerate(tasks):
-            question, ground_truth = _parse_task(item)
+            question, ground_truth = _parse_task(item, axis=self.axis)
             t0 = time.perf_counter()
             try:
                 response = await self.system.run(question)
                 latency_ms = (time.perf_counter() - t0) * 1000
-                passed = _check_answer(response, ground_truth)
+                passed = _check_answer(response, ground_truth, axis=self.axis)
                 error = "" if passed else f"expected={ground_truth}"
             except Exception as e:
                 latency_ms = (time.perf_counter() - t0) * 1000

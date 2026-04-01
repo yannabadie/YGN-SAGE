@@ -475,6 +475,242 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
 }
 
 // ---------------------------------------------------------------------------
+// 9. Robust: Preprocessor -> [Workers] -> Verifier (majority vote)
+// ---------------------------------------------------------------------------
+
+/// Build a robust topology for noise-resilient tasks (MASBENCH robustness axis).
+///
+/// A preprocessor strips noise, then `worker_count` workers solve independently,
+/// and a verifier performs majority voting. Based on MALT (arXiv 2412.01928)
+/// and ResMAS (arXiv 2601.04694).
+pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
+    let mut g = TopologyGraph::try_new("robust").unwrap();
+
+    // Preprocessor (S1 fast): strips noise/distractors from input
+    let mut preprocessor = TopologyNode::new(
+        "preprocessor".into(),
+        "".into(),
+        1,
+        vec!["text_processing".into(), "noise_filter".into()],
+        0,
+        0.5,
+        60.0,
+    );
+    preprocessor.fallback_tier = "fast".into();
+    let pi = g.add_node(preprocessor);
+
+    // Workers (S2 reasoner): solve cleaned problem independently
+    let mut worker_indices = Vec::with_capacity(worker_count);
+    for i in 0..worker_count {
+        let mut worker = TopologyNode::new(
+            format!("worker_{}", i),
+            "".into(),
+            2,
+            vec!["reasoning".into(), "math".into()],
+            0,
+            1.0,
+            120.0,
+        );
+        worker.fallback_tier = "reasoner".into();
+        worker_indices.push(g.add_node(worker));
+    }
+
+    // Verifier (S3 reasoner): majority vote across worker outputs
+    let mut verifier = TopologyNode::new(
+        "verifier".into(),
+        "".into(),
+        3,
+        vec!["aggregation".into(), "verification".into()],
+        0,
+        2.0,
+        180.0,
+    );
+    verifier.fallback_tier = "reasoner".into();
+    verifier.is_checkpoint = true;
+    let vi = g.add_node(verifier);
+
+    for (i, &wi) in worker_indices.iter().enumerate() {
+        // Control: preprocessor -> worker
+        g.try_add_edge(pi, wi, TopologyEdge::control()).unwrap();
+
+        // Message: preprocessor -> worker with cleaned input
+        let mut pre_mapping = HashMap::new();
+        pre_mapping.insert("cleaned_input".to_string(), "input".to_string());
+        g.try_add_edge(pi, wi, TopologyEdge::message(Some(pre_mapping)))
+            .unwrap();
+
+        // Message: worker -> verifier with result
+        let mut result_mapping = HashMap::new();
+        result_mapping.insert("result".to_string(), format!("input_{}", i));
+        g.try_add_edge(wi, vi, TopologyEdge::message(Some(result_mapping)))
+            .unwrap();
+    }
+
+    g
+}
+
+// ---------------------------------------------------------------------------
+// 10. HorizonPipeline: Splitter -> [Stage0 -> Stage1 -> ...] -> Aggregator
+// ---------------------------------------------------------------------------
+
+/// Build a horizon pipeline for sequential multi-step tasks (MASBENCH horizon axis).
+///
+/// A splitter decomposes the task, then `stage_count` stages solve sub-problems
+/// sequentially (each receiving prior stage output as context), and an aggregator
+/// combines all results. Based on Task-Decoupled Planning (arXiv 2601.07577).
+pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
+    let mut g = TopologyGraph::try_new("horizon_pipeline").unwrap();
+
+    // Splitter (S1 fast): parses <<horizon>> delimiters, dispatches sub-problems
+    let mut splitter = TopologyNode::new(
+        "splitter".into(),
+        "".into(),
+        1,
+        vec!["text_processing".into(), "decomposition".into()],
+        0,
+        0.5,
+        60.0,
+    );
+    splitter.fallback_tier = "fast".into();
+    let si = g.add_node(splitter);
+
+    // Stages (S2 reasoner): each solves one sub-problem with prior context
+    let mut stage_indices = Vec::with_capacity(stage_count);
+    for i in 0..stage_count {
+        let mut stage = TopologyNode::new(
+            format!("stage_{}", i),
+            "".into(),
+            2,
+            vec!["reasoning".into(), "math".into()],
+            0,
+            1.0,
+            120.0,
+        );
+        stage.fallback_tier = "reasoner".into();
+        stage_indices.push(g.add_node(stage));
+    }
+
+    // Aggregator (S1 fast): combines all stage outputs
+    let mut aggregator = TopologyNode::new(
+        "aggregator".into(),
+        "".into(),
+        1,
+        vec!["aggregation".into(), "text_processing".into()],
+        0,
+        0.5,
+        60.0,
+    );
+    aggregator.fallback_tier = "fast".into();
+    let ai = g.add_node(aggregator);
+
+    // Chain: splitter -> stage_0 -> stage_1 -> ... -> stage_{N-1} -> aggregator
+    // Each hop has control + message edges
+    let mut prev = si;
+    for (i, &stage_idx) in stage_indices.iter().enumerate() {
+        g.try_add_edge(prev, stage_idx, TopologyEdge::control())
+            .unwrap();
+
+        let mut mapping = HashMap::new();
+        if prev == si {
+            mapping.insert("sub_problem_0".to_string(), "input".to_string());
+        } else {
+            mapping.insert("result".to_string(), "prior_context".to_string());
+        }
+        g.try_add_edge(prev, stage_idx, TopologyEdge::message(Some(mapping)))
+            .unwrap();
+
+        prev = stage_idx;
+    }
+
+    // Last stage -> aggregator
+    g.try_add_edge(prev, ai, TopologyEdge::control()).unwrap();
+    let mut final_mapping = HashMap::new();
+    final_mapping.insert("result".to_string(), "final_input".to_string());
+    g.try_add_edge(prev, ai, TopologyEdge::message(Some(final_mapping)))
+        .unwrap();
+
+    g
+}
+
+// ---------------------------------------------------------------------------
+// 11. ParallelFanout: Dispatcher -> [Diverse Workers] -> Aggregator
+// ---------------------------------------------------------------------------
+
+/// Build a parallel fan-out topology with diverse worker tiers (MASBENCH parallel axis).
+///
+/// Workers cycle through S1/S2/S3 system tiers so ModelAssigner routes them to
+/// different providers/models for output diversity. Based on SC-MAS (arXiv 2601.09434).
+pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
+    let mut g = TopologyGraph::try_new("parallel_fanout").unwrap();
+
+    // Dispatcher (S1 fast): decomposes and fans out
+    let mut dispatcher = TopologyNode::new(
+        "dispatcher".into(),
+        "".into(),
+        1,
+        vec!["text_processing".into(), "decomposition".into()],
+        0,
+        0.5,
+        60.0,
+    );
+    dispatcher.fallback_tier = "fast".into();
+    let di = g.add_node(dispatcher);
+
+    // Workers: cycle S1/S2/S3 for diversity
+    let tier_cycle: [u8; 3] = [1, 2, 3];
+    let fallback_cycle: [&str; 3] = ["fast", "reasoner", "reasoner"];
+
+    let mut worker_indices = Vec::with_capacity(worker_count);
+    for i in 0..worker_count {
+        let system = tier_cycle[i % 3];
+        let mut worker = TopologyNode::new(
+            format!("worker_{}", i),
+            "".into(),
+            system,
+            vec!["reasoning".into()],
+            0,
+            if system >= 2 { 1.0 } else { 0.5 },
+            if system >= 2 { 120.0 } else { 60.0 },
+        );
+        worker.fallback_tier = fallback_cycle[i % 3].into();
+        worker_indices.push(g.add_node(worker));
+    }
+
+    // Aggregator (S2 reasoner): high-quality merge
+    let mut aggregator = TopologyNode::new(
+        "aggregator".into(),
+        "".into(),
+        2,
+        vec!["aggregation".into(), "synthesis".into()],
+        0,
+        1.5,
+        120.0,
+    );
+    aggregator.fallback_tier = "reasoner".into();
+    aggregator.is_checkpoint = true;
+    let ai = g.add_node(aggregator);
+
+    for (i, &wi) in worker_indices.iter().enumerate() {
+        // Control: dispatcher -> worker
+        g.try_add_edge(di, wi, TopologyEdge::control()).unwrap();
+
+        // Message: dispatcher -> worker with sub-problem
+        let mut dispatch_mapping = HashMap::new();
+        dispatch_mapping.insert("sub_problem".to_string(), "input".to_string());
+        g.try_add_edge(di, wi, TopologyEdge::message(Some(dispatch_mapping)))
+            .unwrap();
+
+        // Message: worker -> aggregator with result
+        let mut result_mapping = HashMap::new();
+        result_mapping.insert("result".to_string(), format!("input_{}", i));
+        g.try_add_edge(wi, ai, TopologyEdge::message(Some(result_mapping)))
+            .unwrap();
+    }
+
+    g
+}
+
+// ---------------------------------------------------------------------------
 // TemplateStore
 // ---------------------------------------------------------------------------
 
@@ -493,6 +729,9 @@ impl TemplateStore {
             "hub" => Ok(hub(model_id, model_id, 3)),
             "debate" => Ok(debate(model_id, model_id)),
             "brainstorming" => Ok(brainstorming(model_id, 3)),
+            "robust" => Ok(robust(model_id, 3)),
+            "horizon_pipeline" | "horizon-pipeline" => Ok(horizon_pipeline(model_id, 3)),
+            "parallel_fanout" | "parallel-fanout" => Ok(parallel_fanout(model_id, 5)),
             _ => Err(format!("Unknown template: {}", template_name)),
         }
     }
@@ -508,6 +747,9 @@ impl TemplateStore {
             "hub",
             "debate",
             "brainstorming",
+            "robust",
+            "horizon_pipeline",
+            "parallel_fanout",
         ]
     }
 }
@@ -660,6 +902,79 @@ mod tests {
     #[test]
     fn test_template_store_available() {
         let names = TemplateStore::available();
-        assert_eq!(names.len(), 8);
+        assert_eq!(names.len(), 11);
+    }
+
+    // ── New MASBENCH-axis templates ──────────────────────────────────────
+
+    #[test]
+    fn test_robust_structure() {
+        let g = robust("", 3);
+        // preprocessor + 3 workers + verifier = 5 nodes
+        assert_eq!(g.node_count(), 5);
+        // 3 control (pre→workers) + 3 message (pre→workers) + 3 message (workers→verifier) = 9
+        assert_eq!(g.edge_count(), 9);
+        assert!(g.is_acyclic());
+        assert_eq!(g.entry_nodes().len(), 1); // preprocessor
+        assert_eq!(g.exit_nodes().len(), 1); // verifier
+    }
+
+    #[test]
+    fn test_robust_diverse_workers() {
+        let g = robust("", 5);
+        // preprocessor + 5 workers + verifier = 7 nodes
+        assert_eq!(g.node_count(), 7);
+        // 5 control + 5 message (pre→workers) + 5 message (workers→verifier) = 15
+        assert_eq!(g.edge_count(), 15);
+    }
+
+    #[test]
+    fn test_horizon_pipeline_structure() {
+        let g = horizon_pipeline("", 3);
+        // splitter + 3 stages + aggregator = 5 nodes
+        assert_eq!(g.node_count(), 5);
+        // Chain: splitter→s0→s1→s2→agg = 4 hops × 2 edges (control+message) = 8
+        assert_eq!(g.edge_count(), 8);
+        assert!(g.is_acyclic());
+        assert_eq!(g.entry_nodes().len(), 1); // splitter
+        assert_eq!(g.exit_nodes().len(), 1); // aggregator
+    }
+
+    #[test]
+    fn test_horizon_pipeline_single_stage() {
+        let g = horizon_pipeline("", 1);
+        // splitter + 1 stage + aggregator = 3 nodes
+        assert_eq!(g.node_count(), 3);
+        // 2 hops × 2 = 4 edges
+        assert_eq!(g.edge_count(), 4);
+        assert!(g.is_acyclic());
+    }
+
+    #[test]
+    fn test_parallel_fanout_structure() {
+        let g = parallel_fanout("", 5);
+        // dispatcher + 5 workers + aggregator = 7 nodes
+        assert_eq!(g.node_count(), 7);
+        // 5 control + 5 message (dispatch→workers) + 5 message (workers→agg) = 15
+        assert_eq!(g.edge_count(), 15);
+        assert!(g.is_acyclic());
+        assert_eq!(g.entry_nodes().len(), 1); // dispatcher
+        assert_eq!(g.exit_nodes().len(), 1); // aggregator
+    }
+
+    #[test]
+    fn test_parallel_fanout_tier_diversity() {
+        let g = parallel_fanout("", 6);
+        // 6 workers should cycle S1, S2, S3, S1, S2, S3
+        assert_eq!(g.node_count(), 8); // dispatcher + 6 workers + aggregator
+    }
+
+    #[test]
+    fn test_template_store_create_new_templates() {
+        assert!(TemplateStore::create("robust", "").is_ok());
+        assert!(TemplateStore::create("horizon_pipeline", "").is_ok());
+        assert!(TemplateStore::create("horizon-pipeline", "").is_ok());
+        assert!(TemplateStore::create("parallel_fanout", "").is_ok());
+        assert!(TemplateStore::create("parallel-fanout", "").is_ok());
     }
 }
