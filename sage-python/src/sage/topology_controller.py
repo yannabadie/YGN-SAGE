@@ -165,7 +165,7 @@ class TopologyController:
                             if candidates:
                                 new_model_id = candidates[0].id
                         except (ImportError, Exception):
-                            new_model_id = fallback  # Use tier name as fallback
+                            new_model_id = None  # Don't use tier name — not a valid model_id
                 except Exception:
                     pass
             return AdaptationDecision(
@@ -257,7 +257,9 @@ class TopologyController:
         if not all_outputs or len(all_outputs) <= 1:
             return 1.0  # single node = always important
 
-        other_outputs = [o for i, o in enumerate(all_outputs) if o != result]
+        # Exclude by identity (not value) — if two workers return identical text,
+        # we must still keep both in other_outputs for correct importance scoring.
+        other_outputs = [o for o in all_outputs if o is not result]
         if not other_outputs:
             return 1.0
 

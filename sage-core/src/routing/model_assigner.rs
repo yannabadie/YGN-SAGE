@@ -129,7 +129,7 @@ impl ModelAssigner {
 
             let caps = &node.required_capabilities;
             let needs_tools = caps.iter().any(|c| c == "tools");
-            let needs_json = caps.iter().any(|c| c == "json");
+            let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
             let node_budget = node.max_cost_usd.min(remaining_budget);
             let preferred_provider = hint_map.get(&idx).copied().unwrap_or("");
 
@@ -220,7 +220,7 @@ impl ModelAssigner {
         };
         let caps = &node.required_capabilities;
         let needs_tools = caps.iter().any(|c| c == "tools");
-        let needs_json = caps.iter().any(|c| c == "json");
+        let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
         let all_models = self.registry.all_models();
         let (input_tok, output_tok) = COST_ESTIMATE_TOKENS;
         let model_costs: Vec<f32> = all_models

@@ -115,11 +115,10 @@ jobs:
         run: cargo check --no-default-features --features onnx
 
   integration-smoke:
-    name: Integration Smoke (real API, master only)
+    name: Integration Smoke (real API, main only)
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: [python-sage]
-    continue-on-error: true
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
       REQUESTS_CA_BUNDLE: ""

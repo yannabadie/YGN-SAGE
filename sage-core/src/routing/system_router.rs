@@ -8,7 +8,7 @@
 
 use pyo3::prelude::*;
 use std::collections::{HashMap, VecDeque};
-use tracing::{info, info_span};
+use tracing::{debug, info, info_span};
 
 use super::bandit::ContextualBandit;
 use super::features::StructuralFeatures;
@@ -402,13 +402,22 @@ impl SystemRouter {
         let (model_id, estimated_cost, decision_id) = if let Some(ref mut bandit) = self.bandit {
             match bandit.choose(constraints.exploration_budget) {
                 Ok(bd) => {
-                    // Use bandit's model if it's in our candidates, otherwise fall back
-                    let est = candidates
-                        .iter()
-                        .find(|c| c.id == bd.model_id)
-                        .map(|c| c.estimate_cost(1000, 2000))
-                        .unwrap_or(bd.expected_cost);
-                    (bd.model_id.clone(), est, bd.decision_id.clone())
+                    // Only use bandit's model if it passed constraint filtering.
+                    // Previously returned bd.model_id unconditionally, bypassing
+                    // all constraints (cost, latency, capabilities, security).
+                    if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
+                        let est = card.estimate_cost(1000, 2000);
+                        (bd.model_id.clone(), est, bd.decision_id.clone())
+                    } else {
+                        // Bandit chose a model that doesn't pass constraints — fallback
+                        // to best candidate by domain score (already sorted in Step 2)
+                        debug!(
+                            bandit_model = %bd.model_id,
+                            "bandit_model_not_in_candidates_falling_back"
+                        );
+                        let best = &candidates[0]; // candidates guaranteed non-empty (checked above)
+                        (best.id.clone(), best.estimate_cost(1000, 2000), bd.decision_id.clone())
+                    }
                 }
                 Err(_) => {
                     // Bandit has no arms, fall back to budget selection
@@ -620,7 +629,7 @@ impl SystemRouter {
                                 return false;
                             }
                         }
-                        "json_mode" => {
+                        "json_mode" | "json" => {
                             if !card.supports_json_mode {
                                 return false;
                             }
@@ -631,6 +640,15 @@ impl SystemRouter {
                             }
                         }
                         _ => {} // Unknown capabilities ignored (forward-compat)
+                    }
+                }
+
+                // Security label enforcement: nodes with security_label=N require
+                // models with security_label >= N (model can process data at that level).
+                if !constraints.security_label.is_empty() {
+                    let required: u8 = constraints.security_label.parse().unwrap_or(0);
+                    if card.security_label < required {
+                        return false;
                     }
                 }
 

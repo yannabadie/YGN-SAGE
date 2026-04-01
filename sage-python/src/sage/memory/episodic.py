@@ -2,14 +2,20 @@
 
 Supports two backends:
 - **SQLite** (when ``db_path`` is given): persistent across restarts, uses aiosqlite.
+  Writes go through an asyncio.Queue write-behind buffer to prevent SQLITE_BUSY
+  contention under concurrent async workloads.
 - **In-memory** (default, ``db_path=None``): fast, no dependencies, backward-compatible
   with the original list-based implementation.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 
 class EpisodicMemory:
@@ -30,6 +36,9 @@ class EpisodicMemory:
         self._entries: list[dict[str, Any]] = []
         # Cached SQLite connection (lazy, see _get_connection)
         self._conn = None
+        # Write-behind queue: decouples async callers from SQLite writes
+        self._write_queue: asyncio.Queue | None = None
+        self._writer_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -63,6 +72,43 @@ class EpisodicMemory:
             pass  # Column already exists
         await db.commit()
 
+        # Start write-behind queue if not already running
+        if self._write_queue is None:
+            self._write_queue = asyncio.Queue()
+            self._writer_task = asyncio.create_task(self._background_writer())
+
+    async def _background_writer(self) -> None:
+        """Drain write queue in batches. Decouples callers from SQLite I/O."""
+        batch: list[tuple[str, str, str, str, str | None]] = []
+        while True:
+            try:
+                item = await asyncio.wait_for(self._write_queue.get(), timeout=0.1)
+                batch.append(item)
+                if len(batch) >= 50:
+                    await self._flush_batch(batch)
+                    batch = []
+            except asyncio.TimeoutError:
+                if batch:
+                    await self._flush_batch(batch)
+                    batch = []
+            except asyncio.CancelledError:
+                if batch:
+                    await self._flush_batch(batch)
+                return
+
+    async def _flush_batch(self, batch: list[tuple]) -> None:
+        """Write a batch of episodes to SQLite in one transaction."""
+        try:
+            db = await self._get_connection()
+            await db.executemany(
+                """INSERT OR REPLACE INTO episodes (key, content, metadata, created_at, agent_id)
+                   VALUES (?, ?, ?, ?, ?)""",
+                batch,
+            )
+            await db.commit()
+        except Exception as exc:
+            _log.warning("Episodic write-behind flush failed: %s", exc)
+
     # ------------------------------------------------------------------
     # CRUD
     # ------------------------------------------------------------------
@@ -81,7 +127,14 @@ class EpisodicMemory:
         return self._conn
 
     async def close(self) -> None:
-        """Close the cached SQLite connection if open."""
+        """Flush pending writes and close the SQLite connection."""
+        if self._writer_task is not None:
+            self._writer_task.cancel()
+            try:
+                await self._writer_task
+            except asyncio.CancelledError:
+                pass
+            self._writer_task = None
         if self._conn is not None:
             await self._conn.close()
             self._conn = None
@@ -92,21 +145,30 @@ class EpisodicMemory:
         content: str,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Store (or overwrite) an episodic memory entry."""
+        """Store (or overwrite) an episodic memory entry.
+
+        SQLite writes go through the write-behind queue to prevent SQLITE_BUSY
+        under concurrent async workloads. The background writer batches and
+        flushes every 100ms or 50 items.
+        """
         await self._ensure_initialized()
         meta = metadata or {}
 
         if self._db_path is not None:
             now = datetime.now(timezone.utc).isoformat()
-            db = await self._get_connection()
-            await db.execute(
-                """
-                INSERT OR REPLACE INTO episodes (key, content, metadata, created_at, agent_id)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (key, content, json.dumps(meta), now, self._agent_id),
-            )
-            await db.commit()
+            row = (key, content, json.dumps(meta), now, self._agent_id)
+            if self._write_queue is not None:
+                # Non-blocking enqueue — background writer handles I/O
+                await self._write_queue.put(row)
+            else:
+                # Fallback: direct write (queue not started)
+                db = await self._get_connection()
+                await db.execute(
+                    """INSERT OR REPLACE INTO episodes (key, content, metadata, created_at, agent_id)
+                       VALUES (?, ?, ?, ?, ?)""",
+                    row,
+                )
+                await db.commit()
         else:
             # In-memory: overwrite if key exists (scoped by agent_id), else append
             for entry in self._entries:

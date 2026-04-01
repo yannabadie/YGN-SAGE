@@ -666,14 +666,33 @@ impl ContextualBandit {
     /// Get quality posterior mean for a specific (model, template) arm.
     ///
     /// Returns `None` if the arm doesn't exist or has no observations.
-    /// Used by ModelAssigner feedback loop (MonoScale arXiv 2601.23219):
-    /// bandit learns which models underperform → assignment avoids them.
     pub fn get_quality_mean(&self, model_id: &str, template: &str) -> Option<f64> {
         let key = ArmKey {
             model_id: model_id.to_string(),
             template: template.to_string(),
         };
         self.arms.get(&key).map(|arm| arm.quality.mean())
+    }
+
+    /// Thompson-sample quality for a specific (model, template) arm.
+    ///
+    /// Returns a single draw from the arm's Beta posterior. This preserves
+    /// exploration: bad models get low draws (~0.05) 99% of the time but
+    /// retain a small chance (~0.1%) of being retried — enabling automatic
+    /// rediscovery if the model improves server-side.
+    /// Based on MonoScale (arXiv 2601.23219): trust-region Thompson sampling.
+    pub fn sample_quality(&self, model_id: &str, template: &str) -> f64 {
+        let key = ArmKey {
+            model_id: model_id.to_string(),
+            template: template.to_string(),
+        };
+        match self.arms.get(&key) {
+            Some(arm) => {
+                let mut rng = rand::rng();
+                arm.quality.sample(&mut rng)
+            }
+            None => 0.5, // neutral prior for unknown arms
+        }
     }
 
     /// Get a reference to the arm posteriors map (test/integration use only).
@@ -873,10 +892,15 @@ impl ContextualBandit {
     }
 
     /// Get quality posterior mean for a specific (model, template) arm.
-    /// Returns None if arm doesn't exist. Used by ModelAssigner feedback loop.
     #[pyo3(name = "get_quality_mean")]
     pub fn py_get_quality_mean(&self, model_id: &str, template: &str) -> Option<f64> {
         self.get_quality_mean(model_id, template)
+    }
+
+    /// Thompson-sample quality from arm's Beta posterior (preserves exploration).
+    #[pyo3(name = "sample_quality")]
+    pub fn py_sample_quality(&self, model_id: &str, template: &str) -> f64 {
+        self.sample_quality(model_id, template)
     }
 
     /// Set the temporal decay factor, clamped to [0.9, 1.0].

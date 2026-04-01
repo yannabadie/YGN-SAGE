@@ -149,6 +149,13 @@ pub struct ModelCard {
     #[pyo3(get)]
     #[serde(default = "default_safety")]
     pub safety_rating: f32,
+
+    /// Security clearance level: 0=public, 1=internal, 2=confidential, 3=restricted.
+    /// Models with higher labels can process more sensitive data.
+    /// Nodes with security_label=2 require models with security_label >= 2.
+    #[pyo3(get)]
+    #[serde(default)]
+    pub security_label: u8,
 }
 
 #[pymethods]
@@ -250,6 +257,7 @@ mod tests {
             context_window: 128000,
             domain_scores: HashMap::new(),
             safety_rating: 0.5,
+            security_label: 0,
         }
     }
 

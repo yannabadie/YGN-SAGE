@@ -592,11 +592,14 @@ class CognitiveOrchestrationPipeline:
         except Exception as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
-        # Bandit feedback: override assignments where learned quality is poor
-        # Closes the learn→act loop (MonoScale arXiv 2601.23219)
-        if self.bandit and ctx.topology and hasattr(self.bandit, 'get_quality_mean'):
+        # Bandit quality feedback: Thompson-sampled penalty (not hard exclusion).
+        # Bad models get low Thompson draws (~0.05) → reduced budget → naturally
+        # reassigned to cheaper models. But they retain ~0.1% chance of retry,
+        # preserving exploration per Thompson Sampling theory.
+        # Based on MonoScale (arXiv 2601.23219): trust-region Thompson sampling.
+        if self.bandit and ctx.topology and hasattr(self.bandit, 'sample_quality'):
             template_type = getattr(ctx.topology, 'template_type', '')
-            if self.bandit.arm_count() > 5:  # need enough data
+            if self.bandit.arm_count() > 5:
                 for i in range(ctx.topology.node_count() if hasattr(ctx.topology, 'node_count') else 0):
                     node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
                     if not node:
@@ -604,22 +607,26 @@ class CognitiveOrchestrationPipeline:
                     model_id = getattr(node, 'model_id', '')
                     if not model_id:
                         continue
-                    quality_prior = self.bandit.get_quality_mean(model_id, template_type)
-                    if quality_prior is not None and quality_prior < 0.4:
+                    # Thompson draw — low for bad models, high for good ones
+                    quality_sample = self.bandit.sample_quality(model_id, template_type)
+                    if quality_sample < 0.3:
+                        # Soft reassignment: reduce budget proportionally to quality
+                        # This forces ModelAssigner toward cheaper/faster alternatives
+                        # without hard-excluding — preserving exploration
+                        reduced_budget = ctx.budget * max(quality_sample, 0.1)
                         try:
-                            better = self.assigner.assign_single_node(
-                                ctx.topology, i, ctx.domain, ctx.budget,
-                                [model_id],  # exclude underperforming model
+                            self.assigner.assign_single_node(
+                                ctx.topology, i, ctx.domain, reduced_budget,
                             )
-                            if better and better > 0:
-                                new_id = getattr(ctx.topology.get_node(i), 'model_id', '')
+                            new_id = getattr(ctx.topology.get_node(i), 'model_id', '')
+                            if new_id != model_id:
                                 log.info(
-                                    "Bandit override node %d: %s → %s (quality_prior=%.2f)",
-                                    i, model_id, new_id, quality_prior,
+                                    "Bandit soft reassign node %d: %s → %s (quality_sample=%.2f)",
+                                    i, model_id, new_id, quality_sample,
                                 )
                                 ctx.assignments[i] = new_id
                         except Exception:
-                            pass  # assigner may not support assign_single_node
+                            pass
 
         # Filter out models assigned to unavailable providers (circuit breaker open)
         if self.provider_pool and hasattr(self.provider_pool, 'is_available'):

@@ -144,21 +144,23 @@ class TopologyRunner:
         return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
 
     @staticmethod
-    def _deduplicate_context(
+    def _cosine_sim(a: list[float], b: list[float]) -> float:
+        """Cosine similarity between two embedding vectors (pure Python)."""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        if norm_a < 1e-15 or norm_b < 1e-15:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    @staticmethod
+    def _deduplicate_jaccard(
         parts: list[tuple[str, str]],
         threshold: float = 0.85,
     ) -> list[tuple[str, str]]:
-        """Remove near-duplicate predecessor outputs via Jaccard word similarity.
-
-        When multiple parallel workers produce similar answers (e.g., robust
-        template with 3 workers), passing all of them wastes context. Keep only
-        the longest unique output per similarity cluster.
-
-        Based on S2-MAD (arXiv 2502.04790): -94% tokens, <2% perf loss.
-        """
+        """Fallback: Jaccard word dedup when embeddings unavailable."""
         if len(parts) <= 1:
             return parts
-
         deduplicated: list[tuple[str, str]] = []
         for text_i, role_i in parts:
             words_i = set(text_i.lower().split())
@@ -168,14 +170,58 @@ class TopologyRunner:
                 if words_i and words_j:
                     jaccard = len(words_i & words_j) / len(words_i | words_j)
                     if jaccard > threshold:
-                        # Keep the longer one
-                        if len(text_i) > len(text_j):
+                        if len(text_i) < len(text_j):
                             deduplicated[j] = (text_i, role_i)
                         is_duplicate = True
                         break
             if not is_duplicate:
                 deduplicated.append((text_i, role_i))
         return deduplicated
+
+    @classmethod
+    def _deduplicate_context(
+        cls,
+        parts: list[tuple[str, str]],
+        threshold: float = 0.90,
+    ) -> list[tuple[str, str]]:
+        """Remove near-duplicate predecessor outputs via semantic similarity.
+
+        Uses cosine similarity on arctic-embed-m embeddings (768-dim) when
+        available. Falls back to Jaccard word similarity otherwise.
+
+        Tie-breaker: keep **shortest** (penalize verbosity, not reward it).
+
+        Based on S2-MAD (arXiv 2502.04790): -94% tokens, <2% perf loss.
+        """
+        if len(parts) <= 1:
+            return parts
+
+        # Try semantic similarity (cosine on embeddings)
+        try:
+            from sage.memory.embedder import Embedder
+            emb = Embedder()
+            if not emb.is_semantic:
+                return cls._deduplicate_jaccard(parts)
+            texts = [t for t, _ in parts]
+            vectors = emb.embed_batch(texts)
+        except Exception:
+            return cls._deduplicate_jaccard(parts)
+
+        deduplicated: list[tuple[str, str, list[float]]] = []
+        for (text_i, role_i), vec_i in zip(parts, vectors):
+            is_duplicate = False
+            for j, (text_j, _, vec_j) in enumerate(deduplicated):
+                sim = cls._cosine_sim(vec_i, vec_j)
+                if sim > threshold:
+                    # Keep the SHORTER one (penalize verbosity)
+                    if len(text_i) < len(text_j):
+                        deduplicated[j] = (text_i, role_i, vec_i)
+                    is_duplicate = True
+                    break
+            if not is_duplicate:
+                deduplicated.append((text_i, role_i, vec_i))
+
+        return [(t, r) for t, r, _ in deduplicated]
 
     async def _execute_code_node(
         self, node_idx: int, task: str, context_override: str | None = None,
@@ -305,6 +351,39 @@ class TopologyRunner:
             provider, config = self._provider_pool.resolve(node_model_id)
         else:
             provider, config = self._llm, self._config
+
+        # Context gate: if payload exceeds model window, compress via summarization
+        total_chars = sum(len(m.content) for m in messages)
+        context_window = getattr(config, 'context_window', 0) or getattr(node, 'max_wall_time_s', 0) * 0 or 128000
+        if hasattr(config, 'max_tokens') and config.max_tokens:
+            context_window = config.max_tokens
+        estimated_tokens = total_chars // 4
+        if estimated_tokens > context_window * 0.85:
+            # Compress the context message to fit
+            context_msg = next(
+                (m for m in messages if m.content.startswith("Context from previous")),
+                None,
+            )
+            if context_msg:
+                log.warning(
+                    "Context overflow for node %d (%s): %d tokens > %d * 0.85, compressing",
+                    node_idx, role, estimated_tokens, context_window,
+                )
+                try:
+                    summary_msgs = [
+                        Message(role=Role.SYSTEM, content="Summarize concisely. Preserve all key facts, numbers, code, and conclusions."),
+                        Message(role=Role.USER, content=context_msg.content[:context_window * 2]),
+                    ]
+                    summary_resp = await asyncio.wait_for(
+                        provider.generate(messages=summary_msgs, config=config),
+                        timeout=30.0,
+                    )
+                    context_msg.content = f"Context (summarized):\n{summary_resp.content or ''}"
+                except Exception as exc:
+                    # Compression failed — hard truncate as last resort
+                    max_chars = int(context_window * 0.6 * 4)
+                    context_msg.content = context_msg.content[:max_chars] + "\n[truncated]"
+                    log.error("Context compression failed for node %d: %s", node_idx, exc)
 
         # Per-node resilience: timeout + retry with fallback provider
         output = ""
