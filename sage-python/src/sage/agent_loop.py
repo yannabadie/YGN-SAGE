@@ -421,26 +421,8 @@ class AgentLoop:
 
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
-        tool = self._tools.get(tc.name)
-        if tool is None:
-            # Emit TOOL_GAP for ToolForge gap detection
-            self._emit(
-                LoopPhase.ACT,
-                tool_gap=True,
-                tool_name=tc.name,
-                tool_args=tc.arguments,
-            )
-            return f"Error: Unknown tool '{tc.name}'"
-        kwargs = tc.arguments
-        if not isinstance(kwargs, dict):
-            log.warning("Tool '%s' received non-dict arguments: %s", tc.name, type(kwargs))
-            return f"Error: Tool '{tc.name}' received invalid arguments (expected dict, got {type(kwargs).__name__})"
-        try:
-            result = await tool.execute(kwargs.copy())
-            return result.output
-        except (RuntimeError, ValueError, TimeoutError) as e:
-            log.error("Tool '%s' execution failed: %s", tc.name, e)
-            return f"Error executing tool '{tc.name}': {type(e).__name__}: {e}"
+        from sage.agent_loop_execution import execute_tool_call
+        return await execute_tool_call(tc, self._tools, self._emit)
 
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle.
@@ -608,7 +590,14 @@ class AgentLoop:
         self.working_memory.add_event("ASSISTANT", full_text)
 
     async def _run_legacy(self, task: str) -> str:
-        """Legacy run() — frozen copy for SAGE_AGENT_LOOP_LEGACY=1 fallback."""
+        """Legacy run() -- frozen copy for SAGE_AGENT_LOOP_LEGACY=1 fallback."""
+        from sage.agent_loop_memory import inject_memory_context
+        from sage.agent_loop_execution import (
+            execute_tool_calls_and_record,
+            store_episodic_and_entities,
+        )
+        from sage.agent_loop_learning import compute_learn_meta, record_outcome
+
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
         self._s3_retries = 0
@@ -695,48 +684,18 @@ class AgentLoop:
 
         result_text = ""
 
-        # Semantic memory context injection (one-time, before loop)
-        if self.semantic_memory and not self._cb_semantic.should_skip() and not self._skip_memory:
-            try:
-                sem_context = self.semantic_memory.get_context_for(task)
-                if sem_context and self._relevance_gate.is_relevant(task, sem_context):
-                    messages.insert(1, Message(
-                        role=Role.SYSTEM,
-                        content=f"Relevant knowledge from previous interactions:\n{sem_context}",
-                    ))
-                self._cb_semantic.record_success()
-            except (RuntimeError, AttributeError) as e:
-                self._cb_semantic.record_failure(e)
-
-        # Causal memory context injection (directed cause-effect chains)
-        if self.causal_memory and not self._cb_causal.should_skip() and not self._skip_memory:
-            try:
-                causal_context = self.causal_memory.get_context_for(task)
-                if causal_context and self._relevance_gate.is_relevant(task, causal_context):
-                    messages.insert(
-                        min(2, len(messages)),
-                        Message(
-                            role=Role.SYSTEM,
-                            content=f"Causal relationships from previous interactions:\n{causal_context}",
-                        ),
-                    )
-                self._cb_causal.record_success()
-            except (RuntimeError, AttributeError) as e:
-                self._cb_causal.record_failure(e)
-
-        # S-MMU context injection (graph-based retrieval from compacted chunks)
-        if not self._cb_smmu.should_skip() and not self._skip_memory:
-            try:
-                from sage.memory.smmu_context import retrieve_smmu_context
-                smmu_context = retrieve_smmu_context(self.working_memory)
-                if smmu_context and self._relevance_gate.is_relevant(task, smmu_context):
-                    messages.insert(
-                        min(2, len(messages)),
-                        Message(role=Role.SYSTEM, content=smmu_context),
-                    )
-                self._cb_smmu.record_success()
-            except (ImportError, RuntimeError, AttributeError) as e:
-                self._cb_smmu.record_failure(e)
+        # Memory context injection (semantic + causal + S-MMU)
+        inject_memory_context(
+            messages, task,
+            semantic_memory=self.semantic_memory,
+            causal_memory=self.causal_memory,
+            working_memory=self.working_memory,
+            relevance_gate=self._relevance_gate,
+            cb_semantic=self._cb_semantic,
+            cb_causal=self._cb_causal,
+            cb_smmu=self._cb_smmu,
+            skip_memory=self._skip_memory,
+        )
 
         while self.step_count < self.config.max_steps:
             self.step_count += 1
@@ -844,164 +803,12 @@ class AgentLoop:
                 else:
                     self._s3_retries = 0
 
-            # System 2 validation (Empirical — AVR)
+            # System 2 validation (Empirical -- AVR)
             elif self.config.validation_level == 2 and content and not self._skip_avr:
-                code_blocks = _extract_code_blocks(content)
-
-                if code_blocks and self.sandbox_manager:
-                    raw_code = code_blocks[-1]
-                    cleaned_code = _strip_markdown_fences(raw_code)
-
-                    _te_rejected = False
-                    if self.tool_executor:
-                        try:
-                            te_result = self.tool_executor.validate(cleaned_code)
-                            if not te_result.valid:
-                                te_err = "; ".join(te_result.errors)
-                                log.warning("ToolExecutor rejected code: %s", te_err)
-                                _te_rejected = True
-                                syntax_ok, syntax_err = False, te_err
-                            else:
-                                log.debug("ToolExecutor validated code successfully")
-                        except (ImportError, RuntimeError) as e:
-                            log.warning("ToolExecutor failed, falling back to Python: %s", e)
-
-                    if not _te_rejected:
-                        syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
-
-                    if not syntax_ok:
-                        self._s2_avr_retries += 1
-                        self._avr_error_history.append(syntax_err)
-
-                        if _is_stagnating(self._avr_error_history, window=3):
-                            log.warning("S2 AVR stagnation detected (same error %d times), forcing escalation.",
-                                        len(self._avr_error_history))
-                            self._s2_avr_retries = self._max_s2_avr_retries + 1
-                        else:
-                            budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
-                            self._emit(LoopPhase.ACT,
-                                       validation="s2_avr_fail",
-                                       avr_iteration=self._s2_avr_retries,
-                                       avr_budget_left=budget_left,
-                                       error_type="syntax",
-                                       error=syntax_err)
-                            if self._s2_avr_retries <= self._max_s2_avr_retries:
-                                log.info("S2 AVR syntax fail (iteration %d/%d): %s",
-                                         self._s2_avr_retries, self._max_s2_avr_retries, syntax_err)
-                                messages.append(Message(
-                                    role=Role.USER,
-                                    content=(
-                                        f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
-                                        f"Syntax error in your code:\n```\n{syntax_err}\n```\n"
-                                        f"Fix the syntax error and return ONLY corrected Python code "
-                                        f"in a ```python fenced block."
-                                    ),
-                                ))
-                                continue
-                    else:
-                        if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip() and not self._skip_guardrails:
-                            try:
-                                runtime_results = await self.guardrail_pipeline.check_all(
-                                    input=cleaned_code,
-                                    context={"step": self.step_count, "phase": "runtime"}
-                                )
-                                for r in runtime_results:
-                                    self._emit(LoopPhase.ACT,
-                                               guardrail="runtime",
-                                               guardrail_passed=r.passed,
-                                               guardrail_reason=r.reason)
-                                self._cb_runtime_guard.record_success()
-                            except (RuntimeError, ValueError, TimeoutError) as e:
-                                self._cb_runtime_guard.record_failure(e)
-
-                        sandbox = await self.sandbox_manager.create()
-                        try:
-                            result = await sandbox.execute(
-                                f"python3 -c {_shell_quote(cleaned_code)}"
-                            )
-                            if result.exit_code != 0:
-                                stderr_full = (result.stderr or "").strip()
-                                stderr_last = stderr_full.split("\n")[-1][:200]
-                                stdout_snippet = (result.stdout or "").strip()[:200]
-                                runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_last}"
-                                self._s2_avr_retries += 1
-                                self._avr_error_history.append(runtime_err)
-
-                                if _is_stagnating(self._avr_error_history, window=3):
-                                    log.warning("S2 AVR stagnation detected (same runtime error %d times), forcing escalation.",
-                                                len(self._avr_error_history))
-                                    self._s2_avr_retries = self._max_s2_avr_retries + 1
-                                else:
-                                    budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
-                                    self._emit(LoopPhase.ACT,
-                                               validation="s2_avr_fail",
-                                               avr_iteration=self._s2_avr_retries,
-                                               avr_budget_left=budget_left,
-                                               error_type="runtime",
-                                               error=runtime_err)
-                                    if self._s2_avr_retries <= self._max_s2_avr_retries:
-                                        log.info("S2 AVR runtime fail (iteration %d/%d): %s",
-                                                 self._s2_avr_retries, self._max_s2_avr_retries, runtime_err)
-                                        feedback_parts = [
-                                            f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: Code execution failed.",
-                                        ]
-                                        if stderr_full:
-                                            feedback_parts.append(f"Traceback:\n```\n{stderr_full[:500]}\n```")
-                                        if stdout_snippet:
-                                            feedback_parts.append(f"Stdout: {stdout_snippet}")
-                                        feedback_parts.append(
-                                            "Analyze the error, fix the bug, and return ONLY corrected Python code "
-                                            "in a ```python fenced block."
-                                        )
-                                        messages.append(Message(
-                                            role=Role.USER,
-                                            content="\n".join(feedback_parts),
-                                        ))
-                                        continue
-                            else:
-                                self._emit(LoopPhase.ACT,
-                                           validation="s2_avr_pass",
-                                           stdout=result.stdout[:200])
-                                self._s2_avr_retries = 0
-                                self._avr_error_history.clear()
-                        finally:
-                            await self.sandbox_manager.destroy(sandbox.id)
-
-                elif not code_blocks and self.step_count == 1:
-                    has_reasoning = "<think>" in content or "\n1." in content or "\n- " in content
-                    if not has_reasoning:
-                        self._s2_avr_retries += 1
-                        if self._s2_avr_retries <= self._max_s2_avr_retries:
-                            log.info("S2 validation: missing reasoning, requesting CoT.")
-                            messages.append(Message(
-                                role=Role.USER,
-                                content="SYSTEM: Provide step-by-step reasoning for this task.",
-                            ))
-                            continue
-
-                # S2 -> S3 escalation
-                if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
-                    log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
-                    self.config.validation_level = 3
-                    self._s3_retries = 0
-                    self._avr_error_history.clear()
-                    self._emit(LoopPhase.THINK, escalation="s2_to_s3",
-                               reason="AVR budget exhausted")
-                    escalation_msg = (
-                        "SYSTEM: Escalating to formal verification. Use <think> tags "
-                        "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
-                        "assert invariant) for rigorous step-by-step reasoning."
-                    )
-                    inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
-                    if inv_feedback:
-                        escalation_msg += (
-                            "\n\nPrevious invariant verification failures:\n"
-                            + "\n".join(f"- {f}" for f in inv_feedback)
-                        )
-                    messages.append(Message(
-                        role=Role.USER,
-                        content=escalation_msg,
-                    ))
+                avr_action = await self._run_legacy_avr(
+                    content, messages,
+                )
+                if avr_action == "continue":
                     continue
 
             # CGRS: stop if converged
@@ -1014,37 +821,18 @@ class AgentLoop:
 
             self.working_memory.add_event("ASSISTANT", content)
 
-            if self.episodic_memory and len(content) > 100 and not self._cb_episodic.should_skip() and not self._skip_memory:
-                try:
-                    await self.episodic_memory.store(
-                        key=f"step-{self.step_count}",
-                        content=content[:500],
-                        metadata={"task": task, "step": self.step_count},
-                    )
-                    self._cb_episodic.record_success()
-                except (RuntimeError, AttributeError) as e:
-                    self._cb_episodic.record_failure(e)
-
-            if self.memory_agent and self.semantic_memory and content and len(content) > 50 and not self._cb_entity.should_skip() and not self._skip_memory:
-                try:
-                    extraction = await self.memory_agent.extract(content[:1000])
-                    if extraction.entities:
-                        self.semantic_memory.add_extraction(extraction)
-                        # Feed causal memory: consecutive entities form causal edges
-                        # AMA-Bench (2602.22769): memory without causality fails
-                        if self.causal_memory and len(extraction.entities) >= 2 and not self._cb_causal.should_skip():
-                            try:
-                                for i in range(len(extraction.entities) - 1):
-                                    src, tgt = extraction.entities[i], extraction.entities[i + 1]
-                                    self.causal_memory.add_entity(src)
-                                    self.causal_memory.add_entity(tgt)
-                                    self.causal_memory.add_causal_edge(src, tgt, cause_type="enabled")
-                                self._cb_causal.record_success()
-                            except (RuntimeError, AttributeError) as exc:
-                                self._cb_causal.record_failure(exc)
-                    self._cb_entity.record_success()
-                except (RuntimeError, AttributeError) as e:
-                    self._cb_entity.record_failure(e)
+            # Store episodic memory and extract entities
+            await store_episodic_and_entities(
+                task, content, self.step_count,
+                episodic_memory=self.episodic_memory,
+                memory_agent=self.memory_agent,
+                semantic_memory=self.semantic_memory,
+                causal_memory=self.causal_memory,
+                cb_episodic=self._cb_episodic,
+                cb_entity=self._cb_entity,
+                cb_causal=self._cb_causal,
+                skip_memory=self._skip_memory,
+            )
 
             if not response.tool_calls:
                 result_text = content
@@ -1052,95 +840,41 @@ class AgentLoop:
                 break
 
             # === ACT: Execute tools ===
-            messages.append(Message(role=Role.ASSISTANT, content=content))
-
-            for tc in response.tool_calls:
-                self._emit(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
-                output = await self._execute_tool_call(tc)
-                self.working_memory.add_event("TOOL", f"{tc.name} -> {output}")
-                messages.append(Message(
-                    role=Role.TOOL, content=output,
-                    tool_call_id=tc.id, name=tc.name,
-                ))
-                # Causal edge: tool invocation "triggered" its output entity
-                if self.causal_memory and not self._cb_causal.should_skip() and not self._skip_memory:
-                    try:
-                        tool_entity = f"tool:{tc.name}"
-                        output_entity = f"result:{tc.name}:{self.step_count}"
-                        self.causal_memory.add_entity(tool_entity)
-                        self.causal_memory.add_entity(output_entity)
-                        self.causal_memory.add_causal_edge(tool_entity, output_entity, cause_type="triggered")
-                        self._cb_causal.record_success()
-                    except (RuntimeError, AttributeError) as exc:
-                        self._cb_causal.record_failure(exc)
-
-            if len(messages) > MAX_MESSAGES:
-                messages = messages[:2] + messages[-(MAX_MESSAGES - 2):]
+            await execute_tool_calls_and_record(
+                response, content, messages,
+                tool_registry=self._tools,
+                working_memory=self.working_memory,
+                causal_memory=self.causal_memory,
+                cb_causal=self._cb_causal,
+                skip_memory=self._skip_memory,
+                step_count=self.step_count,
+                emit_fn=self._emit,
+                max_messages=MAX_MESSAGES,
+            )
 
             # === LEARN: Update memory and stats ===
-            aio = self._compute_aio()
-            wall = time.perf_counter() - self.start_time
-            learn_meta: dict[str, Any] = {
-                "aio_ratio": aio,
-                "events": self.working_memory.event_count(),
-                "wall_time_s": round(wall, 1),
-                "cost_usd": round(self.total_cost_usd, 4),
-            }
+            learn_meta = compute_learn_meta(
+                start_time=self.start_time,
+                total_inference_time=self.total_inference_time,
+                total_cost_usd=self.total_cost_usd,
+                working_memory=self.working_memory,
+                agent_pool=self.agent_pool,
+                semantic_memory=self.semantic_memory,
+                causal_memory=self.causal_memory,
+            )
 
-            if self.agent_pool and hasattr(self.agent_pool, "list_agents"):
-                learn_meta["sub_agents"] = self.agent_pool.list_agents()
-
-            if self.semantic_memory:
-                learn_meta["semantic_entities"] = self.semantic_memory.entity_count()
-
-            if self.causal_memory:
-                learn_meta["causal_entities"] = self.causal_memory.entity_count()
-                learn_meta["causal_edges"] = len(self.causal_memory._causal_edges)
-
-            if self._auto_evolve and self.topology_population and self.topology_population.size() > 0 and not self._cb_evo.should_skip():
-                try:
-                    cells = []
-                    best_fitness = 0.0
-                    for (x, y), (genome, score) in self.topology_population._grid.items():
-                        cells.append({"x": x, "y": y, "fitness": round(score, 2)})
-                        best_fitness = max(best_fitness, score)
-                    learn_meta["evo_cells"] = cells
-                    learn_meta["evo_best"] = round(best_fitness, 2)
-                    learn_meta["evo_grid_size"] = len(cells)
-                    self._cb_evo.record_success()
-                except (RuntimeError, AttributeError) as e:
-                    self._cb_evo.record_failure(e)
-
-            # SA-3: Online Evolution — run evolve() when should_evolve() triggers
-            if self._auto_evolve and self.topology_engine and not self._cb_evo.should_skip():
-                try:
-                    if hasattr(self.topology_engine, 'should_evolve') and self.topology_engine.should_evolve():
-                        from sage.constants import EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS
-                        self.topology_engine.evolve(
-                            pop_size=EVOLUTION_ONLINE_POP_SIZE,
-                            generations=EVOLUTION_ONLINE_GENERATIONS,
-                        )
-                        learn_meta["evo_online_run"] = True
-                    if hasattr(self.topology_engine, 'archive_cell_count'):
-                        learn_meta["evo_archive_cells"] = self.topology_engine.archive_cell_count()
-                        learn_meta["evo_archive_coverage"] = round(
-                            self.topology_engine.archive_coverage(), 3
-                        )
-                    self._cb_evo.record_success()
-                except (ImportError, RuntimeError) as e:
-                    self._cb_evo.record_failure(e)
-
-            # Inter-tier consolidation: episodic -> semantic -> causal
-            if self.consolidator and self.step_count % CONSOLIDATION_INTERVAL_STEPS == 0 and not self._skip_memory:
-                try:
-                    consolidation_result = await self.consolidator.consolidate()
-                    if consolidation_result.processed > 0:
-                        learn_meta["consolidation_processed"] = consolidation_result.processed
-                        learn_meta["consolidation_entities"] = consolidation_result.entities_added
-                except (RuntimeError, AttributeError):
-                    pass  # Best-effort, never blocks the loop
-
-            self._emit(LoopPhase.LEARN, **learn_meta)
+            await record_outcome(
+                emit_fn=self._emit,
+                learn_meta=learn_meta,
+                auto_evolve=self._auto_evolve,
+                topology_population=self.topology_population,
+                topology_engine=self.topology_engine,
+                consolidator=self.consolidator,
+                step_count=self.step_count,
+                consolidation_interval=CONSOLIDATION_INTERVAL_STEPS,
+                skip_memory=self._skip_memory,
+                cb_evo=self._cb_evo,
+            )
 
         self._last_avr_iterations = self._s2_avr_retries
 
@@ -1170,6 +904,172 @@ class AgentLoop:
         self._emit(LoopPhase.LEARN, **final_meta)
         self.config.validation_level = self._original_validation_level
         return result_text or f"Agent finished at step {self.step_count}"
+
+    async def _run_legacy_avr(
+        self,
+        content: str,
+        messages: list[Message],
+    ) -> str:
+        """Run S2 AVR validation within _run_legacy. Returns 'continue' or 'proceed'."""
+        code_blocks = _extract_code_blocks(content)
+
+        if code_blocks and self.sandbox_manager:
+            raw_code = code_blocks[-1]
+            cleaned_code = _strip_markdown_fences(raw_code)
+
+            _te_rejected = False
+            if self.tool_executor:
+                try:
+                    te_result = self.tool_executor.validate(cleaned_code)
+                    if not te_result.valid:
+                        te_err = "; ".join(te_result.errors)
+                        log.warning("ToolExecutor rejected code: %s", te_err)
+                        _te_rejected = True
+                        syntax_ok, syntax_err = False, te_err
+                    else:
+                        log.debug("ToolExecutor validated code successfully")
+                except (ImportError, RuntimeError) as e:
+                    log.warning("ToolExecutor failed, falling back to Python: %s", e)
+
+            if not _te_rejected:
+                syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
+
+            if not syntax_ok:
+                self._s2_avr_retries += 1
+                self._avr_error_history.append(syntax_err)
+
+                if _is_stagnating(self._avr_error_history, window=3):
+                    log.warning("S2 AVR stagnation detected (same error %d times), forcing escalation.",
+                                len(self._avr_error_history))
+                    self._s2_avr_retries = self._max_s2_avr_retries + 1
+                else:
+                    budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
+                    self._emit(LoopPhase.ACT,
+                               validation="s2_avr_fail",
+                               avr_iteration=self._s2_avr_retries,
+                               avr_budget_left=budget_left,
+                               error_type="syntax",
+                               error=syntax_err)
+                    if self._s2_avr_retries <= self._max_s2_avr_retries:
+                        log.info("S2 AVR syntax fail (iteration %d/%d): %s",
+                                 self._s2_avr_retries, self._max_s2_avr_retries, syntax_err)
+                        messages.append(Message(
+                            role=Role.USER,
+                            content=(
+                                f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
+                                f"Syntax error in your code:\n```\n{syntax_err}\n```\n"
+                                f"Fix the syntax error and return ONLY corrected Python code "
+                                f"in a ```python fenced block."
+                            ),
+                        ))
+                        return "continue"
+            else:
+                if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip() and not self._skip_guardrails:
+                    try:
+                        runtime_results = await self.guardrail_pipeline.check_all(
+                            input=cleaned_code,
+                            context={"step": self.step_count, "phase": "runtime"}
+                        )
+                        for r in runtime_results:
+                            self._emit(LoopPhase.ACT,
+                                       guardrail="runtime",
+                                       guardrail_passed=r.passed,
+                                       guardrail_reason=r.reason)
+                        self._cb_runtime_guard.record_success()
+                    except (RuntimeError, ValueError, TimeoutError) as e:
+                        self._cb_runtime_guard.record_failure(e)
+
+                sandbox = await self.sandbox_manager.create()
+                try:
+                    result = await sandbox.execute(
+                        f"python3 -c {_shell_quote(cleaned_code)}"
+                    )
+                    if result.exit_code != 0:
+                        stderr_full = (result.stderr or "").strip()
+                        stderr_last = stderr_full.split("\n")[-1][:200]
+                        stdout_snippet = (result.stdout or "").strip()[:200]
+                        runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_last}"
+                        self._s2_avr_retries += 1
+                        self._avr_error_history.append(runtime_err)
+
+                        if _is_stagnating(self._avr_error_history, window=3):
+                            log.warning("S2 AVR stagnation detected (same runtime error %d times), forcing escalation.",
+                                        len(self._avr_error_history))
+                            self._s2_avr_retries = self._max_s2_avr_retries + 1
+                        else:
+                            budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
+                            self._emit(LoopPhase.ACT,
+                                       validation="s2_avr_fail",
+                                       avr_iteration=self._s2_avr_retries,
+                                       avr_budget_left=budget_left,
+                                       error_type="runtime",
+                                       error=runtime_err)
+                            if self._s2_avr_retries <= self._max_s2_avr_retries:
+                                log.info("S2 AVR runtime fail (iteration %d/%d): %s",
+                                         self._s2_avr_retries, self._max_s2_avr_retries, runtime_err)
+                                feedback_parts = [
+                                    f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: Code execution failed.",
+                                ]
+                                if stderr_full:
+                                    feedback_parts.append(f"Traceback:\n```\n{stderr_full[:500]}\n```")
+                                if stdout_snippet:
+                                    feedback_parts.append(f"Stdout: {stdout_snippet}")
+                                feedback_parts.append(
+                                    "Analyze the error, fix the bug, and return ONLY corrected Python code "
+                                    "in a ```python fenced block."
+                                )
+                                messages.append(Message(
+                                    role=Role.USER,
+                                    content="\n".join(feedback_parts),
+                                ))
+                                return "continue"
+                    else:
+                        self._emit(LoopPhase.ACT,
+                                   validation="s2_avr_pass",
+                                   stdout=result.stdout[:200])
+                        self._s2_avr_retries = 0
+                        self._avr_error_history.clear()
+                finally:
+                    await self.sandbox_manager.destroy(sandbox.id)
+
+        elif not code_blocks and self.step_count == 1:
+            has_reasoning = "<think>" in content or "\n1." in content or "\n- " in content
+            if not has_reasoning:
+                self._s2_avr_retries += 1
+                if self._s2_avr_retries <= self._max_s2_avr_retries:
+                    log.info("S2 validation: missing reasoning, requesting CoT.")
+                    messages.append(Message(
+                        role=Role.USER,
+                        content="SYSTEM: Provide step-by-step reasoning for this task.",
+                    ))
+                    return "continue"
+
+        # S2 -> S3 escalation
+        if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
+            log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
+            self.config.validation_level = 3
+            self._s3_retries = 0
+            self._avr_error_history.clear()
+            self._emit(LoopPhase.THINK, escalation="s2_to_s3",
+                       reason="AVR budget exhausted")
+            escalation_msg = (
+                "SYSTEM: Escalating to formal verification. Use <think> tags "
+                "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
+                "assert invariant) for rigorous step-by-step reasoning."
+            )
+            inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
+            if inv_feedback:
+                escalation_msg += (
+                    "\n\nPrevious invariant verification failures:\n"
+                    + "\n".join(f"- {f}" for f in inv_feedback)
+                )
+            messages.append(Message(
+                role=Role.USER,
+                content=escalation_msg,
+            ))
+            return "continue"
+
+        return "proceed"
 
     def _compute_aio(self) -> float:
         wall = time.perf_counter() - self.start_time
