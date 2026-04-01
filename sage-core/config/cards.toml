@@ -131,36 +131,7 @@ formal = 0.66
 creative = 0.73
 factual = 0.35
 
-[[models]]
-id = "gpt-5.4-pro"
-provider = "openai"
-family = "gpt-5.4"
-code_score = 0.90
-reasoning_score = 0.97
-tool_use_score = 0.93
-math_score = 0.87
-formal_z3_strength = 0.68
-cost_input_per_m = 15.0
-cost_output_per_m = 120.0
-latency_ttft_ms = 8000.0
-tokens_per_sec = 50.0
-s1_affinity = 0.05
-s2_affinity = 0.92
-s3_affinity = 0.95
-recommended_topologies = ["avr", "loop"]
-supports_tools = true
-supports_json_mode = true
-supports_vision = true
-context_window = 1100000
-safety_rating = 0.80
-[models.domain_scores]
-math = 0.87
-code = 0.90
-reasoning = 0.97
-tool_use = 0.93
-formal = 0.68
-creative = 0.74
-factual = 0.32
+# gpt-5.4-pro: DOES NOT EXIST in OpenAI API (gpt-5.2-pro exists, not 5.4-pro). Removed April 2026.
 
 [[models]]
 id = "gpt-5.2"
