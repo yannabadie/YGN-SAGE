@@ -402,6 +402,24 @@ fn expr_to_term(
     }
 }
 
+/// Evaluate an AST node to a concrete i64 (constant expressions only).
+/// Returns None for variables, comparisons, and boolean operators.
+fn eval_ast(expr: &Expr) -> Option<i64> {
+    match expr {
+        Expr::Int(n) => Some(*n),
+        Expr::Arith(lhs, op, rhs) => {
+            let l = eval_ast(lhs)?;
+            let r = eval_ast(rhs)?;
+            Some(match op {
+                ArithOp::Add => l.checked_add(r)?,
+                ArithOp::Sub => l.checked_sub(r)?,
+                ArithOp::Mul => l.checked_mul(r)?,
+            })
+        }
+        _ => None,
+    }
+}
+
 /// Result of a formal verification check.
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -520,6 +538,27 @@ impl SmtVerifier {
         let violation = tm.mk_or(vec![too_low, too_high]);
         solver.assert(violation, &mut tm);
         solver.check(&mut tm) == SolverResult::Unsat
+    }
+
+    /// Try to parse a string as an arithmetic expression.
+    ///
+    /// Returns true if the string is a valid expression in OxiZ grammar,
+    /// false otherwise. Safe to call on arbitrary text (never panics).
+    /// Used as a "probe" in the island grammar pattern: scan text for
+    /// parsable arithmetic segments.
+    pub fn try_parse_expr(&self, expr: &str) -> bool {
+        Parser::new(expr).parse_all().is_ok()
+    }
+
+    /// Evaluate a constant arithmetic expression to a concrete i64.
+    ///
+    /// Returns None if the expression contains variables, boolean operators,
+    /// or fails to parse. Only evaluates integer arithmetic (+, -, *).
+    /// Uses the same parser as `verify_arithmetic_expr()` for consistency.
+    #[staticmethod]
+    pub fn eval_const_expr(expr: &str) -> Option<i64> {
+        let ast = Parser::new(expr).parse_all().ok()?;
+        eval_ast(&ast)
     }
 
     /// Verify a pre/post-condition pair (invariant implication).

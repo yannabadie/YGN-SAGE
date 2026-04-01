@@ -166,73 +166,68 @@ pub(crate) fn extract_array_bounds(code: &str) -> Vec<(i64, i64)> {
 // Text arithmetic extraction (Canal 2: non-code math verification)
 // ──────────────────────────────────────────────────────────────────────
 
-/// Extract arithmetic equations from free text (not code blocks).
+/// Extract arithmetic equations from free text using the OxiZ parser as probe.
 ///
-/// Detects patterns like "5 + 3 = 8", "7 * 6 = 42", "Total: 15 + 20 = 35".
-/// Returns (expression_string, claimed_result) pairs for OxiZ verification.
-/// Domain-agnostic: works for any text with inline arithmetic.
-pub(crate) fn extract_text_equations(text: &str) -> Vec<(String, i64)> {
+/// Scans for "= <number>" patterns, then probes backward with the OxiZ
+/// recursive descent parser (island grammar pattern) to find the longest
+/// valid arithmetic expression. No regex — uses the same parser as the
+/// SMT verifier for perfect consistency.
+///
+/// Based on Island Grammar Parsing (SLE 2012): define "islands" (arithmetic
+/// expressions) and "water" (everything else to skip).
+pub(crate) fn extract_text_equations(text: &str, verifier: &SmtVerifier) -> Vec<(String, i64)> {
     let mut results = Vec::new();
 
-    // Scan for patterns: <digits+ops> = <number>
-    // We look for "= <number>" and walk backwards to find the expression
-    for (i, _) in text.match_indices('=') {
-        // Skip "==" (code equality)
-        if text.get(i..i + 2) == Some("==") {
+    for (eq_pos, _) in text.match_indices('=') {
+        // Skip ==, !=, >=, <=
+        if text.get(eq_pos..eq_pos + 2) == Some("==") {
             continue;
         }
-        // Skip "!=" ">=" "<="
-        if i > 0 && matches!(text.as_bytes().get(i - 1), Some(b'!' | b'>' | b'<')) {
+        if eq_pos > 0 && matches!(text.as_bytes().get(eq_pos - 1), Some(b'!' | b'>' | b'<')) {
             continue;
         }
 
-        // Extract the number after '='
-        let after = text[i + 1..].trim_start();
+        // Parse RHS as integer
+        let after = text[eq_pos + 1..].trim_start();
         let num_end = after
             .find(|c: char| !c.is_ascii_digit() && c != '-')
             .unwrap_or(after.len());
         if num_end == 0 {
             continue;
         }
-        let num_str = &after[..num_end];
-        let Ok(expected) = num_str.parse::<i64>() else {
+        let Ok(expected) = after[..num_end].parse::<i64>() else {
             continue;
         };
 
-        // Walk backwards from '=' to find the expression
-        let before = &text[..i];
+        // Probe backward with OxiZ parser (island grammar)
+        let before = &text[..eq_pos];
         let before_trimmed = before.trim_end();
         if before_trimmed.is_empty() {
             continue;
         }
 
-        // Find start of expression: walk back while chars are digits, operators, spaces, parens
-        let expr_bytes = before_trimmed.as_bytes();
-        let mut start = expr_bytes.len();
-        while start > 0 {
-            let c = expr_bytes[start - 1];
-            if c.is_ascii_digit()
-                || c == b'+'
-                || c == b'-'
-                || c == b'*'
-                || c == b'/'
-                || c == b'('
-                || c == b')'
-                || c == b' '
-            {
-                start -= 1;
-            } else {
-                break;
+        // Cap backward search at 60 chars to avoid O(n²) worst case
+        let search_start = before_trimmed.len().saturating_sub(60);
+
+        // Try progressively longer substrings from the right.
+        // Keep the longest valid parse (greedy match).
+        let mut best: Option<String> = None;
+        for start in (search_start..before_trimmed.len()).rev() {
+            if !before_trimmed.is_char_boundary(start) {
+                continue;
+            }
+            let candidate = before_trimmed[start..].trim();
+            if candidate.is_empty() {
+                continue;
+            }
+            if verifier.try_parse_expr(candidate) {
+                best = Some(candidate.to_string());
+                // Keep trying longer prefixes for the longest valid parse
             }
         }
 
-        let expr = before_trimmed[start..].trim();
-        // Must contain at least one operator and one digit
-        if expr.len() >= 3
-            && expr.chars().any(|c| c.is_ascii_digit())
-            && expr.chars().any(|c| "+-*/".contains(c))
-        {
-            results.push((expr.to_string(), expected));
+        if let Some(expr) = best {
+            results.push((expr, expected));
         }
     }
 
@@ -242,34 +237,38 @@ pub(crate) fn extract_text_equations(text: &str) -> Vec<(String, i64)> {
 /// Extract the final numeric answer from a response.
 ///
 /// Tries (in order):
-/// 1. Last line that is a pure integer
-/// 2. "answer/result/total is/: <number>" pattern
+/// 1. Last non-empty line that parses as a pure integer
+/// 2. Number following known keywords ("answer is", "result:", etc.)
 ///
+/// Uses `str::parse::<i64>()` and `chars().take_while()` — no regex.
 /// Domain-agnostic: works for any text ending with a numeric conclusion.
 pub(crate) fn extract_final_number(text: &str) -> Option<i64> {
-    // Try last non-empty lines as pure numbers
+    // 1. Last non-empty line as pure number
     for line in text.lines().rev() {
         let trimmed = line.trim().trim_end_matches('.');
         if !trimmed.is_empty() {
             if let Ok(n) = trimmed.parse::<i64>() {
                 return Some(n);
             }
-            // Only check the last 3 non-empty lines
-            break;
+            break; // Only check the last non-empty line
         }
     }
 
-    // Try "answer is X" / "result: X" / "total = X" patterns
+    // 2. Number after known keywords (no regex — string search + char iteration)
     let lower = text.to_lowercase();
-    for keyword in &["answer is", "answer:", "result is", "result:", "total is", "total:", "equals"] {
+    for keyword in &[
+        "answer is", "answer:", "result is", "result:",
+        "total is", "total:", "equals",
+    ] {
         if let Some(pos) = lower.rfind(keyword) {
             let after = &text[pos + keyword.len()..];
-            let after_trimmed = after.trim_start().trim_start_matches(':').trim_start();
-            let num_end = after_trimmed
-                .find(|c: char| !c.is_ascii_digit() && c != '-')
-                .unwrap_or(after_trimmed.len());
-            if num_end > 0 {
-                if let Ok(n) = after_trimmed[..num_end].parse::<i64>() {
+            let after_clean = after.trim_start().trim_start_matches(':').trim_start();
+            let num_str: String = after_clean
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '-')
+                .collect();
+            if !num_str.is_empty() {
+                if let Ok(n) = num_str.parse::<i64>() {
                     return Some(n);
                 }
             }
@@ -440,7 +439,7 @@ impl QualityLabeler {
 
         // ── Canal 2: Text arithmetic (OxiZ formal verification) ──────
         // Extract "5 + 3 = 8" from prose and verify via QF_LIA SAT solver.
-        let text_equations = extract_text_equations(response);
+        let text_equations = extract_text_equations(response, &self.verifier);
         for (expr, claimed) in &text_equations {
             checks_total += 1;
             if self.verifier.verify_arithmetic_expr(expr, *claimed, 0) {
@@ -680,7 +679,8 @@ y = x * 2
 
     #[test]
     fn test_extract_text_equations_basic() {
-        let eqs = extract_text_equations("Step 1: 5 + 3 = 8. Done.");
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("Step 1: 5 + 3 = 8. Done.", &v);
         assert_eq!(eqs.len(), 1);
         assert_eq!(eqs[0].0, "5 + 3");
         assert_eq!(eqs[0].1, 8);
@@ -688,28 +688,78 @@ y = x * 2
 
     #[test]
     fn test_extract_text_equations_multiple() {
-        let eqs = extract_text_equations("First 10 + 5 = 15, then 15 * 2 = 30.");
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("First 10 + 5 = 15, then 15 * 2 = 30.", &v);
         assert_eq!(eqs.len(), 2);
     }
 
     #[test]
     fn test_extract_text_equations_wrong_result() {
-        let eqs = extract_text_equations("5 + 3 = 9");
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("5 + 3 = 9", &v);
         assert_eq!(eqs.len(), 1);
         assert_eq!(eqs[0].1, 9); // Extracted, but OxiZ will disprove
     }
 
     #[test]
     fn test_extract_text_equations_ignores_equality() {
-        // "==" is code equality, not arithmetic equation
-        let eqs = extract_text_equations("if x == 5: pass");
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("if x == 5: pass", &v);
         assert!(eqs.is_empty());
     }
 
     #[test]
     fn test_extract_text_equations_no_equations() {
-        let eqs = extract_text_equations("Just some text with no math.");
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("Just some text with no math.", &v);
         assert!(eqs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_equations_with_parens() {
+        let v = SmtVerifier::new();
+        let eqs = extract_text_equations("Result: (10 - 2) * 3 = 24", &v);
+        assert_eq!(eqs.len(), 1);
+        assert_eq!(eqs[0].1, 24);
+        // The parser should find a valid expression containing parens
+        assert!(eqs[0].0.contains("("));
+    }
+
+    // ── OxiZ parser probe tests ────────────────────────────────────
+
+    #[test]
+    fn test_try_parse_expr_valid() {
+        let v = SmtVerifier::new();
+        assert!(v.try_parse_expr("5 + 3"));
+        assert!(v.try_parse_expr("(10 - 2) * 3"));
+        assert!(v.try_parse_expr("42"));
+    }
+
+    #[test]
+    fn test_try_parse_expr_invalid() {
+        let v = SmtVerifier::new();
+        assert!(!v.try_parse_expr("The answer is"));
+        assert!(!v.try_parse_expr("Hello world"));
+        assert!(!v.try_parse_expr(""));
+    }
+
+    #[test]
+    fn test_eval_const_expr() {
+        assert_eq!(SmtVerifier::eval_const_expr("5 + 3"), Some(8));
+        assert_eq!(SmtVerifier::eval_const_expr("(10 - 2) * 3"), Some(24));
+        assert_eq!(SmtVerifier::eval_const_expr("100 - 50"), Some(50));
+        assert_eq!(SmtVerifier::eval_const_expr("42"), Some(42));
+    }
+
+    #[test]
+    fn test_eval_const_expr_with_var() {
+        assert_eq!(SmtVerifier::eval_const_expr("x + 1"), None);
+    }
+
+    #[test]
+    fn test_eval_const_expr_invalid() {
+        assert_eq!(SmtVerifier::eval_const_expr("not a number"), None);
+        assert_eq!(SmtVerifier::eval_const_expr(""), None);
     }
 
     // ── Canal 3: Final number tests ────────────────────────────────
