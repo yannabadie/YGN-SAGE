@@ -118,7 +118,7 @@ class AgentSystem:
         # are exercised — important for testing phase events and guardrail wiring.
         if self.pipeline and self.agent_loop.config.llm.provider != "mock":
             try:
-                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD / 2
+                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD
                 result = await self.pipeline.run(task, budget_usd=_budget)
                 self._last_execution_path = "pipeline"
                 await self._persist_memory()
