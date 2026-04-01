@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, AsyncIterator, Callable
 
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
@@ -58,6 +58,7 @@ class TopologyRunner:
         provider_pool: Any | None = None,
         controller: Any | None = None,
         axis_hint: str = "",
+        approval_callback: Callable | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -66,6 +67,7 @@ class TopologyRunner:
         self._provider_pool = provider_pool
         self._controller = controller
         self._axis_hint = axis_hint
+        self._approval_callback = approval_callback  # HITL: async fn(decision) -> bool
         self._node_outputs: dict[int, str] = {}
         self._max_rounds = 3  # max re-executions per node (multi-turn debate)
         self._node_exec_count: dict[int, int] = {}  # track per-node execution count
@@ -452,6 +454,17 @@ class TopologyRunner:
                         node_idx, result, task, self.graph, node_ctx,
                         parallel_outputs=None,
                     )
+                    # HITL: pause for human approval on disruptive actions
+                    # Based on LangGraph interrupt() + A2A input-required
+                    if (self._approval_callback
+                            and decision.action in ("upgrade_model", "reroute_topology", "open_gate")):
+                        try:
+                            approved = await self._approval_callback(decision)
+                            if not approved:
+                                log.info("HITL rejected %s for node %d", decision.action, node_idx)
+                                decision = type(decision)(action="continue", target_node=node_idx)
+                        except Exception as exc:
+                            log.warning("HITL callback failed: %s, proceeding", exc)
                     if decision.action == "upgrade_model":
                         result = await self._retry_with_upgrade(node_idx, decision, task)
                         self._node_outputs[node_idx] = result
@@ -589,3 +602,109 @@ class TopologyRunner:
                 })
 
         return traces
+
+    async def run_stream(self, task: str):
+        """Execute topology, yielding per-node events as an async generator.
+
+        Yields dicts with event types:
+        - {"type": "node_start", "node_idx": int, "role": str}
+        - {"type": "node_done", "node_idx": int, "role": str, "output": str, "latency_ms": float}
+        - {"type": "topology_done", "final_output": str, "node_count": int}
+
+        Enables real-time UI updates (LangGraph-style streaming) and is the
+        foundation for HITL interrupt/resume (Patch 6).
+        """
+        import time as _time
+
+        last_output = ""
+        nodes_executed = 0
+
+        while not self.executor.is_done():
+            ready = self.executor.next_ready(self.graph)
+            if not ready:
+                break
+
+            if len(ready) == 1:
+                node_idx = ready[0]
+                node = self.graph.get_node(node_idx)
+                role = getattr(node, "role", f"node-{node_idx}")
+
+                yield {"type": "node_start", "node_idx": node_idx, "role": role}
+
+                _t0 = _time.monotonic()
+                result = await self._execute_node(node_idx, task)
+                _latency_ms = (_time.monotonic() - _t0) * 1000
+
+                # Controller adaptation (same logic as run())
+                if self._controller:
+                    node_ctx = {
+                        "node_idx": node_idx,
+                        "latency_ms": _latency_ms,
+                        "model_id": getattr(node, "model_id", ""),
+                        "output_length": len(result),
+                        "axis_hint": self._axis_hint,
+                    }
+                    decision = self._controller.evaluate_and_decide(
+                        node_idx, result, task, self.graph, node_ctx,
+                        parallel_outputs=None,
+                    )
+                    if decision.action == "upgrade_model":
+                        result = await self._retry_with_upgrade(node_idx, decision, task)
+                        self._node_outputs[node_idx] = result
+                    elif decision.action == "reroute_topology":
+                        yield {"type": "topology_reroute", "reason": decision.reason}
+                        return
+                    elif decision.action == "open_gate" and decision.gate_target is not None:
+                        target = decision.gate_target
+                        source = decision.gate_source
+                        count = self._node_exec_count.get(target, 1)
+                        if source is not None and count < self._max_rounds:
+                            self.executor.open_gate(self.graph, source, target)
+                            self.executor.reset_node(target)
+                            self._node_exec_count[target] = count + 1
+
+                self.executor.mark_completed(node_idx)
+                self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
+                last_output = self._node_outputs.get(node_idx, result)
+                nodes_executed += 1
+
+                yield {
+                    "type": "node_done",
+                    "node_idx": node_idx,
+                    "role": role,
+                    "output": last_output,
+                    "latency_ms": _latency_ms,
+                }
+            else:
+                # Parallel batch — emit start for all, then done for all
+                for idx in ready:
+                    node = self.graph.get_node(idx)
+                    yield {"type": "node_start", "node_idx": idx,
+                           "role": getattr(node, "role", f"node-{idx}")}
+
+                ctx_snapshot = self._gather_all_context()
+                coros = [
+                    self._execute_node(idx, task, context_override=ctx_snapshot)
+                    for idx in ready
+                ]
+                _t0_par = _time.monotonic()
+                results = await asyncio.gather(*coros)
+                _par_latency_ms = (_time.monotonic() - _t0_par) * 1000
+
+                for idx, output in zip(ready, results):
+                    self.executor.mark_completed(idx)
+                    last_output = self._node_outputs.get(idx, output)
+                    nodes_executed += 1
+                    yield {
+                        "type": "node_done",
+                        "node_idx": idx,
+                        "role": getattr(self.graph.get_node(idx), "role", f"node-{idx}"),
+                        "output": last_output,
+                        "latency_ms": _par_latency_ms,
+                    }
+
+        yield {
+            "type": "topology_done",
+            "final_output": last_output,
+            "node_count": nodes_executed,
+        }

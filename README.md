@@ -50,21 +50,26 @@ Unlike frameworks that use fixed agent pipelines, SAGE designs, executes, and im
 4. **Mutation** — mutate an existing elite (7 operators: add/remove node, swap model, rewire edge, split/merge, mutate prompt)
 5. **MCTS** — Monte Carlo tree search over the mutation space
 6. **Path 6: Learned policy** — a trained model (Qwen3-4B local, Nemotron-8B pod) generates the topology via tool-call. Enable with `SAGE_ENABLE_PATH6=1`.
-7. **Templates** — 8 pre-wired fallback patterns (sequential, parallel, AVR, debate, hub, hierarchical, selfmoa, brainstorming)
+7. **Templates** — 11 pre-wired fallback patterns (sequential, parallel, AVR, debate, hub, hierarchical, selfmoa, brainstorming, robust, horizon_pipeline, parallel_fanout)
+
+Before the 6-path engine, `select_macro_topology()` uses DAG structural features (omega=parallelism, delta=depth, gamma=coupling) to select specialized templates: deep chains → `horizon_pipeline`, wide parallel → `parallel_fanout`, coupled parallel → `robust` (majority voting).
 
 A contextual bandit (Thompson sampling) modulates exploration vs exploitation.
 
-**Stage 4 — Assign Models:** The Rust ModelAssigner scores each candidate model for each node: `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)`. Provider hints from the topology can bias selection (+0.15 bonus). 7 providers available: DeepSeek, Google, OpenAI, xAI, Kimi, MiniMax, OpenRouter — each node can use a different provider.
+**Stage 4 — Assign Models:** The Rust ModelAssigner scores each candidate model for each node: `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)`. Provider hints from the topology can bias selection (+0.15 bonus). 7 providers available: DeepSeek, Google, OpenAI, xAI, Kimi, MiniMax, OpenRouter — each node can use a different provider. The bandit's learned quality priors override assignments for underperforming models (quality < 0.4).
 
-**Stage 5 — Execute:** TopologyRunner executes nodes one by one, respecting the DAG order (predecessors first). After each node:
+**Stage 5 — Execute:** TopologyRunner executes nodes in DAG order with adaptive context — each node receives predecessor outputs sized to the model's context window (no fixed truncation). Near-identical outputs from parallel workers are deduplicated via Jaccard similarity gate (S2-MAD, -94% tokens). After each node:
 - **QualityEstimator** evaluates the output (OxiZ formal verification for code, DistilBERT ONNX for text)
-- **TopologyController** decides: `continue` (quality > 0.7), `upgrade_model` (quality < 0.3, retry with better model), `prune_node` (skip useless node), `reroute_topology` (rebuild from scratch), or `spawn_subagent`
-- **Code nodes** (HyEvo-inspired) are executed in a sandbox instead of LLM calls — offloading deterministic work (validation, parsing, computation) from expensive inference
+- **TopologyController** decides: `continue` (quality > 0.7), `upgrade_model` (quality < 0.3, retry with better model), `prune_node` (skip useless node), `reroute_topology` (rebuild from scratch), `spawn_subagent`, or `open_gate` (re-execute a node for multi-turn refinement, max 3 rounds)
+- **Code nodes** (HyEvo-inspired) are executed in a sandbox instead of LLM calls
+- **Arithmetic verification** catches calculation errors and triggers model upgrade
+- **HITL callback** (optional) pauses for human approval on disruptive actions
+- **Per-node streaming** via `run_stream()` yields events as each node completes
 
 If a provider fails, the circuit breaker opens and the runner falls back to the next available provider.
 
 **Stage 6 — Learn:** The outcome feeds back into 5 systems:
-- **Bandit** updates which topology template/model combination works best
+- **Bandit** updates which topology template/model combination works best (persisted to SQLite, feeds back into Stage 4)
 - **MAP-Elites archive** stores the topology if it's a new elite in its behavioral niche
 - **Episodic memory** records the full execution trace (SQLite, cross-session)
 - **Consolidation** transforms episodic memories into semantic knowledge (every 10 steps)

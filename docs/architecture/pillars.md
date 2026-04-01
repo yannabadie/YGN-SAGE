@@ -17,7 +17,7 @@ The `TopologyGraph` is a unified intermediate representation wrapping `petgraph:
 
 This three-flow edge model comes from the MASFactory research (arXiv 2603.06007), which demonstrated that distinguishing control, message, and state flows enables 84.76% HumanEval accuracy with 97% code reduction.
 
-### 8 Built-in Templates
+### 11 Built-in Templates
 
 The `PyTemplateStore` provides battle-tested starting points:
 
@@ -31,6 +31,9 @@ The `PyTemplateStore` provides battle-tested starting points:
 | Hub | Central coordinator with spokes |
 | Debate | Adversarial argumentation |
 | Brainstorming | Divergent idea generation |
+| Robust | Noise-filter + majority voting (3 workers + verifier). MALT/ResMAS. |
+| HorizonPipeline | Sequential N-stage pipeline for dependent sub-problems. |
+| ParallelFanout | Diverse S1/S2/S3 workers for independent sub-tasks. SC-MAS. |
 
 ### 6-Path Generation Strategy
 

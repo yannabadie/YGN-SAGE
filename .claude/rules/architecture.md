@@ -7,14 +7,14 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). 270+ tests (357 including veRL training tests).
-- `sage-python/` — Python SDK. 1500+ tests (68 veRL/GiGPO-specific).
+- `sage-core/` — Rust orchestrator (PyO3). 403+ tests.
+- `sage-python/` — Python SDK. 1951+ tests (68 veRL/GiGPO-specific).
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.
 
 ## 5 Cognitive Pillars
-1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). MAP-Elites + CMA-ME evolution. Online evolution enabled (_auto_evolve=True). Path 6 learned policy (V1: SFT Phi-4-mini-instruct legacy, V2: Nemotron-Orchestrator-8B GiGPO, opt-in via `SAGE_ENABLE_PATH6=1`) is external Python-side.
+1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). 11 templates (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout). DAG-driven selection via `select_macro_topology(omega, delta, gamma)`. MAP-Elites + CMA-ME evolution. Multi-turn debate loop (reset_node + open_gate, max 3 rounds). Per-node streaming via `run_stream()`. HITL approval callback. Path 6 learned policy opt-in via `SAGE_ENABLE_PATH6=1`.
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic + Causal → ExoCortex RAG. S-MMU paging with ULID chunks. Inter-tier consolidation (Episodic→Semantic→Causal, MAGMA). Composite 5-signal write gate (Rust `RustCompositeWriteGate`). Causal edges from entity extraction + tool calls.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution: Rust `should_evolve()` gates `evolve()` in agent loop (SA-3 complete). AdaptiveMutator (Thompson sampling, ShinkaEvolve). Statistical validation via Wilcoxon signed-rank + Cohen's d.
@@ -22,10 +22,11 @@ paths:
 
 ## Pipeline (5-stage)
 ```
-CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner) → SELECT TOPOLOGY (TopologyEngine)
-→ ASSIGN MODELS (Rust ModelAssigner: affinity 0.4 + domain 0.4 + cost 0.2)
-→ EXECUTE (TopologyRunner with per-node ProviderPool resolution)
-→ LEARN (QualityEstimator Z3 → Bandit + MAP-Elites archive)
+CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner → DAGFeatures omega/delta/gamma)
+→ SELECT TOPOLOGY (DAG-driven select_macro_topology OR TopologyEngine 6-path)
+→ ASSIGN MODELS (Rust ModelAssigner + bandit quality override for underperforming models)
+→ EXECUTE (TopologyRunner: adaptive context, similarity gate, multi-turn, streaming, HITL)
+→ LEARN (QualityEstimator Z3 → Bandit + MAP-Elites archive, persisted to SQLite)
 ```
 
 ## Self-Adaptive Engine

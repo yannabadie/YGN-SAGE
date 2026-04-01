@@ -12,7 +12,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** concu pour orchestrer des topolo
 
 **Ce que le systeme fait reellement :**
 - Route les taches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (92% GT) + SystemRouter Rust + bandit contextuel Thompson.
-- Genere des topologies multi-agents (8 templates + MAP-Elites + MCTS + mutations + LLM synthesis) et les execute via un runner avec resolution per-node de providers.
+- Genere des topologies multi-agents (11 templates + MAP-Elites + MCTS + mutations + LLM synthesis) et les execute via un runner avec resolution per-node de providers.
 - Fournit un pipeline 5-stages (Classify -> Decompose -> Topology -> Assign -> Execute -> Learn) avec boucle d'apprentissage bandit.
 - Integre verification formelle (OxiZ SMT) et LTL (petgraph) pour topologies et contrats.
 
@@ -208,7 +208,7 @@ graph LR
 | `ModelCard` | `#[pyclass]` | Profil par modele (scores, couts, affinites) | serde | Runtime | Tests (14 #[test]) | s1/s2/s3 affinity + domain scores |
 | `RustQualityEstimator` | `#[pyclass]` | 5-signal quality (lexical, rapide) | - | Runtime | Tests (8 #[test]) | Port Rust du Python QualityEstimator |
 | `StructuralFeatures` | `#[pyclass]` | Extraction features structurelles d'une tache | - | Runtime | Tests (6 #[test]) | keyword complexity + uncertainty |
-| `TopologyGraph` | `#[pyclass]` | IR unifie pour topologies multi-agents | petgraph, ulid | Runtime | Tests (4+16 #[test]) | 3-flow edges (Control/Message/State), 8 templates |
+| `TopologyGraph` | `#[pyclass]` | IR unifie pour topologies multi-agents | petgraph, ulid | Runtime | Tests (4+16 #[test]) | 3-flow edges (Control/Message/State), 11 templates |
 | `TopologyNode` | `#[pyclass]` | Noeud : role, model_id, system, capabilities | - | Runtime | Tests | Prompt customisable |
 | `TopologyEdge` | `#[pyclass]` | Arete : type, gate, condition | - | Runtime | Tests | Gating dynamique |
 | `TopologyEngine` (internal) | struct | Moteur 6-path : S-MMU, archive, LLM, mutation, MCTS, template | S-MMU, MAP-Elites, HybridVerifier, CMA-ME, MCTS, Bandit | Runtime | Tests (14+16 #[test]) | Expose via PyTopologyEngine |
@@ -662,7 +662,7 @@ RAG:
 **Consequence** : Cold start lent (posteriors uninformatives), pas de persistence cross-session.
 [Evidence: sage-core/src/routing/bandit.rs:1-97] [Statut: Observe] [Validation: 30 tests]
 
-### ADR-4 : 8 templates de topologie + evolution
+### ADR-4 : 11 templates de topologie + evolution
 **Decision** : Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming comme primitives, enrichies par MAP-Elites/MCTS/mutations.
 **Raison** : MASFactory (2603.06007) + AgentConductor (2602.17100) patterns valides.
 **Consequence** : 6-path cascade complexe dans TopologyEngine.
@@ -813,7 +813,7 @@ ROUTING:
   4-stages: structural -> kNN -> BERT ONNX -> entropy
 
 TOPOLOGIE:
-  8 templates: sequential, parallel, avr, self_moa, hierarchical, hub, debate, brainstorming
+  11 templates: sequential, parallel, avr, self_moa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout
   6-path engine: S-MMU hit > archive > LLM synthesis > mutation > MCTS > template
   3-flow edges: control + message + state
   Execution: static (Kahn DAG) ou dynamic (gate-based)

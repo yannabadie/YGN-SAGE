@@ -44,11 +44,20 @@ bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
 bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 ```
 
-## Current State (March 30, 2026)
+## Current State (April 1, 2026)
 
-- **Tests**: Python **1809 passed** / Rust **289 passed** (base), 373+ with features / 0 failures
-- **MASBENCH depth**: **SAGE 67% vs bare model 40% (+27pp)** — first empirical proof topology helps (pre-kNN fix; rerun pending with full Rust stack)
+- **Tests**: Python **1951 passed** / Rust **403 passed** / 0 failures
+- **MASBENCH 5-axis**: breadth=72%, depth=54%, horizon=16%, parallel=48%, robustness=0% (SAGE vs bare +27pp avg)
 - **Rust stack**: 18/18 components operational (54 exports), kNN 92% routing NOW active in pipeline
+- **Templates**: **11** (was 8) — added robust, horizon_pipeline, parallel_fanout for MASBENCH axes
+- **DAG-driven topology selection**: `select_macro_topology(omega, delta, gamma)` picks template from structural features
+- **Adaptive context**: predecessor outputs sized to model context window (was hardcoded 1000 chars)
+- **Similarity gate**: S2-MAD Jaccard dedup before inter-node communication (-94% tokens on parallel)
+- **Multi-turn debate**: `reset_node()` + `open_gate` action for iterative refinement (max 3 rounds)
+- **Bandit → Assigner**: quality posteriors override underperforming model assignments (quality < 0.4)
+- **Per-node streaming**: `run_stream()` async generator yields events as nodes complete
+- **HITL callback**: `approval_callback` pauses execution at disruptive controller decisions
+- **Arithmetic verification**: Z3-free equation checking in TopologyController (depth tasks)
 - **13 infrastructure fixes** applied March 29-30 — see TRAINING_LOG.md for full chain
 - **BigCodeBench Hard Instruct**: 37.8% (budget model) — leaderboard SOTA stale since April 2025
 - **HumanEval+ pipeline**: 89.6% (+5.5pp over pre-pipeline 84.1%)

@@ -66,7 +66,7 @@ The performance-critical core, exposed to Python via PyO3 bindings. All hot-path
 | `memory/rag_cache.rs` | FIFO+TTL cache for File Search results (DashMap) |
 | `routing/` | SystemRouter (bandit + domain scoring), ContextualBandit, ModelRegistry |
 | `routing/router.rs` | AdaptiveRouter with BERT ONNX classifier (Stage 0 + Stage 1) |
-| `topology/` | TopologyGraph IR, 8 templates, MAP-Elites, CMA-ME, MCTS, LLM synthesis |
+| `topology/` | TopologyGraph IR, 11 templates, MAP-Elites, CMA-ME, MCTS, LLM synthesis |
 | `topology/executor.rs` | Dual-mode scheduling (static toposort / dynamic gate-based) |
 | `verification/smt.rs` | OxiZ pure-Rust SMT solver (10 PyO3 methods, QF_LIA) |
 | `verification/ltl.rs` | Temporal property verification (reachability, safety, liveness) |
