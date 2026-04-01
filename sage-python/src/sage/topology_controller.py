@@ -112,6 +112,25 @@ class TopologyController:
         _quality_is_known = self._abstain_count == _abstain_before  # True if estimator gave a real score
         self._node_qualities[node_idx] = quality
 
+        # Depth axis: verify arithmetic before quality cascade (MASPRM arXiv 2510.24803)
+        axis_hint = ""
+        if hasattr(ctx, 'get') and callable(ctx.get):
+            axis_hint = ctx.get('axis_hint', '')
+        elif hasattr(ctx, 'axis_hint'):
+            axis_hint = getattr(ctx, 'axis_hint', '')
+        if axis_hint == 'depth':
+            verified, feedback = self._verify_arithmetic(result)
+            if not verified:
+                retries_d = self._node_retries.get(node_idx, 0)
+                if retries_d < self.MAX_RETRIES:
+                    self._node_retries[node_idx] = retries_d + 1
+                    return AdaptationDecision(
+                        action="upgrade_model",
+                        target_node=node_idx,
+                        reason=f"arithmetic verification failed: {feedback}",
+                        invariant_feedback=feedback,
+                    )
+
         # Decision cascade
         # 1. Good quality -> continue
         if quality >= self.THETA_GOOD:
@@ -169,6 +188,8 @@ class TopologyController:
 
         # 4. Low importance -> prune (only when quality is KNOWN, not abstained)
         if parallel_outputs and _quality_is_known:
+            importance = self.compute_importance_score(node_idx, result, parallel_outputs)
+            if importance < self.THETA_PRUNE:
                 self._emit("PRUNE_NODE", {"node": node_idx, "importance": importance})
                 return AdaptationDecision(
                     action="prune_node",
@@ -261,6 +282,26 @@ class TopologyController:
         except (ImportError, Exception):
             pass
         return None
+
+    def _verify_arithmetic(self, result: str) -> tuple[bool, str]:
+        """Verify arithmetic equations in result text.
+
+        Catches obvious calculation errors like "5 + 3 = 9" without needing
+        full OxiZ. Based on MASPRM (arXiv 2510.24803) per-step verification.
+        """
+        try:
+            equations = re.findall(r'(\d+)\s*([+\-*/])\s*(\d+)\s*=\s*(\d+)', result)
+            for a_s, op, b_s, c_s in equations:
+                a, b, c = int(a_s), int(b_s), int(c_s)
+                ops = {'+': a + b, '-': a - b, '*': a * b}
+                if op == '/' and b != 0:
+                    ops['/'] = a // b
+                expected = ops.get(op)
+                if expected is not None and expected != c:
+                    return False, f"{a}{op}{b}={c} should be {expected}"
+            return True, ""
+        except Exception:
+            return True, ""  # On error, don't block
 
     @staticmethod
     def _detect_emergent_subtask(result: str) -> str | None:

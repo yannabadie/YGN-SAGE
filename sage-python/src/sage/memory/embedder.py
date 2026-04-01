@@ -174,6 +174,22 @@ class _SentenceTransformerEmbedder:
 
     def _load_model(self) -> None:
         from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
+        import os
+        from pathlib import Path
+
+        # Try local cache path first (avoids SSL retries on corporate proxy)
+        hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
+        model_dir = hf_cache / f"models--{self._MODEL_NAME.replace('/', '--')}"
+        if model_dir.exists():
+            snapshots = model_dir / "snapshots"
+            if snapshots.exists():
+                versions = sorted(snapshots.iterdir())
+                if versions:
+                    local_path = str(versions[-1])
+                    self._model = SentenceTransformer(local_path, local_files_only=True)
+                    return
+
+        # Fallback: use model name (may trigger network requests)
         self._model = SentenceTransformer(self._MODEL_NAME)
 
     @property

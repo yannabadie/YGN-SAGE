@@ -79,10 +79,10 @@ def test_select_macro_parallel():
 
 
 def test_select_macro_hierarchical():
-    """omega=2, delta=4, gamma=0.8 → 'hierarchical' (high coupling density)."""
+    """omega=2, delta=4, gamma=0.8 → 'robust' (parallel + high coupling = cross-validation)."""
     features = DAGFeatures(omega=2, delta=4, gamma=0.8)
     result = select_macro_topology(features)
-    assert result == "hierarchical"
+    assert result == "robust"
 
 
 def test_select_macro_sequential_boundary():
@@ -93,11 +93,11 @@ def test_select_macro_sequential_boundary():
 
 
 def test_select_macro_high_depth_low_coupling():
-    """omega=1, delta=10 (deep chain) with low gamma → not sequential (delta > 5)."""
+    """omega=1, delta=10 (deep chain) with low gamma → horizon_pipeline."""
     features = DAGFeatures(omega=1, delta=10, gamma=0.1)
     result = select_macro_topology(features)
-    # delta > _THETA_DELTA=5, omega=1, gamma<0.6 → hits parallel branch or hybrid
-    assert result in ("parallel", "hybrid")
+    # delta > _THETA_DELTA=5, omega=1 → deep sequential chain → horizon_pipeline
+    assert result == "horizon_pipeline"
 
 
 def test_select_macro_returns_string():

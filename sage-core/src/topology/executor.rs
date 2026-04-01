@@ -84,7 +84,10 @@ impl TopologyExecutor {
             TopologyTemplate::Sequential
             | TopologyTemplate::Parallel
             | TopologyTemplate::Hierarchical
-            | TopologyTemplate::Brainstorming => ExecutionMode::Static,
+            | TopologyTemplate::Brainstorming
+            | TopologyTemplate::Robust
+            | TopologyTemplate::HorizonPipeline
+            | TopologyTemplate::ParallelFanout => ExecutionMode::Static,
             TopologyTemplate::AVR
             | TopologyTemplate::Hub
             | TopologyTemplate::Debate
@@ -379,6 +382,18 @@ mod tests {
         );
         assert_eq!(
             TopologyExecutor::mode_for(TopologyTemplate::Brainstorming),
+            ExecutionMode::Static
+        );
+        assert_eq!(
+            TopologyExecutor::mode_for(TopologyTemplate::Robust),
+            ExecutionMode::Static
+        );
+        assert_eq!(
+            TopologyExecutor::mode_for(TopologyTemplate::HorizonPipeline),
+            ExecutionMode::Static
+        );
+        assert_eq!(
+            TopologyExecutor::mode_for(TopologyTemplate::ParallelFanout),
             ExecutionMode::Static
         );
     }

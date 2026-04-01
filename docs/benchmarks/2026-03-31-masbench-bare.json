@@ -1,0 +1,27 @@
+{
+  "breadth": {
+    "passed": 15,
+    "total": 50,
+    "pass_rate": 0.3
+  },
+  "depth": {
+    "passed": 5,
+    "total": 50,
+    "pass_rate": 0.1
+  },
+  "horizon": {
+    "passed": 0,
+    "total": 50,
+    "pass_rate": 0.0
+  },
+  "parallel": {
+    "passed": 18,
+    "total": 50,
+    "pass_rate": 0.36
+  },
+  "robustness": {
+    "passed": 0,
+    "total": 50,
+    "pass_rate": 0.0
+  }
+}
