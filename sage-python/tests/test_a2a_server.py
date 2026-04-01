@@ -28,3 +28,27 @@ def test_sage_agent_executor_without_loop():
 
     executor = SageAgentExecutor(agent_loop=None)
     assert executor._agent_loop is None
+
+
+def test_sage_agent_executor_with_pipeline():
+    """SageAgentExecutor accepts both agent_loop and pipeline."""
+    from sage.protocols.a2a_server import SageAgentExecutor
+
+    executor = SageAgentExecutor(agent_loop=None, pipeline=None)
+    assert executor._pipeline is None
+    assert executor._cancelled == set()
+
+
+def test_agent_card_version():
+    from sage.protocols.a2a_server import build_agent_card
+
+    card = build_agent_card()
+    assert card.version == "0.2.0"
+    assert card.capabilities.streaming is True
+
+
+def test_agent_card_description_mentions_templates():
+    from sage.protocols.a2a_server import build_agent_card
+
+    card = build_agent_card()
+    assert "11 topology templates" in card.description
