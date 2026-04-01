@@ -67,43 +67,113 @@ class TopologyRunner:
         self._controller = controller
         self._axis_hint = axis_hint
         self._node_outputs: dict[int, str] = {}
+        self._max_rounds = 3  # max re-executions per node (multi-turn debate)
+        self._node_exec_count: dict[int, int] = {}  # track per-node execution count
+
+    def _context_budget_per_predecessor(self, n_predecessors: int) -> int:
+        """Compute per-predecessor character budget based on model context window.
+
+        Adapts to the receiving model's capacity instead of a fixed 1000-char
+        truncation. Reserves 30% of context for system prompt + task text,
+        divides the rest among predecessors. Floors at 1000 chars.
+
+        Based on TalkHier (arXiv 2502.11098): structured communication carrying
+        full intermediate outputs improves accuracy over truncated handoffs.
+        """
+        max_tokens = 4096  # conservative default
+        if self._config and hasattr(self._config, "max_tokens") and self._config.max_tokens:
+            max_tokens = self._config.max_tokens
+        # Estimate chars from tokens (~4 chars/token), reserve 30% for prompt+task
+        available_chars = int(max_tokens * 0.7 * 4)
+        budget = available_chars // max(n_predecessors, 1)
+        return max(budget, 1000)  # never go below 1000
+
+    def _truncate_output(self, output: str, budget: int) -> str:
+        """Truncate output to budget, appending '...' if cut."""
+        if len(output) <= budget:
+            return output
+        return output[:budget] + "..."
 
     def _gather_predecessor_context(self, node_idx: int) -> str:
         """Collect outputs from direct predecessors of node_idx only.
 
         Uses Rust TopologyGraph.get_predecessors() for correct DAG traversal.
         Falls back to all completed nodes if get_predecessors unavailable.
+        Deduplicates near-identical outputs (S2-MAD arXiv 2502.04790).
         """
         predecessor_indices: list[int] = []
         try:
             predecessor_indices = self.graph.get_predecessors(node_idx)
         except (AttributeError, Exception):
-            # Fallback: all completed nodes (old behavior)
             return self._gather_all_context()
 
-        context_parts: list[str] = []
+        budget = self._context_budget_per_predecessor(len(predecessor_indices))
+
+        parts_with_roles: list[tuple[str, str]] = []
         for idx in predecessor_indices:
             output = self._node_outputs.get(idx)
             if output:
                 node = self.graph.get_node(idx)
                 role = getattr(node, "role", f"node-{idx}")
-                # Truncate per-predecessor output to reduce prompt size and API latency
-                truncated = output[:1000] + "..." if len(output) > 1000 else output
-                context_parts.append(f"[{role}]: {truncated}")
-        return "\n\n".join(context_parts)
+                truncated = self._truncate_output(output, budget)
+                parts_with_roles.append((truncated, role))
+
+        # Similarity gate: deduplicate near-identical predecessor outputs
+        # Saves tokens when parallel workers produce similar answers (S2-MAD)
+        deduplicated = self._deduplicate_context(parts_with_roles)
+
+        return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
 
     def _gather_all_context(self) -> str:
         """Fallback: all completed nodes (legacy behavior)."""
-        context_parts: list[str] = []
+        n_completed = len(self._node_outputs)
+        budget = self._context_budget_per_predecessor(n_completed)
+
+        parts_with_roles: list[tuple[str, str]] = []
         for idx in sorted(self._node_outputs.keys()):
             output = self._node_outputs[idx]
             if output:
                 node = self.graph.get_node(idx)
                 role = getattr(node, "role", f"node-{idx}")
-                # Truncate per-predecessor output to reduce prompt size and API latency
-                truncated = output[:1000] + "..." if len(output) > 1000 else output
-                context_parts.append(f"[{role}]: {truncated}")
-        return "\n\n".join(context_parts)
+                truncated = self._truncate_output(output, budget)
+                parts_with_roles.append((truncated, role))
+
+        deduplicated = self._deduplicate_context(parts_with_roles)
+        return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
+
+    @staticmethod
+    def _deduplicate_context(
+        parts: list[tuple[str, str]],
+        threshold: float = 0.85,
+    ) -> list[tuple[str, str]]:
+        """Remove near-duplicate predecessor outputs via Jaccard word similarity.
+
+        When multiple parallel workers produce similar answers (e.g., robust
+        template with 3 workers), passing all of them wastes context. Keep only
+        the longest unique output per similarity cluster.
+
+        Based on S2-MAD (arXiv 2502.04790): -94% tokens, <2% perf loss.
+        """
+        if len(parts) <= 1:
+            return parts
+
+        deduplicated: list[tuple[str, str]] = []
+        for text_i, role_i in parts:
+            words_i = set(text_i.lower().split())
+            is_duplicate = False
+            for j, (text_j, _) in enumerate(deduplicated):
+                words_j = set(text_j.lower().split())
+                if words_i and words_j:
+                    jaccard = len(words_i & words_j) / len(words_i | words_j)
+                    if jaccard > threshold:
+                        # Keep the longer one
+                        if len(text_i) > len(text_j):
+                            deduplicated[j] = (text_i, role_i)
+                        is_duplicate = True
+                        break
+            if not is_duplicate:
+                deduplicated.append((text_i, role_i))
+        return deduplicated
 
     async def _execute_code_node(
         self, node_idx: int, task: str, context_override: str | None = None,
@@ -395,8 +465,29 @@ class TopologyRunner:
                         except (AttributeError, Exception):
                             pass  # Executor may not support skip
                         log.info("Node %d pruned by controller", decision.target_node)
+                    elif decision.action == "open_gate":
+                        # Multi-turn: re-enable a node for another round
+                        # MALT (arXiv 2412.01928): Generation→Verification→Refinement
+                        target = decision.gate_target
+                        source = decision.gate_source
+                        if target is not None and source is not None:
+                            count = self._node_exec_count.get(target, 1)
+                            if count < self._max_rounds:
+                                self.executor.open_gate(self.graph, source, target)
+                                self.executor.reset_node(target)
+                                self._node_exec_count[target] = count + 1
+                                log.info(
+                                    "Multi-turn: reopened gate %d→%d (round %d/%d)",
+                                    source, target, count + 1, self._max_rounds,
+                                )
+                            else:
+                                log.info(
+                                    "Multi-turn: max rounds reached for node %d (%d/%d)",
+                                    target, count, self._max_rounds,
+                                )
 
                 self.executor.mark_completed(node_idx)
+                self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
                 last_output = self._node_outputs.get(node_idx, result)
             else:
                 # Snapshot context before gather to prevent race:

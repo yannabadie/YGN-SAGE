@@ -290,6 +290,11 @@ impl PyTopologyExecutor {
         self.inner.mark_skipped(node_index);
     }
 
+    /// Reset a single node to Pending, enabling re-execution in multi-turn loops.
+    pub fn reset_node(&mut self, node_index: usize) {
+        self.inner.reset_node(node_index);
+    }
+
     /// Open a gate on a control edge between two nodes.
     pub fn open_gate(&self, graph: &mut TopologyGraph, from: usize, to: usize) {
         self.inner.open_gate(graph, from, to);

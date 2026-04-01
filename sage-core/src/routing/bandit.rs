@@ -663,6 +663,19 @@ impl ContextualBandit {
             .collect()
     }
 
+    /// Get quality posterior mean for a specific (model, template) arm.
+    ///
+    /// Returns `None` if the arm doesn't exist or has no observations.
+    /// Used by ModelAssigner feedback loop (MonoScale arXiv 2601.23219):
+    /// bandit learns which models underperform → assignment avoids them.
+    pub fn get_quality_mean(&self, model_id: &str, template: &str) -> Option<f64> {
+        let key = ArmKey {
+            model_id: model_id.to_string(),
+            template: template.to_string(),
+        };
+        self.arms.get(&key).map(|arm| arm.quality.mean())
+    }
+
     /// Get a reference to the arm posteriors map (test/integration use only).
     pub fn arms_map(&self) -> &HashMap<ArmKey, ArmPosterior> {
         &self.arms
@@ -857,6 +870,13 @@ impl ContextualBandit {
     #[pyo3(name = "arm_summaries")]
     pub fn py_arm_summaries(&self) -> Vec<(String, String, f32, f32, f32, u32)> {
         self.arm_summaries()
+    }
+
+    /// Get quality posterior mean for a specific (model, template) arm.
+    /// Returns None if arm doesn't exist. Used by ModelAssigner feedback loop.
+    #[pyo3(name = "get_quality_mean")]
+    pub fn py_get_quality_mean(&self, model_id: &str, template: &str) -> Option<f64> {
+        self.get_quality_mean(model_id, template)
     }
 
     /// Set the temporal decay factor, clamped to [0.9, 1.0].

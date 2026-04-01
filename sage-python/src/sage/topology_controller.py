@@ -18,11 +18,13 @@ log = logging.getLogger(__name__)
 @dataclass
 class AdaptationDecision:
     """Decision from TopologyController after evaluating a node's output."""
-    action: str  # "continue", "upgrade_model", "prune_node", "reroute_topology", "spawn_subagent"
+    action: str  # "continue", "upgrade_model", "prune_node", "reroute_topology", "spawn_subagent", "open_gate"
     target_node: int | None = None
     reason: str = ""
     new_model_id: str | None = None
     invariant_feedback: str | None = None  # clause-level from OxiZ
+    gate_source: int | None = None  # for open_gate: source node of back-edge
+    gate_target: int | None = None  # for open_gate: target node to re-execute
 
 
 # Regex for detecting structured reasoning content

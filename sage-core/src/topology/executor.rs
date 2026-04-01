@@ -337,6 +337,25 @@ impl TopologyExecutor {
         self.node_status.get(index).copied()
     }
 
+    /// Reset a single node to Pending, enabling re-execution.
+    ///
+    /// Used for multi-turn debate loops: when the controller decides a node
+    /// should re-execute (e.g., actor gets feedback from verifier), this
+    /// re-queues it for the next `next_ready()` call.
+    /// Based on MALT (arXiv 2412.01928) Generation→Verification→Refinement.
+    pub fn reset_node(&mut self, node_index: usize) {
+        if node_index < self.node_status.len() {
+            debug!(node_index, "Resetting node to Pending for re-execution");
+            self.node_status[node_index] = NodeStatus::Pending;
+        } else {
+            warn!(
+                node_index,
+                len = self.node_status.len(),
+                "Node index out of range for reset_node"
+            );
+        }
+    }
+
     /// Reset all node statuses to Pending and iteration count to 0.
     pub fn reset(&mut self) {
         info!("Resetting TopologyExecutor");

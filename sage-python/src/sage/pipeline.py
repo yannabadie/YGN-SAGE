@@ -592,6 +592,35 @@ class CognitiveOrchestrationPipeline:
         except Exception as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
+        # Bandit feedback: override assignments where learned quality is poor
+        # Closes the learn→act loop (MonoScale arXiv 2601.23219)
+        if self.bandit and ctx.topology and hasattr(self.bandit, 'get_quality_mean'):
+            template_type = getattr(ctx.topology, 'template_type', '')
+            if self.bandit.arm_count() > 5:  # need enough data
+                for i in range(ctx.topology.node_count() if hasattr(ctx.topology, 'node_count') else 0):
+                    node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
+                    if not node:
+                        continue
+                    model_id = getattr(node, 'model_id', '')
+                    if not model_id:
+                        continue
+                    quality_prior = self.bandit.get_quality_mean(model_id, template_type)
+                    if quality_prior is not None and quality_prior < 0.4:
+                        try:
+                            better = self.assigner.assign_single_node(
+                                ctx.topology, i, ctx.domain, ctx.budget,
+                                [model_id],  # exclude underperforming model
+                            )
+                            if better and better > 0:
+                                new_id = getattr(ctx.topology.get_node(i), 'model_id', '')
+                                log.info(
+                                    "Bandit override node %d: %s → %s (quality_prior=%.2f)",
+                                    i, model_id, new_id, quality_prior,
+                                )
+                                ctx.assignments[i] = new_id
+                        except Exception:
+                            pass  # assigner may not support assign_single_node
+
         # Filter out models assigned to unavailable providers (circuit breaker open)
         if self.provider_pool and hasattr(self.provider_pool, 'is_available'):
             for node_idx, model_id in list(ctx.assignments.items()):
