@@ -244,13 +244,33 @@ class SageTopologyEnv:
         topo = None
 
         # Try <tool_call> format first (Qwen3-4B local model)
-        tc_match = re.search(r'<tool_call>\s*(\{.*?\})\s*</tool_call>', yaml_text, re.DOTALL)
+        # Use greedy .* to capture nested JSON braces, then trim via json.loads
+        tc_match = re.search(r'<tool_call>\s*(\{.*\})\s*</tool_call>', yaml_text, re.DOTALL)
         if not tc_match:
-            tc_match = re.search(r'<tool_call>\s*(\{.*)', yaml_text, re.DOTALL)
+            # No closing tag — grab everything after <tool_call>
+            tc_match = re.search(r'<tool_call>\s*(\{.*\})', yaml_text, re.DOTALL)
+        if not tc_match:
+            # Maybe model outputs <think>...</think><tool_call>... — strip thinking prefix
+            stripped = re.sub(r'<think>.*?</think>\s*', '', yaml_text, flags=re.DOTALL).strip()
+            tc_match = re.search(r'<tool_call>\s*(\{.*\})', stripped, re.DOTALL)
         if tc_match:
+            raw = tc_match.group(1).strip()
+            # Handle case where JSON is followed by extra text after last }
+            # Find the balanced closing brace
+            depth, end = 0, 0
+            for ci, ch in enumerate(raw):
+                if ch == '{': depth += 1
+                elif ch == '}': depth -= 1
+                if depth == 0:
+                    end = ci + 1
+                    break
+            if end > 0:
+                raw = raw[:end]
             try:
-                call = json.loads(tc_match.group(1))
+                call = json.loads(raw)
                 if call.get("name") == "create_topology" and "arguments" in call:
+                    topo = call["arguments"]
+                elif call.get("name") == "adapt_topology" and "arguments" in call:
                     topo = call["arguments"]
                 elif "nodes" in call:
                     topo = call
@@ -514,38 +534,41 @@ class SageTopologyEnv:
     # Each tier has a RANKED list of (provider, model) pairs.
     # First available provider (with API key set) is used.
     # This ensures all 7 providers and 20+ models are leveraged.
+    # Ordered by LATENCY (fastest first) — during training, speed > quality.
+    # MiniMax moved to last (frequent timeouts even at 15s).
     _TIER_PROVIDERS = {
         "budget": [
-            ("deepseek", "deepseek-chat"),          # $0.28/M
-            ("kimi", "kimi-k2.5"),                   # $0.60/M
-            ("minimax", "minimax-m2.7"),              # $0.30/M
+            ("deepseek", "deepseek-chat"),          # $0.28/M, <2s TTFT
+            ("kimi", "kimi-k2.5"),                   # $0.60/M, <3s
+            ("minimax", "minimax-m2.7"),              # $0.30/M, slow
             ("openrouter", "qwen/qwen3.5-plus-02-15"),  # $0.26/M
         ],
         "fast": [
             ("google", "gemini-3.1-flash-lite-preview"),  # $0.025/M, 379 tok/s
-            ("google", "gemini-2.5-flash"),                # $0.015/M
-            ("deepseek", "deepseek-chat"),                  # fast fallback
-            ("xai", "grok-4-1-fast-reasoning"),            # $0.20/M
+            ("deepseek", "deepseek-chat"),                  # $0.28/M, <2s
+            ("xai", "grok-4-1-fast-reasoning"),            # $0.20/M, <3s
+            ("minimax", "minimax-m2.7"),                    # $0.30/M, slow fallback
         ],
         "balanced": [
-            ("xai", "grok-4-1-fast-reasoning"),     # $0.20/M, 2M ctx
-            ("minimax", "minimax-m2.7"),              # $0.30/M, self-evolving
+            ("xai", "grok-4-1-fast-reasoning"),     # $0.20/M, <3s, 2M ctx
+            ("deepseek", "deepseek-chat"),            # $0.28/M, <2s
+            ("kimi", "kimi-k2.5"),                   # $0.60/M, <3s
+            ("minimax", "minimax-m2.7"),              # $0.30/M, slow fallback
             ("openrouter", "qwen/qwen3.5-plus-02-15"),  # $0.26/M
-            ("kimi", "kimi-k2.5"),                   # $0.60/M, strong reasoning
-            ("deepseek", "deepseek-chat"),            # fallback
         ],
         "reasoner": [
             ("openai", "gpt-5.4"),                   # $2.50/M, SOTA reasoning
-            ("google", "gemini-3.1-pro-preview"),     # $1.25/M, strong
-            ("kimi", "kimi-k2.5"),                   # $0.60/M, reasoning tier
-            ("deepseek", "deepseek-reasoner"),        # $0.28/M, R1-style
-            ("xai", "grok-4-1-fast-reasoning"),      # fallback
+            ("google", "gemini-3.1-pro-preview"),     # $2.00/M, 1M ctx
+            ("deepseek", "deepseek-reasoner"),        # $0.28/M, R1-style, <5s
+            ("kimi", "kimi-k2-thinking"),             # $0.60/M, reasoning mode
+            ("minimax", "minimax-m2.7"),              # $0.30/M, slow fallback
         ],
         "codex": [
             ("openai", "gpt-5.4"),                   # SOTA coding
             ("google", "gemini-3.1-pro-preview"),     # strong code
-            ("xai", "grok-code-fast-1"),             # code-specific
-            ("deepseek", "deepseek-chat"),            # good at code
+            ("deepseek", "deepseek-chat"),            # $0.28/M, good at code
+            ("kimi", "kimi-k2.5"),                   # agentic coding
+            ("minimax", "minimax-m2.7"),              # SWE-Pro 56%, slow fallback
         ],
     }
 
@@ -623,7 +646,7 @@ class SageTopologyEnv:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 response = pool.submit(
                     lambda: asyncio.run(provider.generate(messages=messages, config=config))
-                ).result(timeout=60)
+                ).result(timeout=15)
             output = response.content or ""
             latency = time.time() - t0
 

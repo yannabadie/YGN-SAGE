@@ -32,6 +32,7 @@ import math
 import os
 import re
 import time
+import torch
 from typing import Any
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(message)s")
@@ -358,7 +359,7 @@ def main():
         output_dir=args.output,
         num_train_epochs=1,
         learning_rate=5e-6,
-        per_device_train_batch_size=1,
+        per_device_train_batch_size=4,
         num_generations=4,
         max_completion_length=2048,  # Multi-turn needs more tokens
         logging_steps=1,
@@ -388,8 +389,21 @@ def main():
     log.info(f"  Exec mode: {os.environ.get('SAGE_VERL_EXEC', '0')}")
     log.info("=" * 60)
 
+    # Load base model + merge existing adapter, then train new LoRA on top
+    from transformers import AutoModelForCausalLM, BitsAndBytesConfig
+    from peft import PeftModel
+
+    bnb = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_type="nf4")
+    log.info("Loading base model...")
+    base = AutoModelForCausalLM.from_pretrained(args.model, quantization_config=bnb, device_map="auto")
+    if args.adapter and os.path.exists(os.path.join(args.adapter, "adapter_config.json")):
+        log.info(f"Loading adapter from {args.adapter}...")
+        base = PeftModel.from_pretrained(base, args.adapter)
+        base = base.merge_and_unload()
+        log.info("Adapter merged into base.")
+
     trainer = GRPOTrainer(
-        model=args.adapter,  # Loads base + LoRA automatically
+        model=base,
         reward_funcs=reward_func,
         train_dataset=dataset,
         args=config,

@@ -505,12 +505,13 @@ def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
                     bnb_4bit_quant_type="nf4",
                     bnb_4bit_compute_dtype=torch.bfloat16,
                 )
+                import os as _os
+                base_path = _os.environ.get("SAGE_PATH6_MODEL", config.base_model)
                 base = AutoModelForCausalLM.from_pretrained(
-                    config.base_model,
+                    base_path,
                     quantization_config=bnb_config,
                     trust_remote_code=config.trust_remote_code,
                     device_map="auto",
-                    local_files_only=True,
                 )
                 model = PeftModel.from_pretrained(base, adapter_path)
             elif config.chat_template == "qwen3":
