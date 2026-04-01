@@ -17,7 +17,7 @@ Tier = Literal[
 
 _HARDCODED = {
     "codex": "gpt-5.4",
-    "codex_max": "gpt-5.4-pro",
+    "codex_max": "gpt-5.4",
     "fast": "gemini-3.1-flash-lite-preview",
     "mutator": "gpt-5.4-mini",
     "reasoner": "gemini-3.1-pro-preview",

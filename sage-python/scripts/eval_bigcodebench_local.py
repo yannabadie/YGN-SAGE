@@ -36,7 +36,7 @@ def main():
         [sys.executable, "-m", "sage.bench",
          "--type", "bigcodebench", "--subset", "hard", "--split", "instruct",
          "--limit", str(args.limit),
-         "--output-json", args.output or "experiments/n3_latest.json"],
+         "--output", args.output or "experiments/n3_latest.json"],
         env=env, capture_output=True, text=True, timeout=3600,
     )
 

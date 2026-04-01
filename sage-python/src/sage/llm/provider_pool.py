@@ -110,6 +110,7 @@ class ProviderPool:
                     "gemini": "google",
                     "grok": "xai",
                     "minimax": "minimax",
+                    "kimi": "kimi",
                     "moonshot": "kimi",
                     "qwen": "openrouter",
                 }

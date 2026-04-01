@@ -375,7 +375,7 @@ class CognitiveOrchestrationPipeline:
                         "balanced": 2,
                         "reasoner": 3, "codex": 3,
                     }
-                    topo = TopologyGraph("learned_policy")
+                    topo = TopologyGraph("sequential")  # base template, nodes/edges added below
                     for node_data in policy_result["nodes"]:
                         model_tier = node_data.get("model_tier", "")
                         node_system = _TIER_TO_SYSTEM.get(model_tier, ctx.system)
@@ -389,12 +389,12 @@ class CognitiveOrchestrationPipeline:
 
                     for edge_data in policy_result.get("edges", []):
                         if isinstance(edge_data, dict):
-                            edge = TopologyEdge(
-                                from_idx=edge_data.get("from_idx", 0),
-                                to_idx=edge_data.get("to_idx", 0),
-                                flow_type=edge_data.get("flow_type", "message"),
+                            edge = TopologyEdge(edge_data.get("flow_type", "message"))
+                            topo.add_edge(
+                                edge_data.get("from_idx", 0),
+                                edge_data.get("to_idx", 0),
+                                edge,
                             )
-                            topo.add_edge(edge)
 
                     ctx.topology = topo
                     ctx.topology_id = "path6_learned"
