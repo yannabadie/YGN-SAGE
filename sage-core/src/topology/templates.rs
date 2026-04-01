@@ -7,6 +7,13 @@ use super::topology_graph::*;
 use pyo3::prelude::*;
 use std::collections::HashMap;
 
+/// Extraction prompt for terminal/sink nodes in every topology.
+/// Ensures the final output is concise and directly usable by downstream
+/// systems (benchmarks, A2A clients, human users).
+/// Based on MALT (arXiv 2412.01928) and AgentConductor (arXiv 2602.17100):
+/// the terminal node's prompt constrains output format.
+const SINK_NODE_PROMPT: &str = "You are the final synthesizer. Review all context from previous agents and produce the definitive answer. Output ONLY the final answer — concise, no explanation, no reasoning. If the answer is a number, output only that number.";
+
 // ---------------------------------------------------------------------------
 // 1. Sequential: A -> B -> C
 // ---------------------------------------------------------------------------
@@ -36,7 +43,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         1.0,
         120.0,
     );
-    let n2 = TopologyNode::new(
+    let mut n2 = TopologyNode::new(
         "synthesizer".into(),
         "".into(),  // ModelAssigner will assign based on system=1 (fast)
         1,
@@ -45,6 +52,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         0.5,
         60.0,
     );
+    n2.prompt = SINK_NODE_PROMPT.to_string();
 
     let i0 = g.add_node(n0);
     let i1 = g.add_node(n1);
@@ -92,7 +100,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
         worker_indices.push(g.add_node(w));
     }
 
-    let agg = TopologyNode::new(
+    let mut agg = TopologyNode::new(
         "aggregator".into(),
         model_id.into(),
         1,
@@ -101,6 +109,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
         0.5,
         60.0,
     );
+    agg.prompt = SINK_NODE_PROMPT.to_string();
     let ai = g.add_node(agg);
 
     for (i, &wi) in worker_indices.iter().enumerate() {
@@ -215,7 +224,7 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
         agent_indices.push(g.add_node(agent));
     }
 
-    let mixer = TopologyNode::new(
+    let mut mixer = TopologyNode::new(
         "mixer".into(),
         model_id.into(),
         2,
@@ -224,6 +233,7 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
         0.5,
         60.0,
     );
+    mixer.prompt = SINK_NODE_PROMPT.to_string();
     let mi = g.add_node(mixer);
 
     for (i, &ai) in agent_indices.iter().enumerate() {
@@ -383,7 +393,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         1.0,
         120.0,
     );
-    let judge = TopologyNode::new(
+    let mut judge = TopologyNode::new(
         "judge".into(),
         judge_model.into(),
         2,
@@ -392,6 +402,7 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         1.0,
         60.0,
     );
+    judge.prompt = SINK_NODE_PROMPT.to_string();
 
     let ti = g.add_node(topic);
     let dai = g.add_node(debater_a);
@@ -451,7 +462,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
         thinker_indices.push(g.add_node(thinker));
     }
 
-    let synthesizer = TopologyNode::new(
+    let mut synthesizer = TopologyNode::new(
         "synthesizer".into(),
         model_id.into(),
         2,
@@ -460,6 +471,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
         0.5,
         60.0,
     );
+    synthesizer.prompt = SINK_NODE_PROMPT.to_string();
     let si = g.add_node(synthesizer);
 
     for (i, &ti) in thinker_indices.iter().enumerate() {
@@ -527,6 +539,7 @@ pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
     );
     verifier.fallback_tier = "reasoner".into();
     verifier.is_checkpoint = true;
+    verifier.prompt = SINK_NODE_PROMPT.to_string();
     let vi = g.add_node(verifier);
 
     for (i, &wi) in worker_indices.iter().enumerate() {
@@ -601,6 +614,7 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
         60.0,
     );
     aggregator.fallback_tier = "fast".into();
+    aggregator.prompt = SINK_NODE_PROMPT.to_string();
     let ai = g.add_node(aggregator);
 
     // Chain: splitter -> stage_0 -> stage_1 -> ... -> stage_{N-1} -> aggregator
@@ -688,6 +702,7 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
     );
     aggregator.fallback_tier = "reasoner".into();
     aggregator.is_checkpoint = true;
+    aggregator.prompt = SINK_NODE_PROMPT.to_string();
     let ai = g.add_node(aggregator);
 
     for (i, &wi) in worker_indices.iter().enumerate() {
