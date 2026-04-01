@@ -18,6 +18,24 @@
 
 ---
 
+## Try it now
+
+```python
+pip install ygn-sage
+```
+
+```python
+import asyncio
+from sage.boot import boot_agent_system
+
+system = boot_agent_system()
+print(asyncio.run(system.run("Write a Python function that checks if a number is prime")))
+```
+
+SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a multi-agent topology, assigns models from 7 providers, executes with formal verification, and learns from every run.
+
+---
+
 YGN-SAGE is an open-source Agent Development Kit that **learns** which multi-agent topology to use for each task. Inspired by [OpenSAGE](https://arxiv.org/abs/2602.16891) (UC Berkeley), SAGE extends it with formal verification, evolutionary topology search, and a Rust performance core.
 
 Unlike frameworks that use fixed agent pipelines, SAGE designs, executes, and improves its own multi-agent architectures autonomously — adding **+27pp over bare LLM calls** on multi-agent benchmarks (MASBENCH).

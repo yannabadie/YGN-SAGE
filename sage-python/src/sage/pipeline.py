@@ -141,7 +141,7 @@ class CognitiveOrchestrationPipeline:
                 # Compact to Arrow chunk for S-MMU graph storage
                 if self.working_memory.event_count() >= 4:
                     self.working_memory.compact_to_arrow()
-            except Exception as exc:
+            except (RuntimeError, IOError) as exc:
                 log.debug("Memory write (Tier 0) failed: %s", exc)
 
         # Tier 1: Episodic memory (persistent SQLite)
@@ -164,7 +164,7 @@ class CognitiveOrchestrationPipeline:
                     self.episodic_memory.add(key=f"pipeline-{self._task_count}", content=content)
                 elif hasattr(self.episodic_memory, 'add_episode'):
                     self.episodic_memory.add_episode(key=f"pipeline-{self._task_count}", content=content)
-            except Exception as exc:
+            except (RuntimeError, IOError) as exc:
                 log.debug("Memory write (Tier 1) failed: %s", exc)
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
@@ -181,7 +181,7 @@ class CognitiveOrchestrationPipeline:
                         meta={"stage": stage, **data},
                     )
                 )
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
 
     async def run(self, task: str, budget_usd: float = 10.0) -> str:
@@ -262,7 +262,7 @@ class CognitiveOrchestrationPipeline:
                              knn_result.system, knn_result.confidence, knn_result.method)
                     ctx.domain = _infer_domain(ctx.task)
                     return ctx
-            except Exception as exc:
+            except (ImportError, RuntimeError) as exc:
                 log.debug("Stage 0: kNN failed (%s), falling back", exc)
 
         # Priority 2: AdaptiveRouter / ComplexityRouter
@@ -271,7 +271,7 @@ class CognitiveOrchestrationPipeline:
                 profile = self.router.assess_complexity(ctx.task)
                 decision = self.router.route(profile)
                 ctx.system = getattr(decision, "system", 2)
-            except Exception as exc:
+            except (ImportError, RuntimeError) as exc:
                 log.warning("Stage 0 classify failed: %s, defaulting to S2", exc)
                 ctx.system = 2
         else:
@@ -299,7 +299,7 @@ class CognitiveOrchestrationPipeline:
                 ctx.dag_features = compute_dag_features(result.dag)
             else:
                 ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-        except Exception as exc:
+        except (RuntimeError, TimeoutError) as exc:
             log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
             ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
 
@@ -369,7 +369,7 @@ class CognitiveOrchestrationPipeline:
                     _emb = Embedder()
                     if _emb.is_semantic:
                         task_embedding = _emb.embed(ctx.task[:500])
-                except Exception:
+                except (ImportError, RuntimeError):
                     pass
                 result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):
@@ -382,7 +382,7 @@ class CognitiveOrchestrationPipeline:
                     ctx.topology = result
                 self._check_topology_budget(ctx)
                 return ctx
-            except Exception as exc:
+            except (ImportError, RuntimeError) as exc:
                 log.warning(
                     "Stage 2 topology engine failed: %s, using template", exc
                 )
@@ -435,7 +435,7 @@ class CognitiveOrchestrationPipeline:
                     )
                     self._check_topology_budget(ctx)
                     return ctx
-            except Exception as exc:
+            except (ImportError, RuntimeError) as exc:
                 log.debug("Path 6 failed: %s", str(exc)[:100])
 
         # Fallback: create topology from template
@@ -547,7 +547,7 @@ class CognitiveOrchestrationPipeline:
                     log.debug("Cost estimator: loaded %d models from %s",
                               len(self._model_catalog), candidate)
                     break
-        except Exception as exc:
+        except (IOError, OSError, ValueError) as exc:
             log.debug("Cost estimator: catalog unavailable (%s)", exc)
 
         return self._model_catalog
@@ -589,7 +589,7 @@ class CognitiveOrchestrationPipeline:
                 )
                 if node:
                     ctx.assignments[i] = getattr(node, "model_id", "")
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
         # Bandit quality feedback: Thompson-sampled penalty (not hard exclusion).
@@ -625,7 +625,7 @@ class CognitiveOrchestrationPipeline:
                                     i, model_id, new_id, quality_sample,
                                 )
                                 ctx.assignments[i] = new_id
-                        except Exception:
+                        except (ImportError, RuntimeError):
                             pass
 
         # Filter out models assigned to unavailable providers (circuit breaker open)
@@ -651,7 +651,7 @@ class CognitiveOrchestrationPipeline:
         # Formal verification (non-blocking): prove every node has a valid provider
         try:
             self._verify_assignment_formal(ctx)
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
 
         return ctx
@@ -781,7 +781,7 @@ class CognitiveOrchestrationPipeline:
         except ImportError as exc:
             log.debug("Stage 3 formal verify skipped (no SMT backend): %s", exc)
             return
-        except Exception as exc:
+        except RuntimeError as exc:
             log.warning("Stage 3 formal verify raised unexpected error: %s", exc)
             return
 
@@ -820,13 +820,13 @@ class CognitiveOrchestrationPipeline:
                 ]
                 decision = self.bandit.select_with_context(0.1, task_context)
                 ctx.bandit_decision_id = decision.decision_id
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
         elif self.bandit and hasattr(self.bandit, "select"):
             try:
                 decision = self.bandit.select(0.1)  # 10% exploration
                 ctx.bandit_decision_id = decision.decision_id
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
 
         if not ctx.verification_passed:
@@ -847,7 +847,7 @@ class CognitiveOrchestrationPipeline:
                         config=self.llm_config,
                     )
                     ctx.result = response.content or ""
-                except Exception as exc:
+                except (RuntimeError, TimeoutError) as exc:
                     log.error("Stage 4 single-agent execution failed: %s", exc)
                     ctx.result = f"Error: {exc}"
             return ctx
@@ -895,13 +895,13 @@ class CognitiveOrchestrationPipeline:
                         ]
                         new_decision = self.bandit.select_with_context(0.1, task_context)
                         ctx.bandit_decision_id = new_decision.decision_id
-                    except Exception:
+                    except (ImportError, RuntimeError):
                         pass
                 elif self.bandit and hasattr(self.bandit, "select"):
                     try:
                         new_decision = self.bandit.select(0.1)
                         ctx.bandit_decision_id = new_decision.decision_id
-                    except Exception:
+                    except (ImportError, RuntimeError):
                         pass
                 # Fresh executor for the regenerated topology (old one is stale)
                 from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
@@ -932,7 +932,7 @@ class CognitiveOrchestrationPipeline:
                                             ctx.budget * 1.5,  # Budget escalation
                                             exclude_model_ids=[current_model] if current_model else None,
                                         )
-                                    except (ValueError, Exception):
+                                    except (ValueError, RuntimeError):
                                         pass  # Keep current model if no upgrade available
                         # Re-execute with upgraded models
                         from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
@@ -946,14 +946,14 @@ class CognitiveOrchestrationPipeline:
                         if retry_result:
                             result = retry_result
                             log.info("Stage 4: FrugalGPT cascade succeeded on retry")
-                    except Exception as exc:
+                    except (RuntimeError, TimeoutError) as exc:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
             ctx.result = result
             # Estimate cost from topology execution
             # Uses per-model pricing from cards.toml when available
             ctx.cost = self._estimate_topology_cost(ctx)
-        except Exception as exc:
+        except (ImportError, RuntimeError, TimeoutError) as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly with default provider
             if self.llm_provider:
@@ -965,7 +965,7 @@ class CognitiveOrchestrationPipeline:
                     )
                     ctx.result = response.content or ""
                     log.info("Stage 4 fallback single-agent succeeded (%d chars)", len(ctx.result))
-                except Exception as fallback_exc:
+                except (RuntimeError, TimeoutError) as fallback_exc:
                     log.error("Stage 4 fallback also failed: %s", fallback_exc)
                     ctx.result = ""
             else:
@@ -996,7 +996,7 @@ class CognitiveOrchestrationPipeline:
                 quality = self.quality_estimator.estimate(
                     ctx.task, ctx.result, ctx.latency_ms
                 )
-            except Exception:
+            except (ImportError, RuntimeError):
                 quality = None  # cannot assess — abstain
 
         # PRM lightweight scoring (Phase C) — 6th formal signal
@@ -1009,7 +1009,7 @@ class CognitiveOrchestrationPipeline:
                 if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
                     quality = 0.8 * quality + 0.2 * r_path
                     log.debug("PRM blended quality: %.2f (estimator + PRM)", quality)
-            except Exception as exc:
+            except (RuntimeError, ValueError) as exc:
                 log.warning("PRM scoring failed in LEARN: %s", exc)
 
         # Only record to bandit when quality is known — never guess
@@ -1018,7 +1018,7 @@ class CognitiveOrchestrationPipeline:
                 try:
                     self.bandit.record_outcome(ctx.bandit_decision_id, quality, ctx.cost, ctx.latency_ms)
                     log.debug("Bandit outcome recorded (in-memory, not persisted across restarts)")
-                except Exception:
+                except (ImportError, RuntimeError):
                     pass
 
         # Evolution feedback: record outcome in TopologyEngine archive
@@ -1037,7 +1037,7 @@ class CognitiveOrchestrationPipeline:
                         _embedder = Embedder()
                         if _embedder.is_semantic:
                             task_embedding = _embedder.embed(ctx.task[:500])
-                    except Exception:
+                    except (ImportError, RuntimeError):
                         pass  # Embedding unavailable, degrade gracefully
 
                     self.engine.record_outcome(
@@ -1053,7 +1053,7 @@ class CognitiveOrchestrationPipeline:
                         "Evolution: recorded outcome for topology %s (quality=%.2f)",
                         topology_id[:8], quality,
                     )
-            except Exception as exc:
+            except (ImportError, RuntimeError) as exc:
                 log.debug("Evolution feedback failed: %s", exc)
 
         # ── Periodic maintenance ───────────────────────────────────────────
@@ -1071,7 +1071,7 @@ class CognitiveOrchestrationPipeline:
                         consolidation_result.processed,
                         getattr(consolidation_result, 'entities_added', 0),
                     )
-            except Exception:
+            except (RuntimeError, IOError):
                 pass  # Best-effort, never blocks pipeline
 
         # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
@@ -1083,5 +1083,5 @@ class CognitiveOrchestrationPipeline:
                 state_dir = str(Path.home() / ".sage")
                 self.engine.save_state(state_dir)
                 log.debug("Periodic state flush (%d tasks)", self._task_count)
-            except Exception:
+            except (RuntimeError, IOError):
                 pass  # Best-effort, never blocks pipeline

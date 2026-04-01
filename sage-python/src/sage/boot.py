@@ -90,14 +90,14 @@ def _check_sandbox_availability() -> bool:
         has_wasm = te.has_wasm() or te.has_wasi()
         # tree-sitter + subprocess are always available when ToolExecutor loads
         has_subprocess = True
-    except Exception:
+    except (ImportError, RuntimeError):
         pass
 
     if not has_subprocess:
         try:
             import shutil
             has_docker = shutil.which("docker") is not None
-        except Exception:
+        except ImportError:
             pass
 
     available = has_wasm or has_subprocess or has_docker
@@ -177,7 +177,7 @@ class AgentSystem:
                 await self._persist_memory()
                 _log.info("Execution path: pipeline (5-stage)")
                 return result
-            except Exception as exc:
+            except (RuntimeError, TimeoutError) as exc:
                 self._last_execution_path = "pipeline_fallback_legacy"
                 _log.warning("Pipeline FAILED — falling back to legacy path: %s", exc)
 
@@ -264,7 +264,7 @@ class AgentSystem:
                     _emb = Embedder()
                     if _emb.is_semantic:
                         task_embedding = _emb.embed(task[:500])
-                except Exception:
+                except (ImportError, RuntimeError):
                     pass
                 topology_result = self.topology_engine.generate(
                     task,
@@ -302,7 +302,7 @@ class AgentSystem:
                             )
                             _log.info("Path 3: LLM synthesis produced %d-node topology",
                                       llm_graph.node_count())
-                    except Exception as e:
+                    except (RuntimeError, TimeoutError) as e:
                         _log.debug("Path 3 LLM synthesis skipped: %s", e)
                 # Emit topology event for dashboard
                 from sage.agent_loop import AgentEvent
@@ -318,7 +318,7 @@ class AgentSystem:
                         "topology_nodes": topology_result.topology.node_count(),
                     },
                 ))
-            except Exception as e:
+            except (ImportError, RuntimeError) as e:
                 _log.warning("Topology generation failed (%s), continuing without", e)
                 self.agent_loop._current_topology = None
         else:
@@ -352,7 +352,7 @@ class AgentSystem:
                 )
                 bandit_decision = None  # Bandit handled inside route_integrated
                 self._last_decision = decision  # Update stored decision
-            except Exception as e:
+            except (ImportError, RuntimeError) as e:
                 _log.debug("Integrated routing failed (%s), using separate paths", e)
 
         # Phase 6: Bandit model suggestion (Thompson sampling)
@@ -382,7 +382,7 @@ class AgentSystem:
                     bandit_decision.model_id, bandit_decision.template,
                     bandit_decision.expected_quality, bandit_decision.exploration,
                 )
-            except Exception as e:
+            except (ImportError, RuntimeError) as e:
                 _log.warning("Bandit model selection failed (%s), using default", e)
 
         # 3. Set validation level from routing decision
@@ -406,7 +406,7 @@ class AgentSystem:
             _node_count = 0
             try:
                 _node_count = self.agent_loop._current_topology.node_count()
-            except Exception:
+            except AttributeError:
                 pass
             if _node_count > 1:
                 _log.info(
@@ -473,7 +473,7 @@ class AgentSystem:
                 _emb = Embedder()
                 if _emb.is_semantic:
                     outcome_embedding = _emb.embed(task[:500])
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
             self.topology_engine.record_outcome(
                 topology_id,
@@ -495,7 +495,7 @@ class AgentSystem:
                     self.bandit.record(
                         bandit_decision.decision_id, quality, cost, latency_ms,
                     )
-                except Exception as e2:
+                except (ImportError, RuntimeError) as e2:
                     _log.warning("Bandit outcome recording failed (%s)", e2)
 
             # Feed telemetry back to SystemRouter
@@ -506,9 +506,9 @@ class AgentSystem:
                         getattr(_decision, 'decision_id', ''),
                         quality, cost, latency_ms,
                     )
-                except Exception as e3:
+                except (ImportError, RuntimeError) as e3:
                     _log.debug("Router telemetry recording failed (%s)", e3)
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError) as e:
             _log.warning("Topology outcome recording failed (%s)", e)
 
     async def _persist_memory(self) -> None:
@@ -516,12 +516,12 @@ class AgentSystem:
         if hasattr(self.agent_loop, "semantic_memory") and self.agent_loop.semantic_memory:
             try:
                 self.agent_loop.semantic_memory.save()
-            except Exception:
+            except (IOError, OSError):
                 _log.warning("Failed to persist semantic memory", exc_info=True)
         if hasattr(self.agent_loop, "causal_memory") and self.agent_loop.causal_memory:
             try:
                 self.agent_loop.causal_memory.save()
-            except Exception:
+            except (IOError, OSError):
                 _log.warning("Failed to persist causal memory", exc_info=True)
 
 
@@ -639,7 +639,7 @@ def boot_agent_system(
                 "Boot: kNN router loaded (%d exemplars, %s)",
                 _knn_router.exemplar_count, _knn_router.embedder_backend,
             )
-    except Exception as e:
+    except (ImportError, RuntimeError) as e:
         _log.info("Boot: kNN router unavailable (%s)", e)
 
     metacognition = AdaptiveRouter(
@@ -659,7 +659,7 @@ def boot_agent_system(
                 n = metacognition._rust.load_exemplars(flat_emb, flat_labels)
                 if n > 0:
                     _log.info("Boot: Rust kNN loaded %d exemplars (native SIMD search)", n)
-        except Exception as e:
+        except (ImportError, RuntimeError, ValueError) as e:
             _log.info("Boot: Rust kNN exemplar load failed (%s), using Python kNN", e)
 
     # Rust SystemRouter (primary path when sage_core cognitive engine is compiled)
@@ -691,7 +691,7 @@ def boot_agent_system(
                 )
             else:
                 _log.info("Boot: cards.toml not found, using Python AdaptiveRouter")
-        except Exception as e:
+        except (ImportError, RuntimeError) as e:
             _log.warning(
                 "Boot: Rust SystemRouter init failed (%s), using Python AdaptiveRouter", e,
             )
@@ -704,7 +704,7 @@ def boot_agent_system(
                 "Boot: Python ModelRegistry active (%d models from %s)",
                 len(py_model_registry), _cards_toml,
             )
-        except Exception as e:
+        except (IOError, OSError, ValueError) as e:
             _log.warning("Boot: Python ModelRegistry init failed (%s)", e)
 
     # Shadow router: dual Rust/Python comparison when both are available.
@@ -766,7 +766,7 @@ def boot_agent_system(
                 try:
                     rust_router.set_bandit(rust_bandit)
                     _log.info("Boot: Bandit wired into SystemRouter for integrated routing")
-                except Exception as e:
+                except (ImportError, RuntimeError) as e:
                     _log.debug("Boot: Failed to wire bandit into router (%s)", e)
             # Warm-start bandit arms from ModelCard affinities
             if rust_registry and rust_bandit:
@@ -789,12 +789,12 @@ def boot_agent_system(
                         "Boot: Bandit warm-started with %d models x %d templates (%d arms)",
                         len(model_ids), len(templates), len(model_ids) * len(templates),
                     )
-                except Exception as e:
+                except (ImportError, RuntimeError) as e:
                     _log.debug("Boot: Bandit warm-start failed (%s)", e)
             _log.info(
                 "Boot: Phase 6 active — TopologyEngine + ContextualBandit ready"
             )
-        except Exception as e:
+        except (ImportError, RuntimeError) as e:
             _log.warning("Boot: Phase 6 TopologyEngine init failed (%s)", e)
 
     # P1: Restore persisted bandit + MAP-Elites state from previous session
@@ -808,7 +808,7 @@ def boot_agent_system(
                         "Boot: Restored persisted state — %d bandit arms, %d archive cells from %s",
                         bandit_arms, archive_cells, _sage_state_dir,
                     )
-        except Exception as e:
+        except (IOError, OSError, RuntimeError) as e:
             _log.debug("Boot: No persisted state loaded (%s)", e)
 
     # P1: Register atexit handler to save bandit + MAP-Elites state at shutdown
@@ -819,7 +819,7 @@ def boot_agent_system(
             try:
                 engine.save_state(state_dir)
                 _log.info("Shutdown: Saved engine state to %s", state_dir)
-            except Exception as exc:
+            except (IOError, OSError, RuntimeError) as exc:
                 _log.warning("Shutdown: Failed to save engine state (%s)", exc)
 
         atexit.register(_save_engine_state)
@@ -847,7 +847,7 @@ def boot_agent_system(
                     0.0,
                 )
                 _bootstrapped += 1
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
         if _bootstrapped > 0:
             _log.info(
@@ -962,7 +962,7 @@ def boot_agent_system(
                 "Boot: discovered %d models (%d available) — %s",
                 total, avail, ", ".join(summary_parts) if summary_parts else "none",
             )
-        except Exception as e:
+        except (RuntimeError, TimeoutError, OSError) as e:
             _log.warning("Boot: model discovery failed (%s), continuing with legacy routing", e)
 
         # Auto-populate capability matrix from discovered providers.
@@ -999,7 +999,7 @@ def boot_agent_system(
                 from sage.llm.codex import CodexProvider
                 _runtime_adapters["codex"] = CodexProvider()
                 _log.info("Boot: Codex CLI provider added to runtime adapters")
-            except Exception as e:
+            except (ImportError, RuntimeError) as e:
                 _log.warning("Boot: Codex provider init failed (%s)", e)
 
         _cap_matrix.populate_from_providers(
@@ -1106,7 +1106,7 @@ def boot_agent_system(
             from sage.llm.model_assigner import ModelAssigner as PyModelAssigner
             if py_model_registry:
                 model_assigner = PyModelAssigner(py_model_registry)
-        except Exception:
+        except (ImportError, RuntimeError):
             pass
 
     # Provider pool: wraps default provider + registry for per-node resolution
@@ -1121,7 +1121,7 @@ def boot_agent_system(
                 providers=_runtime_adapters,
             )
             _log.info("ProviderPool: %d live providers — %s", len(_runtime_adapters), list(_runtime_adapters.keys()))
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             _log.warning("ProviderPool init failed: %s", exc)
 
     # Pipeline: 5-stage orchestration (optional — None if deps missing)
@@ -1144,7 +1144,7 @@ def boot_agent_system(
                 episodic_memory=episodic_memory,      # Tier 1: cross-session persistence
             )
             _log.info("CognitiveOrchestrationPipeline initialized")
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             _log.warning("Pipeline init failed: %s — using legacy path", exc)
 
     # TopologyController (Phase C — runtime adaptation)
@@ -1163,7 +1163,7 @@ def boot_agent_system(
             try:
                 from sage.quality_estimator import QualityEstimator
                 _qe = QualityEstimator()
-            except Exception:
+            except (ImportError, RuntimeError):
                 pass
             # PRM: from agent_loop if available
             _prm = getattr(loop, 'prm', None)
@@ -1176,7 +1176,7 @@ def boot_agent_system(
                 event_bus=event_bus,
             )
             _log.info("TopologyController initialized (Phase C)")
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             _log.warning("TopologyController init failed: %s", exc)
 
     # Pass controller to pipeline
@@ -1190,7 +1190,7 @@ def boot_agent_system(
         try:
             from sage.quality_estimator import QualityEstimator
             _pipeline_qe = QualityEstimator()
-        except Exception:
+        except (ImportError, RuntimeError):
             pass
     if _pipeline and _pipeline_qe:
         _pipeline.quality_estimator = _pipeline_qe
@@ -1208,7 +1208,7 @@ def boot_agent_system(
             )
             _pipeline.tool_forge = _tool_forge
             _log.info("ToolForge initialized (autonomous tool synthesis)")
-        except Exception as exc:
+        except (ImportError, RuntimeError) as exc:
             _log.debug("ToolForge init failed: %s", exc)
 
     # Log capability surface at boot (Issue E audit fix)

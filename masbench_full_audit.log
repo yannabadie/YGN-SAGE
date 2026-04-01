@@ -1,0 +1,258 @@
+2026-03-31 16:22:02,182 [masbench] INFO MASBENCH FULL AUDIT — Rust ONNX embeddings + OpenAI-compat Google
+2026-03-31 16:22:02,408 [sage.strategy.knn_router] INFO kNN: loaded 50 exemplars from C:\Code\YGN-SAGE\sage-python\config\routing_exemplars.npz
+2026-03-31 16:22:02,413 [sage.strategy.knn_router] INFO kNN: Rust acceleration active (50 exemplars)
+2026-03-31 16:22:03,129 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:03,129 [sage.boot] INFO Boot: kNN router loaded (50 exemplars, rust_onnx)
+2026-03-31 16:22:03,130 [sage.strategy.adaptive_router] INFO AdaptiveRouter: Python heuristic fallback
+2026-03-31 16:22:03,137 [sage.boot] INFO Boot: Rust SystemRouter active (19 models from C:\Code\YGN-SAGE\sage-core\config\cards.toml)
+2026-03-31 16:22:03,137 [sage.boot] INFO Boot: ShadowRouter shadow comparison disabled (49.6%% divergence). Rust SystemRouter is primary. Set SAGE_ENABLE_SHADOW=1 to re-enable.
+2026-03-31 16:22:03,137 [sage.boot] INFO Boot: Bandit wired into SystemRouter for integrated routing
+2026-03-31 16:22:03,137 [sage.boot] INFO Boot: Bandit warm-started with 19 models x 4 templates (76 arms)
+2026-03-31 16:22:03,138 [sage.boot] INFO Boot: Phase 6 active — TopologyEngine + ContextualBandit ready
+2026-03-31 16:22:03,142 [sage.boot] INFO Boot: Restored persisted state — 10 bandit arms, 11 archive cells from C:\Users\yann.abadie\.sage
+2026-03-31 16:22:03,142 [sage.boot] INFO Boot: atexit handler registered for engine state persistence
+2026-03-31 16:22:03,143 [sage.boot] INFO S-MMU bootstrapped with 3 template topologies (3 chunks)
+2026-03-31 16:22:03,752 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:03,755 [sage.providers.registry] INFO Loaded model profiles from C:\Code\YGN-SAGE\sage-python\config\model_profiles.toml (5 entries)
+2026-03-31 16:22:03,763 [sage.providers.connector] INFO Using cached deepseek model list (2 models)
+2026-03-31 16:22:03,765 [sage.providers.connector] INFO Discovered 2 models from deepseek
+2026-03-31 16:22:03,766 [sage.providers.connector] INFO Using cached google model list (1 models)
+2026-03-31 16:22:03,766 [sage.providers.connector] INFO Discovered 1 models from google
+2026-03-31 16:22:03,767 [sage.providers.connector] INFO Using cached openai model list (2 models)
+2026-03-31 16:22:03,768 [sage.providers.connector] INFO Discovered 2 models from openai
+2026-03-31 16:22:03,769 [sage.providers.connector] INFO Using cached xai model list (11 models)
+2026-03-31 16:22:03,769 [sage.providers.connector] INFO Discovered 11 models from xai
+2026-03-31 16:22:03,770 [sage.providers.connector] INFO Using cached kimi model list (13 models)
+2026-03-31 16:22:03,771 [sage.providers.connector] INFO Discovered 13 models from kimi
+2026-03-31 16:22:03,771 [sage.providers.connector] INFO Discovered 1 models from minimax
+2026-03-31 16:22:03,771 [sage.providers.connector] INFO Discovered 1 models from openrouter
+2026-03-31 16:22:03,774 [sage.providers.connector] INFO Codex CLI detected on PATH
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: deepseek-reasoner (deepseek) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: gpt-5-mini (openai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: grok-3 (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,775 [sage.providers.registry] INFO New model discovered: grok-4-1-fast-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-4.20-0309-non-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-4.20-0309-reasoning (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-4.20-multi-agent-0309 (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: grok-code-fast-1 (xai) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,776 [sage.providers.registry] INFO New model discovered: kimi-k2.5 (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,777 [sage.providers.registry] INFO New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,778 [sage.providers.registry] INFO New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+2026-03-31 16:22:03,778 [sage.providers.registry] INFO New model discovered: minimax-m2.7 (minimax) -- no TOML profile, using defaults
+2026-03-31 16:22:03,778 [sage.providers.registry] INFO New model discovered: qwen/qwen3.5-plus-02-15 (openrouter) -- no TOML profile, using defaults
+2026-03-31 16:22:03,778 [sage.providers.registry] INFO New model discovered: codex-cli (codex) -- no TOML profile, using defaults
+2026-03-31 16:22:03,778 [sage.providers.registry] INFO ModelRegistry: 34 total profiles, 32 available
+2026-03-31 16:22:03,779 [sage.boot] INFO Boot: discovered 34 models (32 available) — codex: 1, deepseek: 2, google: 1, kimi: 13, minimax: 1, openai: 2, openrouter: 1, xai: 11
+2026-03-31 16:22:03,782 [sage.boot] INFO Boot: Codex CLI provider added to runtime adapters
+2026-03-31 16:22:03,788 [sage.boot] INFO ToolExecutor (Rust): tree-sitter validator + subprocess executor
+2026-03-31 16:22:03,789 [sage.boot] INFO Online evolution enabled (Rust TopologyEngine available)
+2026-03-31 16:22:03,791 [sage.boot] INFO Sandbox: tree-sitter + subprocess (no Wasm component loaded). Load a .wasm module via ToolExecutor.load_component() for full isolation.
+2026-03-31 16:22:03,792 [sage.boot] INFO ProviderPool: 8 live providers — ['deepseek', 'google', 'openai', 'xai', 'kimi', 'minimax', 'openrouter', 'codex']
+2026-03-31 16:22:03,799 [sage.boot] INFO CognitiveOrchestrationPipeline initialized
+2026-03-31 16:22:03,801 [sage.quality_estimator] INFO QualityEstimator: Z3 formal labeler active
+2026-03-31 16:22:03,801 [sage.boot] INFO TopologyController initialized (Phase C)
+2026-03-31 16:22:03,803 [sage.boot] INFO ToolForge initialized (autonomous tool synthesis)
+2026-03-31 16:22:03,803 [sage.boot] INFO Memory backend: rust_smmu
+2026-03-31 16:22:03,803 [sage.boot] INFO Capabilities: pipeline=True, quality=True, bandit=True, engine=True
+2026-03-31 16:22:03,803 [masbench] INFO Boot: 1.4s
+2026-03-31 16:22:03,804 [masbench] INFO WM: events=0 chunks=0
+2026-03-31 16:22:24,760 [datasets.load] WARNING Using the latest cached version of the dataset since Salesforce/MASBench couldn't be found on the Hugging Face Hub (offline mode is enabled).
+2026-03-31 16:22:24,761 [datasets.packaged_modules.cache.cache] WARNING Found the latest cached dataset configuration 'depth' at C:\Users\yann.abadie\.cache\huggingface\datasets\Salesforce___mas_bench\depth\0.0.0\e85fc3e60107c87b690f9cdc478bad375a243ed0 (last modified on Tue Mar 31 12:24:19 2026).
+2026-03-31 16:22:24,934 [sage.bench.masbench] INFO Loaded 20 MASBENCH tasks (axis=depth, split=test)
+2026-03-31 16:22:24,936 [sage.bench.masbench] INFO === Condition 1: Bare Model ===
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 1/20] passed=False gt=9
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 2/20] passed=False gt=16
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 3/20] passed=False gt=18
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 4/20] passed=False gt=11
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 5/20] passed=False gt=22
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 6/20] passed=False gt=13
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 7/20] passed=False gt=7
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 8/20] passed=False gt=7
+2026-03-31 16:22:24,937 [sage.bench.masbench] INFO [bare 9/20] passed=False gt=17
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 10/20] passed=False gt=11
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 11/20] passed=False gt=6
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 12/20] passed=False gt=12
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 13/20] passed=False gt=0
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 14/20] passed=False gt=10
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 15/20] passed=False gt=2
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 16/20] passed=False gt=19
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 17/20] passed=False gt=0
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 18/20] passed=False gt=0
+2026-03-31 16:22:24,938 [sage.bench.masbench] INFO [bare 19/20] passed=False gt=14
+2026-03-31 16:22:24,939 [sage.bench.masbench] INFO [bare 20/20] passed=False gt=20
+2026-03-31 16:22:24,939 [sage.bench.masbench] INFO === Condition 2: SAGE Full Engine ===
+2026-03-31 16:22:25,060 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.80, rust_knn)
+2026-03-31 16:22:28,986 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:29,033 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:22:29,068 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:22:33,570 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:22:33,571 [sage.bench.masbench] INFO [sage 1/20] passed=True gt=9
+2026-03-31 16:22:33,660 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:22:36,460 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:36,508 [sage.pipeline] WARNING Topology budget 6.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:22:36,536 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:22:40,523 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:22:40,524 [sage.bench.masbench] INFO [sage 2/20] passed=False gt=16
+2026-03-31 16:22:40,652 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.40, rust_knn)
+2026-03-31 16:22:43,150 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:43,188 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:22:43,213 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:22:47,830 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:22:47,830 [sage.bench.masbench] INFO [sage 3/20] passed=True gt=18
+2026-03-31 16:22:47,917 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.61, rust_knn)
+2026-03-31 16:22:50,558 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:50,595 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:22:50,618 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:22:52,988 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:22:52,988 [sage.bench.masbench] INFO [sage 4/20] passed=False gt=11
+2026-03-31 16:22:53,102 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.60, rust_knn)
+2026-03-31 16:22:56,127 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:22:56,162 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:22:56,188 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:01,725 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:01,725 [sage.bench.masbench] INFO [sage 5/20] passed=False gt=22
+2026-03-31 16:23:01,812 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.60, rust_knn)
+2026-03-31 16:23:04,476 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:04,513 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:04,535 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:09,616 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:09,617 [sage.bench.masbench] INFO [sage 6/20] passed=False gt=13
+2026-03-31 16:23:09,689 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.80, rust_knn)
+2026-03-31 16:23:12,210 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:12,245 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:12,270 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:17,534 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:17,534 [sage.bench.masbench] INFO [sage 7/20] passed=False gt=7
+2026-03-31 16:23:17,630 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.81, rust_knn)
+2026-03-31 16:23:20,402 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:20,444 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:20,471 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:23,967 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:23,967 [sage.bench.masbench] INFO [sage 8/20] passed=True gt=7
+2026-03-31 16:23:24,054 [sage.pipeline] INFO Stage 0: kNN routing → S2 (conf=0.40, rust_knn)
+2026-03-31 16:23:26,888 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:26,932 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:26,955 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:31,260 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:31,260 [sage.bench.masbench] INFO [sage 9/20] passed=False gt=17
+2026-03-31 16:23:31,388 [sage.pipeline] INFO Stage 0: kNN routing → S2 (conf=0.60, rust_knn)
+2026-03-31 16:23:33,995 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:34,030 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:34,051 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:36,696 [sage.pipeline] DEBUG Periodic state flush (10 tasks)
+2026-03-31 16:23:36,714 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:36,714 [sage.bench.masbench] INFO [sage 10/20] passed=False gt=11
+2026-03-31 16:23:36,788 [sage.pipeline] INFO Stage 0: kNN routing → S2 (conf=0.40, rust_knn)
+2026-03-31 16:23:39,426 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:39,464 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:39,484 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:43,518 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:43,518 [sage.bench.masbench] INFO [sage 11/20] passed=False gt=6
+2026-03-31 16:23:43,631 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.80, rust_knn)
+2026-03-31 16:23:46,408 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:46,450 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:23:46,472 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:50,210 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:23:50,210 [sage.bench.masbench] INFO [sage 12/20] passed=True gt=12
+2026-03-31 16:23:50,258 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:23:52,564 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:23:52,621 [sage.pipeline] INFO Assigned models to 5 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:23:52,622 [sage.llm.provider_pool] DEBUG ProviderPool: inferred provider=google for model_id=gemini-2.5-flash
+2026-03-31 16:24:01,623 [sage.topology.runner] INFO [TopologyRunner] node 0 (topic_setter) completed, output 1274 chars
+2026-03-31 16:24:52,626 [sage.topology.runner] WARNING [TopologyRunner] node 3 (judge) failed with openrouter provider:  — retrying with default
+2026-03-31 16:26:22,258 [sage.topology.runner] INFO [TopologyRunner] node 3 (judge) succeeded with fallback (deepseek)
+2026-03-31 16:26:22,258 [sage.topology.runner] INFO [TopologyRunner] node 3 (judge) completed, output 9418 chars
+2026-03-31 16:26:22,258 [sage.topology_controller] DEBUG QualityEstimator abstained for node 0, using default=0.5
+2026-03-31 16:26:28,675 [sage.topology_controller] DEBUG QualityEstimator abstained for node 3, using default=0.5
+2026-03-31 16:27:11,353 [sage.topology.runner] INFO [TopologyRunner] node 4 (reviewer) completed, output 2386 chars
+2026-03-31 16:27:20,060 [sage.topology.runner] INFO [TopologyRunner] node 1 (debater_a) completed, output 1433 chars
+2026-03-31 16:27:20,926 [sage.topology.runner] INFO [TopologyRunner] node 2 (debater_b) completed, output 1426 chars
+2026-03-31 16:27:20,926 [sage.topology_controller] DEBUG QualityEstimator abstained for node 1, using default=0.5
+2026-03-31 16:27:21,162 [sage.topology.runner] INFO Node 1 pruned by controller
+2026-03-31 16:27:21,162 [sage.topology_controller] DEBUG QualityEstimator abstained for node 2, using default=0.5
+2026-03-31 16:27:21,369 [sage.topology.runner] INFO Node 2 pruned by controller
+2026-03-31 16:27:21,370 [sage.topology_controller] DEBUG QualityEstimator abstained for node 4, using default=0.5
+2026-03-31 16:27:21,576 [sage.topology.runner] INFO Node 4 pruned by controller
+2026-03-31 16:27:21,579 [sage.pipeline] DEBUG Cost estimator: loaded 18 models from config\cards.toml
+2026-03-31 16:27:21,598 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:27:21,598 [sage.bench.masbench] INFO [sage 13/20] passed=True gt=0
+2026-03-31 16:27:21,723 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:27:24,880 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:27:24,917 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:27:24,955 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:27:29,792 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:27:29,793 [sage.bench.masbench] INFO [sage 14/20] passed=False gt=10
+2026-03-31 16:27:29,924 [sage.pipeline] INFO Stage 0: kNN routing → S2 (conf=0.42, rust_knn)
+2026-03-31 16:27:32,890 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:27:32,930 [sage.pipeline] WARNING Topology budget 6.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:27:32,972 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:27:38,233 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:27:38,233 [sage.bench.masbench] INFO [sage 15/20] passed=True gt=2
+2026-03-31 16:27:38,358 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:27:40,949 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:27:40,995 [sage.pipeline] WARNING Topology budget 6.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:27:41,027 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:27:46,642 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:27:46,642 [sage.bench.masbench] INFO [sage 16/20] passed=False gt=19
+2026-03-31 16:27:46,742 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=0.60, rust_knn)
+2026-03-31 16:27:50,296 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:27:50,333 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:27:50,357 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:27:54,774 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:27:54,774 [sage.bench.masbench] INFO [sage 17/20] passed=True gt=0
+2026-03-31 16:27:54,848 [sage.pipeline] INFO Stage 0: kNN routing → S2 (conf=0.60, rust_knn)
+2026-03-31 16:27:58,069 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:27:58,125 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:27:58,159 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:28:01,109 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:28:01,109 [sage.bench.masbench] INFO [sage 18/20] passed=True gt=0
+2026-03-31 16:28:01,182 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:28:03,446 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:28:03,484 [sage.pipeline] WARNING Topology budget 5.50 > pipeline budget 5.00 — degrading to single-node
+2026-03-31 16:28:03,514 [sage.pipeline] INFO Assigned models to 1 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:28:07,581 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:28:07,582 [sage.bench.masbench] INFO [sage 19/20] passed=True gt=14
+2026-03-31 16:28:07,662 [sage.pipeline] INFO Stage 0: kNN routing → S3 (conf=1.00, rust_knn)
+2026-03-31 16:28:10,585 [sage.memory.embedder] INFO Embedder: using RustEmbedder (ONNX, native)
+2026-03-31 16:28:10,667 [sage.pipeline] INFO Assigned models to 5 nodes (domain=math, budget=5.00, provider_hints=0)
+2026-03-31 16:28:49,417 [sage.topology.runner] INFO [TopologyRunner] node 0 (topic_setter) completed, output 3799 chars
+2026-03-31 16:28:49,418 [sage.topology_controller] DEBUG QualityEstimator abstained for node 0, using default=0.5
+2026-03-31 16:29:49,426 [sage.topology.runner] WARNING [TopologyRunner] node 2 (debater_b) failed with openrouter provider:  — retrying with default
+2026-03-31 16:29:49,428 [sage.topology.runner] WARNING [TopologyRunner] node 1 (debater_a) failed with openrouter provider:  — retrying with default
+2026-03-31 16:30:57,378 [sage.topology.runner] INFO [TopologyRunner] node 1 (debater_a) succeeded with fallback (deepseek)
+2026-03-31 16:30:57,379 [sage.topology.runner] INFO [TopologyRunner] node 1 (debater_a) completed, output 7250 chars
+2026-03-31 16:31:04,389 [sage.topology.runner] INFO [TopologyRunner] node 2 (debater_b) succeeded with fallback (deepseek)
+2026-03-31 16:31:04,390 [sage.topology.runner] INFO [TopologyRunner] node 2 (debater_b) completed, output 8220 chars
+2026-03-31 16:31:04,390 [sage.topology_controller] DEBUG QualityEstimator abstained for node 1, using default=0.5
+2026-03-31 16:31:04,642 [sage.topology.runner] INFO Node 1 pruned by controller
+2026-03-31 16:31:04,642 [sage.topology_controller] DEBUG QualityEstimator abstained for node 2, using default=0.5
+2026-03-31 16:31:04,844 [sage.topology.runner] INFO Node 2 pruned by controller
+2026-03-31 16:32:04,850 [sage.resilience] WARNING Circuit OPEN for provider_openrouter after 3 failures (last: ). Will probe in 60s.
+2026-03-31 16:32:04,850 [sage.topology.runner] WARNING [TopologyRunner] node 3 (formatter) failed with openrouter provider:  — retrying with default
+2026-03-31 16:32:58,349 [sage.topology.runner] INFO [TopologyRunner] node 3 (formatter) succeeded with fallback (deepseek)
+2026-03-31 16:32:58,349 [sage.topology.runner] INFO [TopologyRunner] node 3 (formatter) completed, output 5784 chars
+2026-03-31 16:32:58,350 [sage.topology_controller] DEBUG QualityEstimator abstained for node 3, using default=0.5
+2026-03-31 16:33:02,309 [sage.topology.runner] INFO [TopologyRunner] node 4 (reviewer) completed, output 167 chars
+2026-03-31 16:33:02,309 [sage.topology_controller] DEBUG QualityEstimator abstained for node 4, using default=0.5
+2026-03-31 16:33:02,376 [sage.pipeline] DEBUG Periodic state flush (20 tasks)
+2026-03-31 16:33:02,395 [sage.boot] INFO Execution path: pipeline (5-stage)
+2026-03-31 16:33:02,395 [sage.bench.masbench] INFO [sage 20/20] passed=False gt=20
+2026-03-31 16:33:02,398 [masbench] INFO POST-RUN WM: events=80 chunks=20
+2026-03-31 16:33:02,398 [masbench] INFO Semantic: 157 entities
+2026-03-31 16:33:02,398 [masbench] INFO Engine: cached=3 archive=12
+2026-03-31 16:33:02,399 [masbench] INFO DONE

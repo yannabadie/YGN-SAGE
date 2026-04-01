@@ -60,7 +60,7 @@ def _load_cost_table() -> None:
                     avg_per_m = (card.cost_input_per_m + card.cost_output_per_m) / 2
                     _COST_PER_1K[card.id] = avg_per_m / 1000
                 break
-    except Exception:
+    except (ImportError, IOError, OSError):
         pass  # Rust unavailable — DEFAULT_COST_PER_1K used as fallback
 
 
@@ -327,7 +327,7 @@ class AgentLoop:
                     })
                     executor.mark_completed(idx)
             return schedule
-        except Exception:
+        except (ImportError, RuntimeError):
             return []
 
     async def _run_topology(self, task: str) -> str | None:
@@ -360,7 +360,7 @@ class AgentLoop:
                 node_count=len(schedule),
             )
             return result
-        except Exception as e:
+        except (ImportError, RuntimeError, TimeoutError) as e:
             log.warning("TopologyRunner failed (%s), falling back to single-LLM", e)
             return None
 
@@ -415,7 +415,7 @@ class AgentLoop:
             else:
                 log.warning("CEGAR repair failed: %s", details)
                 return None
-        except Exception as e:
+        except (RuntimeError, TimeoutError) as e:
             log.warning("CEGAR repair LLM call failed: %s", e)
             return None
 
@@ -438,7 +438,7 @@ class AgentLoop:
         try:
             result = await tool.execute(kwargs.copy())
             return result.output
-        except Exception as e:
+        except (RuntimeError, ValueError, TimeoutError) as e:
             log.error("Tool '%s' execution failed: %s", tc.name, e)
             return f"Error executing tool '{tc.name}': {type(e).__name__}: {e}"
 
@@ -580,7 +580,7 @@ class AgentLoop:
             ):
                 collected_chunks.append(chunk)
                 yield chunk
-        except Exception as exc:
+        except (RuntimeError, TimeoutError) as exc:
             log.warning("stream(): streaming failed (%s), falling back to run()", exc)
             # If we already yielded partial content, the caller has
             # inconsistent output -- but this is best-effort Phase 1.
@@ -654,7 +654,7 @@ class AgentLoop:
                 if self.guardrail_pipeline.any_blocked(input_results):
                     blocked = [r for r in input_results if not r.passed]
                     return f"Blocked by guardrail: {blocked[0].reason}"
-            except Exception as e:
+            except (RuntimeError, ValueError, TimeoutError) as e:
                 log.warning("Input guardrail error: %s", e)
 
         system_prompt = self.config.system_prompt
@@ -705,7 +705,7 @@ class AgentLoop:
                         content=f"Relevant knowledge from previous interactions:\n{sem_context}",
                     ))
                 self._cb_semantic.record_success()
-            except Exception as e:
+            except (RuntimeError, AttributeError) as e:
                 self._cb_semantic.record_failure(e)
 
         # Causal memory context injection (directed cause-effect chains)
@@ -721,7 +721,7 @@ class AgentLoop:
                         ),
                     )
                 self._cb_causal.record_success()
-            except Exception as e:
+            except (RuntimeError, AttributeError) as e:
                 self._cb_causal.record_failure(e)
 
         # S-MMU context injection (graph-based retrieval from compacted chunks)
@@ -735,7 +735,7 @@ class AgentLoop:
                         Message(role=Role.SYSTEM, content=smmu_context),
                     )
                 self._cb_smmu.record_success()
-            except Exception as e:
+            except (ImportError, RuntimeError, AttributeError) as e:
                 self._cb_smmu.record_failure(e)
 
         while self.step_count < self.config.max_steps:
@@ -863,7 +863,7 @@ class AgentLoop:
                                 syntax_ok, syntax_err = False, te_err
                             else:
                                 log.debug("ToolExecutor validated code successfully")
-                        except Exception as e:
+                        except (ImportError, RuntimeError) as e:
                             log.warning("ToolExecutor failed, falling back to Python: %s", e)
 
                     if not _te_rejected:
@@ -911,7 +911,7 @@ class AgentLoop:
                                                guardrail_passed=r.passed,
                                                guardrail_reason=r.reason)
                                 self._cb_runtime_guard.record_success()
-                            except Exception as e:
+                            except (RuntimeError, ValueError, TimeoutError) as e:
                                 self._cb_runtime_guard.record_failure(e)
 
                         sandbox = await self.sandbox_manager.create()
@@ -1022,7 +1022,7 @@ class AgentLoop:
                         metadata={"task": task, "step": self.step_count},
                     )
                     self._cb_episodic.record_success()
-                except Exception as e:
+                except (RuntimeError, AttributeError) as e:
                     self._cb_episodic.record_failure(e)
 
             if self.memory_agent and self.semantic_memory and content and len(content) > 50 and not self._cb_entity.should_skip() and not self._skip_memory:
@@ -1040,10 +1040,10 @@ class AgentLoop:
                                     self.causal_memory.add_entity(tgt)
                                     self.causal_memory.add_causal_edge(src, tgt, cause_type="enabled")
                                 self._cb_causal.record_success()
-                            except Exception as exc:
+                            except (RuntimeError, AttributeError) as exc:
                                 self._cb_causal.record_failure(exc)
                     self._cb_entity.record_success()
-                except Exception as e:
+                except (RuntimeError, AttributeError) as e:
                     self._cb_entity.record_failure(e)
 
             if not response.tool_calls:
@@ -1071,7 +1071,7 @@ class AgentLoop:
                         self.causal_memory.add_entity(output_entity)
                         self.causal_memory.add_causal_edge(tool_entity, output_entity, cause_type="triggered")
                         self._cb_causal.record_success()
-                    except Exception as exc:
+                    except (RuntimeError, AttributeError) as exc:
                         self._cb_causal.record_failure(exc)
 
             if len(messages) > MAX_MESSAGES:
@@ -1108,7 +1108,7 @@ class AgentLoop:
                     learn_meta["evo_best"] = round(best_fitness, 2)
                     learn_meta["evo_grid_size"] = len(cells)
                     self._cb_evo.record_success()
-                except Exception as e:
+                except (RuntimeError, AttributeError) as e:
                     self._cb_evo.record_failure(e)
 
             # SA-3: Online Evolution — run evolve() when should_evolve() triggers
@@ -1127,7 +1127,7 @@ class AgentLoop:
                             self.topology_engine.archive_coverage(), 3
                         )
                     self._cb_evo.record_success()
-                except Exception as e:
+                except (ImportError, RuntimeError) as e:
                     self._cb_evo.record_failure(e)
 
             # Inter-tier consolidation: episodic -> semantic -> causal
@@ -1137,7 +1137,7 @@ class AgentLoop:
                     if consolidation_result.processed > 0:
                         learn_meta["consolidation_processed"] = consolidation_result.processed
                         learn_meta["consolidation_entities"] = consolidation_result.entities_added
-                except Exception:
+                except (RuntimeError, AttributeError):
                     pass  # Best-effort, never blocks the loop
 
             self._emit(LoopPhase.LEARN, **learn_meta)
@@ -1155,7 +1155,7 @@ class AgentLoop:
                                guardrail="output",
                                guardrail_passed=r.passed,
                                guardrail_reason=r.reason)
-            except Exception as e:
+            except (RuntimeError, ValueError, TimeoutError) as e:
                 log.warning("Output guardrail error: %s", e)
 
         final_meta: dict[str, Any] = {

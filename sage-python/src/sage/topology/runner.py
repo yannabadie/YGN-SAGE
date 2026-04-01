@@ -72,23 +72,32 @@ class TopologyRunner:
         self._max_rounds = 3  # max re-executions per node (multi-turn debate)
         self._node_exec_count: dict[int, int] = {}  # track per-node execution count
 
-    def _context_budget_per_predecessor(self, n_predecessors: int) -> int:
+    def _context_budget_per_predecessor(self, n_predecessors: int, node_idx: int = 0) -> int:
         """Compute per-predecessor character budget based on model context window.
 
-        Adapts to the receiving model's capacity instead of a fixed 1000-char
-        truncation. Reserves 30% of context for system prompt + task text,
-        divides the rest among predecessors. Floors at 1000 chars.
+        Uses the receiving node's model context_window (from ModelCard, e.g.
+        128K for GPT-5.4, 1M for Gemini), NOT config.max_tokens which is the
+        output token limit. Reserves 30% for system prompt + task text.
 
         Based on TalkHier (arXiv 2502.11098): structured communication carrying
         full intermediate outputs improves accuracy over truncated handoffs.
         """
-        max_tokens = 4096  # conservative default
-        if self._config and hasattr(self._config, "max_tokens") and self._config.max_tokens:
-            max_tokens = self._config.max_tokens
-        # Estimate chars from tokens (~4 chars/token), reserve 30% for prompt+task
-        available_chars = int(max_tokens * 0.7 * 4)
+        context_window = 131072  # safe default (128K tokens)
+        # Try to read real context_window from the node's assigned model
+        try:
+            node = self.graph.get_node(node_idx)
+            model_id = getattr(node, "model_id", "")
+            if model_id and self._provider_pool:
+                _, resolved_config = self._provider_pool.resolve(model_id)
+                cw = getattr(resolved_config, "context_window", 0)
+                if cw and cw > 0:
+                    context_window = cw
+        except (AttributeError, RuntimeError):
+            pass  # graph or pool unavailable — use default
+        # 70% of context for predecessor outputs, ~4 chars per token
+        available_chars = int(context_window * 0.7 * 4)
         budget = available_chars // max(n_predecessors, 1)
-        return max(budget, 1000)  # never go below 1000
+        return max(budget, 1000)  # floor at 1000 chars
 
     def _truncate_output(self, output: str, budget: int) -> str:
         """Truncate output to budget, appending '...' if cut."""
@@ -109,7 +118,7 @@ class TopologyRunner:
         except (AttributeError, Exception):
             return self._gather_all_context()
 
-        budget = self._context_budget_per_predecessor(len(predecessor_indices))
+        budget = self._context_budget_per_predecessor(len(predecessor_indices), node_idx)
 
         parts_with_roles: list[tuple[str, str]] = []
         for idx in predecessor_indices:
@@ -204,7 +213,7 @@ class TopologyRunner:
                 return cls._deduplicate_jaccard(parts)
             texts = [t for t, _ in parts]
             vectors = emb.embed_batch(texts)
-        except Exception:
+        except (ImportError, RuntimeError, AttributeError):
             return cls._deduplicate_jaccard(parts)
 
         deduplicated: list[tuple[str, str, list[float]]] = []
@@ -277,7 +286,7 @@ class TopologyRunner:
                 output = ""
                 stderr = "TIMEOUT"
                 exit_code = -1
-            except Exception as exc:
+            except (OSError, ValueError) as exc:
                 output = ""
                 stderr = str(exc)
                 exit_code = -1
@@ -379,7 +388,7 @@ class TopologyRunner:
                         timeout=30.0,
                     )
                     context_msg.content = f"Context (summarized):\n{summary_resp.content or ''}"
-                except Exception as exc:
+                except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
                     # Compression failed — hard truncate as last resort
                     max_chars = int(context_window * 0.6 * 4)
                     context_msg.content = context_msg.content[:max_chars] + "\n[truncated]"
@@ -397,7 +406,7 @@ class TopologyRunner:
             provider_name = getattr(config, "provider", "unknown")
             if self._provider_pool and hasattr(self._provider_pool, "record_success"):
                 self._provider_pool.record_success(provider_name)
-        except Exception as exc:
+        except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
             provider_name = getattr(config, "provider", "unknown")
             # Record failure in circuit breaker
             if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
@@ -436,7 +445,7 @@ class TopologyRunner:
                         "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
                         node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
                     )
-                except Exception as fallback_exc:
+                except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as fallback_exc:
                     log.error(
                         "[TopologyRunner] node %d (%s) fallback also failed: %s",
                         node_idx, role, str(fallback_exc)[:150],
@@ -492,7 +501,7 @@ class TopologyRunner:
             # Inject into node outputs
             existing = self._node_outputs.get(node_idx, "")
             self._node_outputs[node_idx] = f"{existing}\n[Sub-agent]: {sub_result}"
-        except Exception as exc:
+        except (RuntimeError, TimeoutError, ValueError) as exc:
             log.warning("Sub-agent spawn failed: %s", exc)
 
     async def run(self, task: str) -> str:
@@ -542,7 +551,7 @@ class TopologyRunner:
                             if not approved:
                                 log.info("HITL rejected %s for node %d", decision.action, node_idx)
                                 decision = type(decision)(action="continue", target_node=node_idx)
-                        except Exception as exc:
+                        except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
                             log.warning("HITL callback failed: %s, proceeding", exc)
                     if decision.action == "upgrade_model":
                         result = await self._retry_with_upgrade(node_idx, decision, task)
