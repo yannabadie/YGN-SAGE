@@ -141,29 +141,16 @@ def test_s2_avr_loop_constants():
 
 def test_s3_system_prompt_contains_z3_dsl():
     """S3 system prompt must teach the Z3 DSL syntax to the LLM."""
-    from sage.agent_loop import AgentLoop
-    from sage.agent import AgentConfig
-    from sage.llm.base import LLMConfig
-    from sage.llm.mock import MockProvider
+    from sage.phases.perceive import perceive
 
-    config = AgentConfig(
-        name="test", llm=LLMConfig(provider="mock", model="mock"),
-        max_steps=1, validation_level=3,
-        system_prompt="Base prompt.",
-    )
-    loop = AgentLoop(config=config, llm_provider=MockProvider())
-
-    # Build the system prompt the same way run() does
-    system_prompt = config.system_prompt
-    if config.validation_level >= 3:
-        # The AgentLoop should augment the prompt with Z3 DSL
-        # Check via source code that the augmentation exists
-        import inspect
-        source = inspect.getsource(AgentLoop)
-        assert "assert bounds" in source, "S3 prompt must teach assert bounds"
-        assert "assert loop" in source, "S3 prompt must teach assert loop"
-        assert "assert arithmetic" in source, "S3 prompt must teach assert arithmetic"
-        assert "assert invariant" in source, "S3 prompt must teach assert invariant"
+    # The perceive phase augments the system prompt with Z3 DSL when
+    # validation_level >= 3.  Check via source code that the augmentation exists.
+    import inspect
+    source = inspect.getsource(perceive)
+    assert "assert bounds" in source, "S3 prompt must teach assert bounds"
+    assert "assert loop" in source, "S3 prompt must teach assert loop"
+    assert "assert arithmetic" in source, "S3 prompt must teach assert arithmetic"
+    assert "assert invariant" in source, "S3 prompt must teach assert invariant"
 
 
 def test_s3_prompt_produces_parseable_z3_output():

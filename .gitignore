@@ -101,3 +101,22 @@ sage-python/models/topology_grpo*
 env.txt
 .ipynb_checkpoints/
 untitled.txt
+
+# Personal / local-only files (never commit)
+debug/
+podlog/
+prompts/
+*.backup
+*_CONTEXT.local.md
+Audit*.md
+Conversation.md
+historique.md
+Sourcdes.md
+synthese.md
+POD_BRIEFING.md
+RUNPOD_PLAN.md
+TRAINING_LOG.md
+training_metrics*.txt
+masbench_*.log
+masbench_*_results.json
+Notebooklm.png

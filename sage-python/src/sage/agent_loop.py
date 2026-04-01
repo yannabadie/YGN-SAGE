@@ -1,10 +1,7 @@
 """Structured agent runtime: perceive -> think -> act -> learn."""
 from __future__ import annotations
 
-import ast
-import math
 import os
-import re
 import time
 import logging
 from enum import Enum
@@ -25,7 +22,6 @@ from sage.constants import (
     S2_AVR_MAX_ITERATIONS as _S2_AVR_MAX_ITERATIONS,
     S2_MAX_RETRIES_BEFORE_ESCALATION as _S2_MAX_RETRIES_BEFORE_ESCALATION,
     MAX_AGENT_MESSAGES,
-    STAGNATION_WINDOW,
     DRIFT_CHECK_INTERVAL,
     RELEVANCE_GATE_THRESHOLD,
     S3_MAX_RETRIES,
@@ -33,131 +29,26 @@ from sage.constants import (
     CONSOLIDATION_INTERVAL_STEPS,
 )
 
+# Re-export utility functions for backward compatibility.
+# Canonical implementations live in agent_loop_utils.py.
+from sage.agent_loop_utils import (  # noqa: F401
+    _COST_PER_1K,
+    _load_cost_table,
+    _estimate_tokens,
+    _text_entropy,
+    _extract_code_blocks,
+    _strip_markdown_fences,
+    _validate_code_syntax,
+    _is_stagnating,
+    _is_code_task,
+    _shell_quote,
+)
+
 log = logging.getLogger(__name__)
-
-
-# Cost per 1K tokens (USD) — derived from cards.toml at boot, not hardcoded.
-_COST_PER_1K: dict[str, float] = {}
-
-
-def _load_cost_table() -> None:
-    """Populate _COST_PER_1K from ModelCard catalog (cards.toml)."""
-    global _COST_PER_1K
-    if _COST_PER_1K:
-        return  # already loaded
-    try:
-        from sage_core import ModelRegistry  # type: ignore[import-not-found]
-        from pathlib import Path
-        for p in [
-            Path.cwd() / "sage-core" / "config" / "cards.toml",
-            Path.cwd().parent / "sage-core" / "config" / "cards.toml",
-            Path.cwd() / "config" / "cards.toml",
-        ]:
-            if p.exists():
-                reg = ModelRegistry.from_toml_file(str(p))
-                for card in reg.all_models():
-                    # Average of input + output cost per 1M, converted to per 1K
-                    avg_per_m = (card.cost_input_per_m + card.cost_output_per_m) / 2
-                    _COST_PER_1K[card.id] = avg_per_m / 1000
-                break
-    except (ImportError, IOError, OSError):
-        pass  # Rust unavailable — DEFAULT_COST_PER_1K used as fallback
-
-
-def _estimate_tokens(text: str, actual_count: int | None = None) -> int:
-    """Return actual token count from API if available, else rough estimate."""
-    if actual_count is not None and actual_count > 0:
-        return actual_count
-    return max(1, len(text) // 4)
-
-
-def _text_entropy(text: str) -> float:
-    """Shannon entropy of character distribution (normalised 0-1)."""
-    if not text:
-        return 0.0
-    freq: dict[str, int] = {}
-    for ch in text:
-        freq[ch] = freq.get(ch, 0) + 1
-    n = len(text)
-    ent = -sum((c / n) * math.log2(c / n) for c in freq.values() if c > 0)
-    max_ent = math.log2(max(len(freq), 2))
-    return ent / max_ent if max_ent > 0 else 0.0
-
-
-def _extract_code_blocks(text: str) -> list[str]:
-    """Extract fenced code blocks from markdown-style LLM output."""
-    pattern = r"```(?:\w+)?\n(.*?)```"
-    return re.findall(pattern, text, re.DOTALL)
-
-
-def _strip_markdown_fences(code: str) -> str:
-    """Strip leading/trailing markdown fences from a code string."""
-    code = code.strip()
-    # Remove leading ```python or ``` line
-    if code.startswith("```"):
-        first_newline = code.find("\n")
-        if first_newline != -1:
-            code = code[first_newline + 1:]
-        else:
-            code = code[3:]
-    # Remove trailing ```
-    if code.rstrip().endswith("```"):
-        code = code.rstrip()[:-3]
-    return code.strip()
-
-
-def _validate_code_syntax(code: str) -> tuple[bool, str]:
-    """Validate Python code syntax via ast.parse().
-
-    Returns (is_valid, error_message). If valid, error_message is empty.
-    The error_message uses SLF (Single-Line Feedback) format for concise LLM guidance.
-    """
-    cleaned = _strip_markdown_fences(code)
-    if not cleaned:
-        return False, "SyntaxError: empty code block after stripping markdown fences"
-    try:
-        ast.parse(cleaned, mode="exec")
-        return True, ""
-    except SyntaxError as e:
-        line_info = f" (line {e.lineno})" if e.lineno else ""
-        return False, f"SyntaxError{line_info}: {e.msg}"
-
-
-def _is_stagnating(error_history: list[str], window: int = STAGNATION_WINDOW) -> bool:
-    """Detect stagnation: True if the last `window` errors are identical.
-
-    This means the LLM is producing the same broken code repeatedly
-    and retrying will not help — escalation is needed.
-    """
-    if len(error_history) < window:
-        return False
-    recent = error_history[-window:]
-    return all(e == recent[0] for e in recent)
-
 
 S2_MAX_RETRIES_BEFORE_ESCALATION = _S2_MAX_RETRIES_BEFORE_ESCALATION
 S2_AVR_MAX_ITERATIONS = _S2_AVR_MAX_ITERATIONS  # Max Act-Verify-Refine iterations per code block
 MAX_MESSAGES = MAX_AGENT_MESSAGES  # Keep system + user + last N exchanges
-
-
-def _is_code_task(task: str) -> bool:
-    """Detect if task is primarily about code generation.
-
-    Used to skip episodic/semantic memory injection for code tasks,
-    which Sprint 3 evidence shows degrades accuracy (30% vs 50% no-memory).
-    """
-    lower = task.lower()
-    return bool(re.search(
-        r'\b(?:implement|code|function|class|method|algorithm|program|'
-        r'write\s+(?:a\s+)?(?:function|method|class|code|script)|'
-        r'python|javascript|rust|java|def\s|return\s)\b', lower
-    ))
-
-
-def _shell_quote(code: str) -> str:
-    """Shell-quote a code string for subprocess execution."""
-    import shlex
-    return shlex.quote(code)
 
 
 class LoopPhase(str, Enum):
@@ -302,67 +193,16 @@ class AgentLoop:
         log.info(f"[{event.type}] step={event.step} model={event.model}")
 
     def _schedule_from_topology(self) -> list[dict]:
-        """Use Rust TopologyExecutor to get node execution order.
-
-        Returns list of node specs for topology-aware execution.
-        Falls back to empty list if executor unavailable.
-        """
-        if not self._current_topology:
-            return []
-        try:
-            from sage_core import TopologyExecutor as PyTopologyExecutor  # noqa: E402
-            executor = PyTopologyExecutor(self._current_topology)
-            schedule: list[dict] = []
-            while not executor.is_done():
-                ready = executor.next_ready(self._current_topology)
-                if not ready:
-                    break
-                for idx in ready:
-                    node = self._current_topology.get_node(idx)
-                    schedule.append({
-                        "index": idx,
-                        "role": node.role,
-                        "model_id": node.model_id,
-                        "system": node.system,
-                    })
-                    executor.mark_completed(idx)
-            return schedule
-        except (ImportError, RuntimeError):
-            return []
+        """Use Rust TopologyExecutor to get node execution order."""
+        from sage.agent_loop_execution import schedule_from_topology
+        return schedule_from_topology(self._current_topology)
 
     async def _run_topology(self, task: str) -> str | None:
-        """Execute multi-node topology via TopologyRunner.
-
-        Returns the result string if topology has >1 node, or None to fall
-        through to standard single-LLM execution.
-        """
-        if not self._current_topology:
-            return None
-
-        schedule = self._schedule_from_topology()
-        if len(schedule) <= 1:
-            return None  # Single node or empty — use standard path
-
-        try:
-            from sage.topology.runner import TopologyRunner
-            from sage_core import TopologyExecutor as PyTopologyExecutor  # noqa: E402
-            executor = PyTopologyExecutor(self._current_topology)
-            runner = TopologyRunner(
-                graph=self._current_topology,
-                executor=executor,
-                llm_provider=self._llm,
-                llm_config=self.config.llm,
-            )
-            result = await runner.run(task)
-            self._emit(
-                LoopPhase.THINK,
-                topology_execution="multi_agent",
-                node_count=len(schedule),
-            )
-            return result
-        except (ImportError, RuntimeError, TimeoutError) as e:
-            log.warning("TopologyRunner failed (%s), falling back to single-LLM", e)
-            return None
+        """Execute multi-node topology via TopologyRunner."""
+        from sage.agent_loop_execution import run_topology
+        return await run_topology(
+            task, self._current_topology, self._llm, self.config.llm, self._emit,
+        )
 
     async def _cegar_repair(
         self,
@@ -370,54 +210,15 @@ class AgentLoop:
         prm_details: dict[str, Any] | str,
         invariant_feedback: list[str],
     ) -> str | None:
-        """Attempt CEGAR repair of failed S3 verification.
-
-        Extracts failed clauses from PRM details and invariant feedback,
-        builds a targeted repair prompt, and makes a single LLM call.
-        Returns repaired content if PRM passes, or None if repair fails.
-        """
-        repair_prompt = (
-            "SYSTEM: Your formal verification FAILED. "
-            "Do NOT regenerate from scratch — fix the specific failures below.\n\n"
-            f"Verification error: {prm_details}\n"
+        """Attempt CEGAR repair of failed S3 verification."""
+        from sage.agent_loop_execution import cegar_repair
+        return await cegar_repair(
+            content, prm_details, invariant_feedback,
+            system_prompt=self.config.system_prompt,
+            llm_provider=self._llm,
+            llm_config=self.config.llm,
+            prm=self.prm,
         )
-        if invariant_feedback:
-            repair_prompt += (
-                "\nFailed invariant clauses:\n"
-                + "\n".join(f"- {f}" for f in invariant_feedback)
-                + "\n"
-            )
-        repair_prompt += (
-            "\nFix your reasoning by adding the missing formal assertions. "
-            "Use <think> tags with Z3 assertions for each step."
-        )
-
-        messages = [
-            Message(role=Role.SYSTEM, content=self.config.system_prompt),
-            Message(role=Role.ASSISTANT, content=content),
-            Message(role=Role.USER, content=repair_prompt),
-        ]
-
-        try:
-            response = await self._llm.generate(
-                messages=messages,
-                config=self.config.llm,
-            )
-            repaired = response.content or ""
-            if not repaired:
-                return None
-
-            # Verify the repair
-            r_path, details = self.prm.calculate_r_path(repaired)
-            if r_path >= 0.0 or "error" not in details:
-                log.info("CEGAR repair succeeded: r_path=%.2f", r_path)
-                return repaired
-            else:
-                log.warning("CEGAR repair failed: %s", details)
-                return None
-        except (RuntimeError, TimeoutError) as e:
-            log.warning("CEGAR repair LLM call failed: %s", e)
-            return None
 
     async def _execute_tool_call(self, tc) -> str:
         """Execute a tool call with argument validation."""
@@ -591,12 +392,13 @@ class AgentLoop:
 
     async def _run_legacy(self, task: str) -> str:
         """Legacy run() -- frozen copy for SAGE_AGENT_LOOP_LEGACY=1 fallback."""
-        from sage.agent_loop_memory import inject_memory_context
+        from sage.agent_loop_memory import inject_causal_memory
         from sage.agent_loop_execution import (
             execute_tool_calls_and_record,
             store_episodic_and_entities,
         )
         from sage.agent_loop_learning import compute_learn_meta, record_outcome
+        from sage.phases.perceive import perceive
 
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
@@ -607,93 +409,22 @@ class AgentLoop:
         self._original_validation_level = self.config.validation_level
         self.step_count = 0
 
-        # === PERCEIVE: Gather context ===
-        perceive_meta: dict[str, Any] = {"task": task, "agent": self.config.name}
+        # === PERCEIVE (reuses phases/perceive.py) ===
+        p_result = await perceive(task, self)
+        if p_result.blocked_reason:
+            return p_result.blocked_reason
 
-        # Metacognitive routing (if wired)
-        if self._skip_routing:
-            perceive_meta["system"] = 2
-            perceive_meta["routing_source"] = "ablation_forced_s2"
-        elif self.metacognition:
-            profile = await self.metacognition.assess_complexity_async(task)
-            decision = self.metacognition.route(profile)
-            perceive_meta["system"] = decision.system
-            perceive_meta["routed_tier"] = decision.llm_tier
-            perceive_meta["use_z3"] = decision.use_z3
-            perceive_meta["validation_level"] = decision.validation_level
-            perceive_meta["complexity"] = round(profile.complexity, 2)
-            perceive_meta["uncertainty"] = round(profile.uncertainty, 2)
-            if profile.reasoning:
-                perceive_meta["routing_reason"] = profile.reasoning
-            perceive_meta["routing_source"] = "llm" if profile.reasoning != "heuristic" else "heuristic"
-
-        self._emit(LoopPhase.PERCEIVE, **perceive_meta)
-
-        # Input guardrail check
-        if self.guardrail_pipeline and not self._skip_guardrails:
-            try:
-                input_results = await self.guardrail_pipeline.check_all(
-                    input=task, context={"step": 0, "agent": self.config.name}
-                )
-                for r in input_results:
-                    self._emit(LoopPhase.PERCEIVE,
-                               guardrail=r.__class__.__name__ if hasattr(r, '__class__') else "input",
-                               guardrail_passed=r.passed,
-                               guardrail_reason=r.reason)
-                if self.guardrail_pipeline.any_blocked(input_results):
-                    blocked = [r for r in input_results if not r.passed]
-                    return f"Blocked by guardrail: {blocked[0].reason}"
-            except (RuntimeError, ValueError, TimeoutError) as e:
-                log.warning("Input guardrail error: %s", e)
-
-        system_prompt = self.config.system_prompt
-        if self.config.validation_level >= 3:
-            system_prompt += (
-                "\n\nCRITICAL: Use <think>...</think> tags for formal reasoning. "
-                "Include Z3-verifiable assertions in your reasoning steps:\n"
-                "- assert bounds(address, limit) — prove memory safety\n"
-                "- assert loop(variable) — prove loop termination\n"
-                "- assert arithmetic(expression, expected) — prove arithmetic correctness\n"
-                "- assert invariant(\"precondition\", \"postcondition\") — prove logical invariants\n"
-                "Your reasoning is verified by Z3 SMT solver. "
-                "Steps with proven assertions score 1.0. Steps without score 0.0."
-            )
-        elif self.config.validation_level >= 2:
-            system_prompt += (
-                "\n\nUse step-by-step reasoning to solve this task. "
-                "Show your work clearly."
-            )
-            if _is_code_task(task):
-                system_prompt += (
-                    "\n\nIMPORTANT edge cases to handle: "
-                    "empty inputs ([], \"\"), negative numbers, zero values, "
-                    "single-element collections, very large numbers, "
-                    "boolean-is-int in Python (type(True)==int), "
-                    "floating-point precision (use abs(a-b)<epsilon). "
-                    "Return ONLY the complete function in a ```python block."
-                )
-
-        messages: list[Message] = [
-            Message(role=Role.SYSTEM, content=system_prompt),
-            Message(role=Role.USER, content=task),
-        ]
-        self.working_memory.add_event("USER", task)
-        tool_defs = self._tools.get_tool_defs(
-            self.config.tools if self.config.tools else None
-        )
-
+        messages = p_result.messages
+        system_prompt = p_result.system_prompt
+        tool_defs = p_result.tool_defs
         result_text = ""
 
-        # Memory context injection (semantic + causal + S-MMU)
-        inject_memory_context(
+        # Legacy path also injects causal memory (not in phases/perceive.py)
+        inject_causal_memory(
             messages, task,
-            semantic_memory=self.semantic_memory,
             causal_memory=self.causal_memory,
-            working_memory=self.working_memory,
             relevance_gate=self._relevance_gate,
-            cb_semantic=self._cb_semantic,
             cb_causal=self._cb_causal,
-            cb_smmu=self._cb_smmu,
             skip_memory=self._skip_memory,
         )
 
@@ -715,101 +446,16 @@ class AgentLoop:
                     self.working_memory.add_event("ASSISTANT", content)
                     break
 
-            model_name = self.config.llm.model
-            self._emit(LoopPhase.THINK, model=model_name)
-
-            t0 = time.perf_counter()
-            response = await self._llm.generate(
-                messages=messages,
-                tools=tool_defs if tool_defs else None,
-                config=self.config.llm,
-            )
-            inference_ms = (time.perf_counter() - t0) * 1000
-            self.total_inference_time += inference_ms / 1000
-
-            content = response.content or ""
-
-            usage = getattr(response, "usage", None) or {}
-            actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
-            tokens = _estimate_tokens(content, actual_count=actual_total)
-            _load_cost_table()
-            cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
-            step_cost = (tokens / 1000) * cost_per_k
-            self.total_cost_usd += step_cost
-
-            entropy = _text_entropy(content)
-            brake = False
-            if self.metacognition:
-                self.metacognition.record_output_entropy(entropy)
-                brake = self.metacognition.should_brake()
-
-            self._emit(
-                LoopPhase.THINK,
-                model=model_name,
-                content=content,
-                latency_ms=round(inference_ms, 1),
-                cost_usd=round(self.total_cost_usd, 4),
-                entropy=round(entropy, 3),
-                brake=brake,
+            response, content, brake = await self._legacy_think_step(
+                messages, tool_defs,
             )
 
-            if self.memory_compressor and content:
-                await self.memory_compressor.generate_internal_state(
-                    f"[Step {self.step_count}] {content[:300]}"
-                )
-
-            # System 3 validation (Z3 PRM)
-            if self.config.validation_level >= 3 and content:
-                r_path, details = self.prm.calculate_r_path(content)
-                self._emit(LoopPhase.THINK, r_path=r_path, details=details)
-
-                if r_path < 0.0 and "error" in details:
-                    self._s3_retries += 1
-                    if self._s3_retries <= self._max_s3_retries:
-                        messages.append(Message(
-                            role=Role.USER,
-                            content=(
-                                "SYSTEM: Your reasoning lacks formal assertions. "
-                                "Use <think> tags with Z3 assertions:\n"
-                                "- assert bounds(addr, limit)\n"
-                                "- assert loop(var)\n"
-                                "- assert arithmetic(expr, expected)\n"
-                                "- assert invariant(\"precondition\", \"postcondition\")\n"
-                                "Include at least one formal assertion per reasoning step."
-                            ),
-                        ))
-                        continue
-
-                    inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
-                    repaired = await self._cegar_repair(content, details, inv_feedback)
-                    if repaired is not None:
-                        content = repaired
-                        self._s3_retries = 0
-                    else:
-                        log.warning(
-                            "S3 verification failed after CEGAR repair — "
-                            "degrading to S2 AVR."
-                        )
-                        self._emit(
-                            LoopPhase.THINK,
-                            s3_degradation=True,
-                            reason="CEGAR repair failed",
-                        )
-                        self.config.validation_level = 2
-                        self._s3_degraded = True
-                        self._s3_retries = 0
-                        self._s2_avr_retries = 0
-                        continue
-                else:
-                    self._s3_retries = 0
-
-            # System 2 validation (Empirical -- AVR)
-            elif self.config.validation_level == 2 and content and not self._skip_avr:
-                avr_action = await self._run_legacy_avr(
-                    content, messages,
-                )
-                if avr_action == "continue":
-                    continue
+            # System 3 validation (Z3 PRM) + System 2 validation (AVR)
+            validation_action, content = await self._run_legacy_validation(
+                content, messages,
+            )
+            if validation_action == "continue":
+                continue
 
             # CGRS: stop if converged
             if brake:
@@ -876,200 +522,40 @@ class AgentLoop:
                 cb_evo=self._cb_evo,
             )
 
-        self._last_avr_iterations = self._s2_avr_retries
+        # === LEARN (final) — reuses phases/learn.py ===
+        from sage.phases.learn import learn_final
+        return await learn_final(task, result_text, self)
 
-        if self.guardrail_pipeline and result_text and not self._skip_guardrails:
-            try:
-                output_results = await self.guardrail_pipeline.check_all(
-                    output=result_text,
-                    context={"cost_usd": self.total_cost_usd, "steps": self.step_count}
-                )
-                for r in output_results:
-                    self._emit(LoopPhase.LEARN,
-                               guardrail="output",
-                               guardrail_passed=r.passed,
-                               guardrail_reason=r.reason)
-            except (RuntimeError, ValueError, TimeoutError) as e:
-                log.warning("Output guardrail error: %s", e)
+    async def _legacy_think_step(
+        self, messages: list[Message], tool_defs: list,
+    ) -> tuple[Any, str, bool]:
+        """LLM call + cost estimation + entropy + MEM1 for legacy loop."""
+        from sage.agent_loop_execution import legacy_think_step
+        return await legacy_think_step(messages, tool_defs, self)
 
-        final_meta: dict[str, Any] = {
-            "result": "complete",
-            "steps": self.step_count,
-            "cost_usd": round(self.total_cost_usd, 4),
-            "response_text": result_text or "",
-            "task": task,
-        }
-        if self.semantic_memory:
-            final_meta["semantic_entities"] = self.semantic_memory.entity_count()
-        self._emit(LoopPhase.LEARN, **final_meta)
-        self.config.validation_level = self._original_validation_level
-        return result_text or f"Agent finished at step {self.step_count}"
+    async def _run_legacy_validation(
+        self, content: str, messages: list[Message],
+    ) -> tuple[str, str]:
+        """Run S3 + S2 validation within _run_legacy.
 
-    async def _run_legacy_avr(
-        self,
-        content: str,
-        messages: list[Message],
-    ) -> str:
-        """Run S2 AVR validation within _run_legacy. Returns 'continue' or 'proceed'."""
-        code_blocks = _extract_code_blocks(content)
+        Returns (action, content) where action is 'continue' or 'proceed',
+        and content may be updated by CEGAR repair.
+        """
+        from sage.agent_loop_execution import run_legacy_s3, run_legacy_avr
 
-        if code_blocks and self.sandbox_manager:
-            raw_code = code_blocks[-1]
-            cleaned_code = _strip_markdown_fences(raw_code)
+        # System 3 validation (Z3 PRM)
+        if self.config.validation_level >= 3 and content:
+            action, content = await run_legacy_s3(content, messages, self)
+            if action == "continue":
+                return "continue", content
 
-            _te_rejected = False
-            if self.tool_executor:
-                try:
-                    te_result = self.tool_executor.validate(cleaned_code)
-                    if not te_result.valid:
-                        te_err = "; ".join(te_result.errors)
-                        log.warning("ToolExecutor rejected code: %s", te_err)
-                        _te_rejected = True
-                        syntax_ok, syntax_err = False, te_err
-                    else:
-                        log.debug("ToolExecutor validated code successfully")
-                except (ImportError, RuntimeError) as e:
-                    log.warning("ToolExecutor failed, falling back to Python: %s", e)
+        # System 2 validation (Empirical -- AVR)
+        elif self.config.validation_level == 2 and content and not self._skip_avr:
+            action = await run_legacy_avr(content, messages, self)
+            if action == "continue":
+                return "continue", content
 
-            if not _te_rejected:
-                syntax_ok, syntax_err = _validate_code_syntax(cleaned_code)
-
-            if not syntax_ok:
-                self._s2_avr_retries += 1
-                self._avr_error_history.append(syntax_err)
-
-                if _is_stagnating(self._avr_error_history, window=3):
-                    log.warning("S2 AVR stagnation detected (same error %d times), forcing escalation.",
-                                len(self._avr_error_history))
-                    self._s2_avr_retries = self._max_s2_avr_retries + 1
-                else:
-                    budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
-                    self._emit(LoopPhase.ACT,
-                               validation="s2_avr_fail",
-                               avr_iteration=self._s2_avr_retries,
-                               avr_budget_left=budget_left,
-                               error_type="syntax",
-                               error=syntax_err)
-                    if self._s2_avr_retries <= self._max_s2_avr_retries:
-                        log.info("S2 AVR syntax fail (iteration %d/%d): %s",
-                                 self._s2_avr_retries, self._max_s2_avr_retries, syntax_err)
-                        messages.append(Message(
-                            role=Role.USER,
-                            content=(
-                                f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: "
-                                f"Syntax error in your code:\n```\n{syntax_err}\n```\n"
-                                f"Fix the syntax error and return ONLY corrected Python code "
-                                f"in a ```python fenced block."
-                            ),
-                        ))
-                        return "continue"
-            else:
-                if self.guardrail_pipeline and not self._cb_runtime_guard.should_skip() and not self._skip_guardrails:
-                    try:
-                        runtime_results = await self.guardrail_pipeline.check_all(
-                            input=cleaned_code,
-                            context={"step": self.step_count, "phase": "runtime"}
-                        )
-                        for r in runtime_results:
-                            self._emit(LoopPhase.ACT,
-                                       guardrail="runtime",
-                                       guardrail_passed=r.passed,
-                                       guardrail_reason=r.reason)
-                        self._cb_runtime_guard.record_success()
-                    except (RuntimeError, ValueError, TimeoutError) as e:
-                        self._cb_runtime_guard.record_failure(e)
-
-                sandbox = await self.sandbox_manager.create()
-                try:
-                    result = await sandbox.execute(
-                        f"python3 -c {_shell_quote(cleaned_code)}"
-                    )
-                    if result.exit_code != 0:
-                        stderr_full = (result.stderr or "").strip()
-                        stderr_last = stderr_full.split("\n")[-1][:200]
-                        stdout_snippet = (result.stdout or "").strip()[:200]
-                        runtime_err = f"RuntimeError (exit {result.exit_code}): {stderr_last}"
-                        self._s2_avr_retries += 1
-                        self._avr_error_history.append(runtime_err)
-
-                        if _is_stagnating(self._avr_error_history, window=3):
-                            log.warning("S2 AVR stagnation detected (same runtime error %d times), forcing escalation.",
-                                        len(self._avr_error_history))
-                            self._s2_avr_retries = self._max_s2_avr_retries + 1
-                        else:
-                            budget_left = self._max_s2_avr_retries - self._s2_avr_retries + 1
-                            self._emit(LoopPhase.ACT,
-                                       validation="s2_avr_fail",
-                                       avr_iteration=self._s2_avr_retries,
-                                       avr_budget_left=budget_left,
-                                       error_type="runtime",
-                                       error=runtime_err)
-                            if self._s2_avr_retries <= self._max_s2_avr_retries:
-                                log.info("S2 AVR runtime fail (iteration %d/%d): %s",
-                                         self._s2_avr_retries, self._max_s2_avr_retries, runtime_err)
-                                feedback_parts = [
-                                    f"SYSTEM [AVR {self._s2_avr_retries}/{self._max_s2_avr_retries}]: Code execution failed.",
-                                ]
-                                if stderr_full:
-                                    feedback_parts.append(f"Traceback:\n```\n{stderr_full[:500]}\n```")
-                                if stdout_snippet:
-                                    feedback_parts.append(f"Stdout: {stdout_snippet}")
-                                feedback_parts.append(
-                                    "Analyze the error, fix the bug, and return ONLY corrected Python code "
-                                    "in a ```python fenced block."
-                                )
-                                messages.append(Message(
-                                    role=Role.USER,
-                                    content="\n".join(feedback_parts),
-                                ))
-                                return "continue"
-                    else:
-                        self._emit(LoopPhase.ACT,
-                                   validation="s2_avr_pass",
-                                   stdout=result.stdout[:200])
-                        self._s2_avr_retries = 0
-                        self._avr_error_history.clear()
-                finally:
-                    await self.sandbox_manager.destroy(sandbox.id)
-
-        elif not code_blocks and self.step_count == 1:
-            has_reasoning = "<think>" in content or "\n1." in content or "\n- " in content
-            if not has_reasoning:
-                self._s2_avr_retries += 1
-                if self._s2_avr_retries <= self._max_s2_avr_retries:
-                    log.info("S2 validation: missing reasoning, requesting CoT.")
-                    messages.append(Message(
-                        role=Role.USER,
-                        content="SYSTEM: Provide step-by-step reasoning for this task.",
-                    ))
-                    return "continue"
-
-        # S2 -> S3 escalation
-        if self._s2_avr_retries > self._max_s2_avr_retries and self.config.validation_level == 2 and not self._s3_degraded:
-            log.info("S2 AVR exhausted — escalating to S3 (formal verification).")
-            self.config.validation_level = 3
-            self._s3_retries = 0
-            self._avr_error_history.clear()
-            self._emit(LoopPhase.THINK, escalation="s2_to_s3",
-                       reason="AVR budget exhausted")
-            escalation_msg = (
-                "SYSTEM: Escalating to formal verification. Use <think> tags "
-                "with Z3 assertions (assert bounds, assert loop, assert arithmetic, "
-                "assert invariant) for rigorous step-by-step reasoning."
-            )
-            inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
-            if inv_feedback:
-                escalation_msg += (
-                    "\n\nPrevious invariant verification failures:\n"
-                    + "\n".join(f"- {f}" for f in inv_feedback)
-                )
-            messages.append(Message(
-                role=Role.USER,
-                content=escalation_msg,
-            ))
-            return "continue"
-
-        return "proceed"
+        return "proceed", content
 
     def _compute_aio(self) -> float:
         wall = time.perf_counter() - self.start_time
