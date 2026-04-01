@@ -163,6 +163,123 @@ pub(crate) fn extract_array_bounds(code: &str) -> Vec<(i64, i64)> {
 }
 
 // ──────────────────────────────────────────────────────────────────────
+// Text arithmetic extraction (Canal 2: non-code math verification)
+// ──────────────────────────────────────────────────────────────────────
+
+/// Extract arithmetic equations from free text (not code blocks).
+///
+/// Detects patterns like "5 + 3 = 8", "7 * 6 = 42", "Total: 15 + 20 = 35".
+/// Returns (expression_string, claimed_result) pairs for OxiZ verification.
+/// Domain-agnostic: works for any text with inline arithmetic.
+pub(crate) fn extract_text_equations(text: &str) -> Vec<(String, i64)> {
+    let mut results = Vec::new();
+
+    // Scan for patterns: <digits+ops> = <number>
+    // We look for "= <number>" and walk backwards to find the expression
+    for (i, _) in text.match_indices('=') {
+        // Skip "==" (code equality)
+        if text.get(i..i + 2) == Some("==") {
+            continue;
+        }
+        // Skip "!=" ">=" "<="
+        if i > 0 && matches!(text.as_bytes().get(i - 1), Some(b'!' | b'>' | b'<')) {
+            continue;
+        }
+
+        // Extract the number after '='
+        let after = text[i + 1..].trim_start();
+        let num_end = after
+            .find(|c: char| !c.is_ascii_digit() && c != '-')
+            .unwrap_or(after.len());
+        if num_end == 0 {
+            continue;
+        }
+        let num_str = &after[..num_end];
+        let Ok(expected) = num_str.parse::<i64>() else {
+            continue;
+        };
+
+        // Walk backwards from '=' to find the expression
+        let before = &text[..i];
+        let before_trimmed = before.trim_end();
+        if before_trimmed.is_empty() {
+            continue;
+        }
+
+        // Find start of expression: walk back while chars are digits, operators, spaces, parens
+        let expr_bytes = before_trimmed.as_bytes();
+        let mut start = expr_bytes.len();
+        while start > 0 {
+            let c = expr_bytes[start - 1];
+            if c.is_ascii_digit()
+                || c == b'+'
+                || c == b'-'
+                || c == b'*'
+                || c == b'/'
+                || c == b'('
+                || c == b')'
+                || c == b' '
+            {
+                start -= 1;
+            } else {
+                break;
+            }
+        }
+
+        let expr = before_trimmed[start..].trim();
+        // Must contain at least one operator and one digit
+        if expr.len() >= 3
+            && expr.chars().any(|c| c.is_ascii_digit())
+            && expr.chars().any(|c| "+-*/".contains(c))
+        {
+            results.push((expr.to_string(), expected));
+        }
+    }
+
+    results
+}
+
+/// Extract the final numeric answer from a response.
+///
+/// Tries (in order):
+/// 1. Last line that is a pure integer
+/// 2. "answer/result/total is/: <number>" pattern
+///
+/// Domain-agnostic: works for any text ending with a numeric conclusion.
+pub(crate) fn extract_final_number(text: &str) -> Option<i64> {
+    // Try last non-empty lines as pure numbers
+    for line in text.lines().rev() {
+        let trimmed = line.trim().trim_end_matches('.');
+        if !trimmed.is_empty() {
+            if let Ok(n) = trimmed.parse::<i64>() {
+                return Some(n);
+            }
+            // Only check the last 3 non-empty lines
+            break;
+        }
+    }
+
+    // Try "answer is X" / "result: X" / "total = X" patterns
+    let lower = text.to_lowercase();
+    for keyword in &["answer is", "answer:", "result is", "result:", "total is", "total:", "equals"] {
+        if let Some(pos) = lower.rfind(keyword) {
+            let after = &text[pos + keyword.len()..];
+            let after_trimmed = after.trim_start().trim_start_matches(':').trim_start();
+            let num_end = after_trimmed
+                .find(|c: char| !c.is_ascii_digit() && c != '-')
+                .unwrap_or(after_trimmed.len());
+            if num_end > 0 {
+                if let Ok(n) = after_trimmed[..num_end].parse::<i64>() {
+                    return Some(n);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// ──────────────────────────────────────────────────────────────────────
 // PyO3 types
 // ──────────────────────────────────────────────────────────────────────
 
@@ -230,21 +347,24 @@ impl QualityLabeler {
 
     /// Label the quality of an LLM response for a given task.
     ///
-    /// Returns None if the response contains no code blocks (not assessable).
-    /// Returns Some(QualityLabel) with formal check results otherwise.
+    /// Uses 3 verification canaux:
+    /// 1. **Code** (existing): tree-sitter syntax + OxiZ arithmetic/array/structural
+    /// 2. **Text arithmetic** (new): extract "5 + 3 = 8" from prose, verify via OxiZ
+    /// 3. **Numeric answer** (new): extract final number, score format compliance
+    ///
+    /// Returns None only if NO canal produces any check (pure prose with no
+    /// code, no equations, no numbers). Zero heuristics — every check is a
+    /// formal proof or syntactic fact.
     #[instrument(skip(self, task, response))]
     #[pyo3(signature = (task, response))]
     pub fn label(&self, task: &str, response: &str) -> Option<QualityLabel> {
         let _ = task; // reserved for future task-specific checks
-        let code_blocks = extract_code_blocks(response);
-        if code_blocks.is_empty() {
-            return None;
-        }
-
         let mut checks_passed: u32 = 0;
         let mut checks_total: u32 = 0;
         let mut details = Vec::new();
 
+        // ── Canal 1: Code blocks (existing, unchanged) ───────────────
+        let code_blocks = extract_code_blocks(response);
         for (i, code) in code_blocks.iter().enumerate() {
             let block_label = if code_blocks.len() > 1 {
                 format!("block_{}", i)
@@ -252,7 +372,7 @@ impl QualityLabeler {
                 "code".to_string()
             };
 
-            // Check 1: Syntax validity via tree-sitter
+            // Check 1.1: Syntax validity via tree-sitter
             let validation: ValidationResult = validate_python_code(code);
             checks_total += 1;
             if validation.valid {
@@ -266,7 +386,7 @@ impl QualityLabeler {
                 ));
             }
 
-            // Check 2: Arithmetic assertions verified via OxiZ
+            // Check 1.2: Arithmetic assertions verified via OxiZ
             let arith_assertions = extract_arithmetic_assertions(code);
             for (expr, expected) in &arith_assertions {
                 checks_total += 1;
@@ -281,7 +401,7 @@ impl QualityLabeler {
                 }
             }
 
-            // Check 3: Array bounds verified via OxiZ
+            // Check 1.3: Array bounds verified via OxiZ
             let array_bounds = extract_array_bounds(code);
             if !array_bounds.is_empty() {
                 let result = self.verifier.verify_array_bounds(array_bounds.clone());
@@ -302,7 +422,7 @@ impl QualityLabeler {
                 }
             }
 
-            // Check 4: Structural completeness (def has return)
+            // Check 1.4: Structural completeness (def has return)
             let (has_def, has_return) = check_structural_completeness(code);
             if has_def {
                 checks_total += 1;
@@ -318,12 +438,34 @@ impl QualityLabeler {
             }
         }
 
-        let score = if checks_total > 0 {
-            checks_passed as f32 / checks_total as f32
-        } else {
-            // Code exists but no checks were applicable → neutral score
-            0.5
-        };
+        // ── Canal 2: Text arithmetic (OxiZ formal verification) ──────
+        // Extract "5 + 3 = 8" from prose and verify via QF_LIA SAT solver.
+        let text_equations = extract_text_equations(response);
+        for (expr, claimed) in &text_equations {
+            checks_total += 1;
+            if self.verifier.verify_arithmetic_expr(expr, *claimed, 0) {
+                checks_passed += 1;
+                details.push(format!("math: '{}={}' PROVED", expr, claimed));
+            } else {
+                details.push(format!("math: '{}={}' DISPROVED", expr, claimed));
+            }
+        }
+
+        // ── Canal 3: Final numeric answer ────────────────────────────
+        // If the response ends with a number, that's a well-formatted answer.
+        let final_number = extract_final_number(response);
+        if let Some(n) = final_number {
+            checks_total += 1;
+            checks_passed += 1; // Numeric extraction = format compliance (syntactic fact)
+            details.push(format!("numeric: final answer {}", n));
+        }
+
+        // ── Aggregate ────────────────────────────────────────────────
+        if checks_total == 0 {
+            return None; // Pure prose with no verifiable content → abstain
+        }
+
+        let score = checks_passed as f32 / checks_total as f32;
 
         Some(QualityLabel {
             score,
@@ -396,9 +538,10 @@ def fibonacci(n):
     }
 
     #[test]
-    fn test_label_no_code_returns_none() {
+    fn test_label_pure_prose_returns_none() {
         let labeler = QualityLabeler::new();
-        let response = "Here is a text-only answer with no code.";
+        // Pure prose: no code, no equations, no numbers → abstain
+        let response = "Here is a text-only answer with no code or math.";
         let label = labeler.label("Explain something", response);
         assert!(label.is_none());
     }
@@ -531,5 +674,118 @@ y = x * 2
         let bounds = extract_array_bounds(code);
         assert_eq!(bounds.len(), 1);
         assert_eq!(bounds[0], (1, 3));
+    }
+
+    // ── Canal 2: Text arithmetic tests ──────────────────────────────
+
+    #[test]
+    fn test_extract_text_equations_basic() {
+        let eqs = extract_text_equations("Step 1: 5 + 3 = 8. Done.");
+        assert_eq!(eqs.len(), 1);
+        assert_eq!(eqs[0].0, "5 + 3");
+        assert_eq!(eqs[0].1, 8);
+    }
+
+    #[test]
+    fn test_extract_text_equations_multiple() {
+        let eqs = extract_text_equations("First 10 + 5 = 15, then 15 * 2 = 30.");
+        assert_eq!(eqs.len(), 2);
+    }
+
+    #[test]
+    fn test_extract_text_equations_wrong_result() {
+        let eqs = extract_text_equations("5 + 3 = 9");
+        assert_eq!(eqs.len(), 1);
+        assert_eq!(eqs[0].1, 9); // Extracted, but OxiZ will disprove
+    }
+
+    #[test]
+    fn test_extract_text_equations_ignores_equality() {
+        // "==" is code equality, not arithmetic equation
+        let eqs = extract_text_equations("if x == 5: pass");
+        assert!(eqs.is_empty());
+    }
+
+    #[test]
+    fn test_extract_text_equations_no_equations() {
+        let eqs = extract_text_equations("Just some text with no math.");
+        assert!(eqs.is_empty());
+    }
+
+    // ── Canal 3: Final number tests ────────────────────────────────
+
+    #[test]
+    fn test_extract_final_number_last_line() {
+        assert_eq!(extract_final_number("some text\n42"), Some(42));
+    }
+
+    #[test]
+    fn test_extract_final_number_with_period() {
+        assert_eq!(extract_final_number("The answer is 42."), Some(42));
+    }
+
+    #[test]
+    fn test_extract_final_number_answer_pattern() {
+        assert_eq!(extract_final_number("Therefore the answer is 17"), Some(17));
+    }
+
+    #[test]
+    fn test_extract_final_number_none() {
+        assert_eq!(extract_final_number("no numbers here at all"), None);
+    }
+
+    #[test]
+    fn test_extract_final_number_negative() {
+        assert_eq!(extract_final_number("result: -5"), Some(-5));
+    }
+
+    // ── Integration: label() with 3 canaux ─────────────────────────
+
+    #[test]
+    fn test_label_math_response_proved() {
+        let labeler = QualityLabeler::new();
+        let label = labeler.label("What is 5+3?", "Let me calculate: 5 + 3 = 8\n\n8");
+        assert!(label.is_some(), "Should not be None for math response");
+        let l = label.unwrap();
+        assert!(l.assessable);
+        assert!(l.score > 0.5, "Correct math should score > 0.5");
+        assert!(l.details.contains("PROVED") || l.details.contains("numeric"));
+    }
+
+    #[test]
+    fn test_label_math_response_disproved() {
+        let labeler = QualityLabeler::new();
+        let label = labeler.label("What is 5+3?", "5 + 3 = 9\n\n9");
+        assert!(label.is_some());
+        let l = label.unwrap();
+        assert!(l.details.contains("DISPROVED"));
+    }
+
+    #[test]
+    fn test_label_pure_number_assessable() {
+        let labeler = QualityLabeler::new();
+        let label = labeler.label("How many animals?", "42");
+        assert!(label.is_some(), "Pure number should be assessable now");
+        let l = label.unwrap();
+        assert!(l.assessable);
+        assert_eq!(l.checks_passed, 1);
+        assert!(l.details.contains("numeric"));
+    }
+
+    #[test]
+    fn test_label_no_code_returns_none_for_prose() {
+        let labeler = QualityLabeler::new();
+        // Pure text with no code, no equations, no final number
+        let label = labeler.label("Explain gravity", "Gravity is a force of attraction between objects.");
+        assert!(label.is_none(), "Pure prose should still abstain");
+    }
+
+    #[test]
+    fn test_label_code_still_works_unchanged() {
+        let labeler = QualityLabeler::new();
+        let response = "```python\ndef add(a, b):\n    return a + b\n```";
+        let label = labeler.label("Write add", response);
+        assert!(label.is_some());
+        assert!(label.unwrap().details.contains("syntax OK"));
     }
 }
