@@ -81,7 +81,7 @@ impl MctsNode {
 fn rollout_score(topology: &TopologyGraph) -> f64 {
     let verifier = HybridVerifier::new();
     let result = verifier.verify(topology);
-    let base = if result.errors.is_empty() { 0.6 } else { 0.1 };
+    let base = if result.errors.is_empty() { 0.6 } else { 0.0 };
     let node_bonus = (topology.node_count() as f64).min(5.0) / 10.0;
     (base + node_bonus).min(1.0)
 }
@@ -199,9 +199,9 @@ impl MctsSearcher {
                 score
             }
             crate::topology::mutations::MutationResult::Invalid(_reason) => {
-                // Mutation failed — still count as a visit with low score.
-                // Don't add a child node for invalid mutations.
-                0.1
+                // Mutation failed — zero score so invalid topologies
+                // do not influence UCB1 tree selection.
+                0.0
             }
         }
     }

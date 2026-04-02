@@ -611,29 +611,89 @@ pub fn mutate_prompt(
 // apply_random_mutation
 // ---------------------------------------------------------------------------
 
-/// Fixed set of model IDs for random mutation.
-const MODEL_IDS: &[&str] = &["gemini-2.5-flash", "gemini-3.1-pro", "gpt-5.3-codex"];
+/// Role precedence tiers (not a strict total order — roles in the same tier can coexist).
+/// Based on AgentConductor (arXiv 2602.17100) topological execution order.
+///
+/// Tier 0: Input/planning roles (always first)
+/// Tier 1: Processing/working roles (middle)
+/// Tier 2: Evaluation/verification roles (late)
+/// Tier 3: Output/synthesis roles (always last)
+///
+/// Unknown roles default to tier 1 (permissive — they can go anywhere in the middle).
+pub(crate) fn role_tier(role: &str) -> u8 {
+    // Strip numeric suffixes (worker_0, stage_1, etc.)
+    let base = role.split('_').next().unwrap_or(role);
+    match base {
+        // Tier 0: Input/decomposition
+        "planner" | "preprocessor" | "splitter" | "dispatcher" | "topic" | "source" | "input" => 0,
+        // Tier 1: Processing/working (most roles)
+        "analyst" | "coder" | "actor" | "worker" | "debater" | "thinker" | "stage"
+        | "spoke" | "child" | "agent" | "reasoner" => 1,
+        // Tier 2: Evaluation/verification
+        "reviewer" | "verifier" | "judge" | "output" => 2,
+        // Tier 3: Final synthesis/formatting
+        "synthesizer" | "aggregator" | "formatter" | "mixer" | "parent" | "coordinator" => 3,
+        // Unknown roles: tier 1 (permissive — middle of pipeline)
+        _ => 1,
+    }
+}
 
-/// Fixed set of role names for random mutation.
-const ROLES: &[&str] = &[
-    "coder",
-    "reviewer",
-    "planner",
-    "formatter",
-    "analyst",
-    "reasoner",
+/// Get precedence index for backward compatibility. Returns tier * 10.
+pub(crate) fn role_index(role: &str) -> usize {
+    role_tier(role) as usize * 10
+}
+
+/// Roles available for mutation, grouped by tier.
+const ROLES_TIER0: &[&str] = &["planner", "preprocessor", "splitter", "dispatcher"];
+const ROLES_TIER1: &[&str] = &["analyst", "coder", "worker", "reasoner"];
+const ROLES_TIER2: &[&str] = &["reviewer", "verifier", "judge"];
+const ROLES_TIER3: &[&str] = &["synthesizer", "aggregator", "formatter", "mixer"];
+const ALL_ROLES: &[&str] = &[
+    "planner", "preprocessor", "splitter", "dispatcher",
+    "analyst", "coder", "worker", "reasoner",
+    "reviewer", "verifier", "judge",
+    "synthesizer", "aggregator", "formatter", "mixer",
 ];
 
+/// Pick a role from tier >= min_tier.
+fn pick_role_from_tier<R: Rng>(rng: &mut R, min_tier: u8) -> &'static str {
+    let candidates: Vec<&str> = ALL_ROLES.iter()
+        .copied()
+        .filter(|r| role_tier(r) >= min_tier)
+        .collect();
+    if candidates.is_empty() {
+        ALL_ROLES[ALL_ROLES.len() - 1]
+    } else {
+        candidates[rng.random_range(0..candidates.len())]
+    }
+}
+
+/// Pick a role from tier <= max_tier.
+fn pick_role_up_to_tier<R: Rng>(rng: &mut R, max_tier: u8) -> &'static str {
+    let candidates: Vec<&str> = ALL_ROLES.iter()
+        .copied()
+        .filter(|r| role_tier(r) <= max_tier)
+        .collect();
+    if candidates.is_empty() {
+        ALL_ROLES[0]
+    } else {
+        candidates[rng.random_range(0..candidates.len())]
+    }
+}
+
 /// Pick one of the 7 mutations at random and apply it with random parameters.
+///
+/// Uses empty model_id ("") so ModelAssigner picks the right model from cards.toml
+/// at Stage 3, instead of hardcoding obsolete model names.
+/// Role selection respects ROLE_ORDER precedence for semantic coherence.
 pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> MutationResult {
     let node_count = graph.node_count();
 
     // If graph is empty or has only 1 node, limit to add_node.
     if node_count == 0 {
-        let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-        let role = ROLES[rng.random_range(0..ROLES.len())];
+        let role = ALL_ROLES[rng.random_range(0..ALL_ROLES.len())];
         let system: u8 = rng.random_range(1..=3);
-        return add_node_at(graph, role, model, system, None);
+        return add_node_at(graph, role, "", system, None);
     }
 
     // Choose a mutation (0-6).
@@ -641,103 +701,100 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
 
     match mutation_idx {
         0 => {
-            // add_node — random exit node for mutation diversity
-            let exit_count = graph.exit_nodes().len();
-            let exit_hint = if exit_count > 0 {
-                Some(rng.random_range(0..exit_count))
+            // add_node — role must be >= last exit node's role (precedence order)
+            let exit_nodes = graph.exit_nodes();
+            let exit_hint = if !exit_nodes.is_empty() {
+                Some(rng.random_range(0..exit_nodes.len()))
             } else {
                 None
             };
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            let role = ROLES[rng.random_range(0..ROLES.len())];
+            // Pick a role from tier >= exit node's tier (respects ordering)
+            let min_tier = if let Some(hint) = exit_hint {
+                let exit_node = graph.inner_graph().node_weight(
+                    petgraph::graph::NodeIndex::new(exit_nodes[hint])
+                );
+                exit_node.map(|n| role_tier(&n.role)).unwrap_or(0)
+            } else {
+                0
+            };
+            let role = pick_role_from_tier(rng, min_tier);
             let system: u8 = rng.random_range(1..=3);
-            debug!(
-                mutation = "add_node",
-                role = role,
-                model = model,
-                "apply_random_mutation"
-            );
-            add_node_at(graph, role, model, system, exit_hint)
+            debug!(mutation = "add_node", role = role, "apply_random_mutation");
+            add_node_at(graph, role, "", system, exit_hint)
         }
         1 => {
             // remove_node
             let idx = rng.random_range(0..node_count);
-            debug!(
-                mutation = "remove_node",
-                node_index = idx,
-                "apply_random_mutation"
-            );
+            debug!(mutation = "remove_node", node_index = idx, "apply_random_mutation");
             remove_node(graph, idx)
         }
         2 => {
-            // swap_model
+            // swap_model — use empty model_id, ModelAssigner picks at Stage 3
             let idx = rng.random_range(0..node_count);
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(
-                mutation = "swap_model",
-                node_index = idx,
-                model = model,
-                "apply_random_mutation"
-            );
-            swap_model(graph, idx, model)
+            debug!(mutation = "swap_model", node_index = idx, "apply_random_mutation");
+            swap_model(graph, idx, "")
         }
         3 => {
-            // rewire_edge
+            // rewire_edge — only if respects role ordering
             let from = rng.random_range(0..node_count);
             let to = rng.random_range(0..node_count);
-            debug!(
-                mutation = "rewire_edge",
-                from = from,
-                to = to,
-                "apply_random_mutation"
-            );
+            debug!(mutation = "rewire_edge", from = from, to = to, "apply_random_mutation");
             rewire_edge(graph, from, to)
         }
         4 => {
-            // split_node
+            // split_node — role_a <= original role <= role_b
             let idx = rng.random_range(0..node_count);
-            let role_a = ROLES[rng.random_range(0..ROLES.len())];
-            let model_a = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            let role_b = ROLES[rng.random_range(0..ROLES.len())];
-            let model_b = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(
-                mutation = "split_node",
-                node_index = idx,
-                "apply_random_mutation"
-            );
-            split_node(graph, idx, role_a, model_a, role_b, model_b)
+            let orig_tier = {
+                let inner = graph.inner_graph();
+                let target = petgraph::graph::NodeIndex::new(idx);
+                inner.node_weight(target)
+                    .map(|n| role_tier(&n.role))
+                    .unwrap_or(1)
+            };
+            // role_a: same or earlier tier, role_b: same or later tier
+            let role_a = pick_role_up_to_tier(rng, orig_tier);
+            let role_b = pick_role_from_tier(rng, orig_tier);
+            debug!(mutation = "split_node", node_index = idx, "apply_random_mutation");
+            split_node(graph, idx, role_a, "", role_b, "")
         }
         5 => {
-            // merge_nodes (need at least 2 nodes)
+            // merge_nodes
             if node_count < 2 {
                 return MutationResult::Invalid("Cannot merge with fewer than 2 nodes".to_string());
             }
             let a = rng.random_range(0..node_count);
             let mut b = rng.random_range(0..node_count);
-            // Ensure b != a.
             if b == a {
                 b = (a + 1) % node_count;
             }
-            let role = ROLES[rng.random_range(0..ROLES.len())];
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
-            debug!(
-                mutation = "merge_nodes",
-                node_a = a,
-                node_b = b,
-                "apply_random_mutation"
-            );
-            merge_nodes(graph, a, b, role, model)
+            // Merged role: pick from the later tier of the two (preserves ordering)
+            let tier_a = {
+                let inner = graph.inner_graph();
+                inner.node_weight(petgraph::graph::NodeIndex::new(a))
+                    .map(|n| role_tier(&n.role))
+                    .unwrap_or(1)
+            };
+            let tier_b = {
+                let inner = graph.inner_graph();
+                inner.node_weight(petgraph::graph::NodeIndex::new(b))
+                    .map(|n| role_tier(&n.role))
+                    .unwrap_or(1)
+            };
+            let merged_role = pick_role_from_tier(rng, tier_a.max(tier_b));
+            debug!(mutation = "merge_nodes", node_a = a, node_b = b, "apply_random_mutation");
+            merge_nodes(graph, a, b, merged_role, "")
         }
         6 => {
-            // mutate_prompt
+            // mutate_prompt — pick a role from same tier as current
             let idx = rng.random_range(0..node_count);
-            let role = ROLES[rng.random_range(0..ROLES.len())];
-            debug!(
-                mutation = "mutate_prompt",
-                node_index = idx,
-                new_role = role,
-                "apply_random_mutation"
-            );
+            let current_tier = {
+                let inner = graph.inner_graph();
+                inner.node_weight(petgraph::graph::NodeIndex::new(idx))
+                    .map(|n| role_tier(&n.role))
+                    .unwrap_or(1)
+            };
+            let role = pick_role_from_tier(rng, current_tier);
+            debug!(mutation = "mutate_prompt", node_index = idx, new_role = role, "apply_random_mutation");
             mutate_prompt(graph, idx, role)
         }
         _ => unreachable!(),
@@ -761,7 +818,9 @@ mod tests {
     fn test_add_node_increases_count() {
         let graph = make_sequential();
         let original_count = graph.node_count();
-        let result = add_node(graph, "analyst", "gemini-2.5-flash", 1);
+        // Use a tier-3 role (aggregator) since exit node is synthesizer (tier 3)
+        // model_id "test" to pass capability check
+        let result = add_node(graph, "aggregator", "test", 1);
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
         let new_graph = result.unwrap();
         assert_eq!(new_graph.node_count(), original_count + 1);

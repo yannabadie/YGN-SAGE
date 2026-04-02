@@ -446,6 +446,14 @@ impl MapElitesArchive {
         )
         .entered();
 
+        // Quality floor: reject low-quality topologies from archive.
+        // Prevents degenerate mutations from polluting niches.
+        const ARCHIVE_QUALITY_FLOOR: f32 = 0.3;
+        if quality < ARCHIVE_QUALITY_FLOOR {
+            debug!(quality, "map_elites_insert_rejected_below_quality_floor");
+            return false;
+        }
+
         // Validate topology before insertion.
         let result = self.verifier.verify(&graph);
         if !result.valid {

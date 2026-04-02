@@ -4,6 +4,7 @@
 //! Provides both hard errors (invalid topology) and soft warnings (semantic issues).
 
 use super::topology_graph::*;
+use crate::topology::mutations::role_index;
 use crate::verification::ltl::LtlVerifier;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{Bfs, EdgeRef};
@@ -128,6 +129,11 @@ impl HybridVerifier {
         result.add_warnings(warns);
 
         let (errs, warns) = self.check_security_labels(graph);
+        result.add_errors(errs);
+        result.add_warnings(warns);
+
+        // Role ordering: planner before coder before reviewer before synthesizer
+        let (errs, warns) = self.check_role_ordering(graph);
         result.add_errors(errs);
         result.add_warnings(warns);
 
@@ -416,6 +422,40 @@ impl HybridVerifier {
                 errors.push(format!(
                     "Security label violation: edge from '{}' (label={}) to '{}' (label={})",
                     src.node_id, src.security_label, tgt.node_id, tgt.security_label
+                ));
+            }
+        }
+
+        (errors, warnings)
+    }
+
+    // -----------------------------------------------------------------------
+    // Role ordering check: planner before coder before reviewer etc.
+    // -----------------------------------------------------------------------
+
+    /// Verify that roles follow precedence order on control edges.
+    /// A "planner" must come before a "coder", which must come before a "reviewer".
+    /// Based on AgentConductor (arXiv 2602.17100) topological execution order.
+    fn check_role_ordering(&self, graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
+        let inner = graph.inner_graph();
+        let mut errors = Vec::new();
+        let warnings = Vec::new();
+
+        for edge_ref in inner.edge_references() {
+            let edge = edge_ref.weight();
+            // Only check open control edges (execution ordering)
+            if edge.typed_edge_type() != EdgeType::Control || edge.typed_gate() != Gate::Open {
+                continue;
+            }
+            let src = &inner[edge_ref.source()];
+            let tgt = &inner[edge_ref.target()];
+            let src_idx = role_index(&src.role);
+            let tgt_idx = role_index(&tgt.role);
+            // Allow same-level roles (parallel workers) and unknown roles
+            if src_idx > tgt_idx && tgt_idx < 100 {
+                errors.push(format!(
+                    "Role ordering violation: '{}' (precedence {}) -> '{}' (precedence {})",
+                    src.role, src_idx, tgt.role, tgt_idx,
                 ));
             }
         }
