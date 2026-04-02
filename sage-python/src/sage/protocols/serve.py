@@ -27,8 +27,8 @@ def main() -> None:
         parser.error("Specify at least one of --mcp or --a2a")
 
     # Boot SAGE system
-    from sage.boot import boot
-    system = asyncio.run(boot())
+    from sage.boot import boot_agent_system
+    system = boot_agent_system()
 
     if args.mcp:
         from sage.protocols import HAS_MCP
@@ -53,6 +53,7 @@ def main() -> None:
         import uvicorn
         app = create_a2a_app(
             agent_loop=system.agent_loop,
+            pipeline=system.pipeline,  # enables streaming + cancellation
             tool_registry=system.tool_registry,
             event_bus=system.event_bus,
             url=f"http://{args.host}:{args.a2a_port}",

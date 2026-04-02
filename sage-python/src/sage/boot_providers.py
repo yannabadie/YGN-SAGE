@@ -29,16 +29,24 @@ def init_llm_provider(
         llm_config = LLMConfig(provider="mock", model="mock")
         return provider, llm_config
 
-    # Auto-detect best available provider
+    # Auto-detect best available provider from ALL configured providers
     if llm_tier == "auto":
         if shutil.which("codex"):
             llm_tier = "codex"
-        elif os.environ.get("GOOGLE_API_KEY"):
-            llm_tier = "fast"
         else:
-            raise RuntimeError(
-                "No LLM provider available. Install Codex CLI or set GOOGLE_API_KEY."
-            )
+            from sage.providers.connector import get_available_providers, PROVIDER_CONFIGS
+            available = get_available_providers()
+            if available:
+                # Use first available provider (connector.py priority order)
+                cfg = available[0]
+                _log.info("Auto-detected provider: %s (%s)",
+                          cfg["provider"], cfg.get("default_model", ""))
+                llm_tier = "budget"  # generic tier, model resolved below
+            else:
+                raise RuntimeError(
+                    "No LLM provider available. Set at least one API key: "
+                    + ", ".join(c["api_key_env"] for c in PROVIDER_CONFIGS)
+                )
 
     llm_config = ModelRouter.get_config(llm_tier)
     if llm_config.provider == "codex":

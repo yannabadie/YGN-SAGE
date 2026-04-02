@@ -111,6 +111,9 @@ class DashboardState:
         self.task_queue: asyncio.Queue = asyncio.Queue(maxsize=_TASK_QUEUE_MAX)
         self.task_history: dict[str, dict] = {}  # task_id -> {status, task, result, ...}
         self._queue_worker: asyncio.Task | None = None
+        # Concurrency guard: system.run() mutates shared state (_last_decision,
+        # _current_topology, step_count). Serialize all run() calls.
+        self.run_lock: asyncio.Lock = asyncio.Lock()
 
 _state = DashboardState()
 
@@ -329,7 +332,8 @@ async def _process_task_queue() -> None:
         try:
             _boot_system()
             _state.agent_task = asyncio.current_task()
-            result = await _state.system.run(task_text)
+            async with _state.run_lock:
+                result = await _state.system.run(task_text)
             logger.info("Agent finished [%s]: %s", task_id, result[:200] if result else "(empty)")
             if task_id in _state.task_history:
                 _state.task_history[task_id]["status"] = "done"
@@ -579,7 +583,8 @@ async def chat_stream(request: Request):
             start_event = json.dumps({"type": "start", "model": model})
             yield f"data: {start_event}\n\n"
 
-            result = await _state.system.run(message)
+            async with _state.run_lock:
+                result = await _state.system.run(message)
             result_text = result if isinstance(result, str) else str(result)
 
             chunk_size = 80
