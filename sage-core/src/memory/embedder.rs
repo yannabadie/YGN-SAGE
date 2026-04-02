@@ -9,10 +9,15 @@
 
 use ort::{inputs, session::Session, value::Tensor};
 use pyo3::prelude::*;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 use tokenizers::Tokenizer;
 
 const EMBEDDING_DIM: usize = 768;
+
+/// Global singleton for the ONNX session + tokenizer.
+/// Loaded once on first RustEmbedder::new(), shared by all instances.
+/// Prevents loading 109MB model 11 times (one per Embedder() instantiation).
+static SHARED_SESSION: OnceLock<Arc<Mutex<(Session, Tokenizer)>>> = OnceLock::new();
 
 /// Wrapper to make `*mut Session` Send-able for `py.allow_threads()`.
 ///
@@ -156,8 +161,9 @@ pub(crate) fn discover_ort_dylib(
 
 #[pyclass]
 pub struct RustEmbedder {
-    session: Session,
-    tokenizer: Tokenizer,
+    /// Shared reference to the singleton ONNX session + tokenizer.
+    /// All RustEmbedder instances point to the same loaded model (~109MB).
+    shared: Arc<Mutex<(Session, Tokenizer)>>,
 }
 
 #[pymethods]
@@ -165,11 +171,12 @@ impl RustEmbedder {
     #[new]
     #[pyo3(signature = (model_path, tokenizer_path))]
     pub fn new(py: Python<'_>, model_path: String, tokenizer_path: String) -> PyResult<Self> {
-        // Resolve ORT dylib path once (thread-safe via OnceLock).
-        // This MUST happen before Session::builder() because ort caches
-        // its DLL handle in a OnceLock — once read, it never re-checks env.
-        // Python side (Embedder._ensure_ort_dylib_path) also does this,
-        // but this covers direct `sage_core.RustEmbedder(...)` usage.
+        // Return existing singleton if already loaded (zero-cost for subsequent calls)
+        if let Some(shared) = SHARED_SESSION.get() {
+            return Ok(Self { shared: Arc::clone(shared) });
+        }
+
+        // First call: resolve ORT dylib path and load model
         let sys_prefix: Option<String> = py
             .import("sys")
             .ok()
@@ -177,15 +184,11 @@ impl RustEmbedder {
             .and_then(|p| p.extract().ok());
         if let Some(path) = resolve_ort_dylib_once(&model_path, sys_prefix.as_deref()) {
             if std::env::var("ORT_DYLIB_PATH").is_err() {
-                // SAFETY: OnceLock in resolve_ort_dylib_once guarantees this runs
-                // at most once, and we are still in single-threaded __init__ context.
                 #[allow(unsafe_code)]
                 unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
             }
         }
-        // Release the GIL before loading ORT — on Windows, LoadLibraryW runs
-        // onnxruntime.dll's DllMain which may attempt GIL acquisition, causing
-        // deadlock if we're still holding it from this #[pymethods] call.
+
         let (session, tokenizer) = py
             .allow_threads(|| -> Result<(Session, Tokenizer), String> {
                 let session = Session::builder()
@@ -200,7 +203,11 @@ impl RustEmbedder {
             })
             .map_err(pyo3::exceptions::PyRuntimeError::new_err)?;
 
-        Ok(Self { session, tokenizer })
+        let shared = Arc::new(Mutex::new((session, tokenizer)));
+        // Store in global singleton (ignore if another thread won the race)
+        let _ = SHARED_SESSION.set(Arc::clone(&shared));
+
+        Ok(Self { shared })
     }
 
     /// Embed a single text string. Returns a 768-dim L2-normalized vector.
@@ -212,6 +219,7 @@ impl RustEmbedder {
     /// Embed a batch of text strings. Returns a list of 768-dim L2-normalized vectors.
     ///
     /// Releases the GIL during ONNX inference to avoid blocking Python threads.
+    /// Uses the shared singleton session — all RustEmbedder instances share one model.
     pub fn embed_batch(&mut self, py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
@@ -219,7 +227,13 @@ impl RustEmbedder {
 
         let str_refs: Vec<&str> = texts.iter().map(|s| s.as_str()).collect();
 
-        let encodings = self.tokenizer.encode_batch(str_refs, true).map_err(|e| {
+        // Lock the shared session for the full tokenize+infer cycle.
+        let mut guard = self.shared.lock().map_err(|e| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!("Session lock poisoned: {e}"))
+        })?;
+        let (ref mut session, ref tokenizer) = *guard;
+
+        let encodings = tokenizer.encode_batch(str_refs, true).map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Tokenization error: {e}"))
         })?;
 
@@ -260,9 +274,7 @@ impl RustEmbedder {
         })?;
 
         // Check if the ONNX model expects token_type_ids (standard BERT input).
-        // Some models (e.g. snowflake-arctic-embed-m) may not include it.
-        let has_token_type = self
-            .session
+        let has_token_type = session
             .inputs()
             .iter()
             .any(|input| input.name() == "token_type_ids");
@@ -286,19 +298,14 @@ impl RustEmbedder {
             ]
         };
 
-        // Release GIL during ONNX inference + post-processing.
-        // All tensor data is heap-owned (Tensor, not TensorRef), so session_inputs
-        // can be moved into the closure. Extraction and pooling also happen inside
-        // the closure so that SessionOutputs (which borrows Session) doesn't escape.
-        //
-        // SAFETY: We have &mut self so exclusive access to session is guaranteed.
-        // Session is Send (ort marks it `unsafe impl Send`). We use SendSessionPtr
-        // because raw pointers are !Send; the newtype is safe per the guarantees above.
-        let session_ptr = SendSessionPtr(&mut self.session as *mut Session);
+        // Run inference with the locked session.
+        // Mutex guard guarantees exclusive access. We use SendSessionPtr to
+        // release the GIL during inference (Session is Send per ort).
+        let session_ptr = SendSessionPtr(session as *mut Session);
+        // Drop guard reference before allow_threads (we access via raw ptr)
+        drop(guard);
         let results = py
             .allow_threads(move || -> Result<Vec<Vec<f32>>, String> {
-                // SAFETY: session_ptr is valid for the duration of this call —
-                // the &mut self borrow guarantees no other access exists.
                 #[allow(unsafe_code)]
                 let session = unsafe { session_ptr.as_mut() };
                 let outputs = session
