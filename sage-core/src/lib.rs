@@ -91,6 +91,11 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<verification::quality_labeler::QualityLabel>()?;
     }
 
+    #[cfg(feature = "smt")]
+    {
+        m.add_function(pyo3::wrap_pyfunction!(verification::igsm_parser::parse_and_solve_igsm, m)?)?;
+    }
+
     // Add sort utility functions
     m.add_function(wrap_pyfunction!(sort_utils::vectorized_partition_h96, m)?)?;
     m.add_function(wrap_pyfunction!(sort_utils::h96_quicksort, m)?)?;

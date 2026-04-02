@@ -420,6 +420,81 @@ fn eval_ast(expr: &Expr) -> Option<i64> {
     }
 }
 
+/// Evaluate an AST node with variable bindings.
+/// Variables are resolved from the `bindings` map. Unknown variables return None.
+/// Used by `solve_equation_system` for topological evaluation of dependency graphs.
+fn eval_with_bindings(expr: &Expr, bindings: &HashMap<String, i64>) -> Option<i64> {
+    match expr {
+        Expr::Int(n) => Some(*n),
+        Expr::Var(name) => bindings.get(name).copied(),
+        Expr::Arith(lhs, op, rhs) => {
+            let l = eval_with_bindings(lhs, bindings)?;
+            let r = eval_with_bindings(rhs, bindings)?;
+            Some(match op {
+                ArithOp::Add => l.checked_add(r)?,
+                ArithOp::Sub => l.checked_sub(r)?,
+                ArithOp::Mul => l.checked_mul(r)?,
+            })
+        }
+        _ => None,
+    }
+}
+
+/// Solve a system of named linear equations by topological evaluation.
+///
+/// Takes a list of (variable_name, expression) pairs where expressions can
+/// reference other variables. Evaluates in dependency order (topological sort)
+/// and returns all solved variable values.
+///
+/// Example:
+/// ```text
+/// [("x", "13"), ("y", "x + 5"), ("z", "y * 2")]
+/// → {"x": 13, "y": 18, "z": 36}
+/// ```
+///
+/// Based on SatLM (NeurIPS 2023): separating formalization from solving.
+pub fn solve_equation_system(equations: Vec<(String, String)>) -> HashMap<String, i64> {
+    let mut bindings: HashMap<String, i64> = HashMap::new();
+
+    // Parse all expressions first
+    let mut parsed: Vec<(String, Expr)> = Vec::new();
+    for (name, expr_str) in &equations {
+        match Parser::new(expr_str).parse_all() {
+            Ok(ast) => parsed.push((name.clone(), ast)),
+            Err(()) => {
+                // Try as a plain integer
+                if let Ok(n) = expr_str.trim().parse::<i64>() {
+                    parsed.push((name.clone(), Expr::Int(n)));
+                }
+                // Skip unparseable expressions
+            }
+        }
+    }
+
+    // Iterative resolution: keep evaluating until no progress
+    // (handles any topological ordering without explicit sort)
+    let mut resolved = 0;
+    let max_iterations = parsed.len() + 1;
+    for _ in 0..max_iterations {
+        let mut progress = false;
+        for (name, ast) in &parsed {
+            if bindings.contains_key(name) {
+                continue; // Already solved
+            }
+            if let Some(val) = eval_with_bindings(ast, &bindings) {
+                bindings.insert(name.clone(), val);
+                progress = true;
+                resolved += 1;
+            }
+        }
+        if !progress || resolved == parsed.len() {
+            break;
+        }
+    }
+
+    bindings
+}
+
 /// Result of a formal verification check.
 #[pyclass]
 #[derive(Clone, Debug)]
@@ -542,25 +617,6 @@ impl SmtVerifier {
 
     /// Try to parse a string as an arithmetic expression.
     ///
-    /// Returns true if the string is a valid expression in OxiZ grammar,
-    /// false otherwise. Safe to call on arbitrary text (never panics).
-    /// Used as a "probe" in the island grammar pattern: scan text for
-    /// parsable arithmetic segments.
-    pub fn try_parse_expr(&self, expr: &str) -> bool {
-        Parser::new(expr).parse_all().is_ok()
-    }
-
-    /// Evaluate a constant arithmetic expression to a concrete i64.
-    ///
-    /// Returns None if the expression contains variables, boolean operators,
-    /// or fails to parse. Only evaluates integer arithmetic (+, -, *).
-    /// Uses the same parser as `verify_arithmetic_expr()` for consistency.
-    #[staticmethod]
-    pub fn eval_const_expr(expr: &str) -> Option<i64> {
-        let ast = Parser::new(expr).parse_all().ok()?;
-        eval_ast(&ast)
-    }
-
     /// Verify a pre/post-condition pair (invariant implication).
     ///
     /// Parses string expressions (e.g. "x > 0", "x >= -1 and x < 100")
@@ -862,6 +918,32 @@ impl SmtVerifier {
             }
         }
         (false, unassignable)
+    }
+
+    /// Try to parse a string as an arithmetic expression.
+    /// Returns true if valid, false otherwise. Safe on arbitrary text.
+    pub fn try_parse_expr(&self, expr: &str) -> bool {
+        Parser::new(expr).parse_all().is_ok()
+    }
+
+    /// Evaluate a constant arithmetic expression to i64.
+    /// Returns None if it contains variables or fails to parse.
+    #[staticmethod]
+    pub fn eval_const_expr(expr: &str) -> Option<i64> {
+        let ast = Parser::new(expr).parse_all().ok()?;
+        eval_ast(&ast)
+    }
+
+    /// Solve a system of named linear equations.
+    ///
+    /// Takes (variable_name, expression) pairs. Evaluates in dependency
+    /// order and returns all solved values as a dict.
+    ///
+    /// Example: [("x","13"), ("y","x + 5")] → {"x": 13, "y": 18}
+    #[staticmethod]
+    #[pyo3(name = "solve_equations")]
+    pub fn py_solve_equations(equations: Vec<(String, String)>) -> HashMap<String, i64> {
+        solve_equation_system(equations)
     }
 }
 
