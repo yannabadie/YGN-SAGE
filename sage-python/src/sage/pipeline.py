@@ -330,8 +330,16 @@ class CognitiveOrchestrationPipeline:
         only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
         """
         # S1 fast path: skip topology, use direct single-agent call
-        # This reduces latency from ~200s (multi-node) to ~15s (direct)
+        # EXCEPT for math: use formal_solver (LLM formalizes → Rust solves)
+        # Based on SatLM (NeurIPS 2023): +23% on hard math via formalization
         if ctx.system == 1:
+            if ctx.domain == "math":
+                topo = self._build_topology_from_hint("formal_solver")
+                if topo:
+                    ctx.topology = topo
+                    log.info("S1 math: using formal_solver (2 nodes: formalizer → Rust solver)")
+                    self._check_topology_budget(ctx)
+                    return ctx
             ctx.topology = None
             log.debug("S1 task: skipping topology (direct single-agent)")
             return ctx
