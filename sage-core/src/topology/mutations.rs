@@ -3,14 +3,136 @@
 //! Each operator takes a `TopologyGraph` by value, applies a structural mutation,
 //! validates via `HybridVerifier`, and returns a `MutationResult`. Invalid mutations
 //! return `MutationResult::Invalid` and are NOT retried.
+//!
+//! Operator selection uses Thompson sampling on per-operator Beta posteriors
+//! (Fix 1, based on AgentConductor arXiv 2602.17100 and AgentDropout arXiv 2503.18891).
+//! Operators that produce valid, high-quality mutations get sampled more often.
 
 use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
 
 use crate::topology::topology_graph::*;
 use crate::topology::verifier::HybridVerifier;
+
+// ---------------------------------------------------------------------------
+// MutationStats — Thompson sampling per mutation operator
+// ---------------------------------------------------------------------------
+
+/// Names of the 7 mutation operators (indexed 0..6).
+pub const OPERATOR_NAMES: [&str; 7] = [
+    "add_node",
+    "remove_node",
+    "swap_model",
+    "rewire_edge",
+    "split_node",
+    "merge_nodes",
+    "mutate_prompt",
+];
+
+/// Per-operator Beta posteriors for Thompson sampling.
+///
+/// Each operator has a Beta(alpha, beta) distribution tracking its success rate.
+/// `alpha` = successes + 1 (prior), `beta` = failures + 1 (prior).
+/// Thompson sampling draws from each Beta and picks the operator with the
+/// highest draw — naturally balancing exploration (try undersampled operators)
+/// and exploitation (prefer operators that succeed more).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MutationStats {
+    /// Beta posteriors: (alpha, beta) per operator.
+    alphas: [f64; 7],
+    betas: [f64; 7],
+}
+
+impl Default for MutationStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl MutationStats {
+    /// Uniform prior: Beta(1, 1) for all operators (no preference).
+    pub fn new() -> Self {
+        Self {
+            alphas: [1.0; 7],
+            betas: [1.0; 7],
+        }
+    }
+
+    /// Thompson-sample the best operator index.
+    ///
+    /// Draws from Beta(alpha_i, beta_i) for each operator, returns the index
+    /// with the highest draw. Uses Box-Muller Gaussian approximation
+    /// (same as ContextualBandit — no rand_distr dependency).
+    pub fn sample_operator<R: Rng>(&self, rng: &mut R) -> u32 {
+        let mut best_idx = 0u32;
+        let mut best_sample = f64::NEG_INFINITY;
+
+        for i in 0..7 {
+            let alpha = self.alphas[i];
+            let beta = self.betas[i];
+            let mean = alpha / (alpha + beta);
+            let variance = (alpha * beta)
+                / ((alpha + beta).powi(2) * (alpha + beta + 1.0));
+            let std = variance.sqrt();
+
+            // Box-Muller transform for Gaussian approximation of Beta
+            let u1: f64 = rng.random::<f64>().max(1e-15);
+            let u2: f64 = rng.random::<f64>();
+            let z = (-2.0 * u1.ln()).sqrt()
+                * (2.0 * std::f64::consts::PI * u2).cos();
+            let sample = (mean + std * z).clamp(0.0, 1.0);
+
+            if sample > best_sample {
+                best_sample = sample;
+                best_idx = i as u32;
+            }
+        }
+
+        best_idx
+    }
+
+    /// Record a mutation outcome.
+    ///
+    /// `operator_idx`: which operator was used (0..6)
+    /// `success`: true if MutationResult::Success (and quality > 0)
+    pub fn record(&mut self, operator_idx: usize, success: bool) {
+        if operator_idx >= 7 {
+            return;
+        }
+        if success {
+            self.alphas[operator_idx] += 1.0;
+        } else {
+            self.betas[operator_idx] += 1.0;
+        }
+    }
+
+    /// Get success rate (mean) for an operator.
+    pub fn success_rate(&self, operator_idx: usize) -> f64 {
+        if operator_idx >= 7 {
+            return 0.5;
+        }
+        self.alphas[operator_idx] / (self.alphas[operator_idx] + self.betas[operator_idx])
+    }
+
+    /// Summary string for logging.
+    pub fn summary(&self) -> String {
+        OPERATOR_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                format!(
+                    "{}={:.0}%",
+                    name,
+                    self.success_rate(i) * 100.0,
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
 
 // ---------------------------------------------------------------------------
 // MutationResult
@@ -683,21 +805,49 @@ fn pick_role_up_to_tier<R: Rng>(rng: &mut R, max_tier: u8) -> &'static str {
 
 /// Pick one of the 7 mutations at random and apply it with random parameters.
 ///
-/// Uses empty model_id ("") so ModelAssigner picks the right model from cards.toml
-/// at Stage 3, instead of hardcoding obsolete model names.
-/// Role selection respects ROLE_ORDER precedence for semantic coherence.
+/// Uses Thompson sampling on `MutationStats` to pick the operator most likely
+/// to succeed (Fix 1). Operators that produce valid topologies get sampled more.
+/// Uses empty model_id ("") so ModelAssigner picks from cards.toml at Stage 3.
+/// Role selection respects tier ordering for semantic coherence (Fix 2).
 pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> MutationResult {
+    apply_mutation_with_stats(graph, rng, &MutationStats::new())
+}
+
+/// Apply a random mutation using Thompson sampling from `stats`.
+/// Returns the operator index used (for recording outcome) and the result.
+pub fn apply_mutation_tracked<R: Rng>(
+    graph: TopologyGraph,
+    rng: &mut R,
+    stats: &MutationStats,
+) -> (u32, MutationResult) {
     let node_count = graph.node_count();
 
-    // If graph is empty or has only 1 node, limit to add_node.
+    if node_count == 0 {
+        let role = ALL_ROLES[rng.random_range(0..ALL_ROLES.len())];
+        let system: u8 = rng.random_range(1..=3);
+        return (0, add_node_at(graph, role, "", system, None));
+    }
+
+    let mutation_idx = stats.sample_operator(rng);
+    let result = apply_mutation_with_stats(graph, rng, stats);
+    (mutation_idx, result)
+}
+
+fn apply_mutation_with_stats<R: Rng>(
+    graph: TopologyGraph,
+    rng: &mut R,
+    stats: &MutationStats,
+) -> MutationResult {
+    let node_count = graph.node_count();
+
     if node_count == 0 {
         let role = ALL_ROLES[rng.random_range(0..ALL_ROLES.len())];
         let system: u8 = rng.random_range(1..=3);
         return add_node_at(graph, role, "", system, None);
     }
 
-    // Choose a mutation (0-6).
-    let mutation_idx = rng.random_range(0u32..7);
+    // Thompson-sample the best operator
+    let mutation_idx = stats.sample_operator(rng);
 
     match mutation_idx {
         0 => {

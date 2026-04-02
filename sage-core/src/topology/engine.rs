@@ -24,7 +24,7 @@ use super::cma_me::{CmaEmitter, DimensionBounds};
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mcts::MctsSearcher;
-use super::mutations::{apply_random_mutation, MutationResult};
+use super::mutations::{apply_random_mutation, apply_mutation_tracked, MutationResult, MutationStats};
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;
 use super::topology_graph::TopologyGraph;
@@ -95,6 +95,10 @@ pub struct TopologyEngine {
     /// Number of outcomes recorded since the last `evolve()` call.
     /// Used by `should_evolve()` to enforce a cooldown between evolution passes.
     outcomes_since_last_evolve: usize,
+    /// Thompson sampling stats per mutation operator (Fix 1).
+    /// Tracks success rates to prefer operators that produce valid topologies.
+    /// Mutex for thread-safe interior mutability — stats updated in &self methods.
+    mutation_stats: std::sync::Mutex<MutationStats>,
 }
 
 impl TopologyEngine {
@@ -119,6 +123,7 @@ impl TopologyEngine {
             topology_cache: HashMap::new(),
             last_decision_id: None,
             outcomes_since_last_evolve: 0,
+            mutation_stats: std::sync::Mutex::new(MutationStats::new()),
         }
     }
 
@@ -434,23 +439,34 @@ impl TopologyEngine {
         let graph = best.graph.clone();
         let mut rng = rand::rng();
 
-        match apply_random_mutation(graph, &mut rng) {
+        let stats = self.mutation_stats.lock().unwrap();
+        let (op_idx, result) = apply_mutation_tracked(graph, &mut rng, &stats);
+        drop(stats);
+
+        match result {
             MutationResult::Success(mutated) => {
-                // Verify the mutation result
                 let vr = self.verifier.verify(&mutated);
                 if vr.valid {
-                    info!(parent_quality = best.quality, "mutation_success");
+                    self.mutation_stats.lock().unwrap().record(op_idx as usize, true);
+                    info!(
+                        parent_quality = best.quality,
+                        operator = super::mutations::OPERATOR_NAMES[op_idx as usize],
+                        stats = %self.mutation_stats.lock().unwrap().summary(),
+                        "mutation_success"
+                    );
                     Some(GenerateResult {
                         topology: mutated,
                         source: TopologySource::Mutation,
-                        confidence: best.quality * 0.8, // discount for mutation uncertainty
+                        confidence: best.quality * 0.8,
                     })
                 } else {
+                    self.mutation_stats.lock().unwrap().record(op_idx as usize, false);
                     debug!(errors = ?vr.errors, "mutation_failed_verification");
                     None
                 }
             }
             MutationResult::Invalid(reason) => {
+                self.mutation_stats.lock().unwrap().record(op_idx as usize, false);
                 debug!(reason = %reason, "mutation_invalid");
                 None
             }

@@ -9,7 +9,7 @@ use std::time::Instant;
 use rand::Rng;
 use tracing::{debug, info_span};
 
-use crate::topology::mutations::apply_random_mutation;
+use crate::topology::mutations::{apply_mutation_tracked, MutationStats};
 use crate::topology::topology_graph::TopologyGraph;
 use crate::topology::verifier::HybridVerifier;
 
@@ -113,7 +113,17 @@ impl MctsSearcher {
     }
 
     /// Run MCTS search starting from root topology. Returns best topology found.
+    /// Uses `mutation_stats` for Thompson-sampled operator selection.
     pub fn search(&self, root: TopologyGraph) -> Option<TopologyGraph> {
+        self.search_with_stats(root, &MutationStats::new())
+    }
+
+    /// Run MCTS search with external mutation stats for Thompson sampling.
+    pub fn search_with_stats(
+        &self,
+        root: TopologyGraph,
+        mutation_stats: &MutationStats,
+    ) -> Option<TopologyGraph> {
         let _span = info_span!(
             "mcts.search",
             max_simulations = self.max_simulations,
@@ -136,7 +146,7 @@ impl MctsSearcher {
             let path = self.select(&tree);
 
             // 2. EXPAND: at the selected leaf, mutate to create a new child and score it.
-            let leaf_quality = self.expand_and_rollout(&mut tree, &path, &mut rng);
+            let leaf_quality = self.expand_and_rollout(&mut tree, &path, &mut rng, mutation_stats);
 
             // 3. BACKPROPAGATE: update visit counts and qualities up the path.
             self.backpropagate(&mut tree, &path, leaf_quality);
@@ -181,16 +191,19 @@ impl MctsSearcher {
 
     /// EXPAND + ROLLOUT: navigate to the node at `path`, apply a random mutation
     /// to create a new child, score it with the rollout heuristic.
-    fn expand_and_rollout<R: Rng>(&self, tree: &mut MctsNode, path: &[usize], rng: &mut R) -> f64 {
+    fn expand_and_rollout<R: Rng>(
+        &self, tree: &mut MctsNode, path: &[usize], rng: &mut R,
+        mutation_stats: &MutationStats,
+    ) -> f64 {
         // Navigate to the leaf node.
         let mut current = tree;
         for &idx in path {
             current = &mut current.children[idx];
         }
 
-        // Apply a random mutation to generate a new child topology.
+        // Apply a Thompson-sampled mutation to generate a new child topology.
         let parent_topology = current.topology.clone();
-        let mutated = apply_random_mutation(parent_topology, rng);
+        let (_op_idx, mutated) = apply_mutation_tracked(parent_topology, rng, mutation_stats);
 
         match mutated {
             crate::topology::mutations::MutationResult::Success(new_topology) => {
