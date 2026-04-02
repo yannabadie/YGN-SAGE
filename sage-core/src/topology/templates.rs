@@ -728,6 +728,75 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
 // ---------------------------------------------------------------------------
 // TemplateStore
 // ---------------------------------------------------------------------------
+// 12. FormalSolver: Formalizer (LLM) → Solver (Rust deterministic)
+// ---------------------------------------------------------------------------
+
+/// 2-node formal solver topology: LLM formalizes, Rust solves.
+///
+/// The formalizer node translates natural language into a list of equations
+/// (variable = expression, one per line). The solver node parses these
+/// equations and evaluates them deterministically via `solve_equation_system()`.
+///
+/// Based on SatLM (NeurIPS 2023): separating formalization (LLM's strength)
+/// from solving (deterministic computation) gives +23% on hard math.
+/// Generic — works for any math problem, not just iGSM.
+pub fn formal_solver(model_id: &str) -> TopologyGraph {
+    let mut g = TopologyGraph::try_new("formal_solver").unwrap();
+
+    // Formalizer (LLM): translates NL to equations
+    let mut formalizer = TopologyNode::new(
+        "formalizer".into(),
+        "".into(),
+        2, // S2 reasoner — needs to understand the problem
+        vec!["reasoning".into(), "math".into()],
+        0,
+        1.0,
+        120.0,
+    );
+    formalizer.prompt = concat!(
+        "You are a math formalizer. Convert this word problem into a system of equations.\n",
+        "Rules:\n",
+        "- Write ONE equation per line in the format: variable_name = expression\n",
+        "- Use lowercase with underscores for variable names (e.g., zoo_a_pelican)\n",
+        "- Use +, -, * operators and parentheses\n",
+        "- Reference other variables by name\n",
+        "- On the LAST line, write: ANSWER = variable_name (the variable the question asks for)\n",
+        "- Output ONLY equations, no explanation\n",
+        "\n",
+        "Example:\n",
+        "x = 13\n",
+        "y = x + 5\n",
+        "z = 2 * y\n",
+        "ANSWER = z",
+    ).to_string();
+
+    // Solver (deterministic): evaluates equations via Rust
+    let mut solver = TopologyNode::new(
+        "solver".into(),
+        "".into(),
+        1, // S1 fast — no LLM call, pure computation
+        vec!["math".into()],
+        0,
+        0.1, // Very cheap
+        5.0, // Very fast
+    );
+    solver.prompt = SINK_NODE_PROMPT.to_string();
+
+    let fi = g.add_node(formalizer);
+    let si = g.add_node(solver);
+
+    g.try_add_edge(fi, si, TopologyEdge::control()).unwrap();
+    let mut mapping = HashMap::new();
+    mapping.insert("equations".to_string(), "input".to_string());
+    g.try_add_edge(fi, si, TopologyEdge::message(Some(mapping)))
+        .unwrap();
+
+    g
+}
+
+// ---------------------------------------------------------------------------
+// TemplateStore
+// ---------------------------------------------------------------------------
 
 /// Registry that creates topologies from template names.
 pub struct TemplateStore;
@@ -747,6 +816,7 @@ impl TemplateStore {
             "robust" => Ok(robust(model_id, 3)),
             "horizon_pipeline" | "horizon-pipeline" => Ok(horizon_pipeline(model_id, 3)),
             "parallel_fanout" | "parallel-fanout" => Ok(parallel_fanout(model_id, 5)),
+            "formal_solver" | "formal-solver" => Ok(formal_solver(model_id)),
             _ => Err(format!("Unknown template: {}", template_name)),
         }
     }
@@ -765,6 +835,7 @@ impl TemplateStore {
             "robust",
             "horizon_pipeline",
             "parallel_fanout",
+            "formal_solver",
         ]
     }
 }
@@ -917,7 +988,7 @@ mod tests {
     #[test]
     fn test_template_store_available() {
         let names = TemplateStore::available();
-        assert_eq!(names.len(), 11);
+        assert_eq!(names.len(), 12);
     }
 
     // ── New MASBENCH-axis templates ──────────────────────────────────────

@@ -27,6 +27,9 @@ sage-python/logs/
 .vscode/
 *.swp
 
+# Meta-Harness search workspace
+.sage-meta-harness/
+
 # Environment
 .env
 .env.local

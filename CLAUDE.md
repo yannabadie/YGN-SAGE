@@ -42,6 +42,17 @@ python -m sage.bench --type ablation --limit 50
 pip install -e ".[training]"
 bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
 bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
+
+# Meta-Harness (harness optimization — arXiv 2603.28052)
+# All commands from C:\Code\YGN-SAGE root. Workspace defaults to ~/.sage-meta-harness/
+# Use -w .sage-meta-harness to keep workspace inside the project
+python -m sage.meta_harness init                    # Create workspace
+python -m sage.meta_harness evaluate baseline        # Establish baseline scores
+python -m sage.meta_harness propose                  # Generate candidate template
+python -m sage.meta_harness evaluate <id>            # Score a candidate
+python -m sage.meta_harness status                   # Leaderboard
+python -m sage.meta_harness apply                    # Apply best to production
+python -m sage.meta_harness.auto_propose -n 10       # Automated search (10 iterations)
 ```
 
 ## Current State (April 1, 2026)
@@ -62,3 +73,4 @@ bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 - `architecture.md` — pillars, pipeline, competitors, benchmarks
 - `development.md` — build/test/bench commands, what NOT to benchmark
 - `research-decisions.md` — paper-backed decisions, DROPPED items
+- `meta-harness.md` — Meta-Harness harness optimization rules (arXiv 2603.28052)

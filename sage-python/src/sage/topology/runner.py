@@ -307,6 +307,73 @@ class TopologyRunner:
         self._node_outputs[node_idx] = output
         return output
 
+    async def _execute_solver_node(
+        self, node_idx: int, task: str, context_override: str | None = None,
+    ) -> str:
+        """Execute a formal solver node — Rust deterministic, no LLM call.
+
+        Parses equations from predecessor output (formalizer LLM), solves via
+        SmtVerifier.solve_equations(), returns the ANSWER variable value.
+        Based on SatLM (NeurIPS 2023): formalization + solving separation.
+        """
+        import time as _time
+
+        node = self.graph.get_node(node_idx)
+        role = getattr(node, "role", f"node-{node_idx}")
+
+        context = (
+            context_override
+            if context_override is not None
+            else self._gather_predecessor_context(node_idx)
+        )
+
+        t0 = _time.monotonic()
+
+        # Parse equations from the formalizer's output
+        equations = []
+        answer_var = None
+        source = context if context else task
+
+        for line in source.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if "=" in line and not line.startswith("="):
+                parts = line.split("=", 1)
+                var = parts[0].strip().lower().replace(" ", "_")
+                expr = parts[1].strip()
+                if var == "answer":
+                    answer_var = expr.strip().lower().replace(" ", "_")
+                else:
+                    equations.append((var, expr))
+
+        output = ""
+        if equations:
+            try:
+                from sage_core import SmtVerifier
+                solved = SmtVerifier.solve_equations(equations)
+                if answer_var and answer_var in solved:
+                    output = str(solved[answer_var])
+                elif solved:
+                    # Return last solved value as fallback
+                    last_key = list(solved.keys())[-1]
+                    output = str(solved[last_key])
+                else:
+                    output = "SOLVER: no variables resolved"
+            except (ImportError, RuntimeError) as exc:
+                output = f"SOLVER_ERROR: {exc}"
+        else:
+            output = "SOLVER: no equations found in input"
+
+        latency_ms = (_time.monotonic() - t0) * 1000
+        log.info(
+            "Solver node %d (%s) completed: %d equations, answer=%s (%.1fms)",
+            node_idx, role, len(equations), output[:20], latency_ms,
+        )
+
+        self._node_outputs[node_idx] = output
+        return output
+
     async def _execute_node(
         self, node_idx: int, task: str, context_override: str | None = None,
     ) -> str:
@@ -328,6 +395,10 @@ class TopologyRunner:
         node_type = getattr(node, "node_type", "llm")
         if node_type == "code":
             return await self._execute_code_node(node_idx, task, context_override)
+
+        # Formal solver node: parse equations from predecessor, solve via Rust
+        if node_type == "solver" or getattr(node, "role", "") == "solver":
+            return await self._execute_solver_node(node_idx, task, context_override)
 
         role = getattr(node, "role", f"node-{node_idx}")
         caps = getattr(node, "required_capabilities", [])

@@ -17,6 +17,3 @@ pub use smt::*;
 #[cfg(all(feature = "smt", feature = "tool-executor"))]
 pub mod quality_labeler;
 
-// iGSM deterministic parser — requires SMT (uses solve_equation_system)
-#[cfg(feature = "smt")]
-pub mod igsm_parser;

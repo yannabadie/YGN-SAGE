@@ -87,7 +87,8 @@ impl TopologyExecutor {
             | TopologyTemplate::Brainstorming
             | TopologyTemplate::Robust
             | TopologyTemplate::HorizonPipeline
-            | TopologyTemplate::ParallelFanout => ExecutionMode::Static,
+            | TopologyTemplate::ParallelFanout
+            | TopologyTemplate::FormalSolver => ExecutionMode::Static,
             TopologyTemplate::AVR
             | TopologyTemplate::Hub
             | TopologyTemplate::Debate

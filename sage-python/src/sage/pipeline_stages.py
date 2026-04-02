@@ -154,6 +154,11 @@ def select_macro_topology(features: DAGFeatures, system: int = 2, domain: str = 
       for tasks where cross-validation via majority voting adds value.
     - The original 4 categories remain as fallbacks.
     """
+    # Math with low parallelism: LLM formalizes → Rust solves exactly
+    # Based on SatLM (NeurIPS 2023): +23% on hard math via formalization/solving split
+    if domain == "math" and features.omega <= 1:
+        return "formal_solver"
+
     # Deep sequential chain: many dependent steps, no parallelism
     # → horizon_pipeline excels at chaining intermediate results
     if features.delta > _THETA_DELTA and features.omega <= 1:
