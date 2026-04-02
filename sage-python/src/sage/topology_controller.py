@@ -43,6 +43,7 @@ class TopologyController:
     THETA_PRUNE = 0.2
     MAX_RETRIES = 2
     MAX_REROUTES = 1
+    MAX_GATE_TURNS = 2  # Multi-turn refinement limit (MALT arXiv 2412.01928)
     MAX_SPAWNS = 3
 
     def __init__(
@@ -62,6 +63,7 @@ class TopologyController:
         self._event_bus = event_bus
         self._node_retries: dict[int, int] = {}
         self._node_qualities: dict[int, float] = {}
+        self._gate_loops: dict[int, int] = {}  # Multi-turn refinement tracker
         self._reroute_count = 0
         self._spawn_count = 0
         self._abstain_count = 0
@@ -137,6 +139,34 @@ class TopologyController:
         # 1. Good quality -> continue
         if quality >= self.THETA_GOOD:
             return AdaptationDecision(action="continue", target_node=node_idx)
+
+        # 1.5. Medium quality + back-edge available -> open_gate for multi-turn refinement
+        # Based on MALT (arXiv 2412.01928): Generation→Verification→Refinement loop
+        gate_turns = self._gate_loops.get(node_idx, 0)
+        if (self.THETA_CRITICAL <= quality < self.THETA_GOOD
+                and gate_turns < self.MAX_GATE_TURNS
+                and topology is not None):
+            # Check if node has a back-edge predecessor (gated control edge)
+            try:
+                predecessors = topology.get_predecessors(node_idx)
+                if predecessors:
+                    # Use first predecessor as gate source for refinement
+                    gate_source = node_idx
+                    gate_target = predecessors[0]
+                    self._gate_loops[node_idx] = gate_turns + 1
+                    self._emit("OPEN_GATE", {
+                        "node": node_idx, "turn": gate_turns + 1,
+                        "quality": quality,
+                    })
+                    return AdaptationDecision(
+                        action="open_gate",
+                        target_node=node_idx,
+                        gate_source=gate_source,
+                        gate_target=gate_target,
+                        reason=f"refinement needed (quality={quality:.2f}, turn {gate_turns + 1}/{self.MAX_GATE_TURNS})",
+                    )
+            except (AttributeError, IndexError):
+                pass  # No predecessors or graph API unavailable
 
         # 2. Critical quality -> upgrade model
         retries = self._node_retries.get(node_idx, 0)

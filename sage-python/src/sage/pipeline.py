@@ -592,41 +592,10 @@ class CognitiveOrchestrationPipeline:
         except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
-        # Bandit quality feedback: Thompson-sampled penalty (not hard exclusion).
-        # Bad models get low Thompson draws (~0.05) → reduced budget → naturally
-        # reassigned to cheaper models. But they retain ~0.1% chance of retry,
-        # preserving exploration per Thompson Sampling theory.
-        # Based on MonoScale (arXiv 2601.23219): trust-region Thompson sampling.
-        if self.bandit and ctx.topology and hasattr(self.bandit, 'sample_quality'):
-            template_type = getattr(ctx.topology, 'template_type', '')
-            if self.bandit.arm_count() > 5:
-                for i in range(ctx.topology.node_count() if hasattr(ctx.topology, 'node_count') else 0):
-                    node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
-                    if not node:
-                        continue
-                    model_id = getattr(node, 'model_id', '')
-                    if not model_id:
-                        continue
-                    # Thompson draw — low for bad models, high for good ones
-                    quality_sample = self.bandit.sample_quality(model_id, template_type)
-                    if quality_sample < 0.3:
-                        # Soft reassignment: reduce budget proportionally to quality
-                        # This forces ModelAssigner toward cheaper/faster alternatives
-                        # without hard-excluding — preserving exploration
-                        reduced_budget = ctx.budget * max(quality_sample, 0.1)
-                        try:
-                            self.assigner.assign_single_node(
-                                ctx.topology, i, ctx.domain, reduced_budget,
-                            )
-                            new_id = getattr(ctx.topology.get_node(i), 'model_id', '')
-                            if new_id != model_id:
-                                log.info(
-                                    "Bandit soft reassign node %d: %s → %s (quality_sample=%.2f)",
-                                    i, model_id, new_id, quality_sample,
-                                )
-                                ctx.assignments[i] = new_id
-                        except (ImportError, RuntimeError):
-                            pass
+        # Bandit feedback: Thompson sampling already handles exploration/exploitation
+        # via the Beta posterior. No pre-execution budget reduction — it creates a
+        # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
+        # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
         # Filter out models assigned to unavailable providers (circuit breaker open)
         if self.provider_pool and hasattr(self.provider_pool, 'is_available'):

@@ -50,6 +50,7 @@ class LLMConfig:
     provider: str
     model: str
     max_tokens: int = 8192
+    context_window: int = 128000  # Input token limit (NOT output limit)
     temperature: float = 0.0
     top_p: float = 1.0
     api_key: str | None = None

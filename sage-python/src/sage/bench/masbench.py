@@ -235,7 +235,7 @@ class MASBenchAblation:
             t0 = time.perf_counter()
             try:
                 from sage.llm.base import Message, Role, LLMConfig
-                bare_config = LLMConfig(provider=cfg["provider"], model=bare_model, max_tokens=256)
+                bare_config = LLMConfig(provider=cfg["provider"], model=bare_model, max_tokens=2048)
                 response = await provider.generate(
                     messages=[Message(role=Role.USER, content=question)],
                     config=bare_config,

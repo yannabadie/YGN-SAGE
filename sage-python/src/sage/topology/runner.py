@@ -362,10 +362,9 @@ class TopologyRunner:
             provider, config = self._llm, self._config
 
         # Context gate: if payload exceeds model window, compress via summarization
+        # Uses context_window (input limit, e.g. 128K) NOT max_tokens (output limit, e.g. 8K)
         total_chars = sum(len(m.content) for m in messages)
-        context_window = getattr(config, 'context_window', 0) or getattr(node, 'max_wall_time_s', 0) * 0 or 128000
-        if hasattr(config, 'max_tokens') and config.max_tokens:
-            context_window = config.max_tokens
+        context_window = getattr(config, 'context_window', 0) or 128000
         estimated_tokens = total_chars // 4
         if estimated_tokens > context_window * 0.85:
             # Compress the context message to fit

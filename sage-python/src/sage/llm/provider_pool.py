@@ -136,7 +136,8 @@ class ProviderPool:
                 )
 
             provider_name: str = getattr(profile, "provider", "")
-            config = LLMConfig(provider=provider_name, model=model_id)
+            cw = getattr(profile, "context_window", 128000) or 128000
+            config = LLMConfig(provider=provider_name, model=model_id, context_window=cw)
 
             provider = self._providers.get(provider_name)
             circuit_open = False
