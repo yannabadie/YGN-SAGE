@@ -57,6 +57,26 @@ async def tool_discover_papers(
 
     since_date = date.fromisoformat(since) if since else date.today() - timedelta(days=7)
     candidates = await _discover(since=since_date, query=query, domains=domains)
+
+    # Persist discovered papers to local store so curate/verify can find them.
+    # Without this, discover returns IDs that curate can't resolve.
+    try:
+        components = _get_pipeline_components()
+        store = components["store"]
+        for c in candidates[:max_results]:
+            store.upsert_paper({
+                "paper_id": c.paper_id,
+                "title": c.title,
+                "authors": c.authors,
+                "abstract": c.abstract,
+                "source": c.source,
+                "domain": c.domain,
+                "published": c.published.isoformat(),
+                "citation_count": c.citation_count,
+            })
+    except (AttributeError, TypeError):
+        pass  # store may not support upsert — results still returned
+
     return [
         {
             "paper_id": c.paper_id,

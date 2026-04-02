@@ -6,8 +6,17 @@ import time
 from typing import Dict, Any, List
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../sage-python/src')))
-import sage_core
-from sage.evolution.ebpf_evaluator import EbpfEvaluator
+try:
+    import sage_core
+except ImportError:
+    sage_core = None  # type: ignore[assignment]
+
+# EbpfEvaluator was removed — guard against missing module
+try:
+    from sage.evolution.ebpf_evaluator import EbpfEvaluator
+except ImportError:
+    EbpfEvaluator = None  # type: ignore[assignment,misc]
+
 from mcp_use.server import MCPServer
 
 log = logging.getLogger(__name__)
@@ -208,4 +217,6 @@ if __name__ == "__main__":
     print(" Ready to serve Claude, Cursor, and OpenAI Agents")
     print("===================================================================")
     port = int(os.environ.get("PORT", 8080))
-    server.run(transport="streamable-http", host="0.0.0.0", port=port, debug=True)
+    host = os.environ.get("HOST", "127.0.0.1")  # localhost by default, not 0.0.0.0
+    debug = os.environ.get("DEBUG", "").lower() in ("1", "true")
+    server.run(transport="streamable-http", host=host, port=port, debug=debug)

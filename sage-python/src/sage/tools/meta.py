@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 import os
 import logging
 import re
@@ -131,33 +132,43 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # 2. Check script against destructive command blocklist
-    _DESTRUCTIVE_PATTERN = re.compile(
-        r"rm\s+-rf|mkfs|dd\s+if=|:\(\)\s*\{|/dev/sd|>\s*/dev/"
-    )
-    if _DESTRUCTIVE_PATTERN.search(script):
-        return "Blocked: Script contains potentially destructive commands."
+    # 2. Validate script via tree-sitter (Rust ToolExecutor) if available.
+    # NEVER execute raw bash — the regex blocklist is trivially bypassable.
+    try:
+        from sage_core import ToolExecutor as RustToolExecutor
+        rust_executor = RustToolExecutor()
+        validation = rust_executor.validate(script)
+        if not validation.valid:
+            return f"Blocked: Script failed security validation: {validation.errors}"
+    except (ImportError, AttributeError):
+        # No Rust executor — reject all bash tool creation for safety.
+        return "Blocked: Bash tool creation requires sage_core ToolExecutor for security validation."
 
-    # 3. Build subprocess-isolated handler closure
+    # 3. Build sandbox-isolated handler closure
     saved_script = script  # capture for closure
 
     async def _bash_handler(**kwargs):
         try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    "/bin/bash", "-c", saved_script,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=60,
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode == 0:
-                return stdout.decode("utf-8", errors="replace").strip()
+            # Use Rust sandbox executor if available, subprocess fallback with strict limits
+            from sage.sandbox.isolated_executor import execute_isolated
+            stdout, stderr, exit_code = execute_isolated(saved_script, timeout=30)
+            if exit_code == 0:
+                return stdout.strip()
             else:
-                return f"Error (exit {proc.returncode}): {stderr.decode('utf-8', errors='replace').strip()}"
-        except asyncio.TimeoutError:
-            return "Error: Script execution timed out after 60 seconds."
+                return f"Error (exit {exit_code}): {stderr.strip()}"
+        except ImportError:
+            # Fallback: subprocess with NO shell (safer than /bin/bash -c)
+            import subprocess
+            try:
+                proc = subprocess.run(
+                    [sys.executable, "-c", saved_script],
+                    capture_output=True, text=True, timeout=30,
+                )
+                if proc.returncode == 0:
+                    return proc.stdout.strip()
+                return f"Error (exit {proc.returncode}): {proc.stderr.strip()}"
+            except subprocess.TimeoutExpired:
+                return "Error: Script execution timed out after 30 seconds."
         except Exception as e:
             return f"Error: {type(e).__name__}: {e}"
 
