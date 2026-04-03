@@ -353,7 +353,7 @@ class PolicyModelConfig:
     """Configuration for a topology policy model variant."""
     repo: str
     base_model: str
-    chat_template: str  # "phi4" or "qwen3"
+    chat_template: str  # "phi4", "qwen3", "toolcall", or "gemma4"
     max_new_tokens: int
     trust_remote_code: bool = True
 
@@ -382,6 +382,14 @@ POLICY_V1 = PolicyModelConfig(
     trust_remote_code=False,
 )
 
+POLICY_GEMMA4 = PolicyModelConfig(
+    repo="yannabadie/sage-topology-policy-gemma4",
+    base_model="google/gemma-4-26B-A4B-it",
+    chat_template="gemma4",
+    max_new_tokens=1024,
+    trust_remote_code=True,
+)
+
 _POLICY_CACHE_DIR = None  # Populated by download_policy_model()
 _ACTIVE_POLICY_CONFIG: PolicyModelConfig | None = None
 
@@ -402,12 +410,20 @@ def download_policy_model(cache_dir: str | None = None) -> tuple[str | None, Pol
 
     import os
 
-    # Priority 1: Local adapter path (for local Qwen3-4B training)
+    # Priority 1: Local adapter path
+    # SAGE_PATH6_MODEL_TYPE selects the config: "local" (default), "gemma4", etc.
     local_adapter = os.environ.get("SAGE_PATH6_ADAPTER")
+    model_type = os.environ.get("SAGE_PATH6_MODEL_TYPE", "local")
+    _TYPE_TO_CONFIG = {
+        "local": POLICY_LOCAL,
+        "gemma4": POLICY_GEMMA4,
+        "v2": POLICY_V2,
+        "v1": POLICY_V1,
+    }
     if local_adapter and os.path.isdir(local_adapter):
         _POLICY_CACHE_DIR = os.path.abspath(local_adapter)
-        _ACTIVE_POLICY_CONFIG = POLICY_LOCAL
-        _log.info("Path 6: using local adapter at %s", _POLICY_CACHE_DIR)
+        _ACTIVE_POLICY_CONFIG = _TYPE_TO_CONFIG.get(model_type, POLICY_LOCAL)
+        _log.info("Path 6: using %s adapter at %s", model_type, _POLICY_CACHE_DIR)
         return _POLICY_CACHE_DIR, _ACTIVE_POLICY_CONFIG
 
     try:
@@ -453,6 +469,17 @@ def _format_prompt(task: str, config: PolicyModelConfig, system: int = 2) -> str
             f"<|im_start|>system\n{_TOOLCALL_SYSTEM_PROMPT}<|im_end|>\n"
             f"<|im_start|>user\n{user_msg}<|im_end|>\n"
             "<|im_start|>assistant\n"
+        )
+
+    if config.chat_template == "gemma4":
+        # Gemma4: <|turn> delimiters, same <tool_call> JSON output format
+        system_hint = {1: "simple", 2: "moderate", 3: "complex"}
+        complexity = system_hint.get(system, "moderate")
+        user_msg = f"[Complexity: {complexity} (S{system})]\n\n{task[:2000]}"
+        return (
+            f"<|turn>system\n{_TOOLCALL_SYSTEM_PROMPT}<turn|>\n"
+            f"<|turn>user\n{user_msg}<turn|>\n"
+            "<|turn>model\n"
         )
 
     system_msg = (
@@ -514,7 +541,20 @@ def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
                     local_files_only=True,
                 )
 
-            if config.chat_template == "toolcall":
+            if config.chat_template == "gemma4":
+                # Gemma4-26B-A4B: BF16 + LoRA adapter (H200 needed)
+                from peft import PeftModel
+                import os as _os
+                base_path = _os.environ.get("SAGE_PATH6_MODEL", config.base_model)
+                base = AutoModelForCausalLM.from_pretrained(
+                    base_path,
+                    torch_dtype=torch.bfloat16,
+                    trust_remote_code=config.trust_remote_code,
+                    device_map="auto",
+                    attn_implementation="sdpa",
+                )
+                model = PeftModel.from_pretrained(base, adapter_path)
+            elif config.chat_template == "toolcall":
                 # Local Qwen3-4B: base model in 4-bit NF4 + LoRA adapter
                 from peft import PeftModel
                 from transformers import BitsAndBytesConfig
@@ -568,6 +608,9 @@ def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
 
     prompt = _format_prompt(task, _ACTIVE_POLICY_CONFIG, system)
     inputs = _POLICY_TOKENIZER(prompt, return_tensors="pt").to(_POLICY_MODEL.device)
+    # Gemma4 requires mm_token_type_ids even for text-only inputs
+    if _ACTIVE_POLICY_CONFIG.chat_template == "gemma4":
+        inputs["mm_token_type_ids"] = torch.zeros_like(inputs["input_ids"])
 
     try:
         with torch.no_grad():
@@ -587,7 +630,8 @@ def generate_topology_from_policy(task: str, system: int = 2) -> dict | None:
 
     # Parse output based on format
     data = None
-    if _ACTIVE_POLICY_CONFIG.chat_template == "toolcall":
+    if _ACTIVE_POLICY_CONFIG.chat_template in ("toolcall", "gemma4"):
+        # Both Qwen3 and Gemma4 are SFT-trained to output <tool_call> JSON
         data = _parse_toolcall(raw)
         if data is None:
             _log.debug("Path 6: <tool_call> parse failed — fallback to template")
