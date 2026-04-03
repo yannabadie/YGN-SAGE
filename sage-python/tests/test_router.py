@@ -34,9 +34,10 @@ def test_router_env_override():
 
 
 def test_router_codex_provider():
+    """codex tier routes to OpenAI API (no CLI providers)."""
     from sage.llm.router import ModelRouter
     config = ModelRouter.get_config("codex")
-    assert config.provider == "codex"
+    assert config.provider == "openai"
 
 
 def test_router_critical_is_reasoner():
