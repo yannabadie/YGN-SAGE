@@ -53,7 +53,7 @@ TRAINING_DIR="/home/yann/gemma4_training"
 SFT_OUTPUT="${TRAINING_DIR}/sft_checkpoint"
 GRPO_OUTPUT="${TRAINING_DIR}/grpo_checkpoint"
 MERGED_OUTPUT="/home/yann/gemma4_merged"
-SFT_DATA="${SAGE_PYTHON}/data/v2_final.jsonl"
+SFT_DATA="${SAGE_PYTHON}/data/v2_gemma4_balanced.jsonl"
 HOLDOUT="${SAGE_PYTHON}/experiments/holdout_50_toolcall.json"
 METRICS_DIR="${TRAINING_DIR}/metrics"
 LOG_DIR="${TRAINING_DIR}/logs"
@@ -86,6 +86,33 @@ echo "SFT data:    ${SFT_DATA}"
 echo "Output:      ${TRAINING_DIR}"
 echo "Smoke:       ${SMOKE}"
 echo ""
+
+# ════════════════════════════════════════════════════════════
+# SETUP: User yann + Claude Code (monitoring actif)
+# ════════════════════════════════════════════════════════════
+if ! id -u yann &>/dev/null 2>&1; then
+    echo "[$(ts)] Creating user yann for Claude Code monitoring..."
+    useradd -m -s /bin/bash yann 2>/dev/null || true
+    # Grant sudo without password for training management
+    echo "yann ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/yann 2>/dev/null || true
+fi
+
+# Install Claude Code for monitoring (if not already installed)
+if ! command -v claude &>/dev/null; then
+    echo "[$(ts)] Installing Claude Code for active monitoring..."
+    npm install -g @anthropic-ai/claude-code 2>&1 | tail -3
+fi
+
+# Setup Claude Code for user yann with skip-permissions (monitoring mode)
+if [ -d /home/yann ] && [ ! -f /home/yann/.claude/.setup_done ]; then
+    echo "[$(ts)] Configuring Claude Code for user yann (monitoring mode)..."
+    su - yann -c "mkdir -p /home/yann/.claude"
+    # Copy the pod briefing as CLAUDE.md for the monitoring Claude
+    cp "${REPO_ROOT}/POD_BRIEFING_GEMMA4.md" /home/yann/.claude/CLAUDE.md 2>/dev/null || true
+    touch /home/yann/.claude/.setup_done
+    echo "[$(ts)] Claude Code ready. Start monitoring with:"
+    echo "    su - yann -c 'cd ${REPO_ROOT} && claude --dangerously-skip-permissions'"
+fi
 
 # ════════════════════════════════════════════════════════════
 # SETUP: Install deps + download model (first run only)

@@ -48,8 +48,8 @@ Gemma4-26B-A4B-it est un MoE avec seulement 3.8B paramètres actifs par forward 
 Le modèle apprend à générer `<tool_call>` JSON (format SAGE) au lieu de son format natif.
 
 ### Configuration
-- **Script** : `python scripts/train_gemma4_topology.py --sft-data data/v2_final.jsonl --sft-only`
-- **Dataset** : 8633 exemples (7063 single-turn + 1570 multi-turn)
+- **Script** : `python scripts/train_gemma4_topology.py --sft-data data/v2_gemma4_balanced.jsonl --sft-only`
+- **Dataset** : 8950 exemples rééquilibrés (5694 create_topology 64% + 1686 adapt 19% + 1570 multi-turn 18%)
 - **Epochs** : 2
 - **Learning rate** : 1e-5
 - **VRAM estimé** : ~66GB (model 50GB + LoRA + optimizer + activations)
@@ -73,7 +73,7 @@ python scripts/eval_reward_holdout_gemma4.py \
 Améliorer la qualité des topologies via reinforcement learning avec reward 5-signal.
 
 ### Configuration
-- **Script** : `SAGE_VERL_EXEC=0 SAGE_TRAINING_PHASE=C python scripts/train_gemma4_topology.py --adapter models/gemma4_topology/sft_checkpoint --data data/v2_final.jsonl`
+- **Script** : `SAGE_VERL_EXEC=0 SAGE_TRAINING_PHASE=C python scripts/train_gemma4_topology.py --adapter models/gemma4_topology/sft_checkpoint --data data/v2_gemma4_balanced.jsonl`
 - **K** : 4 rollouts
 - **Learning rate** : 3e-6
 - **Beta** : 0.0
