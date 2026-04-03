@@ -244,9 +244,7 @@ class ProviderConnector:
             except Exception as exc:
                 logger.warning("Provider %s discovery failed: %s", provider, exc)
 
-        # Codex CLI (subprocess-based, not API-based)
-        codex_models = self._discover_codex()
-        all_models.extend(codex_models)
+        # Codex CLI removed — all models use API providers only
 
         return all_models
 

@@ -15,6 +15,8 @@ Tier = Literal[
     "budget", "critical", "fallback",
 ]
 
+# All models use API providers — no CLI-based providers.
+# "codex"/"codex_max" tiers map to OpenAI API models, not Codex CLI.
 _HARDCODED = {
     "codex": "gpt-5.4",
     "codex_max": "gpt-5.4-pro",
@@ -29,8 +31,6 @@ _MAX_TOKENS = {
     "codex": 8192, "codex_max": 16384, "reasoner": 8192, "critical": 8192,
     "mutator": 4096, "budget": 2048, "fallback": 4096, "fast": 4096,
 }
-
-_CODEX_TIERS = {"codex", "codex_max"}
 
 
 class ModelRouter:
@@ -69,10 +69,8 @@ class ModelRouter:
         model = ModelRouter.MODELS.get(lookup_tier, _HARDCODED.get(lookup_tier, _HARDCODED["fast"]))
         max_tokens = _MAX_TOKENS.get(tier, 4096)
 
-        # Infer provider from model_id (Rust-first: model determines provider)
-        if tier in _CODEX_TIERS:
-            provider = "codex"
-        elif "deepseek" in model:
+        # Infer provider from model_id (all API-based, no CLI providers)
+        if "deepseek" in model:
             provider = "deepseek"
         elif "gpt-" in model or "o1" in model or "o3" in model:
             provider = "openai"
@@ -90,7 +88,7 @@ class ModelRouter:
             provider = "google"  # fallback
 
         extra: dict = {}
-        if tier == "codex_max":
+        if tier == "codex_max" or (tier == "critical" and "gpt-5" in model):
             extra["reasoning_effort"] = "xhigh"
 
         return LLMConfig(

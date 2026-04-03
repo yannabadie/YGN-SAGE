@@ -368,16 +368,11 @@ class AgentSystem:
         # 5. Fallback: legacy ModelRouter path (only used with Python router)
         if not self.rust_router:
             new_config = ModelRouter.get_config(decision.llm_tier)
-            if current_provider == "codex" and new_config.provider == "google":
-                pass  # Don't downgrade from Codex to Gemini
-            elif new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
+            if new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
                 pass  # Google unavailable, keep current
             else:
                 self.agent_loop.config.llm = new_config
-                if new_config.provider == "codex":
-                    from sage.llm.codex import CodexProvider
-                    self.agent_loop._llm = CodexProvider()
-                elif new_config.provider == "google":
+                if new_config.provider == "google":
                     from sage.llm.google import GoogleProvider
                     self.agent_loop._llm = GoogleProvider()
 
