@@ -8,8 +8,20 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../sage-python/src')))
 
 from sage.evolution.engine import EvolutionEngine, EvolutionConfig
-from sage.evolution.ebpf_evaluator import EbpfEvaluator
 from sage.evolution.population import Individual
+
+
+class _NoOpEvaluator:
+    """Stub evaluator replacing the removed EbpfEvaluator module."""
+
+    async def evaluate(self, bytecode: bytes):  # noqa: D401
+        """Return a minimal result compatible with EvolutionEngine."""
+
+        class _Result:
+            score = 0.0
+            metadata: dict = {}
+
+        return _Result()
 
 # SOTA: Real eBPF bytecode instead of mocked strings
 # base: mov64 r0, <SCORE> (b7 00 00 00 <XX> 00 00 00)
@@ -45,7 +57,7 @@ async def run_benchmark():
         hard_warm_start_threshold=100
     )
     
-    evaluator = EbpfEvaluator()
+    evaluator = _NoOpEvaluator()
     engine = EvolutionEngine(config=config, evaluator=evaluator)
     
     # Seed with real eBPF bytecode returning 0

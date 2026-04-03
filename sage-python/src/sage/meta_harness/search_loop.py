@@ -117,7 +117,7 @@ class MetaHarnessLoop:
 
         # Boot SAGE
         from sage.boot import boot_agent_system
-        system = await boot_agent_system()
+        system = boot_agent_system()
 
         # Patch pipeline
         from sage.meta_harness.patcher import HarnessPatcher
@@ -173,44 +173,23 @@ class MetaHarnessLoop:
         scores: dict[str, float], traces: list[dict[str, Any]],
     ) -> None:
         """Run MASBENCH with harness-patched pipeline."""
-        from sage.bench.masbench import MASBenchmark
+        from sage.bench.masbench import MASBenchBench
 
-        bench = MASBenchmark(system=system, axis=axis)
-
-        # Wrap pipeline.run to capture traces
-        if system.pipeline:
-            original_run = system.pipeline.run
-
-            async def _traced_run(task: str, budget_usd: float = 10.0) -> str:
-                result = await original_run(task, budget_usd)
-                traces.append({
-                    "task": task[:300],
-                    "result_preview": (result or "")[:500],
-                    "result_length": len(result) if result else 0,
-                    "config_id": config.id,
-                    "timestamp": time.time(),
-                })
-                return result
-
-            system.pipeline.run = _traced_run
+        bench = MASBenchBench(system=system, axis=axis)
 
         report = await bench.run(limit=limit)
 
         for r in report.results:
             scores[r.task_id] = 1.0 if r.passed else 0.0
-            # Enrich trace with per-task metadata
             traces.append({
                 "type": "task_result",
                 "task_id": r.task_id,
                 "passed": r.passed,
-                "system_used": r.system_used,
+                "system_used": getattr(r, "system_used", ""),
                 "latency_ms": r.latency_ms,
                 "cost_usd": r.cost_usd,
                 "error": r.error,
             })
-
-        if system.pipeline and hasattr(system.pipeline, 'run'):
-            system.pipeline.run = original_run  # type: ignore[possibly-undefined]
 
     async def _eval_bigcodebench(
         self, system: Any, config: HarnessConfig, patcher: Any,

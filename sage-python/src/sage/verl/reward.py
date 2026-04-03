@@ -266,7 +266,8 @@ def _score_structure(text: str) -> float:
         # V8 bonuses: template_type and model_tier
         if topo.get("template_type") in ("sequential", "parallel", "avr", "selfmoa", "hierarchical", "hub", "debate", "brainstorming"):
             score += 0.1
-        if all(isinstance(nd, dict) and nd.get("model_tier") in VALID_MODEL_TIERS for nd in nodes):
+        llm_nodes = [nd for nd in nodes if isinstance(nd, dict) and nd.get("node_type", "llm") == "llm"]
+        if llm_nodes and all(nd.get("model_tier") in VALID_MODEL_TIERS for nd in llm_nodes):
             score += 0.1
 
         # Undersized topology penalty

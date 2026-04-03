@@ -264,13 +264,13 @@ class TestTopologyConstruction:
         except ImportError:
             pytest.skip("sage_core not available")
 
-    def test_template_store_has_11(self):
+    def test_template_store_has_12(self):
         try:
             from sage_core import PyTemplateStore
 
             store = PyTemplateStore()
             names = store.available()
-            assert len(names) == 11
+            assert len(names) == 12
             assert "robust" in names
             assert "horizon_pipeline" in names
             assert "parallel_fanout" in names

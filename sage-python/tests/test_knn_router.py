@@ -109,7 +109,7 @@ class TestKnnRouterInit:
     def test_loads_npz(self, exemplar_npz, mock_embedder):
         router = KnnRouter(exemplar_path=exemplar_npz, embedder=mock_embedder)
         assert router.is_ready
-        assert router.exemplar_count == 50
+        assert router.exemplar_count == 60
 
     def test_corrupt_npz_graceful(self, tmp_path, mock_embedder):
         bad_path = tmp_path / "bad.npz"
@@ -192,7 +192,7 @@ class TestKnnBuildFromGroundTruth:
         ok = router.build_from_ground_truth(GT_PATH)
         assert ok
         assert router.is_ready
-        assert router.exemplar_count == 50
+        assert router.exemplar_count == 60
 
     def test_build_and_save(self, mock_embedder, tmp_path):
         router = KnnRouter(embedder=mock_embedder)
@@ -204,7 +204,7 @@ class TestKnnBuildFromGroundTruth:
         # Reload from saved file
         router2 = KnnRouter(exemplar_path=save_path, embedder=mock_embedder)
         assert router2.is_ready
-        assert router2.exemplar_count == 50
+        assert router2.exemplar_count == 60
 
     def test_build_refuses_hash(self, mock_hash_embedder):
         router = KnnRouter(embedder=mock_hash_embedder)

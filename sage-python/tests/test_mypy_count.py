@@ -26,7 +26,9 @@ from pathlib import Path
 # -1 orchestrator.py deleted (net +2).
 # Raised from 27 to 29: +1 Path 6 TopologyEdge import (pipeline.py),
 # +1 FrugalGPT cascade retry TopologyExecutor import (pipeline.py).
-_MAX_TYPE_IGNORES = 29
+# Raised from 29 to 36: +5 a2a_server.py new server imports (import-untyped),
+# +2 quality_estimator.py Rust imports (return type).
+_MAX_TYPE_IGNORES = 36
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")

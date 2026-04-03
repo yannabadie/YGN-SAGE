@@ -84,9 +84,17 @@ class TestPartialCredit:
     def test_partial_credit_bounded(self):
         from sage.verl.reward import _partial_credit
 
-        # Maximum partial credit: nodes + role + yaml_list + reasoning
-        score = _partial_credit("nodes:\n- role: coder\nreasoning: test\n- name: synth")
-        assert -0.3 <= score or score == -0.3, "Partial credit capped at -0.3"
+        # V8: Maximum partial credit requires tool_call markers + structure.
+        # YAML-only partial credit is bounded by available signal bonuses.
+        yaml_score = _partial_credit("nodes:\n- role: coder\nreasoning: test\n- name: synth")
+        assert yaml_score > -2.0, "YAML-like text should get some partial credit"
+        assert yaml_score <= -0.3, "YAML partial credit capped at -0.3"
+
+        # With tool_call markers, can reach the -0.3 cap
+        tool_call_score = _partial_credit(
+            "<tool_call>nodes:\n- role: coder\nreasoning: test\n- name: synth</tool_call>"
+        )
+        assert tool_call_score == -0.3, "Tool-call format partial credit should reach cap"
 
 
 class TestExecModeFallback:

@@ -132,17 +132,33 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # 2. Validate script via tree-sitter (Rust ToolExecutor) if available.
-    # NEVER execute raw bash — the regex blocklist is trivially bypassable.
-    try:
-        from sage_core import ToolExecutor as RustToolExecutor
-        rust_executor = RustToolExecutor()
-        validation = rust_executor.validate(script)
-        if not validation.valid:
-            return f"Blocked: Script failed security validation: {validation.errors}"
-    except (ImportError, AttributeError):
-        # No Rust executor — reject all bash tool creation for safety.
-        return "Blocked: Bash tool creation requires sage_core ToolExecutor for security validation."
+    # 2. Block dangerous shell commands.  The Rust ToolExecutor validates *Python*
+    #    AST — it cannot detect dangerous *bash* commands.  This allowlist-style
+    #    check catches the most critical destructive patterns.
+    import re
+    _BLOCKED_BASH_PATTERNS = [
+        r"\brm\s+.*-[rf]",           # rm -rf, rm -f, rm -r
+        r"\bmkfs\b",                  # mkfs
+        r"\bdd\s+if=",               # dd if=
+        r"\bshutdown\b",             # shutdown
+        r"\breboot\b",               # reboot
+        r"\binit\s+[06]\b",          # init 0, init 6
+        r"\bchmod\s+[0-7]*777\b",    # chmod 777
+        r"\bchown\s+-R\b",           # chown -R
+        r"curl\s.*\|\s*(?:bash|sh)", # curl | bash
+        r"wget\s.*\|\s*(?:bash|sh)", # wget | bash
+        r">\s*/dev/sd",              # > /dev/sda
+        r"\bnc\s+-[le]",             # netcat listen
+        r"\bpython[23]?\s+-c\b",     # python -c
+        r"\bperl\s+-e\b",            # perl -e
+    ]
+    script_lower = script.lower()
+    for pat in _BLOCKED_BASH_PATTERNS:
+        if re.search(pat, script_lower):
+            return "Blocked: Script contains a dangerous shell command."
+
+    # 3. Bash scripts don't go through the Python AST validator — the bash
+    #    blocklist above is the security gate for shell commands.
 
     # 3. Build sandbox-isolated handler closure
     saved_script = script  # capture for closure

@@ -11,11 +11,6 @@ try:
 except ImportError:
     sage_core = None  # type: ignore[assignment]
 
-# EbpfEvaluator was removed — guard against missing module
-try:
-    from sage.evolution.ebpf_evaluator import EbpfEvaluator
-except ImportError:
-    EbpfEvaluator = None  # type: ignore[assignment,misc]
 
 from mcp_use.server import MCPServer
 
@@ -43,8 +38,6 @@ server = MCPServer(
     description="Provides SOTA 2026 secure execution and formal verification for Enterprise AI Agents (ERP/MES integrations)."
 )
 
-# Instantiate core backend
-ebpf_evaluator = EbpfEvaluator()
 
 @server.tool()
 def z3_verify_sql_update(table: str, where_clause: str, update_values: Dict[str, Any]) -> Dict[str, Any]:
@@ -192,16 +185,11 @@ async def optimize_mes_schedule(objective: str, constraints: List[str]) -> Dict[
             "cnc_04_allocation": model[cnc_04].as_long() if model[cnc_04] else 0,
         }
         
-        # 2. Kernel-level fast execution via eBPF (mocking the compilation of the verified plan to bytecode)
-        optimal_bytecode = b"\xb7\x00\x00\x00\x2a\x00\x00\x00\x95\x00\x00\x00\x00\x00\x00\x00"
-        result = await ebpf_evaluator.evaluate(optimal_bytecode)
-        
         execution_latency_ms = (time.perf_counter() - start_time) * 1000
-        
+
         return {
             "status": "SUCCESS",
             "verified": True,
-            "optimal_score": result.score,
             "execution_latency_ms": round(execution_latency_ms, 4),
             "generated_plan_id": "MES_PLAN_Z3_VERIFIED",
             "plan_details": plan

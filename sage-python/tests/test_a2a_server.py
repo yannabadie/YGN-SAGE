@@ -1,7 +1,23 @@
-"""Test A2A agent wrapper."""
+"""Test A2A agent wrapper.
+
+Requires a2a-sdk >= 1.0 which provides a2a.server.agent.
+The 0.3.x release lacks this module (confirmed breaking changes in v1.0).
+"""
 import pytest
 
 a2a = pytest.importorskip("a2a", reason="a2a-sdk not installed")
+
+# a2a-sdk 0.3.x does not ship a2a.server.agent; pin tests to v1.0+ API
+try:
+    from a2a.server.agent import AgentExecutor  # noqa: F401
+    _HAS_A2A_SERVER = True
+except (ImportError, ModuleNotFoundError):
+    _HAS_A2A_SERVER = False
+
+pytestmark = pytest.mark.skipif(
+    not _HAS_A2A_SERVER,
+    reason="a2a-sdk < 1.0 — a2a.server.agent not available",
+)
 
 
 def test_build_agent_card():

@@ -469,19 +469,20 @@ async def run_benchmark(request: Request):
 
     async def _run_bench():
         try:
-            if bench_type == "routing":
-                from sage.strategy.metacognition import ComplexityRouter
-                from sage.bench.routing import RoutingAccuracyBench
-                mc = ComplexityRouter()
-                bench = RoutingAccuracyBench(metacognition=mc)
-                report = await bench.run()
-            elif bench_type == "humaneval":
-                from sage.bench.humaneval import HumanEvalBench
-                _boot_system()
-                bench = HumanEvalBench(system=_state.system, event_bus=_state.event_bus)
-                report = await bench.run(limit=limit)
-            else:
-                return
+            async with _state.run_lock:
+                if bench_type == "routing":
+                    from sage.strategy.metacognition import ComplexityRouter
+                    from sage.bench.routing import RoutingAccuracyBench
+                    mc = ComplexityRouter()
+                    bench = RoutingAccuracyBench(metacognition=mc)
+                    report = await bench.run()
+                elif bench_type == "humaneval":
+                    from sage.bench.humaneval import HumanEvalBench
+                    _boot_system()
+                    bench = HumanEvalBench(system=_state.system, event_bus=_state.event_bus)
+                    report = await bench.run(limit=limit)
+                else:
+                    return
             # Emit summary event
             _state.event_bus.emit(AgentEvent(
                 type="BENCH_SUMMARY",

@@ -48,9 +48,11 @@ def test_upgrade_respects_max_retries(controller, mock_ctx):
 
 def test_reroute_on_inconsistency(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.5  # medium quality
+    topo = MagicMock()
+    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
     with patch('sage.topology_controller.TopologyController.compute_consistency_score', return_value=0.2):
         d = controller.evaluate_and_decide(
-            0, "result", "task", MagicMock(), mock_ctx,
+            0, "result", "task", topo, mock_ctx,
             parallel_outputs=["output1", "output2"],
         )
         assert d.action == "reroute_topology"
@@ -69,10 +71,12 @@ def test_max_reroute_forces_continue(controller, mock_ctx):
 
 def test_prune_on_low_importance(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.5
+    topo = MagicMock()
+    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
     with patch('sage.topology_controller.TopologyController.compute_consistency_score', return_value=0.8):
         with patch('sage.topology_controller.TopologyController.compute_importance_score', return_value=0.1):
             d = controller.evaluate_and_decide(
-                0, "redundant", "task", MagicMock(), mock_ctx,
+                0, "redundant", "task", topo, mock_ctx,
                 parallel_outputs=["same", "content"],
             )
             assert d.action == "prune_node"
@@ -80,16 +84,20 @@ def test_prune_on_low_importance(controller, mock_ctx):
 
 def test_spawn_on_emergent_subtask(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.5
+    topo = MagicMock()
+    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
     result = "The analysis is done. We need to also verify the edge cases for negative inputs."
-    d = controller.evaluate_and_decide(0, result, "task", MagicMock(), mock_ctx)
+    d = controller.evaluate_and_decide(0, result, "task", topo, mock_ctx)
     assert d.action == "spawn_subagent"
 
 
 def test_max_spawns_respected(controller, mock_ctx):
     controller._spawn_count = 3  # at max
     controller._qe.estimate.return_value = 0.5
+    topo = MagicMock()
+    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
     result = "Need to also check the boundary conditions."
-    d = controller.evaluate_and_decide(0, result, "task", MagicMock(), mock_ctx)
+    d = controller.evaluate_and_decide(0, result, "task", topo, mock_ctx)
     assert d.action == "continue"  # spawn blocked
 
 

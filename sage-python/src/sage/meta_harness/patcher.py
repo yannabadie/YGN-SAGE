@@ -138,6 +138,12 @@ class HarnessPatcher:
                     node_idx, task, context_override
                 )
 
+            # Dispatch solver nodes unchanged (deterministic Rust)
+            if node_type == "solver" or getattr(node, "role", "") == "solver":
+                return await runner._execute_solver_node(
+                    node_idx, task, context_override
+                )
+
             role = getattr(node, "role", f"node-{node_idx}")
             caps = getattr(node, "required_capabilities", [])
 
@@ -233,11 +239,8 @@ class HarnessPatcher:
                                     content=context_msg.content[:context_window * 2],
                                 ),
                             ]
-                            summary_resp = await asyncio.wait_for(
-                                provider.generate(
-                                    messages=summary_msgs, config=config
-                                ),
-                                timeout=30.0,
+                            summary_resp = await provider.generate(
+                                messages=summary_msgs, config=config,
                             )
                             context_msg.content = (
                                 f"Context (summarized):\n{summary_resp.content or ''}"
@@ -251,10 +254,12 @@ class HarnessPatcher:
                             )
 
             # ── Execute LLM call ────────────────────────────────────────
+            # Note: DO NOT wrap in asyncio.wait_for — streaming providers
+            # (OpenRouter, etc.) return HTTP 200 immediately but stream
+            # tokens over 60-180s. Provider-level timeouts handle errors.
             try:
-                response = await asyncio.wait_for(
-                    provider.generate(messages=messages, config=config),
-                    timeout=exec_cfg.node_timeout_s,
+                response = await provider.generate(
+                    messages=messages, config=config,
                 )
                 output = response.content or ""
                 if runner._provider_pool and hasattr(runner._provider_pool, "record_success"):
@@ -265,11 +270,8 @@ class HarnessPatcher:
                 # Fallback: try default provider
                 if provider != runner._llm and runner._llm:
                     try:
-                        response = await asyncio.wait_for(
-                            runner._llm.generate(
-                                messages=messages, config=runner._config
-                            ),
-                            timeout=exec_cfg.node_timeout_s,
+                        response = await runner._llm.generate(
+                            messages=messages, config=runner._config,
                         )
                         output = response.content or ""
                         log.info("Node %d fallback to default provider succeeded", node_idx)
@@ -300,15 +302,47 @@ class HarnessPatcher:
     # ── Pipeline patching ───────────────────────────────────────────────
 
     def patch_pipeline(self, pipeline: Any) -> None:
-        """Attach config to pipeline for downstream consumption."""
+        """Intercept TopologyRunner creation so every runner gets patched."""
         pipeline._meta_harness_config = self.config
+        patcher_self = self
+
+        # Monkey-patch _stage_execute to auto-patch each runner it creates
+        if hasattr(pipeline, "_stage_execute"):
+            original_stage_execute = pipeline._stage_execute
+
+            async def _patched_stage_execute(ctx: Any) -> Any:
+                result = await original_stage_execute(ctx)
+                return result
+
+            # Instead, intercept at the TopologyRunner import level
+            # by wrapping the execute method that creates runners
+            pass  # handled below
+
+        # Wrap the execute stage to patch runners after creation
+        from sage.topology.runner import TopologyRunner as _TR
+
+        _original_runner_init = _TR.__init__
+
+        def _hooked_runner_init(self_runner: Any, *args: Any, **kwargs: Any) -> None:
+            _original_runner_init(self_runner, *args, **kwargs)
+            # Auto-patch this runner with the harness config
+            patcher_self.patch_runner(self_runner)
+
+        _TR.__init__ = _hooked_runner_init
+        self._pipeline_originals["_TR_init"] = (_TR, _original_runner_init)
+
         log.info(
-            "HarnessPatcher attached config '%s' to pipeline", self.config.id,
+            "HarnessPatcher attached config '%s' to pipeline (runner auto-patch active)",
+            self.config.id,
         )
 
     def unpatch_pipeline(self, pipeline: Any) -> None:
         if hasattr(pipeline, "_meta_harness_config"):
             del pipeline._meta_harness_config
+        # Restore original TopologyRunner.__init__
+        if "_TR_init" in self._pipeline_originals:
+            cls, original_init = self._pipeline_originals.pop("_TR_init")
+            cls.__init__ = original_init
 
     # ── Context manager ─────────────────────────────────────────────────
 

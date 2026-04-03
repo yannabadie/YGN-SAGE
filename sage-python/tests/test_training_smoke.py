@@ -29,8 +29,9 @@ class TestRewardStructural:
     def test_score_format_valid_yaml(self):
         from sage.verl.reward import _score_format
 
+        # V8: plain YAML returns 0.5; 1.0 is reserved for <tool_call> format
         score = _score_format("nodes:\n  - role: coder\n    model_tier: budget\n")
-        assert score == 1.0
+        assert score == 0.5
 
     def test_score_format_invalid_yaml(self):
         from sage.verl.reward import _score_format

@@ -55,7 +55,7 @@ class _MockTopology:
 
     def __init__(self, n_nodes: int = 3) -> None:
         self._n = n_nodes
-        self._nodes = [MagicMock(model_id=f"model-{i}") for i in range(n_nodes)]
+        self._nodes = [MagicMock(model_id=f"model-{i}", max_cost_usd=0.0) for i in range(n_nodes)]
 
     def node_count(self) -> int:
         return self._n
@@ -83,14 +83,14 @@ class _MockEngine:
     def __init__(self, result: _MockGenerateResult | None = None) -> None:
         self._result = result or _MockGenerateResult()
 
-    def generate(self, task: str, system: int, budget: float) -> _MockGenerateResult:
+    def generate(self, task: str, task_embedding: Any, system: int, budget: float) -> _MockGenerateResult:
         return self._result
 
 
 class _MockAssigner:
     """Mock ModelAssigner."""
 
-    def assign_models(self, topology: Any, domain: str, budget: float) -> int:
+    def assign_models(self, topology: Any, domain: str, budget: float, hints: Any = None) -> int:
         n = topology.node_count() if hasattr(topology, "node_count") else 0
         return n
 
@@ -258,7 +258,7 @@ async def test_pipeline_engine_failure_falls_back():
     """When topology engine fails, falls back to single-agent."""
 
     class _FailEngine:
-        def generate(self, task: str, system: int, budget: float) -> None:
+        def generate(self, task: str, task_embedding: Any, system: int, budget: float) -> None:
             raise RuntimeError("Engine crashed")
 
     pipeline = CognitiveOrchestrationPipeline(
@@ -524,7 +524,7 @@ class TestCircuitBreakerFiltering:
         )
 
         class _AssignerThatSetsModels:
-            def assign_models(self, topology: Any, domain: str, budget: float) -> int:
+            def assign_models(self, topology: Any, domain: str, budget: float, hints: Any = None) -> int:
                 topology._nodes[0].model_id = "openai-model"
                 topology._nodes[1].model_id = "google-model"
                 return 2

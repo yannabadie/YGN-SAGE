@@ -5,7 +5,8 @@ import pytest
 class TestScoreFormat:
     def test_valid_yaml_with_nodes(self):
         from sage.verl.reward import _score_format
-        assert _score_format("nodes:\n- role: coder\n  prompt: Write code\ndifficulty: simple") == 1.0
+        # V8: plain YAML returns 0.5; 1.0 is reserved for <tool_call> format
+        assert _score_format("nodes:\n- role: coder\n  prompt: Write code\ndifficulty: simple") == 0.5
 
     def test_invalid_yaml(self):
         from sage.verl.reward import _score_format
@@ -17,7 +18,9 @@ class TestScoreFormat:
 
     def test_valid_yaml_not_dict(self):
         from sage.verl.reward import _score_format
-        assert _score_format("- item1\n- item2") == -1.5
+        # V8: YAML list has no topology markers, _extract_topology_data returns None,
+        # _partial_credit returns -2.0 (no markers found)
+        assert _score_format("- item1\n- item2") == -2.0
 
     def test_empty_nodes_list(self):
         from sage.verl.reward import _score_format
@@ -132,18 +135,20 @@ class TestPartialCredit:
 
     def test_only_nodes_key(self):
         from sage.verl.reward import _partial_credit
-        assert _partial_credit("nodes:") == -1.0
+        # V8: nodes: marker gives +0.5 (was +1.0 in V5)
+        assert _partial_credit("nodes:") == -1.5
 
     def test_nodes_plus_role_plus_list(self):
         from sage.verl.reward import _partial_credit
         score = _partial_credit("nodes:\n- role: coder\n  model_tier: bud")
-        # nodes(+1.0) + role(+0.3) + yaml_list(+0.2) = -2.0+1.5 = -0.5
-        assert score == pytest.approx(-0.5)  # below cap, not capped
+        # V8: nodes(+0.5) + role(+0.2) + yaml_list(+0.1) = -2.0+0.8 = -1.2
+        assert score == pytest.approx(-1.2)
 
     def test_all_markers_capped(self):
         from sage.verl.reward import _partial_credit
         score = _partial_credit("nodes:\n- role: coder\nreasoning: plan")
-        assert score == -0.3  # cap prevents exceeding valid YAML threshold
+        # V8: nodes(+0.5) + role(+0.2) + yaml_list(+0.1) + reasoning(+0.1) = -2.0+0.9 = -1.1
+        assert score == pytest.approx(-1.1)
 
     def test_never_exceeds_valid_yaml(self):
         """Partial credit must always be < -0.25 (valid-but-empty-nodes score)."""
