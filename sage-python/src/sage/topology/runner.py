@@ -59,6 +59,7 @@ class TopologyRunner:
         controller: Any | None = None,
         axis_hint: str = "",
         approval_callback: Callable | None = None,
+        harness_config: Any | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -69,8 +70,17 @@ class TopologyRunner:
         self._axis_hint = axis_hint
         self._approval_callback = approval_callback  # HITL: async fn(decision) -> bool
         self._node_outputs: dict[int, str] = {}
-        self._max_rounds = 3  # max re-executions per node (multi-turn debate)
         self._node_exec_count: dict[int, int] = {}  # track per-node execution count
+
+        # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
+        # Loaded from config/harness.json at boot. Overrides context budget,
+        # predecessor format, similarity threshold, system prompt templates,
+        # and debate rounds — WITHOUT replacing any methods.
+        self._harness = harness_config
+        self._max_rounds = (
+            harness_config.execution.max_debate_rounds
+            if harness_config else 3
+        )
 
     def _context_budget_per_predecessor(self, n_predecessors: int, node_idx: int = 0) -> int:
         """Compute per-predecessor character budget based on model context window.
@@ -95,9 +105,12 @@ class TopologyRunner:
         except (AttributeError, RuntimeError):
             pass  # graph or pool unavailable — use default
         # 70% of context for predecessor outputs, ~4 chars per token
-        available_chars = int(context_window * 0.7 * 4)
+        _budget_ratio = self._harness.context.budget_ratio if self._harness else 0.7
+        _chars_per_token = self._harness.context.chars_per_token if self._harness else 4
+        _floor = self._harness.context.budget_floor_chars if self._harness else 1000
+        available_chars = int(context_window * _budget_ratio * _chars_per_token)
         budget = available_chars // max(n_predecessors, 1)
-        return max(budget, 1000)  # floor at 1000 chars
+        return max(budget, _floor)  # floor at 1000 chars
 
     def _truncate_output(self, output: str, budget: int) -> str:
         """Truncate output to budget, appending '...' if cut."""
@@ -131,9 +144,25 @@ class TopologyRunner:
 
         # Similarity gate: deduplicate near-identical predecessor outputs
         # Saves tokens when parallel workers produce similar answers (S2-MAD)
-        deduplicated = self._deduplicate_context(parts_with_roles)
+        _sim_threshold = self._harness.context.similarity_threshold if self._harness else 0.90
+        deduplicated = self._deduplicate_context(parts_with_roles, _sim_threshold)
 
-        return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
+        # Format with harness template if available
+        _fmt = self._harness.context.predecessor_format if self._harness else "[{role}]: {text}"
+        _sep = self._harness.context.predecessor_separator if self._harness else "\n\n"
+        formatted = _sep.join(
+            _fmt.format(role=role, text=text, node_idx=0, model_id="")
+            for text, role in deduplicated
+        )
+
+        # Wrap with injection template if harness provides one
+        if self._harness and formatted:
+            return self._harness.context.injection_template.format(
+                context=formatted,
+                n_predecessors=len(predecessor_indices),
+                task_preview="",
+            )
+        return formatted
 
     def _gather_all_context(self) -> str:
         """Fallback: all completed nodes (legacy behavior)."""
@@ -338,11 +367,15 @@ class TopologyRunner:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
+            # Skip markdown formatting, prose, and non-equation lines
+            if line.startswith("```") or line.startswith("-") or line.startswith("*"):
+                continue
             if "=" in line and not line.startswith("="):
                 parts = line.split("=", 1)
                 var = parts[0].strip().lower().replace(" ", "_")
                 expr = parts[1].strip()
-                if var == "answer":
+                # Flexible ANSWER detection: "answer", "ANSWER", "the answer is"
+                if var in ("answer", "the_answer", "final_answer", "result"):
                     answer_var = expr.strip().lower().replace(" ", "_")
                 else:
                     equations.append((var, expr))
@@ -352,14 +385,24 @@ class TopologyRunner:
             try:
                 from sage_core import SmtVerifier
                 solved = SmtVerifier.solve_equations(equations)
-                if answer_var and answer_var in solved:
-                    output = str(solved[answer_var])
-                elif solved:
-                    # Return last solved value as fallback
-                    last_key = list(solved.keys())[-1]
-                    output = str(solved[last_key])
-                else:
+                if not solved:
                     output = "SOLVER: no variables resolved"
+                elif answer_var and answer_var in solved:
+                    output = str(solved[answer_var])
+                else:
+                    # No ANSWER= line or variable not found.
+                    # Extract target from the original question.
+                    target = self._infer_answer_variable(task, solved)
+                    if target:
+                        output = str(solved[target])
+                    else:
+                        # Last resort: return the last equation's variable
+                        # (equations list preserves insertion order)
+                        last_var = equations[-1][0]
+                        if last_var in solved:
+                            output = str(solved[last_var])
+                        else:
+                            output = str(list(solved.values())[-1])
             except (ImportError, RuntimeError) as exc:
                 output = f"SOLVER_ERROR: {exc}"
         else:
@@ -373,6 +416,47 @@ class TopologyRunner:
 
         self._node_outputs[node_idx] = output
         return output
+
+    @staticmethod
+    def _infer_answer_variable(
+        question: str, solved: dict[str, int],
+    ) -> str | None:
+        """Infer which solved variable the question asks about.
+
+        Uses word-overlap scoring between the question and each solved
+        variable name. The variable with the highest overlap wins.
+        No regex — pure set intersection on normalized words.
+        """
+        # Normalize question into a set of lowercase word tokens
+        q_lower = question.lower().replace("'s", " ").replace("'", " ")
+        # Strip punctuation
+        q_clean = "".join(c if c.isalnum() or c == " " else " " for c in q_lower)
+        q_words = set(q_clean.split())
+
+        # Remove common stop words that add noise
+        stop = {
+            "the", "a", "an", "is", "are", "was", "were", "how", "many",
+            "much", "does", "do", "did", "have", "has", "had", "what",
+            "each", "of", "in", "to", "for", "and", "or", "that", "this",
+            "number", "total", "give", "your", "final", "answer", "only",
+            "as", "step", "by", "think", "verify", "result", "intermediate",
+        }
+        q_content = q_words - stop
+
+        if not q_content:
+            return None
+
+        # Score each solved variable by word overlap with the question
+        best_var: str | None = None
+        best_score = 0
+        for var_name in solved:
+            var_words = set(var_name.lower().split("_"))
+            overlap = len(q_content & var_words)
+            if overlap > best_score:
+                best_score = overlap
+                best_var = var_name
+
+        return best_var if best_score >= 2 else None
 
     async def _execute_node(
         self, node_idx: int, task: str, context_override: str | None = None,
@@ -408,9 +492,28 @@ class TopologyRunner:
         if custom_prompt:
             system_prompt = custom_prompt
         else:
-            system_prompt = f"You are acting as: {role}."
+            # Meta-Harness: configurable default template
+            _default_tmpl = (
+                self._harness.prompts.default_template if self._harness
+                else "You are acting as: {role}."
+            )
+            system_prompt = _default_tmpl.format(
+                role=role, capabilities=", ".join(caps) if caps else "",
+                task_preview=task[:200], n_predecessors=0,
+            )
             if caps:
-                system_prompt += f" Your capabilities: {', '.join(caps)}."
+                _cap_tmpl = (
+                    self._harness.prompts.capability_template if self._harness
+                    else " Your capabilities: {capabilities}."
+                )
+                system_prompt += _cap_tmpl.format(capabilities=", ".join(caps))
+
+        # Meta-Harness: global prefix/suffix applied to ALL system prompts
+        if self._harness:
+            if self._harness.prompts.global_prefix:
+                system_prompt = self._harness.prompts.global_prefix + "\n" + system_prompt
+            if self._harness.prompts.global_suffix:
+                system_prompt = system_prompt + "\n" + self._harness.prompts.global_suffix
 
         messages: list[Message] = [
             Message(role=Role.SYSTEM, content=system_prompt),
