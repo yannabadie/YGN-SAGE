@@ -471,9 +471,43 @@ pub fn solve_equation_system(equations: Vec<(String, String)>) -> HashMap<String
         }
     }
 
-    // Iterative resolution: keep evaluating until no progress
-    // (handles any topological ordering without explicit sort)
-    let mut resolved = 0;
+    // Phase 1: Build union-find for variable aliases (a = b).
+    // When an equation is just Expr::Var(other), unify the two variables
+    // so resolving one resolves all aliases in the chain.
+    let mut parent: HashMap<String, String> = HashMap::new();
+    for (name, _) in &parsed {
+        parent.insert(name.clone(), name.clone());
+    }
+
+    fn find(parent: &mut HashMap<String, String>, x: &str) -> String {
+        let p = parent.get(x).cloned().unwrap_or_else(|| x.to_string());
+        if p == x {
+            return p;
+        }
+        let root = find(parent, &p);
+        parent.insert(x.to_string(), root.clone());
+        root
+    }
+
+    fn union(parent: &mut HashMap<String, String>, a: &str, b: &str) {
+        let ra = find(parent, a);
+        let rb = find(parent, b);
+        if ra != rb {
+            parent.insert(ra, rb);
+        }
+    }
+
+    for (name, ast) in &parsed {
+        if let Expr::Var(other) = ast {
+            union(&mut parent, name, other);
+        }
+    }
+
+    // Collect all variable names for alias propagation
+    let all_names: Vec<String> = parsed.iter().map(|(n, _)| n.clone()).collect();
+
+    // Phase 2: Iterative resolution with union-find propagation.
+    // When a variable is resolved, all its aliases are resolved too.
     let max_iterations = parsed.len() + 1;
     for _ in 0..max_iterations {
         let mut progress = false;
@@ -483,16 +517,35 @@ pub fn solve_equation_system(equations: Vec<(String, String)>) -> HashMap<String
             }
             if let Some(val) = eval_with_bindings(ast, &bindings) {
                 bindings.insert(name.clone(), val);
+                // Propagate to all aliases of this variable
+                let root = find(&mut parent, name);
+                for other in &all_names {
+                    if !bindings.contains_key(other) && find(&mut parent, other) == root {
+                        bindings.insert(other.clone(), val);
+                    }
+                }
                 progress = true;
-                resolved += 1;
             }
         }
-        if !progress || resolved == parsed.len() {
+        if !progress {
             break;
         }
     }
 
-    bindings
+    // Phase 3: Expand aliases — ensure every original variable name has a value.
+    let mut result: HashMap<String, i64> = HashMap::new();
+    for (name, _) in &parsed {
+        let root = find(&mut parent, name);
+        if let Some(&val) = bindings.get(&root) {
+            result.insert(name.clone(), val);
+        }
+    }
+    // Also include directly resolved variables
+    for (k, v) in &bindings {
+        result.entry(k.clone()).or_insert(*v);
+    }
+
+    result
 }
 
 /// Result of a formal verification check.
@@ -1300,5 +1353,82 @@ mod tests {
         // These are too strong and weakening to >= won't help
         // x > 0 → x >= 50 is still false
         assert!(result.is_none());
+    }
+
+    // ── Equation solver ──────────────────────────────────────────────
+
+    #[test]
+    fn test_solve_simple_chain() {
+        let eqs = vec![
+            ("x".into(), "13".into()),
+            ("y".into(), "x + 5".into()),
+            ("z".into(), "y * 2".into()),
+        ];
+        let result = solve_equation_system(eqs);
+        assert_eq!(result["x"], 13);
+        assert_eq!(result["y"], 18);
+        assert_eq!(result["z"], 36);
+    }
+
+    #[test]
+    fn test_solve_equality_chain() {
+        // P0 bug: a = b where b is another variable, not a constant
+        let eqs = vec![
+            ("price".into(), "10".into()),
+            ("bread_rye".into(), "price".into()),       // alias
+            ("total".into(), "bread_rye + 5".into()),    // uses alias
+        ];
+        let result = solve_equation_system(eqs);
+        assert_eq!(result["price"], 10);
+        assert_eq!(result["bread_rye"], 10); // should resolve via union-find
+        assert_eq!(result["total"], 15);
+    }
+
+    #[test]
+    fn test_solve_deep_alias_chain() {
+        // a = b = c = 42 (chain of aliases)
+        let eqs = vec![
+            ("c".into(), "42".into()),
+            ("b".into(), "c".into()),
+            ("a".into(), "b".into()),
+            ("result".into(), "a + 1".into()),
+        ];
+        let result = solve_equation_system(eqs);
+        assert_eq!(result["c"], 42);
+        assert_eq!(result["b"], 42);
+        assert_eq!(result["a"], 42);
+        assert_eq!(result["result"], 43);
+    }
+
+    #[test]
+    fn test_solve_reverse_order() {
+        // Equations in reverse dependency order
+        let eqs = vec![
+            ("z".into(), "y * 2".into()),
+            ("y".into(), "x + 5".into()),
+            ("x".into(), "7".into()),
+        ];
+        let result = solve_equation_system(eqs);
+        assert_eq!(result["x"], 7);
+        assert_eq!(result["y"], 12);
+        assert_eq!(result["z"], 24);
+    }
+
+    #[test]
+    fn test_solve_igsm_style() {
+        // Realistic iGSM-style equations with entity names
+        let eqs = vec![
+            ("zoo_a_pelican".into(), "12".into()),
+            ("zoo_a_eagle".into(), "zoo_a_pelican + 3".into()),
+            ("zoo_b_pelican".into(), "zoo_a_pelican".into()),  // alias!
+            ("zoo_b_eagle".into(), "zoo_b_pelican * 2".into()),
+            ("total".into(), "zoo_a_eagle + zoo_b_eagle".into()),
+        ];
+        let result = solve_equation_system(eqs);
+        assert_eq!(result["zoo_a_pelican"], 12);
+        assert_eq!(result["zoo_a_eagle"], 15);
+        assert_eq!(result["zoo_b_pelican"], 12); // resolved via alias
+        assert_eq!(result["zoo_b_eagle"], 24);
+        assert_eq!(result["total"], 39);
     }
 }
