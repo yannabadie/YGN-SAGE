@@ -161,6 +161,30 @@ else
     echo "[$(ts)] Gemma4 weights already cached at ${MODEL_CACHE}"
 fi
 
+# Download rebalanced dataset from HuggingFace (if not in repo)
+if [ ! -f "${SFT_DATA}" ]; then
+    echo "[$(ts)] Downloading rebalanced dataset from HuggingFace..."
+    python3 -c "
+from huggingface_hub import hf_hub_download
+path = hf_hub_download(
+    repo_id='yannabadie/sage-topology-policy-gemma4',
+    filename='training_data/v2_gemma4_balanced.jsonl',
+    local_dir='${SAGE_PYTHON}/data',
+    repo_type='model',
+)
+# Move from nested path to expected location
+import shutil, os
+dest = '${SFT_DATA}'
+if not os.path.exists(dest) and os.path.exists(path):
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    shutil.move(path, dest)
+print(f'Dataset ready at {dest}')
+"
+    echo "[$(ts)] Dataset downloaded."
+else
+    echo "[$(ts)] Dataset already present at ${SFT_DATA}"
+fi
+
 # ── Preflight checks ─────────────────────────────────────
 echo "[$(ts)] Preflight checks..."
 python3 -c "
