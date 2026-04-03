@@ -96,6 +96,7 @@ class CognitiveOrchestrationPipeline:
         working_memory: Any = None,
         episodic_memory: Any = None,
         tool_forge: Any = None,
+        harness_config: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -113,6 +114,16 @@ class CognitiveOrchestrationPipeline:
         self.working_memory = working_memory
         self.episodic_memory = episodic_memory
         self.tool_forge = tool_forge
+        self.harness_config = harness_config  # Meta-Harness: loaded from config/harness.json at boot
+        self._harness_patcher = None
+        if harness_config:
+            try:
+                from sage.meta_harness.patcher import HarnessPatcher
+                self._harness_patcher = HarnessPatcher(harness_config)
+                log.info("Meta-Harness config '%s' loaded: %s",
+                         harness_config.id, harness_config.description)
+            except ImportError:
+                log.debug("meta_harness module not available, skipping harness config")
         self._task_count = 0
 
     def _record_to_memory(self, ctx: PipelineContext) -> None:
@@ -329,19 +340,14 @@ class CognitiveOrchestrationPipeline:
         is faster AND equally effective (confirmed by MASBENCH: topology helps
         only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
         """
-        # S1 fast path: skip topology, use direct single-agent call
-        # EXCEPT for math: use formal_solver (LLM formalizes → Rust solves)
-        # Based on SatLM (NeurIPS 2023): +23% on hard math via formalization
+        # S1 fast path: skip topology, use direct single-agent call.
+        # AdaptOrch (2602.16873): topology adds zero value when omega=1.
+        # Evidence: formal_solver experiment (April 1-3) DEGRADED results
+        # from 65% bare to 15%. Single LLM + chain-of-thought is optimal
+        # for S1 tasks including math (confirmed by MASBENCH depth axis).
         if ctx.system == 1:
-            if ctx.domain == "math":
-                topo = self._build_topology_from_hint("formal_solver")
-                if topo:
-                    ctx.topology = topo
-                    log.info("S1 math: using formal_solver (2 nodes: formalizer → Rust solver)")
-                    self._check_topology_budget(ctx)
-                    return ctx
             ctx.topology = None
-            log.debug("S1 task: skipping topology (direct single-agent)")
+            log.debug("S1 task: skipping topology (direct single-agent, AdaptOrch omega=1)")
             return ctx
 
         # Structure-driven template selection from DAG decomposition
