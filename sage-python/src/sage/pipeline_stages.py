@@ -17,10 +17,28 @@ _CODE_PATTERNS = re.compile(
     r"\b(function|def |class |import |variable|algorithm|code|implement|program|script|bug|debug|refactor|api|endpoint|database|sql|html|css|python|java|rust|typescript)\b",
     re.IGNORECASE,
 )
-_MATH_PATTERNS = re.compile(
-    r"\b(integral|derivative|equation|matrix|vector|theorem|proof|calculus|algebra|probability|statistics|sum|product|factorial|logarithm|exponential|polynomial)\b",
+_MATH_SINGLE_WORDS = re.compile(
+    r"\b(integral|derivative|equation|matrix|vector|theorem|proof|calculus|algebra"
+    r"|probability|statistics|factorial|logarithm|exponential|polynomial"
+    r"|equals|total|difference|twice|triple|percent|ratio)\b",
     re.IGNORECASE,
 )
+# Multi-word math phrases (word problems, iGSM, GSM8K, MASBENCH)
+_MATH_PHRASES = [
+    "number of", "how many", "times as much", "times as many",
+    "more than", "fewer than", "less than", "half of",
+    "sum of", "product of",
+]
+
+
+def _count_math(task: str) -> int:
+    """Count math signals: single-word patterns + multi-word phrases."""
+    count = len(_MATH_SINGLE_WORDS.findall(task))
+    t = task.lower()
+    for phrase in _MATH_PHRASES:
+        if phrase in t:
+            count += 1
+    return count
 _REASONING_PATTERNS = re.compile(
     r"\b(analyze|evaluate|compare|contrast|pros and cons|trade-?off|argue|critique|assess|reason|logic|implications|consequences|strategy|decision)\b",
     re.IGNORECASE,
@@ -43,7 +61,7 @@ def _infer_domain(task: str, profile: Any = None) -> str:
     """
     scores = {
         "code": len(_CODE_PATTERNS.findall(task)),
-        "math": len(_MATH_PATTERNS.findall(task)),
+        "math": _count_math(task),
         "reasoning": len(_REASONING_PATTERNS.findall(task)),
         "formal": len(_FORMAL_PATTERNS.findall(task)),
         "creative": len(_CREATIVE_PATTERNS.findall(task)),

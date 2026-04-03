@@ -743,10 +743,12 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
 pub fn formal_solver(model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("formal_solver").unwrap();
 
-    // Formalizer (LLM): translates NL to equations
+    // Formalizer (LLM): translates NL to equations.
+    // Pinned to deepseek-chat: fast, cheap, reliable for math formalization.
+    // OpenRouter is unreliable (circuit breaker opens frequently).
     let mut formalizer = TopologyNode::new(
         "formalizer".into(),
-        "".into(),
+        "deepseek-chat".into(),
         2, // S2 reasoner — needs to understand the problem
         vec!["reasoning".into(), "math".into()],
         0,

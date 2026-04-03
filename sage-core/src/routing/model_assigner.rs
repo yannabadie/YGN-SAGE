@@ -120,6 +120,13 @@ impl ModelAssigner {
                 Err(_) => continue,
             };
 
+            // Respect pre-assigned model_id from template (e.g., formal_solver
+            // pins formalizer to "deepseek-chat"). Only override if empty.
+            if !node.model_id.is_empty() {
+                assigned += 1;
+                continue;
+            }
+
             let system = match node.system {
                 1 => CognitiveSystem::S1,
                 2 => CognitiveSystem::S2,
