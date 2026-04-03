@@ -78,6 +78,12 @@ from sage.llm.model_card import ModelCard, CognitiveSystem  # noqa: E402
 from sage.llm.model_registry import ModelCardCatalog as PyModelCardCatalog  # noqa: E402
 
 
+def _get_available_synthesis_models() -> list[str]:
+    """Get model list for LLM topology synthesis from config (not hardcoded)."""
+    from sage.llm.config_loader import get_tier_model
+    return [get_tier_model("fast"), get_tier_model("reasoner")]
+
+
 def _check_sandbox_availability() -> bool:
     """Check if any code execution sandbox is available. Warns if not."""
     has_wasm = False
@@ -292,7 +298,7 @@ class AgentSystem:
                             self.agent_loop._llm,
                             task,
                             max_agents=MAX_TOPOLOGY_AGENTS,
-                            available_models=["gemini-2.5-flash", "gemini-3-flash-preview"],
+                            available_models=_get_available_synthesis_models(),
                         )
                         if llm_graph and llm_graph.node_count() > 0:
                             self.topology_engine.cache_topology(llm_graph)
@@ -707,28 +713,25 @@ def boot_agent_system(
         except Exception as e:
             _log.warning("Boot: Python ModelRegistry init failed (%s)", e)
 
-    # Shadow router: dual Rust/Python comparison when both are available.
+    # Shadow router: only created when SAGE_ENABLE_SHADOW=1 (trace collection).
     # DEPRECATED: 49.6% divergence — shadow comparison disabled by default.
-    # Set SAGE_ENABLE_SHADOW=1 to re-enable for trace collection.
-    # When disabled, ShadowRouter acts as a zero-overhead passthrough to
-    # whichever router is available (Rust preferred).
-    shadow_router = ShadowRouter(
-        rust_router=rust_router,
-        python_metacognition=metacognition,
-    )
-    if shadow_router._shadow_active:
+    # Without it, boot.py routes via rust_router directly (zero indirection).
+    shadow_router: ShadowRouter | None = None
+    if os.environ.get("SAGE_ENABLE_SHADOW", "").strip() == "1":
+        shadow_router = ShadowRouter(
+            rust_router=rust_router,
+            python_metacognition=metacognition,
+            enabled=True,
+        )
         _log.info(
             "Boot: ShadowRouter active (dual Rust/Python comparison, "
             "traces -> %s)", shadow_router._trace_path,
         )
     elif rust_router is not None:
-        _log.info(
-            "Boot: ShadowRouter shadow comparison disabled (49.6%% divergence). "
-            "Rust SystemRouter is primary. Set SAGE_ENABLE_SHADOW=1 to re-enable."
-        )
+        _log.info("Boot: Rust SystemRouter is primary (no shadow indirection).")
 
     # Phase 5 gate: load existing traces for cross-session continuity
-    if shadow_router._shadow_active:
+    if shadow_router is not None and shadow_router._shadow_active:
         shadow_router.load_existing_traces()
         if shadow_router.is_phase5_hard_ready():
             _log.info(
@@ -761,6 +764,14 @@ def boot_agent_system(
     if _HAS_RUST_ROUTER:
         try:
             rust_topology_engine = RustTopologyEngine()
+            # Feed model IDs from cards.toml (single source of truth for mutations)
+            if rust_registry:
+                try:
+                    rust_topology_engine.set_available_models(rust_registry.list_ids())
+                    _log.info("Boot: TopologyEngine seeded with %d models from cards.toml",
+                              rust_registry.len())
+                except Exception as e:
+                    _log.debug("Boot: set_available_models failed (%s)", e)
             rust_bandit = RustBandit(0.995, 0.1)
             if rust_router and rust_bandit:
                 try:

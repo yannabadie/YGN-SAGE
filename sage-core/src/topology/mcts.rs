@@ -113,7 +113,8 @@ impl MctsSearcher {
     }
 
     /// Run MCTS search starting from root topology. Returns best topology found.
-    pub fn search(&self, root: TopologyGraph) -> Option<TopologyGraph> {
+    /// `available_models` — model IDs from cards.toml (pass empty for fallback).
+    pub fn search(&self, root: TopologyGraph, available_models: &[String]) -> Option<TopologyGraph> {
         let _span = info_span!(
             "mcts.search",
             max_simulations = self.max_simulations,
@@ -136,7 +137,7 @@ impl MctsSearcher {
             let path = self.select(&tree);
 
             // 2. EXPAND: at the selected leaf, mutate to create a new child and score it.
-            let leaf_quality = self.expand_and_rollout(&mut tree, &path, &mut rng);
+            let leaf_quality = self.expand_and_rollout(&mut tree, &path, &mut rng, available_models);
 
             // 3. BACKPROPAGATE: update visit counts and qualities up the path.
             self.backpropagate(&mut tree, &path, leaf_quality);
@@ -181,7 +182,7 @@ impl MctsSearcher {
 
     /// EXPAND + ROLLOUT: navigate to the node at `path`, apply a random mutation
     /// to create a new child, score it with the rollout heuristic.
-    fn expand_and_rollout<R: Rng>(&self, tree: &mut MctsNode, path: &[usize], rng: &mut R) -> f64 {
+    fn expand_and_rollout<R: Rng>(&self, tree: &mut MctsNode, path: &[usize], rng: &mut R, available_models: &[String]) -> f64 {
         // Navigate to the leaf node.
         let mut current = tree;
         for &idx in path {
@@ -190,7 +191,7 @@ impl MctsSearcher {
 
         // Apply a random mutation to generate a new child topology.
         let parent_topology = current.topology.clone();
-        let mutated = apply_random_mutation(parent_topology, rng);
+        let mutated = apply_random_mutation(parent_topology, rng, available_models);
 
         match mutated {
             crate::topology::mutations::MutationResult::Success(new_topology) => {
@@ -232,14 +233,14 @@ mod tests {
 
     #[test]
     fn test_mcts_node_ucb1_unvisited() {
-        let g = templates::sequential("gemini-2.5-flash");
+        let g = templates::sequential("gemini-3.1-flash-lite-preview");
         let node = MctsNode::new(g);
         assert_eq!(node.ucb1(100, 1.41), f64::INFINITY);
     }
 
     #[test]
     fn test_mcts_node_ucb1_visited() {
-        let g = templates::sequential("gemini-2.5-flash");
+        let g = templates::sequential("gemini-3.1-flash-lite-preview");
         let mut node = MctsNode::new(g);
         node.visit_count = 10;
         node.total_quality = 7.0;
@@ -251,18 +252,18 @@ mod tests {
 
     #[test]
     fn test_mcts_search_returns_topology() {
-        let root = templates::sequential("gemini-2.5-flash");
+        let root = templates::sequential("gemini-3.1-flash-lite-preview");
         let searcher = MctsSearcher::new(20, 500);
-        let result = searcher.search(root);
+        let result = searcher.search(root, &[]);
         assert!(result.is_some());
     }
 
     #[test]
     fn test_mcts_search_time_bounded() {
-        let root = templates::parallel("gemini-2.5-flash", 3);
+        let root = templates::parallel("gemini-3.1-flash-lite-preview", 3);
         let searcher = MctsSearcher::new(10000, 50); // high sim count but low time
         let start = Instant::now();
-        let _result = searcher.search(root);
+        let _result = searcher.search(root, &[]);
         assert!(
             start.elapsed().as_millis() < 200,
             "Search took {}ms, should stop well before 200ms",
@@ -275,12 +276,12 @@ mod tests {
         let g = TopologyGraph::try_new("sequential").unwrap();
         let searcher = MctsSearcher::new(10, 100);
         // Empty graph may or may not produce result - just shouldn't panic
-        let _ = searcher.search(g);
+        let _ = searcher.search(g, &[]);
     }
 
     #[test]
     fn test_rollout_score_valid_topology() {
-        let g = templates::sequential("gemini-2.5-flash");
+        let g = templates::sequential("gemini-3.1-flash-lite-preview");
         let score = rollout_score(&g);
         // Valid 3-node graph: base 0.6 + min(3, 5)/10 = 0.6 + 0.3 = 0.9
         assert!((score - 0.9).abs() < 0.01, "Expected ~0.9, got {}", score);
@@ -296,14 +297,14 @@ mod tests {
 
     #[test]
     fn test_mcts_best_child_quality_empty() {
-        let g = templates::sequential("gemini-2.5-flash");
+        let g = templates::sequential("gemini-3.1-flash-lite-preview");
         let node = MctsNode::new(g);
         assert!(node.best_child_quality().is_none());
     }
 
     #[test]
     fn test_mcts_best_child_ucb1_empty() {
-        let g = templates::sequential("gemini-2.5-flash");
+        let g = templates::sequential("gemini-3.1-flash-lite-preview");
         let node = MctsNode::new(g);
         assert!(node.best_child_ucb1(1.41).is_none());
     }

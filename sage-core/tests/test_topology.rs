@@ -11,8 +11,8 @@ fn test_create_sequential_topology() {
     assert_eq!(topo.template_type, "sequential");
     assert_eq!(topo.template(), TopologyTemplate::Sequential);
 
-    let coder = TopologyNode::with_id("n1".into(), "coder".into(), "gemini-2.5-flash".into());
-    let reviewer = TopologyNode::with_id("n2".into(), "reviewer".into(), "gemini-2.5-flash".into());
+    let coder = TopologyNode::with_id("n1".into(), "coder".into(), "gemini-3.1-flash-lite-preview".into());
+    let reviewer = TopologyNode::with_id("n2".into(), "reviewer".into(), "gemini-3.1-flash-lite-preview".into());
 
     let i0 = topo.add_node(coder);
     let i1 = topo.add_node(reviewer);
@@ -321,10 +321,10 @@ fn test_topology_template_parsing() {
 
 #[test]
 fn test_node_repr() {
-    let node = TopologyNode::with_id("n1".into(), "coder".into(), "gemini-2.5-flash".into());
+    let node = TopologyNode::with_id("n1".into(), "coder".into(), "gemini-3.1-flash-lite-preview".into());
     let repr = node.to_string();
     assert!(repr.contains("coder"));
-    assert!(repr.contains("gemini-2.5-flash"));
+    assert!(repr.contains("gemini-3.1-flash-lite-preview"));
     assert!(repr.contains("S1"));
 }
 

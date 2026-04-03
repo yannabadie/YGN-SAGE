@@ -104,6 +104,12 @@ impl PyTopologyEngine {
         }
     }
 
+    /// Set available model IDs from cards.toml (single source of truth).
+    /// Called once at boot after ModelRegistry loads.
+    pub fn set_available_models(&mut self, models: Vec<String>) {
+        self.inner.set_available_models(models);
+    }
+
     /// Generate a topology for a task using the 6-path strategy.
     ///
     /// Args:

@@ -141,7 +141,7 @@ pub struct TopologyNode {
     /// Role name: "coder", "reviewer", "reasoner", etc.
     #[pyo3(get)]
     pub role: String,
-    /// Model identifier: "gemini-2.5-flash", etc.
+    /// Model identifier: "gemini-3.1-flash-lite-preview", etc.
     #[pyo3(get, set)]
     pub model_id: String,
     /// Cognitive system tier: 1=S1, 2=S2, 3=S3.

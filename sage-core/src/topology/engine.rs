@@ -95,6 +95,9 @@ pub struct TopologyEngine {
     /// Number of outcomes recorded since the last `evolve()` call.
     /// Used by `should_evolve()` to enforce a cooldown between evolution passes.
     outcomes_since_last_evolve: usize,
+    /// Model IDs from cards.toml (single source of truth for mutations).
+    /// Populated via `set_available_models()` from Python after registry load.
+    available_models: Vec<String>,
 }
 
 impl TopologyEngine {
@@ -119,7 +122,14 @@ impl TopologyEngine {
             topology_cache: HashMap::new(),
             last_decision_id: None,
             outcomes_since_last_evolve: 0,
+            available_models: Vec::new(),
         }
+    }
+
+    /// Set available model IDs (from ModelRegistry / cards.toml).
+    /// Called once at boot from Python after loading the registry.
+    pub fn set_available_models(&mut self, models: Vec<String>) {
+        self.available_models = models;
     }
 
     /// Accessor: read-only reference to the MAP-Elites archive.
@@ -434,7 +444,7 @@ impl TopologyEngine {
         let graph = best.graph.clone();
         let mut rng = rand::rng();
 
-        match apply_random_mutation(graph, &mut rng) {
+        match apply_random_mutation(graph, &mut rng, &self.available_models) {
             MutationResult::Success(mutated) => {
                 // Verify the mutation result
                 let vr = self.verifier.verify(&mutated);
@@ -472,7 +482,7 @@ impl TopologyEngine {
         let best = self.archive.best_by_quality()?;
 
         let searcher = MctsSearcher::new(50, 100);
-        if let Some(topology) = searcher.search(best.graph.clone()) {
+        if let Some(topology) = searcher.search(best.graph.clone(), &self.available_models) {
             info!(parent_quality = best.quality, "mcts_search_success");
             Some(GenerateResult {
                 topology,
@@ -491,7 +501,7 @@ impl TopologyEngine {
 
         // Empty model_id forces ModelAssigner to pick real models per-node
         // based on each node's system tier → multi-provider execution.
-        // Previously hardcoded "gemini-2.5-flash" → all nodes same provider.
+        // Previously hardcoded "gemini-3.1-flash-lite-preview" → all nodes same provider.
         let empty = "";
         let topology = match system {
             1 => templates::sequential(empty),
@@ -714,7 +724,7 @@ impl TopologyEngine {
                         Some(g) => g,
                         None => break,
                     };
-                    match apply_random_mutation(g, &mut rng) {
+                    match apply_random_mutation(g, &mut rng, &self.available_models) {
                         MutationResult::Success(mutated) => {
                             current = Some(mutated);
                         }
@@ -1033,7 +1043,7 @@ mod tests {
         let mut engine = TopologyEngine::new();
 
         // Seed the archive with a valid topology so evolve() has something to work with.
-        let graph = templates::sequential("gemini-2.5-flash");
+        let graph = templates::sequential("gemini-3.1-flash-lite-preview");
         engine.cache_topology(graph.clone());
 
         let desc = super::super::map_elites::BehaviorDescriptor::from_raw(3, 2, 0.05, 0.5);

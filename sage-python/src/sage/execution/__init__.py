@@ -380,7 +380,8 @@ def _get_agent_provider():
                     base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
                     provider_name="google",
                 )
-                _AGENT_MODEL = cfg.get("default_model", "gemini-3.1-flash-lite-preview")
+                from sage.llm.config_loader import get_tier_model
+                _AGENT_MODEL = cfg.get("default_model", get_tier_model("fast"))
             else:
                 _AGENT_PROVIDER = OpenAICompatProvider(
                     api_key=os.environ.get(cfg["api_key_env"], ""),

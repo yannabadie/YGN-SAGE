@@ -8,8 +8,8 @@ use sage_core::topology::*;
 fn valid_roles_json() -> &'static str {
     r#"{
         "roles": [
-            {"name": "coder", "model": "gemini-2.5-flash", "system": 2, "capabilities": ["code_generation"]},
-            {"name": "reviewer", "model": "gemini-3.1-pro", "system": 2, "capabilities": ["code_review"]}
+            {"name": "coder", "model": "gemini-3.1-flash-lite-preview", "system": 2, "capabilities": ["code_generation"]},
+            {"name": "reviewer", "model": "gemini-3.1-pro-preview", "system": 2, "capabilities": ["code_review"]}
         ]
     }"#
 }
@@ -31,11 +31,11 @@ fn test_parse_valid_roles_json() {
     let roles = TopologySynthesizer::parse_roles(valid_roles_json()).unwrap();
     assert_eq!(roles.len(), 2);
     assert_eq!(roles[0].name, "coder");
-    assert_eq!(roles[0].model, "gemini-2.5-flash");
+    assert_eq!(roles[0].model, "gemini-3.1-flash-lite-preview");
     assert_eq!(roles[0].system, 2);
     assert_eq!(roles[0].capabilities, vec!["code_generation"]);
     assert_eq!(roles[1].name, "reviewer");
-    assert_eq!(roles[1].model, "gemini-3.1-pro");
+    assert_eq!(roles[1].model, "gemini-3.1-pro-preview");
     assert_eq!(roles[1].capabilities, vec!["code_review"]);
 }
 
@@ -142,12 +142,12 @@ fn test_full_synthesize_success() {
     // Verify nodes
     let node0 = graph.try_get_node(0).unwrap();
     assert_eq!(node0.role, "coder");
-    assert_eq!(node0.model_id, "gemini-2.5-flash");
+    assert_eq!(node0.model_id, "gemini-3.1-flash-lite-preview");
     assert_eq!(node0.system, 2);
 
     let node1 = graph.try_get_node(1).unwrap();
     assert_eq!(node1.role, "reviewer");
-    assert_eq!(node1.model_id, "gemini-3.1-pro");
+    assert_eq!(node1.model_id, "gemini-3.1-pro-preview");
 }
 
 // ---------------------------------------------------------------------------

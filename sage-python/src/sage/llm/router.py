@@ -8,22 +8,15 @@ from pathlib import Path
 from typing import Literal
 
 from sage.llm.base import LLMConfig
-from sage.llm.config_loader import load_model_config, resolve_model_id
+from sage.llm.config_loader import load_model_config, resolve_model_id, _TIER_DEFAULTS
 
 Tier = Literal[
     "fast", "mutator", "reasoner", "codex", "codex_max",
     "budget", "critical", "fallback",
 ]
 
-_HARDCODED = {
-    "codex": "gpt-5.4",
-    "codex_max": "gpt-5.4",
-    "fast": "gemini-3.1-flash-lite-preview",
-    "mutator": "gpt-5.4-mini",
-    "reasoner": "gemini-3.1-pro-preview",
-    "budget": "deepseek-chat",
-    "fallback": "deepseek-chat",
-}
+# Single source of truth for fallback model IDs (shared with config_loader).
+_HARDCODED = _TIER_DEFAULTS
 
 _MAX_TOKENS = {
     "codex": 8192, "codex_max": 16384, "reasoner": 8192, "critical": 8192,

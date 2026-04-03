@@ -52,7 +52,7 @@ fn test_engine_generate_s3_debate() {
 #[test]
 fn test_engine_cache_roundtrip() {
     let mut engine = PyTopologyEngine::new();
-    let graph = templates::sequential("gemini-2.5-flash");
+    let graph = templates::sequential("gemini-3.1-flash-lite-preview");
     let id = graph.id.clone();
 
     engine.cache_topology(&graph);

@@ -7,13 +7,13 @@ fn test_register_and_count_arms() {
     let mut bandit = ContextualBandit::create(0.995, 0.1);
     assert_eq!(bandit.arm_count(), 0);
 
-    bandit.add_arm("gemini-2.5-flash", "sequential");
-    bandit.add_arm("gpt-5.3-codex", "avr");
-    bandit.add_arm("gemini-3.1-pro", "parallel");
+    bandit.add_arm("gemini-3.1-flash-lite-preview", "sequential");
+    bandit.add_arm("gpt-5.4", "avr");
+    bandit.add_arm("gemini-3.1-pro-preview", "parallel");
     assert_eq!(bandit.arm_count(), 3);
 
     // Duplicate registration is a no-op
-    bandit.add_arm("gemini-2.5-flash", "sequential");
+    bandit.add_arm("gemini-3.1-flash-lite-preview", "sequential");
     assert_eq!(bandit.arm_count(), 3);
 }
 
@@ -22,8 +22,8 @@ fn test_register_and_count_arms() {
 #[test]
 fn test_select_returns_decision() {
     let mut bandit = ContextualBandit::create(0.995, 0.1);
-    bandit.add_arm("gemini-2.5-flash", "sequential");
-    bandit.add_arm("gpt-5.3-codex", "avr");
+    bandit.add_arm("gemini-3.1-flash-lite-preview", "sequential");
+    bandit.add_arm("gpt-5.4", "avr");
 
     let decision = bandit.choose(0.0).unwrap();
 
@@ -356,8 +356,8 @@ fn test_bandit_repr() {
 #[test]
 fn test_choose_contextual_returns_decision() {
     let mut bandit = ContextualBandit::create(0.995, 0.1);
-    bandit.add_arm("gemini-2.5-flash", "sequential");
-    bandit.add_arm("gpt-5.3-codex", "avr");
+    bandit.add_arm("gemini-3.1-flash-lite-preview", "sequential");
+    bandit.add_arm("gpt-5.4", "avr");
 
     let context = vec![2.0_f32, 150.0, 3.0];
     let decision = bandit.choose_contextual(0.0, &context).unwrap();

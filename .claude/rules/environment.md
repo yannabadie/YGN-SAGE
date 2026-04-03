@@ -27,7 +27,7 @@ For httpx (HuggingFace Hub), also pass `verify="C:/Code/certs/ca-bundle.pem"` to
 ## Active Models (March 20, 2026)
 | Tier | Model ID | Provider | Notes |
 |------|----------|----------|-------|
-| codex | gpt-5.3-codex | OpenAI | SOTA coding |
+| codex | gpt-5.4 | OpenAI | SOTA coding |
 | reasoner | gemini-3.1-pro-preview | Google | Complex evaluation ($2.00/$12.00) |
 | fast | gemini-3.1-flash-lite-preview | Google | Low-latency ($0.25/$1.50) |
 | budget | deepseek-chat | DeepSeek | Best cost/quality ($0.28/$0.42, no rate limits) |

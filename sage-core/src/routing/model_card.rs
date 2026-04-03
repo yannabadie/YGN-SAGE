@@ -54,7 +54,7 @@ impl CognitiveSystem {
 #[pyclass]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelCard {
-    /// Unique model identifier (e.g. "gemini-2.5-flash").
+    /// Unique model identifier (e.g. "gemini-3.1-flash-lite-preview").
     #[pyo3(get)]
     pub id: String,
 
@@ -312,9 +312,9 @@ mod tests {
     fn parse_toml_single_model() {
         let toml_str = r#"
             [[models]]
-            id = "gemini-2.5-flash"
+            id = "gemini-3.1-flash-lite-preview"
             provider = "google"
-            family = "gemini-2.5"
+            family = "gemini-3.1"
             code_score = 0.85
             reasoning_score = 0.80
             tool_use_score = 0.90
@@ -335,9 +335,9 @@ mod tests {
         "#;
         let cards = ModelCard::parse_toml(toml_str).unwrap();
         assert_eq!(cards.len(), 1);
-        assert_eq!(cards[0].id, "gemini-2.5-flash");
+        assert_eq!(cards[0].id, "gemini-3.1-flash-lite-preview");
         assert_eq!(cards[0].provider, "google");
-        assert_eq!(cards[0].family, "gemini-2.5");
+        assert_eq!(cards[0].family, "gemini-3.1");
         assert!((cards[0].code_score - 0.85).abs() < 0.001);
         assert!((cards[0].s2_affinity - 0.85).abs() < 0.001);
         assert_eq!(cards[0].context_window, 1048576);

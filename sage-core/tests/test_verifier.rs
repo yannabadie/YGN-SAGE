@@ -17,7 +17,7 @@ fn verifier() -> HybridVerifier {
 
 #[test]
 fn test_sequential_template_valid() {
-    let g = templates::sequential("gemini-2.5-flash");
+    let g = templates::sequential("gemini-3.1-flash-lite-preview");
     let r = verifier().verify(&g);
     assert!(r.valid, "Sequential should pass: errors={:?}", r.errors);
     assert!(r.errors.is_empty());
@@ -32,7 +32,7 @@ fn test_sequential_template_valid() {
 
 #[test]
 fn test_parallel_template_valid() {
-    let g = templates::parallel("gemini-2.5-flash", 3);
+    let g = templates::parallel("gemini-3.1-flash-lite-preview", 3);
     let r = verifier().verify(&g);
     assert!(r.valid, "Parallel should pass: errors={:?}", r.errors);
     assert!(r.errors.is_empty());

@@ -17,7 +17,7 @@ fn test_record_and_retrieve() {
             keywords: vec!["code".into(), "sort".into(), "algorithm".into()],
             embedding: Some(emb),
             template: "avr".into(),
-            model_id: "gemini-2.5-flash".into(),
+            model_id: "gemini-3.1-flash-lite-preview".into(),
             quality: 0.9,
             cost: 0.005,
             latency_ms: 1500.0,

@@ -312,7 +312,7 @@ fn test_multiple_evolve_rounds() {
     let mut smmu = MultiViewMMU::new();
 
     // Seed archive
-    let graph = templates::sequential("gemini-2.5-flash");
+    let graph = templates::sequential("gemini-3.1-flash-lite-preview");
     let topo_id = graph.id.clone();
     engine.cache_topology(graph);
     engine.record_outcome(

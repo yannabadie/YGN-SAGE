@@ -530,12 +530,13 @@ class SageTopologyEnv:
     # _execute_single_node — one node at a time
     # ------------------------------------------------------------------
 
-    # ── Multi-provider tier→provider mapping ──
+    # ── Multi-provider tier→provider mapping (training-specific) ──
     # Each tier has a RANKED list of (provider, model) pairs.
     # First available provider (with API key set) is used.
-    # This ensures all 7 providers and 20+ models are leveraged.
     # Ordered by LATENCY (fastest first) — during training, speed > quality.
     # MiniMax moved to last (frequent timeouts even at 15s).
+    # NOTE: model IDs must match sage-core/config/cards.toml (source of truth).
+    # Provider configs from sage.providers.connector.PROVIDER_CONFIGS.
     _TIER_PROVIDERS = {
         "budget": [
             ("deepseek", "deepseek-chat"),          # $0.28/M, <2s TTFT

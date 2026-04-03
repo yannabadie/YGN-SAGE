@@ -611,8 +611,9 @@ pub fn mutate_prompt(
 // apply_random_mutation
 // ---------------------------------------------------------------------------
 
-/// Fixed set of model IDs for random mutation.
-const MODEL_IDS: &[&str] = &["gemini-2.5-flash", "gemini-3.1-pro", "gpt-5.3-codex"];
+/// Last-resort model IDs when no registry is available (e.g. unit tests).
+/// Production code MUST pass model IDs from ModelRegistry (cards.toml).
+const FALLBACK_MODEL_IDS: &[&str] = &["gemini-3.1-flash-lite-preview", "deepseek-chat", "gpt-5.4"];
 
 /// Fixed set of role names for random mutation.
 const ROLES: &[&str] = &[
@@ -625,15 +626,31 @@ const ROLES: &[&str] = &[
 ];
 
 /// Pick one of the 7 mutations at random and apply it with random parameters.
-pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> MutationResult {
+///
+/// `available_models` — model IDs from ModelRegistry (cards.toml).
+/// Pass an empty slice to use built-in fallbacks (test-only).
+pub fn apply_random_mutation<R: Rng>(
+    graph: TopologyGraph,
+    rng: &mut R,
+    available_models: &[String],
+) -> MutationResult {
     let node_count = graph.node_count();
+
+    // Use registry models when available, fallback for tests.
+    let pick_model = |rng: &mut R| -> String {
+        if available_models.is_empty() {
+            FALLBACK_MODEL_IDS[rng.random_range(0..FALLBACK_MODEL_IDS.len())].to_string()
+        } else {
+            available_models[rng.random_range(0..available_models.len())].clone()
+        }
+    };
 
     // If graph is empty or has only 1 node, limit to add_node.
     if node_count == 0 {
-        let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+        let model = pick_model(rng);
         let role = ROLES[rng.random_range(0..ROLES.len())];
         let system: u8 = rng.random_range(1..=3);
-        return add_node_at(graph, role, model, system, None);
+        return add_node_at(graph, role, &model, system, None);
     }
 
     // Choose a mutation (0-6).
@@ -648,16 +665,16 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
             } else {
                 None
             };
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+            let model = pick_model(rng);
             let role = ROLES[rng.random_range(0..ROLES.len())];
             let system: u8 = rng.random_range(1..=3);
             debug!(
                 mutation = "add_node",
                 role = role,
-                model = model,
+                model = model.as_str(),
                 "apply_random_mutation"
             );
-            add_node_at(graph, role, model, system, exit_hint)
+            add_node_at(graph, role, &model, system, exit_hint)
         }
         1 => {
             // remove_node
@@ -672,14 +689,14 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
         2 => {
             // swap_model
             let idx = rng.random_range(0..node_count);
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+            let model = pick_model(rng);
             debug!(
                 mutation = "swap_model",
                 node_index = idx,
-                model = model,
+                model = model.as_str(),
                 "apply_random_mutation"
             );
-            swap_model(graph, idx, model)
+            swap_model(graph, idx, &model)
         }
         3 => {
             // rewire_edge
@@ -697,15 +714,15 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
             // split_node
             let idx = rng.random_range(0..node_count);
             let role_a = ROLES[rng.random_range(0..ROLES.len())];
-            let model_a = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+            let model_a = pick_model(rng);
             let role_b = ROLES[rng.random_range(0..ROLES.len())];
-            let model_b = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+            let model_b = pick_model(rng);
             debug!(
                 mutation = "split_node",
                 node_index = idx,
                 "apply_random_mutation"
             );
-            split_node(graph, idx, role_a, model_a, role_b, model_b)
+            split_node(graph, idx, role_a, &model_a, role_b, &model_b)
         }
         5 => {
             // merge_nodes (need at least 2 nodes)
@@ -719,14 +736,14 @@ pub fn apply_random_mutation<R: Rng>(graph: TopologyGraph, rng: &mut R) -> Mutat
                 b = (a + 1) % node_count;
             }
             let role = ROLES[rng.random_range(0..ROLES.len())];
-            let model = MODEL_IDS[rng.random_range(0..MODEL_IDS.len())];
+            let model = pick_model(rng);
             debug!(
                 mutation = "merge_nodes",
                 node_a = a,
                 node_b = b,
                 "apply_random_mutation"
             );
-            merge_nodes(graph, a, b, role, model)
+            merge_nodes(graph, a, b, role, &model)
         }
         6 => {
             // mutate_prompt
@@ -754,14 +771,14 @@ mod tests {
     use crate::topology::templates;
 
     fn make_sequential() -> TopologyGraph {
-        templates::sequential("gemini-2.5-flash")
+        templates::sequential("gemini-3.1-flash-lite-preview")
     }
 
     #[test]
     fn test_add_node_increases_count() {
         let graph = make_sequential();
         let original_count = graph.node_count();
-        let result = add_node(graph, "analyst", "gemini-2.5-flash", 1);
+        let result = add_node(graph, "analyst", "gemini-3.1-flash-lite-preview", 1);
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
         let new_graph = result.unwrap();
         assert_eq!(new_graph.node_count(), original_count + 1);
@@ -780,11 +797,11 @@ mod tests {
     #[test]
     fn test_swap_model_changes_model_id() {
         let graph = make_sequential();
-        let result = swap_model(graph, 0, "gpt-5.3-codex");
+        let result = swap_model(graph, 0, "gpt-5.4");
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
         let new_graph = result.unwrap();
         let node = new_graph.try_get_node(0).unwrap();
-        assert_eq!(node.model_id, "gpt-5.3-codex");
+        assert_eq!(node.model_id, "gpt-5.4");
     }
 
     #[test]
@@ -801,7 +818,7 @@ mod tests {
     fn test_apply_random_produces_result() {
         let graph = make_sequential();
         let mut rng = rand::rng();
-        let result = apply_random_mutation(graph, &mut rng);
+        let result = apply_random_mutation(graph, &mut rng, &[]);
         // Either Success or Invalid — should not panic.
         assert!(result.is_success() || result.is_invalid());
     }

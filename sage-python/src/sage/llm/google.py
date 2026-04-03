@@ -71,8 +71,9 @@ class GoogleProvider:
             except Exception:
                 pass
 
-        # Default model
-        model = "gemini-2.5-pro"
+        # Default model — resolved from config, not hardcoded
+        from sage.llm.config_loader import get_tier_model
+        model = get_tier_model("reasoner")
         if config and config.model:
             model = config.model
             

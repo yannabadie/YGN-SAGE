@@ -392,8 +392,8 @@ mod tests {
     fn valid_roles_json() -> &'static str {
         r#"{
             "roles": [
-                {"name": "coder", "model": "gemini-2.5-flash", "system": 2, "capabilities": ["code_generation"]},
-                {"name": "reviewer", "model": "gemini-3.1-pro", "system": 2, "capabilities": ["code_review"]}
+                {"name": "coder", "model": "gemini-3.1-flash-lite-preview", "system": 2, "capabilities": ["code_generation"]},
+                {"name": "reviewer", "model": "gemini-3.1-pro-preview", "system": 2, "capabilities": ["code_review"]}
             ]
         }"#
     }
@@ -411,7 +411,7 @@ mod tests {
         let roles = TopologySynthesizer::parse_roles(valid_roles_json()).unwrap();
         assert_eq!(roles.len(), 2);
         assert_eq!(roles[0].name, "coder");
-        assert_eq!(roles[0].model, "gemini-2.5-flash");
+        assert_eq!(roles[0].model, "gemini-3.1-flash-lite-preview");
         assert_eq!(roles[0].system, 2);
         assert_eq!(roles[0].capabilities, vec!["code_generation"]);
         assert_eq!(roles[1].name, "reviewer");
@@ -629,14 +629,14 @@ mod tests {
             "roles": [
                 {
                     "name": "coder",
-                    "model": "gemini-2.5-flash",
+                    "model": "gemini-3.1-flash-lite-preview",
                     "system": 2,
                     "capabilities": ["code_generation"],
                     "prompt": "You are an expert Python developer. Write clean, well-tested code."
                 },
                 {
                     "name": "reviewer",
-                    "model": "gemini-3.1-pro",
+                    "model": "gemini-3.1-pro-preview",
                     "system": 2,
                     "capabilities": ["code_review"]
                 }

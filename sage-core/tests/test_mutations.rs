@@ -7,14 +7,14 @@ use sage_core::topology::topology_graph::*;
 // ---------------------------------------------------------------------------
 
 fn make_sequential() -> TopologyGraph {
-    templates::sequential("gemini-2.5-flash")
+    templates::sequential("gemini-3.1-flash-lite-preview")
 }
 
 fn make_two_node_graph() -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
     let n0 = TopologyNode::new(
         "coder".into(),
-        "gemini-2.5-flash".into(),
+        "gemini-3.1-flash-lite-preview".into(),
         1,
         vec!["text_processing".into()],
         0,
@@ -23,7 +23,7 @@ fn make_two_node_graph() -> TopologyGraph {
     );
     let n1 = TopologyNode::new(
         "reviewer".into(),
-        "gemini-2.5-flash".into(),
+        "gemini-3.1-flash-lite-preview".into(),
         2,
         vec!["reasoning".into()],
         0,
@@ -40,7 +40,7 @@ fn make_single_node_graph() -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
     let n0 = TopologyNode::new(
         "solo".into(),
-        "gemini-2.5-flash".into(),
+        "gemini-3.1-flash-lite-preview".into(),
         1,
         vec!["text_processing".into()],
         0,
@@ -60,7 +60,7 @@ fn test_add_node_increases_count() {
     let graph = make_sequential(); // 3 nodes
     assert_eq!(graph.node_count(), 3);
 
-    let result = add_node(graph, "analyst", "gemini-2.5-flash", 1);
+    let result = add_node(graph, "analyst", "gemini-3.1-flash-lite-preview", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     assert_eq!(new_graph.node_count(), 4);
@@ -75,7 +75,7 @@ fn test_add_node_on_single_node_graph() {
     let graph = make_single_node_graph();
     assert_eq!(graph.node_count(), 1);
 
-    let result = add_node(graph, "helper", "gemini-2.5-flash", 1);
+    let result = add_node(graph, "helper", "gemini-3.1-flash-lite-preview", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     assert_eq!(new_graph.node_count(), 2);
@@ -124,13 +124,13 @@ fn test_remove_node_on_two_node_graph_invalid() {
 fn test_swap_model_changes_model_id() {
     let graph = make_sequential();
     let original = graph.try_get_node(0).unwrap();
-    assert_eq!(original.model_id, "gemini-2.5-flash");
+    assert_eq!(original.model_id, "gemini-3.1-flash-lite-preview");
 
-    let result = swap_model(graph, 0, "gpt-5.3-codex");
+    let result = swap_model(graph, 0, "gpt-5.4");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     let node = new_graph.try_get_node(0).unwrap();
-    assert_eq!(node.model_id, "gpt-5.3-codex");
+    assert_eq!(node.model_id, "gpt-5.4");
 }
 
 // ---------------------------------------------------------------------------
@@ -179,9 +179,9 @@ fn test_split_node_increases_count_by_one() {
         graph,
         1,
         "analyzer",
-        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite-preview",
         "synthesizer",
-        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite-preview",
     );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
@@ -199,7 +199,7 @@ fn test_merge_nodes_decreases_count_by_one() {
     assert_eq!(graph.node_count(), 3);
 
     // Merge adjacent nodes 0 and 1.
-    let result = merge_nodes(graph, 0, 1, "merged_worker", "gemini-2.5-flash");
+    let result = merge_nodes(graph, 0, 1, "merged_worker", "gemini-3.1-flash-lite-preview");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     // Original 3 - 2 merged + 1 new = 2.
@@ -234,7 +234,7 @@ fn test_apply_random_mutation_produces_result() {
     // Run 20 random mutations; all should complete without panicking.
     for _ in 0..20 {
         let g = make_sequential();
-        let result = apply_random_mutation(g, &mut rng);
+        let result = apply_random_mutation(g, &mut rng, &[]);
         assert!(
             result.is_success() || result.is_invalid(),
             "Unexpected variant"
@@ -253,7 +253,7 @@ fn test_security_violation_after_swap_rejected() {
     let mut graph = TopologyGraph::try_new("sequential").unwrap();
     let high = TopologyNode::new(
         "high_sec".into(),
-        "gemini-2.5-flash".into(),
+        "gemini-3.1-flash-lite-preview".into(),
         1,
         vec!["text_processing".into()],
         0,
@@ -262,7 +262,7 @@ fn test_security_violation_after_swap_rejected() {
     );
     let low = TopologyNode::new(
         "low_sec".into(),
-        "gemini-2.5-flash".into(),
+        "gemini-3.1-flash-lite-preview".into(),
         1,
         vec!["text_processing".into()],
         0,
@@ -282,7 +282,7 @@ fn test_security_violation_after_swap_rejected() {
         .security_label = 2;
 
     // swapping model should still keep the security violation
-    let result = swap_model(graph, 0, "gpt-5.3-codex");
+    let result = swap_model(graph, 0, "gpt-5.4");
     assert!(
         result.is_invalid(),
         "Expected Invalid due to security label violation, got: {:?}",
@@ -299,7 +299,7 @@ fn test_merge_non_adjacent_returns_invalid() {
     let graph = make_sequential(); // 0->1->2
 
     // Nodes 0 and 2 are not directly adjacent.
-    let result = merge_nodes(graph, 0, 2, "merged", "gemini-2.5-flash");
+    let result = merge_nodes(graph, 0, 2, "merged", "gemini-3.1-flash-lite-preview");
     assert!(
         result.is_invalid(),
         "Expected Invalid for non-adjacent merge, got: {:?}",
@@ -329,7 +329,7 @@ fn test_remove_node_out_of_range() {
 #[test]
 fn test_swap_model_out_of_range() {
     let graph = make_sequential();
-    let result = swap_model(graph, 99, "gpt-5.3-codex");
+    let result = swap_model(graph, 99, "gpt-5.4");
     assert!(
         result.is_invalid(),
         "Expected Invalid for out-of-range index, got: {:?}",
@@ -350,9 +350,9 @@ fn test_split_node_preserves_connectivity() {
         graph,
         1,
         "pre_worker",
-        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite-preview",
         "post_worker",
-        "gemini-2.5-flash",
+        "gemini-3.1-flash-lite-preview",
     );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
@@ -377,7 +377,7 @@ fn test_add_node_on_empty_graph() {
     let graph = TopologyGraph::try_new("sequential").unwrap();
     assert_eq!(graph.node_count(), 0);
 
-    let result = add_node(graph, "first", "gemini-2.5-flash", 1);
+    let result = add_node(graph, "first", "gemini-3.1-flash-lite-preview", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     assert_eq!(new_graph.node_count(), 1);

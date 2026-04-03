@@ -5,7 +5,7 @@ use std::collections::HashMap;
 fn parse_model_card_from_toml_str() {
     let toml_str = r#"
         [[models]]
-        id = "gemini-2.5-flash"
+        id = "gemini-3.1-flash-lite-preview"
         provider = "google"
         family = "gemini-2.5"
         code_score = 0.85
@@ -28,7 +28,7 @@ fn parse_model_card_from_toml_str() {
     "#;
     let cards = ModelCard::parse_toml(toml_str).unwrap();
     assert_eq!(cards.len(), 1);
-    assert_eq!(cards[0].id, "gemini-2.5-flash");
+    assert_eq!(cards[0].id, "gemini-3.1-flash-lite-preview");
     assert_eq!(cards[0].provider, "google");
     assert!((cards[0].s2_affinity - 0.85).abs() < 0.001);
     assert_eq!(cards[0].context_window, 1048576);

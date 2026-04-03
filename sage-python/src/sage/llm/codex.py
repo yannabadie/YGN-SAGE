@@ -21,8 +21,9 @@ from sage.llm.google import GoogleProvider
 
 logger = logging.getLogger(__name__)
 
-# Default model (matches ~/.codex/config.toml)
-DEFAULT_MODEL = "gpt-5.4"
+# Default model: resolved from config (env > models.toml > fallback).
+from sage.llm.config_loader import get_tier_model as _get_tier_model
+DEFAULT_MODEL = _get_tier_model("codex")
 
 
 def _ensure_additional_properties_false(schema: dict) -> dict:
@@ -313,13 +314,13 @@ class CodexExecProvider:
             except Exception as e:
                 self.logger.warning(f"Codex CLI review failed: {e}")
 
-        # Fallback to Gemini 2.5 Pro
+        # Fallback to Google reasoner model
         try:
-            self.logger.info("Falling back to Gemini 2.5 Pro for review.")
+            self.logger.info("Falling back to Google reasoner for review.")
             provider = GoogleProvider()
             cfg = LLMConfig(
                 provider="google",
-                model="gemini-2.5-pro",
+                model=_get_tier_model("reasoner"),
                 temperature=0.1,
             )
             response = await provider.generate(

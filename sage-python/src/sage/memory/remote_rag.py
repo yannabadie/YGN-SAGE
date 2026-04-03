@@ -19,8 +19,9 @@ log = logging.getLogger(__name__)
 DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 
 # Default model for ExoCortex queries.
-# Resolution order: explicit param > SAGE_EXOCORTEX_MODEL env var > _DEFAULT_MODEL.
-_DEFAULT_MODEL = "gemini-2.5-flash"
+# Resolution order: explicit param > SAGE_EXOCORTEX_MODEL env var > config tier.
+from sage.llm.config_loader import get_tier_model as _get_tier
+_DEFAULT_MODEL = _get_tier("fast")
 
 
 class ExoCortex:

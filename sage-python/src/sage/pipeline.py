@@ -236,6 +236,9 @@ class CognitiveOrchestrationPipeline:
         ctx = await self._stage_execute(ctx)
         ctx.latency_ms = (time.monotonic() - t0) * 1000
 
+        # Stage 4.5: VERIFY (S3 tasks only — PRM + CEGAR repair)
+        ctx = await self._stage_verify(ctx)
+
         # Write execution trace to memory (Tier 0 + Tier 1)
         self._record_to_memory(ctx)
 
@@ -931,6 +934,98 @@ class CognitiveOrchestrationPipeline:
                     ctx.result = ""
             else:
                 ctx.result = ""
+
+        return ctx
+
+    # ── Stage 4.5: Verify ────────────────────────────────────────────────────
+
+    async def _stage_verify(self, ctx: PipelineContext) -> PipelineContext:
+        """Stage 4.5: Verify result quality for S3 tasks via PRM + CEGAR repair.
+
+        Only runs when task is S3 (formal reasoning), PRM is available, and
+        result contains structured content.  If PRM detects issues, attempts a
+        single CEGAR repair LLM call.  Non-blocking: failures keep the
+        original result.
+        """
+        if ctx.system < 3 or not self.prm or not ctx.result:
+            return ctx
+
+        _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
+        if not _STRUCTURED.search(ctx.result):
+            return ctx
+
+        try:
+            r_path, details = self.prm.calculate_r_path(ctx.result)
+            self._emit("VERIFY", {"r_path": r_path, "system": ctx.system})
+
+            if r_path >= 0.0:
+                log.debug("Stage 4.5: PRM passed (r_path=%.2f)", r_path)
+                return ctx
+
+            if "error" not in details:
+                return ctx
+
+            # PRM failed — attempt single CEGAR repair
+            if not self.llm_provider:
+                log.warning(
+                    "Stage 4.5: PRM failed (r_path=%.2f) but no LLM provider for CEGAR repair",
+                    r_path,
+                )
+                return ctx
+
+            log.info("Stage 4.5: PRM failed (r_path=%.2f), attempting CEGAR repair", r_path)
+
+            inv_feedback = getattr(self.prm.kg, "_last_invariant_feedback", [])
+
+            repair_prompt = (
+                "SYSTEM: Your formal verification FAILED. "
+                "Do NOT regenerate from scratch — fix the specific failures below.\n\n"
+                f"Verification error: {details}\n"
+            )
+            if inv_feedback:
+                repair_prompt += (
+                    "\nFailed invariant clauses:\n"
+                    + "\n".join(f"- {f}" for f in inv_feedback)
+                    + "\n"
+                )
+            repair_prompt += (
+                "\nFix your reasoning by adding the missing formal assertions. "
+                "Use <think> tags with Z3 assertions for each step."
+            )
+
+            from sage.llm.base import Message, Role
+
+            messages = [
+                Message(role=Role.ASSISTANT, content=ctx.result),
+                Message(role=Role.USER, content=repair_prompt),
+            ]
+
+            response = await self.llm_provider.generate(
+                messages=messages,
+                config=self.llm_config,
+            )
+            repaired = response.content or ""
+
+            if repaired:
+                r_path_new, _ = self.prm.calculate_r_path(repaired)
+                if r_path_new >= 0.0:
+                    log.info(
+                        "Stage 4.5: CEGAR repair succeeded (r_path=%.2f -> %.2f)",
+                        r_path, r_path_new,
+                    )
+                    ctx.result = repaired
+                    self._emit(
+                        "VERIFY_REPAIRED",
+                        {"r_path_before": r_path, "r_path_after": r_path_new},
+                    )
+                else:
+                    log.info(
+                        "Stage 4.5: CEGAR repair did not improve (r_path=%.2f)",
+                        r_path_new,
+                    )
+
+        except Exception as exc:
+            log.warning("Stage 4.5 verification failed (non-blocking): %s", exc)
 
         return ctx
 

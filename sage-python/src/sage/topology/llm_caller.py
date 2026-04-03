@@ -15,6 +15,13 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
+
+def _default_fast_model() -> str:
+    """Resolve the 'fast' tier model via config (no hardcoded model name)."""
+    from sage.llm.config_loader import get_tier_model
+    return get_tier_model("fast")
+
+
 # ── Tool-call system prompt (must match training in sage_tool_schemas.py) ──
 _SAGE_TOOLS_JSON = json.dumps([
     {
@@ -100,7 +107,8 @@ def build_role_prompt(
     available_models: list[str] | None = None,
 ) -> str:
     """Build the Stage 1 prompt: role assignment with per-agent system prompts."""
-    models_str = ", ".join(available_models or ["gemini-2.5-flash"])
+    from sage.llm.config_loader import get_tier_model
+    models_str = ", ".join(available_models or [get_tier_model("fast")])
     return (
         "You are a multi-agent topology designer. Given a task, assign roles to agents.\n\n"
         f"TASK: {task}\n\n"
@@ -194,7 +202,7 @@ def parse_and_build_topology(
         #              security_label, max_cost_usd, max_wall_time_s, prompt)
         node = TopologyNode(
             role.get("name", "agent"),
-            role.get("model", "gemini-2.5-flash"),
+            role.get("model", _default_fast_model()),
             role.get("system", 2),
             role.get("capabilities", []),
             0,     # security_label
@@ -278,11 +286,12 @@ async def synthesize_topology(
         "required": ["adjacency", "edge_types", "template"],
     }
 
+    _fast = _default_fast_model()
     config_stage1 = LLMConfig(
-        provider="google", model="gemini-2.5-flash", json_schema=roles_schema
+        provider="google", model=_fast, json_schema=roles_schema
     )
     config_stage2 = LLMConfig(
-        provider="google", model="gemini-2.5-flash", json_schema=structure_schema
+        provider="google", model=_fast, json_schema=structure_schema
     )
 
     role_prompt = build_role_prompt(task, max_agents, available_models)
