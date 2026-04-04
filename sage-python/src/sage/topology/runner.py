@@ -339,11 +339,16 @@ class TopologyRunner:
     async def _execute_solver_node(
         self, node_idx: int, task: str, context_override: str | None = None,
     ) -> str:
-        """Execute a formal solver node — Rust deterministic, no LLM call.
+        """Execute a formal solver node — try Rust solver, fall back to LLM.
 
-        Parses equations from predecessor output (formalizer LLM), solves via
-        SmtVerifier.solve_equations(), returns the ANSWER variable value.
-        Based on SatLM (NeurIPS 2023): formalization + solving separation.
+        Hybrid approach (MALT, arXiv 2412.01928):
+        1. Parse equations from formalizer output
+        2. Solve via Rust (exact, sub-ms, deterministic)
+        3. If solver fails → fall back to LLM chain-of-thought on the
+           original task (the LLM can reason through what it can't formalize)
+
+        This gives us the best of both: exact answers when formalization
+        works, LLM reasoning when it doesn't.
         """
         import time as _time
 
@@ -358,7 +363,7 @@ class TopologyRunner:
 
         t0 = _time.monotonic()
 
-        # Parse equations from the formalizer's output
+        # ── Phase 1: Parse equations from formalizer output ────────────
         equations = []
         answer_var = None
         source = context if context else task
@@ -367,52 +372,85 @@ class TopologyRunner:
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
-            # Skip markdown formatting, prose, and non-equation lines
             if line.startswith("```") or line.startswith("-") or line.startswith("*"):
                 continue
             if "=" in line and not line.startswith("="):
                 parts = line.split("=", 1)
                 var = parts[0].strip().lower().replace(" ", "_")
                 expr = parts[1].strip()
-                # Flexible ANSWER detection: "answer", "ANSWER", "the answer is"
                 if var in ("answer", "the_answer", "final_answer", "result"):
                     answer_var = expr.strip().lower().replace(" ", "_")
                 else:
                     equations.append((var, expr))
 
-        output = ""
+        # ── Phase 2: Try Rust solver ───────────────────────────────────
+        solver_answer = None
+        n_resolved = 0
         if equations:
             try:
                 from sage_core import SmtVerifier
                 solved = SmtVerifier.solve_equations(equations)
-                if not solved:
-                    output = "SOLVER: no variables resolved"
-                elif answer_var and answer_var in solved:
-                    output = str(solved[answer_var])
-                else:
-                    # No ANSWER= line or variable not found.
-                    # Extract target from the original question.
-                    target = self._infer_answer_variable(task, solved)
-                    if target:
-                        output = str(solved[target])
+                n_resolved = len(solved)
+                if solved:
+                    # Find the answer variable
+                    if answer_var and answer_var in solved:
+                        solver_answer = str(solved[answer_var])
                     else:
-                        # Last resort: return the last equation's variable
-                        # (equations list preserves insertion order)
-                        last_var = equations[-1][0]
-                        if last_var in solved:
-                            output = str(solved[last_var])
-                        else:
-                            output = str(list(solved.values())[-1])
+                        target = self._infer_answer_variable(task, solved)
+                        if target:
+                            solver_answer = str(solved[target])
+                        elif equations:
+                            last_var = equations[-1][0]
+                            if last_var in solved:
+                                solver_answer = str(solved[last_var])
             except (ImportError, RuntimeError) as exc:
-                output = f"SOLVER_ERROR: {exc}"
-        else:
-            output = "SOLVER: no equations found in input"
+                log.warning("Solver node %d: Rust solver error: %s", node_idx, exc)
 
-        latency_ms = (_time.monotonic() - t0) * 1000
-        log.info(
-            "Solver node %d (%s) completed: %d equations, answer=%s (%.1fms)",
-            node_idx, role, len(equations), output[:20], latency_ms,
+        solve_ms = (_time.monotonic() - t0) * 1000
+
+        # ── Phase 3: Decide — use solver or fall back to LLM ──────────
+        # Solver succeeded if: we got equations, resolved most of them,
+        # and found a numeric answer.
+        solver_ok = (
+            solver_answer is not None
+            and n_resolved >= len(equations) * 0.7  # resolved ≥70% of vars
         )
+
+        if solver_ok:
+            output = solver_answer
+            log.info(
+                "Solver node %d (%s): Rust solved %d/%d vars, answer=%s (%.1fms)",
+                node_idx, role, n_resolved, len(equations), output, solve_ms,
+            )
+        else:
+            # Fall back to LLM chain-of-thought on the original task.
+            # The formalizer tried but the solver couldn't handle it —
+            # let a strong LLM reason through the problem directly.
+            log.info(
+                "Solver node %d (%s): Rust solved %d/%d vars (%.1fms) — "
+                "falling back to LLM chain-of-thought",
+                node_idx, role, n_resolved, len(equations), solve_ms,
+            )
+            try:
+                from sage.llm.base import Message, Role
+                messages = [
+                    Message(
+                        role=Role.SYSTEM,
+                        content=(
+                            "Solve this math problem step by step. "
+                            "Verify each intermediate result. "
+                            "Give your final answer as a single number only."
+                        ),
+                    ),
+                    Message(role=Role.USER, content=task),
+                ]
+                response = await self._llm.generate(
+                    messages=messages, config=self._config,
+                )
+                output = response.content or ""
+            except Exception as exc:
+                log.warning("Solver node %d: LLM fallback failed: %s", node_idx, exc)
+                output = solver_answer or ""
 
         self._node_outputs[node_idx] = output
         return output

@@ -340,14 +340,19 @@ class CognitiveOrchestrationPipeline:
         is faster AND equally effective (confirmed by MASBENCH: topology helps
         only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
         """
-        # S1 fast path: skip topology, use direct single-agent call.
-        # AdaptOrch (2602.16873): topology adds zero value when omega=1.
-        # Evidence: formal_solver experiment (April 1-3) DEGRADED results
-        # from 65% bare to 15%. Single LLM + chain-of-thought is optimal
-        # for S1 tasks including math (confirmed by MASBENCH depth axis).
+        # S1 fast path: skip topology for non-math tasks.
+        # Math tasks use formal_solver (SatLM NeurIPS 2023): LLM formalizes,
+        # Rust solves exactly. Falls back to single-agent if solver fails.
         if ctx.system == 1:
+            if ctx.domain == "math":
+                topo = self._build_topology_from_hint("formal_solver")
+                if topo:
+                    ctx.topology = topo
+                    log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
+                    self._check_topology_budget(ctx)
+                    return ctx
             ctx.topology = None
-            log.debug("S1 task: skipping topology (direct single-agent, AdaptOrch omega=1)")
+            log.debug("S1 task: skipping topology (direct single-agent)")
             return ctx
 
         # Structure-driven template selection from DAG decomposition
