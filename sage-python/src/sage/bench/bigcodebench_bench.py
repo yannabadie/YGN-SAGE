@@ -179,6 +179,12 @@ class BigCodeBenchBench:
             if task_passed:
                 passed_count += 1
 
+            # Enrich trace with AVR repair and eval info
+            trace["avr_attempted"] = bool(eval_stderr and solution and not error)
+            trace["avr_repaired"] = bool(trace.get("avr_attempted") and task_passed and eval_stderr)
+            trace["eval_error_snippet"] = eval_stderr[:200] if eval_stderr and not task_passed else ""
+            trace["generation_error"] = error
+
             # Track prediction + trace for JSONL submission
             self._predictions.append({
                 "task_id": task_id,
