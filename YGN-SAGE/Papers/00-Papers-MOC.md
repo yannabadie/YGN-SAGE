@@ -38,6 +38,7 @@ updated: 2026-04-07
 | [[ShinkaEvolve]] | 2601.04170 | ICLR 2026 | LLM-as-mutator, drift 12D | integre |
 | [[Graph-GRPO]] | 2603.02701 | 2026 | Edge-level credit | integre |
 | [[GiGPO]] | 2505.10978 | NeurIPS 2025 | Multi-step RL training | integre |
+| [[CORAL]] | 2604.01658 | arXiv 2026 | Memoire evolution persistante, heartbeat, 3-10x | **a-integrer** |
 
 ## Memory
 
