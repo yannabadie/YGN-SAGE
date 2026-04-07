@@ -26,7 +26,7 @@ tags:
 |-------|----------|-------|-----|-------|
 | SFT warmup | Loss | 2.87 | 1.30 | Pre-training format |
 | A GRPO | Reward | — | 0.225 | Step 1050, plafond structural |
-| DAPO | — | — | — | En cours |
+| DAPO | — | — | — | **Stalled** — V2 SFT regressed, GRPO broken |
 
 ## Artefacts
 

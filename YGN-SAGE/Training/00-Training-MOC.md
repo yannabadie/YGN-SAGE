@@ -24,7 +24,7 @@ Deux tracks paralleles pour entrainer la policy de generation de topologie (Path
 **Modele** : [[Nemotron-8B-Pod|Nemotron-Orchestrator-8B]]
 - SFT warmup : loss 2.87 → 1.30
 - Phase A GRPO : step 1050, reward 0.225 (structural ceiling)
-- DAPO targeted : en cours
+- DAPO targeted : **stalled** (V2 SFT regressed, GRPO broken — voir memory)
 - Stack : verl 0.7.1 + vLLM + Ray + FSDP
 - HuggingFace : `yannabadie/sage-topology-policy-v2`
 

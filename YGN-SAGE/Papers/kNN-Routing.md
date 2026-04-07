@@ -34,7 +34,7 @@ Approche simple mais tres efficace pour classifier la complexite cognitive.
 |-------|-------------|---------|--------|
 | kNN routing | Routeur principal | sage-core/src/routing/ | integre |
 | arctic-embed-m | Embeddings 768-dim | kNN implementation | integre |
-| 92% GT | 46/50 sur ground truth | benchmark routing_gt | verifie |
+| 93.3% GT | 56/60 sur ground truth | benchmark routing_gt | verifie |
 
 ## Ce qui n'a PAS ete retenu
 
@@ -44,12 +44,12 @@ Approche simple mais tres efficace pour classifier la complexite cognitive.
 
 | Benchmark | Score paper | Score SAGE | Delta |
 |-----------|-----------|-----------|-------|
-| GT accuracy | reference | 92% (46/50) | — |
-| vs ComplexityRouter | — | 34% (dead code) | +58pp |
-| vs SystemRouter | — | 88% | +4pp |
+| GT accuracy | reference | 93.3% (56/60) | — |
+| vs ComplexityRouter | — | 45% (27/60) | +48pp |
+| vs SystemRouter | — | 88% | +5pp |
 
 ## Notes personnelles
 
-60 exemplaires etiquetes suffisent pour 92%. C'est la decision architecturale
+60 exemplaires etiquetes suffisent pour 93.3%. C'est la decision architecturale
 la plus impactante du projet — simple, efficace, et validee empiriquement.
 Le ComplexityRouter heuristic a 34% est officiellement dead code.
