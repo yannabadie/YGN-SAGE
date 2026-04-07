@@ -3,7 +3,7 @@
 Exposes YGN-SAGE as an A2A-compatible agent with streaming per-node events,
 task lifecycle management, and cancellation support.
 
-Requires a2a-sdk (a2a-python). Pinned to latest API (April 2026).
+Requires a2a-sdk >= 0.3.0 (a2a-python).
 
 Usage:
     from sage.protocols.a2a_server import create_a2a_app
@@ -15,15 +15,13 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from a2a.server.agent import AgentExecutor  # type: ignore[import-untyped]
-from a2a.server.request import RequestContext  # type: ignore[import-untyped]
+from a2a.server.agent_execution import AgentExecutor, RequestContext  # type: ignore[import-untyped]
 from a2a.server.events import EventQueue  # type: ignore[import-untyped]
-from a2a.server.tasks import InMemoryTaskStore  # type: ignore[import-untyped]
-from a2a.server.handlers import DefaultRequestHandler  # type: ignore[import-untyped]
-from a2a.server.fastapi import A2AFastAPIApplication  # type: ignore[import-untyped]
-from a2a.agent import create_agent_card  # type: ignore[import-untyped]
-from a2a.messages import new_task, new_agent_text_message  # type: ignore[import-untyped]
-from a2a.tasks import TaskUpdater  # type: ignore[import-untyped]
+from a2a.server.tasks import InMemoryTaskStore, TaskUpdater  # type: ignore[import-untyped]
+from a2a.server.request_handlers import DefaultRequestHandler  # type: ignore[import-untyped]
+from a2a.server.apps import A2AFastAPIApplication  # type: ignore[import-untyped]
+from a2a.utils.message import new_agent_text_message  # type: ignore[import-untyped]
+from a2a.utils.task import new_task  # type: ignore[import-untyped]
 from a2a.types import (  # type: ignore[import-untyped]
     AgentCapabilities,
     AgentCard,
@@ -33,19 +31,9 @@ from a2a.types import (  # type: ignore[import-untyped]
     TextPart,
     TaskArtifactUpdateEvent,
     TaskStatusUpdateEvent,
+    TaskState,
     TaskStatus,
 )
-
-try:
-    from a2a.server.task_state import TaskState  # type: ignore[import-untyped]
-except ImportError:
-    # Fallback enum if task_state module not available
-    class TaskState:  # type: ignore[no-redef]
-        working = "working"
-        completed = "completed"
-        failed = "failed"
-        canceled = "canceled"
-        input_required = "input-required"
 
 _log = logging.getLogger(__name__)
 
@@ -70,15 +58,16 @@ class SageAgentExecutor(AgentExecutor):
         """Execute a task via the SAGE cognitive pipeline with streaming."""
         # Extract task text from A2A message
         task_text = ""
-        if context.message and context.message.parts:
-            for part in context.message.parts:
+        message = context.request.message if context.request else None
+        if message and message.parts:
+            for part in message.parts:
                 if hasattr(part, "root") and hasattr(part.root, "text"):
                     task_text += part.root.text
                 elif hasattr(part, "text"):
                     task_text += part.text
 
-        task = context.task or new_task(request=context.message)
-        updater = TaskUpdater(event_queue, task)
+        task = context.task or new_task(request=message)
+        updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         if not task_text:
             await updater.failed(
@@ -183,7 +172,7 @@ class SageAgentExecutor(AgentExecutor):
         """Cancel a running task."""
         if context.task:
             self._cancelled.add(context.task.id)
-            updater = TaskUpdater(event_queue, context.task)
+            updater = TaskUpdater(event_queue, context.task.id, context.task.context_id)
             await updater.cancel()
         else:
             _log.warning("A2A cancel requested but no task context")

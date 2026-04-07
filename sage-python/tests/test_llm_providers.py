@@ -26,7 +26,7 @@ def test_model_router_tiers():
     assert "pro" in reasoner.model.lower() or "reasoning" in reasoner.model.lower()
 
     codex = ModelRouter.get_config("codex")
-    assert codex.provider == "codex"
+    assert codex.provider == "openai"  # codex tier uses gpt-5.4 via OpenAI API
 
     budget = ModelRouter.get_config("budget")
     assert budget.model  # budget model is configured (may be deepseek-chat or lite)
@@ -50,7 +50,7 @@ def test_model_router_critical_maps_to_reasoner():
 def test_model_router_codex_max():
     from sage.llm.router import ModelRouter
     cfg = ModelRouter.get_config("codex_max")
-    assert cfg.provider == "codex"
+    assert cfg.provider == "openai"  # codex_max tier uses gpt-5.4-pro via OpenAI API
     assert "pro" in cfg.model.lower() or "5." in cfg.model  # gpt-5.x-pro or similar
     assert cfg.extra.get("reasoning_effort") == "xhigh"
 

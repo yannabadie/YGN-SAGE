@@ -34,18 +34,16 @@ pytestmark = pytest.mark.skipif(
 REPORT_DIR = Path("docs/benchmarks")
 
 
-# ── SSL bypass fixture (corporate proxy) ─────────────────────────────────────
+# ── SSL fixture — use proper CA bundle, never bypass ─────────────────────────
 @pytest.fixture(autouse=True)
-def _ssl_bypass(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Disable SSL verification for corporate proxy environment."""
-    monkeypatch.setenv("REQUESTS_CA_BUNDLE", "")
-    monkeypatch.setenv("CURL_CA_BUNDLE", "")
-    # urllib3 / requests
-    try:
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-    except Exception:
-        pass
+def _ssl_certs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point SSL to the CA bundle (directive #3: no proxy bypass)."""
+    ca_bundle = r"C:\Code\certs\ca-bundle.pem"
+    import os
+    if os.path.exists(ca_bundle):
+        monkeypatch.setenv("REQUESTS_CA_BUNDLE", ca_bundle)
+        monkeypatch.setenv("SSL_CERT_FILE", ca_bundle)
+        monkeypatch.setenv("CURL_CA_BUNDLE", ca_bundle)
 
 
 # ── Module-scoped system fixture ─────────────────────────────────────────────

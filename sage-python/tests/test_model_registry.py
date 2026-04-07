@@ -137,18 +137,15 @@ class TestProviderConnector:
         assert models[1].id == "model-b"
 
     @pytest.mark.asyncio
-    async def test_discover_codex_cli(self, monkeypatch):
-        """Codex CLI is detected when shutil.which finds it."""
-        monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/codex" if name == "codex" else None)
-        # No API keys set
+    async def test_discover_no_providers_without_keys(self, monkeypatch):
+        """No models discovered when no API keys are set (Codex CLI removed)."""
+        monkeypatch.setattr("shutil.which", lambda name: None)
         for cfg in PROVIDER_CONFIGS:
             monkeypatch.delenv(cfg["api_key_env"], raising=False)
 
         connector = ProviderConnector()
         models = await connector.discover_all()
-        assert len(models) == 1
-        assert models[0].id == "codex-cli"
-        assert models[0].provider == "codex"
+        assert len(models) == 0
 
     @_skip_no_openai
     @pytest.mark.asyncio

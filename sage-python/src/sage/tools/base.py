@@ -32,6 +32,11 @@ class Tool:
                 is_error=True,
             )
 
+    async def run(self, arguments: dict[str, Any]) -> str:
+        """Execute and return raw output string."""
+        result = await self.execute(arguments)
+        return result.output
+
     @staticmethod
     def define(
         name: str,

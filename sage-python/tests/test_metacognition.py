@@ -96,20 +96,15 @@ def test_assess_complexity_complex():
 
 
 @pytest.mark.asyncio
-async def test_assess_complexity_async_fallback():
+async def test_assess_complexity_async_fallback(monkeypatch):
     """Without GOOGLE_API_KEY, async falls back to degraded heuristic."""
-    import os
-    saved = os.environ.pop('GOOGLE_API_KEY', None)
-    try:
-        ctrl = MetacognitiveController()
-        ctrl._llm_available = False
-        # "debug" + "fix" = 2 hits → 0.67
-        profile = await ctrl.assess_complexity_async('Debug and fix the auth crash')
-        assert profile.complexity > 0.5
-        assert profile.reasoning == 'degraded_heuristic'
-    finally:
-        if saved:
-            os.environ['GOOGLE_API_KEY'] = saved
+    monkeypatch.delenv('GOOGLE_API_KEY', raising=False)
+    ctrl = MetacognitiveController()
+    ctrl._llm_available = False
+    # "debug" + "fix" = 2 hits → 0.67
+    profile = await ctrl.assess_complexity_async('Debug and fix the auth crash')
+    assert profile.complexity > 0.5
+    assert profile.reasoning == 'degraded_heuristic'
 
 
 def test_assess_complexity_has_reasoning():

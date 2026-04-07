@@ -208,8 +208,8 @@ class ToolForge:
 
             try:
                 from sage.tools.meta import create_python_tool
-                result = await create_python_tool(
-                    name=tool_name, code=code, registry=self._registry,
+                result = await create_python_tool.run(
+                    {"name": tool_name, "code": code, "registry": self._registry},
                 )
                 if "Error" in result:
                     log.warning("ToolForge: registration failed: %s", result)

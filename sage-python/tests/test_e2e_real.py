@@ -98,26 +98,14 @@ pytestmark = [
 
 @pytest.fixture(autouse=True)
 def _patch_ssl():
-    """Bypass SSL verification for corporate proxy."""
-    import httpx
-    original_init = httpx.Client.__init__
-
-    def patched_init(self, *args, **kwargs):
-        kwargs.setdefault("verify", False)
-        original_init(self, *args, **kwargs)
-
-    httpx.Client.__init__ = patched_init
-
-    original_async_init = httpx.AsyncClient.__init__
-
-    def patched_async_init(self, *args, **kwargs):
-        kwargs.setdefault("verify", False)
-        original_async_init(self, *args, **kwargs)
-
-    httpx.AsyncClient.__init__ = patched_async_init
+    """Use proper CA bundle for SSL (directive #3: no verify=False)."""
+    import os
+    ca_bundle = r"C:\Code\certs\ca-bundle.pem"
+    if os.path.exists(ca_bundle):
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+        os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+        os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
     yield
-    httpx.Client.__init__ = original_init
-    httpx.AsyncClient.__init__ = original_async_init
 
 
 # ---------------------------------------------------------------------------

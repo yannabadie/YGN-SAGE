@@ -177,9 +177,9 @@ class TestToolForge:
         )
         forge = self._make_forge(llm_response)
 
-        # Mock create_python_tool where forge.py imports it
-        with patch("sage.tools.meta.create_python_tool", new_callable=AsyncMock) as mock_create:
-            mock_create.return_value = "Tool 'tool_adder' created successfully"
+        # Mock create_python_tool.run() where forge.py calls it
+        with patch("sage.tools.meta.create_python_tool") as mock_create:
+            mock_create.run = AsyncMock(return_value="Tool 'tool_adder' created successfully")
             ticket = CreationTicket(
                 task="add two numbers",
                 gap_description="Tool 'adder' not found",
@@ -190,7 +190,7 @@ class TestToolForge:
             )
             name = await forge._build_tool(ticket)
             assert name == "tool_adder"
-            mock_create.assert_called_once()
+            mock_create.run.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_build_tool_all_rounds_fail(self):
