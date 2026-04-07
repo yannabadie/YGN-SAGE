@@ -16,3 +16,4 @@ updated: 2026-04-07
 | [[ADR-003-No-HumanEval]] | Ne pas benchmarker sur HumanEval+/MBPP+/GSM8K | accepte |
 | [[ADR-004-Thompson-Sampling]] | Thompson sampling pour le bandit (pas UCB) | accepte |
 | [[ADR-005-ShadowRouter-Deprecated]] | Deprecier le ShadowRouter dual-path | accepte |
+| [[ADR-006-BigCodeBench-Limits]] | BigCodeBench Hard : topology pas le levier (omega=1.3) | accepte |
