@@ -567,6 +567,23 @@ def boot_agent_system(
         loop._auto_evolve = True
         _log.info("Online evolution enabled (Rust TopologyEngine available)")
 
+    # CORAL Phase 1: persistent evolution memory (arXiv 2604.01658)
+    try:
+        from sage.evolution.memory import EvolutionMemory
+        import asyncio
+        _evo_mem = EvolutionMemory()
+        asyncio.get_event_loop().run_until_complete(_evo_mem.initialize())
+        # Wire into evolution engine if available
+        if hasattr(loop, '_evolution_engine') and loop._evolution_engine:
+            loop._evolution_engine._evolution_memory = _evo_mem
+        # Wire into LLM mutator for skill injection
+        if hasattr(loop, '_mutator') and hasattr(loop._mutator, 'evolution_memory'):
+            loop._mutator.evolution_memory = _evo_mem
+        loop.evolution_memory = _evo_mem
+        _log.info("EvolutionMemory wired (CORAL persistent skills at %s)", _evo_mem._db_path)
+    except Exception as exc:
+        _log.debug("EvolutionMemory not available: %s", exc)
+
     # AgeMem: 8 memory tools (3 STM + 4 LTM + 1 Causal)
     from sage.tools.memory_tools import create_memory_tools
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor, causal_memory=causal_memory):
