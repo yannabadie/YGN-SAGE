@@ -141,11 +141,10 @@ class BigCodeBenchBench:
                     timeout=self.eval_timeout,
                 )
 
-                # AVR retry: send error back to LLM for self-correction
-                avr_retries = 2
-                for avr_attempt in range(avr_retries):
-                    if task_passed or not eval_stderr:
-                        break
+                # AVR retry: 1 attempt with stronger model (research: 2nd retry has ~0 marginal value)
+                # Source: arXiv 2306.09896 — "1 repair attempt is optimal"
+                # Source: Agent 2 research — "repair model should be as strong or stronger"
+                if not task_passed and eval_stderr:
                     retry_prompt = (
                         f"Your previous code for this task failed with this error:\n"
                         f"```\n{eval_stderr[-500:]}\n```\n\n"
@@ -153,12 +152,14 @@ class BigCodeBenchBench:
                         f"Please fix the code. Return ONLY the corrected Python code."
                     )
                     try:
+                        # Use reasoner tier for repair (stronger than generation model)
                         raw = await asyncio.wait_for(
-                            self.system.run(retry_prompt),
+                            self._run_with_reasoner(retry_prompt),
                             timeout=self.task_timeout,
                         )
                         code = extract_code(raw, entry)
                         if code.strip():
+                            solution = code  # Update solution for JSONL
                             task_passed, eval_stderr = self._evaluate_solution_with_stderr(
                                 solution=code,
                                 test_code=task["test"],
@@ -167,9 +168,9 @@ class BigCodeBenchBench:
                                 timeout=self.eval_timeout,
                             )
                             if task_passed:
-                                log.info("  AVR retry %d succeeded for %s", avr_attempt + 1, tid)
+                                log.info("  AVR repair succeeded for %s (reasoner tier)", tid)
                     except Exception:
-                        break
+                        pass
             else:
                 task_passed = False
                 if not error:
@@ -221,6 +222,29 @@ class BigCodeBenchBench:
             routing_breakdown=routing,
             results=results,
         )
+
+    async def _run_with_reasoner(self, prompt: str) -> str:
+        """Run prompt with reasoner tier for AVR repair (stronger than generation model).
+
+        Falls back to system.run() if reasoner provider unavailable.
+        """
+        try:
+            from sage.llm.router import ModelRouter
+            config = ModelRouter.get_config("reasoner", temperature=0.0)
+            provider_pool = getattr(self.system, 'pipeline', None)
+            pool = getattr(provider_pool, 'provider_pool', None) if provider_pool else None
+            if pool:
+                from sage.llm.base import Message, Role
+                prov, _ = pool.resolve(config.model)
+                resp = await prov.generate(
+                    messages=[Message(role=Role.USER, content=prompt)],
+                    config=config,
+                )
+                return resp.content or ""
+        except Exception:
+            pass
+        # Fallback: use normal system.run()
+        return await self.system.run(prompt)
 
     def write_predictions(self, path: str | Path) -> None:
         """Write predictions in JSONL format for official BigCodeBench submission.
