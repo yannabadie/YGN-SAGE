@@ -94,6 +94,9 @@ class BigCodeBenchBench:
             error = ""
             eval_stderr = ""
 
+            # Per-task trace for full observability
+            trace: dict = {}
+
             if self.system:
                 try:
                     raw = await asyncio.wait_for(
@@ -101,6 +104,27 @@ class BigCodeBenchBench:
                         timeout=self.task_timeout,
                     )
                     solution = extract_code(raw, entry)
+                    # Capture pipeline context if available
+                    pipe = getattr(self.system, "pipeline", None)
+                    ctx = getattr(pipe, "last_context", None) if pipe else None
+                    if ctx:
+                        trace = {
+                            "system": ctx.system,
+                            "domain": ctx.domain,
+                            "topology_id": ctx.topology_id,
+                            "topology_nodes": (
+                                ctx.topology.node_count()
+                                if ctx.topology and hasattr(ctx.topology, "node_count")
+                                else 0
+                            ),
+                            "assignments": {str(k): v for k, v in ctx.assignments.items()},
+                            "dag_features": (
+                                {"omega": ctx.dag_features.omega, "delta": ctx.dag_features.delta, "gamma": ctx.dag_features.gamma}
+                                if ctx.dag_features else None
+                            ),
+                            "pipeline_cost": ctx.cost,
+                            "pipeline_latency_ms": ctx.latency_ms,
+                        }
                 except asyncio.TimeoutError:
                     error = "TIMEOUT"
                 except Exception as exc:
@@ -154,16 +178,19 @@ class BigCodeBenchBench:
             if task_passed:
                 passed_count += 1
 
-            # Track prediction for JSONL submission
+            # Track prediction + trace for JSONL submission
             self._predictions.append({
                 "task_id": task_id,
                 "solution": solution or "",
+                "_trace": trace,
             })
 
             results.append(TaskResult(
                 task_id=task_id,
                 passed=task_passed,
+                system_used=trace.get("system", 0),
                 latency_ms=latency_ms,
+                cost_usd=trace.get("pipeline_cost", 0.0),
                 error=error,
             ))
 
@@ -176,6 +203,12 @@ class BigCodeBenchBench:
             if self.system
             else 0.0
         )
+        # Build routing breakdown from collected traces
+        routing = {"S1": 0, "S2": 0, "S3": 0}
+        for r in results:
+            key = f"S{r.system_used}" if r.system_used in (1, 2, 3) else "unknown"
+            routing[key] = routing.get(key, 0) + 1
+
         return BenchReport(
             benchmark=f"bigcodebench-{self.subset}-{self.split}",
             total=total,
@@ -185,7 +218,7 @@ class BigCodeBenchBench:
             pass_rate=passed_count / total if total else 0.0,
             avg_latency_ms=sum(r.latency_ms for r in results) / total if total else 0.0,
             avg_cost_usd=cost / total if total else 0.0,
-            routing_breakdown={},
+            routing_breakdown=routing,
             results=results,
         )
 

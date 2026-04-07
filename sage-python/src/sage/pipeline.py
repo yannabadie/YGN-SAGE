@@ -254,6 +254,9 @@ class CognitiveOrchestrationPipeline:
         await self._stage_learn(ctx)
         self._emit("LEARN", {"latency_ms": ctx.latency_ms})
 
+        # Expose full context for observability (bench, tracing, debugging)
+        self.last_context = ctx
+
         return ctx.result
 
     # ── Stage 0: Classify ───────────────────────────────────────────────────
