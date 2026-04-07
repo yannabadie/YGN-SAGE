@@ -123,3 +123,4 @@ training_metrics*.txt
 masbench_*.log
 masbench_*_results.json
 Notebooklm.png
+YGN-SAGE/.obsidian/
