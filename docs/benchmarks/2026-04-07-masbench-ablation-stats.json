@@ -1,0 +1,77 @@
+{
+  "breadth": {
+    "bare_pct": 32.0,
+    "sage_pct": 54.0,
+    "delta_pp": 22.000000000000004,
+    "mcnemar_p": 0.0153,
+    "cohens_d": 0.456,
+    "ci_95": [
+      8.0,
+      38.0
+    ],
+    "significant": true,
+    "n": 50,
+    "sage_only": 14,
+    "bare_only": 3
+  },
+  "depth": {
+    "bare_pct": 8.0,
+    "sage_pct": 10.0,
+    "delta_pp": 2.0000000000000004,
+    "mcnemar_p": 1.0,
+    "cohens_d": 0.07,
+    "ci_95": [
+      -8.0,
+      12.0
+    ],
+    "significant": false,
+    "n": 50,
+    "sage_only": 4,
+    "bare_only": 3
+  },
+  "horizon": {
+    "bare_pct": 4.0,
+    "sage_pct": 8.0,
+    "delta_pp": 4.0,
+    "mcnemar_p": 0.4795,
+    "cohens_d": 0.169,
+    "ci_95": [
+      0.0,
+      10.0
+    ],
+    "significant": false,
+    "n": 50,
+    "sage_only": 2,
+    "bare_only": 0
+  },
+  "parallel": {
+    "bare_pct": 36.0,
+    "sage_pct": 30.0,
+    "delta_pp": -6.0,
+    "mcnemar_p": 0.3711,
+    "cohens_d": -0.128,
+    "ci_95": [
+      -14.0,
+      2.0
+    ],
+    "significant": false,
+    "n": 50,
+    "sage_only": 1,
+    "bare_only": 4
+  },
+  "robustness": {
+    "bare_pct": 0.0,
+    "sage_pct": 0.0,
+    "delta_pp": 0.0,
+    "mcnemar_p": 1.0,
+    "cohens_d": 0.0,
+    "ci_95": [
+      0.0,
+      0.0
+    ],
+    "significant": false,
+    "n": 50,
+    "sage_only": 0,
+    "bare_only": 0
+  }
+}

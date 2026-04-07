@@ -44,8 +44,26 @@ tags:
 3. **Parallel** : la topologie **nuit** aux taches naturellement paralleles — overhead sans valeur ajoutee
 4. **Robustness** : ni bare ni SAGE ne passent — possible bug dans le benchmark ou taches hors scope
 
+## Analyse statistique (McNemar + Cohen's d, avril 7 2026)
+
+| Axe | Delta | McNemar p | Cohen's d | CI 95% | Sig. |
+|-----|-------|-----------|-----------|--------|------|
+| **breadth** | **+22pp** | **p=0.015** | **d=+0.456** | [+8, +38]pp | **OUI** |
+| depth | +2pp | p=1.000 | d=+0.070 | [-8, +12]pp | NON |
+| horizon | +4pp | p=0.480 | d=+0.169 | [0, +10]pp | NON |
+| parallel | -6pp | p=0.371 | d=-0.128 | [-14, +2]pp | NON |
+| robustness | +0pp | p=1.000 | d=+0.000 | [0, 0]pp | NON |
+
+> [!success] Breadth : SEUL axe statistiquement significatif
+> p=0.015, d=0.456 (effet moyen), CI ne croise pas zero.
+> SAGE recupere 14 taches que bare rate, perd seulement 3.
+
+> [!warning] 4 axes non significatifs
+> Le "+27pp non-pondere" est trompeur — seul breadth est prouve statistiquement.
+
 ## Questions ouvertes
 
 - Pourquoi robustness 0% des deux cotes ? Bug benchmark ou taches impossibles ?
 - Parallel -6pp : faut-il detecter les taches paralleles et bypasser la topologie ?
 - Le delta breadth (+22pp) est-il stable cross-run ?
+- Peut-on augmenter N pour depth/horizon (taille effet trop petite pour N=50) ?
