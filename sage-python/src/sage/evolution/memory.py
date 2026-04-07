@@ -83,9 +83,18 @@ class EvolutionMemory:
     def __init__(self, db_path: str | Path | None = None) -> None:
         self._db_path = str(Path(db_path or _DEFAULT_DB_PATH).expanduser())
         self._db: Any = None  # aiosqlite connection
+        self._initialized = False
+
+    async def _ensure_init(self) -> None:
+        """Lazy init: create tables on first async call."""
+        if self._initialized:
+            return
+        await self.initialize()
 
     async def initialize(self) -> None:
         """Create tables if they don't exist. Uses WAL mode for write throughput."""
+        if self._initialized:
+            return
         import aiosqlite
 
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
@@ -129,6 +138,7 @@ class EvolutionMemory:
             ON skills (domain, min_parent_score, max_parent_score)
         """)
         await self._db.commit()
+        self._initialized = True
         log.info("EvolutionMemory initialized at %s", self._db_path)
 
     async def close(self) -> None:
@@ -139,6 +149,7 @@ class EvolutionMemory:
 
     async def record_mutation(self, record: MutationRecord) -> None:
         """Persist a mutation attempt."""
+        await self._ensure_init()
         if not self._db:
             return
         await self._db.execute(
@@ -164,6 +175,7 @@ class EvolutionMemory:
         and creates/updates skills where sample_count >= min_samples.
         Returns number of skills added/updated.
         """
+        await self._ensure_init()
         if not self._db:
             return 0
 
@@ -225,6 +237,7 @@ class EvolutionMemory:
         Filters by domain (or 'any') and parent_score range.
         Returns top-k by success_rate.
         """
+        await self._ensure_init()
         if not self._db:
             return []
 
@@ -268,6 +281,7 @@ class EvolutionMemory:
         Skills with success_rate < 0.05 after decay are deleted.
         Returns number of skills decayed/deleted.
         """
+        await self._ensure_init()
         if not self._db:
             return 0
 
@@ -302,6 +316,7 @@ class EvolutionMemory:
 
     async def stats(self) -> dict[str, Any]:
         """Return summary statistics."""
+        await self._ensure_init()
         if not self._db:
             return {"mutations": 0, "skills": 0}
 

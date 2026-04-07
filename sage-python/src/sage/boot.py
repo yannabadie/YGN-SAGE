@@ -568,11 +568,11 @@ def boot_agent_system(
         _log.info("Online evolution enabled (Rust TopologyEngine available)")
 
     # CORAL Phase 1: persistent evolution memory (arXiv 2604.01658)
+    # Lazy init: EvolutionMemory.initialize() is called on first async use,
+    # not here (boot is synchronous, can't safely run async init).
     try:
         from sage.evolution.memory import EvolutionMemory
-        import asyncio
         _evo_mem = EvolutionMemory()
-        asyncio.get_event_loop().run_until_complete(_evo_mem.initialize())
         # Wire into evolution engine if available
         if hasattr(loop, '_evolution_engine') and loop._evolution_engine:
             loop._evolution_engine._evolution_memory = _evo_mem
