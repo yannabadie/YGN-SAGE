@@ -84,20 +84,20 @@ Model IDs are resolved in order: environment variable `SAGE_MODEL_<TIER>` > `con
 
 ```python
 import asyncio
-from sage.boot import boot
+from sage.boot import boot_agent_system
 
 async def main():
-    # Boot wires all 5 pillars together
-    system = await boot()
+    # Boot wires all 5 pillars together (synchronous)
+    system = boot_agent_system()
 
     # Run a task through the full cognitive pipeline
-    result = await system.agent.run("Write a Python function to compute fibonacci numbers")
+    result = await system.run("Write a Python function to compute fibonacci numbers")
     print(result)
 
 asyncio.run(main())
 ```
 
-The `boot()` function:
+The `boot_agent_system()` function:
 
 1. Auto-discovers available LLM providers
 2. Loads model configuration from TOML

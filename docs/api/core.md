@@ -6,23 +6,23 @@ This page documents the key classes and interfaces in the YGN-SAGE framework. Fo
 
 ## AgentSystem
 
-The top-level container returned by `boot()`. Wires all five pillars together.
+The top-level container returned by `boot_agent_system()`. Wires all five pillars together.
 
 ```python
-from sage.boot import boot
+from sage.boot import boot_agent_system
 
-system = await boot()
+system = boot_agent_system()  # synchronous
 ```
 
 **Key attributes:**
 
 | Attribute | Type | Description |
 |-----------|------|-------------|
-| `agent` | `AgentLoop` | The main agent loop |
-| `event_bus` | `EventBus` | Central event system |
-| `guardrail_pipeline` | `GuardrailPipeline` | 3-layer guardrail chain |
+| `agent_loop` | `AgentLoop` | The main agent loop |
+| `pipeline` | `CognitiveOrchestrationPipeline` | 5-stage pipeline |
 | `topology_engine` | `PyTopologyEngine` | Rust topology generation |
 | `bandit` | `ContextualBandit` | Model selection bandit |
+| `rust_router` | `SystemRouter` | Rust kNN + SystemRouter |
 
 **Boot sequence:**
 
@@ -40,7 +40,7 @@ system = await boot()
 The runtime that implements the PERCEIVE -> THINK -> ACT -> LEARN pipeline.
 
 ```python
-result = await system.agent.run("Your task here")
+result = await system.run("Your task here")
 ```
 
 **Pipeline phases:**

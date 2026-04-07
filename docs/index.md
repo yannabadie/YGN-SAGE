@@ -52,11 +52,11 @@ export GOOGLE_API_KEY="your-key-here"
 cd ../sage-python
 python -c "
 import asyncio
-from sage.boot import boot
+from sage.boot import boot_agent_system
 
 async def main():
-    system = await boot()
-    result = await system.agent.run('What is the capital of France?')
+    system = boot_agent_system()
+    result = await system.run('What is the capital of France?')
     print(result)
 
 asyncio.run(main())
