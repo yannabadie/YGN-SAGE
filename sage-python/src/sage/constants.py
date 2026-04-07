@@ -119,6 +119,12 @@ EVOLUTION_SATURATION_THRESHOLD = 0.80  # Stop evolving when archive is this full
 EVOLUTION_ONLINE_POP_SIZE = 5       # Population size for online evolution pass
 EVOLUTION_ONLINE_GENERATIONS = 2    # Generations per online evolution pass
 
+# -- Evolution Memory (CORAL arXiv 2604.01658) ---------------------------------
+# [PAPER] Persistent mutation/skill store. Skills extracted via SQL aggregation.
+EVOLUTION_MEMORY_MIN_SAMPLES = 5            # Min mutations before skill extraction
+EVOLUTION_MEMORY_SKILL_DECAY_HALF_LIFE_DAYS = 30.0  # Temporal decay on skills
+EVOLUTION_MEMORY_SKILL_TOP_K = 3            # Max skills injected per mutation prompt
+
 # -- Extended drift monitor / Agent Stability Index (arXiv 2601.04170) ----------
 # [PAPER] 12-dimension ASI. The first 3 reuse the legacy signals via DriftMonitor.
 # These 9 new dimensions are added by ExtendedDriftMonitor. Subject to ablation.

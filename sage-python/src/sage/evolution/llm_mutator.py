@@ -52,6 +52,7 @@ class LLMMutator:
 
     def __init__(self, llm_tier: str = "mutator"):
         self.llm_tier = llm_tier
+        self.evolution_memory = None  # CORAL: wire for skill injection
 
     def _build_mutation_prompt(self, code: str, objective: str, context: str) -> str:
         prompt = f"## Objective\n{objective}\n\n"
@@ -59,6 +60,27 @@ class LLMMutator:
             prompt += f"## SAMPO Directive\n{context}\n\n"
         prompt += f"## Source Code\n```\n{code}\n```\n\n"
         prompt += "Generate 1-3 mutations as SEARCH/REPLACE pairs. Respond in the required JSON format."
+        return prompt
+
+    async def _inject_skills(self, prompt: str, context: str) -> str:
+        """CORAL: inject learned skills from EvolutionMemory into mutation prompt."""
+        if not self.evolution_memory:
+            return prompt
+        try:
+            import json as _json
+            ctx = _json.loads(context) if isinstance(context, str) and context.startswith("{") else {}
+            skills = await self.evolution_memory.query_skills(
+                domain=ctx.get("domain", ""),
+                parent_score=ctx.get("parent_score", 0.0),
+                top_k=3,
+            )
+            if skills:
+                prompt += "\n## Learned Patterns (from past evolution)\n"
+                for s in skills:
+                    prompt += f"- SAMPO action {s.sampo_action}: {s.pattern} "
+                    prompt += f"(success {s.success_rate:.0%}, n={s.sample_count})\n"
+        except Exception:
+            pass  # Best-effort — don't break mutation
         return prompt
 
     async def mutate(self, request: MutationRequest) -> MutationResponse:
@@ -72,6 +94,7 @@ class LLMMutator:
         prompt = self._build_mutation_prompt(
             request.code, request.objective, request.context
         )
+        prompt = await self._inject_skills(prompt, request.context)
 
         messages = [
             Message(role=Role.SYSTEM, content=MUTATION_SYSTEM_PROMPT),

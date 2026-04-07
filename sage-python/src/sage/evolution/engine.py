@@ -62,10 +62,12 @@ class EvolutionEngine:
         config: EvolutionConfig | None = None,
         mutator: Mutator | None = None,
         evaluator: Evaluator | None = None,
+        evolution_memory: Any | None = None,
     ):
         self.config = config or EvolutionConfig()
         self._mutator = mutator or Mutator()
         self._evaluator = evaluator or Evaluator()
+        self._evolution_memory = evolution_memory  # CORAL: persistent mutation/skill store
         self._population = Population(
             feature_dims=self.config.feature_dims,
             bins_per_dim=self.config.bins_per_dim,
@@ -179,8 +181,27 @@ class EvolutionEngine:
             current_gen_traj["actions"].append(sampo_action)
             current_gen_traj["rewards"].append(reward)
 
-            if self._population.add(child):
+            inserted = self._population.add(child)
+            if inserted:
                 accepted.append(child)
+
+            # CORAL: persist mutation + outcome for skill extraction
+            if self._evolution_memory:
+                try:
+                    from sage.evolution.memory import MutationRecord
+                    await self._evolution_memory.record_mutation(MutationRecord(
+                        generation=self.generation,
+                        parent_id=parent.id,
+                        child_id=child.id,
+                        sampo_action=sampo_action,
+                        parent_score=parent.score,
+                        child_score=eval_result.score,
+                        accepted=inserted,
+                        eval_stage=eval_result.stage,
+                        eval_details=eval_result.details,
+                    ))
+                except Exception:
+                    pass  # Best-effort — don't break evolution
 
         # Update SAMPO policy
         self._trajectories.append(current_gen_traj)
