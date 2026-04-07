@@ -300,6 +300,12 @@ async def _run_bigcodebench(output: str | None, limit: int | None, subset: str, 
     _print_report(report)
     _save_report(report, bench, output, f"bigcodebench-{subset}-{split}")
 
+    # Write predictions JSONL for official submission
+    from datetime import datetime
+    pred_path = f"docs/benchmarks/{datetime.now():%Y-%m-%d}-predictions-{subset}-{split}.jsonl"
+    bench.write_predictions(pred_path)
+    print(f"  Predictions: {pred_path}")
+
 
 async def _run_apps(
     output: str | None, limit: int | None, difficulty: str | None,

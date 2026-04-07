@@ -10,6 +10,7 @@ Dataset: https://huggingface.co/datasets/bigcode/bigcodebench
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import subprocess
 import tempfile
@@ -70,6 +71,7 @@ class BigCodeBenchBench:
             task_ids = task_ids[:limit]
 
         results: list[TaskResult] = []
+        self._predictions: list[dict[str, str]] = []
         passed_count = 0
 
         for i, task_id in enumerate(task_ids):
@@ -152,6 +154,12 @@ class BigCodeBenchBench:
             if task_passed:
                 passed_count += 1
 
+            # Track prediction for JSONL submission
+            self._predictions.append({
+                "task_id": task_id,
+                "solution": solution or "",
+            })
+
             results.append(TaskResult(
                 task_id=task_id,
                 passed=task_passed,
@@ -163,6 +171,11 @@ class BigCodeBenchBench:
             log.info("[%d/%d] %s %s (%.0fms)", i + 1, len(task_ids), status, task_id, latency_ms)
 
         total = len(results)
+        cost = (
+            getattr(self.system.agent_loop, "total_cost_usd", 0.0)
+            if self.system
+            else 0.0
+        )
         return BenchReport(
             benchmark=f"bigcodebench-{self.subset}-{self.split}",
             total=total,
@@ -171,10 +184,22 @@ class BigCodeBenchBench:
             errors=sum(1 for r in results if r.error),
             pass_rate=passed_count / total if total else 0.0,
             avg_latency_ms=sum(r.latency_ms for r in results) / total if total else 0.0,
-            avg_cost_usd=0.0,
+            avg_cost_usd=cost / total if total else 0.0,
             routing_breakdown={},
             results=results,
         )
+
+    def write_predictions(self, path: str | Path) -> None:
+        """Write predictions in JSONL format for official BigCodeBench submission.
+
+        Each line: {"task_id": "BigCodeBench/N", "solution": "..."}
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            for pred in self._predictions:
+                f.write(json.dumps(pred, ensure_ascii=False) + "\n")
+        log.info("Wrote %d predictions to %s", len(self._predictions), path)
 
     @staticmethod
     def _evaluate_solution(
