@@ -431,6 +431,14 @@ def main() -> None:
 
     _load_env()
 
+    # Configure logging so bench progress is visible
+    import logging
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(message)s",
+        stream=__import__("sys").stderr,
+    )
+
     # Set boot tier for all benchmark runs
     global _BOOT_TIER
     _BOOT_TIER = args.tier
