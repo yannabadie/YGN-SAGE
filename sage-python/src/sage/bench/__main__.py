@@ -150,11 +150,7 @@ async def _run_evalplus(
 
 async def _run_ablation(output: str | None, limit: int | None) -> None:
     from sage.bench.ablation import ABLATION_CONFIGS
-    from sage.bench.evalplus_bench import EvalPlusBench
-
-    if not os.environ.get("GOOGLE_API_KEY"):
-        print("  ERROR: GOOGLE_API_KEY required for ablation study")
-        return
+    from sage.bench.bigcodebench_bench import BigCodeBenchBench
 
     all_results: dict[str, dict] = {}
 
@@ -168,15 +164,19 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         system, bus = _boot_system()
 
         if config.label == "baseline":
-            bench = EvalPlusBench(
-                system=system, event_bus=bus, dataset="humaneval",
-                baseline_mode=True,
-            )
+            # Disable pipeline entirely — bare LLM call via legacy path
+            system.pipeline = None
         else:
+            # Apply skip flags to agent_loop AND disable pipeline components
             config.apply(system)
-            bench = EvalPlusBench(
-                system=system, event_bus=bus, dataset="humaneval",
-            )
+            if not config.routing and system.pipeline:
+                system.pipeline.router = None  # Skip classify stage
+            if not config.memory:
+                system.agent_loop.consolidator = None
+
+        bench = BigCodeBenchBench(
+            system=system, event_bus=bus, subset="hard", split="instruct",
+        )
 
         report = await bench.run(limit=limit)
         _print_report(report)
@@ -188,6 +188,7 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
             "total": report.total,
             "avg_latency_ms": report.avg_latency_ms,
             "avg_cost_usd": report.avg_cost_usd,
+            "per_task": [r.passed for r in report.results],  # binary outcomes for stats
         }
 
     # Print ablation comparison table
@@ -204,6 +205,19 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         delta_str = f"{delta:+.1%}" if label != "full" else "ref"
         print(f"  {label:<16} {rate:>9.1%} {data['passed']:>8} {data['total']:>8} {delta_str:>8}")
     print()
+
+    # Statistical tests (McNemar + Cohen's d + Bootstrap CI)
+    from sage.bench.ablation import compute_ablation_stats
+    binary_results = {label: data["per_task"] for label, data in all_results.items() if data.get("per_task")}
+    if len(binary_results) >= 2 and all(len(v) == len(next(iter(binary_results.values()))) for v in binary_results.values()):
+        stats = compute_ablation_stats(binary_results)
+        all_results["_statistics"] = stats
+        print("  STATISTICAL TESTS (McNemar + Cohen's d)")
+        print(f"  {'-'*50}")
+        for pair, s in stats.get("pairwise", {}).items():
+            sig = "***" if s["mcnemar_p"] < 0.05 else "n.s."
+            print(f"  {pair:<30} p={s['mcnemar_p']:.4f} {sig}  d={s['cohens_d']:+.3f}  CI={s['bootstrap_ci_95']}")
+        print()
 
     # Save combined results
     if output is None:
