@@ -695,7 +695,7 @@ async def test_pipeline_budget_degrade_emits_event():
             return MagicMock(topology=over_topo)
 
     pipeline = CognitiveOrchestrationPipeline(
-        router=_MockRouter(system=2),
+        router=_MockRouter(system=3),  # S3 always uses topology (no adaptive bypass)
         engine=_OverBudgetEngine(),
         assigner=None,
         provider_pool=MagicMock(),
