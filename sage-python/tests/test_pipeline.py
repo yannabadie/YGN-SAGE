@@ -483,6 +483,9 @@ class _MockProviderPool:
     ) -> None:
         self._unavailable = unavailable_providers or set()
         self._registry = registry
+        # Simulate available providers (all known minus unavailable)
+        _all = {"google", "openai", "deepseek", "xai", "minimax", "kimi", "openrouter"}
+        self._providers = {p: True for p in _all if p not in self._unavailable}
 
     def is_available(self, provider_name: str) -> bool:
         return provider_name not in self._unavailable

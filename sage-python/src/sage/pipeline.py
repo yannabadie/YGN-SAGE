@@ -619,19 +619,48 @@ class CognitiveOrchestrationPipeline:
         # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
         # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
-        # Filter out models assigned to unavailable providers (circuit breaker open)
-        if self.provider_pool and hasattr(self.provider_pool, 'is_available'):
+        # Filter out models whose provider has no API key or circuit breaker open
+        if self.provider_pool:
+            available_providers = set(getattr(self.provider_pool, '_providers', {}).keys())
             for node_idx, model_id in list(ctx.assignments.items()):
-                profile = (
-                    self.provider_pool._registry.get(model_id)
-                    if self.provider_pool._registry else None
-                )
-                provider_name = getattr(profile, 'provider', '') if profile else ''
-                if provider_name and not self.provider_pool.is_available(provider_name):
+                if not model_id:
+                    continue
+                # Infer provider: try registry first, then string matching
+                provider_name = ""
+                _reg = getattr(self.provider_pool, '_registry', None)
+                if _reg:
+                    profile = _reg.get(model_id) if hasattr(_reg, 'get') else None
+                    provider_name = getattr(profile, 'provider', '') if profile else ''
+                if not provider_name:
+                    mid = model_id.lower()
+                    if "minimax" in mid:
+                        provider_name = "minimax"
+                    elif "gpt-" in mid or "o1" in mid or "o3" in mid:
+                        provider_name = "openai"
+                    elif "deepseek" in mid:
+                        provider_name = "deepseek"
+                    elif "gemini" in mid:
+                        provider_name = "google"
+                    elif "grok" in mid:
+                        provider_name = "xai"
+                    elif "kimi" in mid or "moonshot" in mid:
+                        provider_name = "kimi"
+                    elif "qwen" in mid:
+                        provider_name = "openrouter"
+
+                # Check: provider must be in pool AND circuit breaker not open
+                unavailable = False
+                if provider_name and provider_name not in available_providers:
+                    unavailable = True
+                elif provider_name and hasattr(self.provider_pool, 'is_available'):
+                    if not self.provider_pool.is_available(provider_name):
+                        unavailable = True
+
+                if unavailable:
                     default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
                     if default_model:
                         log.info(
-                            "Stage 3: %s provider unavailable (circuit open), "
+                            "Stage 3: %s provider unavailable, "
                             "node %d reassigned %s -> %s",
                             provider_name, node_idx, model_id, default_model,
                         )
