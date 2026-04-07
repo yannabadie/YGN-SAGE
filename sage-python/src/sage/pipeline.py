@@ -365,20 +365,22 @@ class CognitiveOrchestrationPipeline:
         if ctx.dag_features:
             hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
 
-        # ADAPTIVE BYPASS: Skip topology for S2 tasks that are structurally
-        # simple (sequential hint + low omega). AdaptOrch (2602.16873) shows
-        # topology adds only +3.8pp on Chain tasks (omega≤1) but costs overhead.
-        # BigCodeBench traces confirm: sequential 55% vs AVR 45% pass rate.
-        # S3 tasks always keep topology (complex, multi-step).
-        if ctx.system == 2 and hint == "sequential" and ctx.dag_features:
-            if ctx.dag_features.omega <= 1 and ctx.dag_features.delta <= 2:
-                ctx.topology = None
-                log.info(
-                    "Stage 2: BYPASS topology for simple S2 task "
-                    "(hint=%s, omega=%s, delta=%s) — direct single-agent",
-                    hint, ctx.dag_features.omega, ctx.dag_features.delta,
-                )
-                return ctx
+        # ADAPTIVE BYPASS: Skip topology for S2 tasks with "sequential" hint.
+        # select_macro_topology() returns "sequential" when no structural reason
+        # exists for a specialized topology (omega<3, delta<5, gamma<0.6).
+        # AdaptOrch (2602.16873): Chain cluster (sequential) adds only +3.8pp
+        # but costs multi-agent overhead. BigCodeBench traces: sequential 55%
+        # vs AVR 45%. S3 tasks always keep topology (complex, multi-step).
+        if ctx.system == 2 and hint == "sequential":
+            ctx.topology = None
+            log.info(
+                "Stage 2: BYPASS topology for S2+sequential task "
+                "(omega=%s, delta=%s, gamma=%s) — direct single-agent",
+                ctx.dag_features.omega if ctx.dag_features else "?",
+                ctx.dag_features.delta if ctx.dag_features else "?",
+                f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
+            )
+            return ctx
 
         # If DAG analysis selected a specialized template, try to build it
         # before falling through to the TopologyEngine 6-path.
