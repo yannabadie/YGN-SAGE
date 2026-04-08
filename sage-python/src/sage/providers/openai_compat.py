@@ -213,7 +213,11 @@ class OpenAICompatProvider:
                             args = _json.loads(args)
                         except (ValueError, TypeError):
                             args = {"raw": args}
-                    tool_calls.append(ToolCall(name=tc.function.name, arguments=args))
+                    tool_calls.append(ToolCall(
+                        id=tc.id or f"call_{len(tool_calls)}",
+                        name=tc.function.name,
+                        arguments=args,
+                    ))
 
             return LLMResponse(content=final_content, model=model, usage=usage, tool_calls=tool_calls)
         except Exception as e:
