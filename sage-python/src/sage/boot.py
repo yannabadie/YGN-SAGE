@@ -575,6 +575,22 @@ def boot_agent_system(
         loop._auto_evolve = True
         _log.info("Online evolution enabled (Rust TopologyEngine available)")
 
+    # ToolForge: autonomous tool synthesis (UCT arXiv 2602.01983)
+    # When agent calls a tool that doesn't exist, GapDetector creates a ticket,
+    # ToolForge synthesizes code+tests via LLM, validates (AST+sandbox), registers.
+    try:
+        from sage.tools.forge import ToolForge
+        _toolforge = ToolForge(
+            registry=tool_registry,
+            llm_provider=provider,
+            llm_config=llm_config,
+            event_bus=event_bus,
+        )
+        loop.toolforge = _toolforge
+        _log.info("ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)")
+    except Exception as exc:
+        _log.debug("ToolForge not available: %s", exc)
+
     # CORAL Phase 1: persistent evolution memory (arXiv 2604.01658)
     # Lazy init: EvolutionMemory.initialize() is called on first async use,
     # not here (boot is synchronous, can't safely run async init).
@@ -596,6 +612,51 @@ def boot_agent_system(
     from sage.tools.memory_tools import create_memory_tools
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor, causal_memory=causal_memory):
         tool_registry.register(tool)
+
+    # Core code tools: bash execution for file reading, git, tests
+    # These are the foundation for SWE-bench, code review, and self-programming.
+    from sage.tools.base import Tool
+    from sage.llm.base import ToolDef
+
+    async def _execute_bash_handler(command: str, timeout: int = 30, **_kwargs) -> str:
+        """Execute a bash command in a subprocess. Returns stdout+stderr."""
+        import asyncio, subprocess
+        try:
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_shell(
+                    command,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                ),
+                timeout=timeout,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+            output = (stdout or b"").decode("utf-8", errors="replace")
+            if stderr:
+                output += "\n[STDERR]\n" + stderr.decode("utf-8", errors="replace")
+            return output[:10000]  # Cap output to 10K chars
+        except asyncio.TimeoutError:
+            return f"[TIMEOUT after {timeout}s]"
+        except Exception as e:
+            return f"[ERROR] {type(e).__name__}: {e}"
+
+    bash_tool = Tool(
+        spec=ToolDef(
+            name="execute_bash",
+            description="Execute a bash/shell command. Use for: reading files (cat, head), searching code (grep, find), running tests (pytest, python), git operations (git diff, git log), and any system command. Returns stdout+stderr (max 10K chars).",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "The shell command to execute"},
+                    "timeout": {"type": "integer", "description": "Max seconds (default 30)", "default": 30},
+                },
+                "required": ["command"],
+            },
+        ),
+        handler=_execute_bash_handler,
+    )
+    tool_registry.register(bash_tool)
+    _log.info("Core tools: execute_bash registered (file read, git, tests, system commands)")
 
     # ExoCortex tools (search)
     from sage.tools.exocortex_tools import create_exocortex_tools
