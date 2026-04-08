@@ -211,6 +211,9 @@ def init_pipeline(
                 episodic_memory=episodic_memory,
                 tool_registry=tool_registry,
             )
+            # Wire Rust registry for Stage 4 model selection (affinity scoring)
+            if rust_registry:
+                _pipeline._rust_registry = rust_registry
             _log.info("CognitiveOrchestrationPipeline initialized")
         except (ImportError, RuntimeError) as exc:
             _log.warning("Pipeline init failed: %s -- using legacy path", exc)
