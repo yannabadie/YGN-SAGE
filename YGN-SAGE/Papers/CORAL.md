@@ -59,13 +59,13 @@ Agent 1 (worktree)   Agent 2 (worktree)   Agent 3 (worktree)
 
 ## Ce qui est applicable a SAGE
 
-| Innovation CORAL | Feature SAGE cible | Fichiers | Priorite |
-|---|---|---|---|
-| **Memoire evolution persistante** | EvolutionMemory (attempts + skills) | `memory/evolution_memory.py` (NEW) | **P0** |
-| **Heartbeat stagnation redirect** | DriftMonitor → trigger evolve | `monitoring/drift_evolution.py` (NEW) | **P1** |
-| **Autonomie mutation** | LLM propose strategie avant mutation | `evolution/mutation_strategy.py` (NEW) | **P2** |
-| **Worktree parallelization** | Evolution parallele N agents | `evolution/parallel_evolution.py` (NEW) | **P1** |
-| **Knowledge transfer cross-agent** | Skills queryable dans LLM prompts | `evolution/llm_mutator.py` (MODIFY) | **P0** |
+| Innovation CORAL | Feature SAGE cible | Fichiers | Priorite | Status |
+|---|---|---|---|---|
+| **Memoire evolution persistante** | EvolutionMemory (attempts + skills) | `evolution/memory.py` | **P0** | **DONE (avril 8)** |
+| **Knowledge transfer cross-agent** | Skills queryable dans LLM prompts | `evolution/llm_mutator.py` | **P0** | **DONE (wire au boot)** |
+| **Heartbeat stagnation redirect** | DriftMonitor → trigger evolve | `monitoring/drift_evolution.py` | **P1** | A faire |
+| **Autonomie mutation** | LLM propose strategie avant mutation | `evolution/mutation_strategy.py` | **P2** | A faire |
+| **Worktree parallelization** | Evolution parallele N agents | `evolution/parallel_evolution.py` | **P1** | A faire |
 
 ## Ce qui n'est PAS applicable
 

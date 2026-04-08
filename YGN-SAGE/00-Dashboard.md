@@ -22,11 +22,14 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 | BigCodeBench Hard | v1: 37.2%, v3b: 35.8%, **v4 en cours** | v4: bypass + repair + escalation |
 | Adaptive bypass | S2+sequential → single-agent | AdaptOrch omega thresholds |
 | EvolutionMemory | CORAL Phase 1 implemente | SQLite WAL, skills persistantes |
-| Providers | 7 (MiniMax bug 400) | Pre-filtre provider ajoute |
+| Providers | **7 alive** (truststore SSL) | Health check au boot, circuit breaker, ModelAssigner.exclude_providers() |
+| Tools agent | **13** (execute_bash + meta + memory) | Tool-calling loop dans pipeline (single entry point) |
+| Model selection | Rust affinity scoring | ModelRegistry.select_for_system() depuis cards.toml, pas hardcode |
 | Templates topo | 11 | sequential, parallel, AVR, debate, hub, etc. |
 | PyPI | `pip install ygn-sage` | v0.1.0-alpha |
 | A2A | a2a-sdk 0.3.25 | 6 tests, streaming + cancellation |
-| ToolForge | E2E valide | gap -> synthese -> registration -> use |
+| ToolForge | Wire dans agent loop | GapDetector + BuildLoop + tool-calling integre |
+| SWE-bench | Premier patch genere | Agent lit le code via execute_bash, clone repo |
 
 ## Navigation
 
@@ -51,7 +54,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > - **MASBENCH parallel -6pp** : la topologie regresse sur les taches paralleles
 > - **MASBENCH robustness 0%** : 0% bare ET SAGE — a debugger
 > - **BigCodeBench omega=1.3** : topologie n'est PAS le levier (ADR-006). Gains viennent du repair
-> - **MiniMax 400 error** : pre-filtre ajoute mais provider toujours casse
+> - **MiniMax** : exclu au boot via health check + ModelAssigner.exclude_providers() (SSL proxy fixe par truststore)
 > - **Path 6 (learned policy)** : opt-in (`SAGE_ENABLE_PATH6=1`), pas dans le pipeline par defaut
 > - **sage-discover** : gateway partiellement cassee (imports fixes, runtime non verifie)
 > - **Memory consolidation** : design documente, implementation incomplete

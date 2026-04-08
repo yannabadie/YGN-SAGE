@@ -20,15 +20,19 @@ Source de verite : `sage-python/src/sage/providers/connector.py`
 | OpenAI | api.openai.com/v1 | gpt-5.4 | Meilleure qualite |
 | xAI | api.x.ai/v1 | grok-4-1-fast-reasoning | Raisonnement rapide |
 | Kimi | api.moonshot.ai/v1 | kimi-k2.5 | Vision + raisonnement |
-| MiniMax | api.minimax.io/v1 | minimax-m2.7 | Contexte 4M tokens — **BUG 400** "invalid chat setting" |
+| MiniMax | api.minimax.io/v1 | minimax-m2.7 | Contexte 4M tokens — exclu via health check (SSL proxy) |
 | OpenRouter | openrouter.ai/api/v1 | qwen/qwen3.5-plus | Acces 200+ modeles |
 
 ## Fonctionnement
 
 - Chaque noeud de topologie peut utiliser un provider different
 - La policy model peut exprimer `provider_hint` pour biaiser la selection (+0.15)
-- **Circuit breaker** : auto-failover quand un provider tombe
-- **ProviderPool** : resolution per-node, pas globale
+- **Health check au boot** : probe tous les providers, circuit breaker pour les morts
+- **truststore** : SSL proxy corporate (*.adgroupe.com) gere via Windows Certificate Store
+- **ModelAssigner.exclude_providers()** : providers morts exclus du scoring Rust
+- **ProviderPool.infer_provider() + is_model_available()** : verification centralisee
+- **FrugalGPT cascade** : valide provider avant upgrade modele
+- **json_schema** : seulement pour OpenAI (DeepSeek/xAI/etc. le rejettent)
 
 ## Configuration
 

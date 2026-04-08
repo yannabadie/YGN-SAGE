@@ -24,7 +24,24 @@ updated: 2026-04-07
 | [[Robustness-Zero]] | Ouvert | 0% bare ET SAGE |
 | [[Memory-Consolidation-Incomplete]] | Ouvert | Design ok, implementation partielle |
 | [[Path6-Not-Default]] | Design choice | Opt-in, pas dans pipeline defaut |
-| MiniMax 400 error | Ouvert | "invalid chat setting (2013)" — provider inutilisable |
+| MiniMax 400 error | **Mitige** | SSL proxy → truststore, exclu via health check + ModelAssigner.exclude_providers() |
+
+## Recemment fixes (Avril 8, 2026 — Architecture)
+
+| Issue | Severite | Fix |
+|-------|----------|-----|
+| Pipeline tool-calling | P0 | Single entry point, agents utilisent execute_bash via tool-calling loop |
+| ToolForge non wire | P1 | Wire dans agent loop au boot |
+| execute_bash manquant | P0 | Outil enregistre au boot (git bash sur Windows) |
+| Model selection hardcode | P1 | Rust ModelRegistry.select_for_system() affinity scoring |
+| Provider health check | P0 | Probe au boot, circuit breaker pour providers morts |
+| Rust exclude_providers | P1 | ModelAssigner exclut providers morts a la source |
+| truststore SSL | P1 | Corporate proxy fixe via Windows Certificate Store |
+| json_schema DeepSeek | P2 | Seulement envoye a OpenAI |
+| FrugalGPT model mismatch | P2 | Valide provider avant upgrade |
+| SWE-bench repo clone | P1 | Clone au bon commit + chdir avant execution |
+| Token usage capture | P2 | LLMResponse.usage rempli depuis les reponses API |
+| EvolutionMemory | P1 | CORAL Phase 1, SQLite WAL, lazy init au boot |
 
 ## Recemment fixes (Avril 7, 2026 — Phase A)
 

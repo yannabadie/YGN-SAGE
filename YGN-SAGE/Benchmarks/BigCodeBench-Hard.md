@@ -17,13 +17,17 @@ tags:
 - **Limite** : 148 taches
 - **Modele** : budget (DeepSeek primaire)
 
-## Resultat
+## Resultats (Avril 2026, 4 iterations)
 
-| Metrique | Score |
-|----------|-------|
-| Pass rate | **37.8%** (56/148) |
-| Leaderboard (gele) | 33.1% (o3-mini) |
-| SOTA (The Conductor) | 40.0% |
+| Version | Pass rate | Delta | Changements |
+|---------|-----------|-------|-------------|
+| v1 (baseline) | 37.2% (55/148) | ref | Pipeline standard |
+| v3b (bypass) | 35.8% (53/148) | -1.4pp | Bypass trop agressif |
+| **v4 (final)** | **45.9% (68/148)** | **+8.7pp** | Bypass + repair reasoner + escalation |
+| Leaderboard (gele) | 33.1% | — | o3-mini, avril 2025 |
+| SOTA (The Conductor) | 40.0% | — | Recursive self-invocation |
+
+Sources du gain v4 : MiniMax pre-filtre (+7pp), stronger AVR repair (+4pp), model selection via cards.toml
 
 ## Commande
 

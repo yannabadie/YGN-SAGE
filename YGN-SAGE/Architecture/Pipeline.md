@@ -48,32 +48,37 @@ Un bandit contextuel (Thompson sampling) module exploration vs exploitation.
 
 ## Stage 4 — ASSIGN MODELS
 
-**Composant** : ModelAssigner (Rust)
-**Score** : `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)`
-**Provider hints** : +0.15 bonus si la topologie suggere un provider
-**Override** : Le bandit ecrase les assignments pour les modeles sous-performants (quality < 0.4)
-**Source** : `sage-core/config/cards.toml` — 20 modeles, 7 providers
+**Composant** : ModelAssigner (Rust) + `ModelRegistry.select_for_system()` en bypass
+**Score** : `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)` (meme scoring en topologie et en bypass)
+**Bypass** : `select_for_system(S1/S2/S3)` → premier candidat avec provider disponible
+**Provider exclusion** : `ModelAssigner.exclude_providers(dead)` depuis le health check boot
+**FrugalGPT cascade** : valide provider avant upgrade modele, `json_schema` seulement pour OpenAI
+**Source** : `sage-core/config/cards.toml` — 19 modeles, 7 providers
 
-## Stage 5 — EXECUTE
+## Stage 5 — EXECUTE (Tool-Calling Loop)
 
-**Composant** : TopologyRunner
-**Execution** : noeuds en ordre DAG, contexte adaptatif (pas de troncature fixe)
-**Deduplication** : Jaccard similarity gate (S2-MAD, -94% tokens sur outputs paralleles similaires)
+**Single entry point** : `system.run()` → pipeline → tool-calling loop (max 30 turns)
+**Agent tools** : 13 outils (execute_bash, create_python_tool, create_bash_tool, 8 memoire, 2 knowledge)
+**Tool-calling** : generate(tools) → LLM retourne tool_calls → execute → re-generate (boucle)
+**TopologyRunner** : noeuds en ordre DAG, contexte adaptatif (mode multi-agent)
+**Deduplication** : Jaccard similarity gate (S2-MAD)
+**ExecutionTrace** : dataclass structuree par run (tokens, cost, latency par noeud)
 
 Apres chaque noeud :
 - **QualityEstimator** — OxiZ (code) ou DistilBERT ONNX (texte)
 - **TopologyController** decide : `continue` / `upgrade_model` / `prune_node` / `reroute_topology` / `spawn_subagent` / `open_gate`
-- **Code nodes** (HyEvo) : execution sandbox au lieu d'appels LLM
-- **Arithmetic verification** : detecte erreurs de calcul → model upgrade
+- **Escalation Conductor** : bypass → repair (reasoner tier) → topology fallback
+- **Code nodes** (HyEvo) : execution sandbox
 - **HITL callback** : pause optionnelle pour approbation humaine
-- Circuit breaker si provider tombe → failover automatique
+- **Health check** au boot : circuit breaker pour providers morts
 
 ## Stage 6 — LEARN
 
-**5 systemes de feedback** :
+**6 systemes de feedback** :
 1. **Bandit** → met a jour quelle combo template/modele marche (SQLite, retour en Stage 4)
 2. **MAP-Elites** → stocke la topologie si nouveau elite dans sa niche
 3. **Episodic memory** → trace complete (SQLite, cross-session)
+4. **EvolutionMemory** (CORAL Phase 1) → mutations/skills persistantes en SQLite WAL
 4. **Consolidation** → transforme memoire episodique en semantique (tous les 10 steps)
 5. **Online evolution** → `should_evolve()` (Rust) trigger mutation quand assez d'outcomes
 
