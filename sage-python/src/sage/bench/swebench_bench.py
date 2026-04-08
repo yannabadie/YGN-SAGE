@@ -275,6 +275,43 @@ class SWEBenchBench:
         self.run_id = run_id or f"sage-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}"
         self.manifest: BenchmarkManifest | None = None
 
+    @staticmethod
+    def _setup_repo(instance: dict[str, Any]) -> str | None:
+        """Clone the repo at base_commit into a temp directory.
+
+        Returns the path to the repo root, or None if clone fails.
+        The caller must chdir into it and clean up after.
+        """
+        import subprocess, tempfile
+
+        repo = instance.get("repo", "")  # e.g. "astropy/astropy"
+        base_commit = instance.get("base_commit", "")
+        if not repo or not base_commit:
+            return None
+
+        repo_url = f"https://github.com/{repo}.git"
+        tmp = tempfile.mkdtemp(prefix="sage_swe_")
+        repo_dir = os.path.join(tmp, repo.split("/")[-1])
+
+        try:
+            # Shallow clone (depth 1 at the right commit isn't supported by git,
+            # so we clone shallow then fetch the specific commit)
+            subprocess.run(
+                ["git", "clone", "--depth", "50", "--single-branch", repo_url, repo_dir],
+                capture_output=True, timeout=120, check=True,
+            )
+            subprocess.run(
+                ["git", "checkout", base_commit],
+                cwd=repo_dir, capture_output=True, timeout=30, check=True,
+            )
+            log.info("Repo cloned: %s @ %s -> %s", repo, base_commit[:8], repo_dir)
+            return repo_dir
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
+            log.warning("Repo clone failed for %s: %s", repo, e)
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+            return None
+
     # ------------------------------------------------------------------
     # Phase 1: Generate patches
     # ------------------------------------------------------------------
@@ -321,6 +358,16 @@ class SWEBenchBench:
             system_used = 0
             patch = ""
 
+            # Clone repo at base_commit so agent tools (execute_bash) can read code
+            repo_dir = None
+            original_cwd = os.getcwd()
+            try:
+                repo_dir = self._setup_repo(instance)
+                if repo_dir:
+                    os.chdir(repo_dir)
+            except Exception as e:
+                log.warning("[%s] Repo setup failed: %s — agent runs without code access", instance_id, e)
+
             try:
                 response = await asyncio.wait_for(
                     self.system.run(task_prompt),
@@ -337,6 +384,15 @@ class SWEBenchBench:
             except Exception as e:
                 error = str(e)[:200]
                 log.error("[%s] Generation failed: %s", instance_id, error)
+            finally:
+                # Restore cwd and cleanup repo
+                os.chdir(original_cwd)
+                if repo_dir:
+                    import shutil
+                    try:
+                        shutil.rmtree(repo_dir, ignore_errors=True)
+                    except Exception:
+                        pass
 
             latency = (time.perf_counter() - t0) * 1000
             cost = getattr(
