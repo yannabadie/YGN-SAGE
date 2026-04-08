@@ -962,11 +962,31 @@ class CognitiveOrchestrationPipeline:
                                     try:
                                         self.assigner.assign_single_node(
                                             ctx.topology, i, ctx.domain,
-                                            ctx.budget * 1.5,  # Budget escalation
+                                            ctx.budget * 1.5,
                                             exclude_model_ids=[current_model] if current_model else None,
                                         )
                                     except (ValueError, RuntimeError):
-                                        pass  # Keep current model if no upgrade available
+                                        pass
+                                # Verify upgraded model has an available provider
+                                node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
+                                new_model = getattr(node, 'model_id', '') if node else ''
+                                if new_model and self.provider_pool:
+                                    available = set(getattr(self.provider_pool, '_providers', {}).keys())
+                                    mid = new_model.lower()
+                                    pname = ""
+                                    if "minimax" in mid: pname = "minimax"
+                                    elif "gpt-" in mid or "o1" in mid or "o3" in mid: pname = "openai"
+                                    elif "deepseek" in mid: pname = "deepseek"
+                                    elif "gemini" in mid: pname = "google"
+                                    elif "grok" in mid: pname = "xai"
+                                    elif "kimi" in mid: pname = "kimi"
+                                    elif "qwen" in mid: pname = "openrouter"
+                                    if pname and pname not in available:
+                                        # Upgraded model's provider unavailable — revert to default
+                                        default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
+                                        if default_model and hasattr(ctx.topology, 'set_node_model_id'):
+                                            ctx.topology.set_node_model_id(i, default_model)
+                                            log.debug("FrugalGPT: reverted node %d %s -> %s (provider unavailable)", i, new_model, default_model)
                         # Re-execute with upgraded models
                         from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                         executor2 = _TE(ctx.topology)
