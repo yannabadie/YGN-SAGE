@@ -903,7 +903,13 @@ class CognitiveOrchestrationPipeline:
                             break
 
                         # Append assistant message (may have content + tool_calls)
-                        messages.append(Message(role=Role.ASSISTANT, content=response.content or ""))
+                        messages.append(
+                            Message(
+                                role=Role.ASSISTANT,
+                                content=response.content or "",
+                                tool_calls=response.tool_calls or None,
+                            )
+                        )
                         ctx.tool_turn_count += 1
 
                         # Execute each tool call

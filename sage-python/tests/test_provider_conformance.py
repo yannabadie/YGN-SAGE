@@ -4,18 +4,30 @@ from __future__ import annotations
 import pytest
 
 
-def test_openai_compat_capabilities():
-    """OpenAICompatProvider must declare its limitations."""
+def test_openai_compat_openai_capabilities():
+    """OpenAICompatProvider should report OpenAI chat tool-role support truthfully."""
     from sage.providers.openai_compat import OpenAICompatProvider
 
     provider = OpenAICompatProvider(
-        api_key="test", base_url="http://fake", model_id="test"
+        api_key="test", provider_name="openai", model_id="gpt-5.4"
+    )
+    caps = provider.capabilities()
+    assert isinstance(caps, dict)
+    assert caps["tool_role"] is True
+    assert caps["file_search"] is False
+    assert "structured_output" in caps
+
+
+def test_openai_compat_non_openai_capabilities():
+    """Non-OpenAI adapters keep the conservative tool-role downgrade."""
+    from sage.providers.openai_compat import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(
+        api_key="test", provider_name="deepseek", model_id="deepseek-chat"
     )
     caps = provider.capabilities()
     assert isinstance(caps, dict)
     assert caps["tool_role"] is False
-    assert caps["file_search"] is False
-    assert "structured_output" in caps
 
 
 def test_google_provider_capabilities():

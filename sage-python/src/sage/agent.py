@@ -137,7 +137,11 @@ class Agent:
 
                 # Add assistant message with tool calls
                 self._messages.append(
-                    Message(role=Role.ASSISTANT, content=response.content)
+                    Message(
+                        role=Role.ASSISTANT,
+                        content=response.content,
+                        tool_calls=response.tool_calls or None,
+                    )
                 )
 
                 # Execute tool calls
