@@ -11,6 +11,14 @@ from typing import Any
 
 _log = logging.getLogger("sage.boot")
 
+# Use OS certificate store (Windows/macOS) instead of certifi.
+# Fixes SSL errors behind corporate proxies (e.g., AD Groupe *.adgroupe.com).
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except ImportError:
+    pass  # truststore not installed — uses certifi (may fail behind proxy)
+
 # Load .env if present (for GOOGLE_API_KEY etc.)
 try:
     from dotenv import load_dotenv
