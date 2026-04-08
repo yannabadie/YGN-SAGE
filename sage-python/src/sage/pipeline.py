@@ -870,7 +870,7 @@ class CognitiveOrchestrationPipeline:
                 if self.tool_registry and self.tool_registry.list_tools():
                     tool_defs = self.tool_registry.get_tool_defs()
 
-                max_turns = 15  # Safety limit for tool-calling loop
+                max_turns = 30  # Safety limit for tool-calling loop
                 try:
                     for _turn in range(max_turns):
                         response = await provider.generate(
@@ -896,7 +896,8 @@ class CognitiveOrchestrationPipeline:
                                     result_text = tool_result.output[:5000]
                                 except Exception as te:
                                     result_text = f"Tool error: {te}"
-                                log.info("Tool call: %s → %d chars", tc.name, len(result_text))
+                                cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
+                                log.info("Tool call: %s(%s) → %d chars", tc.name, cmd[:80], len(result_text))
                             else:
                                 result_text = f"Unknown tool: {tc.name}"
                                 log.warning("Unknown tool call: %s", tc.name)
