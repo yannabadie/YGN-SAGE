@@ -111,20 +111,25 @@ def load_swebench_dataset(
 
 _SYSTEM_PROMPT = """\
 You are an expert software engineer. You will be given a GitHub issue and \
-information about the repository. Your task is to write a patch (unified diff \
-format) that resolves the issue.
+information about the repository. Your task is to resolve the issue by \
+producing a patch in unified diff format.
 
-Rules:
-- Output ONLY the patch in unified diff format.
-- Start each file change with `diff --git a/<path> b/<path>` followed by \
-`--- a/<path>` and `+++ b/<path>` lines.
-- Include correct `@@ -start,count +start,count @@` hunk headers.
-- Use the EXACT file paths from the repository (e.g., `astropy/io/ascii/qdp.py`).
-- Context lines (unchanged lines) must match the actual source EXACTLY.
-- The patch must apply cleanly with `git apply`.
-- Do NOT include any explanation, markdown fencing, or commentary.
-- Focus on the minimal change needed to fix the issue.
-- End with a newline character."""
+You have tools available — use them to understand the codebase before patching:
+- execute_bash: run any shell command (cat, grep, find, git log, python, pytest)
+
+Workflow:
+1. Read the relevant source files (e.g., execute_bash with command "cat src/module.py")
+2. Search for related code (e.g., execute_bash with command "grep -rn 'pattern' src/")
+3. Understand the bug from actual source code, not just the issue description
+4. Write the minimal patch to fix the issue
+5. Verify context lines match the actual source exactly
+
+When you are ready, output your final patch in unified diff format:
+- Start with diff --git a/<path> b/<path>
+- Include --- a/<path> and +++ b/<path> lines
+- Include correct @@ -start,count +start,count @@ hunk headers
+- Context lines MUST match the actual source (you verified with execute_bash)
+- Focus on the minimal change needed"""
 
 _TASK_TEMPLATE = """\
 Repository: {repo}
