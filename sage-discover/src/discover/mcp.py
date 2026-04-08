@@ -62,20 +62,32 @@ async def tool_discover_papers(
     # Without this, discover returns IDs that curate can't resolve.
     try:
         components = _get_pipeline_components()
-        store = components["store"]
-        for c in candidates[:max_results]:
-            store.upsert_paper({
-                "paper_id": c.paper_id,
-                "title": c.title,
-                "authors": c.authors,
-                "abstract": c.abstract,
-                "source": c.source,
-                "domain": c.domain,
-                "published": c.published.isoformat(),
-                "citation_count": c.citation_count,
-            })
-    except (AttributeError, TypeError):
-        pass  # store may not support upsert — results still returned
+        store = components.get("store")
+        embedder = components.get("embedder")
+        if store is not None and embedder is not None:
+            for c in candidates[:max_results]:
+                try:
+                    dense, sparse = embedder.embed_paper(c.title, c.abstract)
+                    store.upsert_paper(
+                        c.paper_id,
+                        dense,
+                        sparse,
+                        {
+                            "title": c.title,
+                            "authors": c.authors,
+                            "abstract": c.abstract,
+                            "source": c.source,
+                            "domain": c.domain,
+                            "published": c.published.isoformat(),
+                            "year": getattr(c.published, "year", None),
+                            "citation_count": c.citation_count,
+                            "relevance_score": 0.0,
+                        },
+                    )
+                except Exception as exc:
+                    logger.warning("Failed to persist discovered paper %s: %s", c.paper_id, exc)
+    except Exception as exc:
+        logger.warning("Failed to initialize discovery persistence: %s", exc)
 
     return [
         {
