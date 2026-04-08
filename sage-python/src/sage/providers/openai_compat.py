@@ -171,9 +171,10 @@ class OpenAICompatProvider:
         }
 
         # Constrained decoding: JSON schema output (OpenAI Structured Outputs)
-        if config and config.json_schema is not None:
+        # Only OpenAI supports response_format json_schema. DeepSeek, xAI, etc.
+        # return 400 "response_format type is unavailable" if we send it.
+        if config and config.json_schema is not None and self.provider_name == "openai":
             schema = config.json_schema
-            # If it's a Pydantic model class, extract its JSON schema
             if isinstance(schema, type) and hasattr(schema, "model_json_schema"):
                 schema = schema.model_json_schema()
             params["response_format"] = {
