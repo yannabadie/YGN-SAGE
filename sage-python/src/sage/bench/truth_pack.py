@@ -49,6 +49,7 @@ class TaskTrace:
     routing: str = ""
     error: str = ""
     seed: int = 0
+    meta: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.__dict__.items() if v or isinstance(v, bool)}

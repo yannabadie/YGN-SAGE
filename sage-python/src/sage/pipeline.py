@@ -51,6 +51,10 @@ class PipelineContext:
     bandit_decision_id: str | None = None
     verification_passed: bool = True
     axis_hint: str = ""  # MASBENCH axis hint for topology selection
+    tool_call_count: int = 0
+    tool_turn_count: int = 0
+    executed_commands: list[str] = field(default_factory=list)
+    executed_tools: list[str] = field(default_factory=list)
 
 
 class CognitiveOrchestrationPipeline:
@@ -900,9 +904,12 @@ class CognitiveOrchestrationPipeline:
 
                         # Append assistant message (may have content + tool_calls)
                         messages.append(Message(role=Role.ASSISTANT, content=response.content or ""))
+                        ctx.tool_turn_count += 1
 
                         # Execute each tool call
                         for tc in response.tool_calls:
+                            ctx.tool_call_count += 1
+                            ctx.executed_tools.append(tc.name)
                             tool = self.tool_registry.get(tc.name) if self.tool_registry else None
                             if tool:
                                 try:
@@ -911,11 +918,20 @@ class CognitiveOrchestrationPipeline:
                                 except Exception as te:
                                     result_text = f"Tool error: {te}"
                                 cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
+                                if cmd:
+                                    ctx.executed_commands.append(cmd)
                                 log.info("Tool call: %s(%s) → %d chars", tc.name, cmd[:80], len(result_text))
                             else:
                                 result_text = f"Unknown tool: {tc.name}"
                                 log.warning("Unknown tool call: %s", tc.name)
-                            messages.append(Message(role=Role.TOOL, content=result_text))
+                            messages.append(
+                                Message(
+                                    role=Role.TOOL,
+                                    content=result_text,
+                                    tool_call_id=tc.id,
+                                    name=tc.name,
+                                )
+                            )
                     else:
                         # Max turns reached — use last content
                         ctx.result = response.content or ""
