@@ -45,6 +45,76 @@ class ProviderPool:
         self._cache: dict[str, tuple[LLMProvider, LLMConfig]] = {}
         self._breakers: dict[str, CircuitBreaker] = {}
 
+    # -- Boot-time health check -------------------------------------------
+
+    async def health_check(self, timeout: float = 10.0) -> dict[str, bool]:
+        """Probe every provider with a minimal request. Open circuit for dead ones.
+
+        Returns dict of provider_name -> reachable (True/False).
+        Unreachable providers get their circuit breaker tripped immediately
+        so ModelAssigner and FrugalGPT cascade never assign them.
+        """
+        import asyncio
+        from sage.llm.base import Message, Role, LLMConfig as _Cfg
+
+        results: dict[str, bool] = {}
+        probe_msg = [Message(role=Role.USER, content="ping")]
+
+        for name, provider in list(self._providers.items()):
+            try:
+                model_id = getattr(provider, "model_id", "")
+                cfg = _Cfg(provider=name, model=model_id, max_tokens=1, temperature=0.0)
+                await asyncio.wait_for(
+                    provider.generate(messages=probe_msg, config=cfg),
+                    timeout=timeout,
+                )
+                results[name] = True
+                self.record_success(name)
+            except Exception as exc:
+                results[name] = False
+                # Trip circuit breaker immediately (3 synthetic failures)
+                for _ in range(3):
+                    self.record_failure(name, exc)
+                log.warning("Health check FAILED for %s: %s — circuit opened", name, type(exc).__name__)
+
+        alive = sum(1 for v in results.values() if v)
+        log.info("Provider health check: %d/%d alive %s", alive, len(results), results)
+        return results
+
+    # -- Provider inference ------------------------------------------------
+
+    def infer_provider(self, model_id: str) -> str:
+        """Infer provider name from model_id. Registry first, string fallback.
+
+        String fallback matches actual model_id patterns in cards.toml (April 2026):
+        google: gemini-*  |  openai: gpt-*  |  xai: grok-*
+        deepseek: deepseek-*  |  minimax: minimax-*, MiniMax-*
+        kimi: kimi-*  |  openrouter: qwen/*
+        """
+        if self._registry:
+            profile = self._registry.get(model_id) if hasattr(self._registry, 'get') else None
+            pname = getattr(profile, 'provider', '') if profile else ''
+            if pname:
+                return pname
+        mid = model_id.lower()
+        if mid.startswith("gemini"): return "google"
+        if mid.startswith("gpt-"): return "openai"
+        if mid.startswith("grok"): return "xai"
+        if mid.startswith("deepseek"): return "deepseek"
+        if "minimax" in mid: return "minimax"
+        if mid.startswith("kimi"): return "kimi"
+        if "qwen" in mid: return "openrouter"
+        return ""
+
+    def is_model_available(self, model_id: str) -> bool:
+        """Check if a model's provider is in the pool AND circuit is closed."""
+        pname = self.infer_provider(model_id)
+        if not pname:
+            return True  # Unknown provider — let it try
+        if pname not in self._providers:
+            return False
+        return self.is_available(pname)
+
     # -- Per-provider circuit breaker API --------------------------------
 
     def _get_breaker(self, provider_name: str) -> CircuitBreaker:

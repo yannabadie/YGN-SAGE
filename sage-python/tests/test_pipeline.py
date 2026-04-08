@@ -490,6 +490,18 @@ class _MockProviderPool:
     def is_available(self, provider_name: str) -> bool:
         return provider_name not in self._unavailable
 
+    def infer_provider(self, model_id: str) -> str:
+        if self._registry:
+            profile = self._registry.get(model_id) if hasattr(self._registry, 'get') else None
+            return getattr(profile, 'provider', '') if profile else ''
+        return ""
+
+    def is_model_available(self, model_id: str) -> bool:
+        pname = self.infer_provider(model_id)
+        if not pname:
+            return True
+        return pname in self._providers and self.is_available(pname)
+
 
 class _MockModelProfile:
     """Minimal ModelProfile for registry.get()."""

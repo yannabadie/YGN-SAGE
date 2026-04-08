@@ -632,44 +632,13 @@ class CognitiveOrchestrationPipeline:
         # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
         # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
-        # Filter out models whose provider has no API key or circuit breaker open
-        if self.provider_pool:
-            available_providers = set(getattr(self.provider_pool, '_providers', {}).keys())
+        # Filter out models whose provider is dead (health check or circuit breaker)
+        if self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
             for node_idx, model_id in list(ctx.assignments.items()):
                 if not model_id:
                     continue
-                # Infer provider: try registry first, then string matching
-                provider_name = ""
-                _reg = getattr(self.provider_pool, '_registry', None)
-                if _reg:
-                    profile = _reg.get(model_id) if hasattr(_reg, 'get') else None
-                    provider_name = getattr(profile, 'provider', '') if profile else ''
-                if not provider_name:
-                    mid = model_id.lower()
-                    if "minimax" in mid:
-                        provider_name = "minimax"
-                    elif "gpt-" in mid or "o1" in mid or "o3" in mid:
-                        provider_name = "openai"
-                    elif "deepseek" in mid:
-                        provider_name = "deepseek"
-                    elif "gemini" in mid:
-                        provider_name = "google"
-                    elif "grok" in mid:
-                        provider_name = "xai"
-                    elif "kimi" in mid or "moonshot" in mid:
-                        provider_name = "kimi"
-                    elif "qwen" in mid:
-                        provider_name = "openrouter"
-
-                # Check: provider must be in pool AND circuit breaker not open
-                unavailable = False
-                if provider_name and provider_name not in available_providers:
-                    unavailable = True
-                elif provider_name and hasattr(self.provider_pool, 'is_available'):
-                    if not self.provider_pool.is_available(provider_name):
-                        unavailable = True
-
-                if unavailable:
+                if not self.provider_pool.is_model_available(model_id):
+                    provider_name = self.provider_pool.infer_provider(model_id)
                     default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
                     if default_model:
                         log.info(
@@ -970,23 +939,12 @@ class CognitiveOrchestrationPipeline:
                                 # Verify upgraded model has an available provider
                                 node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
                                 new_model = getattr(node, 'model_id', '') if node else ''
-                                if new_model and self.provider_pool:
-                                    available = set(getattr(self.provider_pool, '_providers', {}).keys())
-                                    mid = new_model.lower()
-                                    pname = ""
-                                    if "minimax" in mid: pname = "minimax"
-                                    elif "gpt-" in mid or "o1" in mid or "o3" in mid: pname = "openai"
-                                    elif "deepseek" in mid: pname = "deepseek"
-                                    elif "gemini" in mid: pname = "google"
-                                    elif "grok" in mid: pname = "xai"
-                                    elif "kimi" in mid: pname = "kimi"
-                                    elif "qwen" in mid: pname = "openrouter"
-                                    if pname and pname not in available:
-                                        # Upgraded model's provider unavailable — revert to default
+                                if new_model and self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
+                                    if not self.provider_pool.is_model_available(new_model):
                                         default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
                                         if default_model and hasattr(ctx.topology, 'set_node_model_id'):
                                             ctx.topology.set_node_model_id(i, default_model)
-                                            log.debug("FrugalGPT: reverted node %d %s -> %s (provider unavailable)", i, new_model, default_model)
+                                            log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
                         # Re-execute with upgraded models
                         from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                         executor2 = _TE(ctx.topology)
