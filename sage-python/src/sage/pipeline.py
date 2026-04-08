@@ -844,6 +844,25 @@ class CognitiveOrchestrationPipeline:
             if self.llm_provider:
                 from sage.llm.base import Message, Role
 
+                # Select best provider/config for this task's system level + domain
+                provider = self.llm_provider
+                config = self.llm_config
+                if self.provider_pool and ctx.system >= 2:
+                    try:
+                        from sage.llm.router import ModelRouter
+                        tier = "reasoner" if ctx.system >= 3 else "codex"
+                        best_config = ModelRouter.get_config(tier, temperature=0.0)
+                        if self.provider_pool.is_model_available(best_config.model):
+                            resolved_provider, _ = self.provider_pool.resolve(best_config.model)
+                            provider = resolved_provider
+                            config = best_config
+                            log.info(
+                                "Stage 4 single-agent: upgraded to %s/%s (S%d task)",
+                                config.provider, config.model, ctx.system,
+                            )
+                    except Exception:
+                        pass  # Keep default
+
                 messages = [Message(role=Role.USER, content=ctx.task)]
 
                 # Include tool definitions if registry has tools
@@ -854,9 +873,9 @@ class CognitiveOrchestrationPipeline:
                 max_turns = 15  # Safety limit for tool-calling loop
                 try:
                     for _turn in range(max_turns):
-                        response = await self.llm_provider.generate(
+                        response = await provider.generate(
                             messages=messages,
-                            config=self.llm_config,
+                            config=config,
                             tools=tool_defs,
                         )
 
