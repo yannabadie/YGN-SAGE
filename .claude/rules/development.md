@@ -43,13 +43,14 @@ Every bench run MUST produce full observability. No blind runs.
 
 ### Before launch
 ```bash
-# Environment: disable dead providers, offline HF, unbuffered output
-export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 MINIMAX_API_KEY="" KIMI_API_KEY="" PYTHONUNBUFFERED=1
-# Load keys selectively (not via source .env which leaks dead providers)
-export GOOGLE_API_KEY=$(grep GOOGLE_API_KEY .env | cut -d'"' -f2)
-export DEEPSEEK_API_KEY=$(grep DEEPSEEK_API_KEY .env | cut -d'"' -f2)
-export OPENAI_API_KEY=$(grep OPENAI_API_KEY .env | cut -d'"' -f2)
+# Load ALL API keys — health check at boot excludes dead providers automatically
+set -a && source .env && set +a
+# Offline HF (datasets cached), unbuffered output for live monitoring
+export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONUNBUFFERED=1
 ```
+DO NOT manually exclude providers via empty env vars. The boot health check
+(`ProviderPool.health_check()`) probes every provider and the Rust ModelAssigner
+(`exclude_providers()`) removes dead ones from the scoring loop. Trust the system.
 
 ### During run — monitor these signals
 ```bash
