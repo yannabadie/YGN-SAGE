@@ -96,6 +96,7 @@ class CognitiveOrchestrationPipeline:
         working_memory: Any = None,
         episodic_memory: Any = None,
         tool_forge: Any = None,
+        tool_registry: Any = None,
         harness_config: Any = None,
     ) -> None:
         self.router = router
@@ -109,6 +110,7 @@ class CognitiveOrchestrationPipeline:
         self.llm_config = llm_config
         self.prm = prm
         self.controller = controller
+        self.tool_registry = tool_registry
         self._smmu = smmu
         self.consolidator = consolidator
         self.working_memory = working_memory
@@ -839,16 +841,52 @@ class CognitiveOrchestrationPipeline:
         if ctx.topology is None or (
             hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
         ):
-            # Use LLM provider directly
             if self.llm_provider:
                 from sage.llm.base import Message, Role
 
+                messages = [Message(role=Role.USER, content=ctx.task)]
+
+                # Include tool definitions if registry has tools
+                tool_defs = None
+                if self.tool_registry and self.tool_registry.list_tools():
+                    tool_defs = self.tool_registry.get_tool_defs()
+
+                max_turns = 15  # Safety limit for tool-calling loop
                 try:
-                    response = await self.llm_provider.generate(
-                        messages=[Message(role=Role.USER, content=ctx.task)],
-                        config=self.llm_config,
-                    )
-                    ctx.result = response.content or ""
+                    for _turn in range(max_turns):
+                        response = await self.llm_provider.generate(
+                            messages=messages,
+                            config=self.llm_config,
+                            tools=tool_defs,
+                        )
+
+                        # No tool calls → done
+                        if not response.tool_calls:
+                            ctx.result = response.content or ""
+                            break
+
+                        # Append assistant message (may have content + tool_calls)
+                        messages.append(Message(role=Role.ASSISTANT, content=response.content or ""))
+
+                        # Execute each tool call
+                        for tc in response.tool_calls:
+                            tool = self.tool_registry.get(tc.name) if self.tool_registry else None
+                            if tool:
+                                try:
+                                    tool_result = await tool.execute(tc.arguments if isinstance(tc.arguments, dict) else {})
+                                    result_text = tool_result.output[:5000]
+                                except Exception as te:
+                                    result_text = f"Tool error: {te}"
+                                log.info("Tool call: %s → %d chars", tc.name, len(result_text))
+                            else:
+                                result_text = f"Unknown tool: {tc.name}"
+                                log.warning("Unknown tool call: %s", tc.name)
+                            messages.append(Message(role=Role.TOOL, content=result_text))
+                    else:
+                        # Max turns reached — use last content
+                        ctx.result = response.content or ""
+                        log.warning("Stage 4: max tool-call turns (%d) reached", max_turns)
+
                 except (RuntimeError, TimeoutError) as exc:
                     log.error("Stage 4 single-agent execution failed: %s", exc)
                     ctx.result = f"Error: {exc}"

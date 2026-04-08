@@ -97,10 +97,11 @@ class _MockAssigner:
 
 class _MockLLMResponse:
     content: str = "Pipeline test response"
+    tool_calls: list = []
 
 
 class _MockLLMProvider:
-    async def generate(self, messages: Any, config: Any = None) -> _MockLLMResponse:
+    async def generate(self, messages: Any, config: Any = None, tools: Any = None, **kwargs) -> _MockLLMResponse:
         return _MockLLMResponse()
 
 

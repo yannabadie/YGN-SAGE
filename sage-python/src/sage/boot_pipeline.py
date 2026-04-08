@@ -209,6 +209,7 @@ def init_pipeline(
                 consolidator=consolidator,
                 working_memory=working_memory,
                 episodic_memory=episodic_memory,
+                tool_registry=tool_registry,
             )
             _log.info("CognitiveOrchestrationPipeline initialized")
         except (ImportError, RuntimeError) as exc:

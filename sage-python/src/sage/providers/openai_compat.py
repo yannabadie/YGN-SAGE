@@ -182,6 +182,10 @@ class OpenAICompatProvider:
                 "json_schema": {"name": "response", "schema": schema, "strict": True},
             }
 
+        # Tool definitions for function calling
+        if tools:
+            params["tools"] = tools
+
         params = self._apply_quirks(params)
 
         try:
@@ -197,7 +201,21 @@ class OpenAICompatProvider:
                     "output_tokens": getattr(response.usage, "completion_tokens", 0) or 0,
                     "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
                 }
-            return LLMResponse(content=final_content, model=model, usage=usage)
+            # Parse tool_calls from response
+            tool_calls = []
+            if msg.tool_calls:
+                from sage.llm.base import ToolCall
+                import json as _json
+                for tc in msg.tool_calls:
+                    args = tc.function.arguments
+                    if isinstance(args, str):
+                        try:
+                            args = _json.loads(args)
+                        except (ValueError, TypeError):
+                            args = {"raw": args}
+                    tool_calls.append(ToolCall(name=tc.function.name, arguments=args))
+
+            return LLMResponse(content=final_content, model=model, usage=usage, tool_calls=tool_calls)
         except Exception as e:
             log.error("OpenAI-compat API error (%s/%s): %s", self.provider_name, self.base_url, e)
             raise
