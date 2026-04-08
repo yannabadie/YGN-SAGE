@@ -29,6 +29,8 @@ pub struct ModelAssigner {
     weight_domain: f32,
     /// Weight for cost efficiency (lower cost = higher score) — subject to ablation.
     weight_cost: f32,
+    /// Providers excluded from assignment (dead at boot health check).
+    excluded_providers: Vec<String>,
 }
 
 impl ModelAssigner {
@@ -38,6 +40,7 @@ impl ModelAssigner {
             weight_affinity: DEFAULT_WEIGHT_AFFINITY,
             weight_domain: DEFAULT_WEIGHT_DOMAIN,
             weight_cost: DEFAULT_WEIGHT_COST,
+            excluded_providers: Vec::new(),
         }
     }
 
@@ -56,7 +59,15 @@ impl ModelAssigner {
             weight_affinity: weight_affinity / norm,
             weight_domain: weight_domain / norm,
             weight_cost: weight_cost / norm,
+            excluded_providers: Vec::new(),
         }
+    }
+
+    /// Exclude providers from model assignment (dead at boot health check).
+    /// Models from these providers will never be assigned to any node.
+    pub fn set_excluded_providers(&mut self, providers: Vec<String>) {
+        info!(excluded = ?providers, "ModelAssigner: excluding dead providers");
+        self.excluded_providers = providers;
     }
 
     pub fn assign_models_inner(
@@ -144,6 +155,10 @@ impl ModelAssigner {
             let mut best_score: f32 = f32::NEG_INFINITY;
 
             for (card_idx, card) in all_models.iter().enumerate() {
+                // Skip models from excluded providers (dead at boot health check)
+                if self.excluded_providers.iter().any(|p| p == &card.provider) {
+                    continue;
+                }
                 if needs_tools && !card.supports_tools {
                     continue;
                 }
@@ -239,6 +254,10 @@ impl ModelAssigner {
         let mut best_id: Option<String> = None;
         let mut best_score: f32 = f32::NEG_INFINITY;
         for (card_idx, card) in all_models.iter().enumerate() {
+            // Skip models from excluded providers (dead at boot health check)
+            if self.excluded_providers.iter().any(|p| p == &card.provider) {
+                continue;
+            }
             // FrugalGPT cascade: skip excluded models (Cascade Routing, arXiv 2410.10347)
             if let Some(excluded) = exclude_ids {
                 if excluded.iter().any(|e| e == &card.id) {
@@ -315,6 +334,13 @@ impl ModelAssigner {
             )),
             None => Ok(self.assign_models_inner(graph, task_domain, budget_usd)),
         }
+    }
+
+    /// Exclude dead providers from all future assignments.
+    /// Called after boot health check with list of unreachable provider names.
+    fn exclude_providers(&mut self, providers: Vec<String>) {
+        info!(excluded = ?providers, "ModelAssigner: excluding dead providers from Python");
+        self.excluded_providers = providers;
     }
 
     /// Assign a model to a single node. Optional ``exclude_model_ids`` skips

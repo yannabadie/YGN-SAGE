@@ -183,6 +183,9 @@ def init_pipeline(
                     dead = [k for k, v in health.items() if not v]
                     if dead:
                         _log.warning("Dead providers excluded: %s", dead)
+                        # Tell Rust ModelAssigner to never assign models from dead providers
+                        if model_assigner and hasattr(model_assigner, 'exclude_providers'):
+                            model_assigner.exclude_providers(dead)
             except RuntimeError:
                 _log.debug("Health check skipped (no event loop)")
         except (ImportError, RuntimeError) as exc:
