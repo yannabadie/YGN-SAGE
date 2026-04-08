@@ -34,10 +34,23 @@ class ToolRegistry:
         ]
 
     def get_tool_defs(self, names: list[str] | None = None) -> list:
-        """Get ToolDef list for LLM calls."""
-        if names is None:
-            return [t.spec for t in self._tools.values()]
-        return [self._tools[n].spec for n in names if n in self._tools]
+        """Get tool definitions in OpenAI function-calling format."""
+        specs = (
+            [t.spec for t in self._tools.values()]
+            if names is None
+            else [self._tools[n].spec for n in names if n in self._tools]
+        )
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": s.name,
+                    "description": s.description,
+                    "parameters": s.parameters,
+                },
+            }
+            for s in specs
+        ]
 
     # ── Usage tracking (ToolForge axis) ────────────────────────────────────
 
