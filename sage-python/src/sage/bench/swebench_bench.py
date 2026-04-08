@@ -135,13 +135,14 @@ _TASK_TEMPLATE = """\
 Repository: {repo}
 Version: {version}
 Base commit: {base_commit}
+Working directory: the repo is checked out at the current directory (use relative paths)
 
 ## Issue Description
 
 {problem_statement}
 
 {hints_section}\
-Write a unified diff patch that resolves this issue. Output ONLY the diff."""
+Explore the code with execute_bash, then write a unified diff patch that resolves this issue."""
 
 
 def _build_task_prompt(instance: dict[str, Any]) -> str:

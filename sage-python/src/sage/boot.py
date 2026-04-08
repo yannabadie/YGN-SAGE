@@ -619,17 +619,37 @@ def boot_agent_system(
     from sage.llm.base import ToolDef
 
     async def _execute_bash_handler(command: str, timeout: int = 30, **_kwargs) -> str:
-        """Execute a bash command in a subprocess. Returns stdout+stderr."""
-        import asyncio, subprocess
+        """Execute a bash command in a subprocess. Returns stdout+stderr.
+
+        Uses bash (git bash on Windows) for Unix compatibility.
+        Inherits current working directory (set by SWE-bench to repo root).
+        """
+        import asyncio, subprocess, shutil
+        # Use bash for Unix commands (git bash on Windows, /bin/bash on Linux)
+        bash = shutil.which("bash") or shutil.which("sh")
+        if bash:
+            cmd_args = [bash, "-c", command]
+        else:
+            cmd_args = command  # Fallback to shell=True
         try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_shell(
-                    command,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                ),
-                timeout=timeout,
-            )
+            if isinstance(cmd_args, list):
+                proc = await asyncio.wait_for(
+                    asyncio.create_subprocess_exec(
+                        *cmd_args,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    ),
+                    timeout=timeout,
+                )
+            else:
+                proc = await asyncio.wait_for(
+                    asyncio.create_subprocess_shell(
+                        cmd_args,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                    ),
+                    timeout=timeout,
+                )
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
             output = (stdout or b"").decode("utf-8", errors="replace")
             if stderr:
