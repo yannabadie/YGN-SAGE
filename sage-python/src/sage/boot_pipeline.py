@@ -170,6 +170,21 @@ def init_pipeline(
                 providers=_runtime_adapters,
             )
             _log.info("ProviderPool: %d live providers -- %s", len(_runtime_adapters), list(_runtime_adapters.keys()))
+
+            # Health check: probe all providers, open circuit for dead ones
+            import asyncio
+            try:
+                _loop = asyncio.get_event_loop()
+                if _loop.is_running():
+                    # Already in async context — schedule but don't block
+                    _log.debug("Skipping sync health check (event loop running)")
+                else:
+                    health = _loop.run_until_complete(_provider_pool.health_check(timeout=8.0))
+                    dead = [k for k, v in health.items() if not v]
+                    if dead:
+                        _log.warning("Dead providers excluded: %s", dead)
+            except RuntimeError:
+                _log.debug("Health check skipped (no event loop)")
         except (ImportError, RuntimeError) as exc:
             _log.warning("ProviderPool init failed: %s", exc)
 
