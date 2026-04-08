@@ -189,7 +189,15 @@ class OpenAICompatProvider:
             msg = response.choices[0].message
             reasoning, content = self._extract_reasoning(msg)
             final_content = self._format_response(reasoning, content)
-            return LLMResponse(content=final_content, model=model)
+            # Capture token usage from API response
+            usage = None
+            if response.usage:
+                usage = {
+                    "input_tokens": getattr(response.usage, "prompt_tokens", 0) or 0,
+                    "output_tokens": getattr(response.usage, "completion_tokens", 0) or 0,
+                    "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
+                }
+            return LLMResponse(content=final_content, model=model, usage=usage)
         except Exception as e:
             log.error("OpenAI-compat API error (%s/%s): %s", self.provider_name, self.base_url, e)
             raise
