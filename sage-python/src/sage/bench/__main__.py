@@ -276,12 +276,11 @@ async def _run_swebench(args) -> None:
         print()
         return
 
-    # Full run requires API key
-    if not os.environ.get("GOOGLE_API_KEY"):
-        print("  ERROR: GOOGLE_API_KEY required for SWE-Bench benchmark")
+    try:
+        system, bus = _boot_system()
+    except RuntimeError as exc:
+        print(f"  ERROR: {exc}")
         return
-
-    system, bus = _boot_system()
     bench = SWEBenchBench(
         system=system,
         event_bus=bus,

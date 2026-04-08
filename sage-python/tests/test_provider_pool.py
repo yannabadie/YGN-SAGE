@@ -116,3 +116,38 @@ class TestProviderPool:
         assert provider is default_provider
         assert config is default_config
         registry.get.assert_not_called()
+
+    def test_openai_pro_model_is_not_available_for_chat_completions(self):
+        """Responses-only OpenAI models must not be treated as chat-compatible."""
+        profile = _make_profile("gpt-5.4-pro", "openai")
+        registry = _make_registry(profile)
+        openai_provider = _make_provider("openai")
+        default_provider = _make_provider("default")
+
+        pool = ProviderPool(
+            default_provider=default_provider,
+            registry=registry,
+            providers={"openai": openai_provider},
+        )
+
+        assert pool.is_model_available("gpt-5.4-pro") is False
+
+    def test_resolve_openai_pro_model_falls_back_to_default_config(self):
+        """Responses-only OpenAI models should fall back before chat-completions execution."""
+        profile = _make_profile("gpt-5.4-pro", "openai")
+        registry = _make_registry(profile)
+        openai_provider = _make_provider("openai")
+        default_provider = _make_provider("default")
+        default_config = LLMConfig(provider="google", model="gemini-2.5-flash")
+
+        pool = ProviderPool(
+            default_provider=default_provider,
+            registry=registry,
+            default_config=default_config,
+            providers={"openai": openai_provider},
+        )
+
+        provider, config = pool.resolve("gpt-5.4-pro")
+
+        assert provider is default_provider
+        assert config is default_config

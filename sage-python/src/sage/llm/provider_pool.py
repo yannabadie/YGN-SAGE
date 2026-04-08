@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMProvider
+from sage.providers.openai_compat import supports_chat_completions_model
 from sage.resilience import CircuitBreaker
 
 log = logging.getLogger(__name__)
@@ -111,6 +112,8 @@ class ProviderPool:
         pname = self.infer_provider(model_id)
         if not pname:
             return True  # Unknown provider — let it try
+        if not supports_chat_completions_model(pname, model_id):
+            return False
         if pname not in self._providers:
             return False
         return self.is_available(pname)
@@ -208,6 +211,22 @@ class ProviderPool:
             provider_name: str = getattr(profile, "provider", "")
             cw = getattr(profile, "context_window", 128000) or 128000
             config = LLMConfig(provider=provider_name, model=model_id, context_window=cw)
+
+            if not supports_chat_completions_model(provider_name, model_id):
+                log.info(
+                    "ProviderPool: %s requires Responses API, falling back to default provider",
+                    model_id,
+                )
+                result = (
+                    self._default,
+                    self._default_config
+                    or LLMConfig(
+                        provider="default",
+                        model=getattr(self._default, "model_id", "") or model_id,
+                    ),
+                )
+                self._cache[model_id] = result
+                return result
 
             provider = self._providers.get(provider_name)
             circuit_open = False

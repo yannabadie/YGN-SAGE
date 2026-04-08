@@ -6,11 +6,25 @@ OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi/Moonshot.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMResponse, Message
 
 log = logging.getLogger(__name__)
+
+
+def supports_chat_completions_model(provider_name: str, model_id: str) -> bool:
+    """Return whether this provider/model pair works with chat completions.
+
+    This provider implementation only speaks the chat-completions API.
+    OpenAI GPT-5 Pro variants currently require the Responses API in practice,
+    so they must be filtered out until a Responses-backed provider exists.
+    """
+    if (provider_name or "").lower() != "openai":
+        return True
+    model = (model_id or "").lower()
+    return re.match(r"^gpt-5(?:\.\d+)?-pro(?:-|$)", model) is None
 
 
 class OpenAICompatProvider:
