@@ -294,16 +294,27 @@ class SWEBenchBench:
         repo_dir = os.path.join(tmp, repo.split("/")[-1])
 
         try:
-            # Shallow clone (depth 1 at the right commit isn't supported by git,
-            # so we clone shallow then fetch the specific commit)
+            # Clone and checkout the exact base_commit.
+            # Strategy: shallow clone, then deepen/fetch if commit not present.
             subprocess.run(
-                ["git", "clone", "--depth", "50", "--single-branch", repo_url, repo_dir],
-                capture_output=True, timeout=120, check=True,
+                ["git", "clone", "--depth", "1", repo_url, repo_dir],
+                capture_output=True, timeout=180, check=True,
             )
-            subprocess.run(
+            # Fetch the specific commit (may not be in shallow clone)
+            result = subprocess.run(
                 ["git", "checkout", base_commit],
-                cwd=repo_dir, capture_output=True, timeout=30, check=True,
+                cwd=repo_dir, capture_output=True, timeout=30,
             )
+            if result.returncode != 0:
+                # Commit not in shallow clone — fetch it specifically
+                subprocess.run(
+                    ["git", "fetch", "--depth", "1", "origin", base_commit],
+                    cwd=repo_dir, capture_output=True, timeout=120, check=True,
+                )
+                subprocess.run(
+                    ["git", "checkout", base_commit],
+                    cwd=repo_dir, capture_output=True, timeout=30, check=True,
+                )
             log.info("Repo cloned: %s @ %s -> %s", repo, base_commit[:8], repo_dir)
             return repo_dir
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
