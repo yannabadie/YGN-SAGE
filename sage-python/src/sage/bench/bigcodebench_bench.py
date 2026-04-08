@@ -141,9 +141,13 @@ class BigCodeBenchBench:
                     timeout=self.eval_timeout,
                 )
 
-                # AVR retry: 1 attempt with stronger model (research: 2nd retry has ~0 marginal value)
-                # Source: arXiv 2306.09896 — "1 repair attempt is optimal"
-                # Source: Agent 2 research — "repair model should be as strong or stronger"
+                # Escalation strategy (Conductor-inspired recursive self-invocation):
+                # 1. Bypass already tried (fast single-agent) → failed
+                # 2. Try reasoner repair (stronger model fixes syntax/logic)
+                # 3. If still fails AND was bypassed → escalate with full topology
+                was_bypassed = trace.get("topology_nodes", 0) == 0
+
+                # Step 1: Reasoner repair (arXiv 2306.09896: 1 repair optimal)
                 if not task_passed and eval_stderr:
                     retry_prompt = (
                         f"Your previous code for this task failed with this error:\n"
@@ -152,14 +156,13 @@ class BigCodeBenchBench:
                         f"Please fix the code. Return ONLY the corrected Python code."
                     )
                     try:
-                        # Use reasoner tier for repair (stronger than generation model)
                         raw = await asyncio.wait_for(
                             self._run_with_reasoner(retry_prompt),
                             timeout=self.task_timeout,
                         )
                         code = extract_code(raw, entry)
                         if code.strip():
-                            solution = code  # Update solution for JSONL
+                            solution = code
                             task_passed, eval_stderr = self._evaluate_solution_with_stderr(
                                 solution=code,
                                 test_code=task["test"],
@@ -168,9 +171,38 @@ class BigCodeBenchBench:
                                 timeout=self.eval_timeout,
                             )
                             if task_passed:
-                                log.info("  AVR repair succeeded for %s (reasoner tier)", tid)
+                                log.info("  Repair succeeded for %s (reasoner tier)", tid)
                     except Exception:
                         pass
+
+                # Step 2: Topology escalation (only if bypassed and still failing)
+                if not task_passed and was_bypassed:
+                    try:
+                        pipe = getattr(self.system, "pipeline", None)
+                        if pipe:
+                            pipe._force_topology = True  # Override bypass
+                        raw = await asyncio.wait_for(
+                            self.system.run(prompt),
+                            timeout=self.task_timeout,
+                        )
+                        if pipe:
+                            pipe._force_topology = False
+                        code = extract_code(raw, entry)
+                        if code.strip():
+                            solution = code
+                            task_passed, eval_stderr = self._evaluate_solution_with_stderr(
+                                solution=code,
+                                test_code=task["test"],
+                                entry_point=entry,
+                                task_id=tid,
+                                timeout=self.eval_timeout,
+                            )
+                            if task_passed:
+                                log.info("  Topology escalation succeeded for %s", tid)
+                    except Exception:
+                        pipe = getattr(self.system, "pipeline", None)
+                        if pipe:
+                            pipe._force_topology = False
             else:
                 task_passed = False
                 if not error:

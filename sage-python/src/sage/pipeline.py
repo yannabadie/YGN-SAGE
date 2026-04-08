@@ -366,16 +366,12 @@ class CognitiveOrchestrationPipeline:
             hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
 
         # ADAPTIVE BYPASS: Skip topology for S2 tasks with "sequential" hint.
-        # select_macro_topology() returns "sequential" when no structural reason
-        # exists for a specialized topology (omega<3, delta<5, gamma<0.6).
-        # AdaptOrch (2602.16873): Chain cluster (sequential) adds only +3.8pp
-        # but costs multi-agent overhead. BigCodeBench traces: sequential 55%
-        # vs AVR 45%. S3 tasks always keep topology (complex, multi-step).
-        if ctx.system == 2 and hint == "sequential":
+        # Can be overridden by _force_topology flag (set by bench escalation).
+        if ctx.system == 2 and hint == "sequential" and not getattr(self, '_force_topology', False):
             ctx.topology = None
             log.info(
-                "Stage 2: BYPASS topology for S2+sequential task "
-                "(omega=%s, delta=%s, gamma=%s) — direct single-agent",
+                "Stage 2: BYPASS topology for S2+sequential "
+                "(omega=%s, delta=%s, gamma=%s)",
                 ctx.dag_features.omega if ctx.dag_features else "?",
                 ctx.dag_features.delta if ctx.dag_features else "?",
                 f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
