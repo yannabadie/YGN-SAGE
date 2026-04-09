@@ -1,4 +1,16 @@
-"""Tests for speculative S1+S2 zone detection in AgentSystem.run()."""
+"""Tests for speculative S1+S2 zone detection.
+
+Speculative zone detection was originally in the legacy system.run() path.
+After the system.run() simplification, mock mode bypasses the pipeline
+entirely (H9), so speculative zone detection now lives in the pipeline's
+_stage_classify() (Rust SystemRouter).
+
+These tests verify that mock mode completes without error (the speculative
+log is no longer emitted from system.run() in mock mode).
+
+TODO: Add pipeline-level tests that exercise _stage_classify() speculative
+zone detection with non-mock providers.
+"""
 import logging
 
 import pytest
@@ -9,12 +21,13 @@ from sage.strategy.metacognition import CognitiveProfile
 
 
 @pytest.mark.asyncio
-async def test_speculative_zone_logged(caplog):
-    """When complexity is indecisive (0.35-0.55), a log message is emitted."""
+async def test_speculative_zone_mock_bypass(caplog):
+    """Mock mode bypasses pipeline — no speculative zone log from system.run().
+
+    Speculative zone detection is now in pipeline._stage_classify(), which
+    mock mode does not invoke (H9: mock bypass).
+    """
     system = boot_agent_system(use_mock_llm=True)
-    # Disable Rust router so Python speculative zone detection is exercised
-    system.rust_router = None
-    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.45, uncertainty=0.5, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 
@@ -22,16 +35,14 @@ async def test_speculative_zone_logged(caplog):
         result = await system.run("Explain quantum computing")
 
     assert result is not None
-    assert any("Speculative zone" in r.message for r in caplog.records)
+    # Mock mode takes the direct agent_loop path — no speculative zone log
+    assert system._last_execution_path == "mock"
 
 
 @pytest.mark.asyncio
-async def test_speculative_zone_boundary_low(caplog):
-    """Complexity exactly at 0.35 (lower boundary) triggers speculative log."""
+async def test_speculative_zone_boundary_low_mock_bypass(caplog):
+    """Mock mode at low boundary (0.35) completes without pipeline routing."""
     system = boot_agent_system(use_mock_llm=True)
-    # Disable Rust router so Python speculative zone detection is exercised
-    system.rust_router = None
-    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.35, uncertainty=0.2, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 
@@ -39,18 +50,13 @@ async def test_speculative_zone_boundary_low(caplog):
         result = await system.run("Simple task")
 
     assert result is not None
-    # complexity=0.35 is exactly at the boundary; route() gives S2 (system=2)
-    # since 0.35 <= 0.35 <= 0.55 and system <= 2, speculative zone fires
-    assert any("Speculative zone" in r.message for r in caplog.records)
+    assert system._last_execution_path == "mock"
 
 
 @pytest.mark.asyncio
-async def test_speculative_zone_boundary_high(caplog):
-    """Complexity exactly at 0.55 (upper boundary) triggers speculative log."""
+async def test_speculative_zone_boundary_high_mock_bypass(caplog):
+    """Mock mode at high boundary (0.55) completes without pipeline routing."""
     system = boot_agent_system(use_mock_llm=True)
-    # Disable Rust router so Python speculative zone detection is exercised
-    system.rust_router = None
-    system.shadow_router = None
     profile = CognitiveProfile(complexity=0.55, uncertainty=0.3, tool_required=False)
     system.metacognition.assess_complexity_async = AsyncMock(return_value=profile)
 
@@ -58,7 +64,7 @@ async def test_speculative_zone_boundary_high(caplog):
         result = await system.run("Moderate task")
 
     assert result is not None
-    assert any("Speculative zone" in r.message for r in caplog.records)
+    assert system._last_execution_path == "mock"
 
 
 @pytest.mark.asyncio
