@@ -71,7 +71,7 @@ def _build_capability_matrix(
 
     from sage.providers.capabilities import CapabilityMatrix as _CapMatrix
     from sage.providers.connector import PROVIDER_CONFIGS
-    from sage.providers.openai_compat import OpenAICompatProvider
+    from sage.providers.litellm_provider import LiteLLMProvider
 
     _cap_matrix = _CapMatrix()
     _discovered_providers = {p.provider for p in registry.list_available()}
@@ -81,28 +81,13 @@ def _build_capability_matrix(
         if _pname not in _discovered_providers:
             continue
         _api_key = os.environ.get(_cfg["api_key_env"], "")
-        # Fallback for legacy env var spelling
         if not _api_key and _pname == "deepseek":
             _api_key = os.environ.get("DEEP_SEEK_API_KEY", "")
         if not _api_key:
             continue
-        if _cfg.get("sdk") == "google-genai":
-            from sage.llm.google import GoogleProvider
-            _runtime_adapters[_pname] = GoogleProvider(api_key=_api_key)
-        else:
-            _runtime_adapters[_pname] = OpenAICompatProvider(
-                api_key=_api_key,
-                base_url=_cfg.get("base_url"),
-                provider_name=_pname,
-            )
-    # Codex CLI provider (uses subprocess, not API key)
-    if "codex" in _discovered_providers:
-        try:
-            from sage.llm.codex import CodexProvider
-            _runtime_adapters["codex"] = CodexProvider()
-            _log.info("Boot: Codex CLI provider added to runtime adapters")
-        except (ImportError, RuntimeError) as e:
-            _log.warning("Boot: Codex provider init failed (%s)", e)
+        _runtime_adapters[_pname] = LiteLLMProvider.for_sage_provider(
+            _pname, _cfg.get("default_model", ""), _api_key or None,
+        )
 
     _cap_matrix.populate_from_providers(
         list(_discovered_providers), adapters=_runtime_adapters,

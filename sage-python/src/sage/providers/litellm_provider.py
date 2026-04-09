@@ -24,12 +24,12 @@ _PROVIDER_PREFIX: dict[str, str] = {
     "google": "gemini",
     "xai": "xai",
     "openrouter": "openrouter",
+    "minimax": "minimax",
 }
 
 # Providers that need a custom base_url and use the generic "openai/" prefix.
 _CUSTOM_BASE_PROVIDERS: dict[str, str] = {
     "kimi": "https://api.moonshot.ai/v1",
-    "minimax": "https://api.minimax.io/v1",
 }
 
 

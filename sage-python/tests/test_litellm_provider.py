@@ -66,10 +66,10 @@ class TestFactory:
         assert p.model_string == "openai/moonshot-v1-8k"
         assert p.api_base == "https://api.moonshot.ai/v1"
 
-    def test_minimax_custom_base(self) -> None:
+    def test_minimax_native_prefix(self) -> None:
         p = LiteLLMProvider.for_sage_provider("minimax", "minimax-m2.7", "sk-mm")
-        assert p.model_string == "openai/minimax-m2.7"
-        assert p.api_base == "https://api.minimax.io/v1"
+        assert p.model_string == "minimax/minimax-m2.7"
+        assert p.api_base is None  # LiteLLM handles minimax natively
 
     def test_openai_responses_prefix(self) -> None:
         p = LiteLLMProvider.for_sage_provider("openai", "gpt-5.4-pro")
