@@ -106,255 +106,37 @@ class AgentSystem:
     async def run(self, task: str) -> str:
         """Run a task through the agent system.
 
-        Primary path: CognitiveOrchestrationPipeline (5-stage).
-        Secondary path: CognitiveOrchestrator (multi-provider, score-based).
-        Fallback: legacy AgentLoop with ModelRouter (Codex + Google only).
-        Mock mode: direct AgentLoop.
+        Mock mode: direct AgentLoop (tested exception, preserves 2001 tests).
+        Non-mock: CognitiveOrchestrationPipeline (5-stage).
+        Fallback: direct AgentLoop if pipeline not initialized.
         """
-        # Try CognitiveOrchestrationPipeline first (if wired and not mock)
-        # Mock mode bypasses the pipeline so agent_loop phases (PERCEIVE/THINK/ACT/LEARN)
-        # are exercised — important for testing phase events and guardrail wiring.
-        if self.pipeline and self.agent_loop.config.llm.provider != "mock":
-            try:
-                _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD
-                result = await self.pipeline.run(task, budget_usd=_budget)
-                self._last_execution_path = "pipeline"
-                await self._persist_memory()
-                _log.info("Execution path: pipeline (5-stage)")
-                return result
-            except (RuntimeError, TimeoutError) as exc:
-                self._last_execution_path = "pipeline_fallback_legacy"
-                _log.warning("Pipeline FAILED — falling back to legacy path: %s", exc)
+        _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD
 
-        _run_start = time.perf_counter()
-        if not self._last_execution_path:
-            self._last_execution_path = "legacy"
-            _log.info("Execution path: legacy (pipeline unavailable or mock mode)")
-        self._last_decision = None  # Routing decision for telemetry feedback
-        # Reset topology so each run generates a fresh one.
-        # Externally-forced topologies (TopologyBench) are re-set by the caller
-        # before each run() call, so this is safe.
-        self.agent_loop._current_topology = None
-
-        # 1. Route task to cognitive system
-        budget = DEFAULT_BUDGET_USD
-        if hasattr(self, '_guardrail_budget'):
-            budget = self._guardrail_budget
-
-        if self.rust_router:
-            # Primary path: Rust SystemRouter (no shadow)
-            decision = self.rust_router.route(task, budget)
-            system_num = int(decision.system)  # CognitiveSystem enum -> int
-            model_id = decision.model_id
-            _log.info(
-                "Rust routing: %s -> system=S%d, model=%s (conf=%.2f, cost=%.4f)",
-                task[:60], system_num, model_id,
-                decision.confidence, decision.estimated_cost,
-            )
-        else:
-            # Fallback: Python AdaptiveRouter
-            profile = await self.metacognition.assess_complexity_async(task)
-            decision = self.metacognition.route(profile)
-            system_num = decision.system
-            model_id = None  # Python path uses llm_tier, not model_id
-            # Speculative execution detection
-            if SPECULATIVE_ZONE_MIN <= profile.complexity <= SPECULATIVE_ZONE_MAX and decision.system <= 2:
-                _log.info(
-                    "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
-                    profile.complexity, decision.system,
-                )
-
-        self._last_decision = decision  # Store for telemetry in _record_topology_outcome
-
-        # 2. Topology generation (Rust engine, 6-path strategy)
-        #    If _current_topology is already set (externally forced by benchmark
-        #    scripts or TopologyBench), skip generation to preserve the forced topology.
-        topology_result = None
-        _externally_forced = self.agent_loop._current_topology
-        if _externally_forced:
-            _log.info(
-                "Topology externally forced (%d nodes, template=%s), skipping generation",
-                _externally_forced.node_count(),
-                getattr(_externally_forced, 'template_type', 'unknown'),
-            )
-        elif self.topology_engine:
-            try:
-                exploration_budget = EXPLORATION_BUDGET_LOW if system_num <= 2 else EXPLORATION_BUDGET_HIGH
-                # Compute real embedding for S-MMU semantic retrieval
-                task_embedding = None
-                try:
-                    from sage.memory.embedder import Embedder
-                    _emb = Embedder()
-                    if _emb.is_semantic:
-                        task_embedding = _emb.embed(task[:500])
-                except (ImportError, RuntimeError):
-                    pass
-                topology_result = self.topology_engine.generate(
-                    task,
-                    task_embedding,
-                    system_num,
-                    exploration_budget,
-                )
-                # Cache topology for later outcome recording
-                self.topology_engine.cache_topology(topology_result.topology)
-                self.agent_loop._current_topology = topology_result.topology
-                _log.info(
-                    "Topology generated: source=%s, confidence=%.2f, template=%s",
-                    topology_result.source,
-                    topology_result.confidence,
-                    topology_result.topology.template_type,
-                )
-                # Path 3 hook: if engine returned template_fallback AND
-                # system >= 2 AND not mock, try LLM synthesis
-                if (topology_result.source == "template_fallback"
-                        and system_num >= LLM_SYNTHESIS_MIN_SYSTEM
-                        and self.agent_loop.config.llm.provider != "mock"):
-                    try:
-                        from sage.topology.llm_caller import synthesize_topology
-                        llm_graph = await synthesize_topology(
-                            self.agent_loop._llm,
-                            task,
-                            max_agents=MAX_TOPOLOGY_AGENTS,
-                            available_models=["gemini-2.5-flash", "gemini-3-flash-preview"],
-                        )
-                        if llm_graph and llm_graph.node_count() > 0:
-                            self.topology_engine.cache_topology(llm_graph)
-                            # Update topology_result with LLM synthesis result
-                            topology_result = self.topology_engine.generate(
-                                task, None, system_num, 0.0,
-                            )
-                            _log.info("Path 3: LLM synthesis produced %d-node topology",
-                                      llm_graph.node_count())
-                    except (RuntimeError, TimeoutError) as e:
-                        _log.debug("Path 3 LLM synthesis skipped: %s", e)
-                # Emit topology event for dashboard
-                from sage.agent_loop import AgentEvent
-                self.event_bus.emit(AgentEvent(
-                    type="TOPOLOGY",
-                    step=0,
-                    timestamp=time.time(),
-                    meta={
-                        "topology_source": topology_result.source,
-                        "topology_confidence": topology_result.confidence,
-                        "topology_template": topology_result.topology.template_type,
-                        "topology_id": topology_result.topology.id,
-                        "topology_nodes": topology_result.topology.node_count(),
-                    },
-                ))
-            except (ImportError, RuntimeError) as e:
-                _log.warning("Topology generation failed (%s), continuing without", e)
-                self.agent_loop._current_topology = None
-        else:
+        # Mock bypass: tested exception (H9).
+        # Mock goes direct to agent_loop so phase events (PERCEIVE/THINK/ACT/LEARN)
+        # and guardrail wiring are exercised — important for 2001 tests.
+        if self.agent_loop.config.llm.provider == "mock":
+            self._last_execution_path = "mock"
             self.agent_loop._current_topology = None
-
-        # Track whether integrated routing handled bandit
-        bandit_decision = None
-
-        # Integrated routing: use route_integrated when bandit is wired into router
-        if (self.rust_router and hasattr(self.rust_router, 'route_integrated')
-                and self.bandit):
-            try:
-                from sage_core import RoutingConstraints  # noqa: E402
-                constraints = RoutingConstraints(
-                    max_cost_usd=budget,
-                    exploration_budget=EXPLORATION_BUDGET_LOW if system_num <= 2 else EXPLORATION_BUDGET_HIGH,
-                )
-                topology_id_str = (
-                    topology_result.topology.id if topology_result else ""
-                )
-                integrated_decision = self.rust_router.route_integrated(
-                    task, constraints, topology_id_str,
-                )
-                # Override decision with integrated result
-                decision = integrated_decision
-                system_num = int(decision.system)
-                model_id = decision.model_id
-                _log.info(
-                    "Integrated routing: S%d, model=%s, topology=%s",
-                    system_num, model_id, decision.topology_id,
-                )
-                bandit_decision = None  # Bandit handled inside route_integrated
-                self._last_decision = decision  # Update stored decision
-            except (ImportError, RuntimeError) as e:
-                _log.debug("Integrated routing failed (%s), using separate paths", e)
-
-        # Phase 6: Bandit model suggestion (Thompson sampling)
-        if self.bandit and bandit_decision is None:
-            try:
-                template_type = (
-                    topology_result.topology.template_type
-                    if topology_result else "sequential"
-                )
-                # Seed arms from all registered models in Rust ModelRegistry.
-                # NOTE: self.registry is the Python providers.registry.ModelRegistry.
-                # The Rust registry is stored as _rust_registry during boot.
-                # The Rust method is list_ids() (NOT all_model_ids()).
-                if self._rust_registry:
-                    for model_id in self._rust_registry.list_ids():
-                        self.bandit.register_arm(model_id, template_type)
-                else:
-                    # Fallback: seed from Python registry's available models
-                    for profile in self.registry.list_available():
-                        self.bandit.register_arm(profile.id, template_type)
-                    if not self.registry.list_available():
-                        _log.debug("Bandit: no registry models available, skipping arm seeding")
-
-                bandit_decision = self.bandit.select(EXPLORATION_BUDGET_LOW)
-                _log.info(
-                    "Bandit suggestion: model=%s, template=%s, quality=%.3f, explore=%s",
-                    bandit_decision.model_id, bandit_decision.template,
-                    bandit_decision.expected_quality, bandit_decision.exploration,
-                )
-            except (ImportError, RuntimeError) as e:
-                _log.warning("Bandit model selection failed (%s), using default", e)
-
-        # 3. Set validation level from routing decision
-        if system_num >= 3:
-            self.agent_loop.config.validation_level = 3
-        elif system_num == 2 and self.agent_loop.sandbox_manager:
-            self.agent_loop.config.validation_level = 2
-        else:
-            self.agent_loop.config.validation_level = 1
-
-        current_provider = self.agent_loop.config.llm.provider
-
-        # Mock mode: use AgentLoop directly
-        if current_provider == "mock":
             result = await self.agent_loop.run(task)
-            self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
             return result
 
-        # 4a. Multi-node topology: use AgentLoop → TopologyRunner (direct LLM)
-        if self.agent_loop._current_topology:
-            _node_count = 0
-            try:
-                _node_count = self.agent_loop._current_topology.node_count()
-            except AttributeError:
-                pass
-            if _node_count > 1:
-                _log.info(
-                    "Multi-node topology (%d nodes): using TopologyRunner",
-                    _node_count,
-                )
-                result = await self.agent_loop.run(task)
-                await self._persist_memory()
-                self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
-                return result
+        # Pipeline is THE execution path.
+        # Pipeline Stage 4 now calls agent_loop.run() for bypass (Phase 1),
+        # giving every task tools + S2/S3 validation + guardrails + memory.
+        if self.pipeline:
+            result = await self.pipeline.run(task, budget_usd=_budget)
+            self._last_execution_path = "pipeline"
+            await self._persist_memory()
+            return result
 
-        # 5. Fallback: legacy ModelRouter path (only used with Python router)
-        if not self.rust_router:
-            new_config = ModelRouter.get_config(decision.llm_tier)
-            if new_config.provider == "google" and not os.environ.get("GOOGLE_API_KEY"):
-                pass  # Google unavailable, keep current
-            else:
-                self.agent_loop.config.llm = new_config
-                if new_config.provider == "google":
-                    from sage.llm.google import GoogleProvider
-                    self.agent_loop._llm = GoogleProvider()
-
+        # Fallback: pipeline not initialized (missing deps at boot).
+        # Direct agent_loop.run() — still gets tools + validation.
+        _log.warning("Pipeline not available — using direct agent_loop")
+        self._last_execution_path = "direct"
+        self.agent_loop._current_topology = None
         result = await self.agent_loop.run(task)
         await self._persist_memory()
-        self._record_topology_outcome(task, result, topology_result, bandit_decision, _run_start)
         return result
 
     def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None, run_start: float = 0.0) -> None:

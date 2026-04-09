@@ -19,14 +19,14 @@ def test_last_execution_path_default_empty():
 
 @pytest.mark.asyncio
 async def test_mock_mode_sets_legacy_path():
-    """Mock provider should use legacy path, not pipeline."""
+    """Mock provider should use mock bypass path."""
     from sage.boot import boot_agent_system
     system = boot_agent_system(use_mock_llm=True)
     result = await system.run("test task")
-    assert system._last_execution_path in ("legacy", "pipeline", "pipeline_fallback_legacy"), (
+    assert system._last_execution_path in ("mock", "legacy", "pipeline", "direct"), (
         f"Expected a valid path, got '{system._last_execution_path}'"
     )
-    # Mock mode should use legacy (pipeline skips mock provider)
-    assert system._last_execution_path == "legacy", (
-        f"Mock mode should use legacy path, got '{system._last_execution_path}'"
+    # Mock mode uses direct agent_loop bypass (H9: don't break 2001 tests)
+    assert system._last_execution_path == "mock", (
+        f"Mock mode should use mock bypass, got '{system._last_execution_path}'"
     )

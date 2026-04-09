@@ -154,3 +154,30 @@ async def test_bypass_without_agent_loop_uses_provider_loop():
 
     mock_provider.generate.assert_called_once()
     assert result_ctx.result == "provider result"
+
+
+@pytest.mark.asyncio
+async def test_system_run_mock_bypass():
+    """Mock mode should bypass pipeline and call agent_loop.run() directly."""
+    from sage.boot import boot_agent_system
+
+    system = boot_agent_system(use_mock_llm=True)
+    result = await system.run("test task")
+    assert system._last_execution_path == "mock"
+    assert isinstance(result, str)
+
+
+@pytest.mark.asyncio
+async def test_system_run_pipeline_path():
+    """Non-mock mode should use pipeline (when pipeline is available)."""
+    from sage.boot import boot_agent_system
+
+    system = boot_agent_system(use_mock_llm=True)
+    # Simulate non-mock with pipeline available
+    system.agent_loop.config.llm.provider = "test"
+    system.pipeline = MagicMock()
+    system.pipeline.run = AsyncMock(return_value="pipeline result")
+
+    result = await system.run("test task")
+    assert system._last_execution_path == "pipeline"
+    assert result == "pipeline result"
