@@ -116,6 +116,7 @@ class CognitiveOrchestrationPipeline:
         self.controller = controller
         self.tool_registry = tool_registry
         self._rust_registry = None  # Set by boot if Rust ModelRegistry available
+        self._rust_router = None    # Set by boot if Rust SystemRouter available
         self._smmu = smmu
         self.consolidator = consolidator
         self.working_memory = working_memory
@@ -269,11 +270,39 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
     def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 0: Classify task complexity and domain.
+        """Stage 0: Classify task complexity, domain, and select model.
 
-        Priority: Rust kNN (92%) > AdaptiveRouter kNN > heuristic (34%).
+        Priority: Rust SystemRouter (kNN + bandit + domain + constraints)
+                > Python kNN fallback > heuristic (34%).
+
+        The Rust SystemRouter combines:
+        - Structural feature extraction (complexity, uncertainty, tool_required)
+        - kNN 93.3% GT accuracy
+        - Thompson sampling bandit (per-model posteriors)
+        - Domain scoring from cards.toml
+        - Budget-constrained model selection
+        - Formal keyword detection (prove, theorem → S3)
+
+        Returns: system (S1/S2/S3), domain, and stores RoutingDecision for
+        model selection in Stage 3 (ModelAssigner) and Stage 5 (Learn).
         """
-        # Priority 1: kNN router (92% accuracy, Rust-accelerated)
+        # Priority 1: Rust SystemRouter (full integrated routing)
+        if self._rust_router:
+            try:
+                decision = self._rust_router.route(ctx.task, ctx.budget)
+                ctx.system = int(decision.system)
+                ctx.domain = _infer_domain(ctx.task)
+                # Store decision for model selection + telemetry
+                self._last_routing_decision = decision
+                log.info(
+                    "Stage 0: Rust routing → S%d model=%s (conf=%.2f, cost=%.4f)",
+                    ctx.system, decision.model_id, decision.confidence, decision.estimated_cost,
+                )
+                return ctx
+            except Exception as exc:
+                log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
+
+        # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
         if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
             try:
                 knn_result = self.router._knn.route(ctx.task)
@@ -286,7 +315,7 @@ class CognitiveOrchestrationPipeline:
             except (ImportError, RuntimeError) as exc:
                 log.debug("Stage 0: kNN failed (%s), falling back", exc)
 
-        # Priority 2: AdaptiveRouter / ComplexityRouter
+        # Priority 3: AdaptiveRouter heuristic
         if self.router:
             try:
                 profile = self.router.assess_complexity(ctx.task)
@@ -849,15 +878,25 @@ class CognitiveOrchestrationPipeline:
             if self.llm_provider:
                 from sage.llm.base import Message, Role
 
-                # Bypass mode: use default provider (boot-configured, tier-appropriate).
-                # The default is set by ModelRouter.get_config(tier) at boot:
-                #   - budget tier → deepseek-chat (fast, cheap)
-                #   - fast tier → gemini-flash (low latency)
-                #   - codex tier → gpt-5.4 (best coding)
-                # Model selection per-node is the ModelAssigner's job (topology path).
-                # Bypass means the task is simple enough for a single default call.
+                # Bypass mode: use model_id from Rust routing decision if available.
+                # The SystemRouter already selected the best model for this system level
+                # + domain + budget via cards.toml affinity scoring + bandit Thompson.
+                # If no Rust decision, fall back to boot default (tier-configured).
                 provider = self.llm_provider
                 config = self.llm_config
+                routing_decision = getattr(self, '_last_routing_decision', None)
+                if routing_decision and routing_decision.model_id and self.provider_pool:
+                    try:
+                        if self.provider_pool.is_model_available(routing_decision.model_id):
+                            resolved_provider, resolved_config = self.provider_pool.resolve(routing_decision.model_id)
+                            provider = resolved_provider
+                            config = resolved_config
+                            log.info(
+                                "Stage 4 single-agent: using Rust-selected %s (S%d)",
+                                routing_decision.model_id, ctx.system,
+                            )
+                    except Exception:
+                        pass  # Keep default
 
                 messages = [Message(role=Role.USER, content=ctx.task)]
 
