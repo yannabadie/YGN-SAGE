@@ -125,6 +125,44 @@ Making mock go through pipeline could break test expectations.
 **Fix:** keep mock provider working within LiteLLMProvider (mock responses).
 The pipeline path should work with mock providers — validate with full test suite.
 
+### H6: Recursive validation (Codex finding)
+A "verifier" node running through agent_loop gets S2 AVR validation applied to IT.
+The verifier validates the actor's code, then AVR validates the verifier's output,
+triggering another verification loop. Recursive.
+**Fix:** verifier nodes should run with `validation_level=0` (no AVR/Z3). Only the
+"actor" node gets full validation. Set per-node via agent_loop config.
+
+### H7: Predecessor context injection (Codex finding)
+agent_loop.run(task) takes a string task. It has no mechanism to inject
+predecessor_output from the previous topology node.
+**Fix:** TopologyRunner builds the node prompt as `f"{node_system_prompt}\n\n## Previous agent output:\n{predecessor_output}\n\n## Task:\n{task}"`.
+This is already done for provider.generate() — same pattern for agent_loop.run().
+
+### H8: Async concurrency (Codex finding)
+TopologyRunner uses asyncio.gather() for independent nodes (same DAG depth).
+Multiple agent_loop.run() calls concurrently on the same event loop could conflict
+on shared state (working_memory, drift_monitor, circuit breakers).
+**Fix:** per-node AgentLoop factory creates INDEPENDENT instances. No shared mutable
+state. Working memory shared READ-ONLY; each node writes to its own episodic scope.
+
+### H9: Mock mode test dependency (Codex finding)
+2001 tests use `use_mock_llm=True` which currently bypasses the pipeline entirely.
+Forcing mock through pipeline could break test expectations (different output format,
+different event sequence, different cost tracking).
+**Fix:** keep mock bypass as a TESTED EXCEPTION in system.run():
+`if mock: return agent_loop.run(task)` — one if, not a full legacy path.
+Migrate tests incrementally to pipeline-aware mocks in Phase 3.
+
+## Codex Migration Strategy (8 ordered steps)
+1. Keep mock bypass (don't break 2001 tests)
+2. Add _skip_routing flag before structural changes
+3. Create AgentLoop factory for per-node instances (fresh state)
+4. Clear _current_topology = None before each node call
+5. Pass predecessor_output in node prompt
+6. Budget split via max_cost_usd per-node config
+7. Delete pipeline tool-calling loop (agent_loop handles it)
+8. Delete legacy code AFTER all fixes verified against full test suite
+
 ## Risk
 
 - 2001 existing tests may depend on legacy path behavior
@@ -132,6 +170,7 @@ The pipeline path should work with mock providers — validate with full test su
 - Agent_loop.run() per node is slower than provider.generate() per node
   (but produces REAL agents, not fake prompt chains — OpenSAGE proves this works at 59% SWE-bench)
 - Google ADK pattern (SequentialAgent + LlmAgent per node) validates the architecture
+- Codex found 10 issues (5 BLOCKING), all with identified fixes
 
 ## Success Criteria
 
