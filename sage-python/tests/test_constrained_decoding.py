@@ -85,12 +85,19 @@ def test_openai_compat_sets_response_format():
             class FakeMsg:
                 content = '{"result": 42}'
                 reasoning_content = None
+                tool_calls = None
+
+            class FakeUsage:
+                prompt_tokens = 10
+                completion_tokens = 5
+                total_tokens = 15
 
             class FakeChoice:
                 message = FakeMsg()
 
             class FakeResp:
                 choices = [FakeChoice()]
+                usage = FakeUsage()
 
             return FakeResp()
 
@@ -152,12 +159,19 @@ def test_openai_compat_no_response_format_without_schema():
             class FakeMsg:
                 content = "hello"
                 reasoning_content = None
+                tool_calls = None
+
+            class FakeUsage:
+                prompt_tokens = 10
+                completion_tokens = 5
+                total_tokens = 15
 
             class FakeChoice:
                 message = FakeMsg()
 
             class FakeResp:
                 choices = [FakeChoice()]
+                usage = FakeUsage()
 
             return FakeResp()
 

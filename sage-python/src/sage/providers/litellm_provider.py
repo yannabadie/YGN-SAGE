@@ -149,19 +149,27 @@ class LiteLLMProvider:
         return out
 
     @staticmethod
-    def _convert_tools(tools: list[ToolDef]) -> list[dict[str, Any]]:
-        """Convert SAGE ``ToolDef`` objects to OpenAI function-tool dicts."""
-        return [
-            {
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.parameters,
-                },
-            }
-            for t in tools
-        ]
+    def _convert_tools(tools: list[ToolDef] | list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Convert SAGE ``ToolDef`` objects to OpenAI function-tool dicts.
+
+        Handles both ToolDef objects and pre-formatted dicts (from ToolRegistry.get_tool_defs).
+        """
+        result = []
+        for t in tools:
+            if isinstance(t, dict):
+                # Already in OpenAI format
+                result.append(t)
+            else:
+                # ToolDef object
+                result.append({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.parameters,
+                    },
+                })
+        return result
 
     # ------------------------------------------------------------------
     # Core generate
