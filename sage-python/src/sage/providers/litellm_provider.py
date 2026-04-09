@@ -1,0 +1,257 @@
+"""LiteLLM-based LLM provider — unified interface for all upstream APIs.
+
+Replaces per-provider custom plumbing with a single adapter that delegates
+to ``litellm.acompletion``.  Provider-specific routing (base URL, model
+prefix, API key env var) is handled by the ``for_sage_provider`` factory.
+"""
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from sage.llm.base import LLMConfig, LLMResponse, Message, ToolCall, ToolDef
+
+log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Provider → LiteLLM model-string mapping
+# ---------------------------------------------------------------------------
+
+_PROVIDER_PREFIX: dict[str, str] = {
+    "openai": "openai",
+    "deepseek": "deepseek",
+    "google": "gemini",
+    "xai": "xai",
+    "openrouter": "openrouter",
+}
+
+# Providers that need a custom base_url and use the generic "openai/" prefix.
+_CUSTOM_BASE_PROVIDERS: dict[str, str] = {
+    "kimi": "https://api.moonshot.ai/v1",
+    "minimax": "https://api.minimax.io/v1",
+}
+
+
+def _litellm_model_string(provider: str, model_id: str) -> str:
+    """Build the ``model`` argument expected by ``litellm.acompletion``.
+
+    For most providers this is ``"<prefix>/<model_id>"``.  OpenAI GPT-5.4-pro
+    models require the Responses-API prefix ``"openai/responses/<model_id>"``.
+    """
+    provider_lower = provider.lower()
+
+    # Custom-base providers use the plain "openai/" prefix.
+    if provider_lower in _CUSTOM_BASE_PROVIDERS:
+        return f"openai/{model_id}"
+
+    prefix = _PROVIDER_PREFIX.get(provider_lower, provider_lower)
+
+    # OpenAI gpt-5.4-pro variants need the Responses API path.
+    if prefix == "openai" and model_id.startswith("gpt-5.4-pro"):
+        return f"openai/responses/{model_id}"
+
+    return f"{prefix}/{model_id}"
+
+
+class LiteLLMProvider:
+    """Unified LLM provider backed by LiteLLM.
+
+    Parameters
+    ----------
+    model_string:
+        Full LiteLLM model identifier (e.g. ``"deepseek/deepseek-chat"``).
+    api_key:
+        API key passed to the upstream provider.
+    api_base:
+        Optional custom API base URL (for Kimi, MiniMax, etc.).
+    """
+
+    name = "litellm"
+
+    def __init__(
+        self,
+        model_string: str,
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> None:
+        self.model_string = model_string
+        self.api_key = api_key
+        self.api_base = api_base
+
+    # ------------------------------------------------------------------
+    # Factory
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def for_sage_provider(
+        cls,
+        provider_name: str,
+        model_id: str,
+        api_key: str | None = None,
+    ) -> LiteLLMProvider:
+        """Create a provider instance pre-configured for a SAGE provider name.
+
+        >>> p = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-...")
+        >>> p.model_string
+        'deepseek/deepseek-chat'
+        """
+        model_string = _litellm_model_string(provider_name, model_id)
+        api_base = _CUSTOM_BASE_PROVIDERS.get(provider_name.lower())
+        return cls(model_string=model_string, api_key=api_key, api_base=api_base)
+
+    # ------------------------------------------------------------------
+    # Message conversion (SAGE → OpenAI dict format for LiteLLM)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _convert_messages(messages: list[Message]) -> list[dict[str, Any]]:
+        """Convert SAGE ``Message`` objects to OpenAI-format dicts."""
+        out: list[dict[str, Any]] = []
+        for msg in messages:
+            role = msg.role.value
+
+            # Assistant message carrying tool_calls
+            if role == "assistant" and msg.tool_calls:
+                out.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content or None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    }
+                )
+                continue
+
+            # Tool-result message
+            if role == "tool" and msg.tool_call_id:
+                entry: dict[str, Any] = {
+                    "role": "tool",
+                    "content": msg.content,
+                    "tool_call_id": msg.tool_call_id,
+                }
+                if msg.name:
+                    entry["name"] = msg.name
+                out.append(entry)
+                continue
+
+            out.append({"role": role, "content": msg.content})
+
+        return out
+
+    @staticmethod
+    def _convert_tools(tools: list[ToolDef]) -> list[dict[str, Any]]:
+        """Convert SAGE ``ToolDef`` objects to OpenAI function-tool dicts."""
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.parameters,
+                },
+            }
+            for t in tools
+        ]
+
+    # ------------------------------------------------------------------
+    # Core generate
+    # ------------------------------------------------------------------
+
+    async def generate(
+        self,
+        messages: list[Message],
+        tools: list[ToolDef] | None = None,
+        config: LLMConfig | None = None,
+        **kwargs: Any,
+    ) -> LLMResponse:
+        """Generate a completion via LiteLLM.
+
+        Converts SAGE types to/from the OpenAI wire format that LiteLLM
+        expects and returns a populated ``LLMResponse``.
+        """
+        import litellm
+
+        oai_messages = self._convert_messages(messages)
+
+        params: dict[str, Any] = {
+            "model": self.model_string,
+            "messages": oai_messages,
+            "max_tokens": config.max_tokens if config else 4096,
+            "temperature": config.temperature if config else 0.0,
+        }
+
+        if self.api_key:
+            params["api_key"] = self.api_key
+        if self.api_base:
+            params["api_base"] = self.api_base
+
+        if tools:
+            params["tools"] = self._convert_tools(tools)
+
+        try:
+            response = await litellm.acompletion(**params)
+        except Exception:
+            log.error("LiteLLM error for model %s", self.model_string, exc_info=True)
+            raise
+
+        # --- Parse response ---------------------------------------------------
+        choice = response.choices[0]
+        msg = choice.message
+
+        content = msg.content or ""
+
+        # Tool calls
+        parsed_tool_calls: list[ToolCall] = []
+        if msg.tool_calls:
+            for tc in msg.tool_calls:
+                args = tc.function.arguments
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except (ValueError, TypeError):
+                        args = {"raw": args}
+                parsed_tool_calls.append(
+                    ToolCall(
+                        id=tc.id or f"call_{len(parsed_tool_calls)}",
+                        name=tc.function.name,
+                        arguments=args,
+                    )
+                )
+
+        # Usage
+        usage: dict[str, int] | None = None
+        if response.usage:
+            usage = {
+                "input_tokens": getattr(response.usage, "prompt_tokens", 0) or 0,
+                "output_tokens": getattr(response.usage, "completion_tokens", 0) or 0,
+                "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
+            }
+
+        # Cost (LiteLLM tracks cost in hidden params)
+        cost = None
+        hidden = getattr(response, "_hidden_params", None)
+        if isinstance(hidden, dict):
+            cost = hidden.get("response_cost")
+        if cost is not None and usage is not None:
+            usage["cost_usd"] = cost
+
+        # Stop reason
+        stop_reason = getattr(choice, "finish_reason", None)
+
+        return LLMResponse(
+            content=content,
+            tool_calls=parsed_tool_calls,
+            usage=usage,
+            model=self.model_string,
+            stop_reason=stop_reason,
+        )
