@@ -877,7 +877,54 @@ class CognitiveOrchestrationPipeline:
         if ctx.topology is None or (
             hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
         ):
-            if self.llm_provider:
+            if self._agent_loop:
+                # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
+                # guardrails + memory. Replaces the raw provider.generate() loop.
+
+                # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
+                self._agent_loop._skip_routing = True
+                # H4: Clear topology (pipeline owns topology, not agent_loop)
+                self._agent_loop._current_topology = None
+
+                # Set validation level from system classification
+                if ctx.system >= 3:
+                    self._agent_loop.config.validation_level = 3
+                elif ctx.system >= 2 and self._agent_loop.sandbox_manager:
+                    self._agent_loop.config.validation_level = 2
+                else:
+                    self._agent_loop.config.validation_level = 1
+
+                # Resolve model from Rust routing decision (preserve model selection)
+                routing_decision = getattr(self, '_last_routing_decision', None)
+                _original_llm = self._agent_loop._llm
+                _original_config = self._agent_loop.config.llm
+                if routing_decision and routing_decision.model_id and self.provider_pool:
+                    try:
+                        if self.provider_pool.is_model_available(routing_decision.model_id):
+                            resolved_provider, resolved_config = self.provider_pool.resolve(
+                                routing_decision.model_id
+                            )
+                            self._agent_loop._llm = resolved_provider
+                            self._agent_loop.config.llm = resolved_config
+                            log.info(
+                                "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
+                                routing_decision.model_id, ctx.system,
+                            )
+                    except Exception:
+                        pass  # Keep default provider
+
+                try:
+                    ctx.result = await self._agent_loop.run(ctx.task)
+                    ctx.cost = self._agent_loop.total_cost_usd
+                finally:
+                    # Restore agent_loop state (safe for next run)
+                    self._agent_loop._skip_routing = False
+                    self._agent_loop._llm = _original_llm
+                    self._agent_loop.config.llm = _original_config
+
+            elif self.llm_provider:
+                # Legacy fallback: provider.generate() loop for when pipeline is
+                # created without agent_loop. Will be removed in Phase 3.
                 from sage.llm.base import Message, Role
 
                 # Bypass mode: use model_id from Rust routing decision if available.
