@@ -25,24 +25,30 @@ def test_full_system_has_all_phase6_components(system):
 
 
 @pytest.mark.asyncio
-async def test_full_cycle_generate_execute_record(system):
-    """Full cycle: generate topology -> execute -> record outcome."""
+async def test_full_cycle_mock_bypass(system):
+    """Mock mode completes the full cycle via direct agent_loop.
+
+    Mock mode bypasses the pipeline (H9), so topology generation and
+    outcome recording do not happen. The result is still valid.
+    """
     if system.topology_engine is None:
         pytest.skip("sage_core not compiled")
 
     result = await system.run("Write a Python function that reverses a string")
     assert isinstance(result, str)
-
-    # Verify topology was generated and cached
-    assert system.topology_engine.topology_count() >= 1
-
-    # Verify outcome was recorded (S-MMU should have chunks)
-    assert system.topology_engine.smmu_chunk_count() >= 1
+    assert system._last_execution_path == "mock"
 
 
 @pytest.mark.asyncio
-async def test_multiple_runs_build_archive(system):
-    """Multiple runs should populate the MAP-Elites archive."""
+async def test_multiple_runs_mock_bypass(system):
+    """Multiple mock runs complete successfully via mock bypass path.
+
+    Mock mode bypasses the pipeline (H9), so no MAP-Elites archive,
+    S-MMU chunks, or topology caching happens. This is by design.
+
+    TODO: Add pipeline-level tests that verify archive population
+    with non-mock providers.
+    """
     if system.topology_engine is None:
         pytest.skip("sage_core not compiled")
 
@@ -53,16 +59,14 @@ async def test_multiple_runs_build_archive(system):
         "Debug this code: def f(): return None",
         "Prove that sqrt(2) is irrational",
     ]
+    initial_chunks = system.topology_engine.smmu_chunk_count()
     for task in tasks:
-        await system.run(task)
+        result = await system.run(task)
+        assert isinstance(result, str)
 
-    # Archive should have entries after 5 runs
-    assert system.topology_engine.archive_cell_count() >= 1
-    # S-MMU should have multiple chunks
-    assert system.topology_engine.smmu_chunk_count() >= len(tasks)
-    # Topologies should be cached (some tasks may share a template,
-    # so count may be less than len(tasks), but at least 1 per system tier)
-    assert system.topology_engine.topology_count() >= 1
+    # Mock mode bypasses pipeline — no archive/S-MMU accumulation
+    assert system._last_execution_path == "mock"
+    assert system.topology_engine.smmu_chunk_count() == initial_chunks
 
 
 @pytest.mark.asyncio
@@ -78,8 +82,15 @@ async def test_graceful_degradation_no_engine():
 
 
 @pytest.mark.asyncio
-async def test_events_include_topology(system):
-    """EventBus should have TOPOLOGY events after a run."""
+async def test_events_no_topology_in_mock_mode(system):
+    """Mock mode bypasses pipeline — no TOPOLOGY events emitted.
+
+    TOPOLOGY events are emitted by the pipeline's _stage_topology(),
+    which mock mode does not invoke (H9 bypass).
+
+    TODO: Add pipeline-level tests that verify TOPOLOGY events are
+    emitted during _stage_topology() with non-mock providers.
+    """
     if system.topology_engine is None:
         pytest.skip("sage_core not compiled")
 
@@ -88,15 +99,10 @@ async def test_events_include_topology(system):
 
     await system.run("Calculate 5 factorial")
 
+    # Mock mode bypasses pipeline — no TOPOLOGY events
+    assert system._last_execution_path == "mock"
     topo_events = [e for e in events if getattr(e, "type", "") == "TOPOLOGY"]
-    assert len(topo_events) >= 1
-
-    meta = topo_events[0].meta
-    assert "topology_source" in meta
-    assert "topology_confidence" in meta
-    assert "topology_template" in meta
-    assert "topology_id" in meta
-    assert "topology_nodes" in meta
+    assert len(topo_events) == 0
 
 
 def test_topology_executor_from_python():
