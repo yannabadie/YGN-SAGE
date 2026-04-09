@@ -37,12 +37,9 @@ from sage.agent_pool import AgentPool  # noqa: E402
 from sage.llm.base import LLMConfig  # noqa: E402
 from sage.llm.router import ModelRouter  # noqa: E402
 from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
-# Legacy fallback (34% GT) — kNN (92%) is primary. Kept for backward compatibility.
-from sage.strategy.metacognition import ComplexityRouter  # noqa: E402
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation  # noqa: E402
 from sage.tools.registry import ToolRegistry  # noqa: E402
 from sage.events.bus import EventBus  # noqa: E402
-from sage.routing.shadow import ShadowRouter  # noqa: E402
 from sage.constants import (  # noqa: E402
     DEFAULT_BUDGET_USD,
     EXPLORATION_BUDGET_LOW,
@@ -74,22 +71,15 @@ class AgentSystem:
     """The complete YGN-SAGE agent system."""
     agent_loop: AgentLoop
     agent_pool: AgentPool
-    metacognition: AdaptiveRouter | ComplexityRouter
+    metacognition: AdaptiveRouter
     topology_evolver: TopologyEvolver
     topology_population: TopologyPopulation
     memory_agent: Any
     tool_registry: ToolRegistry
     event_bus: EventBus
-    # Legacy field — kept for backward compat, always None.
-    orchestrator: Any = None
-    # ModelRegistry (live model discovery + TOML knowledge base)
     registry: Any = None
-    # CapabilityMatrix: semantic capability lookup for discovered providers
     capability_matrix: Any = None
-    # Rust SystemRouter (None if sage_core not compiled with cognitive engine)
     rust_router: Any = None
-    # ShadowRouter: dual Rust/Python routing comparison (None if shadow mode inactive)
-    shadow_router: ShadowRouter | None = None
     # Phase 6: Rust TopologyEngine (6-path generate, MAP-Elites, bandit)
     topology_engine: Any = None
     # Phase 6: Standalone ContextualBandit for model selection
@@ -151,29 +141,7 @@ class AgentSystem:
         if hasattr(self, '_guardrail_budget'):
             budget = self._guardrail_budget
 
-        if self.shadow_router:
-            # Shadow mode: runs both routers, returns primary decision
-            decision = await self.shadow_router.route(task, budget)
-            # Determine which router produced the primary decision
-            if self.rust_router:
-                system_num = int(decision.system)
-                model_id = decision.model_id
-                _log.info(
-                    "Shadow routing (Rust primary): %s -> S%d, model=%s (conf=%.2f, cost=%.4f)",
-                    task[:60], system_num, model_id,
-                    decision.confidence, decision.estimated_cost,
-                )
-            else:
-                system_num = decision.system
-                model_id = None
-                # Speculative zone detection (Python-only path via ShadowRouter)
-                profile = await self.metacognition.assess_complexity_async(task)
-                if SPECULATIVE_ZONE_MIN <= profile.complexity <= SPECULATIVE_ZONE_MAX and decision.system <= 2:
-                    _log.info(
-                        "Speculative zone: complexity=%.2f (indecisive). Using S%d for now.",
-                        profile.complexity, decision.system,
-                    )
-        elif self.rust_router:
+        if self.rust_router:
             # Primary path: Rust SystemRouter (no shadow)
             decision = self.rust_router.route(task, budget)
             system_num = int(decision.system)  # CognitiveSystem enum -> int
@@ -502,7 +470,6 @@ def boot_agent_system(
     rust_router = topo["rust_router"]
     rust_registry = topo["rust_registry"]
     py_model_registry = topo["py_model_registry"]
-    shadow_router = topo["shadow_router"]
     rust_topology_engine = topo["topology_engine"]
     rust_bandit = topo["bandit"]
 
@@ -736,11 +703,9 @@ def boot_agent_system(
         memory_agent=memory_agent,
         tool_registry=tool_registry,
         event_bus=event_bus,
-        orchestrator=None,  # Legacy field, kept for backward compat
         registry=pipe["registry"],
         capability_matrix=pipe["capability_matrix"],
         rust_router=rust_router,
-        shadow_router=shadow_router,
         topology_engine=rust_topology_engine,
         bandit=rust_bandit,
         _rust_registry=rust_registry or py_model_registry,

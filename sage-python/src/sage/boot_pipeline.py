@@ -159,18 +159,14 @@ def init_pipeline(
             # Health check: probe all providers, open circuit for dead ones
             import asyncio
             try:
-                _loop = asyncio.get_event_loop()
-                if _loop.is_running():
-                    # Already in async context — schedule but don't block
-                    _log.debug("Skipping sync health check (event loop running)")
-                else:
-                    health = _loop.run_until_complete(_provider_pool.health_check(timeout=8.0))
-                    dead = [k for k, v in health.items() if not v]
-                    if dead:
-                        _log.warning("Dead providers excluded: %s", dead)
-                        # Tell Rust ModelAssigner to never assign models from dead providers
-                        if model_assigner and hasattr(model_assigner, 'exclude_providers'):
-                            model_assigner.exclude_providers(dead)
+                _loop = asyncio.new_event_loop()
+                health = _loop.run_until_complete(_provider_pool.health_check(timeout=8.0))
+                _loop.close()
+                dead = [k for k, v in health.items() if not v]
+                if dead:
+                    _log.warning("Dead providers excluded: %s", dead)
+                    if model_assigner and hasattr(model_assigner, 'exclude_providers'):
+                        model_assigner.exclude_providers(dead)
             except RuntimeError:
                 _log.debug("Health check skipped (no event loop)")
         except (ImportError, RuntimeError) as exc:
