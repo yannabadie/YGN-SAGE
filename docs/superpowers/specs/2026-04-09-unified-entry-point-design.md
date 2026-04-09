@@ -92,12 +92,46 @@ Tools are filtered by node role:
 - Delete SAGE_AGENT_LOOP_LEGACY env var
 - Audit tests for legacy path dependencies
 
+## Identified Integration Hazards (from codebase study)
+
+### H1: Double routing
+`perceive()` in agent_loop calls `metacognition.assess_complexity_async()` (Python router).
+The pipeline already routed via Rust SystemRouter. Two different routing results.
+**Fix:** when pipeline calls agent_loop.run(), set `loop._skip_routing = True` and inject
+the Rust routing decision (system, model_id) into the loop context.
+
+### H2: State reset per-node
+agent_loop.run() resets `total_cost_usd = 0.0` and `step_count = 0` (line 247).
+In multi-node mode, cost tracking across nodes is lost.
+**Fix:** create a fresh agent_loop config per node with `max_cost_usd = budget_remaining / nodes_left`.
+Or pass a shared cost accumulator.
+
+### H3: Double tool-calling loop
+Pipeline Stage 4 has a tool-calling loop (max 30 turns, lines 870-910).
+agent_loop.run() has its own THINK→ACT loop (max_steps).
+If pipeline calls agent_loop.run(), the pipeline loop is redundant.
+**Fix:** in bypass mode, pipeline calls agent_loop.run() directly (no pipeline tool loop).
+DELETE the pipeline tool-calling loop entirely — agent_loop handles it.
+
+### H4: Triple topology execution
+think() (line 54) checks `step_count == 1` and calls `loop._run_topology(task)`.
+The pipeline already executed the topology in Stage 2.
+**Fix:** when pipeline calls agent_loop.run(), set `loop._current_topology = None` so
+think() skips topology execution. The pipeline owns topology, not the agent_loop.
+
+### H5: Mock mode test dependency
+2001 tests use `use_mock_llm=True` which bypasses the pipeline.
+Making mock go through pipeline could break test expectations.
+**Fix:** keep mock provider working within LiteLLMProvider (mock responses).
+The pipeline path should work with mock providers — validate with full test suite.
+
 ## Risk
 
 - 2001 existing tests may depend on legacy path behavior
 - Phase 1 must be validated against full test suite before Phase 2
 - Agent_loop.run() per node is slower than provider.generate() per node
   (but produces REAL agents, not fake prompt chains — OpenSAGE proves this works at 59% SWE-bench)
+- Google ADK pattern (SequentialAgent + LlmAgent per node) validates the architecture
 
 ## Success Criteria
 
@@ -106,3 +140,4 @@ Tools are filtered by node role:
 - S2/S3 validation works for all nodes (not just legacy path)
 - 2001+ tests pass with 0 regressions
 - SWE-bench produces patches with real code exploration (not blind generation)
+- No double routing, no double tool loop, no triple topology
