@@ -50,20 +50,20 @@ class ProviderPool:
     async def health_check(self, timeout: float = 10.0) -> dict[str, bool]:
         """Probe every provider with a minimal request. Open circuit for dead ones.
 
-        Returns dict of provider_name -> reachable (True/False).
-        Unreachable providers get their circuit breaker tripped immediately
-        so ModelAssigner and FrugalGPT cascade never assign them.
+        Only connection errors (DNS, SSL, timeout) mark a provider as dead.
+        API errors (400 bad params, 401 auth) mean the provider is REACHABLE
+        but the probe params were wrong — that's NOT a dead provider.
         """
         import asyncio
         from sage.llm.base import Message, Role, LLMConfig as _Cfg
 
         results: dict[str, bool] = {}
-        probe_msg = [Message(role=Role.USER, content="ping")]
+        probe_msg = [Message(role=Role.USER, content="hi")]
 
         for name, provider in list(self._providers.items()):
             try:
-                model_id = getattr(provider, "model_id", "")
-                cfg = _Cfg(provider=name, model=model_id, max_tokens=1, temperature=0.0)
+                model_id = getattr(provider, "model_id", "") or getattr(provider, "model_string", "")
+                cfg = _Cfg(provider=name, model=model_id, max_tokens=10)
                 await asyncio.wait_for(
                     provider.generate(messages=probe_msg, config=cfg),
                     timeout=timeout,
@@ -71,11 +71,23 @@ class ProviderPool:
                 results[name] = True
                 self.record_success(name)
             except Exception as exc:
-                results[name] = False
-                # Trip circuit breaker immediately (3 synthetic failures)
-                for _ in range(3):
-                    self.record_failure(name, exc)
-                log.warning("Health check FAILED for %s: %s — circuit opened", name, type(exc).__name__)
+                exc_name = type(exc).__name__
+                exc_str = str(exc).lower()
+                # Connection/DNS/SSL/timeout = provider is DEAD
+                is_connection_error = any(s in exc_str for s in [
+                    "connection", "dns", "ssl", "timeout", "getaddrinfo",
+                    "refused", "unreachable", "network",
+                ])
+                if is_connection_error:
+                    results[name] = False
+                    for _ in range(3):
+                        self.record_failure(name, exc)
+                    log.warning("Health check DEAD for %s: %s — circuit opened", name, exc_name)
+                else:
+                    # API error (400/401/403) = provider is reachable, just bad probe params
+                    results[name] = True
+                    self.record_success(name)
+                    log.info("Health check OK for %s (API error on probe, but reachable: %s)", name, exc_name)
 
         alive = sum(1 for v in results.values() if v)
         log.info("Provider health check: %d/%d alive %s", alive, len(results), results)
