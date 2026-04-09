@@ -117,8 +117,8 @@ class TestProviderPool:
         assert config is default_config
         registry.get.assert_not_called()
 
-    def test_openai_pro_model_is_not_available_for_chat_completions(self):
-        """Responses-only OpenAI models must not be treated as chat-compatible."""
+    def test_openai_pro_model_is_available_with_litellm(self):
+        """GPT-5 Pro models are now available — LiteLLM handles Responses API natively."""
         profile = _make_profile("gpt-5.4-pro", "openai")
         registry = _make_registry(profile)
         openai_provider = _make_provider("openai")
@@ -130,10 +130,10 @@ class TestProviderPool:
             providers={"openai": openai_provider},
         )
 
-        assert pool.is_model_available("gpt-5.4-pro") is False
+        assert pool.is_model_available("gpt-5.4-pro") is True
 
-    def test_resolve_openai_pro_model_falls_back_to_default_config(self):
-        """Responses-only OpenAI models should fall back before chat-completions execution."""
+    def test_resolve_openai_pro_model_uses_openai_provider(self):
+        """GPT-5 Pro models are now resolved to their OpenAI provider — LiteLLM handles the Responses API."""
         profile = _make_profile("gpt-5.4-pro", "openai")
         registry = _make_registry(profile)
         openai_provider = _make_provider("openai")
@@ -149,5 +149,6 @@ class TestProviderPool:
 
         provider, config = pool.resolve("gpt-5.4-pro")
 
-        assert provider is default_provider
-        assert config is default_config
+        assert provider is openai_provider
+        assert config.provider == "openai"
+        assert config.model == "gpt-5.4-pro"
