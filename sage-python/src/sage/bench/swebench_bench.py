@@ -369,6 +369,10 @@ class SWEBenchBench:
             error = ""
             system_used = 0
             patch = ""
+            tool_call_count = 0
+            tool_turn_count = 0
+            executed_commands: list[str] = []
+            execution_path = ""
 
             # Clone repo at base_commit so agent tools (execute_bash) can read code
             repo_dir = None
@@ -386,10 +390,16 @@ class SWEBenchBench:
                     timeout=self.timeout_per_task,
                 )
                 patch = _extract_patch(response)
+                pipeline_ctx = getattr(getattr(self.system, "pipeline", None), "last_context", None)
+                execution_path = getattr(self.system, "_last_execution_path", "")
                 system_used = (
-                    getattr(self.system.agent_loop, "_last_routing_system", 0)
+                    getattr(pipeline_ctx, "system", 0)
+                    or getattr(getattr(self.system, "agent_loop", None), "_last_routing_system", 0)
                     or 2
                 )
+                tool_call_count = int(getattr(pipeline_ctx, "tool_call_count", 0) or 0)
+                tool_turn_count = int(getattr(pipeline_ctx, "tool_turn_count", 0) or 0)
+                executed_commands = list(getattr(pipeline_ctx, "executed_commands", []) or [])
             except asyncio.TimeoutError:
                 error = f"generation_timeout_{self.timeout_per_task:.0f}s"
                 log.warning("[%s] Generation timed out", instance_id)
@@ -419,6 +429,10 @@ class SWEBenchBench:
                 "_latency_ms": round(latency, 1),
                 "_cost_usd": round(cost, 6),
                 "_system_used": system_used,
+                "_tool_call_count": tool_call_count,
+                "_tool_turn_count": tool_turn_count,
+                "_executed_commands": executed_commands,
+                "_execution_path": execution_path,
                 "_error": error,
                 "_repo": instance["repo"],
             })
@@ -431,6 +445,12 @@ class SWEBenchBench:
                 model=model_id,
                 routing=f"S{system_used}",
                 error=error[:200] if error else "",
+                meta={
+                    "execution_path": execution_path,
+                    "tool_call_count": tool_call_count,
+                    "tool_turn_count": tool_turn_count,
+                    "executed_commands": executed_commands,
+                },
             ))
 
             if self.event_bus:
@@ -443,6 +463,8 @@ class SWEBenchBench:
                         "benchmark": f"swebench_{self.dataset}",
                         "task_id": instance_id,
                         "system_used": system_used,
+                        "tool_call_count": tool_call_count,
+                        "tool_turn_count": tool_turn_count,
                         "latency_ms": round(latency, 1),
                         "patch_len": len(patch),
                         "progress": f"{i + 1}/{len(instances)}",

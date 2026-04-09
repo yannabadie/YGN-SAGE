@@ -1,0 +1,90 @@
+{
+  "date": "2026-04-08",
+  "dataset": "princeton-nlp/SWE-bench_Lite",
+  "mode": "generate-only",
+  "limit": 5,
+  "command": "python -m sage.bench --type swebench --dataset lite --limit 5 --generate-only",
+  "source_predictions_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_atk7nagu\\predictions.jsonl",
+  "source_metadata_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_atk7nagu\\predictions_meta.json",
+  "summary": {
+    "total_instances": 5,
+    "patches_generated": 5,
+    "empty_patches": 0,
+    "errors": 0,
+    "tool_calls_total": 6,
+    "tool_turns_total": 4,
+    "instances_with_tools": 4
+  },
+  "entries": [
+    {
+      "instance_id": "astropy__astropy-12907",
+      "repo": "astropy/astropy",
+      "system_used": 2,
+      "execution_path": "pipeline",
+      "tool_call_count": 1,
+      "tool_turn_count": 1,
+      "patch_generated": true,
+      "error": "",
+      "executed_commands": [
+        "grep -R \"def separability_matrix\\|separability_matrix(\" -n astropy/modeling | head -50 && sed -n '1,260p' astropy/modeling/separable.py"
+      ]
+    },
+    {
+      "instance_id": "astropy__astropy-14182",
+      "repo": "astropy/astropy",
+      "system_used": 2,
+      "execution_path": "pipeline",
+      "tool_call_count": 3,
+      "tool_turn_count": 1,
+      "patch_generated": true,
+      "error": "",
+      "executed_commands": [
+        "grep -R \"class RST\\|header_rows\\|fixed_width\" -n astropy/io/ascii | head -200",
+        "git rev-parse --short HEAD && python -V && ls -1",
+        "grep -R \"ascii.rst\\|RST\" -n astropy/io/ascii astropy/table | head -200"
+      ]
+    },
+    {
+      "instance_id": "astropy__astropy-14365",
+      "repo": "astropy/astropy",
+      "system_used": 2,
+      "execution_path": "pipeline",
+      "tool_call_count": 1,
+      "tool_turn_count": 1,
+      "patch_generated": true,
+      "error": "",
+      "executed_commands": [
+        "grep -RIn \"QDP\\|qdp\" astropy/io/ascii | head -200"
+      ]
+    },
+    {
+      "instance_id": "astropy__astropy-14995",
+      "repo": "astropy/astropy",
+      "system_used": 2,
+      "execution_path": "pipeline",
+      "tool_call_count": 0,
+      "tool_turn_count": 0,
+      "patch_generated": true,
+      "error": "",
+      "executed_commands": []
+    },
+    {
+      "instance_id": "astropy__astropy-6938",
+      "repo": "astropy/astropy",
+      "system_used": 2,
+      "execution_path": "pipeline",
+      "tool_call_count": 1,
+      "tool_turn_count": 1,
+      "patch_generated": true,
+      "error": "",
+      "executed_commands": [
+        "grep -RIn \"Replace exponent separator in floating point numbers\\|output_field.replace(encode_ascii('E'), encode_ascii('D'))\\|if 'D' in format\" astropy/io/fits/fitsrec.py && sed -n '1,260p' astropy/io/fits/fitsrec.py"
+      ]
+    }
+  ],
+  "notes": [
+    "The OpenAI-compatible provider now preserves assistant tool_calls and tool messages for OpenAI chat.completions.",
+    "This pilot no longer shows the prior failure mode of repeated tool loops caused by rewriting tool messages to user role.",
+    "Docker/Linux grading was not run in this session because the local Docker Desktop Linux engine was unavailable."
+  ]
+}

@@ -213,6 +213,90 @@ async def test_pipeline_no_engine_single_agent_fallback():
 
 
 @pytest.mark.asyncio
+async def test_pipeline_single_agent_tool_loop_records_trace():
+    """Single-agent tool loop must preserve tool ids and expose trace telemetry."""
+    from sage.llm.base import LLMResponse, ToolCall, Role
+    from sage.tools.base import Tool
+    from sage.tools.registry import ToolRegistry
+
+    class _RecordingToolLLMProvider:
+        def __init__(self) -> None:
+            self.calls: list[tuple[list[Any], Any]] = []
+            self._responses = [
+                LLMResponse(
+                    content="Inspecting repository",
+                    tool_calls=[
+                        ToolCall(
+                            id="tc1",
+                            name="execute_bash",
+                            arguments={"command": "git status"},
+                        )
+                    ],
+                ),
+                LLMResponse(
+                    content=(
+                        "diff --git a/pkg/file.py b/pkg/file.py\n"
+                        "--- a/pkg/file.py\n"
+                        "+++ b/pkg/file.py\n"
+                        "@@ -1 +1 @@\n"
+                        "-old\n"
+                        "+new\n"
+                    ),
+                    tool_calls=[],
+                ),
+            ]
+
+        async def generate(self, messages: Any, config: Any = None, tools: Any = None, **kwargs) -> LLMResponse:
+            self.calls.append((list(messages), tools))
+            return self._responses[len(self.calls) - 1]
+
+    @Tool.define(
+        name="execute_bash",
+        description="Execute shell commands",
+        parameters={"type": "object", "properties": {"command": {"type": "string"}}},
+    )
+    async def execute_bash(command: str) -> str:
+        return f"ran: {command}"
+
+    registry = ToolRegistry()
+    registry.register(execute_bash)
+    provider = _RecordingToolLLMProvider()
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=2),
+        engine=None,
+        assigner=None,
+        provider_pool=MagicMock(),
+        llm_provider=provider,
+        llm_config=None,
+        tool_registry=registry,
+    )
+
+    async def _passthrough_decompose(ctx: PipelineContext) -> PipelineContext:
+        ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
+        return ctx
+
+    pipeline._stage_decompose = _passthrough_decompose  # type: ignore[method-assign]
+
+    result = await pipeline.run("Fix the failing repository test")
+
+    assert "diff --git" in result
+    assert pipeline.last_context.system == 2
+    assert pipeline.last_context.tool_call_count == 1
+    assert pipeline.last_context.tool_turn_count == 1
+    assert pipeline.last_context.executed_tools == ["execute_bash"]
+    assert pipeline.last_context.executed_commands == ["git status"]
+
+    second_messages, second_tools = provider.calls[1]
+    tool_messages = [msg for msg in second_messages if msg.role == Role.TOOL]
+
+    assert second_tools is not None
+    assert len(tool_messages) == 1
+    assert tool_messages[0].tool_call_id == "tc1"
+    assert tool_messages[0].name == "execute_bash"
+
+
+@pytest.mark.asyncio
 async def test_pipeline_classify_failure_defaults_to_s2():
     """When classify fails, defaults to S2."""
 

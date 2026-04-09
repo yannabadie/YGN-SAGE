@@ -5,12 +5,27 @@ OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi/Moonshot.
 """
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMResponse, Message
 
 log = logging.getLogger(__name__)
+
+
+def supports_chat_completions_model(provider_name: str, model_id: str) -> bool:
+    """Return whether this provider/model pair works with chat completions.
+
+    This provider implementation only speaks the chat-completions API.
+    OpenAI GPT-5 Pro variants currently require the Responses API in practice,
+    so they must be filtered out until a Responses-backed provider exists.
+    """
+    if (provider_name or "").lower() != "openai":
+        return True
+    model = (model_id or "").lower()
+    return re.match(r"^gpt-5(?:\.\d+)?-pro(?:-|$)", model) is None
 
 
 class OpenAICompatProvider:
@@ -27,7 +42,7 @@ class OpenAICompatProvider:
     api_key:
         Bearer token for the API.
     base_url:
-        API base URL (e.g. ``https://api.x.ai/v1``).  Defaults to OpenAI.
+        API base URL (e.g. ``https://api.x.ai/v1``). Defaults to OpenAI.
     model_id:
         Default model ID to use if none is specified in the config.
     provider_name:
@@ -37,8 +52,13 @@ class OpenAICompatProvider:
 
     name = "openai-compat"
 
-    def __init__(self, api_key: str, base_url: str | None = None,
-                 model_id: str = "", provider_name: str = ""):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str | None = None,
+        model_id: str = "",
+        provider_name: str = "",
+    ):
         self.api_key = api_key
         self.base_url = base_url
         self.model_id = model_id
@@ -69,8 +89,8 @@ class OpenAICompatProvider:
         """Declare what this provider actually supports."""
         return {
             "structured_output": False,
-            "tool_role": False,      # Rewritten to user role
-            "file_search": False,    # Silently dropped
+            "tool_role": self.provider_name == "openai",
+            "file_search": False,
             "grounding": False,
             "system_prompt": True,
             "streaming": False,
@@ -80,7 +100,7 @@ class OpenAICompatProvider:
         """Apply provider-specific parameter quirks before API call."""
         model = params.get("model", self.model_id).lower()
 
-        # OpenAI GPT-5+ models require max_completion_tokens instead of max_tokens
+        # OpenAI GPT-5+ models require max_completion_tokens instead of max_tokens.
         if self.provider_name == "openai" and "max_tokens" in params:
             if any(tag in model for tag in ("gpt-5", "o1", "o3", "o4")):
                 params["max_completion_tokens"] = params.pop("max_tokens")
@@ -89,26 +109,20 @@ class OpenAICompatProvider:
             if "reasoner" in model and "temperature" in params:
                 del params["temperature"]
         elif self.provider_name == "kimi":
-            # K2.5: temperature fixed at 1.0 (thinking) or 0.6 (non-thinking)
-            # Passing any other value → 400 error. Just remove it.
+            # K2.5 has a fixed temperature; sending custom values returns 400.
             if "k2.5" in model or "k2-5" in model:
                 params.pop("temperature", None)
             elif "temperature" in params:
                 params["temperature"] = min(params["temperature"], 1.0)
         elif self.provider_name == "qwen":
-            # Qwen3.5/QwQ: enable_thinking for reasoning mode
             if "qwen3" in model or "qwq" in model:
-                if "extra_body" not in params:
-                    params["extra_body"] = {}
+                params.setdefault("extra_body", {})
                 params["extra_body"]["enable_thinking"] = True
 
         return params
 
     def _extract_reasoning(self, message: Any) -> tuple[str, str]:
-        """Extract reasoning content and main content from response.
-
-        Returns (reasoning, content) tuple.
-        """
+        """Extract reasoning content and main content from response."""
         content = message.content or ""
         raw = getattr(message, "reasoning_content", None)
         reasoning = raw if isinstance(raw, str) else ""
@@ -120,18 +134,52 @@ class OpenAICompatProvider:
             return f"<think>{reasoning}</think>\n{content}"
         return content
 
-    def _convert_messages(self, messages: list[Message]) -> list[dict[str, str]]:
+    def _convert_messages(self, messages: list[Message]) -> list[dict[str, Any]]:
         """Convert Message objects to OpenAI dict format."""
-        oai_messages: list[dict[str, str]] = []
+        oai_messages: list[dict[str, Any]] = []
         for msg in messages:
             role = msg.role.value
+
+            if self.provider_name == "openai" and role == "assistant" and msg.tool_calls:
+                oai_messages.append(
+                    {
+                        "role": "assistant",
+                        "content": msg.content or None,
+                        "tool_calls": [
+                            {
+                                "id": tc.id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc.name,
+                                    "arguments": json.dumps(tc.arguments),
+                                },
+                            }
+                            for tc in msg.tool_calls
+                        ],
+                    }
+                )
+                continue
+
             if role == "tool":
+                if self.provider_name == "openai" and msg.tool_call_id:
+                    oai_messages.append(
+                        {
+                            "role": "tool",
+                            "content": msg.content,
+                            "tool_call_id": msg.tool_call_id,
+                        }
+                    )
+                    continue
+
                 log.warning(
-                    "Rewriting tool role to user for OpenAI-compat API — "
-                    "semantic context (tool provenance) is lost"
+                    "Rewriting tool role to user for OpenAI-compat API (%s) - "
+                    "semantic context (tool provenance) is lost",
+                    self.provider_name or "unknown",
                 )
                 role = "user"
+
             oai_messages.append({"role": role, "content": msg.content})
+
         return oai_messages
 
     async def generate(
@@ -153,6 +201,7 @@ class OpenAICompatProvider:
         if self._client is None:
             import httpx
             from sage.llm._ssl import ssl_verify
+
             client_kwargs: dict[str, Any] = {"api_key": self.api_key}
             if self.base_url:
                 client_kwargs["base_url"] = self.base_url
@@ -160,7 +209,6 @@ class OpenAICompatProvider:
             self._client = AsyncOpenAI(**client_kwargs)
 
         client = self._client
-
         oai_messages = self._convert_messages(messages)
 
         params: dict[str, Any] = {
@@ -170,9 +218,7 @@ class OpenAICompatProvider:
             "temperature": config.temperature if config else 0.3,
         }
 
-        # Constrained decoding: JSON schema output (OpenAI Structured Outputs)
-        # Only OpenAI supports response_format json_schema. DeepSeek, xAI, etc.
-        # return 400 "response_format type is unavailable" if we send it.
+        # Only OpenAI supports response_format json_schema in this adapter family.
         if config and config.json_schema is not None and self.provider_name == "openai":
             schema = config.json_schema
             if isinstance(schema, type) and hasattr(schema, "model_json_schema"):
@@ -182,7 +228,6 @@ class OpenAICompatProvider:
                 "json_schema": {"name": "response", "schema": schema, "strict": True},
             }
 
-        # Tool definitions for function calling
         if tools:
             params["tools"] = tools
 
@@ -193,7 +238,7 @@ class OpenAICompatProvider:
             msg = response.choices[0].message
             reasoning, content = self._extract_reasoning(msg)
             final_content = self._format_response(reasoning, content)
-            # Capture token usage from API response
+
             usage = None
             if response.usage:
                 usage = {
@@ -201,25 +246,32 @@ class OpenAICompatProvider:
                     "output_tokens": getattr(response.usage, "completion_tokens", 0) or 0,
                     "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
                 }
-            # Parse tool_calls from response
+
             tool_calls = []
             if msg.tool_calls:
                 from sage.llm.base import ToolCall
-                import json as _json
+
                 for tc in msg.tool_calls:
                     args = tc.function.arguments
                     if isinstance(args, str):
                         try:
-                            args = _json.loads(args)
+                            args = json.loads(args)
                         except (ValueError, TypeError):
                             args = {"raw": args}
-                    tool_calls.append(ToolCall(
-                        id=tc.id or f"call_{len(tool_calls)}",
-                        name=tc.function.name,
-                        arguments=args,
-                    ))
+                    tool_calls.append(
+                        ToolCall(
+                            id=tc.id or f"call_{len(tool_calls)}",
+                            name=tc.function.name,
+                            arguments=args,
+                        )
+                    )
 
-            return LLMResponse(content=final_content, model=model, usage=usage, tool_calls=tool_calls)
+            return LLMResponse(
+                content=final_content,
+                model=model,
+                usage=usage,
+                tool_calls=tool_calls,
+            )
         except Exception as e:
             log.error("OpenAI-compat API error (%s/%s): %s", self.provider_name, self.base_url, e)
             raise

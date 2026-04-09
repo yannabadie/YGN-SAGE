@@ -249,7 +249,13 @@ async def act(
                           loop_action="break", has_tool_calls=False)
 
     # === Execute tools ===
-    messages.append(Message(role=Role.ASSISTANT, content=content))
+    messages.append(
+        Message(
+            role=Role.ASSISTANT,
+            content=content,
+            tool_calls=response.tool_calls or None,
+        )
+    )
     for tc in response.tool_calls:
         loop._emit(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
         output = await loop._execute_tool_call(tc)

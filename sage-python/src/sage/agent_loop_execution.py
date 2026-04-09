@@ -87,7 +87,13 @@ async def execute_tool_calls_and_record(
     """
     from sage.agent_loop import LoopPhase
 
-    messages.append(Message(role=Role.ASSISTANT, content=content))
+    messages.append(
+        Message(
+            role=Role.ASSISTANT,
+            content=content,
+            tool_calls=response.tool_calls or None,
+        )
+    )
 
     for tc in response.tool_calls:
         emit_fn(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
