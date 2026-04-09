@@ -849,37 +849,15 @@ class CognitiveOrchestrationPipeline:
             if self.llm_provider:
                 from sage.llm.base import Message, Role
 
-                # Select best model via Rust ModelRegistry scoring (same as ModelAssigner)
-                # Uses cards.toml affinity scores for S1/S2/S3 + provider availability
+                # Bypass mode: use default provider (boot-configured, tier-appropriate).
+                # The default is set by ModelRouter.get_config(tier) at boot:
+                #   - budget tier → deepseek-chat (fast, cheap)
+                #   - fast tier → gemini-flash (low latency)
+                #   - codex tier → gpt-5.4 (best coding)
+                # Model selection per-node is the ModelAssigner's job (topology path).
+                # Bypass means the task is simple enough for a single default call.
                 provider = self.llm_provider
                 config = self.llm_config
-                if self.provider_pool:
-                    try:
-                        from sage_core import CognitiveSystem
-                        system_map = {1: CognitiveSystem.S1, 2: CognitiveSystem.S2, 3: CognitiveSystem.S3}
-                        system_enum = system_map.get(ctx.system)
-                        # Use Rust registry (has select_for_system with affinity scoring)
-                        rust_reg = getattr(self, '_rust_registry', None)
-                        if system_enum and rust_reg and hasattr(rust_reg, 'select_for_system'):
-                            candidates = rust_reg.select_for_system(system_enum)
-                            for card in candidates:
-                                if self.provider_pool.is_model_available(card.id):
-                                    resolved_provider, _ = self.provider_pool.resolve(card.id)
-                                    from sage.llm.base import LLMConfig
-                                    config = LLMConfig(
-                                        provider=card.provider,
-                                        model=card.id,
-                                        max_tokens=8192,
-                                        temperature=0.0,
-                                    )
-                                    provider = resolved_provider
-                                    log.info(
-                                        "Stage 4 single-agent: %s/%s (S%d, affinity-scored from cards.toml)",
-                                        card.provider, card.id, ctx.system,
-                                    )
-                                    break
-                    except (ImportError, RuntimeError):
-                        pass  # Keep default if Rust unavailable
 
                 messages = [Message(role=Role.USER, content=ctx.task)]
 
