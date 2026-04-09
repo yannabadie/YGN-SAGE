@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 from dataclasses import dataclass
@@ -35,22 +34,15 @@ from sage.agent import AgentConfig  # noqa: E402
 from sage.agent_loop import AgentLoop  # noqa: E402
 from sage.agent_pool import AgentPool  # noqa: E402
 from sage.llm.base import LLMConfig  # noqa: E402
-from sage.llm.router import ModelRouter  # noqa: E402
 from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation  # noqa: E402
 from sage.tools.registry import ToolRegistry  # noqa: E402
 from sage.events.bus import EventBus  # noqa: E402
 from sage.constants import (  # noqa: E402
     DEFAULT_BUDGET_USD,
-    EXPLORATION_BUDGET_LOW,
-    EXPLORATION_BUDGET_HIGH,
-    MAX_TOPOLOGY_AGENTS,
-    LLM_SYNTHESIS_MIN_SYSTEM,
     COST_GUARDRAIL_MAX_USD,
     OUTPUT_GUARDRAIL_MIN_LENGTH,
     MAX_AGENT_STEPS,
-    SPECULATIVE_ZONE_MIN,
-    SPECULATIVE_ZONE_MAX,
 )
 
 # Sub-modules (extracted for readability)
