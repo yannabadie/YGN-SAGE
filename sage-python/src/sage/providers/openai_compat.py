@@ -1,18 +1,37 @@
 """OpenAI-compatible LLM provider for multi-provider routing.
 
-Supports any API that follows the OpenAI chat completions format:
-OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi/Moonshot.
+DEPRECATED: Use ``sage.providers.litellm_provider.LiteLLMProvider`` instead.
+This module is kept for backward compatibility and will be removed in v0.2.0.
+
+OpenAI-compatible API support (OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi/Moonshot)
+is now unified via LiteLLM (v1.83+).
+
+Legacy migration:
+    Old:  OpenAICompatProvider(api_key="...", base_url="...", model_id="...", provider_name="...")
+    New:  LiteLLMProvider(model_string="deepseek/deepseek-chat", api_key="...")
+
+See: sage-python/src/sage/providers/litellm_provider.py
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
+import warnings
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMResponse, Message
 
 log = logging.getLogger(__name__)
+
+# Module-level deprecation warning
+warnings.warn(
+    "sage.providers.openai_compat.OpenAICompatProvider is DEPRECATED. "
+    "Use sage.providers.litellm_provider.LiteLLMProvider instead. "
+    "This module will be removed in v0.2.0.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 def supports_chat_completions_model(provider_name: str, model_id: str) -> bool:
@@ -30,6 +49,9 @@ def supports_chat_completions_model(provider_name: str, model_id: str) -> bool:
 
 class OpenAICompatProvider:
     """Provider for any OpenAI-compatible API (OpenAI, xAI, DeepSeek, MiniMax, Kimi).
+
+    DEPRECATED: Use ``LiteLLMProvider`` instead (sage.providers.litellm_provider).
+    This class is kept for backward compatibility and will be removed in v0.2.0.
 
     Handles provider-specific quirks:
     - DeepSeek: strip temperature for reasoner; merge reasoning_content
@@ -59,6 +81,12 @@ class OpenAICompatProvider:
         model_id: str = "",
         provider_name: str = "",
     ):
+        warnings.warn(
+            "OpenAICompatProvider is DEPRECATED. Use LiteLLMProvider instead. "
+            "See: sage.providers.litellm_provider.LiteLLMProvider",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.api_key = api_key
         self.base_url = base_url
         self.model_id = model_id
