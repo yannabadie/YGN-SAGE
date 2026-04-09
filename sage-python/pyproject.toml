@@ -23,6 +23,7 @@ dependencies = [
     "aiosqlite>=0.20",
     "numpy>=1.26",
     "truststore>=0.9",
+    "litellm>=1.83",
 ]
 
 [project.optional-dependencies]
