@@ -102,6 +102,7 @@ class CognitiveOrchestrationPipeline:
         tool_forge: Any = None,
         tool_registry: Any = None,
         harness_config: Any = None,
+        agent_loop: Any = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -132,6 +133,7 @@ class CognitiveOrchestrationPipeline:
                          harness_config.id, harness_config.description)
             except ImportError:
                 log.debug("meta_harness module not available, skipping harness config")
+        self._agent_loop = agent_loop
         self._task_count = 0
 
     def _record_to_memory(self, ctx: PipelineContext) -> None:

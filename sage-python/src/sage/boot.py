@@ -682,6 +682,7 @@ def boot_agent_system(
         tool_registry=tool_registry,
         memory_compressor=memory_compressor,
         rust_router=rust_router,
+        agent_loop=loop,
     )
 
     # Log capability surface at boot (Issue E audit fix)
