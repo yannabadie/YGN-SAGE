@@ -60,6 +60,7 @@ class TopologyRunner:
         axis_hint: str = "",
         approval_callback: Callable | None = None,
         harness_config: Any | None = None,
+        agent_loop_factory: Any | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -77,6 +78,7 @@ class TopologyRunner:
         # predecessor format, similarity threshold, system prompt templates,
         # and debate rounds — WITHOUT replacing any methods.
         self._harness = harness_config
+        self._agent_loop_factory = agent_loop_factory
         self._max_rounds = (
             harness_config.execution.max_debate_rounds
             if harness_config else 3
@@ -260,6 +262,86 @@ class TopologyRunner:
                 deduplicated.append((text_i, role_i, vec_i))
 
         return [(t, r) for t, r, _ in deduplicated]
+
+    async def _execute_node_via_agent_loop(
+        self, node_idx: int, task: str, context_override: str | None = None,
+    ) -> str:
+        """Execute an LLM node via per-node AgentLoop (Phase 2).
+
+        Creates an independent AgentLoop instance for this node with:
+        - Role-filtered tools (H6)
+        - Validation level from system classification (H6)
+        - Skip routing (H1) and topology (H4) flags
+        - Predecessor context in user message (H7)
+        """
+        node = self.graph.get_node(node_idx)
+        role = getattr(node, "role", f"node-{node_idx}")
+        caps = getattr(node, "required_capabilities", [])
+
+        # Build system prompt (same logic as _execute_node)
+        custom_prompt = getattr(node, "prompt", "")
+        if custom_prompt:
+            system_prompt = custom_prompt
+        else:
+            _default_tmpl = (
+                self._harness.prompts.default_template if self._harness
+                else "You are acting as: {role}."
+            )
+            system_prompt = _default_tmpl.format(
+                role=role, capabilities=", ".join(caps) if caps else "",
+                task_preview=task[:200], n_predecessors=0,
+            )
+            if caps:
+                _cap_tmpl = (
+                    self._harness.prompts.capability_template if self._harness
+                    else " Your capabilities: {capabilities}."
+                )
+                system_prompt += _cap_tmpl.format(capabilities=", ".join(caps))
+
+        if self._harness:
+            if self._harness.prompts.global_prefix:
+                system_prompt = self._harness.prompts.global_prefix + "\n" + system_prompt
+            if self._harness.prompts.global_suffix:
+                system_prompt = system_prompt + "\n" + self._harness.prompts.global_suffix
+
+        # Resolve per-node model
+        node_model_id = getattr(node, "model_id", "")
+        if node_model_id and self._provider_pool:
+            provider, config = self._provider_pool.resolve(node_model_id)
+        else:
+            provider, config = self._llm, self._config
+
+        # Create per-node AgentLoop (H8: independent instance)
+        loop = self._agent_loop_factory(
+            node_role=role,
+            node_name=f"node-{node_idx}-{role}",
+            llm_provider=provider,
+            llm_config=config,
+            system_prompt=system_prompt,
+        )
+
+        # Build task with predecessor context (H7)
+        context = (
+            context_override
+            if context_override is not None
+            else self._gather_predecessor_context(node_idx)
+        )
+        if context:
+            full_task = (
+                f"## Previous agent output:\n{context}\n\n"
+                f"## Task:\n{task}"
+            )
+        else:
+            full_task = task
+
+        # Execute
+        result = await loop.run(full_task)
+        self._node_outputs[node_idx] = result
+        log.info(
+            "[TopologyRunner] node %d (%s) completed via agent_loop, output %d chars",
+            node_idx, role, len(result),
+        )
+        return result
 
     async def _execute_code_node(
         self, node_idx: int, task: str, context_override: str | None = None,
@@ -521,6 +603,10 @@ class TopologyRunner:
         # Formal solver node: parse equations from predecessor, solve via Rust
         if node_type == "solver" or getattr(node, "role", "") == "solver":
             return await self._execute_solver_node(node_idx, task, context_override)
+
+        # Phase 2: LLM nodes use agent_loop when factory available
+        if self._agent_loop_factory:
+            return await self._execute_node_via_agent_loop(node_idx, task, context_override)
 
         role = getattr(node, "role", f"node-{node_idx}")
         caps = getattr(node, "required_capabilities", [])
