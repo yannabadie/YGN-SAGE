@@ -1028,6 +1028,23 @@ class CognitiveOrchestrationPipeline:
                 ctx.result = "Error: TopologyExecutor unavailable"
                 return ctx
 
+            # Phase 2: create agent_loop factory for per-node execution
+            _agent_loop_factory = None
+            if self._agent_loop and self.tool_registry:
+                from sage.agent_loop_factory import create_node_agent_loop
+                from functools import partial
+
+                _agent_loop_factory = partial(
+                    create_node_agent_loop,
+                    tool_registry=self.tool_registry,
+                    system_level=ctx.system,
+                    on_event=(
+                        self.event_bus.emit
+                        if self.event_bus and hasattr(self.event_bus, "emit")
+                        else None
+                    ),
+                )
+
             runner = TopologyRunner(
                 graph=ctx.topology,
                 executor=executor,
@@ -1036,6 +1053,7 @@ class CognitiveOrchestrationPipeline:
                 provider_pool=self.provider_pool,
                 controller=self.controller,  # Phase C
                 axis_hint=ctx.axis_hint,
+                agent_loop_factory=_agent_loop_factory,
             )
             result = await runner.run(ctx.task)
             if result == "__REROUTE__" and self.engine:
@@ -1074,6 +1092,7 @@ class CognitiveOrchestrationPipeline:
                     llm_provider=self.llm_provider, llm_config=self.llm_config,
                     provider_pool=self.provider_pool,
                     controller=None,  # no controller on retry to prevent loop
+                    agent_loop_factory=_agent_loop_factory,
                 )
                 result = await runner2.run(ctx.task)
 
@@ -1112,6 +1131,7 @@ class CognitiveOrchestrationPipeline:
                             graph=ctx.topology, executor=executor2,
                             llm_provider=self.llm_provider, llm_config=self.llm_config,
                             provider_pool=self.provider_pool,
+                            agent_loop_factory=_agent_loop_factory,
                         )
                         retry_result = await runner3.run(ctx.task)
                         if retry_result:
