@@ -923,94 +923,18 @@ class CognitiveOrchestrationPipeline:
                     self._agent_loop.config.llm = _original_config
 
             elif self.llm_provider:
-                # Legacy fallback: provider.generate() loop for when pipeline is
-                # created without agent_loop. Will be removed in Phase 3.
+                # Simple fallback: single provider.generate() call (no tool loop).
+                # Used only when pipeline is created without agent_loop (e.g., tests).
                 from sage.llm.base import Message, Role
 
-                # Bypass mode: use model_id from Rust routing decision if available.
-                # The SystemRouter already selected the best model for this system level
-                # + domain + budget via cards.toml affinity scoring + bandit Thompson.
-                # If no Rust decision, fall back to boot default (tier-configured).
-                provider = self.llm_provider
-                config = self.llm_config
-                routing_decision = getattr(self, '_last_routing_decision', None)
-                if routing_decision and routing_decision.model_id and self.provider_pool:
-                    try:
-                        if self.provider_pool.is_model_available(routing_decision.model_id):
-                            resolved_provider, resolved_config = self.provider_pool.resolve(routing_decision.model_id)
-                            provider = resolved_provider
-                            config = resolved_config
-                            log.info(
-                                "Stage 4 single-agent: using Rust-selected %s (S%d)",
-                                routing_decision.model_id, ctx.system,
-                            )
-                    except Exception:
-                        pass  # Keep default
-
                 messages = [Message(role=Role.USER, content=ctx.task)]
-
-                # Include tool definitions if registry has tools
-                tool_defs = None
-                if self.tool_registry and self.tool_registry.list_tools():
-                    tool_defs = self.tool_registry.get_tool_defs()
-
-                max_turns = 30  # Safety limit for tool-calling loop
                 try:
-                    for _turn in range(max_turns):
-                        response = await provider.generate(
-                            messages=messages,
-                            config=config,
-                            tools=tool_defs,
-                        )
-
-                        # No tool calls → done
-                        if not response.tool_calls:
-                            ctx.result = response.content or ""
-                            break
-
-                        # Append assistant message (may have content + tool_calls)
-                        messages.append(
-                            Message(
-                                role=Role.ASSISTANT,
-                                content=response.content or "",
-                                tool_calls=response.tool_calls or None,
-                            )
-                        )
-                        ctx.tool_turn_count += 1
-
-                        # Execute each tool call
-                        for tc in response.tool_calls:
-                            ctx.tool_call_count += 1
-                            ctx.executed_tools.append(tc.name)
-                            tool = self.tool_registry.get(tc.name) if self.tool_registry else None
-                            if tool:
-                                try:
-                                    tool_result = await tool.execute(tc.arguments if isinstance(tc.arguments, dict) else {})
-                                    result_text = tool_result.output[:5000]
-                                except Exception as te:
-                                    result_text = f"Tool error: {te}"
-                                cmd = tc.arguments.get("command", "") if isinstance(tc.arguments, dict) else ""
-                                if cmd:
-                                    ctx.executed_commands.append(cmd)
-                                log.info("Tool call: %s(%s) → %d chars", tc.name, cmd[:80], len(result_text))
-                            else:
-                                result_text = f"Unknown tool: {tc.name}"
-                                log.warning("Unknown tool call: %s", tc.name)
-                            messages.append(
-                                Message(
-                                    role=Role.TOOL,
-                                    content=result_text,
-                                    tool_call_id=tc.id,
-                                    name=tc.name,
-                                )
-                            )
-                    else:
-                        # Max turns reached — use last content
-                        ctx.result = response.content or ""
-                        log.warning("Stage 4: max tool-call turns (%d) reached", max_turns)
-
+                    response = await self.llm_provider.generate(
+                        messages=messages, config=self.llm_config,
+                    )
+                    ctx.result = response.content or ""
                 except (RuntimeError, TimeoutError) as exc:
-                    log.error("Stage 4 single-agent execution failed: %s", exc)
+                    log.error("Stage 4 fallback failed: %s", exc)
                     ctx.result = f"Error: {exc}"
             return ctx
 

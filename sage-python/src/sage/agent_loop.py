@@ -1,7 +1,6 @@
 """Structured agent runtime: perceive -> think -> act -> learn."""
 from __future__ import annotations
 
-import os
 import time
 import logging
 from enum import Enum
@@ -229,14 +228,10 @@ class AgentLoop:
         """Execute the full perceive -> think -> act -> learn cycle.
 
         Delegates to phase modules in sage.phases for maintainability.
-        Set SAGE_AGENT_LOOP_LEGACY=1 to use the frozen legacy implementation.
 
         Note: ExoCortex passive grounding removed per Sprint 3 evidence.
         Use active tool (search_exocortex) instead — agent invokes when needed.
         """
-        if os.environ.get("SAGE_AGENT_LOOP_LEGACY") == "1":
-            return await self._run_legacy(task)
-
         from sage.phases.perceive import perceive
         from sage.phases.think import think
         from sage.phases.act import act
@@ -389,173 +384,6 @@ class AgentLoop:
 
         # Record in working memory
         self.working_memory.add_event("ASSISTANT", full_text)
-
-    async def _run_legacy(self, task: str) -> str:
-        """Legacy run() -- frozen copy for SAGE_AGENT_LOOP_LEGACY=1 fallback."""
-        from sage.agent_loop_memory import inject_causal_memory
-        from sage.agent_loop_execution import (
-            execute_tool_calls_and_record,
-            store_episodic_and_entities,
-        )
-        from sage.agent_loop_learning import compute_learn_meta, record_outcome
-        from sage.phases.perceive import perceive
-
-        self.start_time = time.perf_counter()
-        self.total_cost_usd = 0.0
-        self._s3_retries = 0
-        self._s2_avr_retries = 0
-        self._avr_error_history = []
-        self._s3_degraded = False
-        self._original_validation_level = self.config.validation_level
-        self.step_count = 0
-
-        # === PERCEIVE (reuses phases/perceive.py) ===
-        p_result = await perceive(task, self)
-        if p_result.blocked_reason:
-            return p_result.blocked_reason
-
-        messages = p_result.messages
-        system_prompt = p_result.system_prompt
-        tool_defs = p_result.tool_defs
-        result_text = ""
-
-        # Legacy path also injects causal memory (not in phases/perceive.py)
-        inject_causal_memory(
-            messages, task,
-            causal_memory=self.causal_memory,
-            relevance_gate=self._relevance_gate,
-            cb_causal=self._cb_causal,
-            skip_memory=self._skip_memory,
-        )
-
-        while self.step_count < self.config.max_steps:
-            self.step_count += 1
-
-            # Memory compression if needed
-            if self.memory_compressor:
-                compressed = await self.memory_compressor.step(self.working_memory)
-                if compressed:
-                    messages = self._rebuild_messages(system_prompt)
-
-            # === THINK: Call LLM ===
-            if self.step_count == 1:
-                topology_result = await self._run_topology(task)
-                if topology_result is not None:
-                    content = topology_result
-                    result_text = content
-                    self.working_memory.add_event("ASSISTANT", content)
-                    break
-
-            response, content, brake = await self._legacy_think_step(
-                messages, tool_defs,
-            )
-
-            # System 3 validation (Z3 PRM) + System 2 validation (AVR)
-            validation_action, content = await self._run_legacy_validation(
-                content, messages,
-            )
-            if validation_action == "continue":
-                continue
-
-            # CGRS: stop if converged
-            if brake:
-                log.info("CGRS self-brake triggered — stopping reasoning loop.")
-                result_text = content
-                self.working_memory.add_event("ASSISTANT", content)
-                messages.append(Message(role=Role.ASSISTANT, content=content))
-                break
-
-            self.working_memory.add_event("ASSISTANT", content)
-
-            # Store episodic memory and extract entities
-            await store_episodic_and_entities(
-                task, content, self.step_count,
-                episodic_memory=self.episodic_memory,
-                memory_agent=self.memory_agent,
-                semantic_memory=self.semantic_memory,
-                causal_memory=self.causal_memory,
-                cb_episodic=self._cb_episodic,
-                cb_entity=self._cb_entity,
-                cb_causal=self._cb_causal,
-                skip_memory=self._skip_memory,
-            )
-
-            if not response.tool_calls:
-                result_text = content
-                messages.append(Message(role=Role.ASSISTANT, content=content))
-                break
-
-            # === ACT: Execute tools ===
-            await execute_tool_calls_and_record(
-                response, content, messages,
-                tool_registry=self._tools,
-                working_memory=self.working_memory,
-                causal_memory=self.causal_memory,
-                cb_causal=self._cb_causal,
-                skip_memory=self._skip_memory,
-                step_count=self.step_count,
-                emit_fn=self._emit,
-                max_messages=MAX_MESSAGES,
-            )
-
-            # === LEARN: Update memory and stats ===
-            learn_meta = compute_learn_meta(
-                start_time=self.start_time,
-                total_inference_time=self.total_inference_time,
-                total_cost_usd=self.total_cost_usd,
-                working_memory=self.working_memory,
-                agent_pool=self.agent_pool,
-                semantic_memory=self.semantic_memory,
-                causal_memory=self.causal_memory,
-            )
-
-            await record_outcome(
-                emit_fn=self._emit,
-                learn_meta=learn_meta,
-                auto_evolve=self._auto_evolve,
-                topology_population=self.topology_population,
-                topology_engine=self.topology_engine,
-                consolidator=self.consolidator,
-                step_count=self.step_count,
-                consolidation_interval=CONSOLIDATION_INTERVAL_STEPS,
-                skip_memory=self._skip_memory,
-                cb_evo=self._cb_evo,
-            )
-
-        # === LEARN (final) — reuses phases/learn.py ===
-        from sage.phases.learn import learn_final
-        return await learn_final(task, result_text, self)
-
-    async def _legacy_think_step(
-        self, messages: list[Message], tool_defs: list,
-    ) -> tuple[Any, str, bool]:
-        """LLM call + cost estimation + entropy + MEM1 for legacy loop."""
-        from sage.agent_loop_execution import legacy_think_step
-        return await legacy_think_step(messages, tool_defs, self)
-
-    async def _run_legacy_validation(
-        self, content: str, messages: list[Message],
-    ) -> tuple[str, str]:
-        """Run S3 + S2 validation within _run_legacy.
-
-        Returns (action, content) where action is 'continue' or 'proceed',
-        and content may be updated by CEGAR repair.
-        """
-        from sage.agent_loop_execution import run_legacy_s3, run_legacy_avr
-
-        # System 3 validation (Z3 PRM)
-        if self.config.validation_level >= 3 and content:
-            action, content = await run_legacy_s3(content, messages, self)
-            if action == "continue":
-                return "continue", content
-
-        # System 2 validation (Empirical -- AVR)
-        elif self.config.validation_level == 2 and content and not self._skip_avr:
-            action = await run_legacy_avr(content, messages, self)
-            if action == "continue":
-                return "continue", content
-
-        return "proceed", content
 
     def _compute_aio(self) -> float:
         wall = time.perf_counter() - self.start_time

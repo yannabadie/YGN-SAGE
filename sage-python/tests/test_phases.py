@@ -136,37 +136,6 @@ def test_phase_modules_importable():
     from sage.phases import perceive, think, act, learn  # noqa: F401
 
 
-# ── Legacy fallback test ──
-
-
-@pytest.mark.asyncio
-async def test_legacy_fallback_env_var():
-    """When SAGE_AGENT_LOOP_LEGACY=1, run() uses _run_legacy()."""
-    import os
-    from sage.agent import AgentConfig
-    from sage.llm.base import LLMConfig
-    from sage.llm.mock import MockProvider
-    from sage.agent_loop import AgentLoop
-
-    provider = MockProvider(responses=["Legacy result."])
-    config = AgentConfig(
-        name="test", llm=LLMConfig(provider="mock", model="mock"),
-        max_steps=3, validation_level=1,
-    )
-    loop = AgentLoop(config=config, llm_provider=provider)
-
-    old_val = os.environ.get("SAGE_AGENT_LOOP_LEGACY")
-    try:
-        os.environ["SAGE_AGENT_LOOP_LEGACY"] = "1"
-        result = await loop.run("test task")
-        assert result  # Should return something (legacy path works)
-    finally:
-        if old_val is None:
-            os.environ.pop("SAGE_AGENT_LOOP_LEGACY", None)
-        else:
-            os.environ["SAGE_AGENT_LOOP_LEGACY"] = old_val
-
-
 # ── Full agent loop still works (regression) ──
 
 
