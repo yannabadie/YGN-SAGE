@@ -82,7 +82,7 @@ def create_memory_tools(
     @Tool.define(
         name="summarize_context",
         description="Get the current internal state summary (rolling MEM1 IS) of the agent's memory.",
-        parameters={"type": "object", "properties": {}, "required": []},
+        parameters={"type": "object", "properties": {"_": {"type": "string", "description": "Unused (no-arg tool). Pass empty string."}}, "required": []},
     )
     async def summarize_context() -> str:
         if compressor and hasattr(compressor, "internal_state") and compressor.internal_state:

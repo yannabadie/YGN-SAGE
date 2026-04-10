@@ -104,7 +104,7 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
         description=f"Dynamically created tool '{name}' (sandboxed).",
         parameters={
             "type": "object",
-            "properties": {},
+            "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
         },
     )
     new_tool = Tool(spec=tool_spec, handler=handler)
@@ -194,7 +194,7 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
         description=description,
         parameters={
             "type": "object",
-            "properties": {},
+            "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
         },
     )
     new_tool = Tool(spec=tool_spec, handler=_bash_handler)

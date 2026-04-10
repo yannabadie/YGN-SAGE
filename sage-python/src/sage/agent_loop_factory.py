@@ -71,7 +71,7 @@ def create_node_agent_loop(
         name=node_name,
         llm=llm_config,
         system_prompt=system_prompt,
-        max_steps=20,  # nodes are lighter than standalone runs
+        max_steps=5,  # topology nodes: 1-3 steps typical, 5 max to prevent timeouts
         validation_level=validation,
         tools=tools,
     )

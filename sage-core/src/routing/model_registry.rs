@@ -80,12 +80,35 @@ impl ModelRegistry {
         self.cards.remove(id);
     }
 
-    /// Return all cards sorted by affinity for the given system (descending).
+    /// Return all cards sorted by cost-adjusted affinity for the given system (descending).
+    ///
+    /// Score = affinity / (1 + cost_ratio)^ALPHA where cost_ratio = cost / median_cost.
+    /// This penalizes expensive models so a 50x pricier model with +0.07 affinity
+    /// doesn't beat a budget model. ALPHA=0.3 is a calibrated initial value,
+    /// subject to ablation (see critical-directives.md §2).
     pub fn select_for_system(&self, system: CognitiveSystem) -> Vec<ModelCard> {
+        const ALPHA: f32 = 0.3;
+        const EST_INPUT: u32 = 1000;
+        const EST_OUTPUT: u32 = 2000;
+
         let mut candidates: Vec<_> = self.cards.values().cloned().collect();
+        if candidates.is_empty() {
+            return candidates;
+        }
+
+        // Compute median cost for normalization
+        let mut costs: Vec<f32> = candidates
+            .iter()
+            .map(|c| c.estimate_cost(EST_INPUT, EST_OUTPUT))
+            .collect();
+        costs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        let median_cost = costs[costs.len() / 2].max(1e-6);
+
         candidates.sort_by(|a, b| {
-            b.affinity_for(system)
-                .partial_cmp(&a.affinity_for(system))
+            let score_a = cost_adjusted_score(a, system, median_cost, ALPHA, EST_INPUT, EST_OUTPUT);
+            let score_b = cost_adjusted_score(b, system, median_cost, ALPHA, EST_INPUT, EST_OUTPUT);
+            score_b
+                .partial_cmp(&score_a)
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         candidates
@@ -435,4 +458,21 @@ mod tests {
         assert!(best.is_some());
         assert_eq!(best.unwrap().id, "math-model");
     }
+}
+
+/// Cost-adjusted affinity score: penalizes expensive models.
+/// Free function (not in #[pymethods]) to avoid PyO3 trait bound issues.
+fn cost_adjusted_score(
+    card: &ModelCard,
+    system: CognitiveSystem,
+    median_cost: f32,
+    alpha: f32,
+    est_input: u32,
+    est_output: u32,
+) -> f32 {
+    let affinity = card.affinity_for(system);
+    let cost = card.estimate_cost(est_input, est_output);
+    let cost_ratio = cost / median_cost;
+    // (1 + cost_ratio)^alpha penalizes above-median cost models
+    affinity / (1.0 + cost_ratio).powf(alpha)
 }

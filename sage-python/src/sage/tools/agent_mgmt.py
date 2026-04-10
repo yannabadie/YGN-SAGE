@@ -106,7 +106,7 @@ async def call_agent(agent_name: str, task_message: str, agent_pool: dict = None
     description="Lists all currently active sub-agents in the pool.",
     parameters={
         "type": "object",
-        "properties": {}
+        "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
     }
 )
 async def list_active_agents(agent_pool: dict = None) -> str:

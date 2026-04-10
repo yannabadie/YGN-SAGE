@@ -68,8 +68,13 @@ def init_tools(
     tool_registry.register(create_bash_tool)
 
     # Sandbox manager for S2 empirical validation
-    # SECURITY: local host execution disabled by default (requires allow_local=True)
-    sandbox_manager = SandboxManager()
+    # SECURITY: local host execution disabled by default.
+    # Set SAGE_ALLOW_LOCAL_EXEC=1 for benchmarks that need code execution.
+    import os
+    _allow_local = os.environ.get("SAGE_ALLOW_LOCAL_EXEC") == "1"
+    sandbox_manager = SandboxManager(allow_local=_allow_local)
+    if _allow_local:
+        _log.info("Sandbox: allow_local=True (SAGE_ALLOW_LOCAL_EXEC=1)")
 
     # Stage 0.5: kNN router (arXiv 2505.12601 -- kNN on embeddings beats complex routers)
     _knn_router = None
