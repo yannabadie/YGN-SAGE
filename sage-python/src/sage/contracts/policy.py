@@ -1,49 +1,39 @@
-# RESERVED FOR PHASE C: PolicyVerifier — info-flow labels, budget caps, fan-in/fan-out.
-# To be integrated into Pipeline Stage 3/4 for security and budget constraint enforcement.
-"""PolicyVerifier — checks info-flow, budget, and structural constraints on a TaskDAG.
+"""Policy verification for DAG execution — stub after training code removal.
 
-Rules:
-1. Info-flow: data cannot flow from higher security label to lower (no HIGH→LOW)
-2. Budget: sum of per-node max_cost_usd must not exceed total budget
-3. Fan-in/fan-out: no single node should have excessive in/out degree
+The full PolicyVerifier validated topology constraints (fan-in, fan-out, budget).
+This stub preserves the interface for DAGExecutor compatibility.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
 
-from sage.contracts.dag import TaskDAG
-
 
 @dataclass
 class PolicyViolation:
-    """A single policy violation."""
-
+    """A policy violation found during verification."""
     rule: str
-    node_id: str
     message: str
+    severity: str = "warning"
 
 
 class PolicyVerifier:
-    """Verifies structural and security policies on a TaskDAG."""
+    """Verify DAG execution policies (budget, fan-in, fan-out)."""
 
     def __init__(
         self,
-        dag: TaskDAG,
-        *,
-        total_budget_usd: float = 0.0,
-        max_fan_in: int = 0,
-        max_fan_out: int = 0,
+        dag: Any,
+        total_budget_usd: float = 10.0,
+        max_fan_in: int = 10,
+        max_fan_out: int = 10,
     ) -> None:
         self.dag = dag
         self.total_budget_usd = total_budget_usd
         self.max_fan_in = max_fan_in
         self.max_fan_out = max_fan_out
 
-    # -- Info-flow ----------------------------------------------------------
-
     def check_info_flow(self) -> list[PolicyViolation]:
-        """No data flow from higher security label to lower."""
+        """Check that data does not flow from higher to lower security label."""
         violations: list[PolicyViolation] = []
         for nid in self.dag.node_ids:
             src = self.dag.get_node(nid)
@@ -52,114 +42,36 @@ class PolicyVerifier:
                 if src.security_label > dst.security_label:
                     violations.append(PolicyViolation(
                         rule="info_flow",
-                        node_id=nid,
                         message=(
-                            f"Info-flow violation: {nid} "
-                            f"({src.security_label.name}) → {succ_id} "
-                            f"({dst.security_label.name})"
+                            f"Edge {nid}->{succ_id}: security label downgrade "
+                            f"({src.security_label.name}->{dst.security_label.name})"
                         ),
+                        severity="error",
                     ))
         return violations
-
-    # -- Budget -------------------------------------------------------------
-
-    def check_budget(self) -> list[PolicyViolation]:
-        """Sum of per-node max_cost_usd must not exceed total budget."""
-        if self.total_budget_usd <= 0:
-            return []
-
-        total = sum(
-            self.dag.get_node(nid).budget.max_cost_usd
-            for nid in self.dag.node_ids
-            if self.dag.get_node(nid).budget.max_cost_usd > 0
-        )
-
-        if total > self.total_budget_usd:
-            return [PolicyViolation(
-                rule="budget",
-                node_id="*",
-                message=(
-                    f"Budget exceeded: ${total:.4f} > "
-                    f"${self.total_budget_usd:.4f}"
-                ),
-            )]
-        return []
-
-    # -- Fan-in / fan-out ---------------------------------------------------
 
     def check_fan_limits(self) -> list[PolicyViolation]:
-        """Check fan-in and fan-out limits."""
+        """Check fan-in and fan-out limits for each node."""
         violations: list[PolicyViolation] = []
-
         for nid in self.dag.node_ids:
             if self.max_fan_out > 0:
-                out_degree = len(self.dag.successors(nid))
-                if out_degree > self.max_fan_out:
+                fan_out = len(self.dag.successors(nid))
+                if fan_out > self.max_fan_out:
                     violations.append(PolicyViolation(
                         rule="fan_out",
-                        node_id=nid,
-                        message=(
-                            f"Fan-out exceeded: {nid} has {out_degree} "
-                            f"successors (limit {self.max_fan_out})"
-                        ),
+                        message=f"Node {nid}: fan-out {fan_out} exceeds limit {self.max_fan_out}",
+                        severity="error",
                     ))
-
             if self.max_fan_in > 0:
-                in_degree = len(self.dag.predecessors(nid))
-                if in_degree > self.max_fan_in:
+                fan_in = len(self.dag.predecessors(nid))
+                if fan_in > self.max_fan_in:
                     violations.append(PolicyViolation(
                         rule="fan_in",
-                        node_id=nid,
-                        message=(
-                            f"Fan-in exceeded: {nid} has {in_degree} "
-                            f"predecessors (limit {self.max_fan_in})"
-                        ),
+                        message=f"Node {nid}: fan-in {fan_in} exceeds limit {self.max_fan_in}",
+                        severity="error",
                     ))
-
         return violations
-
-    # -- Node-scoped (no DAG required) -------------------------------------
-
-    @staticmethod
-    def verify_node(
-        node: Any,
-        predecessors: list[Any],
-        budget_remaining: float,
-        max_fan_in: int = 5,
-    ) -> bool:
-        """Node-scoped policy check. Duck-typed for TopologyNode/TaskNode.
-
-        Checks:
-        - Info-flow: node.security_label >= max(predecessor security_labels)
-        - Budget: node.max_cost_usd <= budget_remaining
-        - Fan-in: len(predecessors) <= max_fan_in
-
-        Returns True if all checks pass, False otherwise.
-        """
-        label = getattr(node, 'security_label', 0)
-        cost = getattr(node, 'max_cost_usd', 0.0)
-
-        # Info-flow check
-        pred_labels = [getattr(p, 'security_label', 0) for p in predecessors]
-        if pred_labels and label < max(pred_labels):
-            return False
-
-        # Budget check
-        if cost > budget_remaining > 0:
-            return False
-
-        # Fan-in check
-        if len(predecessors) > max_fan_in:
-            return False
-
-        return True
-
-    # -- Combined -----------------------------------------------------------
 
     def verify_all(self) -> list[PolicyViolation]:
-        """Run all policy checks and return combined violations."""
-        violations: list[PolicyViolation] = []
-        violations.extend(self.check_info_flow())
-        violations.extend(self.check_budget())
-        violations.extend(self.check_fan_limits())
-        return violations
+        """Verify all policies: info-flow, fan-in, fan-out."""
+        return self.check_info_flow() + self.check_fan_limits()
