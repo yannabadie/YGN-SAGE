@@ -8,6 +8,10 @@
 use pyo3::prelude::*;
 use tracing::instrument;
 
+/// If the nearest exemplar is effectively an exact match, prefer its label
+/// over the aggregate top-k vote to avoid neighbor pileups overturning it.
+const EXACT_MATCH_THRESHOLD: f32 = 0.98;
+
 /// Rust kNN router for pre-computed exemplar embeddings.
 ///
 /// Hot-path: L2-normalize, dot product, top-k, distance-weighted vote.
@@ -136,6 +140,10 @@ impl RustKnnRouter {
             return None;
         }
 
+        if nearest_dist >= EXACT_MATCH_THRESHOLD {
+            return Some((self.labels[top_k[0]], nearest_dist.max(0.99), nearest_dist));
+        }
+
         // Distance-weighted majority vote (only positive similarities count)
         let mut votes: std::collections::HashMap<i32, f32> = std::collections::HashMap::new();
         for &idx in top_k {
@@ -237,6 +245,32 @@ mod tests {
             router.route(query).is_none(),
             "OOD query should be rejected"
         );
+    }
+
+    #[test]
+    fn test_exact_match_overrides_weighted_vote() {
+        // The exact nearest neighbor should win even if two lower-rank
+        // neighbors of another class would outvote it under raw top-k voting.
+        let exact = make_unit(&[1.0_f32, 0.0, 0.0]);
+        let other1 = make_unit(&[0.8_f32, 0.6, 0.0]);
+        let other2 = make_unit(&[0.8_f32, -0.6, 0.0]);
+
+        let mut embeddings = Vec::new();
+        embeddings.extend_from_slice(&exact);
+        embeddings.extend_from_slice(&other1);
+        embeddings.extend_from_slice(&other2);
+
+        let labels = vec![1i32, 2i32, 2i32];
+
+        let mut router = RustKnnRouter::new(3, 0.0);
+        router
+            .load_exemplars(embeddings, labels, 3)
+            .expect("load ok");
+
+        let result = router.route(exact.clone()).expect("should route");
+        assert_eq!(result.0, 1);
+        assert!(result.1 >= 0.99);
+        assert!((result.2 - 1.0).abs() < 1e-5);
     }
 
     #[test]

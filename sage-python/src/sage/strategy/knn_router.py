@@ -34,6 +34,11 @@ _EMBED_CACHE_MAXSIZE = 256
 
 _log = logging.getLogger(__name__)
 
+# If a query is effectively identical to a labeled exemplar, prefer that
+# exemplar's label over the aggregate top-k vote. This prevents lower-rank
+# neighbors from overturning a near-exact match.
+_EXACT_MATCH_THRESHOLD = 0.98
+
 # Rust kNN hot-path acceleration
 try:
     from sage_core import RustKnnRouter as _RustKnn
@@ -213,6 +218,7 @@ class KnnRouter:
 
         k_distances = similarities[top_k_idx].tolist()
         k_labels = self._exemplar_labels[top_k_idx].tolist()
+        nearest_label = int(k_labels[0])
 
         # OOD rejection: if nearest neighbor is below threshold
         if k_distances[0] < self._distance_threshold:
@@ -221,6 +227,15 @@ class KnnRouter:
                 k_distances[0], self._distance_threshold,
             )
             return None
+
+        if k_distances[0] >= _EXACT_MATCH_THRESHOLD:
+            return KnnRoutingResult(
+                system=nearest_label,
+                confidence=min(1.0, max(float(k_distances[0]), 0.99)),
+                nearest_distance=k_distances[0],
+                k_distances=k_distances,
+                k_labels=k_labels,
+            )
 
         # Distance-weighted majority vote
         votes: dict[int, float] = {}

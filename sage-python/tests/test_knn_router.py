@@ -183,6 +183,32 @@ class TestKnnRouting:
         )
         assert router.route("anything") is None
 
+    def test_exact_match_prefers_nearest_label_over_vote(self, mock_embedder):
+        router = KnnRouter(
+            exemplar_path=Path("/nonexistent.npz"),
+            embedder=mock_embedder,
+            k=3,
+            distance_threshold=0.0,
+        )
+        exact = np.zeros((768,), dtype=np.float32)
+        exact[0] = 1.0
+        other1 = np.zeros((768,), dtype=np.float32)
+        other1[:2] = np.array([0.8, 0.6], dtype=np.float32)
+        other2 = np.zeros((768,), dtype=np.float32)
+        other2[:2] = np.array([0.8, -0.6], dtype=np.float32)
+
+        router._exemplar_embeddings = np.stack([exact, other1, other2]).astype(np.float32)
+        router._exemplar_labels = np.array([1, 2, 2], dtype=np.int32)
+        router._exemplar_count = 3
+        router._rust_knn = None
+        router._cached_embed = lambda task: exact.tolist()
+
+        result = router.route("exact exemplar")
+        assert result is not None
+        assert result.system == 1
+        assert result.confidence >= 0.99
+        assert result.nearest_distance == pytest.approx(1.0)
+
 
 class TestKnnBuildFromGroundTruth:
     def test_build_in_memory(self, mock_embedder):
