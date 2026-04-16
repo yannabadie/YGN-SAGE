@@ -341,6 +341,25 @@ class TopologyRunner:
             "[TopologyRunner] node %d (%s) completed via agent_loop, output %d chars",
             node_idx, role, len(result),
         )
+
+        # Inter-node quality signal (VPRMs pattern, arXiv 2601.17223):
+        # evaluate output quality and let controller decide next action.
+        if self._controller and result:
+            try:
+                decision = self._controller.evaluate_and_decide(
+                    node_idx=node_idx,
+                    output=result,
+                    task=task,
+                    topology=self.graph,
+                )
+                if decision and hasattr(decision, 'action'):
+                    log.debug(
+                        "[TopologyRunner] controller decision for node %d: %s",
+                        node_idx, decision.action,
+                    )
+            except Exception as exc:
+                log.debug("[TopologyRunner] controller evaluation failed: %s", exc)
+
         return result
 
     async def _execute_code_node(
