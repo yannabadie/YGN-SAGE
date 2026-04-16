@@ -431,22 +431,20 @@ class CognitiveOrchestrationPipeline:
         if ctx.dag_features:
             hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
 
-        # ADAPTIVE BYPASS: Skip topology for S2 tasks with "sequential" hint.
-        # Can be overridden by _force_topology flag (set by bench escalation).
-        if ctx.system == 2 and hint == "sequential" and not getattr(self, '_force_topology', False):
-            ctx.topology = None
-            log.info(
-                "Stage 2: BYPASS topology for S2+sequential "
-                "(omega=%s, delta=%s, gamma=%s)",
-                ctx.dag_features.omega if ctx.dag_features else "?",
-                ctx.dag_features.delta if ctx.dag_features else "?",
-                f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
-            )
-            return ctx
+        # S2+sequential: use the sequential topology template instead of bypass.
+        # Research (AdaptOrch 2602.16873, MASS 2502.02533) shows sequential
+        # planner→coder→synthesizer pipeline beats single-agent by 12-23%.
+        # The old bypass (SAGE_BYPASS_S2_SEQUENTIAL=1) is available for A/B testing.
+        if ctx.system == 2 and hint == "sequential":
+            import os
+            if os.environ.get("SAGE_BYPASS_S2_SEQUENTIAL") == "1":
+                ctx.topology = None
+                log.info("Stage 2: BYPASS topology (SAGE_BYPASS_S2_SEQUENTIAL=1)")
+                return ctx
 
-        # If DAG analysis selected a specialized template, try to build it
-        # before falling through to the TopologyEngine 6-path.
-        if hint in ("robust", "horizon_pipeline", "parallel_fanout"):
+        # Build topology from template hint. All DAG-selected templates go
+        # through TemplateStore which creates multi-node topologies.
+        if hint in ("sequential", "avr", "parallel", "robust", "horizon_pipeline", "parallel_fanout"):
             topo = self._build_topology_from_hint(hint)
             if topo:
                 ctx.topology = topo
