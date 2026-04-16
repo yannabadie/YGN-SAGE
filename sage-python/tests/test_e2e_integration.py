@@ -106,7 +106,7 @@ class TestAgentLifecycle:
         from sage.agent_loop import AgentLoop
         from sage.llm.base import LLMConfig
         from sage.llm.mock import MockProvider
-        from sage.strategy.metacognition import ComplexityRouter
+        from sage.strategy.adaptive_router import AdaptiveRouter
 
         config = AgentConfig(
             name="routing-test",
@@ -115,7 +115,7 @@ class TestAgentLifecycle:
         )
         provider = MockProvider(responses=["Simple answer."])
         loop = AgentLoop(config=config, llm_provider=provider)
-        loop.metacognition = ComplexityRouter()  # injected post-init like boot.py does
+        loop.metacognition = AdaptiveRouter()  # injected post-init like boot.py does
         result = await loop.run("What is 2+2?")
         assert result is not None
 
@@ -126,13 +126,13 @@ class TestAgentLifecycle:
 
 
 class TestRoutingQualityLoop:
-    """ComplexityRouter → QualityEstimator → feedback chain."""
+    """AdaptiveRouter → QualityEstimator → feedback chain."""
 
     def test_routing_tiers_are_ordered(self):
         """S1 < S2 < S3 complexity for canonical tasks."""
-        from sage.strategy.metacognition import ComplexityRouter
+        from sage.strategy.adaptive_router import AdaptiveRouter
 
-        router = ComplexityRouter()
+        router = AdaptiveRouter()
         s1 = router.assess_complexity("What is 2+2?")
         s2 = router.assess_complexity("Write a Python function to merge two sorted lists")
         s3 = router.assess_complexity(
@@ -164,10 +164,10 @@ class TestRoutingQualityLoop:
 
     def test_routing_to_quality_roundtrip(self):
         """Route a task, estimate quality, verify the round-trip works."""
-        from sage.strategy.metacognition import ComplexityRouter
+        from sage.strategy.adaptive_router import AdaptiveRouter
         from sage.quality_estimator import QualityEstimator
 
-        router = ComplexityRouter()
+        router = AdaptiveRouter()
         profile = router.assess_complexity("What is 2+2?")
         assert profile.complexity >= 0
 
@@ -981,7 +981,7 @@ class TestCrossModuleSmoke:
         from sage.agent_loop import AgentLoop
         from sage.llm.base import LLMConfig
         from sage.llm.mock import MockProvider
-        from sage.strategy.metacognition import ComplexityRouter
+        from sage.strategy.adaptive_router import AdaptiveRouter
         from sage.memory.episodic import EpisodicMemory
         from sage.memory.semantic import SemanticMemory
         from sage.events.bus import EventBus
@@ -1005,7 +1005,7 @@ class TestCrossModuleSmoke:
         )
 
         # Inject subsystems like boot.py does
-        loop.metacognition = ComplexityRouter()
+        loop.metacognition = AdaptiveRouter()
         loop.episodic_memory = EpisodicMemory()
         await loop.episodic_memory.initialize()
         loop.semantic_memory = SemanticMemory()

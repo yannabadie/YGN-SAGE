@@ -46,10 +46,10 @@ def test_manifest_summary():
 @pytest.mark.asyncio
 async def test_routing_bench_produces_manifest():
     """Routing benchmark should populate a manifest with 30 traces."""
-    from sage.strategy.metacognition import ComplexityRouter
+    from sage.strategy.adaptive_router import AdaptiveRouter
     from sage.bench.routing import RoutingAccuracyBench, LABELED_TASKS
 
-    mc = ComplexityRouter()
+    mc = AdaptiveRouter()
     bench = RoutingAccuracyBench(metacognition=mc)
     report = await bench.run()
 

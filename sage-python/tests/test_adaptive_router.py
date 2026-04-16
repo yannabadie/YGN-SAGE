@@ -1,4 +1,4 @@
-"""Tests for sage.strategy.adaptive_router -- AdaptiveRouter with duck-type ComplexityRouter compat."""
+"""Tests for sage.strategy.adaptive_router -- AdaptiveRouter (primary Python router)."""
 import sys
 import types
 
@@ -11,7 +11,7 @@ from sage.strategy.adaptive_router import AdaptiveRouter, AdaptiveRoutingResult
 from sage.strategy.metacognition import CognitiveProfile, RoutingDecision
 
 
-# -- Duck-type compatibility (same interface as ComplexityRouter) -------------
+# -- Core interface (route, assess_complexity) --------------------------------
 
 
 def test_has_route_method():

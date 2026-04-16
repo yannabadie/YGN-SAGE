@@ -244,19 +244,19 @@ async def run_routing_proof() -> None:
     Methodology (inspired by RouteLLM 2024):
     1. All tasks → S1 (cheapest model)
     2. All tasks → S2 (best available model)
-    3. Router decides (ComplexityRouter)
+    3. Router decides (AdaptiveRouter)
     4. Proof: Router achieves >= S2 quality at < S2 cost
     """
     from sage.boot import boot_agent_system
     from sage.events.bus import EventBus
-    from sage.strategy.metacognition import ComplexityRouter
+    from sage.strategy.adaptive_router import AdaptiveRouter
 
     bench_dir = _repo_root() / "docs" / "benchmarks"
     bench_dir.mkdir(parents=True, exist_ok=True)
     date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # First, route all tasks to see distribution
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     routing_decisions = []
     for item in ROUTING_PROOF_TASKS:
         profile = router.assess_complexity(item["task"])
@@ -293,7 +293,7 @@ async def run_routing_proof() -> None:
     print(f"{'=' * 60}")
 
     # Run with router (Config R: actual routing)
-    log.info("Running 30 unseen tasks with ComplexityRouter...")
+    log.info("Running 30 unseen tasks with AdaptiveRouter...")
     bus_r = EventBus()
     system_r = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus_r)
     router_results = []

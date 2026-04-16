@@ -109,9 +109,9 @@ def test_bench_report_from_results_no_model_config():
 
 @pytest.mark.asyncio
 async def test_routing_accuracy_bench():
-    from sage.strategy.metacognition import MetacognitiveController
+    from sage.strategy.adaptive_router import AdaptiveRouter
 
-    mc = MetacognitiveController()
+    mc = AdaptiveRouter()
     bench = RoutingAccuracyBench(metacognition=mc)
     report = await bench.run()
 

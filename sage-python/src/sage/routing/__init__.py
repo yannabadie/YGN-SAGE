@@ -1,1 +1,1 @@
-"""Routing: ShadowRouter for dual Rust/Python routing with JSONL divergence traces."""
+"""Routing module — ShadowRouter removed (49.6% divergence, dead code)."""

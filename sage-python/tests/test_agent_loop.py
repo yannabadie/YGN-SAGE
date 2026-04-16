@@ -175,9 +175,9 @@ async def test_self_brake_stores_in_working_memory():
     from sage.agent import AgentConfig
     from sage.llm.base import LLMConfig
     from sage.llm.mock import MockProvider
-    from sage.strategy.metacognition import MetacognitiveController
+    from sage.strategy.adaptive_router import AdaptiveRouter
 
-    ctrl = MetacognitiveController(brake_window=1, brake_entropy_threshold=1.0)
+    ctrl = AdaptiveRouter(brake_window=1, brake_entropy_threshold=1.0)
     ctrl.record_output_entropy(0.01)
 
     provider = MockProvider(responses=["Braked response content here."])
@@ -224,10 +224,10 @@ async def test_loop_uses_async_metacognition():
     from sage.agent import AgentConfig
     from sage.llm.base import LLMConfig
     from sage.llm.mock import MockProvider
-    from sage.strategy.metacognition import MetacognitiveController
+    from sage.strategy.adaptive_router import AdaptiveRouter
     from unittest.mock import AsyncMock
 
-    ctrl = MetacognitiveController()
+    ctrl = AdaptiveRouter()
     provider = MockProvider(responses=["Done."])
     config = AgentConfig(
         name="test", llm=LLMConfig(provider="mock", model="mock"),

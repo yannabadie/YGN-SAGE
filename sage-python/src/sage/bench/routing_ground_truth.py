@@ -35,7 +35,7 @@ def run_routing_gt(router, gt_path: Path | None = None, verbose: bool = False) -
     Parameters
     ----------
     router:
-        ComplexityRouter (assess_complexity + route), AdaptiveRouter,
+        AdaptiveRouter (assess_complexity + route),
         or Rust SystemRouter (route(task, budget) → RoutingDecision).
     gt_path:
         Path to ground truth JSON. Defaults to config/routing_ground_truth.json.
@@ -54,7 +54,7 @@ def run_routing_gt(router, gt_path: Path | None = None, verbose: bool = False) -
 
         try:
             if hasattr(router, "assess_complexity") and hasattr(router, "route"):
-                # ComplexityRouter: assess_complexity(task) → CognitiveProfile,
+                # AdaptiveRouter: assess_complexity(task) → CognitiveProfile,
                 # then route(profile) → RoutingDecision with .system
                 profile = router.assess_complexity(task_text)
                 decision = router.route(profile)

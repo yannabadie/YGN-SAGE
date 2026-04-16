@@ -282,10 +282,10 @@ class TestC5KnnVsHeuristicRouting:
     ]
 
     def test_c5_knn_vs_heuristic_routing(self) -> None:
-        from sage.strategy.metacognition import ComplexityRouter
+        from sage.strategy.adaptive_router import AdaptiveRouter
         from sage.strategy.knn_router import KnnRouter
 
-        heuristic = ComplexityRouter()
+        heuristic = AdaptiveRouter()
         knn = KnnRouter()
 
         heuristic_correct = 0

@@ -43,8 +43,6 @@ def _init_rust_router(cards_toml: str | None) -> tuple[Any, Any]:
     Returns:
         (rust_router, rust_registry) -- either may be None.
     """
-    from sage.routing.shadow import ShadowRouter
-
     rust_router = None
     rust_registry = None
 
@@ -84,74 +82,21 @@ def _init_py_registry(rust_registry: Any, cards_toml: str | None) -> Any:
     return py_model_registry
 
 
-def _init_shadow_router(
-    rust_router: Any,
-    metacognition: Any,
-) -> Any:
-    """Initialize ShadowRouter for dual Rust/Python comparison."""
-    from sage.routing.shadow import ShadowRouter
-
-    # Shadow router: dual Rust/Python comparison when both are available.
-    # DEPRECATED: 49.6% divergence -- shadow comparison disabled by default.
-    # Set SAGE_ENABLE_SHADOW=1 to re-enable for trace collection.
-    shadow_router = ShadowRouter(
-        rust_router=rust_router,
-        python_metacognition=metacognition,
-    )
-    if shadow_router._shadow_active:
-        _log.info(
-            "Boot: ShadowRouter active (dual Rust/Python comparison, "
-            "traces -> %s)", shadow_router._trace_path,
-        )
-    elif rust_router is not None:
-        _log.info(
-            "Boot: ShadowRouter shadow comparison disabled (49.6%% divergence). "
-            "Rust SystemRouter is primary. Set SAGE_ENABLE_SHADOW=1 to re-enable."
-        )
-
-    # Phase 5 gate: load existing traces for cross-session continuity
-    if shadow_router._shadow_active:
-        shadow_router.load_existing_traces()
-        if shadow_router.is_phase5_hard_ready():
-            _log.info(
-                "Shadow Phase 5 HARD gate passed (%d traces, %.1f%% divergence) -- "
-                "Python router can be safely removed",
-                shadow_router.stats.get("total_comparisons", 0),
-                shadow_router.divergence_rate() * 100,
-            )
-        elif shadow_router.is_phase5_soft_ready():
-            _log.info(
-                "Shadow Phase 5 SOFT gate passed (%d traces, %.1f%% divergence) -- "
-                "Rust router preferred",
-                shadow_router.stats.get("total_comparisons", 0),
-                shadow_router.divergence_rate() * 100,
-            )
-        else:
-            _log.info(
-                "Shadow Phase 5: %d/1000 traces collected (divergence=%.1f%%)",
-                shadow_router.stats.get("total_comparisons", 0),
-                shadow_router.divergence_rate() * 100,
-            )
-
-    return shadow_router
-
-
 def init_topology(
     rust_registry: Any,
     metacognition: Any,
 ) -> dict[str, Any]:
-    """Initialize topology engine, bandit, shadow router, and restore state.
+    """Initialize topology engine, bandit, and restore state.
 
     Returns:
         dict with keys: rust_router, rust_registry, py_model_registry,
-        shadow_router, topology_engine, bandit, cards_toml.
+        topology_engine, bandit, cards_toml.
     """
     from sage.constants import EXPLORATION_BUDGET_LOW
 
     cards_toml = _find_cards_toml()
     rust_router, rust_reg = _init_rust_router(cards_toml)
     py_model_registry = _init_py_registry(rust_reg, cards_toml)
-    shadow_router = _init_shadow_router(rust_router, metacognition)
 
     # If caller provided a pre-built rust_registry, use it; otherwise use ours
     if rust_registry is not None:
@@ -259,7 +204,6 @@ def init_topology(
         "rust_router": rust_router,
         "rust_registry": rust_reg,
         "py_model_registry": py_model_registry,
-        "shadow_router": shadow_router,
         "topology_engine": rust_topology_engine,
         "bandit": rust_bandit,
         "cards_toml": cards_toml,

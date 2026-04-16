@@ -10,10 +10,10 @@ from hypothesis import given, strategies as st, settings
 @given(task=st.text(min_size=0, max_size=1000))
 @settings(max_examples=200)
 def test_complexity_router_never_crashes(task):
-    """ComplexityRouter.assess_complexity + route must never raise on any text input."""
-    from sage.strategy.metacognition import ComplexityRouter
+    """AdaptiveRouter.assess_complexity + route must never raise on any text input."""
+    from sage.strategy.adaptive_router import AdaptiveRouter
 
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     profile = router.assess_complexity(task)
     result = router.route(profile)
     assert result.system in (1, 2, 3)
@@ -27,9 +27,10 @@ def test_complexity_router_never_crashes(task):
 @settings(max_examples=200)
 def test_complexity_router_route_is_total(complexity, uncertainty, tool_required):
     """route() must return a valid system for every CognitiveProfile combination."""
-    from sage.strategy.metacognition import ComplexityRouter, CognitiveProfile
+    from sage.strategy.adaptive_router import AdaptiveRouter
+    from sage.strategy.metacognition import CognitiveProfile
 
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     profile = CognitiveProfile(
         complexity=complexity,
         uncertainty=uncertainty,

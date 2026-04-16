@@ -115,14 +115,10 @@ async def _run_humaneval(output: str | None, limit: int | None) -> None:
 
 
 async def _run_routing(output: str | None) -> None:
-    from sage.strategy.metacognition import MetacognitiveController
-    from sage.bench.routing import RoutingAccuracyBench
-
-    mc = MetacognitiveController()
-    bench = RoutingAccuracyBench(metacognition=mc)
-    report = await bench.run()
-    _print_report(report)
-    _save_report(report, bench, output, "routing")
+    # Legacy self-consistency benchmark removed (measured heuristic vs itself).
+    # Use routing_gt instead for real accuracy measurement.
+    print("  routing benchmark removed — use --type routing_gt instead")
+    return
 
 
 async def _run_evalplus(
@@ -487,11 +483,7 @@ def main() -> None:
                     print(f"    [{m['id']}] expected=S{m['expected']} got=S{m['actual']}: {m['task']}")
             return result
 
-        # 1. ComplexityRouter (heuristic baseline)
-        from sage.strategy.metacognition import ComplexityRouter
-        _run_gt_with("ComplexityRouter (heuristic)", ComplexityRouter())
-
-        # 2. AdaptiveRouter + kNN (if embedder available)
+        # AdaptiveRouter + kNN (primary — learned routing)
         try:
             from sage.strategy.adaptive_router import AdaptiveRouter
             from sage.strategy.knn_router import KnnRouter

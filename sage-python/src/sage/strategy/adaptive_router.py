@@ -5,8 +5,6 @@ Stage 0.5: kNN on pre-computed embeddings (arXiv 2505.12601) -- Python/numpy.
 Stage 1: ONNX BERT classifier (routellm/bert) -- Rust only.
 Stage 2: Entropy probe (logprobs or token diversity) -- Python async.
 Stage 3: Reserved for future online learning (not yet implemented).
-
-Duck-type compatible with ComplexityRouter for seamless drop-in integration.
 """
 from __future__ import annotations
 
@@ -48,7 +46,7 @@ class AdaptiveRoutingResult:
 
 
 class AdaptiveRouter:
-    """4-stage adaptive router, duck-type compatible with ComplexityRouter.
+    """4-stage adaptive router — primary Python routing interface.
 
     Stages: structural -> kNN embeddings -> BERT ONNX -> entropy probe.
     Stage 3 (online learning) reserved for future work. Falls back to cascade.
@@ -76,12 +74,12 @@ class AdaptiveRouter:
         self._llm_provider = llm_provider
         self._enable_entropy = enable_entropy_probe
 
-        # CGRS self-braking (same as ComplexityRouter)
+        # CGRS self-braking
         self.brake_window = brake_window
         self.brake_entropy_threshold = brake_entropy_threshold
         self._entropy_history: deque[float] = deque(maxlen=10)
 
-        # ComplexityRouter thresholds (used by heuristic fallback)
+        # Routing thresholds (used by heuristic fallback)
         self.s1_complexity_ceil = s1_complexity_ceil
         self.s1_uncertainty_ceil = s1_uncertainty_ceil
         self.s3_complexity_floor = s3_complexity_floor
@@ -110,10 +108,10 @@ class AdaptiveRouter:
         if self._rust is None:
             log.info("AdaptiveRouter: Python heuristic fallback")
 
-    # -- ComplexityRouter-compatible interface --------------------------------
+    # -- Routing interface -----------------------------------------------------
 
     def route(self, profile: CognitiveProfile) -> RoutingDecision:
-        """Route based on a pre-assessed profile (ComplexityRouter compat)."""
+        """Route based on a pre-assessed profile."""
         return self._route_from_profile(profile)
 
     def assess_complexity(self, task: str) -> CognitiveProfile:
@@ -263,7 +261,7 @@ class AdaptiveRouter:
     # -- Private -------------------------------------------------------------
 
     def _route_from_profile(self, profile: CognitiveProfile) -> RoutingDecision:
-        """Convert profile to routing decision (same logic as ComplexityRouter.route)."""
+        """Convert profile to routing decision."""
         c, u = profile.complexity, profile.uncertainty
 
         if c > self.s3_complexity_floor or u > self.s3_uncertainty_floor:
@@ -368,7 +366,7 @@ class AdaptiveRouter:
         """Degraded keyword-count fallback (no regex).
 
         Used only when ONNX model and kNN are both unavailable.
-        Delegates to ComplexityRouter._assess_heuristic for consistency.
+        Keyword-count heuristic (degraded fallback, 34% GT accuracy).
         """
         import warnings
         warnings.warn(

@@ -1,11 +1,11 @@
 """Ablation: does routing add value over fixed model selection?"""
 import pytest
-from sage.strategy.metacognition import MetacognitiveController
+from sage.strategy.adaptive_router import AdaptiveRouter
 
 
 def test_routing_produces_different_tiers():
     """Routing should produce different tiers for different task types."""
-    mc = MetacognitiveController()
+    mc = AdaptiveRouter()
 
     tasks = {
         "simple": "What is 2+2?",
@@ -42,7 +42,7 @@ def test_routing_system_levels_for_different_complexity():
     """Different complexity levels should map to different systems (S1/S2/S3)."""
     from sage.strategy.metacognition import CognitiveProfile
 
-    mc = MetacognitiveController()
+    mc = AdaptiveRouter()
 
     # S1: low complexity, low uncertainty, no tools
     s1_profile = CognitiveProfile(complexity=0.1, uncertainty=0.1, tool_required=False)
@@ -60,7 +60,7 @@ def test_routing_system_levels_for_different_complexity():
 
 def test_heuristic_is_deterministic():
     """Same input should always produce the same routing decision."""
-    mc = MetacognitiveController()
+    mc = AdaptiveRouter()
     task = "Write a function to compute Fibonacci numbers efficiently"
 
     decisions = []

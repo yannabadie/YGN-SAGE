@@ -62,7 +62,7 @@ class CognitiveOrchestrationPipeline:
 
     Parameters
     ----------
-    router : AdaptiveRouter or ComplexityRouter
+    router : AdaptiveRouter
         For Stage 0 (classify).
     engine : TopologyEngine (Rust) or None
         For Stage 2 (select topology). If None, uses sequential template.

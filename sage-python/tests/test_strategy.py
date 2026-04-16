@@ -4,7 +4,7 @@ import numpy as np
 from sage.strategy.solvers import RegretMatcher, SAMPOSolver
 from sage.strategy.allocator import ResourceAllocator
 from sage.strategy.engine import StrategyEngine
-from sage.strategy.metacognition import ComplexityRouter
+from sage.strategy.adaptive_router import AdaptiveRouter
 
 
 # --- RegretMatcher Tests ---
@@ -168,11 +168,11 @@ def test_engine_invalid_solver():
         StrategyEngine(["a"], solver_type="invalid")
 
 
-# --- ComplexityRouter heuristic routing tests ---
+# --- AdaptiveRouter routing tests ---
 
 def test_routing_simple_factual_to_s1():
     """Simple factual question should route to S1 (fast/cheap)."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     profile = router.assess_complexity("What is the capital of France?")
     decision = router.route(profile)
     assert decision.system == 1, (
@@ -183,7 +183,7 @@ def test_routing_simple_factual_to_s1():
 
 def test_routing_code_generation_to_s2():
     """Tasks with multiple complex keywords should route to S2+."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     # "implement" + "algorithm" = 2 hits → 0.67
     profile = router.assess_complexity("Implement an algorithm to optimize sorting")
     decision = router.route(profile)
@@ -195,7 +195,7 @@ def test_routing_code_generation_to_s2():
 
 def test_routing_simple_code_to_s1():
     """Simple tasks with no complex keywords route to S1 (degraded heuristic)."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     profile = router.assess_complexity("Write a hello world function")
     decision = router.route(profile)
     assert decision.system == 1, (
@@ -206,7 +206,7 @@ def test_routing_simple_code_to_s1():
 
 def test_routing_complex_debug_to_s3():
     """Complex debug task with race condition and long description should route to S3."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     task = (
         "Debug the race condition in the distributed worker pool that causes "
         "intermittent deadlocks under high load. The system uses a shared mutex "
@@ -225,7 +225,7 @@ def test_routing_complex_debug_to_s3():
 
 def test_routing_fibonacci_to_s1_or_s2():
     """Simple algorithm request should route to S1 or S2, never S3."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     profile = router.assess_complexity(
         "Write a function that returns the nth Fibonacci number"
     )
@@ -238,7 +238,7 @@ def test_routing_fibonacci_to_s1_or_s2():
 
 def test_routing_long_task_complexity_boost():
     """Longer task descriptions should have higher complexity than short ones."""
-    router = ComplexityRouter()
+    router = AdaptiveRouter()
     short_task = "Add two numbers"
     long_task = " ".join(["Add two numbers and verify the result is correct."] * 12)
     short_profile = router.assess_complexity(short_task)
