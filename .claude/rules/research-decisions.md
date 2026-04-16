@@ -33,6 +33,15 @@ paths:
 - **QualityEstimator**: Z3 formal labeler (Rust) > ONNX learned model > None (abstain).
 - **Zero heuristics**: 5-signal heuristic REMOVED. Proved mediocre (r=0.34 Pearson).
 
+## April 2026 Research Update
+- **MASS** (2502.02533, ICLR '26): Joint prompt+topology optimization → +9pp on code. Meta-Harness is the same concept.
+- **SGH** (2604.11378): Formalizes agent loop → DAG transition. TopologyEngine already does this.
+- **GoAgent** (2603.19677): Group CIB → 17% token savings. S2-MAD dedup in runner.py is equivalent.
+- **AdaptOrch** (2602.16873): Topology-aware +12-23% over static. Validates removal of S2+sequential bypass.
+- **VPRMs** (2601.17223): Step-level verifiable rewards → +20% F1. Gap: Z3 QualityLabeler not used between nodes.
+- **CORAL** (2604.01658, MS Research): 3-10x evolution speedup with shared memory. Validates MAP-Elites + S-MMU.
+- **SWE-bench Pro** (April '26): Opus 4.6+WarpGrep = 57.5%. Scaffold matters as much as model.
+
 ## DROPPED Ideas (with evidence)
 - Speculative S1+S2 parallel: no SOTA backing
 - Full PSRO/DCH: wrong abstraction for LLM routing (contextual bandit is correct)
