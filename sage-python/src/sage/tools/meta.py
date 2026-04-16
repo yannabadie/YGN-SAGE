@@ -132,33 +132,33 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # 2. Block dangerous shell commands.  The Rust ToolExecutor validates *Python*
-    #    AST — it cannot detect dangerous *bash* commands.  This allowlist-style
-    #    check catches the most critical destructive patterns.
+    # 2. Security gate: allowlist of safe command prefixes.
+    #    A blocklist is trivially bypassable (base64, variable expansion, etc.).
+    #    Only permit read-only inspection commands; reject everything else.
     import re
-    _BLOCKED_BASH_PATTERNS = [
-        r"\brm\s+.*-[rf]",           # rm -rf, rm -f, rm -r
-        r"\bmkfs\b",                  # mkfs
-        r"\bdd\s+if=",               # dd if=
-        r"\bshutdown\b",             # shutdown
-        r"\breboot\b",               # reboot
-        r"\binit\s+[06]\b",          # init 0, init 6
-        r"\bchmod\s+[0-7]*777\b",    # chmod 777
-        r"\bchown\s+-R\b",           # chown -R
-        r"curl\s.*\|\s*(?:bash|sh)", # curl | bash
-        r"wget\s.*\|\s*(?:bash|sh)", # wget | bash
-        r">\s*/dev/sd",              # > /dev/sda
-        r"\bnc\s+-[le]",             # netcat listen
-        r"\bpython[23]?\s+-c\b",     # python -c
-        r"\bperl\s+-e\b",            # perl -e
-    ]
-    script_lower = script.lower()
-    for pat in _BLOCKED_BASH_PATTERNS:
-        if re.search(pat, script_lower):
-            return "Blocked: Script contains a dangerous shell command."
+    import shlex
 
-    # 3. Bash scripts don't go through the Python AST validator — the bash
-    #    blocklist above is the security gate for shell commands.
+    _ALLOWED_PREFIXES = (
+        "cat ", "head ", "tail ", "less ", "wc ", "grep ", "rg ",
+        "find ", "ls ", "tree ", "stat ", "file ", "du ", "df ",
+        "echo ", "printf ", "date ", "env ", "pwd", "whoami",
+        "python ", "python3 ", "uv run ",
+        "cargo test", "cargo check", "cargo clippy",
+        "pytest ", "git log", "git diff", "git status", "git show",
+    )
+    script_stripped = script.strip()
+    if not script_stripped:
+        return "Blocked: Empty script."
+    first_line = script_stripped.split("\n")[0].strip()
+    if not any(first_line.startswith(p) for p in _ALLOWED_PREFIXES):
+        return (
+            f"Blocked: Command not in allowlist. "
+            f"Permitted prefixes: {', '.join(sorted(set(p.strip() for p in _ALLOWED_PREFIXES)))}"
+        )
+    # Reject shell metacharacters that enable chaining/escaping
+    _DANGEROUS_CHARS = re.compile(r"[;`$\(\){}<>]|\|(?!\s*grep\b|\s*rg\b|\s*wc\b|\s*head\b|\s*tail\b|\s*sort\b)")
+    if _DANGEROUS_CHARS.search(script_stripped):
+        return "Blocked: Script contains shell metacharacters (pipes to non-grep commands, subshells, etc.)."
 
     # 3. Build sandbox-isolated handler closure
     saved_script = script  # capture for closure
