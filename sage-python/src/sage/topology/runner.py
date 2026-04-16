@@ -346,11 +346,19 @@ class TopologyRunner:
         # evaluate output quality and let controller decide next action.
         if self._controller and result:
             try:
+                node_ctx = {
+                    "node_idx": node_idx,
+                    "latency_ms": 0.0,
+                    "model_id": getattr(node, "model_id", ""),
+                    "output_length": len(result),
+                    "axis_hint": self._axis_hint,
+                }
                 decision = self._controller.evaluate_and_decide(
                     node_idx=node_idx,
-                    output=result,
+                    result=result,
                     task=task,
                     topology=self.graph,
+                    ctx=node_ctx,
                 )
                 if decision and hasattr(decision, 'action'):
                     log.debug(

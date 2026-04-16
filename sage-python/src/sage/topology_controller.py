@@ -29,6 +29,12 @@ class AdaptationDecision:
 
 # Regex for detecting structured reasoning content
 _STRUCTURED_CONTENT = re.compile(r'<think>|```|assert\s|def\s+test_|proof:|invariant:', re.IGNORECASE)
+_TASK_TOKEN = re.compile(r"[a-zA-Z_]{4,}")
+_ERROR_OUTPUT = re.compile(
+    r"^\s*(error|exception|traceback|timeout|failed)\b|"
+    r"\b(traceback|stack trace|timed out|no output|failed with)\b",
+    re.IGNORECASE,
+)
 
 
 class TopologyController:
@@ -88,11 +94,13 @@ class TopologyController:
     def evaluate_and_decide(
         self,
         node_idx: int,
-        result: str,
-        task: str,
-        topology: Any,
-        ctx: Any,
+        result: str | None = None,
+        task: str = "",
+        topology: Any = None,
+        ctx: Any = None,
         parallel_outputs: list[str] | None = None,
+        *,
+        output: str | None = None,
     ) -> AdaptationDecision:
         """Core decision logic — called after each node execution.
 
@@ -104,13 +112,32 @@ class TopologyController:
             ctx: PipelineContext
             parallel_outputs: outputs from sibling parallel nodes (if any)
         """
+        result = result if result is not None else (output or "")
+
         # Early exit: max reroute hit
         if self._reroute_count >= self.MAX_REROUTES:
             if parallel_outputs and self.compute_consistency_score(parallel_outputs) < self.THETA_CONSISTENCY:
                 self._emit("MAX_REROUTE_HIT", {"node": node_idx, "reroute_count": self._reroute_count})
                 log.warning("Max reroute limit reached (count=%d), forcing continue", self._reroute_count)
 
-        # Compute quality (80% heuristic + 20% PRM if structured content)
+        # Empty/error outputs are structural failures, not quality failures.
+        if self._is_empty_or_error(result):
+            if self._reroute_count < self.MAX_REROUTES:
+                self._reroute_count += 1
+                reason = "empty output" if not result.strip() else "error-like output"
+                self._emit("REROUTE_TOPOLOGY", {"node": node_idx, "reason": reason})
+                return AdaptationDecision(
+                    action="reroute_topology",
+                    target_node=node_idx,
+                    reason=reason,
+                )
+            return AdaptationDecision(
+                action="continue",
+                target_node=node_idx,
+                reason="reroute budget exhausted",
+            )
+
+        # Compute quality (formal estimator when available, heuristic fallback otherwise).
         _abstain_before = self._abstain_count
         quality = self._compute_quality(node_idx, result, task, ctx)
         _quality_is_known = self._abstain_count == _abstain_before  # True if estimator gave a real score
@@ -118,15 +145,13 @@ class TopologyController:
 
         # Depth axis: verify arithmetic before quality cascade (MASPRM arXiv 2510.24803)
         axis_hint = ""
-        if hasattr(ctx, 'get') and callable(ctx.get):
-            axis_hint = ctx.get('axis_hint', '')
-        elif hasattr(ctx, 'axis_hint'):
-            axis_hint = getattr(ctx, 'axis_hint', '')
+        axis_hint = str(self._ctx_value(ctx, "axis_hint", "") or "")
         if axis_hint == 'depth':
             verified, feedback = self._verify_arithmetic(result)
             if not verified:
                 retries_d = self._node_retries.get(node_idx, 0)
-                if retries_d < self.MAX_RETRIES:
+                retry_limit = self._max_retries_for_node(topology, node_idx)
+                if retries_d < retry_limit:
                     self._node_retries[node_idx] = retries_d + 1
                     return AdaptationDecision(
                         action="upgrade_model",
@@ -140,64 +165,20 @@ class TopologyController:
         if quality >= self.THETA_GOOD:
             return AdaptationDecision(action="continue", target_node=node_idx)
 
-        # 1.5. Medium quality + back-edge available -> open_gate for multi-turn refinement
-        # Based on MALT (arXiv 2412.01928): Generation→Verification→Refinement loop
-        gate_turns = self._gate_loops.get(node_idx, 0)
-        if (self.THETA_CRITICAL <= quality < self.THETA_GOOD
-                and gate_turns < self.MAX_GATE_TURNS
-                and topology is not None):
-            # Check if node has a back-edge predecessor (gated control edge)
-            try:
-                predecessors = topology.get_predecessors(node_idx)
-                if predecessors:
-                    # Use first predecessor as gate source for refinement
-                    gate_source = node_idx
-                    gate_target = predecessors[0]
-                    self._gate_loops[node_idx] = gate_turns + 1
-                    self._emit("OPEN_GATE", {
-                        "node": node_idx, "turn": gate_turns + 1,
-                        "quality": quality,
-                    })
-                    return AdaptationDecision(
-                        action="open_gate",
-                        target_node=node_idx,
-                        gate_source=gate_source,
-                        gate_target=gate_target,
-                        reason=f"refinement needed (quality={quality:.2f}, turn {gate_turns + 1}/{self.MAX_GATE_TURNS})",
-                    )
-            except (AttributeError, IndexError):
-                pass  # No predecessors or graph API unavailable
+        # 1.5. Debate refinement is gated by disagreement between peer debaters.
+        if self.THETA_CRITICAL <= quality < self.THETA_GOOD:
+            gate_decision = self._open_gate(node_idx, topology, parallel_outputs)
+            if gate_decision is not None:
+                return gate_decision
 
         # 2. Critical quality -> upgrade model
         retries = self._node_retries.get(node_idx, 0)
-        if quality < self.THETA_CRITICAL and retries < self.MAX_RETRIES:
+        retry_limit = self._max_retries_for_node(topology, node_idx)
+        if quality < self.THETA_CRITICAL and retries < retry_limit:
             self._node_retries[node_idx] = retries + 1
             # Get invariant feedback for S3 nodes if available
             feedback = self._get_invariant_feedback(result, topology, node_idx)
-            # Resolve fallback_tier -> actual model_id
-            new_model_id = None
-            if topology is not None and hasattr(topology, "get_node"):
-                try:
-                    node = topology.get_node(node_idx)
-                    fallback = getattr(node, "fallback_tier", "")
-                    if fallback:
-                        try:
-                            from sage.llm.model_card import CognitiveSystem
-                            from sage.llm.model_registry import ModelCardCatalog
-                            tier_to_cs = {
-                                "reasoner": CognitiveSystem.S3,
-                                "fast": CognitiveSystem.S2,
-                                "budget": CognitiveSystem.S1,
-                            }
-                            cs = tier_to_cs.get(fallback, CognitiveSystem.S2)
-                            catalog = ModelCardCatalog.from_toml_file("config/cards.toml")
-                            candidates = catalog.select_for_system(cs)
-                            if candidates:
-                                new_model_id = candidates[0].id
-                        except (ImportError, Exception):
-                            new_model_id = None  # Don't use tier name — not a valid model_id
-                except Exception:
-                    pass
+            new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
             return AdaptationDecision(
                 action="upgrade_model",
                 target_node=node_idx,
@@ -207,7 +188,7 @@ class TopologyController:
             )
 
         # 3. Parallel inconsistency -> reroute topology
-        if parallel_outputs and self._reroute_count < self.MAX_REROUTES:
+        if parallel_outputs and self._reroute_count < self.MAX_REROUTES and not self._is_debate_topology(topology):
             consistency = self.compute_consistency_score(parallel_outputs)
             if consistency < self.THETA_CONSISTENCY:
                 self._reroute_count += 1
@@ -219,7 +200,7 @@ class TopologyController:
                 )
 
         # 4. Low importance -> prune (only when quality is KNOWN, not abstained)
-        if parallel_outputs and _quality_is_known:
+        if parallel_outputs and _quality_is_known and not self._is_debate_topology(topology):
             importance = self.compute_importance_score(node_idx, result, parallel_outputs)
             if importance < self.THETA_PRUNE:
                 self._emit("PRUNE_NODE", {"node": node_idx, "importance": importance})
@@ -244,21 +225,24 @@ class TopologyController:
         return AdaptationDecision(action="continue", target_node=node_idx)
 
     def _compute_quality(self, node_idx: int, result: str, task: str, ctx: Any) -> float:
-        """80% QualityEstimator + 20% PRM (if structured content detected)."""
+        """Formal quality estimate with heuristic fallback and optional PRM blend."""
         base_score: float | None = None
         if self._qe:
             try:
-                latency = getattr(ctx, 'latency_ms', 0.0)
+                latency = float(self._ctx_value(ctx, "latency_ms", 0.0) or 0.0)
                 base_score = self._qe.estimate(task, result, latency)
             except Exception:
                 pass
 
-        # If estimator abstained (None), default to 0.5 for controller decisions
-        # (controller must always produce a float to make adaptation decisions)
         if base_score is None:
             self._abstain_count += 1
-            log.debug("QualityEstimator abstained for node %d, using default=0.5", node_idx)
-        quality = base_score if base_score is not None else 0.5
+            base_score = self._heuristic_quality(result, task)
+            log.debug(
+                "QualityEstimator abstained for node %d, using heuristic fallback=%.3f",
+                node_idx,
+                base_score,
+            )
+        quality = float(base_score)
 
         # PRM only for structured content (guard: -1.0 on plain text)
         if self._prm and _STRUCTURED_CONTENT.search(result):
@@ -270,6 +254,208 @@ class TopologyController:
                 log.debug("PRM scoring failed: %s", exc)
 
         return quality
+
+    @staticmethod
+    def _ctx_value(ctx: Any, key: str, default: Any = None) -> Any:
+        if ctx is None:
+            return default
+        if isinstance(ctx, dict):
+            return ctx.get(key, default)
+        if hasattr(ctx, "get") and callable(ctx.get):
+            try:
+                return ctx.get(key, default)
+            except TypeError:
+                pass
+        return getattr(ctx, key, default)
+
+    @staticmethod
+    def _coerce_float(value: Any, default: float) -> float:
+        if isinstance(value, bool):
+            return default
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value)
+            except ValueError:
+                return default
+        return default
+
+    @staticmethod
+    def _coerce_str(value: Any, default: str = "") -> str:
+        return value if isinstance(value, str) else default
+
+    @staticmethod
+    def _is_empty_or_error(result: str) -> bool:
+        stripped = result.strip()
+        if not stripped:
+            return True
+        return bool(_ERROR_OUTPUT.search(stripped))
+
+    @staticmethod
+    def _is_debate_topology(topology: Any) -> bool:
+        return str(getattr(topology, "template_type", "") or "") == "debate"
+
+    def _heuristic_quality(self, result: str, task: str) -> float:
+        """Cheap structural fallback when formal quality signals are unavailable."""
+        stripped = result.strip()
+        if not stripped:
+            return 0.0
+        if _ERROR_OUTPUT.search(stripped):
+            return 0.0
+
+        words = stripped.split()
+        length_score = min(len(words) / 96.0, 1.0)
+        structure_score = 1.0 if _STRUCTURED_CONTENT.search(stripped) else 0.35
+        if "\n" in stripped or re.search(r"(^|\n)([-*]|\d+\.)\s", stripped):
+            structure_score = max(structure_score, 0.7)
+        elif re.search(r"[.:;]", stripped):
+            structure_score = max(structure_score, 0.55)
+
+        task_terms = set(_TASK_TOKEN.findall(task.lower()))
+        result_terms = set(_TASK_TOKEN.findall(stripped.lower()))
+        overlap = len(task_terms & result_terms)
+        coverage_score = min(overlap / 4.0, 1.0) if task_terms else 0.5
+
+        quality = 0.45 * length_score + 0.35 * structure_score + 0.20 * coverage_score
+        return max(0.0, min(1.0, quality))
+
+    def _max_retries_for_node(self, topology: Any, node_idx: int) -> int:
+        node = topology.get_node(node_idx) if topology is not None and hasattr(topology, "get_node") else None
+        node_limit = int(getattr(node, "max_retries", 0) or self.MAX_RETRIES)
+        return max(0, min(node_limit, self.MAX_RETRIES))
+
+    def _resolve_upgrade_model(self, node_idx: int, task: str, topology: Any, ctx: Any) -> str | None:
+        node = topology.get_node(node_idx) if topology is not None and hasattr(topology, "get_node") else None
+        if node is None:
+            return None
+
+        current_model_id = self._coerce_str(getattr(node, "model_id", ""), "")
+        task_domain = self._infer_task_domain(task, node, ctx)
+        budget_usd = self._coerce_float(
+            self._ctx_value(ctx, "budget_usd", None)
+            or self._ctx_value(ctx, "budget", None)
+            or getattr(node, "max_cost_usd", 1.0)
+            or 1.0,
+            1.0,
+        )
+
+        if self._assigner and hasattr(self._assigner, "assign_single_node") and hasattr(topology, "set_node_model_id"):
+            excluded = [current_model_id] if current_model_id else None
+            try:
+                return self._assigner.assign_single_node(
+                    topology,
+                    node_idx,
+                    task_domain,
+                    budget_usd,
+                    excluded,
+                )
+            except TypeError:
+                try:
+                    return self._assigner.assign_single_node(
+                        topology,
+                        node_idx,
+                        task_domain,
+                        budget_usd,
+                    )
+                except Exception as exc:
+                    log.debug("assign_single_node retry without exclusion failed: %s", exc)
+            except Exception as exc:
+                log.debug("assign_single_node failed for node %d: %s", node_idx, exc)
+
+        return self._resolve_fallback_model(node, current_model_id)
+
+    def _resolve_fallback_model(self, node: Any, current_model_id: str) -> str | None:
+        fallback = self._coerce_str(getattr(node, "fallback_tier", ""), "")
+        if not fallback:
+            return None
+        try:
+            from pathlib import Path
+
+            from sage.llm.model_card import CognitiveSystem
+            from sage.llm.model_registry import ModelCardCatalog
+
+            tier_to_cs = {
+                "reasoner": CognitiveSystem.S3,
+                "fast": CognitiveSystem.S2,
+                "budget": CognitiveSystem.S1,
+            }
+            catalog_path = Path(__file__).resolve().parents[2] / "config" / "cards.toml"
+            catalog = ModelCardCatalog.from_toml_file(str(catalog_path))
+            candidates = [
+                card for card in catalog.select_for_system(tier_to_cs.get(fallback, CognitiveSystem.S2))
+                if card.id != current_model_id
+            ]
+            return candidates[0].id if candidates else None
+        except Exception as exc:
+            log.debug("fallback_tier resolution failed: %s", exc)
+            return None
+
+    def _infer_task_domain(self, task: str, node: Any, ctx: Any) -> str:
+        domain = self._ctx_value(ctx, "domain", None)
+        if isinstance(domain, str) and domain:
+            return domain
+
+        required_caps = getattr(node, "required_capabilities", [])
+        if not isinstance(required_caps, (list, tuple, set)):
+            required_caps = []
+        required = {str(cap).lower() for cap in required_caps}
+        role = self._coerce_str(getattr(node, "role", ""), "").lower()
+        task_lower = task.lower()
+
+        if {"code", "python", "json"} & required or any(tok in task_lower for tok in ("code", "python", "function", "bug")):
+            return "code"
+        if {"reasoning", "evaluation", "formal"} & required or any(tok in role for tok in ("judge", "review", "reason", "formal")):
+            return "reasoning"
+        if "math" in required or "equation" in task_lower or "calculate" in task_lower:
+            return "math"
+        return "general"
+
+    def _open_gate(
+        self,
+        node_idx: int,
+        topology: Any,
+        parallel_outputs: list[str] | None,
+    ) -> AdaptationDecision | None:
+        """Open another debate round when peer outputs still materially disagree."""
+        if not self._is_debate_topology(topology) or not parallel_outputs or len(parallel_outputs) < 2:
+            return None
+
+        gate_turns = self._gate_loops.get(node_idx, 0)
+        if gate_turns >= self.MAX_GATE_TURNS:
+            return None
+
+        consistency = self.compute_consistency_score(parallel_outputs)
+        if consistency >= self.THETA_CONSISTENCY:
+            return None
+
+        try:
+            predecessors = topology.get_predecessors(node_idx)
+        except Exception:
+            predecessors = []
+        if not predecessors:
+            return None
+
+        source = predecessors[0]
+        self._gate_loops[node_idx] = gate_turns + 1
+        self._emit(
+            "OPEN_GATE",
+            {
+                "node": node_idx,
+                "turn": gate_turns + 1,
+                "consistency": consistency,
+            },
+        )
+        return AdaptationDecision(
+            action="open_gate",
+            target_node=node_idx,
+            gate_source=source,
+            gate_target=node_idx,
+            reason=(
+                f"debate disagreement (consistency={consistency:.2f}, "
+                f"turn {gate_turns + 1}/{self.MAX_GATE_TURNS})"
+            ),
+        )
 
     def compute_consistency_score(self, outputs: list[str]) -> float:
         """Mean pairwise cosine similarity of parallel outputs."""

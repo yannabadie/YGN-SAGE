@@ -34,9 +34,12 @@ def test_upgrade_model_on_critical_quality(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.1
     topo = MagicMock()
     topo.get_node.return_value = MagicMock(system=2)
+    controller._assigner.assign_single_node.return_value = "reasoner-v2"
     d = controller.evaluate_and_decide(0, "bad result", "task", topo, mock_ctx)
     assert d.action == "upgrade_model"
     assert d.target_node == 0
+    assert d.new_model_id == "reasoner-v2"
+    controller._assigner.assign_single_node.assert_called_once()
 
 
 def test_upgrade_respects_max_retries(controller, mock_ctx):
@@ -99,6 +102,70 @@ def test_max_spawns_respected(controller, mock_ctx):
     result = "Need to also check the boundary conditions."
     d = controller.evaluate_and_decide(0, result, "task", topo, mock_ctx)
     assert d.action == "continue"  # spawn blocked
+
+
+def test_empty_output_reroutes_immediately(controller, mock_ctx):
+    d = controller.evaluate_and_decide(0, "", "task", MagicMock(), mock_ctx)
+    assert d.action == "reroute_topology"
+    assert "empty" in d.reason
+
+
+def test_error_output_reroutes_immediately(controller, mock_ctx):
+    d = controller.evaluate_and_decide(0, "ERROR: provider timeout", "task", MagicMock(), mock_ctx)
+    assert d.action == "reroute_topology"
+    assert "error-like" in d.reason
+
+
+def test_heuristic_quality_used_when_estimator_abstains(mock_ctx):
+    qe = MagicMock()
+    qe.estimate.return_value = None
+    ctrl = TopologyController(quality_estimator=qe, prm=None)
+
+    quality = ctrl._compute_quality(
+        0,
+        "1. Inspect the input.\n2. Return a valid Python function with tests.",
+        "Write a Python function",
+        mock_ctx,
+    )
+
+    assert quality > 0.3  # short output scores low in the new weighted heuristic
+    assert ctrl._abstain_count == 1
+
+
+def test_debate_disagreement_opens_gate(controller, mock_ctx):
+    controller._qe.estimate.return_value = 0.5
+    topo = MagicMock()
+    topo.template_type = "debate"
+    topo.get_predecessors.return_value = [0]
+    with patch('sage.topology_controller.TopologyController.compute_consistency_score', return_value=0.2):
+        d = controller.evaluate_and_decide(
+            1,
+            "Counterargument with unresolved disagreement.",
+            "task",
+            topo,
+            mock_ctx,
+            parallel_outputs=["Answer A", "Answer B"],
+        )
+    assert d.action == "open_gate"
+    assert d.gate_source == 0
+    assert d.gate_target == 1
+
+
+def test_debate_agreement_stops_additional_round(controller, mock_ctx):
+    controller._qe.estimate.return_value = 0.5
+    topo = MagicMock()
+    topo.template_type = "debate"
+    topo.get_predecessors.return_value = [0]
+    with patch('sage.topology_controller.TopologyController.compute_consistency_score', return_value=0.9):
+        d = controller.evaluate_and_decide(
+            1,
+            "Matching argument with peer output.",
+            "task",
+            topo,
+            mock_ctx,
+            parallel_outputs=["Answer A", "Answer A"],
+        )
+    assert d.action == "continue"
 
 
 def test_quality_blends_prm(mock_ctx):
