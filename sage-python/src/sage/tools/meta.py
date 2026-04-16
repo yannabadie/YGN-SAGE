@@ -11,7 +11,8 @@ import json
 import sys
 import os
 import logging
-import re
+import shlex
+from typing import Callable
 
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
@@ -22,6 +23,158 @@ logger = logging.getLogger(__name__)
 
 TOOLS_WORKSPACE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_tools")
 os.makedirs(TOOLS_WORKSPACE, exist_ok=True)
+
+_READ_ONLY_COMMANDS: tuple[tuple[str, ...], ...] = (
+    ("git", "diff"),
+    ("git", "log"),
+    ("git", "show"),
+    ("git", "status"),
+    ("cat",),
+    ("date",),
+    ("df",),
+    ("du",),
+    ("echo",),
+    ("file",),
+    ("find",),
+    ("grep",),
+    ("head",),
+    ("ls",),
+    ("printf",),
+    ("pwd",),
+    ("rg",),
+    ("sort",),
+    ("stat",),
+    ("tail",),
+    ("tree",),
+    ("uniq",),
+    ("wc",),
+    ("whoami",),
+)
+
+_EXACT_SHELL_OPERATOR_TOKENS = {
+    ";", ";;", "&", "&&", "|", "||", ">", ">>", "<", "<<", "<<<",
+}
+_CONTROL_CHARS = tuple(chr(i) for i in range(32) if chr(i) not in ("\t",))
+
+
+def _format_allowed_commands() -> str:
+    return ", ".join(" ".join(parts) for parts in _READ_ONLY_COMMANDS)
+
+
+def _reject_control_chars(argv: list[str]) -> str | None:
+    for arg in argv:
+        if "\x00" in arg or any(ch in arg for ch in _CONTROL_CHARS):
+            return "Blocked: Control characters are not allowed in bash tool commands."
+    return None
+
+
+def _reject_shell_operators(argv: list[str]) -> str | None:
+    for arg in argv:
+        if arg in _EXACT_SHELL_OPERATOR_TOKENS:
+            return (
+                "Blocked: Shell operators are not supported. "
+                "Pass a single command with arguments only."
+            )
+    return None
+
+
+def _validate_find_args(args: list[str]) -> str | None:
+    blocked = {
+        "-delete", "-exec", "-execdir", "-ok", "-okdir",
+        "-fprint", "-fprint0", "-fprintf", "-fls",
+    }
+    for arg in args:
+        if arg in blocked:
+            return f"Blocked: find argument '{arg}' is not allowed."
+    return None
+
+
+def _validate_rg_args(args: list[str]) -> str | None:
+    for arg in args:
+        if arg == "--pre" or arg.startswith("--pre="):
+            return "Blocked: rg --pre is not allowed in bash tools."
+        if arg == "--pre-glob" or arg.startswith("--pre-glob="):
+            return "Blocked: rg --pre-glob is not allowed in bash tools."
+    return None
+
+
+def _validate_git_args(args: list[str]) -> str | None:
+    for arg in args:
+        if arg == "--output" or arg.startswith("--output="):
+            return "Blocked: git --output is not allowed in bash tools."
+        if arg == "--ext-diff":
+            return "Blocked: git --ext-diff is not allowed in bash tools."
+        if arg == "--textconv":
+            return "Blocked: git --textconv is not allowed in bash tools."
+    return None
+
+
+def _validator_for(prefix: tuple[str, ...]) -> Callable[[list[str]], str | None]:
+    if prefix == ("find",):
+        return _validate_find_args
+    if prefix == ("rg",):
+        return _validate_rg_args
+    if prefix[0] == "git":
+        return _validate_git_args
+    return lambda _args: None
+
+
+def _parse_bash_tool_command(script: str) -> tuple[list[str] | None, str | None]:
+    script_stripped = script.strip()
+    if not script_stripped:
+        return None, "Blocked: Empty script."
+    if "\n" in script_stripped or "\r" in script_stripped:
+        return None, "Blocked: Multi-line bash tool scripts are not allowed."
+
+    try:
+        argv = shlex.split(script_stripped, posix=True)
+    except ValueError as exc:
+        return None, f"Blocked: Invalid shell quoting: {exc}"
+
+    if not argv:
+        return None, "Blocked: Empty script."
+
+    control_error = _reject_control_chars(argv)
+    if control_error:
+        return None, control_error
+
+    operator_error = _reject_shell_operators(argv)
+    if operator_error:
+        return None, operator_error
+
+    matched_prefix: tuple[str, ...] | None = None
+    for prefix in sorted(_READ_ONLY_COMMANDS, key=len, reverse=True):
+        if argv[: len(prefix)] == list(prefix):
+            matched_prefix = prefix
+            break
+
+    if matched_prefix is None:
+        return (
+            None,
+            "Blocked: Command not in allowlist. "
+            f"Permitted commands: {_format_allowed_commands()}",
+        )
+
+    validator = _validator_for(matched_prefix)
+    arg_error = validator(argv[len(matched_prefix):])
+    if arg_error:
+        return None, arg_error
+
+    return argv, None
+
+
+def _build_isolated_exec_wrapper(argv: list[str]) -> str:
+    argv_literal = json.dumps(argv)
+    return (
+        "import json\n"
+        "import subprocess\n"
+        "import sys\n"
+        f"argv = json.loads({argv_literal!r})\n"
+        "proc = subprocess.run(argv, capture_output=True, text=True, shell=False)\n"
+        "sys.stdout.write(proc.stdout)\n"
+        "sys.stderr.write(proc.stderr)\n"
+        "raise SystemExit(proc.returncode)\n"
+    )
 
 @Tool.define(
     name="create_python_tool",
@@ -132,58 +285,43 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # 2. Security gate: allowlist of safe command prefixes.
-    #    A blocklist is trivially bypassable (base64, variable expansion, etc.).
-    #    Only permit read-only inspection commands; reject everything else.
-    import re
-    import shlex
-
-    _ALLOWED_PREFIXES = (
-        "cat ", "head ", "tail ", "less ", "wc ", "grep ", "rg ",
-        "find ", "ls ", "tree ", "stat ", "file ", "du ", "df ",
-        "echo ", "printf ", "date ", "env ", "pwd", "whoami",
-        "python ", "python3 ", "uv run ",
-        "cargo test", "cargo check", "cargo clippy",
-        "pytest ", "git log", "git diff", "git status", "git show",
-    )
-    script_stripped = script.strip()
-    if not script_stripped:
-        return "Blocked: Empty script."
-    first_line = script_stripped.split("\n")[0].strip()
-    if not any(first_line.startswith(p) for p in _ALLOWED_PREFIXES):
-        return (
-            f"Blocked: Command not in allowlist. "
-            f"Permitted prefixes: {', '.join(sorted(set(p.strip() for p in _ALLOWED_PREFIXES)))}"
-        )
-    # Reject shell metacharacters that enable chaining/escaping
-    _DANGEROUS_CHARS = re.compile(r"[;`$\(\){}<>]|\|(?!\s*grep\b|\s*rg\b|\s*wc\b|\s*head\b|\s*tail\b|\s*sort\b)")
-    if _DANGEROUS_CHARS.search(script_stripped):
-        return "Blocked: Script contains shell metacharacters (pipes to non-grep commands, subshells, etc.)."
+    # 2. Security gate: parse to argv and validate against an explicit read-only allowlist.
+    argv, validation_error = _parse_bash_tool_command(script)
+    if validation_error:
+        return validation_error
+    assert argv is not None
 
     # 3. Build sandbox-isolated handler closure
-    saved_script = script  # capture for closure
+    saved_argv = list(argv)
 
     async def _bash_handler(**kwargs):
         try:
             # Use Rust sandbox executor if available, subprocess fallback with strict limits
             from sage.sandbox.isolated_executor import execute_isolated
-            stdout, stderr, exit_code = execute_isolated(saved_script, timeout=30)
+            wrapper = _build_isolated_exec_wrapper(saved_argv)
+            stdout, stderr, exit_code = execute_isolated(wrapper, timeout=30)
             if exit_code == 0:
                 return stdout.strip()
             else:
                 return f"Error (exit {exit_code}): {stderr.strip()}"
         except ImportError:
-            # Fallback: subprocess with NO shell (safer than /bin/bash -c)
-            import subprocess
+            # Fallback: direct argv execution with no shell.
             try:
-                proc = subprocess.run(
-                    [sys.executable, "-c", saved_script],
-                    capture_output=True, text=True, timeout=30,
+                proc = await asyncio.create_subprocess_exec(
+                    *saved_argv,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30)
+                stdout_text = stdout.decode("utf-8", errors="replace").strip()
+                stderr_text = stderr.decode("utf-8", errors="replace").strip()
                 if proc.returncode == 0:
-                    return proc.stdout.strip()
-                return f"Error (exit {proc.returncode}): {proc.stderr.strip()}"
-            except subprocess.TimeoutExpired:
+                    return stdout_text
+                return f"Error (exit {proc.returncode}): {stderr_text}"
+            except asyncio.TimeoutError:
+                if proc.returncode is None:
+                    proc.kill()
+                    await proc.communicate()
                 return "Error: Script execution timed out after 30 seconds."
         except Exception as e:
             return f"Error: {type(e).__name__}: {e}"

@@ -135,7 +135,7 @@ class TestBashToolCreation:
 
     @pytest.mark.skipif(
         platform.system() == "Windows",
-        reason="Bash tool handler uses /bin/bash which is not available on Windows",
+        reason="Read-only command wrappers are only covered here for POSIX-style environments",
     )
     def test_create_and_run_echo(self):
         """Create a bash echo tool and verify output."""
@@ -180,6 +180,40 @@ class TestBashToolCreation:
         )
         assert "Success" in result
         assert registry.get("date_tool") is not None
+
+    def test_reject_multiline_script(self):
+        """Only single-command wrappers are allowed."""
+        registry = ToolRegistry()
+        result = _create_bash(
+            "multiline", "Bad tool", "echo hi\necho bye", registry,
+        )
+        assert "Blocked" in result
+        assert registry.get("multiline") is None
+
+    def test_reject_python_exec(self):
+        """Interpreter-style commands are excluded from the allowlist."""
+        registry = ToolRegistry()
+        result = _create_bash(
+            "python_tool", "Bad tool", 'python -c "print(1)"', registry,
+        )
+        assert "Blocked" in result
+        assert registry.get("python_tool") is None
+
+    def test_reject_find_exec(self):
+        """find -exec would escape the read-only policy."""
+        registry = ToolRegistry()
+        result = _create_bash(
+            "find_exec", "Bad tool", r"find . -exec cat {} \;", registry,
+        )
+        assert "Blocked" in result
+
+    def test_reject_git_diff_output(self):
+        """git diff --output writes to disk and must stay blocked."""
+        registry = ToolRegistry()
+        result = _create_bash(
+            "git_output", "Bad tool", "git diff --output=patch.txt", registry,
+        )
+        assert "Blocked" in result
 
     def test_no_registry_returns_error(self):
         """Calling without registry returns an error string."""

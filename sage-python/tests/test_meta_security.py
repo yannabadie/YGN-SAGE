@@ -90,6 +90,62 @@ class TestMetaToolsSandboxed:
         assert "Blocked" in result
         assert registry.get("evil_bash") is None
 
+    def test_bash_tool_blocks_multiline_script(self):
+        """Bash tools must be a single command, not a shell script."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="multiline",
+            description="Dangerous",
+            script="echo hi\necho bye",
+            registry=registry,
+        ))
+        assert "Blocked" in result
+        assert registry.get("multiline") is None
+
+    def test_bash_tool_blocks_python_interpreters(self):
+        """Allowlist excludes interpreter-style commands that can execute arbitrary code."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="python_tool",
+            description="Dangerous",
+            script='python -c "print(1)"',
+            registry=registry,
+        ))
+        assert "Blocked" in result
+        assert registry.get("python_tool") is None
+
+    def test_bash_tool_blocks_find_exec(self):
+        """find -exec defeats the read-only policy and must stay blocked."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="find_exec",
+            description="Dangerous",
+            script='find . -exec cat {} \\;',
+            registry=registry,
+        ))
+        assert "Blocked" in result
+        assert registry.get("find_exec") is None
+
+    def test_bash_tool_blocks_rg_preprocessor(self):
+        """rg --pre can spawn external commands and must stay blocked."""
+        from sage.tools.meta import create_bash_tool
+        from sage.tools.registry import ToolRegistry
+        registry = ToolRegistry()
+        result = asyncio.run(create_bash_tool._handler(
+            name="rg_pre",
+            description="Dangerous",
+            script='rg --pre python needle .',
+            registry=registry,
+        ))
+        assert "Blocked" in result
+        assert registry.get("rg_pre") is None
+
     def test_tools_registered_in_boot(self):
         """Verify create_python_tool and create_bash_tool ARE registered (sandboxed — SEC-01/02 fixed)."""
         from sage.boot import boot_agent_system
