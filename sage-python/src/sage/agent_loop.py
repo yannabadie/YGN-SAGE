@@ -153,6 +153,7 @@ class AgentLoop:
         self._drift_monitor = DriftMonitor()
         self._drift_events: list[AgentEvent] = []
         self._drift_check_interval = DRIFT_CHECK_INTERVAL  # Analyze every N events
+        self._consolidation_steps_total = 0  # Persist maintenance cadence across runs
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = AgentEvent(
@@ -190,6 +191,25 @@ class AgentLoop:
 
     def _default_event_handler(self, event: AgentEvent) -> None:
         log.info(f"[{event.type}] step={event.step} model={event.model}")
+
+    async def _maybe_run_consolidation(self) -> None:
+        """Run bounded inter-tier consolidation on cumulative step intervals."""
+        self._consolidation_steps_total += 1
+
+        if (self.consolidator is None
+                or self._consolidation_steps_total % CONSOLIDATION_INTERVAL_STEPS != 0):
+            return
+
+        try:
+            consolidation_result = await self.consolidator.consolidate()
+            if getattr(consolidation_result, "processed", 0) > 0:
+                log.debug(
+                    "AgentLoop consolidation: %d episodes -> %d entities",
+                    consolidation_result.processed,
+                    getattr(consolidation_result, "entities_added", 0),
+                )
+        except Exception as exc:
+            log.debug("AgentLoop consolidation failed: %s", exc)
 
     def _schedule_from_topology(self) -> list[dict]:
         """Use Rust TopologyExecutor to get node execution order."""
@@ -294,10 +314,12 @@ class AgentLoop:
             if t_result.loop_action == "break":
                 # Topology result used — skip to final LEARN
                 result_text = t_result.content
+                await self._maybe_run_consolidation()
                 break
 
             if t_result.loop_action == "continue":
                 # S3 retry or S3->S2 degradation — re-enter loop
+                await self._maybe_run_consolidation()
                 continue
 
             # === ACT ===
@@ -308,14 +330,17 @@ class AgentLoop:
 
             if a_result.loop_action == "break":
                 result_text = a_result.result_text
+                await self._maybe_run_consolidation()
                 break
 
             if a_result.loop_action == "continue":
                 # AVR retry or S2->S3 escalation — re-enter loop
+                await self._maybe_run_consolidation()
                 continue
 
             # === LEARN (in-loop) ===
             await learn_step(self)
+            await self._maybe_run_consolidation()
 
         # === LEARN (final) ===
         return await learn_final(task, result_text, self)

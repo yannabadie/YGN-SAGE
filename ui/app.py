@@ -111,6 +111,7 @@ class DashboardState:
         self.task_queue: asyncio.Queue = asyncio.Queue(maxsize=_TASK_QUEUE_MAX)
         self.task_history: dict[str, dict] = {}  # task_id -> {status, task, result, ...}
         self._queue_worker: asyncio.Task | None = None
+        self._background_tasks: set[asyncio.Task] = set()
         # Concurrency guard: system.run() mutates shared state (_last_decision,
         # _current_topology, step_count). Serialize all run() calls.
         self.run_lock: asyncio.Lock = asyncio.Lock()
@@ -317,6 +318,31 @@ def _ensure_queue_worker() -> None:
         _state._queue_worker = asyncio.create_task(_process_task_queue())
 
 
+def _track_background_task(task: asyncio.Task) -> asyncio.Task:
+    """Track detached tasks so reset can cancel them deterministically."""
+    _state._background_tasks.add(task)
+    task.add_done_callback(_state._background_tasks.discard)
+    return task
+
+
+async def _cancel_background_tasks(timeout: float = 1.0) -> None:
+    """Cancel detached background tasks and wait for them to exit."""
+    tasks = [task for task in list(_state._background_tasks) if not task.done()]
+    if not tasks:
+        return
+
+    for task in tasks:
+        task.cancel()
+
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(*tasks, return_exceptions=True),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Timed out waiting for %d dashboard background task(s)", len(tasks))
+
+
 async def _process_task_queue() -> None:
     """Background worker: pull tasks from queue and run them sequentially."""
     while True:
@@ -410,7 +436,7 @@ async def stop_agent():
 
 @app.post("/api/reset", dependencies=[Depends(verify_token)])
 async def reset_state():
-    """Clear event bus buffer, drain task queue, and reset system reference."""
+    """Clear dashboard state after in-flight work has been stopped/serialized."""
     # Cancel queue worker (drains queue internally)
     if _state._queue_worker and not _state._queue_worker.done():
         _state._queue_worker.cancel()
@@ -421,18 +447,23 @@ async def reset_state():
     _state._queue_worker = None
     _state.agent_task = None
 
-    # Drain any remaining items from queue
-    while not _state.task_queue.empty():
-        try:
-            _state.task_queue.get_nowait()
-            _state.task_queue.task_done()
-        except asyncio.QueueEmpty:
-            break
+    # Detached benchmark tasks are not tied to the queue worker.
+    await _cancel_background_tasks()
 
-    _state.task_history.clear()
-    _state.event_bus.clear()
+    # Wait for any in-flight run() to finish or unwind cancellation before
+    # clearing the shared system/event bus references.
+    async with _state.run_lock:
+        while not _state.task_queue.empty():
+            try:
+                _state.task_queue.get_nowait()
+                _state.task_queue.task_done()
+            except asyncio.QueueEmpty:
+                break
 
-    _state.system = None
+        _state.task_history.clear()
+        _state.event_bus.clear()
+        _state.system = None
+
     return JSONResponse({"status": "reset"})
 
 
@@ -501,7 +532,7 @@ async def run_benchmark(request: Request):
             logger.exception("Benchmark failed")
             _state.event_bus.emit(AgentEvent(type="ERROR", step=0, timestamp=time.time(), meta={"error": str(e)}))
 
-    asyncio.create_task(_run_bench())
+    _track_background_task(asyncio.create_task(_run_bench()))
     return JSONResponse({"status": "started", "type": bench_type})
 
 

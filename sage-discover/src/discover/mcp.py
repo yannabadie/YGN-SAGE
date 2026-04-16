@@ -18,6 +18,38 @@ except ImportError:
 _components: dict[str, Any] | None = None
 
 
+def _serialize_candidate(candidate: Any) -> dict[str, Any]:
+    """Normalize a discovered paper candidate for MCP responses."""
+    return {
+        "paper_id": candidate.paper_id,
+        "title": candidate.title,
+        "authors": candidate.authors,
+        "abstract": candidate.abstract[:300],
+        "source": candidate.source,
+        "domain": candidate.domain,
+        "published": candidate.published.isoformat(),
+        "citation_count": candidate.citation_count,
+    }
+
+
+def _discover_error(
+    *,
+    code: str,
+    message: str,
+    papers: list[dict[str, Any]],
+    persisted_paper_ids: list[str],
+) -> dict[str, Any]:
+    """Return a structured discover failure payload."""
+    return {
+        "ok": False,
+        "error": {"code": code, "message": message},
+        "papers": papers,
+        "persisted_paper_ids": persisted_paper_ids,
+        "discovered_count": len(papers),
+        "persisted_count": len(persisted_paper_ids),
+    }
+
+
 def _get_pipeline_components() -> dict[str, Any]:
     """Lazy-initialize pipeline components."""
     global _components
@@ -49,7 +81,7 @@ async def tool_discover_papers(
     domains: list[str] | None = None,
     since: str | None = None,
     max_results: int = 20,
-) -> list[dict]:
+) -> dict[str, Any]:
     """Discover papers from arXiv + Semantic Scholar + HuggingFace."""
     _discover = discover
     if _discover is None:
@@ -57,63 +89,99 @@ async def tool_discover_papers(
 
     since_date = date.fromisoformat(since) if since else date.today() - timedelta(days=7)
     candidates = await _discover(since=since_date, query=query, domains=domains)
+    selected = candidates[:max_results]
+    papers = [_serialize_candidate(candidate) for candidate in selected]
+    persisted_paper_ids: list[str] = []
 
-    # Persist discovered papers to local store so curate/verify can find them.
-    # Without this, discover returns IDs that curate can't resolve.
     try:
         components = _get_pipeline_components()
-        store = components.get("store")
-        embedder = components.get("embedder")
-        if store is not None and embedder is not None:
-            for c in candidates[:max_results]:
-                try:
-                    dense, sparse = embedder.embed_paper(c.title, c.abstract)
-                    store.upsert_paper(
-                        c.paper_id,
-                        dense,
-                        sparse,
-                        {
-                            "title": c.title,
-                            "authors": c.authors,
-                            "abstract": c.abstract,
-                            "source": c.source,
-                            "domain": c.domain,
-                            "published": c.published.isoformat(),
-                            "year": getattr(c.published, "year", None),
-                            "citation_count": c.citation_count,
-                            "relevance_score": 0.0,
-                        },
-                    )
-                except Exception as exc:
-                    logger.warning("Failed to persist discovered paper %s: %s", c.paper_id, exc)
     except Exception as exc:
-        logger.warning("Failed to initialize discovery persistence: %s", exc)
+        logger.exception("Failed to initialize discovery persistence")
+        return _discover_error(
+            code="persistence_init_failed",
+            message=str(exc),
+            papers=papers,
+            persisted_paper_ids=persisted_paper_ids,
+        )
 
-    return [
-        {
-            "paper_id": c.paper_id,
-            "title": c.title,
-            "authors": c.authors,
-            "abstract": c.abstract[:300],
-            "source": c.source,
-            "domain": c.domain,
-            "published": c.published.isoformat(),
-            "citation_count": c.citation_count,
-        }
-        for c in candidates[:max_results]
-    ]
+    store = components.get("store")
+    embedder = components.get("embedder")
+    if store is None or embedder is None:
+        return _discover_error(
+            code="persistence_unavailable",
+            message="Knowledge store or embedder unavailable; discovered papers were not persisted.",
+            papers=papers,
+            persisted_paper_ids=persisted_paper_ids,
+        )
+
+    for candidate in selected:
+        try:
+            dense, sparse = embedder.embed_paper(candidate.title, candidate.abstract)
+            store.upsert_paper(
+                candidate.paper_id,
+                dense,
+                sparse,
+                {
+                    "title": candidate.title,
+                    "authors": candidate.authors,
+                    "abstract": candidate.abstract,
+                    "source": candidate.source,
+                    "domain": candidate.domain,
+                    "published": candidate.published.isoformat(),
+                    "year": getattr(candidate.published, "year", None),
+                    "citation_count": candidate.citation_count,
+                    "relevance_score": 0.0,
+                },
+            )
+            persisted_paper_ids.append(candidate.paper_id)
+        except Exception as exc:
+            logger.exception("Failed to persist discovered paper %s", candidate.paper_id)
+            return _discover_error(
+                code="persistence_failed",
+                message=f"Failed to persist paper {candidate.paper_id}: {exc}",
+                papers=papers,
+                persisted_paper_ids=persisted_paper_ids,
+            )
+
+    return {
+        "ok": True,
+        "papers": papers,
+        "persisted_paper_ids": persisted_paper_ids,
+        "discovered_count": len(papers),
+        "persisted_count": len(persisted_paper_ids),
+    }
 
 
-async def tool_curate_papers(paper_ids: list[str]) -> list[dict]:
-    """Score and filter papers using adaptive curation."""
+async def tool_curate_papers(paper_ids: list[str]) -> dict[str, Any]:
+    """Score and filter papers using adaptive curation with explicit missing IDs."""
     components = _get_pipeline_components()
-    store = components["store"]
-    papers = []
+    store = components.get("store")
+    if store is None:
+        return {
+            "ok": False,
+            "error": {"code": "store_unavailable", "message": "Knowledge store unavailable."},
+            "requested_paper_ids": paper_ids,
+            "found": [],
+            "missing_paper_ids": paper_ids,
+            "found_count": 0,
+            "missing_count": len(paper_ids),
+        }
+    found = []
+    missing = []
     for pid in paper_ids:
         p = store.get_paper(pid)
         if p:
-            papers.append({"paper_id": pid, "title": p.get("title", ""), "relevance_score": p.get("relevance_score", 0)})
-    return papers
+            found.append({"paper_id": pid, "title": p.get("title", ""), "relevance_score": p.get("relevance_score", 0)})
+        else:
+            missing.append(pid)
+    return {
+        "ok": len(missing) == 0,
+        "requested_paper_ids": paper_ids,
+        "found": found,
+        "missing_paper_ids": missing,
+        "found_count": len(found),
+        "missing_count": len(missing),
+    }
 
 
 async def tool_query_knowledge(question: str, top_k: int = 10, domain: str | None = None) -> str:

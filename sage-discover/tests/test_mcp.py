@@ -61,8 +61,9 @@ async def test_tool_discover_papers(mock_components):
     mock_discover = AsyncMock(return_value=[_candidate()])
     with patch("discover.mcp.discover", mock_discover):
         result = await tool_discover_papers(query="multi-agent RL", domains=None, since=None, max_results=10)
-    assert isinstance(result, list)
-    assert result[0]["paper_id"] == "p1"
+    assert result["ok"] is True
+    assert result["papers"][0]["paper_id"] == "p1"
+    assert result["persisted_paper_ids"] == ["p1"]
     mock_embedder.embed_paper.assert_called_once_with("Test Paper", "Test abstract")
     mock_store.upsert_paper.assert_called_once()
 
@@ -82,9 +83,58 @@ async def test_discover_then_curate_uses_persisted_store(mock_components):
 
     with patch("discover.mcp.discover", AsyncMock(return_value=[_candidate()])):
         discovered = await tool_discover_papers(query="multi-agent RL", domains=None, since=None, max_results=10)
-    curated = await tool_curate_papers([discovered[0]["paper_id"]])
+    curated = await tool_curate_papers(discovered["persisted_paper_ids"])
 
-    assert curated == [{"paper_id": "p1", "title": "Test Paper", "relevance_score": 0.0}]
+    assert curated == {
+        "ok": True,
+        "requested_paper_ids": ["p1"],
+        "found": [{"paper_id": "p1", "title": "Test Paper", "relevance_score": 0.0}],
+        "missing_paper_ids": [],
+        "found_count": 1,
+        "missing_count": 0,
+    }
+
+
+@pytest.mark.asyncio
+@patch("discover.mcp._get_pipeline_components")
+async def test_tool_discover_papers_surfaces_persistence_failures(mock_components):
+    mock_store = MagicMock()
+    mock_store.upsert_paper.side_effect = RuntimeError("disk full")
+    mock_embedder = MagicMock()
+    mock_embedder.embed_paper.return_value = ([0.1, 0.2], {"indices": [1], "values": [0.3]})
+    mock_components.return_value = {
+        "store": mock_store,
+        "embedder": mock_embedder,
+        "llm": None,
+        "rag": MagicMock(),
+    }
+
+    with patch("discover.mcp.discover", AsyncMock(return_value=[_candidate()])):
+        result = await tool_discover_papers(query="multi-agent RL", domains=None, since=None, max_results=10)
+
+    assert result["ok"] is False
+    assert result["error"]["code"] == "persistence_failed"
+    assert result["persisted_paper_ids"] == []
+    assert result["papers"][0]["paper_id"] == "p1"
+
+
+@pytest.mark.asyncio
+@patch("discover.mcp._get_pipeline_components")
+async def test_tool_curate_papers_reports_missing_ids(mock_components):
+    fake_store = _FakeStore()
+    fake_store.papers["p1"] = {"title": "Stored Paper", "relevance_score": 0.5}
+    mock_components.return_value = {"store": fake_store}
+
+    result = await tool_curate_papers(["p1", "p2"])
+
+    assert result == {
+        "ok": False,
+        "requested_paper_ids": ["p1", "p2"],
+        "found": [{"paper_id": "p1", "title": "Stored Paper", "relevance_score": 0.5}],
+        "missing_paper_ids": ["p2"],
+        "found_count": 1,
+        "missing_count": 1,
+    }
 
 
 @pytest.mark.asyncio
