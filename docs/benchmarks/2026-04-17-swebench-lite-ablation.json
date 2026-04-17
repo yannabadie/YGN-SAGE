@@ -1,0 +1,59 @@
+{
+  "benchmark": "swebench_lite",
+  "date": "2026-04-17",
+  "generated_at": "2026-04-17T11:13:06.780959+00:00",
+  "tier": "reasoner",
+  "limit": 5,
+  "configs_run": [
+    "full",
+    "no_sage_recurse",
+    "no_toolforge",
+    "bare"
+  ],
+  "results": [
+    {
+      "config": "full",
+      "description": "Everything on (topology, ToolForge, sage_recurse).",
+      "env": {},
+      "exit_code": 0,
+      "wall_time_s": 277.9,
+      "predictions_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-predictions-full.jsonl",
+      "report_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-full.json"
+    },
+    {
+      "config": "no_sage_recurse",
+      "description": "sage_recurse tool unregistered, rest on.",
+      "env": {
+        "SAGE_ABLATION_NO_RECURSE": "1"
+      },
+      "exit_code": 0,
+      "wall_time_s": 322.9,
+      "predictions_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-predictions-no_sage_recurse.jsonl",
+      "report_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-no_sage_recurse.json"
+    },
+    {
+      "config": "no_toolforge",
+      "description": "ToolForge synthesis disabled, rest on.",
+      "env": {
+        "SAGE_ABLATION_NO_TOOLFORGE": "1"
+      },
+      "exit_code": 0,
+      "wall_time_s": 317.9,
+      "predictions_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-predictions-no_toolforge.jsonl",
+      "report_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-no_toolforge.json"
+    },
+    {
+      "config": "bare",
+      "description": "Topology + ToolForge + sage_recurse all off (LLM + basic tools).",
+      "env": {
+        "SAGE_ABLATION_NO_RECURSE": "1",
+        "SAGE_ABLATION_NO_TOOLFORGE": "1",
+        "SAGE_ABLATION_NO_TOPOLOGY": "1"
+      },
+      "exit_code": 0,
+      "wall_time_s": 135.0,
+      "predictions_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-predictions-bare.jsonl",
+      "report_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-bare.json"
+    }
+  ]
+}

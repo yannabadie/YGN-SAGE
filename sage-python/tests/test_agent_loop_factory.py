@@ -171,3 +171,30 @@ def test_max_steps_bounded():
         system_level=1,
     )
     assert loop.config.max_steps <= 30
+
+
+def test_max_steps_scales_with_system_level():
+    """S3 topology nodes need a bigger step budget than S1/S2.
+
+    The flat `max_steps=5` cap produced empty patches on SWE-bench Lite
+    (2026-04-17 smoke): planner / coder / synthesizer burned their 5
+    steps on execute_bash exploration before reaching a final answer.
+    See docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
+    """
+    def _mk(level):
+        return create_node_agent_loop(
+            node_role="actor",
+            node_name="n",
+            llm_provider=MagicMock(),
+            llm_config=MagicMock(),
+            tool_registry=_make_tool_registry(),
+            system_prompt="prompt",
+            system_level=level,
+        )
+
+    assert _mk(1).config.max_steps == 5
+    assert _mk(2).config.max_steps == 10
+    assert _mk(3).config.max_steps == 20
+    # Monotonic with respect to level.
+    s1, s2, s3 = _mk(1).config.max_steps, _mk(2).config.max_steps, _mk(3).config.max_steps
+    assert s1 < s2 < s3

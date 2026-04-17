@@ -67,11 +67,25 @@ def create_node_agent_loop(
     else:
         validation = 1
 
+    # Per-node step budget: scales with system level so complex S3 tasks
+    # (SWE-bench, agentic debugging) get enough room to explore + patch.
+    # The old flat cap of 5 produced empty results on SWE-bench Lite smoke
+    # (2026-04-17), because each node burned its budget on execute_bash
+    # exploration before ever emitting a final answer — learn.py's
+    # "Agent finished at step N" fallback then masked the failure
+    # downstream. See docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
+    if system_level >= 3:
+        node_max_steps = 20
+    elif system_level >= 2:
+        node_max_steps = 10
+    else:
+        node_max_steps = 5
+
     config = AgentConfig(
         name=node_name,
         llm=llm_config,
         system_prompt=system_prompt,
-        max_steps=5,  # topology nodes: 1-3 steps typical, 5 max to prevent timeouts
+        max_steps=node_max_steps,
         validation_level=validation,
         tools=tools,
     )
