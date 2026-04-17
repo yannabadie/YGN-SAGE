@@ -81,13 +81,9 @@ class ExoCortex:
     async def create_store(self, display_name: str) -> str:
         """Create a new FileSearchStore. Returns the store resource name."""
         import asyncio
-        from google import genai
 
         def _create():
-            client = genai.Client(api_key=self._api_key)
-            from sage.llm._ssl import patch_genai_ssl
-            patch_genai_ssl(client)
-            return client.file_search_stores.create(
+            return self._get_client().file_search_stores.create(
                 config={"display_name": display_name}
             )
 
@@ -122,13 +118,14 @@ class ExoCortex:
         if not self.store_name:
             raise RuntimeError("No store configured. Call create_store() first.")
         import asyncio
-        from google import genai
 
         def _upload():
             import time
-            client = genai.Client(api_key=self._api_key)
-            from sage.llm._ssl import patch_genai_ssl
-            patch_genai_ssl(client)
+            # Reuse the cached client (was creating a new genai.Client +
+            # re-applying SSL patching on EVERY upload, costing ~200-500ms
+            # of auth handshake per call — observed 2026-04-17 nightly
+            # rattrapage with 200+ uploads).
+            client = self._get_client()
             operation = client.file_search_stores.upload_to_file_search_store(
                 file=file_path,
                 file_search_store_name=self.store_name,
@@ -152,15 +149,11 @@ class ExoCortex:
         if not self.store_name:
             return
         import asyncio
-        from google import genai
 
         store_name = self.store_name
 
         def _delete():
-            client = genai.Client(api_key=self._api_key)
-            from sage.llm._ssl import patch_genai_ssl
-            patch_genai_ssl(client)
-            client.file_search_stores.delete(name=store_name)
+            self._get_client().file_search_stores.delete(name=store_name)
 
         await asyncio.to_thread(_delete)
         log.info("Deleted ExoCortex store: %s", self.store_name)
