@@ -436,7 +436,9 @@ class CognitiveOrchestrationPipeline:
         # planner→coder→synthesizer pipeline beats single-agent by 12-23%.
         # The old bypass (SAGE_BYPASS_S2_SEQUENTIAL=1) is available for A/B testing.
         if ctx.system == 2 and hint == "sequential":
-            import os
+            # `os` is imported at module level; a redundant local `import os`
+            # here would shadow it and break the earlier SAGE_ABLATION_NO_TOPOLOGY
+            # check (UnboundLocalError when Python treats `os` as local).
             if os.environ.get("SAGE_BYPASS_S2_SEQUENTIAL") == "1":
                 ctx.topology = None
                 log.info("Stage 2: BYPASS topology (SAGE_BYPASS_S2_SEQUENTIAL=1)")
