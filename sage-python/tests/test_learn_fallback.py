@@ -15,9 +15,22 @@ import pytest
 from sage.phases.learn import learn_final
 
 
+def _mk_event(etype, content):
+    """Mirror the real WorkingMemory event shape: object with attrs, not a tuple."""
+    return SimpleNamespace(event_type=etype, content=content)
+
+
 def _mk_loop(events, step_count=5, result_text=""):
-    """Build a minimal loop stub with controllable working_memory events."""
-    wm = SimpleNamespace(_events=events, event_count=lambda: len(events))
+    """Build a minimal loop stub with controllable working_memory events.
+
+    `events` may be a list of tuples (legacy test signature) OR a list of
+    already-built SimpleNamespaces. Tuples are auto-promoted.
+    """
+    normalized = [
+        e if hasattr(e, "event_type") else _mk_event(e[0], e[1])
+        for e in events
+    ]
+    wm = SimpleNamespace(_events=normalized, event_count=lambda: len(normalized))
     loop = SimpleNamespace(
         step_count=step_count,
         total_cost_usd=0.0,

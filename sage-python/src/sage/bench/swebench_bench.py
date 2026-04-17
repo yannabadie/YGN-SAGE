@@ -456,8 +456,14 @@ class SWEBenchBench:
                 error = f"generation_timeout_{self.timeout_per_task:.0f}s"
                 log.warning("[%s] Generation timed out", instance_id)
             except Exception as e:
-                error = str(e)[:200]
-                log.error("[%s] Generation failed: %s", instance_id, error)
+                # Include the exception type + traceback so "Generation failed: 0"
+                # type of mysteries are debuggable straight from the log.
+                import traceback
+                error = f"{type(e).__name__}: {str(e) or repr(e)}"[:200]
+                log.error(
+                    "[%s] Generation failed: %s\n%s",
+                    instance_id, error, traceback.format_exc(),
+                )
             finally:
                 # Restore cwd and cleanup repo
                 os.chdir(original_cwd)

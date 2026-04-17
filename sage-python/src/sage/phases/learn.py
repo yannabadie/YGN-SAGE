@@ -94,12 +94,15 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
     # final answer (e.g. max_steps hit mid-tool-calling). Prior behavior
     # returned "Agent finished at step N", which SWE-bench and similar
     # benches happily packaged as a fake "patch" and masked the failure.
+    # Events are Rust-backed (WorkingMemory) or _MockEvent objects; both
+    # expose .event_type and .content — never subscriptable like a tuple.
     try:
         events = getattr(loop.working_memory, "_events", None) or []
         for event in reversed(events):
-            etype, content = (event[0], event[1]) if len(event) >= 2 else ("", "")
+            etype = getattr(event, "event_type", None) or getattr(event, "type", None)
+            content = getattr(event, "content", None)
             if etype == "ASSISTANT" and isinstance(content, str) and content.strip():
                 return content
-    except (AttributeError, IndexError):
+    except (AttributeError, IndexError, TypeError):
         pass
     return f"[sage: agent exited after {loop.step_count} steps with no content]"
