@@ -117,6 +117,67 @@ async def test_generate_basic() -> None:
 
 
 @pytest.mark.asyncio
+async def test_gemini3_temperature_forced_to_one() -> None:
+    """Gemini 3.x needs temperature=1.0 or it enters degenerate regimes.
+
+    LiteLLM logs a loud warning on every call when temperature<1.0 on
+    Gemini 3 models, and the 2026-04-17 SWE-bench smoke observed those
+    same models falling into "infinite loops / degraded reasoning /
+    failure on complex tasks". The provider now auto-overrides the
+    temperature for gemini-3 model strings regardless of config.
+    """
+    mock_resp = _make_response(content="ok", prompt_tokens=1, completion_tokens=1, response_cost=0.0)
+    provider = LiteLLMProvider(model_string="gemini/gemini-3.1-flash-lite-preview")
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(
+            messages=[Message(role=Role.USER, content="hi")],
+            config=LLMConfig(provider="google", model="gemini-3.1-flash-lite-preview"),
+        )
+
+    assert mock_call.call_args.kwargs["temperature"] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_non_gemini_preserves_config_temperature() -> None:
+    """Other providers must keep the caller's temperature (determinism)."""
+    mock_resp = _make_response(content="ok", prompt_tokens=1, completion_tokens=1, response_cost=0.0)
+    provider = LiteLLMProvider(model_string="deepseek/deepseek-chat")
+
+    class _Cfg:
+        temperature = 0.25
+        max_tokens = 100
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(
+            messages=[Message(role=Role.USER, content="hi")],
+            config=_Cfg(),
+        )
+
+    assert mock_call.call_args.kwargs["temperature"] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_gemini2_unaffected_by_override() -> None:
+    """Gemini 2.x models keep the caller's temperature — override is strictly
+    for Gemini 3.x (the family that LiteLLM and Google flag as fragile)."""
+    mock_resp = _make_response(content="ok", prompt_tokens=1, completion_tokens=1, response_cost=0.0)
+    provider = LiteLLMProvider(model_string="gemini/gemini-2.5-flash")
+
+    class _Cfg:
+        temperature = 0.3
+        max_tokens = 100
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(
+            messages=[Message(role=Role.USER, content="hi")],
+            config=_Cfg(),
+        )
+
+    assert mock_call.call_args.kwargs["temperature"] == 0.3
+
+
+@pytest.mark.asyncio
 async def test_generate_with_tools() -> None:
     """Response containing tool_calls — verify ToolCall parsing."""
     raw_tool_calls = [

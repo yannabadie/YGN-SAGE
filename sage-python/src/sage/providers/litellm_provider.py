@@ -191,11 +191,24 @@ class LiteLLMProvider:
 
         oai_messages = self._convert_messages(messages)
 
+        # Gemini 3.x models require temperature == 1.0 — LiteLLM warns
+        # loudly on every call otherwise, and the models themselves enter
+        # degenerate "infinite loops / degraded reasoning / failure on
+        # complex tasks" regimes at low temperature (verified on the
+        # 2026-04-17 SWE-bench smoke). Other providers keep the
+        # config-driven temperature so deterministic tests / benches still
+        # work.
+        _requested_temp = config.temperature if config else 0.0
+        if "gemini-3" in self.model_string.lower():
+            _effective_temp = 1.0
+        else:
+            _effective_temp = _requested_temp
+
         params: dict[str, Any] = {
             "model": self.model_string,
             "messages": oai_messages,
             "max_tokens": config.max_tokens if config else 4096,
-            "temperature": config.temperature if config else 0.0,
+            "temperature": _effective_temp,
         }
 
         if self.api_key:
