@@ -4,7 +4,8 @@ type: architecture
 tags:
   - architecture
   - pipeline
-updated: 2026-04-07
+  - f7
+updated: 2026-04-17
 ---
 
 # Pipeline — 6 Etapes
@@ -52,17 +53,61 @@ Un bandit contextuel (Thompson sampling) module exploration vs exploitation.
 **Score** : `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)` (meme scoring en topologie et en bypass)
 **Bypass** : `select_for_system(S1/S2/S3)` → premier candidat avec provider disponible
 **Provider exclusion** : `ModelAssigner.exclude_providers(dead)` depuis le health check boot
-**FrugalGPT cascade** : valide provider avant upgrade modele, `json_schema` seulement pour OpenAI
+**FrugalGPT cascade** : valide provider avant upgrade modele, `json_schema` seulement pour OpenAI, **forwarde `task_system` depuis Apr 17** (voir [[ADR-007-F7-Routing]])
 **Source** : `sage-core/config/cards.toml` — 19 modeles, 7 providers
+
+### F7 — Role-aware tier promotion (Apr 17)
+
+`pipeline._stage_assign_models` forwarde `task_system=ctx.system` au Rust
+`assigner.assign_models(...)`. Le scoring lit alors `effective_system(role,
+node, task_system, task_domain)` au lieu de la `node.system` brute :
+
+```
+producer role + S3 task + math/formal domain  → S3 floor (full reasoner)
+producer role + S3 task + autres domaines     → S2 floor (mid-tier reasoner)
+producer role + S2 task                       → S1 floor (no-op)
+sink role (synthesizer/aggregator/mixer/      → keep node.system
+  judge/verifier/solver/formatter/output)
+```
+
+- **Sink classification** : liste maintenue dans `SINK_ROLES` const, audit
+  `grep -B 1 SINK_NODE_PROMPT sage-core/src/topology/templates.rs` par
+  `test_sink_drift_templates_match_classifier`.
+- **Domain split** : `is_high_rigour_domain(domain)` substring-match sur
+  `math` ou `formal`. Cards exposent `math` et `formal` columns.
+- **FrugalGPT cascade** : `topology_controller._resolve_upgrade_model` et
+  `pipeline.py` Stage 4 cascade forwardent aussi `task_system` à
+  `assign_single_node`. TypeError fallback pour bindings antérieurs.
+
+**Régression évitée par audit** : sans la classification sink, F7 promouvait
+`formal_solver`'s `solver` node (model_id="", S1, Rust math evaluator)
+de S1 → S3 sur math task → remplaçait Rust math gratuit par LLM call à
+0.10 USD. Caught par `test_formal_solver_sink_protected_on_math_s3`.
 
 ## Stage 5 — EXECUTE (Tool-Calling Loop)
 
-**Single entry point** : `system.run()` → pipeline → tool-calling loop (max 30 turns)
-**Agent tools** : 13 outils (execute_bash, create_python_tool, create_bash_tool, 8 memoire, 2 knowledge)
+**Single entry point** : `system.run()` → pipeline.run() (Apr 9-10 unified)
+**Per-node max_steps** : F1 scale par task tier (S1=5, S2=10, S3=20)
+**Agent tools** : **14** outils (execute_bash, create_python_tool, create_bash_tool, 8 memoire, 2 knowledge, +`sage_recurse` Apr 17 Sprint 4)
 **Tool-calling** : generate(tools) → LLM retourne tool_calls → execute → re-generate (boucle)
-**TopologyRunner** : noeuds en ordre DAG, contexte adaptatif (mode multi-agent)
+**Tool choice** : depuis `da839dc` (Apr 17), `tool_choice="required"` sur coder/actor steps 1-2 pour forcer F6 mandate empiriquement ignoré
+**TopologyRunner** : noeuds en ordre DAG via `agent_loop` factory (Apr 9-10 Phase 2 — vrais agents par node)
 **Deduplication** : Jaccard similarity gate (S2-MAD)
 **ExecutionTrace** : dataclass structuree par run (tokens, cost, latency par noeud)
+
+### Validation level — domain-symetrique au F7 (Apr 17)
+
+```
+sink role (verifier/formatter/aggregator/critic) → validation = 0
+S3 task + math/formal                            → validation = 3 (PRM Z3)
+S3 task + autres                                 → validation = 2 (AVR)
+S2 task                                          → validation = 2
+S1 task                                          → validation = 1
+```
+
+Voir [[ADR-008-PRM-Gate-Domain]]. Pré-fix, S3 + code allait chercher Z3
+PRM avec `<think>` blocks → 17 CEGAR failures × 6 RESET_AGENT × 6
+SWITCH_MODEL → 0/3 patches sur smoke v2.
 
 Apres chaque noeud :
 - **QualityEstimator** — OxiZ (code) ou DistilBERT ONNX (texte)
@@ -71,6 +116,7 @@ Apres chaque noeud :
 - **Code nodes** (HyEvo) : execution sandbox
 - **HITL callback** : pause optionnelle pour approbation humaine
 - **Health check** au boot : circuit breaker pour providers morts
+- **Orphan-tool guard** dans message truncation (Apr 17 `591d3c4`) : strict providers (MiniMax) rejetaient orphan `tool_call_id`
 
 ## Stage 6 — LEARN
 
