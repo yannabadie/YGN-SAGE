@@ -278,8 +278,49 @@ async def act(
             except Exception as exc:
                 loop._cb_causal.record_failure(exc)
 
-    # Trim messages to prevent unbounded growth
+    # Trim messages to prevent unbounded growth (orphan-tool aware).
     if len(messages) > MAX_MESSAGES:
-        messages[:] = messages[:2] + messages[-(MAX_MESSAGES - 2):]
+        messages[:] = _truncate_messages_orphan_safe(messages, MAX_MESSAGES)
 
     return _ActResult(content=content, loop_action="proceed", has_tool_calls=True)
+
+
+def _truncate_messages_orphan_safe(
+    messages: list[Message], max_msgs: int,
+) -> list[Message]:
+    """Truncate keeping system+user head and recent tail, dropping orphan tools.
+
+    The naive split (`messages[:2] + messages[-(N-2):]`) drops any
+    assistant carrying tool_calls in the middle but keeps their
+    tool_result in the tail — producing an orphan: a `role: "tool"`
+    message whose `tool_call_id` matches NO surviving assistant.
+
+    Lenient providers (OpenAI, Gemini) accept it. Strict providers
+    (MiniMax-m2.7 since late 2025) reject the request:
+        400 invalid params, tool result's tool id(call_X) not found (2013)
+    Surfaced 2026-04-17 SWE-bench smoke after F7 floor started routing
+    nodes onto MiniMax-tier models.
+
+    Fix: after the head/tail split, drop any tool message whose
+    tool_call_id has no surviving assistant counterpart in the kept
+    window.
+    """
+    if len(messages) <= max_msgs:
+        return list(messages)
+    head = messages[:2]
+    tail = messages[-(max_msgs - 2):]
+    surviving_call_ids: set[str] = set()
+    for m in head + tail:
+        if m.role == Role.ASSISTANT and m.tool_calls:
+            for tc in m.tool_calls:
+                if tc.id:
+                    surviving_call_ids.add(tc.id)
+    cleaned_tail = [
+        m for m in tail
+        if not (
+            m.role == Role.TOOL
+            and m.tool_call_id
+            and m.tool_call_id not in surviving_call_ids
+        )
+    ]
+    return head + cleaned_tail
