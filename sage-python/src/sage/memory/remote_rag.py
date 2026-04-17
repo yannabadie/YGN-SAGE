@@ -100,15 +100,24 @@ class ExoCortex:
         self,
         file_path: str,
         display_name: str | None = None,
-        timeout_s: float = 90.0,
+        timeout_s: float = 300.0,
     ) -> None:
         """Upload and index a file into the store.
 
         `timeout_s` bounds the polling loop on Google's index operation —
         without it a single slow upload hangs the entire pipeline (observed
         2026-04-17: paper 4/11 polled `operations/...:get` for >5 minutes
-        with no completion). Raises TimeoutError so callers (`ingest_all`)
-        can log it and continue with the next paper.
+        with no completion).
+
+        Default raised from 90s → 300s on 2026-04-17 PM after the first
+        nightly rattrapage hit 31/31 timeouts. Empirical measurement on
+        the verify run (3 successful uploads): 168 GET polls across 3
+        papers = avg ~56 polls × 2s sleep = ~112s per paper, with the
+        slowest PDF taking >150s. 90s was below the median; 300s clears
+        all observed cases with margin.
+
+        Raises TimeoutError so callers (`ingest_all`) can log it and
+        continue with the next paper.
         """
         if not self.store_name:
             raise RuntimeError("No store configured. Call create_store() first.")
