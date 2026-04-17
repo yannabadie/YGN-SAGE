@@ -69,6 +69,25 @@ _KEY_INSTANCE_ID = "instance_id"
 _KEY_MODEL = "model_name_or_path"
 _KEY_PREDICTION = "model_patch"
 
+# Sentinel string returned by agent_loop when the LLM produces no content for
+# N consecutive steps. MUST stay in sync with phases/learn.py. We classify
+# sentinels separately from real patches so reporting doesn't overcount.
+_SENTINEL_MARKER = "[sage: agent exited after"
+
+
+def _classify_prediction(patch: str | None) -> str:
+    """Return 'real' | 'sentinel' | 'empty' for a prediction string.
+
+    Real patches are non-empty non-sentinel strings. Sentinels indicate the
+    agent hit step budget with no content. Empty patches indicate generation
+    errors or timeouts.
+    """
+    if not patch:
+        return "empty"
+    if _SENTINEL_MARKER in patch:
+        return "sentinel"
+    return "real"
+
 
 # ---------------------------------------------------------------------------
 # Dataset loading (uses HuggingFace `datasets` directly)
@@ -784,16 +803,22 @@ class SWEBenchBench:
         meta_path = out_dir / "predictions_meta.json"
         meta_path.write_text(json.dumps(predictions, indent=2), encoding="utf-8")
 
-        # Print summary
-        patches_count = sum(1 for p in predictions if p[_KEY_PREDICTION])
-        empty_count = sum(1 for p in predictions if not p[_KEY_PREDICTION])
+        # Print summary — classify real vs sentinel vs empty so the header
+        # can't lie. A "sentinel" patch is the agent_loop fallback string
+        # when the LLM produced zero content for N steps; counting it as a
+        # real patch (as the pre-fix code did) misreported 6 "patches" on
+        # a run that had only 1 real patch.
+        real_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "real")
+        sentinel_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "sentinel")
+        empty_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "empty")
         errors_count = sum(1 for p in predictions if p.get("_error"))
 
         print(f"\n  Generation complete:")
         print(f"    Total instances: {len(predictions)}")
-        print(f"    Patches generated: {patches_count}")
-        print(f"    Empty patches: {empty_count}")
-        print(f"    Errors: {errors_count}")
+        print(f"    Real patches:    {real_count}")
+        print(f"    Sentinels:       {sentinel_count}  (agent exited with no content)")
+        print(f"    Empty:           {empty_count}  (generation failed)")
+        print(f"    Errors:          {errors_count}")
         print(f"\n  Predictions: {preds_path}")
         print(f"  Metadata: {meta_path}")
         print(f"\n  To evaluate (requires Docker with Linux containers):")

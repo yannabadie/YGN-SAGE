@@ -5,7 +5,37 @@ from types import SimpleNamespace
 import pytest
 
 import sage.bench.swebench_bench as swebench_mod
-from sage.bench.swebench_bench import SWEBenchBench
+from sage.bench.swebench_bench import (
+    SWEBenchBench,
+    _classify_prediction,
+    _SENTINEL_MARKER,
+)
+
+
+def test_classify_prediction_empty():
+    assert _classify_prediction(None) == "empty"
+    assert _classify_prediction("") == "empty"
+
+
+def test_classify_prediction_sentinel():
+    # Exact string agent_loop emits (phases/learn.py). Stays in sync via marker constant.
+    assert _classify_prediction("[sage: agent exited after 5 steps with no content]") == "sentinel"
+    assert _classify_prediction("[sage: agent exited after 17 steps with no content]") == "sentinel"
+
+
+def test_classify_prediction_real_diff():
+    patch = "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n"
+    assert _classify_prediction(patch) == "real"
+
+
+def test_sentinel_marker_matches_learn_phase():
+    # Guard against silent divergence — phases/learn.py's EMPTY_STEP_SENTINEL
+    # must start with the same prefix that bench's _SENTINEL_MARKER looks for.
+    from sage.phases.learn import EMPTY_STEP_SENTINEL
+    # The formatted string (with step_count substituted) must contain the marker.
+    sample = EMPTY_STEP_SENTINEL.format(step_count=42)
+    assert _SENTINEL_MARKER in sample
+    assert _classify_prediction(sample) == "sentinel"
 
 
 @pytest.mark.asyncio

@@ -105,4 +105,12 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
                 return content
     except (AttributeError, IndexError, TypeError):
         pass
-    return f"[sage: agent exited after {loop.step_count} steps with no content]"
+    return EMPTY_STEP_SENTINEL.format(step_count=loop.step_count)
+
+
+# Sentinel string returned when the agent produced no content for the full
+# step budget. Kept stable so downstream filters (bench reporting, predecessor
+# context) can detect and drop it without guessing the exact text. If you
+# change this format, update bench/swebench_bench._SENTINEL_MARKER and the
+# corresponding test_sentinel_marker_matches_learn_phase test in sync.
+EMPTY_STEP_SENTINEL = "[sage: agent exited after {step_count} steps with no content]"
