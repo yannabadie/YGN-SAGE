@@ -241,3 +241,72 @@ def test_sentinel_prefix_only_matches_exact_format():
     assert _is_sentinel("  [sage: agent exited after 0 steps with no content]  ")
     assert not _is_sentinel("")
     assert not _is_sentinel(None)
+
+
+# --- Planner-output injection experiment (SAGE_PLANNER_INJECTION=1) ---
+
+
+def test_planner_injection_off_by_default(monkeypatch):
+    """With the flag unset, system_prompt is unchanged."""
+    monkeypatch.delenv("SAGE_PLANNER_INJECTION", raising=False)
+    runner = _make_runner()
+    runner._node_outputs = {0: "Plan: step 1, step 2, step 3"}
+    out = runner._maybe_planner_injection(1, "You are the coder.")
+    assert out == "You are the coder."
+
+
+def test_planner_injection_on_prepends_planner_output(monkeypatch):
+    """With flag ON and a planner predecessor, output is prepended."""
+    monkeypatch.setenv("SAGE_PLANNER_INJECTION", "1")
+    runner = _make_runner()
+    runner._node_outputs = {0: "Plan: step 1, step 2, step 3"}
+    out = runner._maybe_planner_injection(1, "You are the coder.")
+    assert "Upstream plan (from planner)" in out
+    assert "step 1, step 2, step 3" in out
+    assert "You are the coder." in out
+
+
+def test_planner_injection_skips_if_current_node_is_planner(monkeypatch):
+    """A planner node never receives planner-injection (would self-inject)."""
+    monkeypatch.setenv("SAGE_PLANNER_INJECTION", "1")
+    runner = _make_runner()
+    # node 0 is planner; treat node 0 as the target
+    runner._node_outputs = {0: "Plan output"}
+    out = runner._maybe_planner_injection(0, "You are the planner.")
+    assert out == "You are the planner."
+
+
+def test_planner_injection_skips_sentinel_output(monkeypatch):
+    """If planner produced a sentinel, we don't inject the failure signal."""
+    monkeypatch.setenv("SAGE_PLANNER_INJECTION", "1")
+    runner = _make_runner()
+    runner._node_outputs = {0: "[sage: agent exited after 5 steps with no content]"}
+    out = runner._maybe_planner_injection(1, "You are the coder.")
+    assert out == "You are the coder."
+
+
+def test_planner_injection_truncates_long_output(monkeypatch):
+    """Planner outputs longer than the budget are truncated with a marker."""
+    from sage.topology.runner import _PLANNER_INJECTION_BUDGET
+    monkeypatch.setenv("SAGE_PLANNER_INJECTION", "1")
+    runner = _make_runner()
+    long_plan = "STEP " * 10000  # way over budget
+    runner._node_outputs = {0: long_plan}
+    out = runner._maybe_planner_injection(1, "You are the coder.")
+    assert "[truncated]" in out
+    # The injected section itself is bounded; the full prompt will be a bit
+    # larger due to headers and the original system_prompt, but the injection
+    # proper is at most _PLANNER_INJECTION_BUDGET chars.
+    assert len(out) < _PLANNER_INJECTION_BUDGET + 500
+
+
+def test_is_planner_role_aliases():
+    from sage.topology.runner import _is_planner_role
+    assert _is_planner_role("planner")
+    assert _is_planner_role("input_processor")
+    assert _is_planner_role("decomposer")
+    assert _is_planner_role("Task Planner")  # case + substring
+    assert not _is_planner_role("coder")
+    assert not _is_planner_role("synthesizer")
+    assert not _is_planner_role("")
+    assert not _is_planner_role(None)

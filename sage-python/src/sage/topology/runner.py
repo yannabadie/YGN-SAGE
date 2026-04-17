@@ -14,6 +14,8 @@ import asyncio
 import logging
 from typing import Any, AsyncIterator, Callable
 
+import os
+
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 
@@ -31,10 +33,26 @@ EDGE_STATE = 2
 # predecessor context entirely (without fabricating a replacement prompt).
 _SENTINEL_PREFIX = "[sage: agent exited after"
 
+# Roles recognized as "planner" for the optional planner-output injection
+# experiment. Kept in sync with topology/role_prompts.py _PLANNER aliases.
+_PLANNER_ROLE_KEYWORDS = ("planner", "input_processor", "decomposer")
+
+# Max characters of planner output injected into downstream system prompt.
+# Keeps the prompt bounded regardless of how verbose the planner is.
+_PLANNER_INJECTION_BUDGET = 2000
+
 
 def _is_sentinel(output: str) -> bool:
     """True if output is the EMPTY_STEP_SENTINEL string from phases/learn.py."""
     return isinstance(output, str) and output.strip().startswith(_SENTINEL_PREFIX)
+
+
+def _is_planner_role(role: str) -> bool:
+    """True if a node role is a planner/decomposer variant."""
+    if not isinstance(role, str):
+        return False
+    rl = role.lower()
+    return any(kw in rl for kw in _PLANNER_ROLE_KEYWORDS)
 
 
 class TopologyRunner:
@@ -194,6 +212,57 @@ class TopologyRunner:
             )
         return formatted
 
+    def _maybe_planner_injection(self, node_idx: int, system_prompt: str) -> str:
+        """Optionally prepend upstream planner output to this node's system_prompt.
+
+        Gated by SAGE_PLANNER_INJECTION=1 (default: off). The experiment is
+        backed by MASS (arXiv 2502.02533): the structured decomposition plan
+        is higher-signal for downstream nodes than the raw predecessor
+        context mixed with other outputs. Still emitted via predecessor
+        context too — this only adds explicit section at the top of the
+        system prompt for nodes downstream of a planner.
+
+        No-op if:
+        - Flag is off
+        - Current node IS a planner (skip self-injection)
+        - No planner found among predecessors
+        - Planner output is a sentinel (already stripped elsewhere, guard anyway)
+        """
+        if os.environ.get("SAGE_PLANNER_INJECTION") != "1":
+            return system_prompt
+
+        current = self.graph.get_node(node_idx)
+        current_role = getattr(current, "role", "")
+        if _is_planner_role(current_role):
+            return system_prompt
+
+        try:
+            predecessors = self.graph.get_predecessors(node_idx)
+        except (AttributeError, Exception):
+            return system_prompt
+
+        for pred_idx in predecessors:
+            pred_node = self.graph.get_node(pred_idx)
+            pred_role = getattr(pred_node, "role", "")
+            if not _is_planner_role(pred_role):
+                continue
+            pred_output = self._node_outputs.get(pred_idx, "")
+            if not pred_output or _is_sentinel(pred_output):
+                continue
+            # Bound the injection; planner output can be long
+            truncated = pred_output[:_PLANNER_INJECTION_BUDGET]
+            if len(pred_output) > _PLANNER_INJECTION_BUDGET:
+                truncated += "\n... [truncated]"
+            log.info(
+                "topology.runner: injecting planner output (%d chars, role=%s) into node %d system prompt",
+                len(truncated), pred_role, node_idx,
+            )
+            return (
+                f"## Upstream plan (from {pred_role}):\n{truncated}\n\n"
+                f"## Your role\n{system_prompt}"
+            )
+        return system_prompt
+
     def _gather_all_context(self) -> str:
         """Fallback: all completed nodes (legacy behavior)."""
         n_completed = len(self._node_outputs)
@@ -346,6 +415,11 @@ class TopologyRunner:
                 system_prompt = self._harness.prompts.global_prefix + "\n" + system_prompt
             if self._harness.prompts.global_suffix:
                 system_prompt = system_prompt + "\n" + self._harness.prompts.global_suffix
+
+        # Optional: prepend upstream planner output (MASS arXiv 2502.02533).
+        # Gated by SAGE_PLANNER_INJECTION=1 — off by default so the base
+        # behavior is unchanged.
+        system_prompt = self._maybe_planner_injection(node_idx, system_prompt)
 
         # Resolve per-node model
         node_model_id = getattr(node, "model_id", "")
