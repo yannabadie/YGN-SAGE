@@ -39,25 +39,44 @@ fn is_sink_role(role: &str) -> bool {
         || r == "sink"
 }
 
+/// True if the task domain demands the highest reasoning tier
+/// (formal proofs, math, theorem proving). For these, an S3 task pushes
+/// producer nodes all the way to S3 (full reasoner tier), not the
+/// general-purpose S2 floor.
+///
+/// Match is case-insensitive substring, so `"math"`, `"formal"`,
+/// `"formal_verification"`, `"Math"` all classify as high-rigour. This
+/// keeps the function tolerant to whatever upstream pipeline naming
+/// convention surfaces (`ctx.domain` in pipeline.py uses lower-case
+/// short tokens; cards.toml uses `math`, `formal`).
+fn is_high_rigour_domain(task_domain: &str) -> bool {
+    let d = task_domain.to_lowercase();
+    d.contains("math") || d.contains("formal")
+}
+
 /// Compute the effective cognitive tier for Stage 3 model assignment.
 ///
 /// * Sink nodes stay on their template tier — they just forward predecessor
 ///   output, they don't need a reasoner.
-/// * Producer nodes get promoted to `max(node.system, task_system - 1)`.
-///   That means a task-level S3 (e.g. SWE-bench, forced via `system_hint=3`)
-///   pushes every producer node to AT LEAST S2, so Stage 3 picks a reasoner-
-///   tier model instead of the template-default S1 flash-tier.
-/// * `task_system=None` disables the promotion (full back-compat with
-///   existing `assign_models(...)` callers).
+/// * Producer nodes get promoted to `max(node.system, floor)`, where
+///   `floor` depends on (task tier, task domain):
+///   - S3 + math/formal     → 3 (full reasoner tier — proofs/Z3 need it)
+///   - S3 + other domains   → 2 (mid-tier reasoner suffices for code/general)
+///   - S2                   → 1 (no-op; S1 is already the minimum)
+///   - S1 / None            → keep node tier (no promotion)
+/// * `task_system=None` disables the promotion entirely (full back-compat
+///   with pre-F7 callers that didn't know about task-level routing).
 ///
-/// Surface area is deliberately small: we don't bump sinks (SINK_NODE_PROMPT
-/// is narrow text forwarding; a flash-tier synthesizer is correct), and we
-/// floor at `task - 1` rather than `task` so an S3 task doesn't force S3
-/// (formal reasoning tier) on every worker — only S2 (code+tools).
+/// Why the domain split: an S3 SWE-bench task wants a strong code agent,
+/// not necessarily a pure proof model. But an S3 math/formal task NEEDS
+/// the reasoner tier — there's no point promoting a coder. This is the
+/// minimal Topaz-inspired adaptation that the existing card domain_scores
+/// already support (cards expose `math` and `formal` columns explicitly).
 fn effective_system(
     role: &str,
     node_system: CognitiveSystem,
     task_system: Option<CognitiveSystem>,
+    task_domain: &str,
 ) -> CognitiveSystem {
     let task = match task_system {
         Some(t) => t,
@@ -66,9 +85,13 @@ fn effective_system(
     if is_sink_role(role) {
         return node_system;
     }
+    let floor_n: u8 = if matches!(task, CognitiveSystem::S3) && is_high_rigour_domain(task_domain) {
+        3
+    } else {
+        (task as u8).saturating_sub(1)
+    };
     let node_n = node_system as u8;
-    let task_n = task as u8;
-    let promoted_n = std::cmp::max(node_n, task_n.saturating_sub(1));
+    let promoted_n = std::cmp::max(node_n, floor_n);
     match promoted_n {
         1 => CognitiveSystem::S1,
         2 => CognitiveSystem::S2,
@@ -209,7 +232,7 @@ impl ModelAssigner {
                 3 => CognitiveSystem::S3,
                 _ => CognitiveSystem::S1,
             };
-            let system = effective_system(&node.role, local_system, task_system);
+            let system = effective_system(&node.role, local_system, task_system, task_domain);
             if system != local_system {
                 info!(
                     node = idx,
@@ -217,6 +240,7 @@ impl ModelAssigner {
                     local = %local_system,
                     effective = %system,
                     task = ?task_system,
+                    domain = task_domain,
                     "tier_promoted"
                 );
             }
@@ -317,7 +341,7 @@ impl ModelAssigner {
             3 => CognitiveSystem::S3,
             _ => CognitiveSystem::S1,
         };
-        let system = effective_system(&node.role, local_system, task_system);
+        let system = effective_system(&node.role, local_system, task_system, task_domain);
         let caps = &node.required_capabilities;
         let needs_tools = caps.iter().any(|c| c == "tools");
         let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
@@ -782,7 +806,7 @@ mod tests {
         // per-node tier it always got.
         for role in ["planner", "coder", "synthesizer", "worker"] {
             for local in [CognitiveSystem::S1, CognitiveSystem::S2, CognitiveSystem::S3] {
-                assert_eq!(effective_system(role, local, None), local);
+                assert_eq!(effective_system(role, local, None, "code"), local);
             }
         }
     }
@@ -790,22 +814,23 @@ mod tests {
     #[test]
     fn test_effective_system_s3_task_promotes_producers() {
         // The SWE-bench case: sequential template has planner=S1, coder=S2,
-        // synthesizer=S1. With a task-level S3 hint, the producer nodes
-        // (planner, coder, worker) floor at S2; the synthesizer stays S1.
+        // synthesizer=S1. With a task-level S3 hint on a code task, the
+        // producer nodes (planner, coder, worker) floor at S2; the
+        // synthesizer stays S1.
         assert_eq!(
-            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("coder", CognitiveSystem::S2, Some(CognitiveSystem::S3)),
+            effective_system("coder", CognitiveSystem::S2, Some(CognitiveSystem::S3), "code"),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("worker_0", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            effective_system("worker_0", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("synthesizer", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            effective_system("synthesizer", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
             CognitiveSystem::S1
         );
     }
@@ -816,7 +841,7 @@ mod tests {
         // no promotion happens. Templates that deliberately use cheap
         // planners on S2 tasks keep that choice.
         assert_eq!(
-            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S2)),
+            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S2), "code"),
             CognitiveSystem::S1
         );
     }
@@ -824,12 +849,13 @@ mod tests {
     #[test]
     fn test_effective_system_sink_roles_never_promoted() {
         // Synthesizer / aggregator / formatter / output_* are terminal
-        // forwarders (SINK_NODE_PROMPT). Cheap is correct.
+        // forwarders (SINK_NODE_PROMPT). Cheap is correct — the domain
+        // floor must NOT override the sink classification.
         for sink in ["synthesizer", "aggregator", "output_formatter", "formatter", "output_writer"] {
             assert_eq!(
-                effective_system(sink, CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+                effective_system(sink, CognitiveSystem::S1, Some(CognitiveSystem::S3), "math"),
                 CognitiveSystem::S1,
-                "sink role `{}` must stay on local tier", sink
+                "sink role `{}` must stay on local tier even on math/S3", sink
             );
         }
     }
@@ -839,13 +865,63 @@ mod tests {
         // If the template explicitly picked S3 for a node, we never
         // downgrade, even if the task tier is lower.
         assert_eq!(
-            effective_system("verifier", CognitiveSystem::S3, Some(CognitiveSystem::S1)),
+            effective_system("verifier", CognitiveSystem::S3, Some(CognitiveSystem::S1), "code"),
             CognitiveSystem::S3
         );
         assert_eq!(
-            effective_system("coder", CognitiveSystem::S3, Some(CognitiveSystem::S2)),
+            effective_system("coder", CognitiveSystem::S3, Some(CognitiveSystem::S2), "code"),
             CognitiveSystem::S3
         );
+    }
+
+    // ── F7 domain-aware floor (advisor sequence item 1) ──────────────
+    //
+    // Math/formal S3 tasks get the FULL reasoner tier (S3), not the
+    // general S2 floor. Code/general S3 tasks keep the S2 floor.
+    //
+    // Rationale: a planner on a Coq/Lean/SMT task is doing proof search,
+    // not codegen — promoting to S2 picks a strong coder (e.g.
+    // gpt-5.3-codex) that can't actually prove the goal. Promoting to S3
+    // picks the reasoner-tier (e.g. gemini-3.1-pro-preview) that can.
+    // Cards already expose `math` and `formal` columns explicitly.
+
+    #[test]
+    fn test_f7_math_s3_floors_at_s3() {
+        // Math S3 task: producer planner gets full S3, not S2.
+        for domain in ["math", "Math", "MATH"] {
+            assert_eq!(
+                effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                CognitiveSystem::S3,
+                "math/S3 must floor producer at S3 (not S2), got domain={}", domain
+            );
+        }
+    }
+
+    #[test]
+    fn test_f7_formal_s3_floors_at_s3() {
+        // Formal verification S3 task: same — full reasoner tier.
+        // Both bare "formal" and "formal_verification" must classify.
+        for domain in ["formal", "formal_verification", "Formal", "formal_proofs"] {
+            assert_eq!(
+                effective_system("coder", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                CognitiveSystem::S3,
+                "formal/S3 must floor producer at S3, got domain={}", domain
+            );
+        }
+    }
+
+    #[test]
+    fn test_f7_code_s3_unchanged_floors_at_s2() {
+        // Sanity: the original S2 floor for non-rigour domains MUST be
+        // preserved. Otherwise we'd burn budget on a pure reasoner for
+        // every SWE-bench task — exactly the opposite of what we want.
+        for domain in ["code", "general", "", "swe_bench", "agent"] {
+            assert_eq!(
+                effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                CognitiveSystem::S2,
+                "non-rigour S3 must keep the S2 floor, got domain={}", domain
+            );
+        }
     }
 
     #[test]
@@ -892,5 +968,19 @@ mod tests {
             "baseline planner@S1 should pick the S1-heavy cheap-fast");
         assert_eq!(promoted, "expensive-smart",
             "task_system=S3 should promote planner to S2 and pick expensive-smart");
+    }
+
+    #[test]
+    fn test_is_high_rigour_domain_classification() {
+        // Positive: substring match, case-insensitive — handles every
+        // sensible variant the pipeline might emit.
+        for d in ["math", "Math", "MATH", "formal", "Formal_Verification",
+                  "formal_proofs", "discrete_math", "applied_math"] {
+            assert!(is_high_rigour_domain(d), "`{}` should be high-rigour", d);
+        }
+        // Negative: explicit non-rigour domains and the unset case.
+        for d in ["code", "general", "", "swe_bench", "agent", "tools"] {
+            assert!(!is_high_rigour_domain(d), "`{}` should NOT be high-rigour", d);
+        }
     }
 }
