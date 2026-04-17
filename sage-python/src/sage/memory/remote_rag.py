@@ -96,7 +96,7 @@ class ExoCortex:
         self,
         file_path: str,
         display_name: str | None = None,
-        timeout_s: float = 300.0,
+        timeout_s: float = 600.0,
     ) -> None:
         """Upload and index a file into the store.
 
@@ -105,12 +105,15 @@ class ExoCortex:
         2026-04-17: paper 4/11 polled `operations/...:get` for >5 minutes
         with no completion).
 
-        Default raised from 90s → 300s on 2026-04-17 PM after the first
-        nightly rattrapage hit 31/31 timeouts. Empirical measurement on
-        the verify run (3 successful uploads): 168 GET polls across 3
-        papers = avg ~56 polls × 2s sleep = ~112s per paper, with the
-        slowest PDF taking >150s. 90s was below the median; 300s clears
-        all observed cases with margin.
+        Default raised in three steps as evidence accumulated:
+          90s  → 300s (first rattrapage v1 hit 31/31 timeouts)
+          300s → 600s (rattrapage v2 still 5/5 timeouts on PDF papers)
+        Verify run (3 successful uploads, no timeout): 168 GET polls
+        across 3 papers = avg ~56 polls × 2s sleep = ~112s per paper.
+        But Google's PDF index latency has a long right tail — observed
+        papers polling 150-300s+ in v2 still timing out. 600s clears most
+        observed cases; pathological papers (>10MB or chunking-heavy)
+        still hit the budget and skip cleanly.
 
         Raises TimeoutError so callers (`ingest_all`) can log it and
         continue with the next paper.
