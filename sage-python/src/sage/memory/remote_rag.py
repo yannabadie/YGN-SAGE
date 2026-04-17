@@ -96,8 +96,20 @@ class ExoCortex:
         log.info("Created ExoCortex store: %s", store.name)
         return store.name
 
-    async def upload(self, file_path: str, display_name: str | None = None) -> None:
-        """Upload and index a file into the store."""
+    async def upload(
+        self,
+        file_path: str,
+        display_name: str | None = None,
+        timeout_s: float = 90.0,
+    ) -> None:
+        """Upload and index a file into the store.
+
+        `timeout_s` bounds the polling loop on Google's index operation —
+        without it a single slow upload hangs the entire pipeline (observed
+        2026-04-17: paper 4/11 polled `operations/...:get` for >5 minutes
+        with no completion). Raises TimeoutError so callers (`ingest_all`)
+        can log it and continue with the next paper.
+        """
         if not self.store_name:
             raise RuntimeError("No store configured. Call create_store() first.")
         import asyncio
@@ -113,7 +125,13 @@ class ExoCortex:
                 file_search_store_name=self.store_name,
                 config={"display_name": display_name or file_path},
             )
+            deadline = time.time() + timeout_s
             while not operation.done:
+                if time.time() > deadline:
+                    raise TimeoutError(
+                        f"ExoCortex upload polling exceeded {timeout_s}s "
+                        f"for {file_path} (Google index operation not done)"
+                    )
                 time.sleep(2)
                 operation = client.operations.get(operation)
 

@@ -78,3 +78,27 @@ def test_is_already_ingested():
     m = Manifest(papers={"p1": {}})
     assert is_already_ingested("p1", m) is True
     assert is_already_ingested("p2", m) is False
+
+
+@pytest.mark.asyncio
+async def test_ingest_stamps_store_name_in_manifest(tmp_path, sample_curated):
+    """Regression: pre-2026-04-17 the manifest's store_name field was
+    never populated even though `ingest()` had access to a live ExoCortex
+    client. Multi-store setups couldn't tell which Google File Search
+    store a given run had written to.
+    """
+    from discover.ingestion import ingest
+
+    manifest_path = tmp_path / "manifest.json"
+    # PaperCandidate has no pdf_url → ingest() takes the markdown fallback.
+    fake_exo = MagicMock()
+    fake_exo.upload = AsyncMock()
+    fake_exo.store_name = "fileSearchStores/my-target-store"
+
+    ok = await ingest(sample_curated, fake_exo, manifest_path)
+    assert ok is True
+    fake_exo.upload.assert_awaited_once()
+
+    saved = load_manifest(manifest_path)
+    assert saved.store_name == "fileSearchStores/my-target-store"
+    assert "test-001" in saved.papers

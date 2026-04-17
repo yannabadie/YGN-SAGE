@@ -219,7 +219,11 @@ async def ingest(
         logger.error("ExoCortex upload failed for %s: %s", pid, exc)
         return False
 
-    # Update manifest
+    # Update manifest. Stamp `store_name` from the live ExoCortex client so
+    # the manifest is self-describing — multi-store setups can tell which
+    # Google File Search store a given run wrote to (was always "" pre-fix).
+    if not manifest.store_name:
+        manifest.store_name = getattr(exocortex, "store_name", "") or ""
     manifest.papers[pid] = {
         "title": paper.candidate.title,
         "domain": paper.candidate.domain,
