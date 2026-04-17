@@ -32,7 +32,14 @@ class _MockTopology:
 
 
 class _MockAssigner:
-    def assign_models(self, topology: object, domain: str, budget: float, hints: object = None) -> int:
+    def assign_models(
+        self,
+        topology: object,
+        domain: str,
+        budget: float,
+        hints: object = None,
+        task_system: int | None = None,  # F7 (2026-04-17): forwarded by pipeline
+    ) -> int:
         return topology.node_count() if hasattr(topology, "node_count") else 0  # type: ignore[union-attr]
 
 
