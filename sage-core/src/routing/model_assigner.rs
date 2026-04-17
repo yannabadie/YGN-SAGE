@@ -19,6 +19,29 @@ const PROVIDER_HINT_BONUS: f32 = 0.15;
 /// Fixed token estimate for cost normalization (input, output).
 const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 
+/// Roles that templates.rs explicitly marks as "sink" (final-stage
+/// forwarder) by assigning `SINK_NODE_PROMPT` to them. Single source of
+/// truth: maintain this list in sync with templates.rs whenever a new
+/// template adds a SINK_NODE_PROMPT-tagged node.
+///
+/// To audit:
+///   `grep -B 1 SINK_NODE_PROMPT sage-core/src/topology/templates.rs`
+/// As of 2026-04-17 the templates assign SINK_NODE_PROMPT to:
+///   synthesizer (sequential, brainstorming)
+///   aggregator  (parallel, horizon_pipeline, parallel_fanout)
+///   mixer       (self_moa)
+///   judge       (debate)
+///   verifier    (robust — final node; AVR's verifier is non-final but
+///                also benign as a sink classification — its job is
+///                cheap pattern-matching, not deep reasoning)
+///   solver      (formal_solver — DETERMINISTIC compute node, model_id="";
+///                MUST stay sink or F7 will replace free Rust math with
+///                a $0.10 LLM call on math/formal tasks)
+const SINK_ROLES: &[&str] = &[
+    "synthesizer", "aggregator", "mixer", "judge", "verifier", "solver",
+    "formatter", "output", "sink",
+];
+
 /// Classify a role string as a "sink" (output-only forwarder) vs a
 /// "producer" (generates content). Sink nodes keep their template-assigned
 /// cognitive tier — they just format / synthesize predecessor output.
@@ -31,12 +54,7 @@ const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 /// template catalogue (templates.rs).
 fn is_sink_role(role: &str) -> bool {
     let r = role.to_lowercase();
-    r.contains("synthesizer")
-        || r.contains("aggregator")
-        || r.contains("formatter")
-        || r.contains("output_")
-        || r == "output"
-        || r == "sink"
+    SINK_ROLES.iter().any(|&s| r == s) || r.starts_with("output_")
 }
 
 /// True if the task domain demands the highest reasoning tier
@@ -926,15 +944,41 @@ mod tests {
 
     #[test]
     fn test_is_sink_role_classification() {
-        // Positive: forwarder roles from templates.rs (SINK_NODE_PROMPT).
+        // Positive: every role that templates.rs assigns SINK_NODE_PROMPT to.
+        // Audit cmd: `grep -B 1 SINK_NODE_PROMPT sage-core/src/topology/templates.rs`
         for r in ["synthesizer", "Synthesizer", "aggregator",
+                  "mixer", "judge", "verifier", "solver",
                   "output_formatter", "formatter", "sink", "output"] {
             assert!(is_sink_role(r), "`{}` should classify as sink", r);
         }
         // Negative: producer / tool-using / reasoning roles.
-        for r in ["planner", "coder", "worker_0", "verifier", "source",
-                  "thinker", "brainstormer", "actor", "critic"] {
+        for r in ["planner", "coder", "worker_0", "source",
+                  "thinker", "brainstormer", "actor", "critic",
+                  "formalizer", "preprocessor", "splitter", "dispatcher"] {
             assert!(!is_sink_role(r), "`{}` should NOT classify as sink", r);
+        }
+    }
+
+    #[test]
+    fn test_formal_solver_sink_protected_on_math_s3() {
+        // Regression for the audit-uncovered bug: pre-this-fix, F7's
+        // domain floor would push formal_solver's `solver` node from S1
+        // to S3 on a math task — replacing free deterministic Rust
+        // computation with a $0.10 LLM call. The sink classification
+        // must take precedence over the domain-aware floor.
+        assert_eq!(
+            effective_system("solver", CognitiveSystem::S1, Some(CognitiveSystem::S3), "math"),
+            CognitiveSystem::S1,
+            "formal_solver's solver MUST stay S1 — it's pure Rust compute"
+        );
+        // Also covered: every other SINK_NODE_PROMPT role on math/S3.
+        for sink in ["mixer", "judge", "verifier", "solver"] {
+            assert_eq!(
+                effective_system(sink, CognitiveSystem::S1, Some(CognitiveSystem::S3), "math"),
+                CognitiveSystem::S1,
+                "newly-classified sink `{}` must not be promoted by domain rule",
+                sink
+            );
         }
     }
 
