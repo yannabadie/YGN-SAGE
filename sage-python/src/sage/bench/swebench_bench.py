@@ -59,6 +59,9 @@ _DATASET_MAP = {
     "lite": "princeton-nlp/SWE-bench_Lite",
     "verified": "princeton-nlp/SWE-bench_Verified",
     "full": "princeton-nlp/SWE-bench",
+    # Scale AI's Pro split — enterprise-scale long-horizon tasks
+    # (OpenSAGE reports 59% on this; it is the target for Sprint 5).
+    "pro": "ScaleAI/SWE-bench_Pro",
 }
 
 # swebench prediction keys

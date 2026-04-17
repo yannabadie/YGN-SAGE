@@ -403,6 +403,12 @@ class CognitiveOrchestrationPipeline:
         is faster AND equally effective (confirmed by MASBENCH: topology helps
         only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
         """
+        # Sprint 5 ablation: force bypass to measure framework delta.
+        if os.environ.get("SAGE_ABLATION_NO_TOPOLOGY") == "1":
+            ctx.topology = None
+            log.info("Stage 2: topology disabled by SAGE_ABLATION_NO_TOPOLOGY=1 (ablation)")
+            return ctx
+
         # S1 fast path: skip topology for non-math tasks.
         # Math tasks use formal_solver (SatLM NeurIPS 2023): LLM formalizes,
         # Rust solves exactly. Falls back to single-agent if solver fails.

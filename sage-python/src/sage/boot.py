@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -334,18 +335,22 @@ def boot_agent_system(
     # ToolForge: autonomous tool synthesis (UCT arXiv 2602.01983)
     # When agent calls a tool that doesn't exist, GapDetector creates a ticket,
     # ToolForge synthesizes code+tests via LLM, validates (AST+sandbox), registers.
-    try:
-        from sage.tools.forge import ToolForge
-        _toolforge = ToolForge(
-            registry=tool_registry,
-            llm_provider=provider,
-            llm_config=llm_config,
-            event_bus=event_bus,
-        )
-        loop.toolforge = _toolforge
-        _log.info("ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)")
-    except Exception as exc:
-        _log.debug("ToolForge not available: %s", exc)
+    # Skip when SAGE_ABLATION_NO_TOOLFORGE=1 (Sprint 5 ablation config).
+    if os.environ.get("SAGE_ABLATION_NO_TOOLFORGE") == "1":
+        _log.info("ToolForge disabled by SAGE_ABLATION_NO_TOOLFORGE=1 (ablation)")
+    else:
+        try:
+            from sage.tools.forge import ToolForge
+            _toolforge = ToolForge(
+                registry=tool_registry,
+                llm_provider=provider,
+                llm_config=llm_config,
+                event_bus=event_bus,
+            )
+            loop.toolforge = _toolforge
+            _log.info("ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)")
+        except Exception as exc:
+            _log.debug("ToolForge not available: %s", exc)
 
     # CORAL Phase 1: persistent evolution memory (arXiv 2604.01658)
     # Lazy init: EvolutionMemory.initialize() is called on first async use,
@@ -506,11 +511,15 @@ def boot_agent_system(
     # sage_recurse: recursive self-invocation for test-time scaling
     # (The Conductor, arXiv 2512.04388, ICLR 2026). Bound here so the tool
     # can call system.run() without creating an import-level cycle.
-    try:
-        from sage.tools.sage_recurse import build_sage_recurse_tool
-        tool_registry.register(build_sage_recurse_tool(system.run))
-        _log.info("Core tools: sage_recurse registered (max depth 3)")
-    except (ImportError, RuntimeError) as exc:
-        _log.debug("sage_recurse not available: %s", exc)
+    # Skip when SAGE_ABLATION_NO_RECURSE=1 (Sprint 5 ablation config).
+    if os.environ.get("SAGE_ABLATION_NO_RECURSE") == "1":
+        _log.info("sage_recurse disabled by SAGE_ABLATION_NO_RECURSE=1 (ablation)")
+    else:
+        try:
+            from sage.tools.sage_recurse import build_sage_recurse_tool
+            tool_registry.register(build_sage_recurse_tool(system.run))
+            _log.info("Core tools: sage_recurse registered (max depth 3)")
+        except (ImportError, RuntimeError) as exc:
+            _log.debug("sage_recurse not available: %s", exc)
 
     return system
