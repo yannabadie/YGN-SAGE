@@ -90,7 +90,18 @@ class _MockEngine:
 class _MockAssigner:
     """Mock ModelAssigner."""
 
-    def assign_models(self, topology: Any, domain: str, budget: float, hints: Any = None) -> int:
+    def assign_models(
+        self,
+        topology: Any,
+        domain: str,
+        budget: float,
+        hints: Any = None,
+        task_system: int | None = None,
+    ) -> int:
+        # F7 (2026-04-17): Rust assigner gained a `task_system` param for
+        # role-aware tier promotion; the mock accepts+ignores it so legacy
+        # and F7-aware pipeline callers both work.
+        self.last_task_system = task_system
         n = topology.node_count() if hasattr(topology, "node_count") else 0
         return n
 
@@ -563,7 +574,14 @@ class TestCircuitBreakerFiltering:
         )
 
         class _AssignerThatSetsModels:
-            def assign_models(self, topology: Any, domain: str, budget: float, hints: Any = None) -> int:
+            def assign_models(
+                self,
+                topology: Any,
+                domain: str,
+                budget: float,
+                hints: Any = None,
+                task_system: int | None = None,
+            ) -> int:
                 topology._nodes[0].model_id = "openai-model"
                 topology._nodes[1].model_id = "google-model"
                 return 2

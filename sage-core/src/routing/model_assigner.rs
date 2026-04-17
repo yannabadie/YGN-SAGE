@@ -19,6 +19,64 @@ const PROVIDER_HINT_BONUS: f32 = 0.15;
 /// Fixed token estimate for cost normalization (input, output).
 const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 
+/// Classify a role string as a "sink" (output-only forwarder) vs a
+/// "producer" (generates content). Sink nodes keep their template-assigned
+/// cognitive tier — they just format / synthesize predecessor output.
+/// Producer nodes do the actual reasoning and MUST be promoted to the
+/// overall task tier floor when the task is complex (F7, Topaz-inspired).
+///
+/// Research: Topaz (arXiv 2604.03527) argues routing must match model
+/// capability to per-subtask REQUIREMENTS. The role-based sink/producer
+/// split is the training-free approximation that fits our existing
+/// template catalogue (templates.rs).
+fn is_sink_role(role: &str) -> bool {
+    let r = role.to_lowercase();
+    r.contains("synthesizer")
+        || r.contains("aggregator")
+        || r.contains("formatter")
+        || r.contains("output_")
+        || r == "output"
+        || r == "sink"
+}
+
+/// Compute the effective cognitive tier for Stage 3 model assignment.
+///
+/// * Sink nodes stay on their template tier — they just forward predecessor
+///   output, they don't need a reasoner.
+/// * Producer nodes get promoted to `max(node.system, task_system - 1)`.
+///   That means a task-level S3 (e.g. SWE-bench, forced via `system_hint=3`)
+///   pushes every producer node to AT LEAST S2, so Stage 3 picks a reasoner-
+///   tier model instead of the template-default S1 flash-tier.
+/// * `task_system=None` disables the promotion (full back-compat with
+///   existing `assign_models(...)` callers).
+///
+/// Surface area is deliberately small: we don't bump sinks (SINK_NODE_PROMPT
+/// is narrow text forwarding; a flash-tier synthesizer is correct), and we
+/// floor at `task - 1` rather than `task` so an S3 task doesn't force S3
+/// (formal reasoning tier) on every worker — only S2 (code+tools).
+fn effective_system(
+    role: &str,
+    node_system: CognitiveSystem,
+    task_system: Option<CognitiveSystem>,
+) -> CognitiveSystem {
+    let task = match task_system {
+        Some(t) => t,
+        None => return node_system,
+    };
+    if is_sink_role(role) {
+        return node_system;
+    }
+    let node_n = node_system as u8;
+    let task_n = task as u8;
+    let promoted_n = std::cmp::max(node_n, task_n.saturating_sub(1));
+    match promoted_n {
+        1 => CognitiveSystem::S1,
+        2 => CognitiveSystem::S2,
+        3 => CognitiveSystem::S3,
+        _ => node_system,
+    }
+}
+
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct ModelAssigner {
@@ -76,7 +134,7 @@ impl ModelAssigner {
         task_domain: &str,
         budget_usd: f32,
     ) -> usize {
-        self.assign_models_with_hints_inner(graph, task_domain, budget_usd, &[])
+        self.assign_models_with_hints_inner(graph, task_domain, budget_usd, &[], None)
     }
 
     /// Assign models with optional per-node provider hints.
@@ -85,12 +143,19 @@ impl ModelAssigner {
     /// When a hint is present for a node, candidates from that provider get
     /// a +0.15 scoring bonus (soft preference, not hard filter — if no
     /// model from the hinted provider qualifies, the best alternative wins).
+    ///
+    /// `task_system` is the OVERALL cognitive tier of the task (from Stage 0
+    /// routing + optional `system_hint` override). Producer nodes (planner,
+    /// coder, worker, verifier, source) are promoted via `effective_system`
+    /// so an S3 task doesn't end up with flash-tier planners. Pass `None` to
+    /// keep the legacy per-node-only behaviour (full back-compat).
     pub fn assign_models_with_hints_inner(
         &self,
         graph: &mut TopologyGraph,
         task_domain: &str,
         budget_usd: f32,
         provider_hints: &[(usize, String)],
+        task_system: Option<CognitiveSystem>,
     ) -> usize {
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
@@ -138,12 +203,23 @@ impl ModelAssigner {
                 continue;
             }
 
-            let system = match node.system {
+            let local_system = match node.system {
                 1 => CognitiveSystem::S1,
                 2 => CognitiveSystem::S2,
                 3 => CognitiveSystem::S3,
                 _ => CognitiveSystem::S1,
             };
+            let system = effective_system(&node.role, local_system, task_system);
+            if system != local_system {
+                info!(
+                    node = idx,
+                    role = %node.role,
+                    local = %local_system,
+                    effective = %system,
+                    task = ?task_system,
+                    "tier_promoted"
+                );
+            }
 
             let caps = &node.required_capabilities;
             let needs_tools = caps.iter().any(|c| c == "tools");
@@ -232,14 +308,16 @@ impl ModelAssigner {
         task_domain: &str,
         budget_usd: f32,
         exclude_ids: Option<&[String]>,
+        task_system: Option<CognitiveSystem>,
     ) -> Option<String> {
         let node = graph.try_get_node(node_idx).ok()?;
-        let system = match node.system {
+        let local_system = match node.system {
             1 => CognitiveSystem::S1,
             2 => CognitiveSystem::S2,
             3 => CognitiveSystem::S3,
             _ => CognitiveSystem::S1,
         };
+        let system = effective_system(&node.role, local_system, task_system);
         let caps = &node.required_capabilities;
         let needs_tools = caps.iter().any(|c| c == "tools");
         let needs_json = caps.iter().any(|c| c == "json" || c == "json_mode");
@@ -317,23 +395,33 @@ impl ModelAssigner {
 
     /// Assign models to all topology nodes. Optional provider_hints bias
     /// the selection towards specific providers (soft preference, +0.15 bonus).
-    #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None))]
+    ///
+    /// `task_system` is the OVERALL cognitive tier of the task (1, 2, or 3)
+    /// and drives role-aware tier promotion (see `effective_system`). When
+    /// omitted, behaviour is unchanged from the legacy per-node-only
+    /// scoring — same path every bench that existed pre-F7 ran.
+    #[pyo3(signature = (graph, task_domain, budget_usd, provider_hints=None, task_system=None))]
     fn assign_models(
         &self,
         graph: &mut TopologyGraph,
         task_domain: &str,
         budget_usd: f32,
         provider_hints: Option<Vec<(usize, String)>>,
+        task_system: Option<u8>,
     ) -> PyResult<usize> {
-        match provider_hints {
-            Some(hints) => Ok(self.assign_models_with_hints_inner(
-                graph,
-                task_domain,
-                budget_usd,
-                &hints,
-            )),
-            None => Ok(self.assign_models_inner(graph, task_domain, budget_usd)),
-        }
+        let task_sys = task_system.and_then(|n| match n {
+            1 => Some(CognitiveSystem::S1),
+            2 => Some(CognitiveSystem::S2),
+            3 => Some(CognitiveSystem::S3),
+            _ => None,
+        });
+        let hints: &[(usize, String)] = match &provider_hints {
+            Some(h) => h.as_slice(),
+            None => &[],
+        };
+        Ok(self.assign_models_with_hints_inner(
+            graph, task_domain, budget_usd, hints, task_sys,
+        ))
     }
 
     /// Exclude dead providers from all future assignments.
@@ -345,7 +433,8 @@ impl ModelAssigner {
 
     /// Assign a model to a single node. Optional ``exclude_model_ids`` skips
     /// specific models (used by FrugalGPT cascade to force an upgrade).
-    #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None))]
+    /// `task_system` drives role-aware tier promotion (see `effective_system`).
+    #[pyo3(signature = (graph, node_idx, task_domain, budget_usd, exclude_model_ids=None, task_system=None))]
     fn assign_single_node(
         &self,
         graph: &mut TopologyGraph,
@@ -353,10 +442,17 @@ impl ModelAssigner {
         task_domain: &str,
         budget_usd: f32,
         exclude_model_ids: Option<Vec<String>>,
+        task_system: Option<u8>,
     ) -> PyResult<String> {
+        let task_sys = task_system.and_then(|n| match n {
+            1 => Some(CognitiveSystem::S1),
+            2 => Some(CognitiveSystem::S2),
+            3 => Some(CognitiveSystem::S3),
+            _ => None,
+        });
         self.assign_single_node_inner(
             graph, node_idx, task_domain, budget_usd,
-            exclude_model_ids.as_deref(),
+            exclude_model_ids.as_deref(), task_sys,
         )
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
     }
@@ -581,7 +677,7 @@ mod tests {
         let n0b = TopologyNode::new("coder".into(), "".into(), 2, vec![], 0, 5.0, 60.0);
         graph2.add_node(n0b);
         let hints = vec![(0, other_provider.to_string())];
-        let n_with_hint = assigner.assign_models_with_hints_inner(&mut graph2, "code", 10.0, &hints);
+        let n_with_hint = assigner.assign_models_with_hints_inner(&mut graph2, "code", 10.0, &hints, None);
         assert_eq!(n_with_hint, 1);
         let assigned_with_hint = graph2.try_get_node(0).unwrap().model_id.clone();
         assert_eq!(assigned_with_hint, expected_with_hint,
@@ -594,7 +690,7 @@ mod tests {
         let registry = test_registry();
         let assigner = ModelAssigner::from_registry(&registry);
         let mut graph = two_node_graph();
-        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None);
+        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None, None);
         assert!(model_id.is_some());
         assert_eq!(
             graph.try_get_node(1).unwrap().model_id,
@@ -608,14 +704,14 @@ mod tests {
         let assigner = ModelAssigner::from_registry(&registry);
         let mut graph = two_node_graph();
         // First assign without exclusion
-        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None);
+        let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None, None);
         assert!(model_id.is_some());
         let first_model = model_id.unwrap();
 
         // Now assign with that model excluded — should pick a different one
         let mut graph2 = two_node_graph();
         let model_id2 = assigner.assign_single_node_inner(
-            &mut graph2, 1, "math", 10.0, Some(&[first_model.clone()]),
+            &mut graph2, 1, "math", 10.0, Some(&[first_model.clone()]), None,
         );
         if let Some(ref m) = model_id2 {
             assert_ne!(m, &first_model, "Excluded model should not be reassigned");
@@ -671,5 +767,130 @@ mod tests {
         assert!((a.weight_affinity - 0.4).abs() < 1e-6);
         assert!((a.weight_domain - 0.4).abs() < 1e-6);
         assert!((a.weight_cost - 0.2).abs() < 1e-6);
+    }
+
+    // ── F7 effective_system + role-aware tier promotion ────────────────
+    //
+    // Topaz-inspired (arXiv 2604.03527): route by role+task requirement,
+    // not by raw template tier. See sage-python/docs/benchmarks/
+    // 2026-04-17-swebench-smoke-debug.md for the motivating evidence.
+
+    #[test]
+    fn test_effective_system_without_task_hint_is_identity() {
+        // Legacy behaviour preserved when task_system=None — every existing
+        // caller that didn't know about task-level routing still gets the
+        // per-node tier it always got.
+        for role in ["planner", "coder", "synthesizer", "worker"] {
+            for local in [CognitiveSystem::S1, CognitiveSystem::S2, CognitiveSystem::S3] {
+                assert_eq!(effective_system(role, local, None), local);
+            }
+        }
+    }
+
+    #[test]
+    fn test_effective_system_s3_task_promotes_producers() {
+        // The SWE-bench case: sequential template has planner=S1, coder=S2,
+        // synthesizer=S1. With a task-level S3 hint, the producer nodes
+        // (planner, coder, worker) floor at S2; the synthesizer stays S1.
+        assert_eq!(
+            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            CognitiveSystem::S2
+        );
+        assert_eq!(
+            effective_system("coder", CognitiveSystem::S2, Some(CognitiveSystem::S3)),
+            CognitiveSystem::S2
+        );
+        assert_eq!(
+            effective_system("worker_0", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            CognitiveSystem::S2
+        );
+        assert_eq!(
+            effective_system("synthesizer", CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+            CognitiveSystem::S1
+        );
+    }
+
+    #[test]
+    fn test_effective_system_s2_task_is_no_op_for_low_local() {
+        // S2 task: producers floor at S1, which is already the minimum —
+        // no promotion happens. Templates that deliberately use cheap
+        // planners on S2 tasks keep that choice.
+        assert_eq!(
+            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S2)),
+            CognitiveSystem::S1
+        );
+    }
+
+    #[test]
+    fn test_effective_system_sink_roles_never_promoted() {
+        // Synthesizer / aggregator / formatter / output_* are terminal
+        // forwarders (SINK_NODE_PROMPT). Cheap is correct.
+        for sink in ["synthesizer", "aggregator", "output_formatter", "formatter", "output_writer"] {
+            assert_eq!(
+                effective_system(sink, CognitiveSystem::S1, Some(CognitiveSystem::S3)),
+                CognitiveSystem::S1,
+                "sink role `{}` must stay on local tier", sink
+            );
+        }
+    }
+
+    #[test]
+    fn test_effective_system_never_demotes() {
+        // If the template explicitly picked S3 for a node, we never
+        // downgrade, even if the task tier is lower.
+        assert_eq!(
+            effective_system("verifier", CognitiveSystem::S3, Some(CognitiveSystem::S1)),
+            CognitiveSystem::S3
+        );
+        assert_eq!(
+            effective_system("coder", CognitiveSystem::S3, Some(CognitiveSystem::S2)),
+            CognitiveSystem::S3
+        );
+    }
+
+    #[test]
+    fn test_is_sink_role_classification() {
+        // Positive: forwarder roles from templates.rs (SINK_NODE_PROMPT).
+        for r in ["synthesizer", "Synthesizer", "aggregator",
+                  "output_formatter", "formatter", "sink", "output"] {
+            assert!(is_sink_role(r), "`{}` should classify as sink", r);
+        }
+        // Negative: producer / tool-using / reasoning roles.
+        for r in ["planner", "coder", "worker_0", "verifier", "source",
+                  "thinker", "brainstormer", "actor", "critic"] {
+            assert!(!is_sink_role(r), "`{}` should NOT classify as sink", r);
+        }
+    }
+
+    #[test]
+    fn test_s3_task_pushes_planner_to_reasoner_model() {
+        // End-to-end: the two_node_graph() test registry has "cheap-fast"
+        // (s1_affinity=0.9, s2_affinity=0.3) and "expensive-smart"
+        // (s1_affinity=0.1, s2_affinity=0.9). A planner node at local=S1
+        // would normally score cheap-fast highest. With task_system=S3,
+        // the effective tier becomes S2 and expensive-smart should win.
+        let registry = test_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+
+        let mut g_no_hint = TopologyGraph::try_new("sequential").unwrap();
+        g_no_hint.add_node(TopologyNode::new(
+            "planner".into(), "".into(), 1, vec![], 0, 5.0, 60.0,
+        ));
+        assigner.assign_models_with_hints_inner(&mut g_no_hint, "code", 10.0, &[], None);
+        let baseline = g_no_hint.try_get_node(0).unwrap().model_id.clone();
+
+        let mut g_with_hint = TopologyGraph::try_new("sequential").unwrap();
+        g_with_hint.add_node(TopologyNode::new(
+            "planner".into(), "".into(), 1, vec![], 0, 5.0, 60.0,
+        ));
+        assigner.assign_models_with_hints_inner(
+            &mut g_with_hint, "code", 10.0, &[], Some(CognitiveSystem::S3),
+        );
+        let promoted = g_with_hint.try_get_node(0).unwrap().model_id.clone();
+
+        assert_eq!(baseline, "cheap-fast",
+            "baseline planner@S1 should pick the S1-heavy cheap-fast");
+        assert_eq!(promoted, "expensive-smart",
+            "task_system=S3 should promote planner to S2 and pick expensive-smart");
     }
 }

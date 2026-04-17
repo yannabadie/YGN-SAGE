@@ -611,18 +611,30 @@ class CognitiveOrchestrationPipeline:
             return ctx
 
         try:
-            # Pass provider hints from Path 6 policy output (multi-provider dimension)
+            # Pass provider hints from Path 6 policy output (multi-provider dimension).
             hints_list = (
                 list(ctx.provider_hints.items()) if ctx.provider_hints else None
             )
+            # F7: forward the OVERALL task tier so the Rust ModelAssigner can
+            # promote producer-role nodes (planner, coder, worker, verifier)
+            # that the template hardcoded at a low system tier. Without this,
+            # an S3 SWE-bench task's planner (template system=1) was matched
+            # against S1 affinity and picked a flash-lite model — see
+            # docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
+            task_system = ctx.system if ctx.system in (1, 2, 3) else None
             n_assigned = self.assigner.assign_models(
-                ctx.topology, ctx.domain, ctx.budget, hints_list
+                ctx.topology,
+                ctx.domain,
+                ctx.budget,
+                hints_list,
+                task_system,
             )
             log.info(
-                "Assigned models to %d nodes (domain=%s, budget=%.2f, provider_hints=%d)",
+                "Assigned models to %d nodes (domain=%s, budget=%.2f, task_system=%s, provider_hints=%d)",
                 n_assigned,
                 ctx.domain,
                 ctx.budget,
+                task_system,
                 len(ctx.provider_hints),
             )
 
