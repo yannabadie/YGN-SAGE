@@ -1,0 +1,90 @@
+{
+  "benchmark": "bigcodebench-hard-instruct",
+  "total": 5,
+  "passed": 0,
+  "failed": 5,
+  "errors": 5,
+  "pass_rate": 0.0,
+  "avg_latency_ms": 120010.95886230469,
+  "avg_cost_usd": 0.0026819999999999995,
+  "routing_breakdown": {
+    "S1": 0,
+    "S2": 0,
+    "S3": 0,
+    "unknown": 5
+  },
+  "results": [
+    {
+      "task_id": "BigCodeBench/13",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 120014.00399208069,
+      "cost_usd": 0.0,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "TIMEOUT"
+    },
+    {
+      "task_id": "BigCodeBench/15",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 120002.1345615387,
+      "cost_usd": 0.0,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "TIMEOUT"
+    },
+    {
+      "task_id": "BigCodeBench/17",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 120002.15601921082,
+      "cost_usd": 0.0,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "TIMEOUT"
+    },
+    {
+      "task_id": "BigCodeBench/19",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 120020.19929885864,
+      "cost_usd": 0.0,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "TIMEOUT"
+    },
+    {
+      "task_id": "BigCodeBench/34",
+      "passed": false,
+      "system_used": 0,
+      "latency_ms": 120016.3004398346,
+      "cost_usd": 0.0,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "TIMEOUT"
+    }
+  ],
+  "model_config": {},
+  "model": "unknown",
+  "provider": "",
+  "git_sha": "",
+  "feature_flags": [],
+  "timestamp": "",
+  "temperature": 0.0
+}
