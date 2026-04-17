@@ -1021,12 +1021,33 @@ class CognitiveOrchestrationPipeline:
                             for i in range(ctx.topology.node_count()):
                                 if self.assigner and hasattr(self.assigner, 'assign_single_node'):
                                     current_model = ctx.assignments.get(i, "")
+                                    # F7 wiring: forward task_system so the
+                                    # Rust ModelAssigner promotes producer
+                                    # nodes correctly during the cascade
+                                    # upgrade (otherwise the upgrade picks
+                                    # the next best per-node-tier model,
+                                    # ignoring the overall task complexity).
+                                    cascade_task_system = (
+                                        ctx.system if isinstance(getattr(ctx, "system", None), int)
+                                        and ctx.system in (1, 2, 3) else None
+                                    )
                                     try:
                                         self.assigner.assign_single_node(
                                             ctx.topology, i, ctx.domain,
                                             ctx.budget * 1.5,
                                             exclude_model_ids=[current_model] if current_model else None,
+                                            task_system=cascade_task_system,
                                         )
+                                    except TypeError:
+                                        # Older binding without task_system kwarg.
+                                        try:
+                                            self.assigner.assign_single_node(
+                                                ctx.topology, i, ctx.domain,
+                                                ctx.budget * 1.5,
+                                                exclude_model_ids=[current_model] if current_model else None,
+                                            )
+                                        except (ValueError, RuntimeError):
+                                            pass
                                     except (ValueError, RuntimeError):
                                         pass
                                 # Verify upgraded model has an available provider

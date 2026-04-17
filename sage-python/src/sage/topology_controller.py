@@ -342,6 +342,14 @@ class TopologyController:
 
         if self._assigner and hasattr(self._assigner, "assign_single_node") and hasattr(topology, "set_node_model_id"):
             excluded = [current_model_id] if current_model_id else None
+            # F7 wiring: forward the overall task tier so the Rust
+            # ModelAssigner's effective_system() can apply role-aware
+            # promotion (e.g., FrugalGPT cascade upgrades a coder on an
+            # S3 SWE-bench task → S2-floored picks land on a real
+            # reasoner, not just whichever cheap model has the next-best
+            # raw score). None when ctx.system is unset/garbage.
+            ctx_system = self._ctx_value(ctx, "system", None)
+            task_system = ctx_system if isinstance(ctx_system, int) and ctx_system in (1, 2, 3) else None
             try:
                 return self._assigner.assign_single_node(
                     topology,
@@ -349,17 +357,21 @@ class TopologyController:
                     task_domain,
                     budget_usd,
                     excluded,
+                    task_system=task_system,
                 )
             except TypeError:
                 try:
+                    # Older Rust .pyd / Python fallback that doesn't
+                    # know task_system — drop it and retry.
                     return self._assigner.assign_single_node(
                         topology,
                         node_idx,
                         task_domain,
                         budget_usd,
+                        excluded,
                     )
                 except Exception as exc:
-                    log.debug("assign_single_node retry without exclusion failed: %s", exc)
+                    log.debug("assign_single_node retry (no task_system) failed: %s", exc)
             except Exception as exc:
                 log.debug("assign_single_node failed for node %d: %s", node_idx, exc)
 

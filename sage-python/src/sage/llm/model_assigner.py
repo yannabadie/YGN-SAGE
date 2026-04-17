@@ -81,6 +81,7 @@ class ModelAssigner:
         task_domain: str,
         budget_usd: float,
         exclude_model_ids: list[str] | None = None,
+        task_system: int | None = None,
     ) -> str:
         """Assign a single node. Returns model_id or raises ValueError.
 
@@ -89,7 +90,16 @@ class ModelAssigner:
         exclude_model_ids : list[str], optional
             Model IDs to exclude from selection (e.g. for FrugalGPT cascade
             retry — exclude the model that produced low-quality output).
+        task_system : int, optional
+            Overall cognitive tier of the task (1/2/3). Accepted for
+            signature compatibility with the Rust ModelAssigner (F7
+            role-aware tier promotion). The pure-Python fallback does not
+            implement the floor logic — it scores per-node only — but
+            taking the param here lets callers forward ctx.system without
+            a TypeError dance. When this fallback is on the hot path
+            (Rust unavailable), the system already runs in degraded mode.
         """
+        del task_system  # Documented above: param accepted, not used.
         node = graph.get_node(node_idx) if hasattr(graph, 'get_node') else None
         if node is None:
             raise ValueError(f"Node index {node_idx} out of range")
