@@ -24,6 +24,18 @@ EDGE_CONTROL = 0
 EDGE_MESSAGE = 1
 EDGE_STATE = 2
 
+# Prefix of phases/learn.py EMPTY_STEP_SENTINEL. An output starting with this
+# means the upstream node exited its step budget without producing content —
+# forwarding it to downstream nodes only teaches them that predecessors
+# failed, then they cascade the same sentinel. We drop such outputs from
+# predecessor context entirely (without fabricating a replacement prompt).
+_SENTINEL_PREFIX = "[sage: agent exited after"
+
+
+def _is_sentinel(output: str) -> bool:
+    """True if output is the EMPTY_STEP_SENTINEL string from phases/learn.py."""
+    return isinstance(output, str) and output.strip().startswith(_SENTINEL_PREFIX)
+
 
 class TopologyRunner:
     """Execute a TopologyGraph as a real multi-agent system.
@@ -138,11 +150,27 @@ class TopologyRunner:
         parts_with_roles: list[tuple[str, str]] = []
         for idx in predecessor_indices:
             output = self._node_outputs.get(idx)
-            if output:
-                node = self.graph.get_node(idx)
-                role = getattr(node, "role", f"node-{idx}")
-                truncated = self._truncate_output(output, budget)
-                parts_with_roles.append((truncated, role))
+            if not output:
+                continue
+            # Drop EMPTY_STEP_SENTINEL — forwarding "agent exited after N steps
+            # with no content" to a downstream synthesizer teaches it that its
+            # inputs failed, and it replies with the same sentinel (cascade
+            # observed on smoke v4: 5/10 tasks ended with SENTINEL patches).
+            # We strip at the source; no fabricated replacement — if all
+            # predecessors are sentinels, the downstream node sees empty
+            # context and falls back to the task prompt alone, which is
+            # strictly better than being told "everyone failed".
+            if _is_sentinel(output):
+                log.info(
+                    "topology.runner: dropped sentinel output from predecessor %d (role=%s)",
+                    idx,
+                    getattr(self.graph.get_node(idx), "role", f"node-{idx}"),
+                )
+                continue
+            node = self.graph.get_node(idx)
+            role = getattr(node, "role", f"node-{idx}")
+            truncated = self._truncate_output(output, budget)
+            parts_with_roles.append((truncated, role))
 
         # Similarity gate: deduplicate near-identical predecessor outputs
         # Saves tokens when parallel workers produce similar answers (S2-MAD)
@@ -174,11 +202,15 @@ class TopologyRunner:
         parts_with_roles: list[tuple[str, str]] = []
         for idx in sorted(self._node_outputs.keys()):
             output = self._node_outputs[idx]
-            if output:
-                node = self.graph.get_node(idx)
-                role = getattr(node, "role", f"node-{idx}")
-                truncated = self._truncate_output(output, budget)
-                parts_with_roles.append((truncated, role))
+            if not output:
+                continue
+            # Same sentinel-strip logic as _gather_predecessor_context above.
+            if _is_sentinel(output):
+                continue
+            node = self.graph.get_node(idx)
+            role = getattr(node, "role", f"node-{idx}")
+            truncated = self._truncate_output(output, budget)
+            parts_with_roles.append((truncated, role))
 
         deduplicated = self._deduplicate_context(parts_with_roles)
         return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)

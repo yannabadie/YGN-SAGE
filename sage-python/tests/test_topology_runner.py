@@ -177,3 +177,67 @@ async def test_agent_loop_delegates_to_topology_runner():
         runner = TopologyRunner(graph, executor, llm_provider=mock_provider)
         result = await runner.run("test task")
         assert result == "Multi-agent result"
+
+
+# --- Sentinel-strip tests (post-smoke-v4 cascade fix) ---
+
+
+def _make_runner():
+    """Lightweight TopologyRunner with enough structure to exercise
+    _gather_predecessor_context directly (no LLM calls)."""
+    from sage.topology.runner import TopologyRunner
+
+    class _StubGraph:
+        def __init__(self):
+            self._n = {
+                0: FakeNode("planner", "mock", 2),
+                1: FakeNode("coder", "mock", 2),
+                2: FakeNode("synthesizer", "mock", 2),
+            }
+        def node_count(self):
+            return len(self._n)
+        def get_node(self, idx):
+            return self._n[idx]
+        def get_predecessors(self, idx):
+            return [i for i in self._n if i < idx]
+
+    runner = TopologyRunner(
+        _StubGraph(),
+        FakeExecutor(order=[]),
+        llm_provider=AsyncMock(),
+    )
+    return runner
+
+
+def test_sentinel_output_dropped_from_predecessor_context():
+    """Predecessor outputs matching EMPTY_STEP_SENTINEL must not reach downstream."""
+    runner = _make_runner()
+    runner._node_outputs = {
+        0: "[sage: agent exited after 5 steps with no content]",
+        1: "real investigation findings",
+    }
+    ctx = runner._gather_predecessor_context(2)
+    assert "sage: agent exited" not in ctx
+    assert "real investigation" in ctx
+
+
+def test_all_sentinels_produces_empty_context():
+    """If every predecessor is a sentinel, context is empty — downstream
+    node falls back to its own task prompt rather than 'everyone failed'."""
+    runner = _make_runner()
+    runner._node_outputs = {
+        0: "[sage: agent exited after 3 steps with no content]",
+        1: "[sage: agent exited after 5 steps with no content]",
+    }
+    ctx = runner._gather_predecessor_context(2)
+    assert ctx == ""
+
+
+def test_sentinel_prefix_only_matches_exact_format():
+    """Legitimate outputs that merely mention the marker text must not be dropped."""
+    from sage.topology.runner import _is_sentinel
+    assert not _is_sentinel("Discussion of the [sage: agent exited after ...] failure mode")
+    assert _is_sentinel("[sage: agent exited after 17 steps with no content]")
+    assert _is_sentinel("  [sage: agent exited after 0 steps with no content]  ")
+    assert not _is_sentinel("")
+    assert not _is_sentinel(None)
