@@ -68,7 +68,9 @@ def main() -> None:
     )
     print(
         f"Pipeline complete: discovered={report.discovered}, "
-        f"curated={report.curated}, ingested={report.ingested}"
+        f"curated={report.curated}, "
+        f"ingested={report.ingested} "
+        f"(qdrant={report.qdrant_ingested}, exocortex={report.exocortex_ingested})"
     )
 
 

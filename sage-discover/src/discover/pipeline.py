@@ -17,10 +17,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PipelineReport:
-    """Summary of a pipeline run."""
+    """Summary of a pipeline run.
+
+    `ingested` is the SUM of `qdrant_ingested + exocortex_ingested` so a
+    "successful" total can't lie about which backend actually grew. The
+    historical contract (single backend → `ingested == that backend's count`)
+    is preserved.
+    """
     discovered: int = 0
     curated: int = 0
     ingested: int = 0
+    qdrant_ingested: int = 0
+    exocortex_ingested: int = 0
 
 
 def _try_init_store():
@@ -42,12 +50,18 @@ def _try_init_embedder():
 
 
 def _try_init_exocortex():
-    store_name = os.environ.get("SAGE_EXOCORTEX_STORE")
-    if not store_name:
-        return None
+    """Best-effort ExoCortex init. Returns None on import failure or unavailable.
+
+    The class itself defaults `store_name` to the production store
+    (remote_rag.DEFAULT_STORE) when SAGE_EXOCORTEX_STORE is unset, so we
+    only need to gate on availability — not on the env var being present.
+    Previously a missing env var silently disabled ExoCortex even when
+    the class could have served queries.
+    """
     try:
         from sage.memory.remote_rag import ExoCortex
-        return ExoCortex()
+        ex = ExoCortex()
+        return ex if ex.is_available else None
     except Exception:
         return None
 
@@ -115,13 +129,21 @@ async def run_pipeline(
     if not curated:
         return report
 
-    # Ingestion -- prefer Qdrant store, fall back to ExoCortex
+    # Ingestion — write to BOTH stores when available.
+    # Qdrant feeds adaptive_curate's local hybrid neighbour search.
+    # ExoCortex feeds the runtime `search_exocortex` agent tool (Google
+    # File Search store). Pre-fix this was an `if/else` — when Qdrant
+    # init succeeded, ExoCortex was silently skipped and the runtime
+    # store stayed frozen. See docs/benchmarks/2026-04-17-exocortex-debug.md
     if store and embedder:
-        report.ingested = await ingest_all_to_store(curated, store, embedder)
-    else:
-        exocortex = exocortex or _try_init_exocortex()
-        if exocortex:
-            report.ingested = await ingest_all(curated, exocortex)
+        report.qdrant_ingested = await ingest_all_to_store(curated, store, embedder)
+    exocortex = exocortex or _try_init_exocortex()
+    if exocortex:
+        report.exocortex_ingested = await ingest_all(curated, exocortex)
+    report.ingested = report.qdrant_ingested + report.exocortex_ingested
 
-    logger.info("Ingested %d papers", report.ingested)
+    logger.info(
+        "Ingested papers: total=%d (qdrant=%d, exocortex=%d)",
+        report.ingested, report.qdrant_ingested, report.exocortex_ingested,
+    )
     return report

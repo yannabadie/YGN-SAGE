@@ -40,6 +40,7 @@ def sample_curated(sample_candidates):
 def test_pipeline_report_structure():
     r = PipelineReport()
     assert r.discovered == 0 and r.curated == 0 and r.ingested == 0
+    assert r.qdrant_ingested == 0 and r.exocortex_ingested == 0
     r2 = PipelineReport(discovered=5, curated=3, ingested=2)
     assert r2.discovered == 5
 
@@ -56,8 +57,45 @@ async def test_pipeline_nightly_with_store(mock_discover, mock_curate, mock_inge
 
     report = await run_pipeline(mode="nightly", llm=MagicMock(), store=mock_store, embedder=mock_embedder)
     assert report.discovered == 2
+    # No ExoCortex passed, no env-default → only Qdrant ran
+    assert report.qdrant_ingested == 2
+    assert report.exocortex_ingested == 0
     assert report.ingested == 2
     mock_discover.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch("discover.pipeline.ingest_all", new_callable=AsyncMock, return_value=2)
+@patch("discover.pipeline.ingest_all_to_store", new_callable=AsyncMock, return_value=2)
+@patch("discover.pipeline.curate", new_callable=AsyncMock)
+@patch("discover.pipeline.discover", new_callable=AsyncMock)
+async def test_pipeline_writes_to_both_backends(
+    mock_discover, mock_curate, mock_qdrant, mock_exo,
+    sample_candidates, sample_curated,
+):
+    """Regression test for 2026-04-17 ExoCortex ingest=0 bug.
+
+    Pre-fix the pipeline did `if store and embedder: ... else: exocortex...`
+    so a passed ExoCortex was silently ignored when Qdrant init succeeded.
+    The runtime `search_exocortex` tool queries the Google File Search
+    store — it MUST receive new uploads alongside the local Qdrant writes.
+    """
+    mock_discover.return_value = sample_candidates
+    mock_curate.return_value = sample_curated
+    mock_store = MagicMock()
+    mock_embedder = MagicMock()
+    mock_exocortex = MagicMock()
+
+    report = await run_pipeline(
+        mode="nightly", llm=MagicMock(),
+        store=mock_store, embedder=mock_embedder,
+        exocortex=mock_exocortex,
+    )
+    mock_qdrant.assert_awaited_once()
+    mock_exo.assert_awaited_once()  # ← would have been 0 pre-fix
+    assert report.qdrant_ingested == 2
+    assert report.exocortex_ingested == 2
+    assert report.ingested == 4  # SUM, not max — surfaces both writes
 
 
 @pytest.mark.asyncio
