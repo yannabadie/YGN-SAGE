@@ -21,19 +21,34 @@ from discover.discovery import (
 
 # --- DOMAINS ---
 
-def test_domains_has_five_entries():
-    assert len(DOMAINS) == 5
-    expected_keys = {
+def test_domains_has_expected_entries():
+    # Original 5 domains (memory of the 5-pillar project) + 7 frontier
+    # domains added 2026-04-17 from the Discover AI / code4AI channel
+    # inspection. Each entry must still carry arxiv_categories + keywords.
+    original_five = {
         "marl",
         "cognitive_architectures",
         "formal_verification",
         "evolutionary_computation",
         "memory_systems",
     }
+    frontier_2026 = {
+        "agent_harness",
+        "test_time_compute",
+        "neuro_symbolic_ai",
+        "multi_agent_communication",
+        "prompt_optimization",
+        "agent_safety",
+        "agent_benchmarks",
+    }
+    expected_keys = original_five | frontier_2026
     assert set(DOMAINS.keys()) == expected_keys
+    assert len(DOMAINS) == len(expected_keys)
     for key, val in DOMAINS.items():
-        assert "arxiv_categories" in val
-        assert "keywords" in val
+        assert "arxiv_categories" in val, f"{key} missing arxiv_categories"
+        assert "keywords" in val, f"{key} missing keywords"
+        assert val["arxiv_categories"], f"{key} has empty arxiv_categories"
+        assert val["keywords"], f"{key} has empty keywords"
 
 
 # --- PaperCandidate ---

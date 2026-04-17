@@ -64,6 +64,92 @@ DOMAINS: dict[str, dict[str, Any]] = {
             "working memory transformer",
         ],
     },
+    # --- April 2026 expansion (Discover AI / code4AI channel inspiration) ---
+    # Each new domain maps to a frontier topic not covered by the original 5.
+    "agent_harness": {
+        # Scaffolds, SKILL.md files, Meta-Harness, Trace2Skill, OpenClaw/OmniFlow/NemoClaw,
+        # AI filesystems for agents. This is the dominant theme of 2026-04 research.
+        "arxiv_categories": ["cs.AI", "cs.SE", "cs.CL"],
+        "keywords": [
+            "agent harness scaffold",
+            "SKILL.md agent skills",
+            "meta harness prompt tuning",
+            "agent toolchain filesystem",
+            "trace-to-skill extraction",
+        ],
+    },
+    "test_time_compute": {
+        # Test-time training, reasoning traces, sage_recurse-style recursion,
+        # self-invocation, inference-time scaling.
+        "arxiv_categories": ["cs.LG", "cs.AI", "cs.CL"],
+        "keywords": [
+            "test-time training LLM",
+            "test-time compute scaling",
+            "reasoning trace complexity",
+            "inference-time adaptation",
+            "recursive self-invocation LLM",
+        ],
+    },
+    "neuro_symbolic_ai": {
+        # Bridges formal_verification + LLM reasoning. SMT + neural, differentiable
+        # logic, verified chain-of-thought.
+        "arxiv_categories": ["cs.AI", "cs.LO", "cs.SYMB"],
+        "keywords": [
+            "neuro-symbolic AI",
+            "neuro-symbolic reasoning",
+            "differentiable logic programming",
+            "symbolic LLM verification",
+            "chain of thought verified",
+        ],
+    },
+    "multi_agent_communication": {
+        # Bandwidth theory, S2-MAD dedup, graph topology messaging, efficient
+        # agent protocols. Extends marl with communication primitives.
+        "arxiv_categories": ["cs.MA", "cs.IT", "cs.AI"],
+        "keywords": [
+            "multi-agent communication bandwidth",
+            "agent message passing protocol",
+            "topology-aware communication",
+            "information-theoretic agent communication",
+            "compressed agent messaging",
+        ],
+    },
+    "prompt_optimization": {
+        # GEPA, VISTA, auto-prompting, DSPy-style prompt compilation,
+        # Meta-Harness research fits here.
+        "arxiv_categories": ["cs.CL", "cs.AI", "cs.LG"],
+        "keywords": [
+            "prompt optimization auto-prompt",
+            "DSPy prompt compilation",
+            "GEPA prompt engineering",
+            "VISTA prompt tuning",
+            "learned prompts gradient-free",
+        ],
+    },
+    "agent_safety": {
+        # LogAct (Meta), alignment for agents, attack vectors on agent systems,
+        # guardrails, sandbox escapes. Currently uncovered in our 5 domains.
+        "arxiv_categories": ["cs.AI", "cs.CR", "cs.SE"],
+        "keywords": [
+            "agent safety alignment",
+            "LLM agent trust LogAct",
+            "agent guardrails runtime",
+            "agent sandbox escape defense",
+            "tool-use safety LLM",
+        ],
+    },
+    "agent_benchmarks": {
+        # SWE-bench Pro, Terminal-Bench, CyberGym, agent evaluation methodology.
+        # Our own bench targets live here — crucial for staying SOTA-aware.
+        "arxiv_categories": ["cs.SE", "cs.AI", "cs.CL"],
+        "keywords": [
+            "SWE-bench Pro benchmark",
+            "agent benchmark evaluation",
+            "Terminal-Bench CyberGym",
+            "coding agent leaderboard",
+            "agent scaffolding evaluation 2026",
+        ],
+    },
 }
 
 # ---------------------------------------------------------------------------
