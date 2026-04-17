@@ -100,23 +100,14 @@ errors = [r for r in report['results'] if r.get('error')]
 | routing_gt | Strategy only | N/A | Routing accuracy |
 | ablation | Framework delta | varies | YES (full vs baseline) |
 
-## Z3 Quality Labels (for training DistilBERT)
+## Path 6 (Learned Topology Policy) — OFF BY DEFAULT
 ```bash
-python scripts/collect_quality_labels.py --dataset bigcodebench --subset hard --limit 50
-```
-
-## Path 6 (Learned Topology Policy)
-```bash
-# Enable Path 6 in pipeline (loads 3.8B model on GPU)
+# Enable Path 6 only if a local checkpoint is set up (3.8B model on GPU)
 export SAGE_ENABLE_PATH6=1
 python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
-
-# Train topology policy (on RunPod H100 — see RUNPOD_PLAN.md)
-cd sage-python && bash scripts/verl/train_topology.sh  # GiGPO via verl-agent
-
-# Generate SFT data (requires OPENAI_API_KEY for GPT-5.4)
-python scripts/generate_topology_sft.py --dataset bigcodebench --limit 100 --model gpt-5.4
 ```
+
+Training code (verl/, scripts/, data/, models/) lives on a dedicated training branch — removed from `main` on 2026-04-15 (commit `b2f59ee`, -4.3 GB). Z3 quality labels, SFT generation and GRPO training live there. Checkpoints remain on HuggingFace (`yannabadie/sage-topology-policy-local`, `yannabadie/sage-topology-policy-v2`).
 
 ## Lint
 ```bash

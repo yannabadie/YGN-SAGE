@@ -38,10 +38,10 @@ python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 
 python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 
-# Training (Nemotron E2E — THE reference command)
-pip install -e ".[training]"
-bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
-bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
+# Training — PARKED on main since 2026-04-15 (commit b2f59ee, -4.3GB)
+# verl/, scripts/, data/, models/ and training tests live on a dedicated training branch.
+# Trained checkpoints still on HF: yannabadie/sage-topology-policy-local (Phase C, 40% MASBENCH).
+# Set SAGE_ENABLE_PATH6=1 to load a local checkpoint at inference time.
 
 # Meta-Harness (harness optimization — arXiv 2603.28052)
 # All commands from C:\Code\YGN-SAGE root. Workspace defaults to ~/.sage-meta-harness/
@@ -55,15 +55,16 @@ python -m sage.meta_harness apply                    # Apply best to production
 python -m sage.meta_harness.auto_propose -n 10       # Automated search (10 iterations)
 ```
 
-## Current State (April 1, 2026)
+## Current State (April 17, 2026)
 
-- **Tests**: Python **1951 passed** / Rust **403 passed** / 0 failures
+- **Tests**: Python **1897 collected** / Rust **429 passed** (2026-04-10)
 - **Templates**: 11 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout)
-- **Routing**: kNN 92% GT, SystemRouter 86%, heuristic 34% (dead code)
+- **Routing**: kNN 92% GT, Rust SystemRouter 88% (now wired end-to-end since 2026-04-10, commit 921cb7e), heuristic 34% (dead code)
 - **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml
-- **Benchmarks**: BigCodeBench Hard 37.8%, HumanEval+ 89.6%, MASBENCH +27pp over bare
-- **Training data**: `yannabadie/sage-training-data` on HuggingFace
-- **Trained models**: `yannabadie/sage-topology-policy-v2` on HuggingFace
+- **Benchmarks**: BigCodeBench Hard **45.9%** (tuned v4, 2026-04-07, above The Conductor 40%) / 37.8% (budget), HumanEval+ 89.6%, MASBENCH breadth **+22pp p=0.015**
+- **Architecture**: Unified entry point Phases 1-3 MERGED (2026-04-10, f212f93). `system.run()` → `pipeline.run()` single path; topology nodes = real agents via factory.
+- **Training**: ⏸ PARKED on main (2026-04-15, b2f59ee). Code on dedicated branch, checkpoints on HF.
+- **Trained models**: `yannabadie/sage-topology-policy-local` (Phase C, best), `yannabadie/sage-topology-policy-v2` (Nemotron)
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha
 
 ## Detailed rules in .claude/rules/

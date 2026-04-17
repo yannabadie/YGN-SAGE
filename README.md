@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-1980%20passed-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1897%20collected-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -168,30 +168,15 @@ Unique among agent frameworks — no competitor has this:
 
 ## Training Pipeline
 
-Two parallel training tracks:
+Training code (veRL integration, SFT/GRPO scripts, datasets, checkpoints) was moved out of `main` on 2026-04-15 (commit `b2f59ee`, ~4.3 GB removed). Focus shifted to orchestration correctness and agentic benchmarks. The code lives in a dedicated training branch; revive it there when needed.
 
-### Local (RTX 3500 Ada 12 GB) — Qwen3-4B
-```bash
-pip install -e ".[training]"
-python scripts/train_local_qwen3_4b.py --sft-data data/topology_sft_v2_combined.jsonl
-```
-- **Phase A SFT**: loss 1.59→0.225, N1=0.865 (tool-call JSON format)
-- **Phase C SFT Adaptive**: N1=0.922 (+6.6%, with checkpoints + adapt_topology decisions)
-- Stack: bitsandbytes NF4 + PEFT LoRA + TRL (SFTTrainer + GRPOTrainer)
-- Model on HF: [yannabadie/sage-topology-policy-local](https://huggingface.co/yannabadie/sage-topology-policy-local)
+Trained checkpoints remain available on HuggingFace:
+- [yannabadie/sage-topology-policy-local](https://huggingface.co/yannabadie/sage-topology-policy-local) — Qwen3-4B (Phase C: 0.922 structural, 40% MASBENCH depth — **best local model**)
+- [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2) — Nemotron-Orchestrator-8B (veRL pod checkpoints)
 
-### Pod (RunPod 2xH100 NVL) — Nemotron-Orchestrator-8B
-```bash
-bash scripts/verl/train_nemotron_e2e.sh --smoke  # plumbing test
-bash scripts/verl/train_nemotron_e2e.sh           # full (~30h)
-```
-- **SFT warmup**: loss 2.87→1.30
-- **Phase A GRPO**: step 1050, reward 0.225 (structural ceiling)
-- **DAPO targeted**: in progress
-- Stack: verl 0.7.1 + vLLM + Ray + FSDP
-- Model on HF: [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2)
-
-Phase A/B = GRPO warm-up (single-turn, learn YAML format). Phase C = GiGPO multi-step with 4-state machine, checkpoints, and micro-decisions (continue/upgrade/reroute).
+Path 6 (learned topology policy) is currently off by default. To use a trained model:
+- Enable via `SAGE_ENABLE_PATH6=1`, point to your local checkpoint, and install the training extras in a dedicated environment.
+- See the training branch for SFT/GRPO scripts and the `V2 GRPO lessons` note (avoid `environment_factory`, use plain `reward_funcs`).
 
 ## Multi-Provider Architecture
 
@@ -213,18 +198,20 @@ Each topology node can use a different provider. The policy model can express `p
 
 | Benchmark | Score | Notes |
 |-----------|-------|-------|
-| **MASBENCH** | **67%** (vs 40% bare = +27pp) | First empirical proof topology helps |
-| **HumanEval+ pipeline** | **89.6%** (147/164) | +5.5pp over pre-pipeline (84.1%) |
-| **BigCodeBench Hard Instruct** | **37.8%** (56/148) | Budget model. SOTA 40.0% (The Conductor) |
-| **kNN routing GT** | **92%** (46/50) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) |
+| **BigCodeBench Hard Instruct (tuned)** | **45.9%** (68/148) | 2026-04-07 v4: pre-filter + reasoner repair + escalation. Above SOTA 40.0% (The Conductor). |
+| **BigCodeBench Hard Instruct (budget)** | **37.8%** (56/148) | Budget model baseline (2026-03). |
+| **MASBENCH breadth** | **+22pp** p=0.015 | Only statistically significant axis (N=50). Other axes p>0.05. |
+| **HumanEval+ pipeline** | **89.6%** (147/164) | +5.5pp over pre-pipeline (84.1%). Saturated benchmark — prefer BCB for framework delta. |
+| **kNN routing GT** | **92%** (46/50) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601). Rust SystemRouter 88%. |
 | **TopologyBench** | **94.0%** mean (9/9) | 4.3pp spread across topologies |
+| **SWE-bench Lite** | 0% (0/5) diagnostic | 2026-04-08: 3 gaps — routing S2→S3, tool-use prompt, multi-turn loop. Remediation in progress. |
 
 ### Tests
 
 | Suite | Result |
 |-------|--------|
-| Python | **1980 passed**, 0 failures |
-| Rust | **311 passed** (base), **395+** with smt, tool-executor, onnx, cognitive features |
+| Python | **1897 collected** (training-test deletion on 2026-04-15) |
+| Rust | **429 passed** with smt, tool-executor, onnx, cognitive features (2026-04-10) |
 | Discovery | 95 tests |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 
@@ -268,12 +255,9 @@ cd sage-python && python -m pytest tests/ -v
 python -m sage.bench --type routing_gt
 python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
 python -m sage.bench --type masbench --limit 5
-
-# Training (Nemotron E2E — THE reference command)
-pip install -e ".[training]"
-bash scripts/verl/train_nemotron_e2e.sh --smoke    # Plumbing test (CPU, <2min)
-bash scripts/verl/train_nemotron_e2e.sh             # Full (RunPod H100, ~30h)
 ```
+
+Training commands live on the training branch — see the [Training Pipeline](#training-pipeline) section.
 
 ## Use as a Library
 

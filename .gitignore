@@ -78,6 +78,14 @@ certs/
 
 # Data blobs (regenerate via scripts/)
 sage-python/data/*.log
+
+# Benchmark runtime artifacts
+sage-python/astropy/
+*.aeskey.encrypted
+
+# Session handoff notes (not for repo)
+infos_lastsesion.md
+infos_lastsession.md
 sage-python/data/*.jsonl
 
 # Trained models (regenerate via scripts/train_topology_grpo.py)
