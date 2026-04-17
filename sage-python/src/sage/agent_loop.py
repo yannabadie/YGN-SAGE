@@ -220,9 +220,19 @@ class AgentLoop:
         )
 
     async def _execute_tool_call(self, tc) -> str:
-        """Execute a tool call with argument validation."""
+        """Execute a tool call with argument validation.
+
+        Forwards the loop's ToolForge (if any, wired in boot.py) so unknown
+        tools trigger autonomous synthesis instead of a hard error.
+        """
         from sage.agent_loop_execution import execute_tool_call
-        return await execute_tool_call(tc, self._tools, self._emit)
+        return await execute_tool_call(
+            tc,
+            self._tools,
+            self._emit,
+            toolforge=getattr(self, "toolforge", None),
+            task_context=getattr(self, "_current_task", "") or "",
+        )
 
     async def run(self, task: str) -> str:
         """Execute the full perceive -> think -> act -> learn cycle.
@@ -246,6 +256,17 @@ class AgentLoop:
         self._s3_degraded = False
         self._original_validation_level = self.config.validation_level
         self.step_count = 0
+        # Exposed for _execute_tool_call so synthesized tools (ToolForge
+        # CreationTicket) know what task they were asked to support.
+        self._current_task = task
+
+        # Reset ToolForge per-run counters so each run gets its own
+        # MAX_CREATIONS budget (default: 2).
+        if getattr(self, "toolforge", None) is not None:
+            try:
+                self.toolforge.reset_run()
+            except Exception:
+                pass
 
         # === PERCEIVE ===
         p_result = await perceive(task, self)

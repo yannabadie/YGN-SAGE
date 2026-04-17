@@ -18,8 +18,16 @@ async def execute_tool_call(
     tc: Any,
     tool_registry: Any,
     emit_fn: Any,
+    toolforge: Any = None,
+    task_context: str = "",
 ) -> str:
     """Execute a single tool call with argument validation.
+
+    If the tool is unknown and a ToolForge is provided (self-programming, UCT
+    arXiv 2602.01983), we open a CreationTicket, synthesize the tool (LLM
+    generates code + tests, dual-gate validation), and transparently retry
+    the call when synthesis succeeds. Otherwise, we return the original
+    "Unknown tool" error so the LLM can recover on its own.
 
     Parameters
     ----------
@@ -29,6 +37,11 @@ async def execute_tool_call(
         Registry to look up the tool by name.
     emit_fn : callable
         Callable to emit LoopPhase.ACT events (for TOOL_GAP detection).
+    toolforge : ToolForge, optional
+        If provided, triggers autonomous tool synthesis on unknown tools.
+    task_context : str, optional
+        Current task text (passed to GapDetector so synthesized tools know
+        what they are for).
 
     Returns
     -------
@@ -39,14 +52,52 @@ async def execute_tool_call(
 
     tool = tool_registry.get(tc.name)
     if tool is None:
-        # Emit TOOL_GAP for ToolForge gap detection
+        # Emit TOOL_GAP for observability / tracing.
         emit_fn(
             LoopPhase.ACT,
             tool_gap=True,
             tool_name=tc.name,
             tool_args=tc.arguments,
         )
-        return f"Error: Unknown tool '{tc.name}'"
+
+        # Try autonomous synthesis if a ToolForge is wired.
+        if toolforge is not None and getattr(toolforge, "gap_detector", None):
+            try:
+                ticket = toolforge.gap_detector.on_unknown_tool(
+                    tool_name=tc.name,
+                    tool_args=tc.arguments,
+                    task=task_context,
+                )
+                if ticket is not None:
+                    log.info("ToolForge: synthesizing missing tool '%s'", tc.name)
+                    emit_fn(
+                        LoopPhase.ACT,
+                        tool_forge="synthesizing",
+                        tool_name=tc.name,
+                    )
+                    created = await toolforge.process_tickets([ticket])
+                    if tc.name in created:
+                        # Re-lookup — the registry should now have the tool.
+                        tool = tool_registry.get(tc.name)
+                        if tool is not None:
+                            log.info(
+                                "ToolForge: '%s' registered, retrying call", tc.name,
+                            )
+                            emit_fn(
+                                LoopPhase.ACT,
+                                tool_forge="created",
+                                tool_name=tc.name,
+                            )
+                        else:
+                            log.warning(
+                                "ToolForge: '%s' reported created but missing in registry",
+                                tc.name,
+                            )
+            except (RuntimeError, ValueError, TimeoutError) as exc:
+                log.warning("ToolForge synthesis for '%s' failed: %s", tc.name, exc)
+
+        if tool is None:
+            return f"Error: Unknown tool '{tc.name}'"
     kwargs = tc.arguments
     if not isinstance(kwargs, dict):
         log.warning("Tool '%s' received non-dict arguments: %s", tc.name, type(kwargs))
