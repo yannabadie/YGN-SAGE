@@ -95,12 +95,25 @@ class AgentSystem:
             info["tier"] = getattr(self.metacognition, "_current_tier", "")
         return info
 
-    async def run(self, task: str) -> str:
+    async def run(
+        self,
+        task: str,
+        *,
+        system_hint: int | None = None,
+    ) -> str:
         """Run a task through the agent system.
 
         Mock mode: direct AgentLoop (tested exception, preserves 2001 tests).
         Non-mock: CognitiveOrchestrationPipeline (5-stage).
         Fallback: direct AgentLoop if pipeline not initialized.
+
+        Args:
+            task: The user's task.
+            system_hint: Optional override for Stage 0 routing (1, 2, or 3).
+                Passed through to ``pipeline.run(system_hint=...)`` when the
+                pipeline is active. Benchmark adapters that already know the
+                task class (e.g. SWE-bench tasks are always S3) use this to
+                skip router misclassification.
         """
         _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD
 
@@ -117,7 +130,9 @@ class AgentSystem:
         # Pipeline Stage 4 now calls agent_loop.run() for bypass (Phase 1),
         # giving every task tools + S2/S3 validation + guardrails + memory.
         if self.pipeline:
-            result = await self.pipeline.run(task, budget_usd=_budget)
+            result = await self.pipeline.run(
+                task, budget_usd=_budget, system_hint=system_hint,
+            )
             self._last_execution_path = "pipeline"
             await self._persist_memory()
             return result

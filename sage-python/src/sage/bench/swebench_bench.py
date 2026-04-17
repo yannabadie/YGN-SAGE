@@ -108,49 +108,91 @@ def load_swebench_dataset(
 # ---------------------------------------------------------------------------
 # Prompt engineering for SWE-Bench tasks
 # ---------------------------------------------------------------------------
-
-_SYSTEM_PROMPT = """\
-You are an expert software engineer. You will be given a GitHub issue and \
-information about the repository. Your task is to resolve the issue by \
-producing a patch in unified diff format.
-
-You have tools available — use them to understand the codebase before patching:
-- execute_bash: run any shell command (cat, grep, find, git log, python, pytest)
-
-Workflow:
-1. Read the relevant source files (e.g., execute_bash with command "cat src/module.py")
-2. Search for related code (e.g., execute_bash with command "grep -rn 'pattern' src/")
-3. Understand the bug from actual source code, not just the issue description
-4. Write the minimal patch to fix the issue
-5. Verify context lines match the actual source exactly
-
-When you are ready, output your final patch in unified diff format:
-- Start with diff --git a/<path> b/<path>
-- Include --- a/<path> and +++ b/<path> lines
-- Include correct @@ -start,count +start,count @@ hunk headers
-- Context lines MUST match the actual source (you verified with execute_bash)
-- Focus on the minimal change needed"""
+#
+# NOTE: AgentSystem.run() takes a single task string (no separate system
+# prompt slot at the benchmark boundary). Everything the model needs to know
+# about tool-use and iteration must be inside the task text — hence the
+# merged template below.
+#
+# Lessons from 2026-04-08 diagnostic (tool_turn_count=1 for all 5 tasks):
+# 1. Routing classified SWE-bench tasks as S2 — fixed via pipeline.run(system_hint=3).
+# 2. The richer system-prompt text wasn't wired into the task — fixed below.
+# 3. Models rushed to patch after one tool call — the template now MANDATES
+#    at least three exploration steps before any patch is written, and forces
+#    line-number verification before emitting hunk headers.
 
 _TASK_TEMPLATE = """\
-Repository: {repo}
-Version: {version}
-Base commit: {base_commit}
-Working directory: the repo is checked out at the current directory (use relative paths)
+You are an expert software engineer working inside a checked-out repository \
+clone. Your job is to resolve a GitHub issue by producing a minimal unified \
+diff patch.
+
+## Repository
+- **Repo:** {repo}
+- **Version:** {version}
+- **Base commit:** {base_commit}
+- **Working directory:** the repo is checked out in the current directory. \
+Use relative paths (no absolute paths, no /tmp/...).
 
 ## Issue Description
 
 {problem_statement}
 
 {hints_section}\
-Explore the code with execute_bash, then write a unified diff patch that resolves this issue."""
+## Mandatory Workflow — Follow Every Step
+
+You have these tools available:
+- **execute_bash** — run any shell command (cat, grep, find, git log, sed, python, pytest)
+- Memory + knowledge tools registered at boot (if any)
+
+You MUST make at least THREE distinct execute_bash calls *before* writing any \
+patch. One-shot patches are almost always wrong — the line numbers and \
+context lines will not match the real source, and the harness will reject \
+the diff.
+
+1. **Locate** the code mentioned in the issue.
+   Example: `grep -RIn "ClassName\\|function_name" src/ tests/ | head -40`
+2. **Read** the full function/class being modified (not just the snippet in the issue).
+   Example: `sed -n '200,260p' src/package/module.py`
+3. **Check tests** that reference the target. They often reveal the contract.
+   Example: `grep -RIn "function_name" tests/ | head -20`
+4. **Verify** hunk line numbers immediately before emitting them.
+   Example: `grep -n "^def function_name" src/package/module.py`
+5. Reason about the minimal change. If unsure, read more. Never guess line numbers.
+6. Write the patch.
+
+## Patch Format — Strict
+
+Output your final patch in unified diff format inside a fenced ```diff block:
+
+```diff
+diff --git a/path/to/file.py b/path/to/file.py
+--- a/path/to/file.py
++++ b/path/to/file.py
+@@ -<start>,<count> +<start>,<count> @@ <optional context>
+ unchanged line
+-removed line
++added line
+ unchanged line
+```
+
+Hard requirements:
+- `diff --git` headers and `--- a/` / `+++ b/` paths MUST use forward slashes.
+- Every context and removed line MUST match the real source exactly — you \
+verified this with execute_bash.
+- Hunk ranges (`@@ -s,c +s,c @@`) MUST be correct. Re-check with grep -n.
+- Keep the change minimal. Do not refactor unrelated code."""
 
 
 def _build_task_prompt(instance: dict[str, Any]) -> str:
-    """Build the task prompt for an SWE-Bench instance."""
+    """Build the task prompt for an SWE-Bench instance.
+
+    Note: the system prompt and task body are merged into a single text
+    because AgentSystem.run() accepts only a single task string.
+    """
     hints = instance.get("hints_text") or ""
     hints_section = ""
     if hints and hints.strip():
-        hints_section = f"## Hints\n\n{hints.strip()}\n\n"
+        hints_section = f"## Hints (from the issue comments)\n\n{hints.strip()}\n\n"
 
     return _TASK_TEMPLATE.format(
         repo=instance["repo"],
@@ -385,8 +427,10 @@ class SWEBenchBench:
                 log.warning("[%s] Repo setup failed: %s — agent runs without code access", instance_id, e)
 
             try:
+                # SWE-bench tasks are always S3 (complex multi-step code work).
+                # Skip router misclassification by hinting explicitly.
                 response = await asyncio.wait_for(
-                    self.system.run(task_prompt),
+                    self.system.run(task_prompt, system_hint=3),
                     timeout=self.timeout_per_task,
                 )
                 patch = _extract_patch(response)

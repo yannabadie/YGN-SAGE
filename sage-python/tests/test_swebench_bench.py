@@ -34,7 +34,11 @@ async def test_generate_patches_uses_pipeline_context_metadata(monkeypatch):
             self.pipeline = SimpleNamespace(last_context=None)
             self._last_execution_path = ""
 
-        async def run(self, task: str) -> str:
+        async def run(self, task: str, *, system_hint: int | None = None) -> str:
+            # SWEBenchBench forces S3 routing via system_hint=3 — verify the
+            # plumbing reaches this layer so the router override is actually
+            # in effect at inference time.
+            assert system_hint == 3
             self.pipeline.last_context = SimpleNamespace(
                 system=3,
                 tool_call_count=2,

@@ -205,13 +205,35 @@ class CognitiveOrchestrationPipeline:
             except (ImportError, RuntimeError):
                 pass
 
-    async def run(self, task: str, budget_usd: float = 10.0) -> str:
-        """Execute the full 5-stage pipeline."""
+    async def run(
+        self,
+        task: str,
+        budget_usd: float = 10.0,
+        system_hint: int | None = None,
+    ) -> str:
+        """Execute the full 5-stage pipeline.
+
+        Args:
+            task: The user's task.
+            budget_usd: Soft budget cap for the run.
+            system_hint: Optional override for Stage 0 routing (1, 2, or 3).
+                Benchmark adapters use this when they already know the task
+                complexity (e.g. SWE-bench tasks are always S3). When set,
+                the Rust SystemRouter still runs (so we keep the model
+                assignment + bandit posteriors), but `ctx.system` is forced
+                to the hint afterwards.
+        """
         t0 = time.monotonic()
         ctx = PipelineContext(task=task, budget=budget_usd)
 
         # Stage 0: CLASSIFY
         ctx = self._stage_classify(ctx)
+        if system_hint in (1, 2, 3) and ctx.system != system_hint:
+            log.info(
+                "Stage 0: system_hint=S%d overrides router S%d",
+                system_hint, ctx.system,
+            )
+            ctx.system = system_hint
         self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
         # Stage 1: DECOMPOSE (S2/S3 only)
