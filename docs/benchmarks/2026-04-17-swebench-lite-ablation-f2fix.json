@@ -1,0 +1,21 @@
+{
+  "benchmark": "swebench_lite",
+  "date": "2026-04-17",
+  "generated_at": "2026-04-17T12:30:24.378728+00:00",
+  "tier": "reasoner",
+  "limit": 3,
+  "configs_run": [
+    "full"
+  ],
+  "results": [
+    {
+      "config": "full",
+      "description": "Everything on (topology, ToolForge, sage_recurse).",
+      "env": {},
+      "exit_code": 0,
+      "wall_time_s": 714.4,
+      "predictions_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-predictions-full.jsonl",
+      "report_path": "C:\\Code\\YGN-SAGE\\docs\\benchmarks\\2026-04-17-swebench-lite-full.json"
+    }
+  ]
+}
