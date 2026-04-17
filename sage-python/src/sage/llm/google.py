@@ -34,6 +34,7 @@ class GoogleProvider:
         config: LLMConfig | None = None,
         use_google_search: bool = False,
         file_search_store_names: list[str] | None = None,
+        tool_choice: str | None = None,  # F6 enforcement (2026-04-17): Google uses function_calling_config not OpenAI-style — accept-and-ignore
     ) -> LLMResponse:
         try:
             from google import genai

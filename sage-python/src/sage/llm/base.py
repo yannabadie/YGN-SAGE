@@ -71,6 +71,7 @@ class LLMProvider(Protocol):
         messages: list[Message],
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
+        tool_choice: str | None = None,
     ) -> LLMResponse: ...
 
 

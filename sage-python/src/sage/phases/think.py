@@ -68,10 +68,30 @@ async def think(
     # ExoCortex: passive grounding removed per Sprint 3 evidence.
     # Use active tool (search_exocortex) instead — agent invokes when needed.
 
+    # Force tool use on early steps for coder/actor roles. Without this
+    # the API returns text directly and the F6 _CODER prompt mandate
+    # ("AT LEAST 3 execute_bash before diff") is silently ignored — every
+    # smoke v3 task had _tool_call_count=0 even with the mandate text in
+    # the system prompt. tool_choice="required" makes the provider REJECT
+    # plain-text responses on these turns and force a function call.
+    #
+    # Predicate: role in {coder, actor} (matches F6 _CODER aliases) AND
+    # we have tools to choose from AND we're in the early window
+    # (steps 1-2: explore-the-code phase). Step 3+ relax to "auto" so the
+    # agent can finalize the diff once it has gathered evidence.
+    role_lc = (loop.config.name or "").lower()
+    forces_tools = (
+        any(r in role_lc for r in ("coder", "actor"))
+        and tool_defs
+        and loop.step_count <= 2
+    )
+    tool_choice = "required" if forces_tools else None
+
     response = await loop._llm.generate(
         messages=messages,
         tools=tool_defs if tool_defs else None,
         config=loop.config.llm,
+        tool_choice=tool_choice,
     )
     inference_ms = (time.perf_counter() - t0) * 1000
     loop.total_inference_time += inference_ms / 1000

@@ -132,6 +132,7 @@ class CodexProvider:
         tools: Optional[List[ToolDef]] = None,
         config: Optional[LLMConfig] = None,
         file_search_store_names: Optional[List[str]] = None,
+        tool_choice: Optional[str] = None,  # F6 enforcement (2026-04-17): Codex CLI doesn't surface this — accept-and-ignore
     ) -> LLMResponse:
         # Codex CLI works best with direct task instructions.
         # System messages are skipped (Codex has its own agent persona).

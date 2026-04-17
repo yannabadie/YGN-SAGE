@@ -15,6 +15,7 @@ class MockLLMProvider:
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
         file_search_store_names: list[str] | None = None,
+        tool_choice: str | None = None,  # F6 enforcement (2026-04-17): accept + ignore
     ) -> LLMResponse:
         # Simulate LLM reasoning time
         await asyncio.sleep(self.latency)
@@ -40,6 +41,7 @@ class MockProvider:
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
         file_search_store_names: list[str] | None = None,
+        tool_choice: str | None = None,  # F6 enforcement (2026-04-17): accept + ignore
     ) -> LLMResponse:
         if self.latency > 0:
             await asyncio.sleep(self.latency)

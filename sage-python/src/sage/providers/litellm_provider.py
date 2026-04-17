@@ -180,12 +180,22 @@ class LiteLLMProvider:
         messages: list[Message],
         tools: list[ToolDef] | None = None,
         config: LLMConfig | None = None,
+        tool_choice: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
         """Generate a completion via LiteLLM.
 
         Converts SAGE types to/from the OpenAI wire format that LiteLLM
         expects and returns a populated ``LLMResponse``.
+
+        `tool_choice` (added 2026-04-17): when set to "required" / "auto" /
+        "none" or a specific function name, forwarded to the provider's
+        OpenAI-compatible API. Used by phases/think.py to FORCE coder/actor
+        roles to call execute_bash on early steps, since the F6 _CODER text
+        mandate ("AT LEAST 3 execute_bash") was empirically ignored by all
+        models (smoke v3: 0 tool calls across 3 tasks despite the mandate).
+        Most providers accept "required"; a few may reject — exception
+        propagates and caller can drop the gate and retry.
         """
         import litellm
 
@@ -218,6 +228,10 @@ class LiteLLMProvider:
 
         if tools:
             params["tools"] = self._convert_tools(tools)
+            # Only meaningful when tools are present — providers will 400
+            # if tool_choice is set with no tools list.
+            if tool_choice:
+                params["tool_choice"] = tool_choice
 
         try:
             response = await litellm.acompletion(**params)
