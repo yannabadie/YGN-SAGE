@@ -76,6 +76,74 @@ CONFIGS: list[Config] = [
 ]
 
 
+def _most_recent_tempdir() -> Path | None:
+    """Return the newest /tmp/sage_swebench_* directory, if any exist.
+
+    `sage.bench ... --generate-only` writes predictions to
+    `tempfile.mkdtemp(prefix="sage_swebench_")` and returns that path only
+    via stdout. We poll the filesystem immediately after the subprocess
+    exits — on Windows / POSIX this is a reliable way to pick up the
+    fresh dir without parsing the child's log.
+    """
+    import tempfile
+    root = Path(tempfile.gettempdir())
+    candidates = sorted(
+        root.glob("sage_swebench_*"),
+        key=lambda p: p.stat().st_mtime if p.exists() else 0,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _synth_report_from_predictions(
+    preds_path: Path, wall_time_s: float, config_name: str, dataset: str,
+) -> dict:
+    """Compute a synthetic bench report from a predictions JSONL.
+
+    `--generate-only` mode doesn't write a report (no Docker eval); the
+    ablation still needs a pass_rate signal for decide_next_phase.py.
+    We use a lightweight proxy: a patch is considered "valid" if it
+    contains `diff --git` AND is >= 100 chars. Empty strings and the F2
+    `[sage: agent exited after N steps with no content]` sentinel both
+    fail. This is NOT the Docker-eval score — it's a generator-side
+    signal that the agent actually produced a diff.
+    """
+    total, valid = 0, 0
+    results = []
+    if preds_path.exists():
+        with open(preds_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    p = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                total += 1
+                patch = p.get("model_patch", "") or ""
+                is_diff = "diff --git" in patch and len(patch) >= 100
+                if is_diff:
+                    valid += 1
+                results.append({
+                    "task_id": p.get("instance_id", ""),
+                    "passed": is_diff,
+                    "patch_len": len(patch),
+                })
+    return {
+        "benchmark": f"swebench_{dataset}",
+        "config": config_name,
+        "total": total,
+        "passed": valid,
+        # NB: pass_rate here = "generator produced a non-empty diff" —
+        # real SWE-bench resolved_rate requires the Docker harness.
+        "pass_rate": valid / total if total > 0 else 0.0,
+        "wall_time_s": wall_time_s,
+        "results": results,
+        "_note": "synthetic: diff --git presence + len>=100, not Docker-verified",
+    }
+
+
 def _run_one(
     config: Config,
     dataset: str,
@@ -112,6 +180,30 @@ def _run_one(
     result = subprocess.run(cmd, env=base_env, capture_output=False)
     elapsed = time.perf_counter() - t0
 
+    # Find the subprocess's tempdir, copy predictions.jsonl to our
+    # stable location, and synthesize a bench report so downstream tools
+    # (decide_next_phase.py) can read it.
+    tempdir = _most_recent_tempdir()
+    if tempdir is not None:
+        src_preds = tempdir / "predictions.jsonl"
+        if src_preds.exists():
+            pred_path.parent.mkdir(parents=True, exist_ok=True)
+            import shutil
+            shutil.copy2(src_preds, pred_path)
+        src_meta = tempdir / "predictions_meta.json"
+        if src_meta.exists():
+            meta_dest = out_dir / f"{date}-swebench-{dataset}-predictions-{config.name}-meta.json"
+            import shutil
+            shutil.copy2(src_meta, meta_dest)
+    synthetic_report = _synth_report_from_predictions(
+        pred_path, wall_time_s=round(elapsed, 1),
+        config_name=config.name, dataset=dataset,
+    )
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(
+        json.dumps(synthetic_report, indent=2), encoding="utf-8",
+    )
+
     return {
         "config": config.name,
         "description": config.description,
@@ -120,6 +212,9 @@ def _run_one(
         "wall_time_s": round(elapsed, 1),
         "predictions_path": str(pred_path),
         "report_path": str(report_path),
+        "synthetic_pass_rate": synthetic_report["pass_rate"],
+        "synthetic_total": synthetic_report["total"],
+        "synthetic_passed": synthetic_report["passed"],
     }
 
 
@@ -166,11 +261,18 @@ def main():
     out_path.write_text(json.dumps(ablation_report, indent=2), encoding="utf-8")
     print(f"\nAblation report saved to {out_path}")
 
-    # Quick summary — exit codes.
+    # Quick summary — exit codes + synthetic generator-side pass rate.
     print("\nSummary:")
     for r in ablation_report["results"]:
         status = "OK" if r["exit_code"] == 0 else f"FAIL ({r['exit_code']})"
-        print(f"  {r['config']:<20} {status:<12} ({r['wall_time_s']:.1f}s)")
+        passed = r.get("synthetic_passed", "?")
+        total = r.get("synthetic_total", "?")
+        rate = r.get("synthetic_pass_rate", 0.0) or 0.0
+        print(
+            f"  {r['config']:<20} {status:<12} "
+            f"gen-pass={passed}/{total} ({rate:.1%}) "
+            f"({r['wall_time_s']:.1f}s)",
+        )
 
 
 if __name__ == "__main__":
