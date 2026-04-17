@@ -400,8 +400,14 @@ class SWEBenchBench:
     async def generate_patches(
         self,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         """Generate patches for SWE-Bench instances via AgentSystem.
+
+        ``offset`` skips the first N instances. Useful to avoid tasks the
+        model has memorized (well-known SWE-bench Lite first few are
+        astropy/scikit-learn classics that show up in training data). If
+        offset >= len(instances), returns an empty list.
 
         Returns list of prediction dicts in swebench format:
         {instance_id, model_name_or_path, model_patch, ...metadata}
@@ -411,6 +417,8 @@ class SWEBenchBench:
             return []
 
         instances = load_swebench_dataset(self.dataset)
+        if offset:
+            instances = instances[offset:]
         if limit is not None:
             instances = instances[:limit]
 
@@ -724,13 +732,13 @@ class SWEBenchBench:
     # Full pipeline
     # ------------------------------------------------------------------
 
-    async def run(self, limit: int | None = None) -> BenchReport:
+    async def run(self, limit: int | None = None, offset: int = 0) -> BenchReport:
         """Full pipeline: generate patches, evaluate with Docker harness.
 
         Returns a BenchReport compatible with the existing benchmark framework.
         """
         # Phase 1: Generate patches
-        predictions = await self.generate_patches(limit=limit)
+        predictions = await self.generate_patches(limit=limit, offset=offset)
         if not predictions:
             return BenchReport.from_results(
                 f"swebench_{self.dataset}", [],
@@ -785,13 +793,13 @@ class SWEBenchBench:
             model_config={"model": self.manifest.model if self.manifest else "unknown"},
         )
 
-    async def run_generate_only(self, limit: int | None = None) -> Path:
+    async def run_generate_only(self, limit: int | None = None, offset: int = 0) -> Path:
         """Generate patches and save predictions file (skip Docker evaluation).
 
         Useful when Docker is not available or for deferred evaluation on Linux.
         Returns path to the predictions JSONL file.
         """
-        predictions = await self.generate_patches(limit=limit)
+        predictions = await self.generate_patches(limit=limit, offset=offset)
         if not predictions:
             raise RuntimeError("No predictions generated")
 

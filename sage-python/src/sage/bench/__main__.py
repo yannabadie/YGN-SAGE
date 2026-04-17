@@ -287,11 +287,11 @@ async def _run_swebench(args) -> None:
 
     if args.generate_only:
         # Generate patches only (no Docker evaluation)
-        preds_path = await bench.run_generate_only(limit=args.limit)
+        preds_path = await bench.run_generate_only(limit=args.limit, offset=args.offset or 0)
         print(f"  Predictions saved to: {preds_path}")
     else:
         # Full pipeline: generate + evaluate
-        report = await bench.run(limit=args.limit)
+        report = await bench.run(limit=args.limit, offset=args.offset or 0)
         _print_report(report)
         _save_report(report, bench, args.output, f"swebench-{swe_dataset}")
 
@@ -369,6 +369,13 @@ def main() -> None:
         type=int,
         default=None,
         help="Limit the number of problems",
+    )
+    parser.add_argument(
+        "--offset",
+        type=int,
+        default=0,
+        help="Skip the first N problems (SWE-Bench only). Useful to avoid "
+             "tasks the model has memorized (e.g. first 3 astropy tasks).",
     )
     parser.add_argument(
         "--dataset",
