@@ -952,6 +952,7 @@ class CognitiveOrchestrationPipeline:
                     create_node_agent_loop,
                     tool_registry=self.tool_registry,
                     system_level=ctx.system,
+                    task_domain=ctx.domain or "",  # F7-symmetric domain gate for PRM
                     on_event=(
                         self.event_bus.emit
                         if self.event_bus and hasattr(self.event_bus, "emit")

@@ -24,6 +24,25 @@ _FORMATTER_TOOLS = ["stm_read", "stm_write", "ltm_recall"]
 _NO_VALIDATION_ROLES = {"verifier", "output_formatter", "formatter", "aggregator", "critic"}
 
 
+def _is_high_rigour_domain(task_domain: str) -> bool:
+    """True for domains where Z3 PRM <think>-block reasoning is meaningful.
+
+    Mirrors the Rust `is_high_rigour_domain` in sage-core/src/routing/
+    model_assigner.rs (F7 floor — same predicate, same intent: separate
+    "this task wants formal proofs" from "this task wants code". Don't
+    drift between Python and Rust — both should answer the same question.
+
+    For non-rigour domains (code/general), validation_level >= 3 still
+    enables AVR (level 2) but skips PRM/CEGAR — Z3 assertions on a Python
+    bug-fix patch don't carry signal, and the `<think>` block requirement
+    triggers a retry+CEGAR thrashing loop on every model that doesn't
+    natively emit them (observed 2026-04-17 SWE-bench smoke: 17 CEGAR
+    failures, 6 RESET_AGENT, 6 SWITCH_MODEL → 0/3 patches generated).
+    """
+    d = task_domain.lower()
+    return "math" in d or "formal" in d
+
+
 def create_node_agent_loop(
     node_role: str,
     node_name: str,
@@ -32,6 +51,7 @@ def create_node_agent_loop(
     tool_registry: ToolRegistry,
     system_prompt: str,
     system_level: int,
+    task_domain: str = "",
     on_event: Any = None,
 ) -> AgentLoop:
     """Create an independent AgentLoop for a topology node.
@@ -44,9 +64,16 @@ def create_node_agent_loop(
     - verifier: execute_bash + memory (can run tests, no code gen)
     - output_formatter/aggregator: memory only (no code execution)
 
-    Validation (H6):
-    - actor/coder: full validation from system_level
+    Validation (H6 + 2026-04-17 PM domain gate):
     - verifier/formatter/aggregator: validation_level=0 (no AVR/Z3)
+    - S3 task + math/formal domain: validation=3 (PRM Z3 is meaningful)
+    - S3 task + other domains:      validation=2 (AVR only — PRM thrash on code)
+    - S2 task: validation=2
+    - S1 task: validation=1
+
+    `task_domain` defaults to "" (treated as non-rigour). The default
+    keeps existing direct callers (without F7 wiring) working — they get
+    AVR-only on S3, which is the safer choice for an unknown domain.
     """
     role_lower = node_role.lower()
 
@@ -57,11 +84,16 @@ def create_node_agent_loop(
     elif any(r in role_lower for r in ("format", "output", "aggregat")):
         tools = _FORMATTER_TOOLS
 
-    # Validation level (H6: no validation on verifiers to prevent recursion)
+    # Validation level. Sink/verifier roles always get 0 (H6: no recursive
+    # validation). S3 tasks get PRM (level 3) ONLY when the domain wants
+    # formal reasoning; other S3 tasks fall back to AVR (level 2) so the
+    # Z3 <think>-block requirement doesn't trigger CEGAR thrashing on
+    # code/general domains where `<think>` blocks aren't part of the
+    # model's normal output (2026-04-17 SWE-bench smoke regression).
     if any(r in role_lower for r in _NO_VALIDATION_ROLES):
         validation = 0
     elif system_level >= 3:
-        validation = 3
+        validation = 3 if _is_high_rigour_domain(task_domain) else 2
     elif system_level >= 2:
         validation = 2
     else:

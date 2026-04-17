@@ -66,8 +66,10 @@ def test_verifier_validation_level_zero():
     assert loop.config.validation_level == 0
 
 
-def test_actor_s3_gets_validation_3():
-    """Actor nodes in S3 system should get full Z3 validation."""
+def test_actor_s3_math_gets_validation_3():
+    """Actor on S3 + math domain → full Z3 PRM validation. Z3 assertions
+    in <think> blocks are MEANINGFUL for math/formal reasoning.
+    """
     loop = create_node_agent_loop(
         node_role="actor",
         node_name="node-0-actor",
@@ -76,12 +78,56 @@ def test_actor_s3_gets_validation_3():
         tool_registry=_make_tool_registry(),
         system_prompt="You are an actor.",
         system_level=3,
+        task_domain="math",
     )
     assert loop.config.validation_level == 3
 
 
+def test_actor_s3_code_gets_validation_2():
+    """Regression for 2026-04-17 SWE-bench thrashing bug. Pre-fix, S3 +
+    code → validation=3 → PRM expects <think> blocks → 17 CEGAR
+    failures × 6 RESET_AGENT × 6 SWITCH_MODEL → 0 patches generated.
+
+    Domain gate: code/general S3 tasks degrade to AVR (level 2) so the
+    Z3 <think>-block requirement doesn't trigger the thrash loop.
+    """
+    for domain in ["code", "general", "", "swe_bench"]:
+        loop = create_node_agent_loop(
+            node_role="actor",
+            node_name="node-0-actor",
+            llm_provider=MagicMock(),
+            llm_config=MagicMock(),
+            tool_registry=_make_tool_registry(),
+            system_prompt="You are an actor.",
+            system_level=3,
+            task_domain=domain,
+        )
+        assert loop.config.validation_level == 2, (
+            f"S3+`{domain}` must degrade to AVR (validation=2), "
+            f"got {loop.config.validation_level}"
+        )
+
+
+def test_actor_s3_formal_gets_validation_3():
+    """Same as math: formal verification benefits from Z3 PRM.
+    Substring match handles `formal`, `formal_verification`, etc.
+    """
+    for domain in ["formal", "formal_verification", "Formal"]:
+        loop = create_node_agent_loop(
+            node_role="actor",
+            node_name="node-0-actor",
+            llm_provider=MagicMock(),
+            llm_config=MagicMock(),
+            tool_registry=_make_tool_registry(),
+            system_prompt="You are an actor.",
+            system_level=3,
+            task_domain=domain,
+        )
+        assert loop.config.validation_level == 3
+
+
 def test_actor_s2_gets_validation_2():
-    """Actor nodes in S2 system should get AVR validation."""
+    """Actor nodes in S2 system should get AVR validation regardless of domain."""
     loop = create_node_agent_loop(
         node_role="coder",
         node_name="node-0-coder",
