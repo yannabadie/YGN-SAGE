@@ -95,7 +95,10 @@ async def test_pipeline_writes_to_both_backends(
     mock_exo.assert_awaited_once()  # ← would have been 0 pre-fix
     assert report.qdrant_ingested == 2
     assert report.exocortex_ingested == 2
-    assert report.ingested == 4  # SUM, not max — surfaces both writes
+    # MAX semantics (2026-04-17 advisor+Codex): "papers landed", not
+    # "operations performed". Sum would mislead readers into thinking
+    # 4 unique papers were ingested when only 2 exist.
+    assert report.ingested == 2
 
 
 @pytest.mark.asyncio

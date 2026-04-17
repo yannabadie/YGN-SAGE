@@ -12,7 +12,12 @@ use std::collections::HashMap;
 /// systems (benchmarks, A2A clients, human users).
 /// Based on MALT (arXiv 2412.01928) and AgentConductor (arXiv 2602.17100):
 /// the terminal node's prompt constrains output format.
-const SINK_NODE_PROMPT: &str = "You are the final synthesizer. Review all context from previous agents and produce the definitive answer. Output ONLY the final answer — concise, no explanation, no reasoning. If the answer is a number, output only that number.";
+// pub(crate): exposed for the sink-drift test in routing::model_assigner —
+// every node tagged with this string MUST also classify as sink via
+// `is_sink_role(&node.role)`. Drift between templates and SINK_ROLES would
+// over-promote the node on F7 task-tier escalation. Test enforces the
+// contract automatically as new templates land.
+pub(crate) const SINK_NODE_PROMPT: &str = "You are the final synthesizer. Review all context from previous agents and produce the definitive answer. Output ONLY the final answer — concise, no explanation, no reasoning. If the answer is a number, output only that number.";
 
 // ---------------------------------------------------------------------------
 // 1. Sequential: A -> B -> C

@@ -1021,12 +1021,21 @@ class CognitiveOrchestrationPipeline:
                             for i in range(ctx.topology.node_count()):
                                 if self.assigner and hasattr(self.assigner, 'assign_single_node'):
                                     current_model = ctx.assignments.get(i, "")
-                                    # F7 wiring: forward task_system so the
-                                    # Rust ModelAssigner promotes producer
-                                    # nodes correctly during the cascade
-                                    # upgrade (otherwise the upgrade picks
-                                    # the next best per-node-tier model,
-                                    # ignoring the overall task complexity).
+                                    # F7 wiring (2026-04-17): forward task_system so the
+                                    # Rust ModelAssigner promotes producer nodes correctly
+                                    # during the cascade upgrade (otherwise the upgrade picks
+                                    # the next best per-node-tier model, ignoring the overall
+                                    # task complexity).
+                                    #
+                                    # Interaction note (advisor 2026-04-17): the cascade
+                                    # stays at the F7-effective tier (S2 floor for non-rigour
+                                    # S3 tasks). It does NOT escalate beyond what F7 already
+                                    # set — exhausting S2 candidates before touching S3.
+                                    # That's intentional: cascade is "swap to a different
+                                    # model in the same tier", not "tier-escalate". If a
+                                    # task genuinely needs an S3 model on a node F7 floored
+                                    # at S2, that's a separate routing decision (not yet
+                                    # implemented; would need a TierEscalator).
                                     cascade_task_system = (
                                         ctx.system if isinstance(getattr(ctx, "system", None), int)
                                         and ctx.system in (1, 2, 3) else None

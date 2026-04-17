@@ -19,10 +19,16 @@ logger = logging.getLogger(__name__)
 class PipelineReport:
     """Summary of a pipeline run.
 
-    `ingested` is the SUM of `qdrant_ingested + exocortex_ingested` so a
-    "successful" total can't lie about which backend actually grew. The
-    historical contract (single backend → `ingested == that backend's count`)
-    is preserved.
+    `ingested` is the MAX of `qdrant_ingested` and `exocortex_ingested`,
+    representing "documents that landed in at least one backend" — the
+    semantic a casual reader expects. Sum was rejected (advisor 2026-04-17,
+    Codex concurred): a 2-paper run hitting both backends would show
+    `ingested=4` and look like 4 unique papers to anyone glancing at the
+    headline. Per-backend write counts stay in the breakdown fields for
+    operational visibility.
+
+    The historical contract (single backend → `ingested == that backend's
+    count`) is preserved because max(N, 0) = N.
     """
     discovered: int = 0
     curated: int = 0
@@ -140,10 +146,12 @@ async def run_pipeline(
     exocortex = exocortex or _try_init_exocortex()
     if exocortex:
         report.exocortex_ingested = await ingest_all(curated, exocortex)
-    report.ingested = report.qdrant_ingested + report.exocortex_ingested
+    # Headline = papers that reached at least one backend. See the
+    # PipelineReport docstring for the sum-vs-max rejection rationale.
+    report.ingested = max(report.qdrant_ingested, report.exocortex_ingested)
 
     logger.info(
-        "Ingested papers: total=%d (qdrant=%d, exocortex=%d)",
+        "Ingested papers: max=%d (qdrant=%d, exocortex=%d)",
         report.ingested, report.qdrant_ingested, report.exocortex_ingested,
     )
     return report

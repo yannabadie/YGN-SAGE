@@ -959,6 +959,123 @@ mod tests {
         }
     }
 
+    // ── Drift guards (advisor 2026-04-17): pin the SINK_ROLES list and
+    // the "no coder/worker on S1" template invariant to templates.rs at
+    // build time. If a future template adds a SINK_NODE_PROMPT node with
+    // a new role, OR declares a coder/worker at S1, these tests fail and
+    // the offending diff stops at CI.
+
+    /// Every node tagged with templates::SINK_NODE_PROMPT must classify
+    /// as sink via `is_sink_role`. Catches drift in either direction —
+    /// new template sink role missing from SINK_ROLES, OR a SINK_ROLES
+    /// entry that no template actually uses.
+    #[test]
+    fn test_sink_drift_templates_match_classifier() {
+        use crate::topology::templates::{
+            self_moa, sequential, parallel, avr, hierarchical, hub,
+            debate, brainstorming, robust, horizon_pipeline,
+            parallel_fanout, formal_solver, SINK_NODE_PROMPT,
+        };
+
+        let templates: Vec<(&str, TopologyGraph)> = vec![
+            ("sequential", sequential("test-model")),
+            ("parallel", parallel("test-model", 3)),
+            ("avr", avr("test-model", "test-model")),
+            ("self_moa", self_moa("test-model", 3)),
+            ("hierarchical", hierarchical("test-model", "test-model")),
+            ("hub", hub("test-model", "test-model", 3)),
+            ("debate", debate("test-model", "test-model")),
+            ("brainstorming", brainstorming("test-model", 3)),
+            ("robust", robust("test-model", 3)),
+            ("horizon_pipeline", horizon_pipeline("test-model", 3)),
+            ("parallel_fanout", parallel_fanout("test-model", 3)),
+            ("formal_solver", formal_solver("test-model")),
+        ];
+
+        let mut sink_count = 0;
+        for (name, graph) in &templates {
+            for idx in 0..graph.node_count() {
+                let node = graph.try_get_node(idx).unwrap();
+                if node.prompt == SINK_NODE_PROMPT {
+                    sink_count += 1;
+                    assert!(
+                        is_sink_role(&node.role),
+                        "template `{name}` node {idx} has SINK_NODE_PROMPT but role `{}` is NOT in SINK_ROLES — F7 will over-promote it on task-tier escalation",
+                        node.role
+                    );
+                }
+            }
+        }
+        // Sanity: ensure the test actually found sinks (would silently
+        // pass if the SINK_NODE_PROMPT marker drifted to a different name).
+        assert!(sink_count >= 6, "expected >=6 sink nodes across 12 templates, found {sink_count}");
+    }
+
+    /// Roles whose F6 prompt explicitly mandates "AT LEAST 3 distinct
+    /// execute_bash calls before emitting any diff" (see
+    /// sage-python/src/sage/topology/role_prompts.py — the `_CODER`
+    /// template, matched by substrings ("coder", "actor", "coder_worker")).
+    /// Other producer roles (worker/thinker/brainstormer → `_WORKER`)
+    /// only suggest "1-3 tool calls is typical" — softer, no hard floor.
+    ///
+    /// If a template declares a coder/actor at node.system=1, that's not
+    /// a problem in itself (F1 max_steps = ctx.system, not node.system),
+    /// BUT it's a smell: the only way that node gets a non-cheap budget
+    /// is if the pipeline ALWAYS escalates the task tier. Since
+    /// "S1 non-math skips topology" (CLAUDE.md), a coder@node.S1 only
+    /// runs on S2/S3 tasks anyway → still safe. This test pins the
+    /// template invariant; the runtime invariant ("S1 tasks bypass") is
+    /// pinned at the Python layer.
+    ///
+    /// Rationale for the narrower predicate (vs the original draft that
+    /// also flagged worker/thinker/brainstormer): `parallel_fanout` (line
+    /// 678 in templates.rs) deliberately cycles workers S1/S2/S3 for
+    /// output diversity (SC-MAS arXiv 2601.09434). That's a feature.
+    #[test]
+    fn test_no_strict_mandate_role_at_s1_in_any_template() {
+        use crate::topology::templates::{
+            self_moa, sequential, parallel, avr, hierarchical, hub,
+            debate, brainstorming, robust, horizon_pipeline,
+            parallel_fanout, formal_solver,
+        };
+
+        let templates: Vec<(&str, TopologyGraph)> = vec![
+            ("sequential", sequential("test-model")),
+            ("parallel", parallel("test-model", 3)),
+            ("avr", avr("test-model", "test-model")),
+            ("self_moa", self_moa("test-model", 3)),
+            ("hierarchical", hierarchical("test-model", "test-model")),
+            ("hub", hub("test-model", "test-model", 3)),
+            ("debate", debate("test-model", "test-model")),
+            ("brainstorming", brainstorming("test-model", 3)),
+            ("robust", robust("test-model", 3)),
+            ("horizon_pipeline", horizon_pipeline("test-model", 3)),
+            ("parallel_fanout", parallel_fanout("test-model", 3)),
+            ("formal_solver", formal_solver("test-model")),
+        ];
+
+        // Substring match — same predicate as get_role_prompt(role) maps to
+        // _CODER in sage-python/src/sage/topology/role_prompts.py.
+        let strict_mandate_substrings = ["coder", "actor"];
+
+        for (name, graph) in &templates {
+            for idx in 0..graph.node_count() {
+                let node = graph.try_get_node(idx).unwrap();
+                let role_lc = node.role.to_lowercase();
+                let triggers_coder_prompt = strict_mandate_substrings
+                    .iter()
+                    .any(|s| role_lc.contains(s));
+                if triggers_coder_prompt {
+                    assert!(
+                        node.system >= 2,
+                        "template `{name}` declares strict-mandate role `{}` at system={} (S1) — F6 _CODER prompt requires >=3 execute_bash calls, F1 budgets only 5 steps at S1, leaving 1 buffer. Promote node to S2+ or move the role to a non-coder name.",
+                        node.role, node.system
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_formal_solver_sink_protected_on_math_s3() {
         // Regression for the audit-uncovered bug: pre-this-fix, F7's
