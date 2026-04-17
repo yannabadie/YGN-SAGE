@@ -485,7 +485,7 @@ def boot_agent_system(
         rust_topology_engine is not None,
     )
 
-    return AgentSystem(
+    system = AgentSystem(
         agent_loop=loop,
         agent_pool=agent_pool,
         metacognition=metacognition,
@@ -502,3 +502,15 @@ def boot_agent_system(
         _rust_registry=rust_registry or py_model_registry,
         pipeline=pipe["pipeline"],
     )
+
+    # sage_recurse: recursive self-invocation for test-time scaling
+    # (The Conductor, arXiv 2512.04388, ICLR 2026). Bound here so the tool
+    # can call system.run() without creating an import-level cycle.
+    try:
+        from sage.tools.sage_recurse import build_sage_recurse_tool
+        tool_registry.register(build_sage_recurse_tool(system.run))
+        _log.info("Core tools: sage_recurse registered (max depth 3)")
+    except (ImportError, RuntimeError) as exc:
+        _log.debug("sage_recurse not available: %s", exc)
+
+    return system
