@@ -283,14 +283,25 @@ class TopologyRunner:
         if custom_prompt:
             system_prompt = custom_prompt
         else:
-            _default_tmpl = (
-                self._harness.prompts.default_template if self._harness
-                else "You are acting as: {role}."
-            )
-            system_prompt = _default_tmpl.format(
-                role=role, capabilities=", ".join(caps) if caps else "",
-                task_preview=task[:200], n_predecessors=0,
-            )
+            # New (2026-04-17): try the per-role prompt registry first. The
+            # Rust template factories (sequential / parallel / robust) build
+            # nodes with empty `prompt` fields for planner/coder/worker, so
+            # the previous fallback — "You are acting as: {role}." — was
+            # what every non-synthesizer agent actually saw. Smoke evidence:
+            # docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
+            from sage.topology.role_prompts import get_role_prompt
+            _role_prompt = get_role_prompt(role)
+            if _role_prompt:
+                system_prompt = _role_prompt
+            else:
+                _default_tmpl = (
+                    self._harness.prompts.default_template if self._harness
+                    else "You are acting as: {role}."
+                )
+                system_prompt = _default_tmpl.format(
+                    role=role, capabilities=", ".join(caps) if caps else "",
+                    task_preview=task[:200], n_predecessors=0,
+                )
             if caps:
                 _cap_tmpl = (
                     self._harness.prompts.capability_template if self._harness
