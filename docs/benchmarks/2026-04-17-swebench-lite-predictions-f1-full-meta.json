@@ -1,0 +1,72 @@
+[
+  {
+    "instance_id": "astropy__astropy-12907",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 127796.8,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_120s",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-14182",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 127716.3,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_120s",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-14365",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 137754.0,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_120s",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-14995",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 126886.3,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_120s",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-6938",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 127430.7,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_120s",
+    "_repo": "astropy/astropy"
+  }
+]

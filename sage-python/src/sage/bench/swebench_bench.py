@@ -303,7 +303,12 @@ class SWEBenchBench:
         system: Any = None,
         event_bus: Any = None,
         dataset: str = "lite",
-        timeout_per_task: float = 120.0,
+        # 120s was too tight once topology + tool-use was the default: the
+        # 2026-04-17 F1 smoke ran every S3 task over the wall (~127s) and
+        # timed out before the synthesizer emitted its patch. 300s buys the
+        # agent loop (max_steps=20 for S3) enough time to explore and
+        # finalize. Bench adapters can still override per-run.
+        timeout_per_task: float = 300.0,
         eval_timeout: int = 300,
         max_workers: int = 4,
         run_id: str | None = None,

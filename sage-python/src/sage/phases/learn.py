@@ -88,4 +88,18 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
     # Restore validation_level if S3->S2 degradation occurred (multi-run safety)
     loop.config.validation_level = loop._original_validation_level
 
-    return result_text or f"Agent finished at step {loop.step_count}"
+    if result_text:
+        return result_text
+    # Salvage the last real assistant content if the loop exited without a
+    # final answer (e.g. max_steps hit mid-tool-calling). Prior behavior
+    # returned "Agent finished at step N", which SWE-bench and similar
+    # benches happily packaged as a fake "patch" and masked the failure.
+    try:
+        events = getattr(loop.working_memory, "_events", None) or []
+        for event in reversed(events):
+            etype, content = (event[0], event[1]) if len(event) >= 2 else ("", "")
+            if etype == "ASSISTANT" and isinstance(content, str) and content.strip():
+                return content
+    except (AttributeError, IndexError):
+        pass
+    return f"[sage: agent exited after {loop.step_count} steps with no content]"
