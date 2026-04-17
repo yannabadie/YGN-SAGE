@@ -142,13 +142,40 @@ class TestC2MultiModelAssignment:
         # Stage 3: Assign models
         ctx = pipeline._stage_assign_models(ctx)
 
-        # Assignments may be empty if no Rust assigner, but the stages must complete
+        # Hard assertions — proves the stage actually did its job.
+        # Skip only if the orchestration stack isn't wired (no Rust topology + no assigner).
+        if ctx.topology is None and pipeline.assigner is None:
+            pytest.skip("Pipeline boots without topology engine or model assigner")
+
+        if ctx.topology is None:
+            pytest.fail(
+                "Stage 2 (select_topology) produced no topology on S2 task — "
+                "check SAGE_BYPASS_S2_SEQUENTIAL or sage_core import"
+            )
+
+        if pipeline.assigner is not None:
+            node_count = (
+                ctx.topology.node_count()
+                if hasattr(ctx.topology, "node_count") else 0
+            )
+            assert node_count > 0, "Topology has no nodes"
+            assert len(ctx.assignments) == node_count, (
+                f"Assigner produced {len(ctx.assignments)} assignments for "
+                f"{node_count} nodes (expected 1:1)"
+            )
+            assigned_models = [v for v in ctx.assignments.values() if v]
+            assert assigned_models, (
+                "Every node has empty model_id — assigner ran but assigned nothing"
+            )
+
         _RESULTS["c2"] = {
             "status": "PASS",
             "system": ctx.system,
             "domain": ctx.domain,
             "assignments": {str(k): v for k, v in ctx.assignments.items()},
             "has_topology": ctx.topology is not None,
+            "node_count": ctx.topology.node_count() if hasattr(ctx.topology, "node_count") else 0,
+            "non_empty_model_ids": sum(1 for v in ctx.assignments.values() if v),
         }
 
 

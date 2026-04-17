@@ -1,0 +1,49 @@
+{
+  "campaign": "e2e-validation",
+  "date": "2026-04-17",
+  "timestamp": "2026-04-17T08:16:56.186247",
+  "python_version": "3.11.15 (main, Mar  3 2026, 09:26:23) [GCC 13.3.0]",
+  "results": {
+    "c2": {
+      "status": "PASS",
+      "system": 2,
+      "domain": "code",
+      "assignments": {
+        "0": "gemini-2.5-flash",
+        "1": "gpt-5.4",
+        "2": "gemini-2.5-flash"
+      },
+      "has_topology": true,
+      "node_count": 3,
+      "non_empty_model_ids": 3
+    },
+    "c3": {
+      "status": "PASS",
+      "quality_empty": 0.0,
+      "quality_good": 0.3606,
+      "delta": 0.3606
+    },
+    "c4": {
+      "status": "PASS",
+      "timings_ms": {
+        "memory_safety": 0.1558,
+        "memory_unsafe": 0.0212,
+        "arithmetic": 0.0203,
+        "invariant": 0.0173
+      }
+    },
+    "c6": {
+      "status": "PASS",
+      "episodic_session1_results": 1,
+      "episodic_session2_python": 1,
+      "episodic_session2_rust": 1,
+      "semantic_entities": 2,
+      "semantic_context_preview": "Guido van Rossum --[created]--> Python"
+    }
+  },
+  "summary": {
+    "total_tests": 7,
+    "passed": 4,
+    "claims_validated": 4
+  }
+}

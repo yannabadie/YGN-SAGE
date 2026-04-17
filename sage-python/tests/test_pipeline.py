@@ -717,7 +717,11 @@ def test_check_topology_budget_no_degrade_when_under():
 
 @pytest.mark.asyncio
 async def test_pipeline_budget_degrade_emits_event():
-    """Budget degradation emits TOPOLOGY_BUDGET_WARNING event."""
+    """Budget degradation emits TOPOLOGY_BUDGET_WARNING event.
+
+    Stage 2 now tries template path before falling back to engine.generate().
+    To exercise the engine path we patch _build_topology_from_hint → None.
+    """
     events_captured: list[Any] = []
 
     class _CapturingBus:
@@ -738,6 +742,8 @@ async def test_pipeline_budget_degrade_emits_event():
         event_bus=_CapturingBus(),
         llm_provider=_MockLLMProvider(),
     )
+    # Force engine.generate() path (templates would shadow the mock engine)
+    pipeline._build_topology_from_hint = lambda hint: None  # type: ignore[assignment,method-assign]
 
     await pipeline.run("test task", budget_usd=5.0)
 

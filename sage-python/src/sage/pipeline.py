@@ -468,7 +468,8 @@ class CognitiveOrchestrationPipeline:
                     _emb = Embedder()
                     if _emb.is_semantic:
                         task_embedding = _emb.embed(ctx.task[:500])
-                except (ImportError, RuntimeError):
+                except (ImportError, RuntimeError, OSError):
+                    # OSError: model weights not on disk / HF_HUB_OFFLINE=1 without cache
                     pass
                 result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):

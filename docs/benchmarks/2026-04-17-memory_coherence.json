@@ -1,0 +1,88 @@
+{
+  "benchmark": "memory_coherence",
+  "total": 3,
+  "cold_pass": 2,
+  "primed_pass": 2,
+  "avg_cold_quality": 1.0,
+  "avg_primed_quality": 1.0,
+  "avg_cold_latency_ms": 54243.09117050053,
+  "avg_primed_latency_ms": 210533.69347800026,
+  "quality_gain": 0.0,
+  "latency_gain_ms": -156290.60230749974,
+  "probes": [
+    {
+      "pair_idx": 0,
+      "cold_quality": 0.0,
+      "primed_quality": 0.0,
+      "cold_latency_ms": 0.0,
+      "primed_latency_ms": 0.0,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 0.0,
+      "cold_error": "ServiceUnavailableError: litellm.ServiceUnavailableError: GeminiException - DNS cache overflow",
+      "primed_error": "RateLimitError: litellm.RateLimitError: RateLimitError: OpenAIException - You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors."
+    },
+    {
+      "pair_idx": 1,
+      "cold_quality": 1.0,
+      "primed_quality": 1.0,
+      "cold_latency_ms": 72598.34158300055,
+      "primed_latency_ms": 251967.4010380004,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 179369.05945499983,
+      "cold_error": null,
+      "primed_error": null
+    },
+    {
+      "pair_idx": 2,
+      "cold_quality": 1.0,
+      "primed_quality": 1.0,
+      "cold_latency_ms": 35887.84075800049,
+      "primed_latency_ms": 169099.98591800014,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 133212.14515999964,
+      "cold_error": null,
+      "primed_error": null
+    }
+  ],
+  "timestamp": "2026-04-17T09:10:35.301447+00:00",
+  "passed": 2,
+  "pass_rate": 0.6666666666666666,
+  "avg_latency_ms": 210533.69347800026,
+  "avg_cost_usd": 0.0,
+  "results": [
+    {
+      "pair_idx": 0,
+      "cold_quality": 0.0,
+      "primed_quality": 0.0,
+      "cold_latency_ms": 0.0,
+      "primed_latency_ms": 0.0,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 0.0,
+      "cold_error": "ServiceUnavailableError: litellm.ServiceUnavailableError: GeminiException - DNS cache overflow",
+      "primed_error": "RateLimitError: litellm.RateLimitError: RateLimitError: OpenAIException - You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors."
+    },
+    {
+      "pair_idx": 1,
+      "cold_quality": 1.0,
+      "primed_quality": 1.0,
+      "cold_latency_ms": 72598.34158300055,
+      "primed_latency_ms": 251967.4010380004,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 179369.05945499983,
+      "cold_error": null,
+      "primed_error": null
+    },
+    {
+      "pair_idx": 2,
+      "cold_quality": 1.0,
+      "primed_quality": 1.0,
+      "cold_latency_ms": 35887.84075800049,
+      "primed_latency_ms": 169099.98591800014,
+      "quality_delta": 0.0,
+      "latency_delta_ms": 133212.14515999964,
+      "cold_error": null,
+      "primed_error": null
+    }
+  ],
+  "routing_breakdown": {}
+}

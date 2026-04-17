@@ -283,13 +283,31 @@ class Embedder:
     def embed(self, text: str) -> list[float]:
         """Embed a single text string.
 
-        Returns a list of EMBEDDING_DIM (768) floats.
+        Returns a list of EMBEDDING_DIM (768) floats. Falls back to the
+        deterministic hash embedder if the semantic backend fails at
+        runtime (e.g. HF cache corrupted, OSError on model weights).
         """
-        return self._provider.embed(text)
+        try:
+            return self._provider.embed(text)
+        except (OSError, RuntimeError) as exc:
+            self._demote_to_hash(exc)
+            return self._provider.embed(text)
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of texts.
+        """Embed a batch of texts. Same runtime-fallback semantics as embed()."""
+        try:
+            return self._provider.embed_batch(texts)
+        except (OSError, RuntimeError) as exc:
+            self._demote_to_hash(exc)
+            return self._provider.embed_batch(texts)
 
-        Returns a list of embedding vectors, one per input text.
-        """
-        return self._provider.embed_batch(texts)
+    def _demote_to_hash(self, exc: Exception) -> None:
+        """Switch to deterministic hash backend on semantic backend failure."""
+        if self._backend == "hash":
+            return  # already on hash; re-raise would be caller's problem
+        logger.warning(
+            "Embedder %s failed (%s: %s) — demoting to hash fallback",
+            self._backend, type(exc).__name__, exc,
+        )
+        self._provider = _HashEmbedder()
+        self._backend = "hash"

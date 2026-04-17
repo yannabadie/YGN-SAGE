@@ -354,7 +354,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--type",
-        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "evolution_ablation", "swebench", "heterogeneous", "gaia", "bigcodebench", "apps", "livecodebench", "all"],
+        choices=["routing", "humaneval", "evalplus", "ablation", "routing_gt", "memory_ablation", "memory_coherence", "evolution_ablation", "swebench", "heterogeneous", "gaia", "bigcodebench", "apps", "livecodebench", "all"],
         default="routing",
         help="Benchmark type to run (default: routing)",
     )
@@ -534,6 +534,36 @@ def main() -> None:
 
     if args.type == "memory_ablation":
         print("Memory Ablation requires full boot. Run: python -m sage.bench.memory_ablation")
+
+    if args.type == "memory_coherence":
+        from sage.bench.memory_coherence import run_memory_coherence, _default_boot
+        from datetime import datetime, timezone
+
+        report = asyncio.run(run_memory_coherence(_default_boot, limit=args.limit))
+        print(f"\n{'=' * 60}")
+        print("  Benchmark: memory_coherence")
+        print(f"{'=' * 60}")
+        print(f"  Pairs run          : {report.total}")
+        print(f"  Cold   pass@0.7    : {report.cold_pass}/{report.total}")
+        print(f"  Primed pass@0.7    : {report.primed_pass}/{report.total}")
+        print(
+            f"  Avg quality        : cold={report.avg_cold_quality:.3f}  "
+            f"primed={report.avg_primed_quality:.3f}  Δ={report.quality_gain:+.3f}"
+        )
+        print(
+            f"  Avg latency (ms)   : cold={report.avg_cold_latency_ms:.0f}  "
+            f"primed={report.avg_primed_latency_ms:.0f}  Δ={report.latency_gain_ms:+.0f}"
+        )
+        print(f"{'=' * 60}\n")
+        if args.output is None:
+            repo = _repo_root()
+            bench_dir = repo / "docs" / "benchmarks"
+            bench_dir.mkdir(parents=True, exist_ok=True)
+            date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            args.output = str(bench_dir / f"{date_str}-memory_coherence.json")
+        data = dataclasses.asdict(report)
+        Path(args.output).write_text(json.dumps(data, indent=2), encoding="utf-8")
+        print(f"  Report saved to: {args.output}")
 
     if args.type == "evolution_ablation":
         print("Evolution Ablation requires full boot. Run: python -m sage.bench.evolution_ablation")
