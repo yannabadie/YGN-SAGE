@@ -50,9 +50,15 @@ class ProviderPool:
     async def health_check(self, timeout: float = 10.0) -> dict[str, bool]:
         """Probe every provider with a minimal request. Open circuit for dead ones.
 
-        Only connection errors (DNS, SSL, timeout) mark a provider as dead.
-        API errors (400 bad params, 401 auth) mean the provider is REACHABLE
-        but the probe params were wrong — that's NOT a dead provider.
+        Classification (2026-04-18 refined after Codex review):
+          - Connection errors (DNS/SSL/timeout/refused) → DEAD (provider unreachable)
+          - Quota exhaustion (429 insufficient_quota / rate_limit_exceeded with
+            "quota" in message) → DEAD (reachable but unusable; quota typically
+            resets on a time boundary). ModelAssigner should route elsewhere.
+          - Transient rate-limit 429 without quota wording → ALIVE (probe noise,
+            don't kill a perfectly good provider because the probe got rate-limited)
+          - Other API errors (400 bad params, 401 auth, 403) → ALIVE (provider
+            reachable, probe params just mismatched the adapter default model)
         """
         import asyncio
         from sage.llm.base import Message, Role, LLMConfig as _Cfg
@@ -73,21 +79,37 @@ class ProviderPool:
             except Exception as exc:
                 exc_name = type(exc).__name__
                 exc_str = str(exc).lower()
-                # Connection/DNS/SSL/timeout = provider is DEAD
+                # Connection/DNS/SSL/timeout = provider unreachable
                 is_connection_error = any(s in exc_str for s in [
                     "connection", "dns", "ssl", "timeout", "getaddrinfo",
                     "refused", "unreachable", "network",
                 ])
-                if is_connection_error:
+                # Quota exhaustion: 429 with quota/billing/credits wording.
+                # Pure rate-limit without quota signal is probe noise, not a
+                # dead provider — handled in the else branch.
+                is_quota_exhaustion = (
+                    "429" in exc_str or "ratelimit" in exc_name.lower()
+                ) and any(s in exc_str for s in [
+                    "insufficient_quota", "quota", "billing", "credit",
+                    "exceeded your current quota", "payment",
+                ])
+                if is_connection_error or is_quota_exhaustion:
                     results[name] = False
                     for _ in range(3):
                         self.record_failure(name, exc)
-                    log.warning("Health check DEAD for %s: %s — circuit opened", name, exc_name)
+                    reason = "unreachable" if is_connection_error else "quota exhausted"
+                    log.warning(
+                        "Health check DEAD for %s (%s): %s — circuit opened",
+                        name, reason, exc_name,
+                    )
                 else:
-                    # API error (400/401/403) = provider is reachable, just bad probe params
+                    # API error (400/401/403/transient 429) — provider reachable
                     results[name] = True
                     self.record_success(name)
-                    log.info("Health check OK for %s (API error on probe, but reachable: %s)", name, exc_name)
+                    log.info(
+                        "Health check OK for %s (API error on probe, but reachable: %s)",
+                        name, exc_name,
+                    )
 
         alive = sum(1 for v in results.values() if v)
         log.info("Provider health check: %d/%d alive %s", alive, len(results), results)

@@ -152,3 +152,79 @@ class TestProviderPool:
         assert provider is openai_provider
         assert config.provider == "openai"
         assert config.model == "gpt-5.4-pro"
+
+
+# --- Quota-aware health_check tests (Codex item F, 2026-04-18) ---
+
+
+class TestHealthCheckQuotaAwareness:
+    """health_check() must mark OpenAI-style quota exhaustion as DEAD,
+    not ALIVE, so ModelAssigner routes elsewhere instead of 429-looping."""
+
+    @pytest.mark.asyncio
+    async def test_insufficient_quota_marks_dead(self):
+        from unittest.mock import AsyncMock
+        default_provider = _make_provider("deepseek")
+        dead_provider = _make_provider("openai")
+        dead_provider.generate = AsyncMock(
+            side_effect=Exception(
+                "RateLimitError Error code: 429 - insufficient_quota. "
+                "You exceeded your current quota. Check your billing."
+            )
+        )
+
+        pool = ProviderPool(
+            default_provider=default_provider,
+            registry=_make_registry(),
+            default_config=LLMConfig(provider="deepseek", model="x"),
+            providers={"openai": dead_provider, "deepseek": default_provider},
+        )
+        # Force deepseek probe to succeed
+        default_provider.generate = AsyncMock(return_value=MagicMock(content="hi"))
+
+        results = await pool.health_check(timeout=1.0)
+        assert results == {"openai": False, "deepseek": True}
+
+    @pytest.mark.asyncio
+    async def test_transient_rate_limit_stays_alive(self):
+        """A plain 429 without quota wording is probe noise, not a dead provider."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("gemini")
+        p.generate = AsyncMock(
+            side_effect=Exception("429 Too Many Requests — please retry later")
+        )
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="gemini", model="x"),
+            providers={"gemini": p},
+        )
+        results = await pool.health_check(timeout=1.0)
+        assert results == {"gemini": True}
+
+    @pytest.mark.asyncio
+    async def test_connection_error_still_marks_dead(self):
+        """Regression guard: connection errors (old behavior) still mark dead."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("openrouter")
+        p.generate = AsyncMock(side_effect=Exception("DNS resolution failed"))
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="openrouter", model="x"),
+            providers={"openrouter": p},
+        )
+        results = await pool.health_check(timeout=1.0)
+        assert results == {"openrouter": False}
+
+    @pytest.mark.asyncio
+    async def test_401_stays_alive(self):
+        """Regression: 401 auth errors remain ALIVE (reachable, probe misconfig)."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("xai")
+        p.generate = AsyncMock(side_effect=Exception("401 Unauthorized"))
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="xai", model="x"),
+            providers={"xai": p},
+        )
+        results = await pool.health_check(timeout=1.0)
+        assert results == {"xai": True}

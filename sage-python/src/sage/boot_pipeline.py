@@ -158,19 +158,65 @@ def init_pipeline(
             )
             _log.info("ProviderPool: %d live providers -- %s", len(_runtime_adapters), list(_runtime_adapters.keys()))
 
-            # Health check: probe all providers, open circuit for dead ones
+            # Health check: probe all providers, open circuit for dead ones.
+            #
+            # Windows/asyncio pitfall (Codex review 2026-04-18): earlier code
+            # used `asyncio.new_event_loop()` + `run_until_complete`, which
+            # raised "event loop is already running" under certain boot
+            # contexts. The exception was caught (RuntimeError branch) but
+            # the coroutine returned by health_check() was never awaited →
+            # RuntimeWarning + silent skip. Result: dead providers stayed
+            # "live" in the pool.
+            #
+            # Fix: prefer `asyncio.run()` which creates + closes a loop in
+            # one call and doesn't silently swallow coroutines on failure.
+            # If a loop is already running (e.g. boot from an async context),
+            # run the health check in a dedicated thread so we still get the
+            # signal instead of silently skipping.
             import asyncio
+            import threading
+
+            def _run_health() -> dict | None:
+                try:
+                    return asyncio.run(_provider_pool.health_check(timeout=8.0))
+                except RuntimeError:
+                    return None
+
+            health: dict | None = None
             try:
-                _loop = asyncio.new_event_loop()
-                health = _loop.run_until_complete(_provider_pool.health_check(timeout=8.0))
-                _loop.close()
+                # Fast path: no running loop → asyncio.run works inline.
+                asyncio.get_running_loop()
+                _running_in_async = True
+            except RuntimeError:
+                _running_in_async = False
+
+            if _running_in_async:
+                # We're inside an existing loop — offload to a worker thread
+                # so we don't deadlock and don't drop the coroutine.
+                _result: list[dict | None] = [None]
+
+                def _worker():
+                    _result[0] = _run_health()
+
+                _t = threading.Thread(target=_worker, daemon=True)
+                _t.start()
+                _t.join(timeout=30.0)
+                health = _result[0]
+            else:
+                health = _run_health()
+
+            if health is None:
+                _log.warning(
+                    "ProviderPool health check did not return — treating all providers as alive",
+                )
+            else:
                 dead = [k for k, v in health.items() if not v]
                 if dead:
                     _log.warning("Dead providers excluded: %s", dead)
                     if model_assigner and hasattr(model_assigner, 'exclude_providers'):
                         model_assigner.exclude_providers(dead)
-            except RuntimeError:
-                _log.debug("Health check skipped (no event loop)")
+                else:
+                    _log.info("Health check: all %d providers alive", len(health))
         except (ImportError, RuntimeError) as exc:
             _log.warning("ProviderPool init failed: %s", exc)
 
