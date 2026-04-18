@@ -1,0 +1,44 @@
+# Meta-Harness configuration for YGN-SAGE reference example.
+
+# Proposer (Codex CLI via codex_wrapper.py)
+proposer:
+  tool: codex
+  model: gpt-5.4
+  reasoning_effort: high       # "xhigh" per user requirement
+  sandbox: workspace-write     # needed to write agents/<id>.py
+  timeout_s: 600               # 10 min per propose call
+  skip_git_repo_check: true
+  ephemeral: true
+
+# Evaluation benchmark
+benchmark:
+  # Command executed per candidate. {candidate} is replaced with the
+  # candidate's module import path. Must write a predictions JSON that
+  # benchmark.py can parse.
+  type: swebench
+  dataset: lite                # SWE-bench Lite
+  offset: 3                    # skip first-3 memorized astropy tasks
+  limit: 5                     # val-set size (quick feedback loop)
+  timeout_per_task_s: 300
+  seeds: [42]                  # single-seed for val; multi-seed for test phase
+  concurrency: 1               # SAGE pipeline is async internally; don't double-concurrent
+
+# Held-out test set (used only at end of sweep, NOT exposed to proposer)
+test:
+  type: masbench
+  axes: [breadth]              # only breadth is p=0.015 significant
+  seeds: [42, 123, 456]        # multi-seed for statistical power
+
+# Candidates
+candidates:
+  baselines:
+    - baseline
+  proposed: []                 # meta_harness.py writes proposed files at runtime
+
+# Evolution loop
+evolve:
+  iterations: 10
+  candidates_per_iteration: 3
+  budget_usd: 5.0              # hard cap per iteration (aggregate Codex + SAGE)
+  log_dir: logs                # relative to this file
+  run_name: default            # override via --run-name

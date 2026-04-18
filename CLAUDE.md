@@ -44,15 +44,15 @@ python -m sage.bench --type ablation --limit 50
 # Set SAGE_ENABLE_PATH6=1 to load a local checkpoint at inference time.
 
 # Meta-Harness (harness optimization — arXiv 2603.28052)
-# All commands from C:\Code\YGN-SAGE root. Workspace defaults to ~/.sage-meta-harness/
-# Use -w .sage-meta-harness to keep workspace inside the project
-python -m sage.meta_harness init                    # Create workspace
-python -m sage.meta_harness evaluate baseline        # Establish baseline scores
-python -m sage.meta_harness propose                  # Generate candidate template
-python -m sage.meta_harness evaluate <id>            # Score a candidate
-python -m sage.meta_harness status                   # Leaderboard
-python -m sage.meta_harness apply                    # Apply best to production
-python -m sage.meta_harness.auto_propose -n 10       # Automated search (10 iterations)
+# Uses the official framework from stanford-iris-lab/meta-harness
+# (cloned to external/meta-harness/). Our in-tree implementation was
+# removed on 2026-04-18 — it was a dataclass hyperparameter tuner, not
+# the structural-evolution harness search the paper specifies. See ADR-010.
+#
+# Workflow (for a SAGE reference_example under external/meta-harness/):
+cd external/meta-harness/reference_examples/ygn_sage
+uv sync
+uv run python meta_harness.py --iterations 10 --fresh
 ```
 
 ## Current State (April 18, 2026)

@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+
+jobs/
+logs/claude_sessions/
+logs/pending_eval.json
+logs/frontier_val.json

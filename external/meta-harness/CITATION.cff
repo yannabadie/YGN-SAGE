@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite the paper below."
+title: "Meta-Harness"
+type: software
+license: MIT
+url: "https://github.com/stanford-iris-lab/meta-harness"
+repository-code: "https://github.com/stanford-iris-lab/meta-harness"
+authors:
+  - family-names: Lee
+    given-names: Yoonho
+  - family-names: Nair
+    given-names: Roshen
+  - family-names: Zhang
+    given-names: Qizheng
+  - family-names: Lee
+    given-names: Kangwook
+  - family-names: Khattab
+    given-names: Omar
+  - family-names: Finn
+    given-names: Chelsea
+preferred-citation:
+  type: article
+  title: "Meta-Harness: End-to-End Optimization of Model Harnesses"
+  authors:
+    - family-names: Lee
+      given-names: Yoonho
+    - family-names: Nair
+      given-names: Roshen
+    - family-names: Zhang
+      given-names: Qizheng
+    - family-names: Lee
+      given-names: Kangwook
+    - family-names: Khattab
+      given-names: Omar
+    - family-names: Finn
+      given-names: Chelsea
+  year: 2026
+  url: "https://arxiv.org/abs/2603.28052"

@@ -1,0 +1,15 @@
+[project]
+name = "meta-harness-ygn-sage"
+version = "0.1.0"
+description = "Meta-Harness × YGN-SAGE reference example (Codex CLI proposer)"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["agents"]

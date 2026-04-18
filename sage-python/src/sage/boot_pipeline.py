@@ -220,30 +220,13 @@ def init_pipeline(
         except (ImportError, RuntimeError) as exc:
             _log.warning("ProviderPool init failed: %s", exc)
 
-    # Meta-Harness: try to load the production harness config so the
-    # pipeline sees its tuned context/prompt/execution parameters. Not
-    # loading this is why harness_config stayed None across every smoke
-    # run — Meta-Harness search results were dead code (ADR-009 followup).
-    _harness_config: Any | None = None
-    try:
-        from sage.meta_harness.config import HarnessConfig
-        from pathlib import Path as _Path
-        _harness_candidates = [
-            _Path(__file__).resolve().parent.parent.parent.parent / "config" / "harness.json",
-            _Path.home() / ".sage-meta-harness" / "production.json",
-            _Path.cwd() / "config" / "harness.json",
-        ]
-        for _candidate in _harness_candidates:
-            if _candidate.exists():
-                _harness_config = HarnessConfig.load(_candidate)
-                _log.info("Meta-Harness: loaded production config from %s", _candidate)
-                break
-        else:
-            _log.info("Meta-Harness: no harness.json found — using dataclass defaults")
-    except ImportError:
-        pass
-    except Exception as exc:  # noqa: BLE001 - best-effort load, defaults are safe
-        _log.warning("Meta-Harness: config load failed (%s), using defaults", exc)
+    # Meta-Harness: the in-tree hyperparameter tuner was removed on 2026-04-18
+    # in favour of the official framework (stanford-iris-lab/meta-harness,
+    # see external/meta-harness/ and ADR-010). Harness search now lives as
+    # a reference_example adjacent to the upstream framework and invokes
+    # SAGE through python -m sage.bench rather than through runtime patching.
+    # The `harness_config` parameter on CognitiveOrchestrationPipeline stays
+    # (Any = None) for future re-integration; boot no longer injects one.
 
     # Pipeline: 5-stage orchestration (optional -- None if deps missing)
     _pipeline = None
@@ -265,7 +248,6 @@ def init_pipeline(
                 episodic_memory=episodic_memory,
                 tool_registry=tool_registry,
                 agent_loop=agent_loop,
-                harness_config=_harness_config,
             )
             # Wire Rust registry for Stage 4 model selection (affinity scoring)
             if rust_registry:
