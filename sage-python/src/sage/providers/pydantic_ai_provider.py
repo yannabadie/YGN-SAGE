@@ -70,8 +70,21 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
     kind = cfg["kind"]
 
     if kind == "native_openai":
-        from pydantic_ai.models.openai import OpenAIChatModel
         from pydantic_ai.providers.openai import OpenAIProvider
+        # gpt-5.4-pro and other reasoning-only variants must use the
+        # Responses API (`/v1/responses`) — the Chat Completions endpoint
+        # returns "This is not a chat model" 404. Pydantic AI exposes
+        # OpenAIResponsesModel for this. Our cards.toml convention: any
+        # model starting with "gpt-5.4-pro" or ending in "-pro" among the
+        # gpt-5 family routes via Responses. (The previous LiteLLM path
+        # used an `openai/responses/<model>` prefix — same mechanism.)
+        _responses_only = model_id.startswith("gpt-5.4-pro") or "responses" in model_id.lower()
+        if _responses_only:
+            from pydantic_ai.models.openai import OpenAIResponsesModel
+            return OpenAIResponsesModel(
+                model_id, provider=OpenAIProvider(api_key=api_key or "")
+            )
+        from pydantic_ai.models.openai import OpenAIChatModel
         return OpenAIChatModel(model_id, provider=OpenAIProvider(api_key=api_key or ""))
 
     if kind == "native_google":

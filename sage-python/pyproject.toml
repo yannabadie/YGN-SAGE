@@ -101,6 +101,7 @@ testpaths = ["tests"]
 markers = [
     "e2e: end-to-end tests requiring a real LLM (GOOGLE_API_KEY)",
     "integration: integration tests requiring optional protocol dependencies",
+    "live_provider: live-API tests hitting real LLM providers (opt-in via SAGE_LIVE_PROVIDERS=1)",
 ]
 
 [tool.ruff]
