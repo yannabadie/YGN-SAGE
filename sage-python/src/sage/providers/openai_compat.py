@@ -146,9 +146,13 @@ class OpenAICompatProvider:
         if self.provider_name == "openai" and "gpt-5" in model:
             if "max_tokens" in params:
                 params["max_completion_tokens"] = params.pop("max_tokens")
-            # The API rejects anything except 1.0 here; just drop our value.
-            if "temperature" in params and params["temperature"] != 1.0:
-                params["temperature"] = 1.0
+            # DROP temperature entirely. GPT-5 reasoning models reject any
+            # non-default value with "Unsupported value: 'temperature' does
+            # not support X with this model". Even `temperature=1.0` fails
+            # on some variants. Verified 2026-04-18 via LiteLLM issue #13781
+            # + OpenAI Community thread 1337133 after iter2-real still
+            # produced errors under the earlier "clamp to 1.0" approach.
+            params.pop("temperature", None)
 
         if self.provider_name == "deepseek":
             if "reasoner" in model and "temperature" in params:

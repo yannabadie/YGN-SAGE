@@ -296,34 +296,44 @@ class LiteLLMProvider:
                     effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
 
         _requested_temp = config.temperature if config else 0.0
-        # Forced temperature=1.0 for:
-        #   - Gemini 3.x (degenerate at low temp, per F8 fix 081812d)
-        #   - GPT-5 / GPT-5.x reasoning models (OpenAI rejects any temp != 1
-        #     with "invalid temperature" BadRequestError — observed 2026-04-18
-        #     during the Meta-Harness first real eval on astropy/django tasks)
         _effective_model_lower = effective_model.lower()
-        if "gemini-3" in _effective_model_lower or "gpt-5" in _effective_model_lower:
-            _effective_temp = 1.0
-        else:
-            _effective_temp = _requested_temp
 
-        # GPT-5 reasoning models reject `max_tokens` — they require
-        # `max_completion_tokens`. Temperature already clamped to 1.0 above.
-        # The openai_compat fallback path does the same swap in _apply_quirks;
-        # mirror it here so the primary LiteLLM path doesn't need the
-        # fallback to kick in. Observed 2026-04-18 in iter1-real when only
-        # temperature was clamped — OpenAI still rejected calls, error
-        # message surfaced as "invalid temperature" but the real parameter
-        # mismatch was max_tokens.
-        _uses_completion_tokens = "gpt-5" in _effective_model_lower
+        # GPT-5 / GPT-5.x reasoning models:
+        #   - DROP `temperature` entirely. OpenAI rejects any non-default value
+        #     ("Unsupported value: 'temperature' does not support X with this
+        #     model. Only the default (1) value is supported"). Even sending
+        #     `temperature=1.0` explicitly is rejected on some variants, and
+        #     clamping did NOT fix iter2-real failures. The only robust
+        #     behavior is to omit the parameter so the API uses its internal
+        #     default. Verified 2026-04-18 via web search + LiteLLM issue
+        #     #13781 + OpenAI Community thread 1337133. Per directive #7:
+        #     cards.toml wires gpt-5.4 / gpt-5.4-pro / gpt-5.4-mini /
+        #     gpt-5.4-nano / gpt-5.2 — all treated uniformly here; if a
+        #     specific variant later accepts temperature we can re-enable.
+        #   - Require `max_completion_tokens` instead of `max_tokens`. Same
+        #     source (LiteLLM issue, OpenAI docs).
+        #
+        # Gemini 3.x: keep forced temperature=1.0 (the old F8 fix, commit
+        # 081812d) because Gemini 3 models ENTER DEGENERATE regimes at low
+        # temp but DO accept the parameter. Opposite policy from GPT-5.
+        _is_gpt5 = "gpt-5" in _effective_model_lower
+        _is_gemini3 = "gemini-3" in _effective_model_lower
+
         _token_cap = config.max_tokens if config else 4096
-        _token_key = "max_completion_tokens" if _uses_completion_tokens else "max_tokens"
+        _token_key = "max_completion_tokens" if _is_gpt5 else "max_tokens"
         params: dict[str, Any] = {
             "model": effective_model,
             "messages": oai_messages,
             _token_key: _token_cap,
-            "temperature": _effective_temp,
         }
+
+        if _is_gpt5:
+            # Omit temperature entirely — API uses default (1).
+            pass
+        elif _is_gemini3:
+            params["temperature"] = 1.0
+        else:
+            params["temperature"] = _requested_temp
 
         if self.api_key:
             params["api_key"] = self.api_key
