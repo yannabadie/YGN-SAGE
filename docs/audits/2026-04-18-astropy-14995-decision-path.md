@@ -283,6 +283,17 @@ Net: 1 real → 1 real (different task recovered, another regressed). But struct
 ### Follow-ups (new tasks)
 
 - **F1** *(COMPLETE, partial win)*: Relaxed S2 stall_cap from `max_steps-3` → `max_steps-1` (cap 9). astropy-6938 recovered, sentinels -2. Net real_count unchanged (LLM variance).
+- **F2** *(COMPLETE, no net improvement)*: Tightened `_PLANNER` prompt (`role_prompts.py:37-63`) to:
+  (a) explicitly mandate final-plan emission as non-negotiable;
+  (b) constrain tool use to 0-2 calls;
+  (c) instruct "emit best partial plan if out of ideas".
+  Smoke v4 log: `docs/benchmarks/2026-04-18-swebench-smoke-v4-f2-planner-prompt.log`.
+  Results identical to v3 (1 real / 1 sentinel / 3 empty). Planner still
+  emits 50-char sentinel at 5-8 tool calls. **Hypothesis**: the S1 fast
+  model (gemini-3.1-flash-lite) underweights prompt-level "must emit"
+  directives when it's mid-tool-call-loop. Real fix probably requires
+  a structural constraint (e.g., strip tools from planner role entirely
+  and push exploration to coder) rather than prompt tightening.
 - **F2** *(partial insight from smoke v2)*: Planners (S1 max=5) sentinel at 5/5 tool calls. The `_PLANNER` role prompt (`topology/role_prompts.py:37-58`) explicitly allows `execute_bash` + `search_memory` for repo sanity checking. With S1 fast-tier models (gemini-3.1-flash-lite) and D8 disabled for S1, planners burn their full budget on tools without emitting final content. The hard rule "Do NOT emit code" doesn't have a matching "DO emit final plan" clause. Two potential fixes (deferred): (a) tighten prompt to require final content on last step, (b) restrict planner tool use (let coder do exploration).
 - **F3**: Docker-eval the v2 patch (astropy-14365, 647 chars) to verify it's semantically correct, not just syntactically a diff.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order appears to have shifted between runs — investigate `load_swebench_dataset` determinism).
