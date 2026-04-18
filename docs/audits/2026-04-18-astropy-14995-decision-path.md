@@ -405,6 +405,72 @@ the one experiment that would cleanly isolate F6's contribution. Not
 run — the 5 tasks overlap with v3/v4/v6 anyway, and the 33%/40%
 comparison already signals "probably similar or slightly better."
 
+### Smoke v8 (F8 — coder tier bump S2→S3) — RESULTS
+
+F8 took the next identified lever: bump sequential **coder** from
+`system=2` (10-step budget) to `system=3` (20-step budget + top-
+reasoner tier). `templates.rs:58` change + regression test
+(`test_sequential_planner_tier_is_s2` now also asserts coder=S3).
+
+Log: `docs/benchmarks/2026-04-18-swebench-smoke-v8-15task-f8-coder-s3.log`
+
+| Metric | baseline (honest) | v7 (F6 only) | **v8 (F6+F8)** |
+|---|---|---|---|
+| Real patches | 2/5 = 40% | 5/15 = 33.3% | **6/15 = 40%** 🎯 |
+| Sentinels | 3 (1 fake) | 9 | **5** (−44%) |
+| Empty | 0 | 1 | 4 |
+| Timeouts | 1 | 0 | 0 |
+| Cost/task avg | — | $0.115 | $0.159 (+38%) |
+| Cost/real-patch | — | $0.35 | $0.40 (+15%) |
+
+Patches won in v8:
+- astropy-14995 (592 chars) ← **audit target, stably back to PATCH**
+- astropy-6938 (522 chars) ← stable across v3/v4/v6/v7/v8
+- astropy-7746 (562 chars) ← **new win vs v7 (was EMPTY)**
+- django-11039 (594 chars) ← stable v7→v8
+- django-11099 (753 chars) ← **new win vs v7 (was EMPTY)**
+- django-11179 (578 chars) ← stable v7→v8
+
+**Honest read:**
+- F8 is a clearer win than F6 alone: 15-task rate moved from 33.3% →
+  40.0% (+20% relative). The sentinel count dropped from 9 to 5
+  (-44%), directly matching the F8 hypothesis (coder was running out
+  of budget). The 4 empties remain — likely planner-level failures
+  untouched by F8.
+- astropy-14995, the audit target, produced a real 592-char patch in
+  v8. Three of five runs that included this task (v6, v8) have now
+  succeeded; v3, v4, v7 saw EMPTY. **Plurality favours "F6+F8 fixes
+  the audit target", but variance remains a factor.**
+- 95% CIs for 2/5 (12–74%) and 6/15 (16–68%) still overlap — the
+  statistical claim "F6+F8 > baseline" is suggestive, not proven.
+
+### Cost implications of F8
+
+F8 bumps the coder from S2 (gemini-3.1-pro-preview: $2.00/$12.00 per
+M) to S3 (deepseek-reasoner: $0.28/$0.42 per M) — actually **cheaper
+per token**. But the 20-step budget (vs 10) means the coder runs ~2×
+as many turns in the worst case. Net cost/task went up 38% not because
+of model price but because of more tool calls per node.
+
+### Final verdict — updated after v8
+
+**Proven:**
+- D1–D8 architecture + reporting (zero fake patches, 0 timeouts,
+  ~1.8× faster, structured failure metadata).
+- F1 soft-cap 7→9 (astropy-6938 stable across 4 smokes).
+- F8 coder S2→S3 (sentinel count halved in v8; this was the next
+  lever identified post-F6, and it paid off).
+
+**Plausible:**
+- F6 planner S1→S2. At 15 tasks the rate increase is consistent
+  with the hypothesis but not statistically separable from baseline.
+  The regression test locks it in place so a future revert requires
+  explicit data.
+
+**Confirmed negative:**
+- F2 prompt tightening.
+- F5 planner tool-stripping (backfired, reverted).
+
 - **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).
 

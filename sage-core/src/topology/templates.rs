@@ -49,11 +49,19 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         0.5,
         60.0,
     );
+    // F8 audit fix (2026-04-18 docs/audits/2026-04-18-astropy-14995-*):
+    // Coder node was system=2 (10-step budget, reasoner tier). Smoke v7
+    // at 15 tasks showed 9/15 non-passing are coder sentinels — coder
+    // runs out of budget before emitting its diff. Bump to system=3
+    // (20-step budget + top-reasoner tier; D8 stall_cap=17 still catches
+    // 20-for-20 thrash). SWE-bench coders routinely do grep+read+run+
+    // edit+verify chains that need 12-18 tool calls. This aligns the
+    // coder's tier with the task-outer tier (SWE-bench classifies as S3).
     let n1 = TopologyNode::new(
         "coder".into(),
-        "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
-        2,
-        vec!["reasoning".into(), "tools".into()],
+        "".into(),  // ModelAssigner will assign based on system=3 (top reasoner)
+        3,
+        vec!["reasoning".into(), "tools".into(), "code_generation".into()],
         0,
         1.0,
         120.0,
@@ -944,10 +952,17 @@ mod tests {
              dropping to system=1 regressed astropy-14995 from real \
              patch to 52-char sentinel in all earlier smokes."
         );
-        // Sanity: coder is also S2 (unchanged)
+        // F8 audit fix (2026-04-18): coder bumped S2→S3 after v7 showed
+        // 9/15 non-passing were coder sentinels. S3 gives 20-step budget
+        // (vs S2=10) for grep+read+run+edit+verify chains.
         let coder = g.try_get_node(1).expect("sequential has 3 nodes");
         assert_eq!(coder.role, "coder");
-        assert_eq!(coder.system, 2);
+        assert_eq!(
+            coder.system, 3,
+            "Sequential coder must be system=3 (top reasoner, 20-step \
+             budget). F8 fix; reverting to system=2 re-introduces the \
+             10-step limit that blocked 9/15 tasks in smoke v7."
+        );
         // Synthesizer remains S1 (sink formatting, cheap is fine)
         let synth = g.try_get_node(2).expect("sequential has 3 nodes");
         assert_eq!(synth.role, "synthesizer");
