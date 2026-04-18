@@ -70,9 +70,9 @@ Pluggable RAG backend interface. Defines the `KnowledgeStore` protocol with `sea
 
 ### `remote_rag.py` -- ExoCortex (Tier 3)
 
-Persistent managed RAG via Google GenAI File Search API. Implements the `KnowledgeStore` protocol. Auto-configured with a default store. Provides passive grounding during `_think()` and active `search_exocortex` agent tool. 500+ research sources indexed. Future backends can plug in via the `KnowledgeStore` protocol.
+Persistent managed RAG via Google GenAI File Search API. Implements the `KnowledgeStore` protocol. **Store is NOT auto-configured** — set `SAGE_EXOCORTEX_STORE` (or pass `store_name=`) to enable. No default, per the 2026-04-18 shipping-blocker fix that prevented pip-install users from leaking into the project maintainer's shared store. Provides passive grounding during `_think()` and active `search_exocortex` agent tool. 500+ research sources indexed. Future backends can plug in via the `KnowledgeStore` protocol.
 
-- **Key exports**: `ExoCortex`, `DEFAULT_STORE`
+- **Key exports**: `ExoCortex`
 
 ### `memory_agent.py` -- MemoryAgent
 

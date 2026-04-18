@@ -14,13 +14,42 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-# Known stable store name -- avoids silent disable when .env is not loaded.
-# Resolution order: explicit param > SAGE_EXOCORTEX_STORE env var > DEFAULT_STORE.
-DEFAULT_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
+# Shipping-blocker fix (2026-04-18, P1.3 of mega-plan): until today this
+# module silently defaulted to `fileSearchStores/ygnsageresearch-<...>` —
+# a store that belongs to the project maintainer's Google account. Any
+# `pip install ygn-sage` user who didn't override the store ended up
+# writing research artefacts into the maintainer's shared store, leaking
+# tenancy.
+#
+# Resolution order is now strictly: explicit param > SAGE_EXOCORTEX_STORE
+# env var > None. When all three are missing we do NOT pick a default;
+# `is_available` returns False, ExoCortex features silently disable, and
+# a one-shot warning goes to the log so the operator sees it. To keep
+# existing local development frictionless we still accept the project
+# store name via env var — it just has to be opted into explicitly
+# (set SAGE_EXOCORTEX_STORE in .env). See `tests/test_exocortex_auto.py`
+# for the pinned contract.
+_PROJECT_LEGACY_STORE = "fileSearchStores/ygnsageresearch-wii7kwkqozrd"
 
 # Default model for ExoCortex queries.
 # Resolution order: explicit param > SAGE_EXOCORTEX_MODEL env var > _DEFAULT_MODEL.
 _DEFAULT_MODEL = "gemini-2.5-flash"
+
+_WARNED_NO_STORE = False
+
+
+def _resolve_store(explicit: str | None) -> str | None:
+    """Resolve the File Search store name from param/env. No silent default.
+
+    Returns the empty string as-is when the caller explicitly passed one
+    (treated as "disabled"), returns None when no source supplies a value.
+    """
+    if explicit is not None:
+        return explicit
+    env_value = os.environ.get("SAGE_EXOCORTEX_STORE")
+    if env_value:
+        return env_value
+    return None
 
 
 class ExoCortex:
@@ -31,7 +60,15 @@ class ExoCortex:
     """
 
     def __init__(self, store_name: str | None = None, model_id: str | None = None):
-        self._store_name = store_name or os.environ.get("SAGE_EXOCORTEX_STORE") or DEFAULT_STORE
+        global _WARNED_NO_STORE
+        self._store_name = _resolve_store(store_name)
+        if not self._store_name and not _WARNED_NO_STORE:
+            log.warning(
+                "ExoCortex: no store configured; set SAGE_EXOCORTEX_STORE "
+                "(or pass store_name=) to enable File Search. "
+                "Features depending on ExoCortex will no-op."
+            )
+            _WARNED_NO_STORE = True
         self._model_id = model_id or os.environ.get("SAGE_EXOCORTEX_MODEL") or _DEFAULT_MODEL
         self._api_key = os.environ.get("GOOGLE_API_KEY", "")
         self._client = None
@@ -48,8 +85,8 @@ class ExoCortex:
         return self._client
 
     @property
-    def store_name(self) -> str:
-        """Human-readable name of the store backend."""
+    def store_name(self) -> str | None:
+        """Human-readable name of the store backend, or None if unconfigured."""
         return self._store_name
 
     @store_name.setter
