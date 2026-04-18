@@ -36,6 +36,17 @@ _ERROR_OUTPUT = re.compile(
     re.IGNORECASE,
 )
 
+# D3 audit fix (2026-04-18 docs/audits/2026-04-18-astropy-14995-*): the
+# loop-exhaustion sentinel from phases/learn.py is a structural failure
+# signal, NOT quality text. Before this detection, the controller saw a
+# 51-char output, treated it as real content, and never triggered
+# reroute/upgrade — so the sequential template silently cascaded the
+# sentinel across three nodes on astropy-14995. Keep the prefix in sync
+# with `phases/learn.py:EMPTY_STEP_SENTINEL` (one source of truth —
+# the `phases/learn.py` constant drives both this check and
+# `bench/swebench_bench._SENTINEL_MARKER`).
+_SENTINEL_PREFIX = "[sage: agent exited after"
+
 
 class TopologyController:
     """Runtime adaptation controller for Pipeline Stage 4.
@@ -289,6 +300,13 @@ class TopologyController:
     def _is_empty_or_error(result: str) -> bool:
         stripped = result.strip()
         if not stripped:
+            return True
+        # D3 audit fix: treat AgentLoop sentinel as structural failure.
+        # Without this, astropy-14995's 51-char sentinel passed the
+        # empty-or-error check and fell through to quality scoring,
+        # which rated it as "neutral" (0.5) and returned continue —
+        # wasting the opportunity to upgrade_model or reroute.
+        if stripped.startswith(_SENTINEL_PREFIX):
             return True
         return bool(_ERROR_OUTPUT.search(stripped))
 

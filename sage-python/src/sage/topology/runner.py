@@ -222,25 +222,46 @@ class TopologyRunner:
                 n_predecessors=len(predecessor_indices),
                 task_preview="",
             )
-        return formatted
+        if formatted:
+            return formatted
+        # All predecessors were sentinels or empty (dropped by _is_sentinel
+        # above). Returning "" would leave the downstream node with only
+        # its own task prompt — it tool-explores from nothing and burns
+        # its step budget. Instead, emit an explicit cold-start note so
+        # the agent knows to short-circuit to a direct attempt rather
+        # than chasing context that isn't coming. Fix for the sentinel
+        # cascade observed on astropy-14995 (docs/audits/2026-04-18-*).
+        if predecessor_indices:
+            return (
+                "[system]: upstream nodes did not produce usable output "
+                "(all predecessors were step-budget sentinels). Work "
+                "directly from the task description; do not wait for "
+                "upstream context."
+            )
+        return ""
 
     def _maybe_planner_injection(self, node_idx: int, system_prompt: str) -> str:
         """Optionally prepend upstream planner output to this node's system_prompt.
 
-        Gated by SAGE_PLANNER_INJECTION=1 (default: off). The experiment is
-        backed by MASS (arXiv 2502.02533): the structured decomposition plan
-        is higher-signal for downstream nodes than the raw predecessor
-        context mixed with other outputs. Still emitted via predecessor
-        context too — this only adds explicit section at the top of the
-        system prompt for nodes downstream of a planner.
+        Default ON since 2026-04-18 (audit docs/audits/2026-04-18-astropy-14995).
+        Set SAGE_PLANNER_INJECTION=0 to disable. MASS (arXiv 2502.02533): the
+        structured decomposition plan is higher-signal for downstream nodes
+        than the raw predecessor context mixed with other outputs. Still
+        emitted via predecessor context too — this only adds explicit
+        section at the top of the system prompt for nodes downstream of a
+        planner.
+
+        The function is self-gated: it only injects if a planner exists
+        among predecessors AND that planner produced non-sentinel output,
+        so the default-ON flip is scoped to sequential-like topologies.
 
         No-op if:
-        - Flag is off
+        - Flag is set to "0"
         - Current node IS a planner (skip self-injection)
         - No planner found among predecessors
-        - Planner output is a sentinel (already stripped elsewhere, guard anyway)
+        - Planner output is a sentinel
         """
-        if os.environ.get("SAGE_PLANNER_INJECTION") != "1":
+        if os.environ.get("SAGE_PLANNER_INJECTION", "1") == "0":
             return system_prompt
 
         current = self.graph.get_node(node_idx)
@@ -294,7 +315,18 @@ class TopologyRunner:
             parts_with_roles.append((truncated, role))
 
         deduplicated = self._deduplicate_context(parts_with_roles)
-        return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
+        if deduplicated:
+            return "\n\n".join(f"[{role}]: {text}" for text, role in deduplicated)
+        # All completed outputs were sentinels (see D2 fix in
+        # _gather_predecessor_context above). Same cold-start note.
+        if self._node_outputs:
+            return (
+                "[system]: upstream nodes did not produce usable output "
+                "(all predecessors were step-budget sentinels). Work "
+                "directly from the task description; do not wait for "
+                "upstream context."
+            )
+        return ""
 
     @staticmethod
     def _cosine_sim(a: list[float], b: list[float]) -> float:
@@ -440,14 +472,54 @@ class TopologyRunner:
         else:
             provider, config = self._llm, self._config
 
-        # Create per-node AgentLoop (H8: independent instance)
-        loop = self._agent_loop_factory(
+        # Create per-node AgentLoop (H8: independent instance).
+        # D1 fix (2026-04-18 audit): pass the node's own system tier,
+        # not the outer task system. Sequential template declares
+        # system=1/2/1 on nodes (templates.rs:36,44,54), but the
+        # partial created in pipeline.py bound system_level=ctx.system
+        # which is the outer task tier. That pushed S1 planner/synthesizer
+        # into a 20-step S3 budget, which explains the 20-tool-call
+        # sentinel on astropy-14995. Partial kwargs are overridable.
+        _factory_kwargs: dict[str, Any] = dict(
             node_role=role,
             node_name=f"node-{node_idx}-{role}",
             llm_provider=provider,
             llm_config=config,
             system_prompt=system_prompt,
         )
+        _node_system = int(getattr(node, "system", 0) or 0)
+        if _node_system > 0:
+            _factory_kwargs["system_level"] = _node_system
+        # D6 audit fix (2026-04-18): forward drift classifications from
+        # DriftMonitor (monitoring/drift.py) to ProviderPool so a
+        # SWITCH_MODEL-worthy drift signal actually trips the circuit
+        # breaker for the offending provider. Before this wiring the
+        # drift action was log-only — classifications had zero effect
+        # on subsequent model resolutions.
+        _pool_for_drift = self._provider_pool
+        if _pool_for_drift is not None and hasattr(_pool_for_drift, "record_failure"):
+            _node_model_id = getattr(node, "model_id", "") or "default"
+            def _on_drift(
+                provider_hint: str,
+                action: str,
+                details: dict[str, Any],
+                _pool: Any = _pool_for_drift,
+                _model: str = _node_model_id,
+            ) -> None:
+                if action not in ("SWITCH_MODEL", "RESET_AGENT"):
+                    return
+                _key = (provider_hint or _model or "unknown")
+                try:
+                    _pool.record_failure(
+                        _key,
+                        RuntimeError(
+                            f"drift_{action.lower()} score={details.get('latency', '?')}"
+                        ),
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+            _factory_kwargs["on_drift"] = _on_drift
+        loop = self._agent_loop_factory(**_factory_kwargs)
 
         # Build task with predecessor context (H7)
         context = (

@@ -89,6 +89,8 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
     loop.config.validation_level = loop._original_validation_level
 
     if result_text:
+        # Clear any lingering exhaustion metadata from a previous run.
+        loop.last_exhaustion = None
         return result_text
     # Salvage the last real assistant content if the loop exited without a
     # final answer (e.g. max_steps hit mid-tool-calling). Prior behavior
@@ -96,16 +98,55 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
     # benches happily packaged as a fake "patch" and masked the failure.
     # Events are Rust-backed (WorkingMemory) or _MockEvent objects; both
     # expose .event_type and .content — never subscriptable like a tuple.
+    last_snippet: str | None = None
     try:
         events = getattr(loop.working_memory, "_events", None) or []
         for event in reversed(events):
             etype = getattr(event, "event_type", None) or getattr(event, "type", None)
             content = getattr(event, "content", None)
             if etype == "ASSISTANT" and isinstance(content, str) and content.strip():
+                if last_snippet is None:
+                    last_snippet = content[:200]
                 return content
     except (AttributeError, IndexError, TypeError):
         pass
-    return EMPTY_STEP_SENTINEL.format(step_count=loop.step_count)
+
+    # D4 audit fix (2026-04-18): populate structured exhaustion metadata
+    # before the sentinel return. TopologyRunner/Controller read this
+    # after loop.run() to decide whether to upgrade_model / spawn_subagent
+    # / fail cleanly — avoids relying on substring-match against the
+    # sentinel string.
+    #
+    # Guard with getattr() for callers that pass a SimpleNamespace or
+    # other minimal stub as the loop (several learn_fallback tests do).
+    # If `last_exhaustion` can't be read/written, silently skip the
+    # metadata plumbing — sentinel string return path still works.
+    try:
+        from sage.agent_loop import (  # noqa: PLC0415
+            AgentLoopBudgetExhausted,
+            AgentLoopExhaustion,
+        )
+        # D8 soft-cap fires during the loop itself (agent_loop.py); if
+        # last_exhaustion is already set with reason=="stalled", preserve it.
+        # Only set here when we fall through to the hard max-steps fallback.
+        if getattr(loop, "last_exhaustion", None) is None:
+            loop.last_exhaustion = AgentLoopExhaustion(
+                reason="budget_exhausted",
+                step_count=getattr(loop, "step_count", 0),
+                consecutive_tool_steps=getattr(loop, "_consecutive_tool_steps", 0),
+                last_tool_name=getattr(loop, "_last_tool_name", None),
+                last_assistant_snippet=last_snippet,
+            )
+
+        # Opt-in: raise instead of returning sentinel. Controllers wired for
+        # structural failure handling set AgentConfig.raise_on_exhaustion=True.
+        if getattr(getattr(loop, "config", None), "raise_on_exhaustion", False):
+            raise AgentLoopBudgetExhausted(loop.last_exhaustion)
+    except AttributeError:
+        # loop doesn't expose `last_exhaustion` writeable — skip metadata.
+        pass
+
+    return EMPTY_STEP_SENTINEL.format(step_count=getattr(loop, "step_count", 0))
 
 
 # Sentinel string returned when the agent produced no content for the full

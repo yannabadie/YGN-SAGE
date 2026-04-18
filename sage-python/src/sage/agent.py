@@ -23,6 +23,16 @@ class AgentConfig:
     use_docker_sandbox: bool = False
     snapshot_to_restore: str | None = None
     validation_level: int = 1  # 1=none(S1), 2=empirical(S2), 3=formal/Z3(S3)
+    # D4 fix (2026-04-18 audit): opt-in to raise AgentLoopBudgetExhausted
+    # instead of returning EMPTY_STEP_SENTINEL. Off by default — many
+    # callers (sequential bench paths) still depend on the sentinel
+    # string. TopologyController opts in so it can react structurally.
+    raise_on_exhaustion: bool = False
+    # D8 fix (same audit): soft cap — after N consecutive tool-calling
+    # steps with no final content, set loop.last_exhaustion (reason=
+    # "stalled") and return early. Default 0 disables the soft cap for
+    # backward compat; runner wires it to 10 for sequential nodes.
+    stall_after_tool_steps: int = 0
 
 
 class Agent:

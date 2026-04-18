@@ -221,16 +221,23 @@ def test_sentinel_output_dropped_from_predecessor_context():
     assert "real investigation" in ctx
 
 
-def test_all_sentinels_produces_empty_context():
-    """If every predecessor is a sentinel, context is empty — downstream
-    node falls back to its own task prompt rather than 'everyone failed'."""
+def test_all_sentinels_produces_cold_start_note():
+    """If every predecessor is a sentinel, downstream gets an explicit
+    cold-start note — NOT empty string. Fix for astropy-14995 sentinel
+    cascade (docs/audits/2026-04-18-astropy-14995-decision-path.md):
+    previous behavior left synthesizer with no context, which caused it
+    to burn 20 steps tool-exploring from nothing and emit its own
+    sentinel. Explicit note lets agents short-circuit to a direct
+    attempt."""
     runner = _make_runner()
     runner._node_outputs = {
         0: "[sage: agent exited after 3 steps with no content]",
         1: "[sage: agent exited after 5 steps with no content]",
     }
     ctx = runner._gather_predecessor_context(2)
-    assert ctx == ""
+    assert "sage: agent exited" not in ctx, "sentinel must still be stripped"
+    assert "upstream nodes did not produce" in ctx
+    assert "step-budget sentinels" in ctx
 
 
 def test_sentinel_prefix_only_matches_exact_format():
@@ -246,9 +253,24 @@ def test_sentinel_prefix_only_matches_exact_format():
 # --- Planner-output injection experiment (SAGE_PLANNER_INJECTION=1) ---
 
 
-def test_planner_injection_off_by_default(monkeypatch):
-    """With the flag unset, system_prompt is unchanged."""
+def test_planner_injection_on_by_default(monkeypatch):
+    """With the flag unset, injection is ON by default (flipped 2026-04-18
+    per astropy-14995 audit). Planner output propagates to downstream
+    nodes even when coder/synthesizer fail — MASS arXiv 2502.02533 shows
+    structured plan is higher-signal than mixed predecessor context.
+    Set SAGE_PLANNER_INJECTION=0 to opt out."""
     monkeypatch.delenv("SAGE_PLANNER_INJECTION", raising=False)
+    runner = _make_runner()
+    runner._node_outputs = {0: "Plan: step 1, step 2, step 3"}
+    out = runner._maybe_planner_injection(1, "You are the coder.")
+    assert "Upstream plan (from planner)" in out
+    assert "step 1, step 2, step 3" in out
+    assert "You are the coder." in out
+
+
+def test_planner_injection_opt_out_via_env(monkeypatch):
+    """Explicit SAGE_PLANNER_INJECTION=0 disables injection."""
+    monkeypatch.setenv("SAGE_PLANNER_INJECTION", "0")
     runner = _make_runner()
     runner._node_outputs = {0: "Plan: step 1, step 2, step 3"}
     out = runner._maybe_planner_injection(1, "You are the coder.")

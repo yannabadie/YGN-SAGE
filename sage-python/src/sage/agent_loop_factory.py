@@ -53,6 +53,7 @@ def create_node_agent_loop(
     system_level: int,
     task_domain: str = "",
     on_event: Any = None,
+    on_drift: Any = None,
 ) -> AgentLoop:
     """Create an independent AgentLoop for a topology node.
 
@@ -113,6 +114,25 @@ def create_node_agent_loop(
     else:
         node_max_steps = 5
 
+    # D8 soft-cap (2026-04-18 audit, revised after first smoke): break
+    # out of consecutive-tool-turn thrash with enough headroom for
+    # legitimate multi-call work. First revision used max_steps//2
+    # which killed a 5-task SWE-Lite run (0/5 real vs 3/5 baseline —
+    # coder bailed at 5/10, synthesizer at 2/5, before either could
+    # emit a patch). SWE-bench coders need 8-15 tool turns (grep +
+    # read_file + run_tests + edit) before final content. The cap
+    # has to be "almost the full budget" — catch the pathological
+    # 20-for-20 thrash, not normal exploration.
+    #
+    # Heuristic: leave the final 3 steps available for content
+    # emission. Small S1 budgets (max=5) disable D8 entirely (cap=0)
+    # since a 3-step thrash window would still break legitimate
+    # execute_bash → read_file → final-answer chains.
+    if node_max_steps <= 5:
+        node_stall_cap = 0  # disabled for S1
+    else:
+        node_stall_cap = max(0, node_max_steps - 3)
+
     config = AgentConfig(
         name=node_name,
         llm=llm_config,
@@ -120,6 +140,7 @@ def create_node_agent_loop(
         max_steps=node_max_steps,
         validation_level=validation,
         tools=tools,
+        stall_after_tool_steps=node_stall_cap,
     )
 
     loop = AgentLoop(
@@ -128,6 +149,11 @@ def create_node_agent_loop(
         tool_registry=tool_registry,
         on_event=on_event,
     )
+    # D6 audit fix (2026-04-18): wire the drift callback so SWITCH_MODEL/
+    # RESET_AGENT drift classifications from monitoring/drift.py get
+    # forwarded to ProviderPool.record_failure via the runner's wiring.
+    if on_drift is not None:
+        loop._on_drift = on_drift
 
     # H1/H4 carryover: pipeline already handled routing and topology
     loop._skip_routing = True

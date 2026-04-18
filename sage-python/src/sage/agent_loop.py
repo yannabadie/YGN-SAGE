@@ -67,6 +67,64 @@ class LoopEvent:
 
 
 @dataclass
+class AgentLoopExhaustion:
+    """Structured metadata when the loop exits without final content.
+
+    D4 fix (2026-04-18 audit docs/audits/2026-04-18-astropy-14995-*):
+    before this struct existed, the loop returned a sentinel STRING
+    (``phases/learn.py:EMPTY_STEP_SENTINEL``) that callers had to detect
+    via substring match. Controllers had no way to learn WHY the agent
+    stalled — just that "something" emitted 51 chars.
+
+    This dataclass carries the *why* forward. Callers (TopologyRunner,
+    TopologyController) read ``loop.last_exhaustion`` after ``run()`` to
+    decide whether to upgrade_model, spawn_subagent, or fail the node.
+
+    Attributes
+    ----------
+    reason:
+        "budget_exhausted" — ran to max_steps with no final content.
+        "stalled" — D8 soft cap: N consecutive tool turns, no content.
+    step_count:
+        Step the loop exited at. Equals ``loop.config.max_steps`` for
+        budget_exhausted; less for stalled.
+    consecutive_tool_steps:
+        How many steps in a row called tools without producing final
+        content. Useful for distinguishing true thrash (20/20) from
+        near-miss (18/20 tools, 2 with reasoning).
+    last_tool_name:
+        Name of the last tool invoked, if any. Often the repeated tool
+        that wasted the budget.
+    last_assistant_snippet:
+        First 200 chars of the last ASSISTANT message content if any —
+        lets controllers see what the agent was *trying* to say.
+    """
+    reason: str = "budget_exhausted"
+    step_count: int = 0
+    consecutive_tool_steps: int = 0
+    last_tool_name: str | None = None
+    last_assistant_snippet: str | None = None
+
+
+class AgentLoopBudgetExhausted(RuntimeError):
+    """Raised when the agent loop hits max_steps with no final content.
+
+    D4 fix. Not raised by default to preserve backward compat with
+    callers that depend on the sentinel-string return. Opt-in via
+    ``AgentConfig.raise_on_exhaustion=True`` (added in the same patch).
+
+    Carries the ``AgentLoopExhaustion`` metadata as ``.detail``.
+    """
+    def __init__(self, detail: AgentLoopExhaustion):
+        self.detail = detail
+        super().__init__(
+            f"agent_loop budget exhausted at step {detail.step_count} "
+            f"(reason={detail.reason}, "
+            f"consecutive_tool_steps={detail.consecutive_tool_steps})"
+        )
+
+
+@dataclass
 class AgentEvent:
     """Versioned structured event for observability (v1)."""
     type: str                           # PERCEIVE, THINK, ACT, LEARN
@@ -135,6 +193,19 @@ class AgentLoop:
         self.tool_call_count = 0   # total individual function_call invocations
         self.tool_turn_count = 0   # turns on which the LLM returned >=1 tool call
         self.executed_commands: list[str] = []  # bash commands executed (truncated)
+        # D4 audit fix (2026-04-18): populated by phases/learn.py when the
+        # loop exits without final content. Runner/Controller read this
+        # to decide whether to upgrade_model / spawn_subagent / fail.
+        # None means "run completed with final content".
+        self.last_exhaustion: AgentLoopExhaustion | None = None
+        # D8 audit fix (2026-04-18): tracks consecutive steps where the
+        # LLM called tools but emitted no final content. Used for soft-cap
+        # stall detection. Reset to 0 on any step that produces final
+        # content.
+        self._consecutive_tool_steps = 0
+        # Last tool name invoked — carried into AgentLoopExhaustion for
+        # controller diagnostics (often the repeated tool that thrashed).
+        self._last_tool_name: str | None = None
         self.start_time = 0.0
         self._s3_retries = 0
         self._max_s3_retries = S3_MAX_RETRIES
@@ -171,6 +242,13 @@ class AgentLoop:
         self._drift_events: list[AgentEvent] = []
         self._drift_check_interval = DRIFT_CHECK_INTERVAL  # Analyze every N events
         self._consolidation_steps_total = 0  # Persist maintenance cadence across runs
+        # D6 audit fix (2026-04-18): drift action was previously log-only.
+        # Callers (TopologyRunner) inject a callback to forward SWITCH_MODEL
+        # / RESET_AGENT events to ProviderPool.record_failure so repeated
+        # drift against the same provider trips the circuit breaker and
+        # subsequent resolve() calls pick a different provider. Signature:
+        # on_drift(provider_hint: str, action: str, details: dict) -> None.
+        self._on_drift: Callable[[str, str, dict[str, Any]], None] | None = None
 
     def _emit(self, phase: LoopPhase, **data: Any) -> None:
         evt = AgentEvent(
@@ -195,6 +273,16 @@ class AgentLoop:
             if report.action != "CONTINUE":
                 log.warning("Drift detected: score=%.3f action=%s details=%s",
                             report.drift_score, report.action, report.details)
+                # D6 audit fix: forward actionable drift to caller callback
+                # so ProviderPool can record a failure / flip the circuit.
+                # Was log-only before — SWITCH_MODEL classifications in
+                # monitoring/drift.py:99 had zero downstream effect.
+                if self._on_drift is not None:
+                    try:
+                        _hint = str(getattr(evt, "model", "") or "")
+                        self._on_drift(_hint, report.action, report.details or {})
+                    except Exception as _drift_exc:  # noqa: BLE001 — telemetry
+                        log.debug("on_drift callback failed: %s", _drift_exc)
                 self._on_event(AgentEvent(
                     type="DRIFT",
                     step=self.step_count,
@@ -387,6 +475,48 @@ class AgentLoop:
                 # AVR retry or S2->S3 escalation — re-enter loop
                 await self._maybe_run_consolidation()
                 continue
+
+            # === D8 soft-cap stall detection (audit 2026-04-18) ===
+            # Track consecutive tool-calling steps that produce no final
+            # content. After `stall_after_tool_steps` in a row, bail early
+            # with structured AgentLoopExhaustion(reason="stalled") instead
+            # of burning the full max_steps budget. Default 0 = disabled
+            # (backward compat); TopologyRunner wires it to 10 for
+            # sequential nodes so a thrashing coder doesn't eat 20 steps.
+            _tool_step_this_turn = bool(_tc)
+            _produced_content = bool(a_result.result_text)
+            if _tool_step_this_turn and not _produced_content:
+                self._consecutive_tool_steps += 1
+                # Capture the most recent tool name for controller diagnostics
+                try:
+                    self._last_tool_name = getattr(_tc[0], "name", None)
+                except (AttributeError, IndexError):
+                    pass
+            else:
+                self._consecutive_tool_steps = 0
+
+            _stall_cap = int(getattr(self.config, "stall_after_tool_steps", 0) or 0)
+            if _stall_cap > 0 and self._consecutive_tool_steps >= _stall_cap:
+                log.warning(
+                    "[%s] stall detected: %d consecutive tool steps with no "
+                    "final content — breaking early (D8 soft cap, step=%d/%d)",
+                    self.config.name,
+                    self._consecutive_tool_steps,
+                    self.step_count,
+                    self.config.max_steps,
+                )
+                from sage.agent_loop import AgentLoopExhaustion as _AgentLoopExhaustion
+                self.last_exhaustion = _AgentLoopExhaustion(
+                    reason="stalled",
+                    step_count=self.step_count,
+                    consecutive_tool_steps=self._consecutive_tool_steps,
+                    last_tool_name=self._last_tool_name,
+                    last_assistant_snippet=(t_result.content or "")[:200] if t_result.content else None,
+                )
+                # Let learn_final observe last_exhaustion and return the
+                # sentinel (or raise if raise_on_exhaustion=True).
+                await self._maybe_run_consolidation()
+                break
 
             # === LEARN (in-loop) ===
             await learn_step(self)

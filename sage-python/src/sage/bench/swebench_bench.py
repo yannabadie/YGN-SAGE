@@ -75,16 +75,32 @@ _KEY_PREDICTION = "model_patch"
 _SENTINEL_MARKER = "[sage: agent exited after"
 
 
-def _classify_prediction(patch: str | None) -> str:
-    """Return 'real' | 'sentinel' | 'empty' for a prediction string.
+def _classify_prediction(pred: str | None | dict) -> str:
+    """Return 'real' | 'sentinel' | 'empty' for a prediction.
 
     Real patches are non-empty non-sentinel strings. Sentinels indicate the
     agent hit step budget with no content. Empty patches indicate generation
     errors or timeouts.
+
+    Accepts either the raw patch string (legacy) or the full prediction dict
+    (preferred, since 2026-04-18 D7 audit). The dict form checks the
+    structured_failure metadata first — `_extract_patch` strips sentinel
+    text now, so the patch alone can no longer distinguish sentinel-emptied
+    from real-empty. The `_structured_failure` field carries that signal
+    forward for accurate bucketing in the summary header.
     """
+    if isinstance(pred, dict):
+        failure = pred.get("_structured_failure")
+        if failure == "step_budget_exhausted":
+            return "sentinel"
+        patch = pred.get(_KEY_PREDICTION)
+    else:
+        patch = pred
     if not patch:
         return "empty"
     if _SENTINEL_MARKER in patch:
+        # Legacy path — pre-D7, sentinel text was emitted as patch directly.
+        # Kept for backward compat with old jsonl files.
         return "sentinel"
     return "real"
 
@@ -237,6 +253,16 @@ def _extract_patch(response: str) -> str:
     (required by `git apply` in Linux Docker containers).
     """
     if not response:
+        return ""
+
+    # D7 fix (2026-04-18 audit docs/audits/2026-04-18-astropy-14995-*):
+    # sentinel text must NOT be emitted as a patch. Before this guard,
+    # astropy-14995 produced a 52-char "PATCH" that was literally
+    # "[sage: agent exited after 20 steps with no content]\n" — Docker
+    # eval rejects it, but the jsonl counted it as a patch attempt.
+    # Return empty so the classifier buckets it as `empty` and reports
+    # surface the real failure mode (step-budget exhaustion).
+    if _SENTINEL_MARKER in response:
         return ""
 
     # Normalize line endings (Windows -> Unix) before processing
@@ -463,6 +489,7 @@ class SWEBenchBench:
             error = ""
             system_used = 0
             patch = ""
+            structured_failure = ""  # D7 audit: track step_budget_exhausted
             tool_call_count = 0
             tool_turn_count = 0
             executed_commands: list[str] = []
@@ -485,6 +512,12 @@ class SWEBenchBench:
                     self.system.run(task_prompt, system_hint=3),
                     timeout=self.timeout_per_task,
                 )
+                # D7 audit (2026-04-18): flag sentinel BEFORE _extract_patch
+                # strips it — _extract_patch intentionally returns "" for
+                # sentinel, so the prediction dict needs an auxiliary flag
+                # to distinguish sentinel-emptied from real-empty.
+                if response and _SENTINEL_MARKER in response:
+                    structured_failure = "step_budget_exhausted"
                 patch = _extract_patch(response)
                 pipeline_ctx = getattr(getattr(self.system, "pipeline", None), "last_context", None)
                 execution_path = getattr(self.system, "_last_execution_path", "")
@@ -536,6 +569,7 @@ class SWEBenchBench:
                 "_executed_commands": executed_commands,
                 "_execution_path": execution_path,
                 "_error": error,
+                "_structured_failure": structured_failure,  # D7 audit
                 "_repo": instance["repo"],
             })
 
@@ -833,9 +867,12 @@ class SWEBenchBench:
         # when the LLM produced zero content for N steps; counting it as a
         # real patch (as the pre-fix code did) misreported 6 "patches" on
         # a run that had only 1 real patch.
-        real_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "real")
-        sentinel_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "sentinel")
-        empty_count = sum(1 for p in predictions if _classify_prediction(p.get(_KEY_PREDICTION)) == "empty")
+        # D7 audit: pass the full prediction dict so _classify_prediction can
+        # read `_structured_failure` (sentinel was stripped from the patch
+        # at extract time, so the patch alone can't distinguish anymore).
+        real_count = sum(1 for p in predictions if _classify_prediction(p) == "real")
+        sentinel_count = sum(1 for p in predictions if _classify_prediction(p) == "sentinel")
+        empty_count = sum(1 for p in predictions if _classify_prediction(p) == "empty")
         errors_count = sum(1 for p in predictions if p.get("_error"))
 
         print(f"\n  Generation complete:")

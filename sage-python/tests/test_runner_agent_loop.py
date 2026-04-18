@@ -185,3 +185,136 @@ async def test_factory_receives_node_role():
 
     call_kwargs = factory.call_args.kwargs
     assert call_kwargs.get("node_role") == "verifier"
+
+
+@pytest.mark.asyncio
+async def test_factory_receives_per_node_system_level():
+    """D1 fix (docs/audits/2026-04-18-astropy-14995-decision-path.md):
+    the factory must receive the node's own `system` tier, not the outer
+    task system. Sequential template declares system=1/2/1 on nodes
+    (templates.rs:36,44,54); before the fix, all three nodes inherited
+    the outer task tier (S3) through a functools.partial binding, which
+    pushed S1 planner/synthesizer into a 20-step S3 budget and caused
+    the sentinel cascade on astropy-14995.
+
+    Partial kwargs are overridable — the runner overrides system_level
+    from node.system when it's non-zero."""
+    factory = MagicMock()
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock(return_value="result")
+    mock_loop.total_cost_usd = 0.0
+    factory.return_value = mock_loop
+
+    from sage.topology.runner import TopologyRunner
+
+    graph = _make_graph(1)
+    # Node declares system=1 (fast tier); outer task is S3.
+    graph.get_node(0).system = 1
+    graph.get_node(0).role = "planner"
+    executor = _make_executor([[0]])
+
+    runner = TopologyRunner(
+        graph=graph,
+        executor=executor,
+        llm_provider=MagicMock(),
+        agent_loop_factory=factory,
+    )
+
+    await runner.run("task")
+
+    call_kwargs = factory.call_args.kwargs
+    assert call_kwargs.get("system_level") == 1, (
+        "Runner must pass node.system=1 to factory, overriding any partial "
+        "binding from the outer task system. Without this, sequential "
+        "templates get uniform 20-step budgets regardless of node tier."
+    )
+
+
+@pytest.mark.asyncio
+async def test_factory_system_level_unset_when_node_system_zero():
+    """If node.system is 0 (unset), runner does NOT override — partial's
+    bound system_level from outer task is used as fallback. Backward-compat
+    for graphs where node.system was never populated."""
+    factory = MagicMock()
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock(return_value="result")
+    mock_loop.total_cost_usd = 0.0
+    factory.return_value = mock_loop
+
+    from sage.topology.runner import TopologyRunner
+
+    graph = _make_graph(1)
+    graph.get_node(0).system = 0  # unset
+    executor = _make_executor([[0]])
+
+    runner = TopologyRunner(
+        graph=graph,
+        executor=executor,
+        llm_provider=MagicMock(),
+        agent_loop_factory=factory,
+    )
+
+    await runner.run("task")
+
+    call_kwargs = factory.call_args.kwargs
+    assert "system_level" not in call_kwargs, (
+        "When node.system==0, runner must NOT inject system_level so the "
+        "partial's bound value (outer task tier) is used. Forcing 0 would "
+        "break agent_loop_factory's system_level>=1 guard."
+    )
+
+
+@pytest.mark.asyncio
+async def test_factory_receives_on_drift_when_provider_pool_set():
+    """D6 audit fix (docs/audits/2026-04-18-astropy-14995-decision-path.md):
+    when runner has a ProviderPool, it must inject an ``on_drift`` callback
+    so DriftMonitor's SWITCH_MODEL/RESET_AGENT classifications translate
+    into ProviderPool.record_failure calls. Before this wiring, drift
+    labels were log-only — the provider stayed eligible for subsequent
+    nodes even after 0.472/0.552 drift scores on astropy-14995."""
+    factory = MagicMock()
+    mock_loop = MagicMock()
+    mock_loop.run = AsyncMock(return_value="result")
+    mock_loop.total_cost_usd = 0.0
+    factory.return_value = mock_loop
+
+    from sage.topology.runner import TopologyRunner
+
+    graph = _make_graph(1)
+    # Leave node.model_id empty so runner skips provider_pool.resolve()
+    # (which would require a full LLMConfig mock); the on_drift wiring
+    # is independent of resolution.
+    graph.get_node(0).model_id = ""
+    executor = _make_executor([[0]])
+
+    # ProviderPool stub that records what the drift callback forwards
+    calls: list[tuple[str, Exception]] = []
+    pool = MagicMock()
+    pool.record_failure = lambda name, exc: calls.append((name, exc))
+
+    runner = TopologyRunner(
+        graph=graph,
+        executor=executor,
+        llm_provider=MagicMock(),
+        provider_pool=pool,
+        agent_loop_factory=factory,
+    )
+
+    await runner.run("task")
+
+    call_kwargs = factory.call_args.kwargs
+    assert "on_drift" in call_kwargs, (
+        "Runner must inject on_drift callback when provider_pool is set."
+    )
+
+    # Invoke the callback with a simulated SWITCH_MODEL drift event; it
+    # must forward to pool.record_failure.
+    cb = call_kwargs["on_drift"]
+    cb("deepseek-chat", "SWITCH_MODEL", {"latency": 0.55, "errors": 0.0})
+    assert len(calls) == 1
+    assert calls[0][0] == "deepseek-chat"
+    assert "drift_switch_model" in str(calls[0][1]).lower()
+
+    # CONTINUE drift label is a no-op — must NOT record a failure.
+    cb("deepseek-chat", "CONTINUE", {})
+    assert len(calls) == 1, "CONTINUE must not record failure"

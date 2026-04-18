@@ -54,6 +54,58 @@ def test_sentinel_marker_matches_learn_phase():
     assert _classify_prediction(sample) == "sentinel"
 
 
+def test_extract_patch_returns_empty_for_sentinel():
+    """D7 audit (2026-04-18): sentinel text must NOT become a patch.
+    Before fix: astropy-14995 emitted "[sage: agent exited after 20 steps
+    with no content]\\n" as a 52-char patch. Docker eval rejects it but
+    the jsonl counted it as a patch attempt."""
+    from sage.bench.swebench_bench import _extract_patch
+    sentinel = "[sage: agent exited after 20 steps with no content]"
+    assert _extract_patch(sentinel) == ""
+    # Sentinel embedded in longer output also strips to empty
+    assert _extract_patch(f"some text\n{sentinel}\nmore") == ""
+
+
+def test_classify_prediction_dict_form_reads_structured_failure():
+    """D7 audit: classifier accepts the full prediction dict and reads
+    `_structured_failure` to distinguish sentinel-emptied (step budget
+    exhausted) from real-empty (generation error). Since _extract_patch
+    now strips sentinel text, the patch alone can't distinguish — the
+    auxiliary flag does."""
+    # sentinel-emptied: patch is "" (stripped by _extract_patch) but
+    # _structured_failure flag tells the classifier what happened
+    sentinel_pred = {
+        "instance_id": "x-1",
+        "model_patch": "",
+        "_structured_failure": "step_budget_exhausted",
+    }
+    assert _classify_prediction(sentinel_pred) == "sentinel"
+
+    # real-empty: no flag, empty patch
+    real_empty = {
+        "instance_id": "x-2",
+        "model_patch": "",
+        "_structured_failure": "",
+    }
+    assert _classify_prediction(real_empty) == "empty"
+
+    # real patch
+    real = {
+        "instance_id": "x-3",
+        "model_patch": "diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n",
+        "_structured_failure": "",
+    }
+    assert _classify_prediction(real) == "real"
+
+    # Backward compat: legacy jsonl still has sentinel text in the patch
+    legacy = {
+        "instance_id": "x-4",
+        "model_patch": "[sage: agent exited after 20 steps with no content]",
+        # No _structured_failure field in old files
+    }
+    assert _classify_prediction(legacy) == "sentinel"
+
+
 @pytest.mark.asyncio
 async def test_generate_patches_uses_pipeline_context_metadata(monkeypatch):
     instance = {
