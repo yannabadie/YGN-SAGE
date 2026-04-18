@@ -367,10 +367,25 @@ class PydanticAIProvider:
         self.provider_name = provider_name
         self.model_id = model_id
         self.api_key = api_key
-        self._model = _build_pydantic_model(provider_name, model_id, api_key)
+        # Cache of built Pydantic AI models keyed by their model_id. We
+        # build lazily-on-first-use for each distinct id the caller asks
+        # for via `config.model` — matches LiteLLMProvider's per-call
+        # model routing (commit c9ff902) where ModelAssigner picks a
+        # different model per topology node.
+        self._model_cache: dict[str, Any] = {}
+        self._model = self._get_or_build_model(model_id)
         # Set by ProviderPool for FrugalGPT-on-rate-limit runtime circuit
         # breaking. Keep the same attribute name LiteLLMProvider exposed.
         self._pool_ref: Any = None
+
+    def _get_or_build_model(self, model_id: str) -> Any:
+        """Return a Pydantic AI model for the given id, cached."""
+        mid = model_id or self.model_id
+        if mid in self._model_cache:
+            return self._model_cache[mid]
+        built = _build_pydantic_model(self.provider_name, mid, self.api_key)
+        self._model_cache[mid] = built
+        return built
 
     # ------------------------------------------------------------------
     # Factory
@@ -405,6 +420,17 @@ class PydanticAIProvider:
         from pydantic_ai.direct import model_request
         from pydantic_ai.models import ModelRequestParameters
 
+        # Honor per-call model override — topology runners (ModelAssigner
+        # commit c9ff902) pick a different model per node and pass it
+        # via config.model. Without this the boot-time model is always
+        # used, which for openrouter (no default_model in connector.py)
+        # built OpenRouterModel("") and crashed on profile access
+        # (ValueError: not enough values to unpack). Mirrors LiteLLM-
+        # Provider's effective_model logic.
+        effective_model_id = (config.model if config and config.model else None) or self.model_id
+        model_obj = self._get_or_build_model(effective_model_id)
+        resolved_model_name_for_cost = effective_model_id
+
         history = _our_messages_to_pydantic(messages)
 
         params = ModelRequestParameters(
@@ -414,7 +440,7 @@ class PydanticAIProvider:
 
         try:
             response = await model_request(
-                self._model,
+                model_obj,
                 history,
                 model_request_parameters=params,
             )
@@ -442,12 +468,12 @@ class PydanticAIProvider:
                     pass  # never let breaker bookkeeping mask the real error
             raise
 
-        model_name = getattr(response, "model_name", None) or self.model_id
+        model_name = getattr(response, "model_name", None) or resolved_model_name_for_cost
         return _pydantic_response_to_ours(
             response,
             model_name=model_name,
             provider_name=self.provider_name,
-            model_id=self.model_id,
+            model_id=resolved_model_name_for_cost,
         )
 
     async def generate_stream(
