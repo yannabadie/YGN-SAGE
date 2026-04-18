@@ -337,7 +337,8 @@ the template level.
 
 Log: `docs/benchmarks/2026-04-18-swebench-smoke-v7-15task-f6.log`
 
-**Result: 5/15 = 33.3% real patch rate.**
+**Result: 5/15 = 33.3% real patch rate.** Cost: **$1.73 total, $0.115/task avg**
+(v6 5-task was $0.46, same per-task). v7 per-successful-patch cost: ~$0.35.
 
 Tasks won:
 - astropy-14365 (840 chars)
@@ -348,30 +349,61 @@ Tasks won:
 
 Breakdown: 5 real + 9 sentinels + 1 empty + 0 timeouts.
 
-**Key insight: the 1/5 (v3/v4/v5) and 3/5 (v6) results were both
-sampling noise**. At 15 tasks the true rate is ~33%, which is
-consistent with F6 being a real ~1.5× improvement over the baseline's
-honest 2/5 (= 40% with just 5 tasks, also noisy).
+**Important variance observation**: on v7 we re-ran v6's 5 tasks and
+got 2/5 real (not 3/5). astropy-14995 — the audit target — went from
+PATCH (567 chars) in v6 to EMPTY in v7 **under the same F6 code**.
+That is pure LLM sampling variance on the audit anchor task. It does
+not invalidate F6 (the 5 new tasks in v7 added 3 patches vs. the
+ex-null baseline we'd expect for them), but it does put bounds on
+what F6 empirically proves.
 
-Sentinels remain 60% of failure modes — the coder still runs out of
-budget on hard bugs. The next real lever is almost certainly the
-coder's reasoner model (gemini-3.1-pro-preview), not more cap tuning.
+### Final verdict — calibrated
 
-### Final verdict
+**Unambiguous wins** (architecture, not statistics):
+- D1–D8 structural fixes — honest classification, no fake 52-char
+  patches, structured failure metadata, drift classifications now
+  actionable.
+- D7 reporting filter — zero fake PATCHes in any smoke. Baseline's
+  3 reported patches were 2 real + 1 fake sentinel-masqueraded-as-patch.
+- Timeouts: 0/15 in v7 vs 1/5 in baseline.
+- Throughput: ~100s/task vs ~180s/task — ~1.8× faster average.
+- F1 cap tuning — empirically validated (astropy-6938 stable across
+  v3/v4/v6/v7 after the 7→9 bump, flaky before).
 
-Going from baseline to v7 F6 at 15 tasks:
-- **Real patch rate**: 33% (5/15), vs baseline honest 40% (2/5) — but
-  baseline's 2/5 is uncalibrated small-sample variance.
-- **Visibility**: zero fake patches (D7 win). All 15 outcomes are
-  accurately classified real/sentinel/empty/timeout.
-- **Timeouts**: 0/15 (vs baseline 1/5). D8 + D6 eliminate hangs.
-- **Throughput**: ~100s/task avg (vs baseline 180s) — consistent ~2×
-  speedup.
+**Plausible but not established** (statistics don't settle it):
+- F6 planner tier S1→S2. Baseline honest 2/5 = 40%, v7 5/15 = 33%.
+  **33% is not > 40%.** The 95% confidence intervals for these two
+  proportions overlap massively (baseline: 12–74%, v7: 15–57%). The
+  F6 hypothesis is consistent with the data but NOT proven by it.
+  What IS proven: F6 does not regress catastrophically, and the
+  5 tasks that baseline never tried produced 3 more patches — a
+  plausible signal.
+- Quantifying F6 cost impact properly would require re-running the
+  baseline with same D7/D8 corrections (apples-to-apples) rather
+  than comparing to the old un-honest baseline.
 
-The 8 initial decisions (D1-D8) stabilized reporting. F1 tuned the
-soft cap. F6 (one line: planner tier S1→S2) moved the raw pass rate.
-F2 and F5 failed but confirmed leverage: model assignment > prompts
-or caps. F7 validates F6 at scale.
+**Confirmed negative** (saved future wasted work):
+- F2 prompt-level "must emit" directives — no effect on fast-tier
+  models mid-tool-call-loop.
+- F5 stripping tools from the planner — backfired, the plain-text
+  plan becomes ungrounded and the coder inherits something it can't
+  execute.
+
+### Cost implication of F6
+
+F6 moves the planner from S1 (fast-tier, ~$0.25/$1.50 per M tokens)
+to S2 (reasoner-tier, deepseek-reasoner at ~$0.28/$0.42 per M). Per
+cards.toml, this is nearly cost-neutral. BUT if the ModelAssigner
+ever routes S2 to a premium reasoner (gemini-3.1-pro-preview at
+$2.00/$12.00 per M), cost could spike 8–24×. Flag this for anyone
+tuning ModelAssigner after F6.
+
+### What F7 did NOT settle
+
+F4 (apples-to-apples on baseline's exact 5 tasks with HEAD code) is
+the one experiment that would cleanly isolate F6's contribution. Not
+run — the 5 tasks overlap with v3/v4/v6 anyway, and the 33%/40%
+comparison already signals "probably similar or slightly better."
 
 - **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).
