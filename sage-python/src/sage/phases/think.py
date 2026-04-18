@@ -27,6 +27,35 @@ class _ThinkResult:
     loop_action: str = "proceed"  # "proceed", "continue", "break"
 
 
+def _extract_step_cost(response: Any, model_name: str, content: str) -> float:
+    """Single-LLM-call cost in USD. Prefers the provider's own figure.
+
+    LiteLLM populates ``response._hidden_params["response_cost"]`` by default;
+    ``LiteLLMProvider._finalize_response`` copies it into
+    ``LLMResponse.usage["cost_usd"]``. When present we use it verbatim —
+    the token-count × local cost table fallback only runs when the provider
+    returned no cost (e.g. an abstaining provider, a mocked response in
+    tests, or a model id missing from the hidden-params cost catalogue).
+
+    Until 2026-04-18 the fallback was always used and silently floored to $0
+    whenever the model id was missing from ``_COST_PER_1K``, which is why
+    every v5* bench run reported ``_cost_usd=0.0`` even when the providers
+    were metering correctly.
+    """
+    from sage.agent_loop import _COST_PER_1K, _estimate_tokens
+    from sage.constants import DEFAULT_COST_PER_1K
+
+    usage = getattr(response, "usage", None) or {}
+    provider_cost = usage.get("cost_usd") if isinstance(usage, dict) else None
+    if provider_cost is not None and provider_cost > 0:
+        return float(provider_cost)
+
+    actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
+    tokens = _estimate_tokens(content, actual_count=actual_total)
+    cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
+    return (tokens / 1000) * cost_per_k
+
+
 async def think(
     task: str,
     messages: list[Message],
@@ -78,13 +107,7 @@ async def think(
 
     content = response.content or ""
 
-    # Cost estimation — prefer actual token counts from API usage_metadata
-    usage = getattr(response, "usage", None) or {}
-    actual_total = usage.get("total_tokens") if isinstance(usage, dict) else None
-    tokens = _estimate_tokens(content, actual_count=actual_total)
-    from sage.constants import DEFAULT_COST_PER_1K
-    cost_per_k = _COST_PER_1K.get(model_name, DEFAULT_COST_PER_1K)
-    step_cost = (tokens / 1000) * cost_per_k
+    step_cost = _extract_step_cost(response, model_name, content)
     loop.total_cost_usd += step_cost
 
     # Entropy for CGRS self-braking

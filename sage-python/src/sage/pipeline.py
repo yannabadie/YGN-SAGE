@@ -982,6 +982,10 @@ class CognitiveOrchestrationPipeline:
             ctx.tool_call_count = getattr(runner, "tool_call_count", 0)
             ctx.tool_turn_count = getattr(runner, "tool_turn_count", 0)
             ctx.executed_commands = list(getattr(runner, "executed_commands", []))
+            # Same roll-up for cost. Before Apr 18 2026 ctx.cost came only
+            # from the single-loop bypass path, so multi-agent topology runs
+            # reported _cost_usd=0 even when each node had metered cost.
+            ctx.cost = float(getattr(runner, "total_cost_usd", 0.0) or 0.0)
             if result == "__REROUTE__" and self.engine:
                 log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
                 self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
@@ -1026,6 +1030,7 @@ class CognitiveOrchestrationPipeline:
                 ctx.tool_call_count = getattr(runner2, "tool_call_count", 0)
                 ctx.tool_turn_count = getattr(runner2, "tool_turn_count", 0)
                 ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
+                ctx.cost = float(getattr(runner2, "total_cost_usd", 0.0) or 0.0)
 
             # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
             if result and result != "__REROUTE__" and self.quality_estimator:
@@ -1102,9 +1107,15 @@ class CognitiveOrchestrationPipeline:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
             ctx.result = result
-            # Estimate cost from topology execution
-            # Uses per-model pricing from cards.toml when available
-            ctx.cost = self._estimate_topology_cost(ctx)
+            # Prefer the runner's aggregated real cost (summed from per-node
+            # AgentLoop.total_cost_usd, which now prefers provider-reported
+            # cost_usd). Fall back to the 500-in/300-out per-node estimate
+            # only when no node reported a real cost (e.g. fully-mocked
+            # tests). Before Apr 18 2026 this was always the estimate, so
+            # benches never saw real provider metering even when LiteLLM
+            # populated it correctly.
+            if not ctx.cost:
+                ctx.cost = self._estimate_topology_cost(ctx)
         except (ImportError, RuntimeError, TimeoutError) as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly with default provider

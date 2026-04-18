@@ -233,7 +233,7 @@ async def _run_swebench(args) -> None:
     from sage.bench.swebench_bench import SWEBenchBench, evaluate_predictions, dataset_info
 
     # Dataset selection: default to "lite" if humaneval/mbpp selected
-    swe_dataset = args.dataset if args.dataset in ("lite", "verified") else "lite"
+    swe_dataset = args.dataset if args.dataset in ("lite", "verified", "pro") else "lite"
 
     # Info mode
     if args.swebench_info:
@@ -382,9 +382,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--dataset",
-        choices=["humaneval", "mbpp", "lite", "verified"],
+        choices=["humaneval", "mbpp", "lite", "verified", "pro"],
         default="humaneval",
-        help="Dataset: humaneval/mbpp for EvalPlus, lite/verified for SWE-Bench",
+        help="Dataset: humaneval/mbpp for EvalPlus, lite/verified/pro for SWE-Bench "
+             "(pro = ScaleAI/SWE-bench_Pro, Sprint 6 gate signal)",
     )
     parser.add_argument(
         "--official",

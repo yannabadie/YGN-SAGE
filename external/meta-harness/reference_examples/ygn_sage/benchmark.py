@@ -29,10 +29,12 @@ from typing import Any
 
 # Ensure external/meta-harness is on sys.path so candidates can be
 # imported as "reference_examples.ygn_sage.agents.<id>". Idempotent —
-# safe to import this module multiple times.
-_EXTERNAL_ROOT = Path(__file__).resolve().parents[3]  # external/meta-harness/
-if str(_EXTERNAL_ROOT) not in sys.path:
-    sys.path.insert(0, str(_EXTERNAL_ROOT))
+# safe to import this module multiple times. parents[2] is
+# external/meta-harness/ — parents[3] is external/ and candidate
+# imports would silently fail with ModuleNotFoundError.
+_META_HARNESS_ROOT = Path(__file__).resolve().parents[2]
+if str(_META_HARNESS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_META_HARNESS_ROOT))
 
 
 # ── Score computation ────────────────────────────────────────────

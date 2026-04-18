@@ -31,10 +31,13 @@ import yaml  # type: ignore[import-not-found]
 
 # Ensure our reference_example sibling modules and the parent external/
 # meta-harness tree are on sys.path so `reference_examples.ygn_sage.
-# agents.<id>` is importable (used by benchmark.py).
+# agents.<id>` is importable (used by benchmark.py). parents[1] is the
+# external/meta-harness/ directory — not parents[2], which is external/.
+# Getting this wrong silently makes every candidate import fail with
+# "ModuleNotFoundError: No module named 'reference_examples'".
 _HERE = Path(__file__).resolve().parent
-_EXTERNAL_ROOT = _HERE.parents[2]  # external/meta-harness/
-for _p in (str(_HERE), str(_EXTERNAL_ROOT)):
+_META_HARNESS_ROOT = _HERE.parents[1]  # external/meta-harness/
+for _p in (str(_HERE), str(_META_HARNESS_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

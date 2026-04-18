@@ -108,6 +108,12 @@ class TopologyRunner:
         self.tool_call_count: int = 0
         self.tool_turn_count: int = 0
         self.executed_commands: list[str] = []
+        # Per-run cost aggregate. Before Apr 18 2026 per-node loops each had
+        # their own total_cost_usd but nothing rolled them up, so benches read
+        # system.agent_loop.total_cost_usd (the single top-level loop) and
+        # saw 0 whenever topology ran in multi-node mode. Aggregating here
+        # matches the tool_call_count pattern above and feeds the pipeline ctx.
+        self.total_cost_usd: float = 0.0
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -465,6 +471,7 @@ class TopologyRunner:
         # when nodes did call tools.
         self.tool_call_count += int(getattr(loop, "tool_call_count", 0) or 0)
         self.tool_turn_count += int(getattr(loop, "tool_turn_count", 0) or 0)
+        self.total_cost_usd += float(getattr(loop, "total_cost_usd", 0.0) or 0.0)
         node_commands = list(getattr(loop, "executed_commands", []) or [])
         if node_commands:
             self.executed_commands.extend(f"[{role}] {c}" for c in node_commands)

@@ -7,9 +7,25 @@ import pytest
 import sage.bench.swebench_bench as swebench_mod
 from sage.bench.swebench_bench import (
     SWEBenchBench,
+    _DATASET_MAP,
     _classify_prediction,
     _SENTINEL_MARKER,
 )
+
+
+def test_pro_dataset_wired_to_scaleai():
+    # P0.2 wiring guard: SWE-bench Pro must remain reachable so Sprint 6
+    # can baseline against it. Mapping mirrors the HF repo at
+    # github.com/scaleapi/SWE-bench_Pro-os.
+    assert "pro" in _DATASET_MAP
+    assert _DATASET_MAP["pro"] == "ScaleAI/SWE-bench_Pro"
+
+
+def test_legacy_dataset_keys_intact():
+    # Regression guard: do not break --dataset lite/verified/full.
+    assert _DATASET_MAP["lite"] == "princeton-nlp/SWE-bench_Lite"
+    assert _DATASET_MAP["verified"] == "princeton-nlp/SWE-bench_Verified"
+    assert _DATASET_MAP["full"] == "princeton-nlp/SWE-bench"
 
 
 def test_classify_prediction_empty():
