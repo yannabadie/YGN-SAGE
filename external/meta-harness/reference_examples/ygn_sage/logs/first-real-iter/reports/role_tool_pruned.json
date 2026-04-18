@@ -1,0 +1,57 @@
+{
+  "candidate": {
+    "name": "role_tool_pruned",
+    "module": "reference_examples.ygn_sage.agents.role_tool_pruned",
+    "hypothesis": "(evaluate-only)"
+  },
+  "score": {
+    "val_score": 0.2,
+    "real": 1,
+    "sentinel": 0,
+    "empty": 4,
+    "total": 5,
+    "cost_usd": 0.0,
+    "tool_calls_total": 39,
+    "per_task": {
+      "astropy__astropy-14995": {
+        "class": "real",
+        "patch_len": 567,
+        "tool_calls": 39,
+        "latency_ms": 264947.2,
+        "error": ""
+      },
+      "astropy__astropy-6938": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 95771.6,
+        "error": "AuthenticationError: litellm.AuthenticationError: GeminiException - {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n"
+      },
+      "astropy__astropy-7746": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 131290.2,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "django__django-10914": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 89215.4,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "django__django-10924": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 314442.4,
+        "error": "generation_timeout_300s"
+      }
+    },
+    "latency_s": 906.9693276882172,
+    "predictions_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_bj_kegf_\\predictions.jsonl",
+    "meta_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_bj_kegf_\\predictions_meta.json"
+  },
+  "iteration": 0
+}

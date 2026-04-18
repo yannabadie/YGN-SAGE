@@ -1,0 +1,57 @@
+{
+  "candidate": {
+    "name": "baseline",
+    "module": "reference_examples.ygn_sage.agents.baseline",
+    "hypothesis": "reference"
+  },
+  "score": {
+    "val_score": 0.05,
+    "real": 0,
+    "sentinel": 1,
+    "empty": 4,
+    "total": 5,
+    "cost_usd": 0.0,
+    "tool_calls_total": 54,
+    "per_task": {
+      "astropy__astropy-14995": {
+        "class": "sentinel",
+        "patch_len": 52,
+        "tool_calls": 54,
+        "latency_ms": 234659.6,
+        "error": ""
+      },
+      "astropy__astropy-6938": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 80392.3,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "astropy__astropy-7746": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 121818.1,
+        "error": "AuthenticationError: litellm.AuthenticationError: GeminiException - {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n"
+      },
+      "django__django-10914": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 97150.6,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "django__django-10924": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 124567.7,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      }
+    },
+    "latency_s": 669.95947265625,
+    "predictions_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_mmvssh71\\predictions.jsonl",
+    "meta_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_mmvssh71\\predictions_meta.json"
+  },
+  "iteration": 0
+}

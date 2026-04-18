@@ -1,0 +1,57 @@
+{
+  "candidate": {
+    "name": "minimax_pinned",
+    "module": "reference_examples.ygn_sage.agents.minimax_pinned",
+    "hypothesis": "(evaluate-only)"
+  },
+  "score": {
+    "val_score": 0.0,
+    "real": 0,
+    "sentinel": 0,
+    "empty": 5,
+    "total": 5,
+    "cost_usd": 0.0,
+    "tool_calls_total": 0,
+    "per_task": {
+      "astropy__astropy-14995": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 59473.2,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "astropy__astropy-6938": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 91624.8,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "astropy__astropy-7746": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 139974.8,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "django__django-10914": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 129812.8,
+        "error": "AuthenticationError: litellm.AuthenticationError: GeminiException - {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n"
+      },
+      "django__django-10924": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 97644.5,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      }
+    },
+    "latency_s": 539.0837054252625,
+    "predictions_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_jkt2u9jj\\predictions.jsonl",
+    "meta_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_jkt2u9jj\\predictions_meta.json"
+  },
+  "iteration": 0
+}

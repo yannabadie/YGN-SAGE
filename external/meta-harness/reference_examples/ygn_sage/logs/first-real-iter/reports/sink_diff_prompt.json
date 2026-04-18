@@ -1,0 +1,57 @@
+{
+  "candidate": {
+    "name": "sink_diff_prompt",
+    "module": "reference_examples.ygn_sage.agents.sink_diff_prompt",
+    "hypothesis": "(evaluate-only)"
+  },
+  "score": {
+    "val_score": 0.2,
+    "real": 1,
+    "sentinel": 0,
+    "empty": 4,
+    "total": 5,
+    "cost_usd": 0.0,
+    "tool_calls_total": 17,
+    "per_task": {
+      "astropy__astropy-14995": {
+        "class": "real",
+        "patch_len": 592,
+        "tool_calls": 17,
+        "latency_ms": 104742.9,
+        "error": ""
+      },
+      "astropy__astropy-6938": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 77289.5,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "astropy__astropy-7746": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 118361.6,
+        "error": "AuthenticationError: litellm.AuthenticationError: GeminiException - {\n  \"error\": {\n    \"code\": 400,\n    \"message\": \"API key not valid. Please pass a valid API key.\",\n    \"status\": \"INVALID_ARGUMENT\",\n"
+      },
+      "django__django-10914": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 94313.6,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      },
+      "django__django-10924": {
+        "class": "empty",
+        "patch_len": 0,
+        "tool_calls": 0,
+        "latency_ms": 89143.2,
+        "error": "BadRequestError: litellm.BadRequestError: OpenAIException - invalid temperature: only 1 is allowed for this model"
+      }
+    },
+    "latency_s": 493.59192872047424,
+    "predictions_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_6c62u84s\\predictions.jsonl",
+    "meta_path": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\sage_swebench_6c62u84s\\predictions_meta.json"
+  },
+  "iteration": 0
+}
