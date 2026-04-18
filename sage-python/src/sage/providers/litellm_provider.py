@@ -32,6 +32,11 @@ _CUSTOM_BASE_PROVIDERS: dict[str, str] = {
     "kimi": "https://api.moonshot.ai/v1",
 }
 
+# TTL for provider marked DEAD by runtime rate-limit / quota signal.
+# Short for pure rate-limit (they typically recover in ~60s); longer for
+# quota exhaustion (typically midnight UTC reset). Reused by TTL refresh.
+DEFAULT_POOL_DEAD_TTL_RL_SEC = 300
+
 
 def _infer_provider_from_model_id(model_id: str) -> str:
     """Best-effort provider inference from a bare model id.
@@ -106,6 +111,10 @@ class LiteLLMProvider:
         self.model_string = model_string
         self.api_key = api_key
         self.api_base = api_base
+        # Set by ProviderPool after construction to enable
+        # runtime rate-limit / quota circuit-breaking. Can remain None;
+        # failures then fall through to the caller.
+        self._pool_ref: Any = None
 
     # ------------------------------------------------------------------
     # Factory
@@ -308,7 +317,47 @@ class LiteLLMProvider:
 
         try:
             response = await litellm.acompletion(**params)
-        except Exception:
+        except Exception as exc:
+            # Runtime rate-limit / quota signal → ProviderPool (FrugalGPT-on-
+            # rate-limit, Apr 18). Without this, a provider that starts
+            # rate-limiting mid-run keeps getting requests until every node
+            # times out. We trip the breaker + mark dead so subsequent nodes
+            # route elsewhere and the next batch-start refresh re-probes.
+            _exc_str = str(exc).lower()
+            _exc_name = type(exc).__name__
+            _is_rate_limit = ("ratelimit" in _exc_name.lower() or "429" in _exc_str)
+            _is_quota = _is_rate_limit and any(
+                s in _exc_str for s in [
+                    "insufficient_quota", "quota", "billing", "credit",
+                    "exceeded your current quota", "payment",
+                ]
+            )
+            if self._pool_ref is not None and (_is_rate_limit or _is_quota):
+                # Derive provider name from the effective model prefix
+                _prov = (effective_model.split("/", 1)[0]
+                         if "/" in effective_model else self.model_string.split("/", 1)[0]
+                         if "/" in self.model_string else "")
+                # Reverse-map LiteLLM prefix → SAGE provider name (gemini → google)
+                _litellm_to_sage = {v: k for k, v in _PROVIDER_PREFIX.items()}
+                _prov_sage = _litellm_to_sage.get(_prov, _prov)
+                if _prov_sage:
+                    try:
+                        self._pool_ref.record_failure(_prov_sage, exc)
+                        if _is_quota:
+                            # Quota exhaustion: long TTL (typically midnight UTC reset)
+                            import time as _time
+                            self._pool_ref._dead_at[_prov_sage] = _time.time()
+                            log.warning(
+                                "LiteLLM: quota exhaustion on %s → marked DEAD for %ds TTL",
+                                _prov_sage, DEFAULT_POOL_DEAD_TTL_RL_SEC,
+                            )
+                        else:
+                            log.info(
+                                "LiteLLM: rate-limit on %s → circuit-breaker failure recorded",
+                                _prov_sage,
+                            )
+                    except Exception as _inner:  # noqa: BLE001 - signal is best-effort
+                        log.debug("pool_ref.record_failure failed: %s", _inner)
             log.error("LiteLLM error for model %s", self.model_string, exc_info=True)
             raise
 

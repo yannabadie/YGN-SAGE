@@ -222,6 +222,15 @@ impl ModelAssigner {
             .map(|(idx, prov)| (*idx, prov.as_str()))
             .collect();
 
+        // Provider-diversity load balancing (added 2026-04-18 after v5f
+        // observation: MiniMax took 88% of calls → rate-limit saturation).
+        // Track how many nodes have already been assigned to each provider
+        // during this call; apply a soft penalty that grows with
+        // concentration. Cap the penalty so affinity still wins when a
+        // specific provider is strongly preferred by the score function.
+        let mut provider_count: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+
         for idx in 0..node_count {
             if remaining_budget < BUDGET_EPSILON {
                 warn!(
@@ -300,6 +309,16 @@ impl ModelAssigner {
                     score += PROVIDER_HINT_BONUS;
                 }
 
+                // Diversity penalty: -0.08 per previous assignment to the
+                // same provider in this call (capped at -0.20). Prevents
+                // one provider from taking every node even when it
+                // marginally wins on score. Observed impact: MiniMax
+                // saturation (88% of calls in v5f) → balanced across
+                // 2-3 providers, reducing rate-limit pressure.
+                let concentration = provider_count.get(&card.provider).copied().unwrap_or(0);
+                let diversity_penalty = (concentration as f32 * 0.08_f32).min(0.20_f32);
+                score -= diversity_penalty;
+
                 if score > best_score {
                     best_score = score;
                     best_id = Some(card.id.clone());
@@ -312,6 +331,10 @@ impl ModelAssigner {
                     .get(&model_id)
                     .map(|c| c.estimate_cost(input_tok, output_tok))
                     .unwrap_or(0.0);
+                // Track provider for diversity penalty on subsequent nodes.
+                if let Some(provider) = self.registry.get(&model_id).map(|c| c.provider.clone()) {
+                    *provider_count.entry(provider).or_insert(0) += 1;
+                }
                 let node_idx_pg = petgraph::graph::NodeIndex::new(idx);
                 if let Some(node_mut) = graph.inner_graph_mut().node_weight_mut(node_idx_pg) {
                     node_mut.model_id.clone_from(&model_id);
@@ -964,6 +987,90 @@ mod tests {
     // build time. If a future template adds a SINK_NODE_PROMPT node with
     // a new role, OR declares a coder/worker at S1, these tests fail and
     // the offending diff stops at CI.
+
+    /// Diversity penalty: a 3-node graph where two providers tie on
+    /// affinity/domain should distribute instead of all going to the
+    /// marginally better one. Without the penalty, the v5f smoke had
+    /// MiniMax at 88% of calls; with it, nodes 2+ get a -0.08 penalty
+    /// per prior assignment to the same provider.
+    #[test]
+    fn test_diversity_penalty_spreads_across_providers() {
+        // Two providers with near-identical scores
+        let toml = r#"
+            [[models]]
+            id = "alpha-pro"
+            provider = "alpha"
+            family = "test"
+            code_score = 0.80
+            reasoning_score = 0.80
+            tool_use_score = 0.80
+            math_score = 0.80
+            formal_z3_strength = 0.6
+            cost_input_per_m = 1.0
+            cost_output_per_m = 3.0
+            latency_ttft_ms = 200.0
+            tokens_per_sec = 100.0
+            s1_affinity = 0.5
+            s2_affinity = 0.80
+            s3_affinity = 0.80
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.80
+
+            [[models]]
+            id = "beta-pro"
+            provider = "beta"
+            family = "test"
+            code_score = 0.78
+            reasoning_score = 0.78
+            tool_use_score = 0.78
+            math_score = 0.78
+            formal_z3_strength = 0.6
+            cost_input_per_m = 1.0
+            cost_output_per_m = 3.0
+            latency_ttft_ms = 200.0
+            tokens_per_sec = 100.0
+            s1_affinity = 0.5
+            s2_affinity = 0.78
+            s3_affinity = 0.78
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+            [models.domain_scores]
+            code = 0.78
+        "#;
+        let registry = ModelRegistry::from_toml_str(toml).unwrap();
+        let assigner = ModelAssigner::from_registry(&registry);
+
+        // 3 coder nodes. With diversity penalty, we expect at least 2
+        // distinct providers (not all-alpha-pro).
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        for _ in 0..3 {
+            let n = TopologyNode::new("coder".into(), "".into(), 2, vec![], 0, 5.0, 60.0);
+            graph.add_node(n);
+        }
+        let n = assigner.assign_models_inner(&mut graph, "code", 10.0);
+        assert_eq!(n, 3);
+
+        let providers: Vec<String> = (0..3)
+            .map(|i| {
+                let model_id = &graph.try_get_node(i).unwrap().model_id;
+                registry.get(model_id).map(|c| c.provider.clone()).unwrap_or_default()
+            })
+            .collect();
+        let distinct: std::collections::HashSet<_> = providers.iter().collect();
+        assert!(
+            distinct.len() >= 2,
+            "diversity penalty should spread across providers; got {:?}",
+            providers
+        );
+    }
 
     /// Every node tagged with templates::SINK_NODE_PROMPT must classify
     /// as sink via `is_sink_role`. Catches drift in either direction —

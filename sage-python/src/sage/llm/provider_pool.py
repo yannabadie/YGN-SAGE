@@ -58,6 +58,14 @@ class ProviderPool:
         # for the whole process lifetime.
         self._dead_at: dict[str, float] = {}
 
+        # Inject self into every provider that can self-report rate-limit /
+        # quota failures at runtime. Enables FrugalGPT-on-rate-limit: when
+        # a provider starts 429-ing mid-task, circuit trips immediately and
+        # subsequent nodes route elsewhere without waiting for probe cycles.
+        for _p in self._providers.values():
+            if hasattr(_p, "_pool_ref"):
+                _p._pool_ref = self
+
     # -- Boot-time health check -------------------------------------------
 
     async def health_check(self, timeout: float = 10.0) -> dict[str, bool]:
