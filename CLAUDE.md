@@ -11,6 +11,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 4. **kNN is primary router** (92% GT) — ComplexityRouter heuristic is DEAD CODE (34% GT)
 5. **Evidence before assertions** — run tests + benchmarks before claiming completion
 6. **SOTA minimum, AI breakthrough at least** — don't settle for "good enough"
+7. **No training-leak model hardcodes** — truth for OpenAI/Gemini/xAI/DeepSeek/Anthropic models in this repo is `sage-core/config/cards.toml`, NOT the agent's training snapshot. Before adding a `"<tag>" in model` check or a quirk branch, verify the tag hits at least one id in cards.toml AND verify the quirk itself via Context7 `/berriai/litellm` or the provider's live docs — cite the source in the code comment. See `docs/patterns/knowledge-cutoff-checks.md`. *2026-04 incident*: hardcoded `o1/o3/o4` for a temperature clamp even though cards.toml only ships `gpt-5.x`.
 
 ## Architecture (see .claude/rules/architecture.md for details)
 

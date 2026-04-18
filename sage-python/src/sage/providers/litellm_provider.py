@@ -51,7 +51,12 @@ def _infer_provider_from_model_id(model_id: str) -> str:
     m = model_id.lower()
     if m.startswith("gemini-"):
         return "google"
-    if m.startswith("gpt-") or m.startswith("o1") or m.startswith("o3"):
+    # OpenAI: cards.toml only wires gpt-5.x variants as of 2026-04-18.
+    # Keep gpt- prefix broad so gpt-5.4 / gpt-5.2 / gpt-5.4-{pro,mini,nano}
+    # all route correctly and any future gpt-5.N rev is covered without
+    # a re-edit. Do NOT add o1/o3/o4 — see
+    # `docs/patterns/knowledge-cutoff-checks.md`.
+    if m.startswith("gpt-"):
         return "openai"
     if m.startswith("deepseek"):
         return "deepseek"

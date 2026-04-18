@@ -47,3 +47,18 @@ SSL bypass is controlled by `SAGE_SSL_VERIFY=false` env var (default: verify=Tru
 - Run benchmarks before claiming scores
 - Provide before/after metrics with statistical significance
 - Date all benchmark results (pre-pipeline vs post-pipeline)
+
+## 6. Don't Hardcode Model Quirks from Training Knowledge
+Source of truth for which OpenAI/Gemini/Anthropic/xAI/DeepSeek models
+exist in this repo is `sage-core/config/cards.toml`. Not the agent's
+training snapshot. Before adding a model-name substring check (e.g.
+`"o1" in model`, `"claude-3" in model`), verify the substring matches
+at least one id in cards.toml. If it doesn't, delete the branch.
+
+Before adding a NEW quirk (temperature clamp, token-param rename,
+etc.), verify the restriction itself via Context7 `/berriai/litellm` or
+the provider's own docs — not cached training data — and cite the
+source in the code comment.
+
+See `docs/patterns/knowledge-cutoff-checks.md` for the full audit
+procedure and a log of known incidents.

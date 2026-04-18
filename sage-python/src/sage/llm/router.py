@@ -72,7 +72,9 @@ class ModelRouter:
         # Infer provider from model_id (all API-based, no CLI providers)
         if "deepseek" in model:
             provider = "deepseek"
-        elif "gpt-" in model or "o1" in model or "o3" in model:
+        elif "gpt-" in model:
+            # cards.toml only wires gpt-5.x. No o1/o3/o4 — see
+            # docs/patterns/knowledge-cutoff-checks.md.
             provider = "openai"
         elif "grok" in model:
             provider = "xai"

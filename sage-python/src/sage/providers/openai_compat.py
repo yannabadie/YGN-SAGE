@@ -128,7 +128,7 @@ class OpenAICompatProvider:
         """Apply provider-specific parameter quirks before API call."""
         model = params.get("model", self.model_id).lower()
 
-        # OpenAI GPT-5+ / o-series reasoning models:
+        # OpenAI GPT-5+ reasoning models:
         #   - require max_completion_tokens instead of max_tokens
         #   - reject any temperature != 1 (observed 2026-04-18 on every
         #     OpenAI-fallback call during the Meta-Harness v2 real eval)
@@ -136,9 +136,14 @@ class OpenAICompatProvider:
         # adapter is still used as the topology-runner fallback provider
         # and was the source of 41 temperature-rejection errors that made
         # 4/5 SWE-Lite tasks look worse than they were.
-        if self.provider_name == "openai" and any(
-            tag in model for tag in ("gpt-5", "o1", "o3", "o4")
-        ):
+        #
+        # Source of truth for which models we actually use:
+        # `sage-core/config/cards.toml` — only gpt-5.x variants are wired
+        # (gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano, gpt-5.2).
+        # Don't add tags for o1/o3/o4 or other legacy reasoning lines
+        # here — they aren't in cards.toml and the hardcode would rot.
+        # See `docs/patterns/knowledge-cutoff-checks.md`.
+        if self.provider_name == "openai" and "gpt-5" in model:
             if "max_tokens" in params:
                 params["max_completion_tokens"] = params.pop("max_tokens")
             # The API rejects anything except 1.0 here; just drop our value.
