@@ -59,3 +59,16 @@ OPEN_ROUTER_API_KEY   # For Qwen3.5-Plus
 
 ## ExoCortex
 Store: `fileSearchStores/ygnsageresearch-wii7kwkqozrd`
+
+**Not auto-defaulted since 2026-04-18** (P1.3 multi-tenant fix, commit
+e338b7e). Set `SAGE_EXOCORTEX_STORE` in your `.env`:
+
+```
+SAGE_EXOCORTEX_STORE=fileSearchStores/ygnsageresearch-wii7kwkqozrd
+```
+
+If unset: ExoCortex features no-op silently (one-shot WARN). Fine for
+SWE-bench / code-repair benches (they use repo-local tools, not File
+Search). Required for `search_exocortex` agent tool to return papers.
+
+See `.env.example` for the full reference template.
