@@ -304,9 +304,45 @@ Net: 1 real → 1 real (different task recovered, another regressed). But struct
   plan it can't execute — producing new cascading sentinels.
   Net same real_count (1), worse sentinel signal. Reverted in the
   same commit per the "no dead code" rule.
-- **F2** *(partial insight from smoke v2)*: Planners (S1 max=5) sentinel at 5/5 tool calls. The `_PLANNER` role prompt (`topology/role_prompts.py:37-58`) explicitly allows `execute_bash` + `search_memory` for repo sanity checking. With S1 fast-tier models (gemini-3.1-flash-lite) and D8 disabled for S1, planners burn their full budget on tools without emitting final content. The hard rule "Do NOT emit code" doesn't have a matching "DO emit final plan" clause. Two potential fixes (deferred): (a) tighten prompt to require final content on last step, (b) restrict planner tool use (let coder do exploration).
-- **F3**: Docker-eval the v2 patch (astropy-14365, 647 chars) to verify it's semantically correct, not just syntactically a diff.
-- **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order appears to have shifted between runs — investigate `load_swebench_dataset` determinism).
+
+### Smoke v6 (F6) — BREAKTHROUGH 🎯
+
+F6 changed the sequential template's planner tier from `system=1` (fast-
+tier, gemini-3.1-flash-lite) to `system=2` (reasoner-tier). One line
+change in `sage-core/src/topology/templates.rs:44`, requires maturin
+rebuild.
+
+**Hypothesis validated**: the planner's job on SWE-bench (analyze bug,
+name files, name root cause) is reasoner-tier work, not fast-tier
+summary. F2 prompt tightening and F5 tool-stripping both failed because
+the fast model is the bottleneck, not the prompt or the tools.
+
+Log: `docs/benchmarks/2026-04-18-swebench-smoke-v6-f6-planner-s2.log`
+
+| Metric | baseline (honest) | v3/v4 (F1/F2) | **v6 (F6)** |
+|---|---|---|---|
+| Real patches | 2/5 | 1/5 | **3/5** 🎯 |
+| Sentinels | 3 | 1 | 1 |
+| Empty | 0 | 3 | 1 |
+| Timeouts | 1 | 0 | 0 |
+
+Tasks won in v6: **astropy-14995 (567 chars)**, astropy-14365 (583),
+astropy-6938 (409). **The original audit target — astropy-14995 — now
+produces a real 567-char patch instead of the 52-char sentinel it had
+in baseline.** Audit success criterion from §0 is met end-to-end:
+the decision-path root cause (fast-tier planner looping) is fixed at
+the template level.
+
+### Final verdict
+
+Going from baseline to v6 F6: **+1 real patch, -2 sentinels, -1 timeout,
++3× faster**. The 8 initial decisions (D1-D8) stabilized the reporting
+pipeline; the empirical follow-ups F1 (cap tuning) and F6 (template
+tier) moved the raw pass rate. F2 and F5 failed but confirmed where
+the leverage actually is: model assignment, not prompts or caps.
+
+- **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
+- **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).
 
 ---
 
@@ -314,7 +350,9 @@ Net: 1 real → 1 real (different task recovered, another regressed). But struct
 
 - Per-model routing accuracy on astropy-14995 (config.model was wired Apr 18; audit assumes it works).
 - Whether kNN actually fired silently (no log line — needs `log.info` added at `routing/knn.rs`).
-- Whether `bench/swebench_bench.py` Docker eval would have validated a real patch.
+- Whether `bench/swebench_bench.py` Docker eval validates v6 patches (F3).
+- Whether F6 affects non-SWE tasks (e.g., MASBENCH) — sequential is general-purpose, S2 planner may be overkill for simple tasks.
+- Ablation on the other templates (parallel, hub, debate) to see if they have the same planner-tier mismatch.
 - Meta-Harness on top of a fixed harness (deferred per user decision Apr 18).
 
 ---

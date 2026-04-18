@@ -30,11 +30,21 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     // Each node has a different system tier so ModelAssigner picks different
     // models/providers → real multi-provider execution.
     // model_id="" forces ModelAssigner to assign based on system tier.
+    //
+    // F6 audit fix (2026-04-18 docs/audits/2026-04-18-astropy-14995-*):
+    // Planner was system=1 (fast tier, gemini-3.1-flash-lite). On SWE-bench
+    // tasks the fast model looped on execute_bash tool calls without
+    // emitting the plan (4/5 tasks emitted 50-char sentinel). F2 prompt
+    // tightening and F5 tool-stripping both failed. Promoting planner to
+    // system=2 (reasoner tier) aligns the template with its actual job:
+    // analyzing a bug report, naming files, naming root causes — this is
+    // reasoner-tier work, not summarization. Coder stays S2, synthesizer
+    // stays S1 (sink formatting).
     let n0 = TopologyNode::new(
         "planner".into(),
-        "".into(),  // ModelAssigner will assign based on system=1 (fast/budget)
-        1,
-        vec!["text_processing".into()],
+        "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
+        2,
+        vec!["text_processing".into(), "reasoning".into()],
         0,
         0.5,
         60.0,
