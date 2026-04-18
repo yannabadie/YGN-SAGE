@@ -309,21 +309,39 @@ class LiteLLMProvider:
                 if _cfg_provider:
                     effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
 
-        # Build the request "naïvely" and let LiteLLM filter unsupported
-        # params via the module-level `litellm.drop_params = True`. This
-        # covers GPT-5 / o-series reasoning models rejecting `temperature`,
-        # the `max_tokens → max_completion_tokens` swap, Moonshot/Kimi's
-        # temperature clamp, and Gemini 3's default-to-1.0 policy — all
-        # of which are maintained upstream in litellm.llms.<provider>/
-        # transformation modules. Per directive #7: stop hand-coding
-        # per-model quirks when the library already owns them.
+        # Intent: let `litellm.drop_params = True` handle per-model
+        # parameter filtering. Reality (verified 2026-04-18, litellm
+        # v1.83.4): the module-level flag only drops params the
+        # registry flags as unsupported, and the registry for
+        # `openai/gpt-5.4` incorrectly lists `temperature` under
+        # `supported_openai_params`. `register_model` doesn't let us
+        # override that field either (it merges cost data only). So
+        # we still need explicit handling for models where LiteLLM's
+        # registry lags reality. Keep the flag on as a safety net for
+        # OTHER unknown restrictions, but also force-drop temperature
+        # for models we've empirically seen reject it.
+        #
+        # Directive #7 (knowledge-cutoff-checks.md): both `gpt-5` and
+        # `kimi-k2.5` are in cards.toml, confirmed live 2026-04-18.
         _requested_temp = config.temperature if config else 0.0
+        _effective_model_lower = effective_model.lower()
+        _is_gpt5 = "gpt-5" in _effective_model_lower
+        _is_kimi_k25 = "kimi-k2.5" in _effective_model_lower or "kimi-k2-5" in _effective_model_lower
+        _is_gemini3 = "gemini-3" in _effective_model_lower
+        _token_cap = config.max_tokens if config else 4096
+        _token_key = "max_completion_tokens" if _is_gpt5 else "max_tokens"
         params: dict[str, Any] = {
             "model": effective_model,
             "messages": oai_messages,
-            "max_tokens": config.max_tokens if config else 4096,
-            "temperature": _requested_temp,
+            _token_key: _token_cap,
         }
+        if _is_gpt5 or _is_kimi_k25:
+            # Drop temperature — API rejects the parameter entirely.
+            pass
+        elif _is_gemini3:
+            params["temperature"] = 1.0
+        else:
+            params["temperature"] = _requested_temp
 
         if self.api_key:
             params["api_key"] = self.api_key
