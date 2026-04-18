@@ -356,3 +356,45 @@ async def test_per_model_routing_accepts_prefixed_model():
 
     called_with = mock_call.call_args.kwargs["model"]
     assert called_with == "gemini/gemini-2.0-flash"
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_unknown_provider_infers_from_model_id():
+    """config.provider='unknown' must not reach litellm as 'unknown/...'.
+
+    Regression: smoke v5c astropy-7746 failed with
+    `BadRequestError: model=unknown/gemini-3.1-flash-lite-preview` because
+    registry defaults provider to 'unknown' when TOML lacks the key, and
+    the original fix passed that through verbatim.
+    """
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    cfg = LLMConfig(provider="unknown", model="gemini-3.1-flash-lite-preview", max_tokens=50)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    called_with = mock_call.call_args.kwargs["model"]
+    # Should infer "google" from gemini- prefix, then map to "gemini/" via _PROVIDER_PREFIX
+    assert called_with == "gemini/gemini-3.1-flash-lite-preview"
+
+
+def test_infer_provider_from_model_id_patterns():
+    from sage.providers.litellm_provider import _infer_provider_from_model_id
+    assert _infer_provider_from_model_id("gemini-3.1-flash-lite-preview") == "google"
+    assert _infer_provider_from_model_id("gpt-5.4-mini") == "openai"
+    assert _infer_provider_from_model_id("deepseek-chat") == "deepseek"
+    assert _infer_provider_from_model_id("deepseek-reasoner") == "deepseek"
+    assert _infer_provider_from_model_id("grok-4-1-fast-reasoning") == "xai"
+    assert _infer_provider_from_model_id("minimax-m2.7") == "minimax"
+    assert _infer_provider_from_model_id("kimi-k2-0711-preview") == "kimi"
+    assert _infer_provider_from_model_id("qwen/qwen3.5-plus-02-15") == "openrouter"
+    assert _infer_provider_from_model_id("") == ""
+    assert _infer_provider_from_model_id("mystery-model") == ""

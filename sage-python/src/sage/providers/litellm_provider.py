@@ -33,6 +33,34 @@ _CUSTOM_BASE_PROVIDERS: dict[str, str] = {
 }
 
 
+def _infer_provider_from_model_id(model_id: str) -> str:
+    """Best-effort provider inference from a bare model id.
+
+    Used as a last resort when config.provider is missing/"unknown" and the
+    adapter default can't help (neither has the right prefix). Patterns match
+    actual model_id conventions in sage-core/config/cards.toml (April 2026).
+    Empty return means "caller should fall back to adapter default".
+    """
+    if not model_id:
+        return ""
+    m = model_id.lower()
+    if m.startswith("gemini-"):
+        return "google"
+    if m.startswith("gpt-") or m.startswith("o1") or m.startswith("o3"):
+        return "openai"
+    if m.startswith("deepseek"):
+        return "deepseek"
+    if m.startswith("grok"):
+        return "xai"
+    if m.startswith("minimax") or m.startswith("MiniMax".lower()):
+        return "minimax"
+    if m.startswith("kimi"):
+        return "kimi"
+    if "/" in model_id:  # openrouter-style "qwen/qwen-plus"
+        return "openrouter"
+    return ""
+
+
 def _litellm_model_string(provider: str, model_id: str) -> str:
     """Build the ``model`` argument expected by ``litellm.acompletion``.
 
@@ -222,10 +250,27 @@ class LiteLLMProvider:
             if "/" in _cfg_model:
                 effective_model = _cfg_model  # already formatted
             else:
-                # Prefer explicit provider on config; else infer from adapter default.
-                _cfg_provider = getattr(config, "provider", "") or (
-                    self.model_string.split("/", 1)[0] if "/" in self.model_string else ""
+                # Prefer explicit provider on config; treat "unknown"/"" as
+                # missing (registry defaults to "unknown" when TOML lacks a
+                # provider key — don't propagate that to litellm or it emits
+                # model="unknown/…" which litellm rejects).
+                _cfg_provider_raw = getattr(config, "provider", "") or ""
+                _cfg_provider = (
+                    _cfg_provider_raw
+                    if _cfg_provider_raw and _cfg_provider_raw.lower() != "unknown"
+                    else ""
                 )
+                # Model-id-based inference beats adapter default. If the
+                # model id clearly belongs to a specific provider (e.g.
+                # "gemini-3.1-flash-lite-preview" → google), we should not
+                # route it via the deepseek adapter, even if that's the
+                # default we were built with.
+                if not _cfg_provider:
+                    _cfg_provider = _infer_provider_from_model_id(_cfg_model)
+                # Last resort: adapter default. Used only when model_id
+                # doesn't match any known pattern (e.g. a custom model name).
+                if not _cfg_provider and "/" in self.model_string:
+                    _cfg_provider = self.model_string.split("/", 1)[0]
                 if _cfg_provider:
                     effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
 
