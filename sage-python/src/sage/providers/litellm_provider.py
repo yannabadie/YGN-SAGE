@@ -307,10 +307,21 @@ class LiteLLMProvider:
         else:
             _effective_temp = _requested_temp
 
+        # GPT-5 reasoning models reject `max_tokens` — they require
+        # `max_completion_tokens`. Temperature already clamped to 1.0 above.
+        # The openai_compat fallback path does the same swap in _apply_quirks;
+        # mirror it here so the primary LiteLLM path doesn't need the
+        # fallback to kick in. Observed 2026-04-18 in iter1-real when only
+        # temperature was clamped — OpenAI still rejected calls, error
+        # message surfaced as "invalid temperature" but the real parameter
+        # mismatch was max_tokens.
+        _uses_completion_tokens = "gpt-5" in _effective_model_lower
+        _token_cap = config.max_tokens if config else 4096
+        _token_key = "max_completion_tokens" if _uses_completion_tokens else "max_tokens"
         params: dict[str, Any] = {
             "model": effective_model,
             "messages": oai_messages,
-            "max_tokens": config.max_tokens if config else 4096,
+            _token_key: _token_cap,
             "temperature": _effective_temp,
         }
 
