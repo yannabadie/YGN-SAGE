@@ -1,0 +1,72 @@
+[
+  {
+    "instance_id": "astropy__astropy-14995",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "[sage: agent exited after 20 steps with no content]\n",
+    "_latency_ms": 240704.7,
+    "_cost_usd": 0.0,
+    "_system_used": 3,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "pipeline",
+    "_error": "",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-6938",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "diff --git a/astropy/io/fits/fitsrec.py b/astropy/io/fits/fitsrec.py\n--- a/astropy/io/fits/fitsrec.py\n+++ b/astropy/io/fits/fitsrec.py\n@@ -1262,4 +1262,4 @@\n         # Replace exponent separator in floating point numbers\n         if 'D' in format:\n-            output_field.replace(encode_ascii('E'), encode_ascii('D'))\n+            output_field = output_field.replace(encode_ascii('E'), encode_ascii('D'))\n",
+    "_latency_ms": 105426.2,
+    "_cost_usd": 0.0,
+    "_system_used": 3,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "pipeline",
+    "_error": "",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "astropy__astropy-7746",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "",
+    "_latency_ms": 309952.4,
+    "_cost_usd": 0.0,
+    "_system_used": 0,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "",
+    "_error": "generation_timeout_300s",
+    "_repo": "astropy/astropy"
+  },
+  {
+    "instance_id": "django__django-10914",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "[sage: agent exited after 20 steps with no content]\n",
+    "_latency_ms": 142261.5,
+    "_cost_usd": 0.0,
+    "_system_used": 3,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "pipeline",
+    "_error": "",
+    "_repo": "django/django"
+  },
+  {
+    "instance_id": "django__django-10924",
+    "model_name_or_path": "sage/unknown",
+    "model_patch": "[sage: agent exited after 20 steps with no content]\n",
+    "_latency_ms": 144291.7,
+    "_cost_usd": 0.0,
+    "_system_used": 3,
+    "_tool_call_count": 0,
+    "_tool_turn_count": 0,
+    "_executed_commands": [],
+    "_execution_path": "pipeline",
+    "_error": "",
+    "_repo": "django/django"
+  }
+]
