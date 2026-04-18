@@ -10,9 +10,32 @@ import json
 import logging
 from typing import Any
 
+import litellm
+
 from sage.llm.base import LLMConfig, LLMResponse, Message, ToolCall, ToolDef
 
 log = logging.getLogger(__name__)
+
+# LiteLLM handles provider-specific parameter quirks natively when
+# `drop_params=True` is set — unsupported parameters (e.g. `temperature`
+# on GPT-5 reasoning models) are silently filtered instead of raising
+# `BadRequestError`. This removes the need for our own per-model drop
+# tables. Documented in
+# https://github.com/berriai/litellm/blob/main/docs/my-website/docs/completion/drop_params.md
+#
+# Also gives us automatic handling of:
+#   - GPT-5 / o-series `max_tokens → max_completion_tokens` swap
+#     (LiteLLM's provider_specific_params translation; verified via
+#     Context7 /berriai/litellm).
+#   - Moonshot (Kimi) temperature clamp to [0, 1] — only when routed
+#     via the `moonshot/` prefix, not our custom "openai/kimi-k2.5".
+#   - Gemini 3 default temperature=1.0 injection.
+#
+# Set ONCE at module import, not per-call — litellm reads the flag on
+# every `acompletion`. Per directive #7: we rely on upstream LiteLLM
+# for model-quirk behaviour; we only keep quirks for models/providers
+# LiteLLM doesn't know about (so far: none we care about).
+litellm.drop_params = True
 
 # ---------------------------------------------------------------------------
 # Provider → LiteLLM model-string mapping
@@ -239,17 +262,8 @@ class LiteLLMProvider:
         Most providers accept "required"; a few may reject — exception
         propagates and caller can drop the gate and retry.
         """
-        import litellm
-
         oai_messages = self._convert_messages(messages)
 
-        # Gemini 3.x models require temperature == 1.0 — LiteLLM warns
-        # loudly on every call otherwise, and the models themselves enter
-        # degenerate "infinite loops / degraded reasoning / failure on
-        # complex tasks" regimes at low temperature (verified on the
-        # 2026-04-17 SWE-bench smoke). Other providers keep the
-        # config-driven temperature so deterministic tests / benches still
-        # work.
         # Per-model routing: honor config.model if it names a different model
         # than the adapter default. Without this, ModelAssigner decisions are
         # silently dropped — LiteLLMProvider was always calling self.model_string
@@ -295,54 +309,21 @@ class LiteLLMProvider:
                 if _cfg_provider:
                     effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
 
+        # Build the request "naïvely" and let LiteLLM filter unsupported
+        # params via the module-level `litellm.drop_params = True`. This
+        # covers GPT-5 / o-series reasoning models rejecting `temperature`,
+        # the `max_tokens → max_completion_tokens` swap, Moonshot/Kimi's
+        # temperature clamp, and Gemini 3's default-to-1.0 policy — all
+        # of which are maintained upstream in litellm.llms.<provider>/
+        # transformation modules. Per directive #7: stop hand-coding
+        # per-model quirks when the library already owns them.
         _requested_temp = config.temperature if config else 0.0
-        _effective_model_lower = effective_model.lower()
-
-        # GPT-5 / GPT-5.x reasoning models:
-        #   - DROP `temperature` entirely. OpenAI rejects any non-default value
-        #     ("Unsupported value: 'temperature' does not support X with this
-        #     model. Only the default (1) value is supported"). Even sending
-        #     `temperature=1.0` explicitly is rejected on some variants, and
-        #     clamping did NOT fix iter2-real failures. The only robust
-        #     behavior is to omit the parameter so the API uses its internal
-        #     default. Verified 2026-04-18 via web search + LiteLLM issue
-        #     #13781 + OpenAI Community thread 1337133. Per directive #7:
-        #     cards.toml wires gpt-5.4 / gpt-5.4-pro / gpt-5.4-mini /
-        #     gpt-5.4-nano / gpt-5.2 — all treated uniformly here; if a
-        #     specific variant later accepts temperature we can re-enable.
-        #   - Require `max_completion_tokens` instead of `max_tokens`. Same
-        #     source (LiteLLM issue, OpenAI docs).
-        #
-        # Gemini 3.x: keep forced temperature=1.0 (the old F8 fix, commit
-        # 081812d) because Gemini 3 models ENTER DEGENERATE regimes at low
-        # temp but DO accept the parameter. Opposite policy from GPT-5.
-        _is_gpt5 = "gpt-5" in _effective_model_lower
-        _is_gemini3 = "gemini-3" in _effective_model_lower
-        # Kimi k2.5 has a fixed internal temperature — any explicit
-        # temperature parameter gets rejected with the same "only 1
-        # allowed" surface error OpenAI uses for gpt-5 reasoning models.
-        # `openai_compat.py::_apply_quirks` already strips temp for kimi,
-        # but kimi can also reach us via the LiteLLM route under the
-        # "openai/kimi-k2.5" custom-base prefix (substring check catches
-        # both k2.5 and k2-5 spellings). Flag #7 (cards.toml): we ship
-        # kimi-k2.5 via the kimi provider — no other variants.
-        _is_kimi_k25 = "kimi-k2.5" in _effective_model_lower or "kimi-k2-5" in _effective_model_lower
-
-        _token_cap = config.max_tokens if config else 4096
-        _token_key = "max_completion_tokens" if _is_gpt5 else "max_tokens"
         params: dict[str, Any] = {
             "model": effective_model,
             "messages": oai_messages,
-            _token_key: _token_cap,
+            "max_tokens": config.max_tokens if config else 4096,
+            "temperature": _requested_temp,
         }
-
-        if _is_gpt5 or _is_kimi_k25:
-            # Omit temperature entirely — API uses its internal default.
-            pass
-        elif _is_gemini3:
-            params["temperature"] = 1.0
-        else:
-            params["temperature"] = _requested_temp
 
         if self.api_key:
             params["api_key"] = self.api_key
