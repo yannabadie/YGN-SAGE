@@ -311,18 +311,39 @@ def _pydantic_response_to_ours(
     )
 
 
-def _our_tools_to_pydantic(tools: list[ToolDef]) -> list[Any]:
-    """Translate our ``ToolDef`` list to Pydantic AI ``ToolDefinition`` list."""
+def _our_tools_to_pydantic(tools: list[Any]) -> list[Any]:
+    """Translate tool defs to Pydantic AI ``ToolDefinition`` list.
+
+    Accepts BOTH our ``ToolDef`` dataclass AND raw OpenAI-format
+    function-tool dicts — LiteLLMProvider accepted both shapes and
+    some callers still pass the dict variant (observed 2026-04-18 in
+    test_e2e_real on phases/think.py). Normalize here.
+    """
     from pydantic_ai import ToolDefinition
 
-    return [
-        ToolDefinition(
-            name=t.name,
-            description=t.description,
-            parameters_json_schema=t.parameters,
-        )
-        for t in tools
-    ]
+    out: list[Any] = []
+    for t in tools:
+        if isinstance(t, dict):
+            # OpenAI-format: {"type": "function", "function": {"name": ..., "description": ..., "parameters": {...}}}
+            # OR bare: {"name": ..., "description": ..., "parameters": {...}}
+            fn = t.get("function") if t.get("type") == "function" else t
+            out.append(
+                ToolDefinition(
+                    name=fn.get("name", ""),
+                    description=fn.get("description", ""),
+                    parameters_json_schema=fn.get("parameters", {}),
+                )
+            )
+        else:
+            # ToolDef dataclass
+            out.append(
+                ToolDefinition(
+                    name=t.name,
+                    description=t.description,
+                    parameters_json_schema=t.parameters,
+                )
+            )
+    return out
 
 
 class PydanticAIProvider:

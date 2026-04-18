@@ -46,11 +46,14 @@ def init_llm_provider(
 
     llm_config = ModelRouter.get_config(llm_tier)
 
-    # Route to correct provider via LiteLLM (unified multi-provider gateway).
+    # Route to correct provider via Pydantic AI (replaced LiteLLM on
+    # 2026-04-18, migration docs at docs/plans/2026-04-18-pydantic-ai-migration.md).
+    # PydanticAIProvider.for_sage_provider preserves the same signature —
+    # one-line swap, no caller changes.
     from sage.providers.connector import (
         get_provider_for_model, get_available_providers, PROVIDER_CONFIGS,
     )
-    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
 
     model_id = llm_config.model or ""
     matched = False
@@ -62,14 +65,14 @@ def init_llm_provider(
             next((c["api_key_env"] for c in PROVIDER_CONFIGS if c["provider"] == prov_name), ""), ""
         )
         if api_key or prov_name == "google":  # Google uses ADC
-            provider = LiteLLMProvider.for_sage_provider(prov_name, model_id, api_key or None)
+            provider = PydanticAIProvider.for_sage_provider(prov_name, model_id, api_key or None)
             matched = True
 
     # Fallback: try available providers in connector config order
     if not matched:
         for cfg in get_available_providers():
             api_key = os.environ.get(cfg["api_key_env"], "")
-            provider = LiteLLMProvider.for_sage_provider(
+            provider = PydanticAIProvider.for_sage_provider(
                 cfg["provider"], cfg.get("default_model", ""), api_key or None,
             )
             matched = True

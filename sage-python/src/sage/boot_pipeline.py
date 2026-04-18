@@ -71,7 +71,9 @@ def _build_capability_matrix(
 
     from sage.providers.capabilities import CapabilityMatrix as _CapMatrix
     from sage.providers.connector import PROVIDER_CONFIGS
-    from sage.providers.litellm_provider import LiteLLMProvider
+    # Migrated from LiteLLMProvider to PydanticAIProvider on 2026-04-18
+    # (docs/plans/2026-04-18-pydantic-ai-migration.md).
+    from sage.providers.pydantic_ai_provider import PydanticAIProvider
 
     _cap_matrix = _CapMatrix()
     _discovered_providers = {p.provider for p in registry.list_available()}
@@ -85,7 +87,7 @@ def _build_capability_matrix(
             _api_key = os.environ.get("DEEP_SEEK_API_KEY", "")
         if not _api_key:
             continue
-        _runtime_adapters[_pname] = LiteLLMProvider.for_sage_provider(
+        _runtime_adapters[_pname] = PydanticAIProvider.for_sage_provider(
             _pname, _cfg.get("default_model", ""), _api_key or None,
         )
 

@@ -1,16 +1,20 @@
 """OpenAI-compatible LLM provider for multi-provider routing.
 
-DEPRECATED: Use ``sage.providers.litellm_provider.LiteLLMProvider`` instead.
-This module is kept for backward compatibility and will be removed in v0.2.0.
+DEPRECATED: Use ``sage.providers.pydantic_ai_provider.PydanticAIProvider``
+instead. This module is kept for backward compatibility (topology
+runner fallback + bench/masbench direct use) and will be removed in
+v0.2.0.
 
-OpenAI-compatible API support (OpenAI, xAI (Grok), DeepSeek, MiniMax, Kimi/Moonshot)
-is now unified via LiteLLM (v1.83+).
+Multi-provider support (OpenAI, xAI/Grok, DeepSeek, MiniMax, Kimi/
+Moonshot, OpenRouter, Google) was previously via LiteLLM (1.x series),
+migrated to Pydantic AI on 2026-04-18. See
+docs/plans/2026-04-18-pydantic-ai-migration.md for the migration log.
 
 Legacy migration:
     Old:  OpenAICompatProvider(api_key="...", base_url="...", model_id="...", provider_name="...")
-    New:  LiteLLMProvider(model_string="deepseek/deepseek-chat", api_key="...")
+    New:  PydanticAIProvider.for_sage_provider("deepseek", "deepseek-chat", api_key="...")
 
-See: sage-python/src/sage/providers/litellm_provider.py
+See: sage-python/src/sage/providers/pydantic_ai_provider.py
 """
 from __future__ import annotations
 
@@ -27,7 +31,7 @@ log = logging.getLogger(__name__)
 # Module-level deprecation warning
 warnings.warn(
     "sage.providers.openai_compat.OpenAICompatProvider is DEPRECATED. "
-    "Use sage.providers.litellm_provider.LiteLLMProvider instead. "
+    "Use sage.providers.pydantic_ai_provider.PydanticAIProvider instead. "
     "This module will be removed in v0.2.0.",
     DeprecationWarning,
     stacklevel=2,

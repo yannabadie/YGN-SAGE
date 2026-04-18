@@ -116,6 +116,13 @@ def test_cost_lookup_agrees_with_rust_registry() -> None:
     except Exception:
         pytest.skip("sage_core not available (Rust not built)")
 
+    # When another test in this run stubs `sage_core` with an empty
+    # ModuleType, `ModelRegistry` won't exist as an attribute even
+    # though the module is in `sys.modules`. Skip gracefully so we
+    # don't fail on test-ordering rather than on real breakage.
+    if not hasattr(sage_core, "ModelRegistry"):
+        pytest.skip("sage_core stubbed by another test; real Rust module unavailable")
+
     from sage.providers.pydantic_ai_provider import _lookup_cost_per_token
 
     # Load the Rust registry independently and pick a known model
