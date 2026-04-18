@@ -29,6 +29,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Ensure external/meta-harness is on sys.path so candidates can be
+# imported as "reference_examples.ygn_sage.agents.<id>". Idempotent —
+# safe to import this module multiple times.
+_EXTERNAL_ROOT = Path(__file__).resolve().parents[3]  # external/meta-harness/
+if str(_EXTERNAL_ROOT) not in sys.path:
+    sys.path.insert(0, str(_EXTERNAL_ROOT))
+
 
 # ── Score computation ────────────────────────────────────────────
 
@@ -85,13 +92,21 @@ def score_predictions(predictions: list[dict[str, Any]]) -> dict[str, Any]:
 
 # ── Bench invocation ─────────────────────────────────────────────
 
+def _import_sage_candidate():
+    """Import SageCandidate via the canonical absolute path so this module
+    works whether benchmark.py is called as a script or imported as part
+    of the reference_examples.ygn_sage package."""
+    from reference_examples.ygn_sage.sage_candidate import SageCandidate  # type: ignore
+    return SageCandidate
+
+
 def validate_candidate(module_name: str) -> str:
     """Import-check a candidate. Returns 'ok' or error message."""
     try:
         mod = importlib.import_module(module_name)
     except Exception as exc:  # noqa: BLE001
         return f"ImportError: {type(exc).__name__}: {exc}"
-    from .sage_candidate import SageCandidate
+    SageCandidate = _import_sage_candidate()
     candidate = getattr(mod, "CANDIDATE", None)
     if not isinstance(candidate, SageCandidate):
         for attr in dir(mod):

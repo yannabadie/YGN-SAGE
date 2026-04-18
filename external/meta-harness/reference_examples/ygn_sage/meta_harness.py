@@ -29,6 +29,15 @@ from pathlib import Path
 
 import yaml  # type: ignore[import-not-found]
 
+# Ensure our reference_example sibling modules and the parent external/
+# meta-harness tree are on sys.path so `reference_examples.ygn_sage.
+# agents.<id>` is importable (used by benchmark.py).
+_HERE = Path(__file__).resolve().parent
+_EXTERNAL_ROOT = _HERE.parents[2]  # external/meta-harness/
+for _p in (str(_HERE), str(_EXTERNAL_ROOT)):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
 # Local imports (siblings in reference_examples/ygn_sage/)
 import codex_wrapper  # type: ignore[import-not-found]
 import benchmark  # type: ignore[import-not-found]
