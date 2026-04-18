@@ -114,24 +114,22 @@ def create_node_agent_loop(
     else:
         node_max_steps = 5
 
-    # D8 soft-cap (2026-04-18 audit, revised after first smoke): break
-    # out of consecutive-tool-turn thrash with enough headroom for
-    # legitimate multi-call work. First revision used max_steps//2
-    # which killed a 5-task SWE-Lite run (0/5 real vs 3/5 baseline —
-    # coder bailed at 5/10, synthesizer at 2/5, before either could
-    # emit a patch). SWE-bench coders need 8-15 tool turns (grep +
-    # read_file + run_tests + edit) before final content. The cap
-    # has to be "almost the full budget" — catch the pathological
-    # 20-for-20 thrash, not normal exploration.
-    #
-    # Heuristic: leave the final 3 steps available for content
-    # emission. Small S1 budgets (max=5) disable D8 entirely (cap=0)
-    # since a 3-step thrash window would still break legitimate
-    # execute_bash → read_file → final-answer chains.
+    # D8 soft-cap (2026-04-18 audit) — revised three times based on
+    # empirical smoke results:
+    #   Rev 1 (max_steps//2): 0/5 real, coder bailed at 5/10.
+    #   Rev 2 (max_steps-3):  1/5 real, astropy-6938 regressed (bailed
+    #                         at 7/10 on near-completion).
+    #   Rev 3 (max_steps-1 for S2, max_steps-3 for S3, off for S1) — F1:
+    #   S2 coders routinely use the full 10-step budget; only 1-step
+    #   headroom catches the 20-for-20 pathology without killing
+    #   near-completion work. S3 keeps 3-step headroom because 20-budget
+    #   thrash has more slack to detect. S1 stays disabled.
     if node_max_steps <= 5:
-        node_stall_cap = 0  # disabled for S1
+        node_stall_cap = 0  # S1 — budget too tight for any window
+    elif node_max_steps <= 10:
+        node_stall_cap = node_max_steps - 1  # S2: 9 (F1, was 7)
     else:
-        node_stall_cap = max(0, node_max_steps - 3)
+        node_stall_cap = node_max_steps - 3  # S3: 17 (unchanged)
 
     config = AgentConfig(
         name=node_name,
