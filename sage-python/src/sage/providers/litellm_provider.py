@@ -318,6 +318,15 @@ class LiteLLMProvider:
         # temp but DO accept the parameter. Opposite policy from GPT-5.
         _is_gpt5 = "gpt-5" in _effective_model_lower
         _is_gemini3 = "gemini-3" in _effective_model_lower
+        # Kimi k2.5 has a fixed internal temperature — any explicit
+        # temperature parameter gets rejected with the same "only 1
+        # allowed" surface error OpenAI uses for gpt-5 reasoning models.
+        # `openai_compat.py::_apply_quirks` already strips temp for kimi,
+        # but kimi can also reach us via the LiteLLM route under the
+        # "openai/kimi-k2.5" custom-base prefix (substring check catches
+        # both k2.5 and k2-5 spellings). Flag #7 (cards.toml): we ship
+        # kimi-k2.5 via the kimi provider — no other variants.
+        _is_kimi_k25 = "kimi-k2.5" in _effective_model_lower or "kimi-k2-5" in _effective_model_lower
 
         _token_cap = config.max_tokens if config else 4096
         _token_key = "max_completion_tokens" if _is_gpt5 else "max_tokens"
@@ -327,8 +336,8 @@ class LiteLLMProvider:
             _token_key: _token_cap,
         }
 
-        if _is_gpt5:
-            # Omit temperature entirely — API uses default (1).
+        if _is_gpt5 or _is_kimi_k25:
+            # Omit temperature entirely — API uses its internal default.
             pass
         elif _is_gemini3:
             params["temperature"] = 1.0
