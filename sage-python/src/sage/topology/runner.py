@@ -463,8 +463,30 @@ class TopologyRunner:
         else:
             full_task = task
 
-        # Execute
-        result = await loop.run(full_task)
+        # Execute. Before Apr 18 2026 the agent-loop path had no provider
+        # circuit-breaker wiring: if the per-node loop raised because of
+        # a rate-limit or timeout, the exception propagated untouched and
+        # `_provider_pool` never learned the provider was sick, so the
+        # next node on the same provider just hit the same wall. The
+        # direct _execute_node path already records failure/success on
+        # `_provider_pool` — this block mirrors it for AgentLoop. P1.2
+        # of the 2026-04-18 mega-plan.
+        provider_name = getattr(config, "provider", "unknown")
+        try:
+            result = await loop.run(full_task)
+        except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
+            if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
+                try:
+                    self._provider_pool.record_failure(provider_name, exc)
+                except Exception:  # noqa: BLE001 — never let telemetry mask the real error
+                    pass
+            raise
+        else:
+            if self._provider_pool and hasattr(self._provider_pool, "record_success"):
+                try:
+                    self._provider_pool.record_success(provider_name)
+                except Exception:  # noqa: BLE001
+                    pass
         self._node_outputs[node_idx] = result
         # Aggregate tool-use telemetry — per-node counters are local to each
         # AgentLoop; without this rollup the pipeline ctx sees zero even
