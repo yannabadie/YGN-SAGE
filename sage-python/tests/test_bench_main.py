@@ -23,8 +23,9 @@ async def test_run_swebench_generate_only_does_not_require_google_env(monkeypatc
                 "max_workers": max_workers,
             }
 
-        async def run_generate_only(self, limit=None):
+        async def run_generate_only(self, limit=None, offset=0):
             calls["limit"] = limit
+            calls["offset"] = offset
             return Path("predictions.jsonl")
 
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)

@@ -285,13 +285,16 @@ async def _run_swebench(args) -> None:
         max_workers=args.max_workers,
     )
 
+    # offset defaults to 0 and is optional on argparse, but callers
+    # constructing args via SimpleNamespace may omit it — handle both.
+    _offset = int(getattr(args, "offset", 0) or 0)
     if args.generate_only:
         # Generate patches only (no Docker evaluation)
-        preds_path = await bench.run_generate_only(limit=args.limit, offset=args.offset or 0)
+        preds_path = await bench.run_generate_only(limit=args.limit, offset=_offset)
         print(f"  Predictions saved to: {preds_path}")
     else:
         # Full pipeline: generate + evaluate
-        report = await bench.run(limit=args.limit, offset=args.offset or 0)
+        report = await bench.run(limit=args.limit, offset=_offset)
         _print_report(report)
         _save_report(report, bench, args.output, f"swebench-{swe_dataset}")
 
