@@ -398,3 +398,49 @@ def test_infer_provider_from_model_id_patterns():
     assert _infer_provider_from_model_id("qwen/qwen3.5-plus-02-15") == "openrouter"
     assert _infer_provider_from_model_id("") == ""
     assert _infer_provider_from_model_id("mystery-model") == ""
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_openrouter_qwen_gets_prefix():
+    """Regression for smoke v5d django-10914: 'qwen/qwen3.5-plus-02-15' has a
+    slash but is NOT pre-formatted — it's the openrouter model id. Must be
+    re-prefixed as 'openrouter/qwen/qwen3.5-plus-02-15'."""
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    cfg = LLMConfig(provider="openrouter", model="qwen/qwen3.5-plus-02-15", max_tokens=50)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    called_with = mock_call.call_args.kwargs["model"]
+    assert called_with == "openrouter/qwen/qwen3.5-plus-02-15", \
+        f"Expected openrouter/ prefix; got {called_with!r}"
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_gemini_prefixed_passes_through():
+    """'gemini/gemini-2.0-flash' IS pre-formatted (first segment is a known
+    LiteLLM prefix) and should pass through verbatim."""
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    cfg = LLMConfig(provider="google", model="gemini/gemini-2.0-flash", max_tokens=50)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    called_with = mock_call.call_args.kwargs["model"]
+    assert called_with == "gemini/gemini-2.0-flash"

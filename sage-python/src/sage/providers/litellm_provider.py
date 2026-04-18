@@ -247,7 +247,14 @@ class LiteLLMProvider:
             # config.model is typically a bare id like "gemini-3.1-flash-lite-preview"
             # or "deepseek-reasoner"; LiteLLM needs "<provider>/<model>". If the
             # config specifies a different model_id, re-prefix via provider.
-            if "/" in _cfg_model:
+            #
+            # "/" in model_id is ambiguous: could be a LiteLLM prefix
+            # ("openai/gpt-4") or part of a multi-slash HF-style id
+            # ("qwen/qwen3.5-plus-02-15" — openrouter). Only treat as
+            # pre-formatted when the first segment is a known LiteLLM prefix.
+            _KNOWN_PREFIXES = set(_PROVIDER_PREFIX.values()) | {"openai", "vertex_ai"}
+            _first_seg = _cfg_model.split("/", 1)[0]
+            if "/" in _cfg_model and _first_seg in _KNOWN_PREFIXES:
                 effective_model = _cfg_model  # already formatted
             else:
                 # Prefer explicit provider on config; treat "unknown"/"" as
