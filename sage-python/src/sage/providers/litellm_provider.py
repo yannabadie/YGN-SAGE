@@ -291,7 +291,13 @@ class LiteLLMProvider:
                     effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
 
         _requested_temp = config.temperature if config else 0.0
-        if "gemini-3" in effective_model.lower():
+        # Forced temperature=1.0 for:
+        #   - Gemini 3.x (degenerate at low temp, per F8 fix 081812d)
+        #   - GPT-5 / GPT-5.x reasoning models (OpenAI rejects any temp != 1
+        #     with "invalid temperature" BadRequestError — observed 2026-04-18
+        #     during the Meta-Harness first real eval on astropy/django tasks)
+        _effective_model_lower = effective_model.lower()
+        if "gemini-3" in _effective_model_lower or "gpt-5" in _effective_model_lower:
             _effective_temp = 1.0
         else:
             _effective_temp = _requested_temp
