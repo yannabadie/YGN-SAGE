@@ -437,6 +437,23 @@ class SWEBenchBench:
             provider=provider_name,
         )
 
+        # Refresh provider exclusion list at batch start: a provider marked
+        # DEAD at boot may have recovered (quota reset, Gemini outage over).
+        # Re-probes any exclusion older than TTL; syncs new state to the
+        # Rust ModelAssigner so routing decisions use current reality.
+        try:
+            pipeline = getattr(self.system, "pipeline", None)
+            pool = getattr(pipeline, "provider_pool", None) if pipeline else None
+            assigner = getattr(pipeline, "assigner", None) if pipeline else None
+            if pool and hasattr(pool, "refresh_exclusion_list"):
+                dead_after = await pool.refresh_exclusion_list(model_assigner=assigner)
+                log.info(
+                    "[generate_patches] provider exclusion refreshed: still dead=%s",
+                    dead_after,
+                )
+        except Exception as exc:  # noqa: BLE001 - best-effort refresh, don't block the run
+            log.warning("[generate_patches] exclusion refresh failed: %s", exc)
+
         predictions: list[dict[str, Any]] = []
 
         for i, instance in enumerate(instances):

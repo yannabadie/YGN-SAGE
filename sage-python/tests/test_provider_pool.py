@@ -228,3 +228,117 @@ class TestHealthCheckQuotaAwareness:
         )
         results = await pool.health_check(timeout=1.0)
         assert results == {"xai": True}
+
+
+# --- Re-probe / TTL-based exclusion (2026-04-18) ---
+
+
+class TestExclusionTTLAndReprobe:
+    """Exclusion must be time-bounded and re-verified, not permanent."""
+
+    @pytest.mark.asyncio
+    async def test_dead_provider_recovers_after_reprobe(self):
+        """After TTL, a provider that now responds should be removed from the dead list."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("flaky")
+        # First call fails (connection), second call succeeds.
+        p.generate = AsyncMock(
+            side_effect=[Exception("connection refused"), MagicMock(content="ok")]
+        )
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="flaky", model="x"),
+            providers={"flaky": p},
+        )
+        # First probe → dead
+        r1 = await pool.health_check(timeout=1.0)
+        assert r1 == {"flaky": False}
+        assert "flaky" in pool._dead_at
+
+        # Force TTL expiry so reprobe actually runs.
+        pool._dead_at["flaky"] = 0.0  # very old
+        r2 = await pool.reprobe_excluded_providers(timeout=1.0, ttl_sec=60.0)
+        assert r2 == {"flaky": True}
+        assert "flaky" not in pool._dead_at
+
+    @pytest.mark.asyncio
+    async def test_dead_provider_within_ttl_not_reprobed(self):
+        """A recently-marked-dead provider should NOT be reprobed within TTL."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("recent")
+        p.generate = AsyncMock(side_effect=Exception("SSL handshake failed"))
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="recent", model="x"),
+            providers={"recent": p},
+        )
+        await pool.health_check(timeout=1.0)
+        # Dead timestamp just written; TTL=300s → reprobe should be a no-op.
+        p.generate.reset_mock()
+        r = await pool.reprobe_excluded_providers(timeout=1.0, ttl_sec=300.0)
+        assert r == {}  # nothing reprobed
+        assert p.generate.call_count == 0
+        assert "recent" in pool._dead_at  # still dead
+
+    @pytest.mark.asyncio
+    async def test_still_dead_after_reprobe_resets_ttl(self):
+        """A provider that stays dead on reprobe must keep the exclusion
+        (but with a fresh TTL so we don't re-probe every call)."""
+        from unittest.mock import AsyncMock
+        import time as _time
+        p = _make_provider("down")
+        p.generate = AsyncMock(side_effect=Exception("DNS resolution failed"))
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="down", model="x"),
+            providers={"down": p},
+        )
+        await pool.health_check(timeout=1.0)
+        pool._dead_at["down"] = 0.0  # force expiry
+        before = _time.time()
+        r = await pool.reprobe_excluded_providers(timeout=1.0, ttl_sec=60.0)
+        after = _time.time()
+        assert r == {"down": False}
+        # Timestamp refreshed
+        assert before <= pool._dead_at["down"] <= after + 1
+
+    @pytest.mark.asyncio
+    async def test_refresh_exclusion_list_syncs_assigner(self):
+        """refresh_exclusion_list must push the current dead list to the
+        Rust ModelAssigner via exclude_providers()."""
+        from unittest.mock import AsyncMock
+        p = _make_provider("test")
+        p.generate = AsyncMock(side_effect=Exception("SSL error"))
+        pool = ProviderPool(
+            default_provider=p, registry=_make_registry(),
+            default_config=LLMConfig(provider="test", model="x"),
+            providers={"test": p},
+        )
+        await pool.health_check(timeout=1.0)
+        pool._dead_at["test"] = 0.0  # force TTL expiry
+
+        # Simulate Rust assigner
+        class _FakeAssigner:
+            def __init__(self):
+                self.last_exclusion: list[str] | None = None
+            def exclude_providers(self, providers):
+                self.last_exclusion = list(providers)
+        assigner = _FakeAssigner()
+
+        # Provider is still dead (same side_effect); refresh should call exclude_providers with it
+        dead = await pool.refresh_exclusion_list(model_assigner=assigner, ttl_sec=60.0, timeout=1.0)
+        assert dead == ["test"]
+        assert assigner.last_exclusion == ["test"]
+
+    def test_get_dead_providers_respects_ttl(self):
+        import time as _time
+        pool = ProviderPool(
+            default_provider=_make_provider("a"), registry=_make_registry(),
+            default_config=LLMConfig(provider="a", model="x"),
+            providers={"a": _make_provider("a")},
+        )
+        now = _time.time()
+        pool._dead_at["fresh"] = now                # within TTL
+        pool._dead_at["ancient"] = now - 10_000.0   # way past TTL
+        current = pool.get_dead_providers(ttl_sec=300.0)
+        assert current == ["fresh"]  # expired entry not reported

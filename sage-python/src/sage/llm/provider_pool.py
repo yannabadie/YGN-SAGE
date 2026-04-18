@@ -6,12 +6,19 @@ assigned by ModelAssigner.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from sage.llm.base import LLMConfig, LLMProvider
 from sage.resilience import CircuitBreaker
 
 log = logging.getLogger(__name__)
+
+# Default TTL for dead-provider exclusion. 5 minutes covers most transient
+# outages (Gemini brown-outs, OpenAI backend hiccups) without making
+# operators wait hours for a recovered provider. Shorter values increase
+# probe traffic; longer values delay recovery.
+DEFAULT_EXCLUSION_TTL_SEC = 300.0
 
 
 class ProviderPool:
@@ -44,6 +51,12 @@ class ProviderPool:
         self._providers: dict[str, LLMProvider] = providers or {}
         self._cache: dict[str, tuple[LLMProvider, LLMConfig]] = {}
         self._breakers: dict[str, CircuitBreaker] = {}
+        # Time-bounded exclusion: provider_name → unix timestamp when it was
+        # marked dead. reprobe_excluded_providers() re-tests entries older
+        # than a TTL and removes them if they respond. Replaces the earlier
+        # boot-permanent exclusion which left recovered providers locked out
+        # for the whole process lifetime.
+        self._dead_at: dict[str, float] = {}
 
     # -- Boot-time health check -------------------------------------------
 
@@ -95,6 +108,7 @@ class ProviderPool:
                 ])
                 if is_connection_error or is_quota_exhaustion:
                     results[name] = False
+                    self._dead_at[name] = time.time()
                     for _ in range(3):
                         self.record_failure(name, exc)
                     reason = "unreachable" if is_connection_error else "quota exhausted"
@@ -106,14 +120,148 @@ class ProviderPool:
                     # API error (400/401/403/transient 429) — provider reachable
                     results[name] = True
                     self.record_success(name)
+                    # Successful probe clears any prior exclusion.
+                    self._dead_at.pop(name, None)
                     log.info(
                         "Health check OK for %s (API error on probe, but reachable: %s)",
                         name, exc_name,
                     )
+            else:
+                # Success path — ensure exclusion cleared.
+                self._dead_at.pop(name, None)
 
         alive = sum(1 for v in results.values() if v)
         log.info("Provider health check: %d/%d alive %s", alive, len(results), results)
         return results
+
+    def get_dead_providers(self, ttl_sec: float = DEFAULT_EXCLUSION_TTL_SEC) -> list[str]:
+        """Return providers currently marked DEAD and still within TTL.
+
+        Entries older than ttl_sec are considered expired — they will be
+        re-probed on the next ``reprobe_excluded_providers()`` call and
+        removed from the dead list if they respond.
+        """
+        now = time.time()
+        return [
+            name for name, dead_since in self._dead_at.items()
+            if (now - dead_since) < ttl_sec
+        ]
+
+    async def reprobe_excluded_providers(
+        self,
+        timeout: float = 5.0,
+        ttl_sec: float = DEFAULT_EXCLUSION_TTL_SEC,
+    ) -> dict[str, bool]:
+        """Re-test any provider that has been DEAD longer than ttl_sec.
+
+        Providers marked DEAD are not permanently excluded — outages
+        recover (Gemini brown-outs, quota resets at midnight UTC, OpenAI
+        backend hiccups). Call this at the start of each task batch (or
+        cron-style on a short interval) so ModelAssigner sees a current
+        view of provider health.
+
+        Parameters
+        ----------
+        timeout : float
+            Per-provider probe timeout (short by design — we already
+            probed once at boot; this is a cheap re-verify).
+        ttl_sec : float
+            Minimum age before re-probing. Within TTL: stay DEAD.
+            After TTL: probe; if OK, remove from dead list.
+
+        Returns
+        -------
+        dict[str, bool]
+            {provider_name: alive_now} for every provider that was in
+            the dead list at entry. Providers not in the dead list are
+            omitted.
+        """
+        import asyncio
+        from sage.llm.base import Message, Role, LLMConfig as _Cfg
+
+        now = time.time()
+        to_reprobe = [
+            name for name, dead_since in list(self._dead_at.items())
+            if (now - dead_since) >= ttl_sec
+        ]
+        if not to_reprobe:
+            return {}
+
+        results: dict[str, bool] = {}
+        probe_msg = [Message(role=Role.USER, content="hi")]
+        for name in to_reprobe:
+            provider = self._providers.get(name)
+            if provider is None:
+                # Provider gone entirely (unloaded) — drop from dead list
+                self._dead_at.pop(name, None)
+                continue
+            try:
+                model_id = getattr(provider, "model_id", "") or getattr(provider, "model_string", "")
+                cfg = _Cfg(provider=name, model=model_id, max_tokens=10)
+                await asyncio.wait_for(
+                    provider.generate(messages=probe_msg, config=cfg),
+                    timeout=timeout,
+                )
+                results[name] = True
+                self.record_success(name)
+                self._dead_at.pop(name, None)
+                log.info("Reprobe RECOVERED provider %s — removed from exclusion list", name)
+            except Exception as exc:
+                exc_str = str(exc).lower()
+                exc_name = type(exc).__name__
+                # Use the same classifier as health_check — recoverable
+                # API errors (400/401 with wrong probe params) should
+                # recover the provider since it's reachable.
+                is_connection_error = any(s in exc_str for s in [
+                    "connection", "dns", "ssl", "timeout", "getaddrinfo",
+                    "refused", "unreachable", "network",
+                ])
+                is_quota_exhaustion = (
+                    "429" in exc_str or "ratelimit" in exc_name.lower()
+                ) and any(s in exc_str for s in [
+                    "insufficient_quota", "quota", "billing", "credit",
+                    "exceeded your current quota", "payment",
+                ])
+                if is_connection_error or is_quota_exhaustion:
+                    results[name] = False
+                    self._dead_at[name] = now  # reset TTL — still dead
+                    log.info("Reprobe STILL DEAD for %s: %s", name, exc_name)
+                else:
+                    results[name] = True
+                    self.record_success(name)
+                    self._dead_at.pop(name, None)
+                    log.info(
+                        "Reprobe RECOVERED provider %s (API-layer error on probe: %s) "
+                        "— reachable, removed from exclusion list",
+                        name, exc_name,
+                    )
+        return results
+
+    async def refresh_exclusion_list(
+        self,
+        model_assigner: Any = None,
+        ttl_sec: float = DEFAULT_EXCLUSION_TTL_SEC,
+        timeout: float = 5.0,
+    ) -> list[str]:
+        """Reprobe expired dead providers and push the current dead list to
+        the Rust ``ModelAssigner`` if one is provided.
+
+        Intended to be called at the start of each task batch (e.g. from
+        ``SWEBenchBench.generate_patches`` before the first instance, or
+        from ``CognitiveOrchestrationPipeline.run`` before Stage 4). Fast
+        path: no dead entries older than ttl_sec → returns early without
+        touching the network.
+
+        Returns the final list of provider names still considered dead.
+        """
+        await self.reprobe_excluded_providers(timeout=timeout, ttl_sec=ttl_sec)
+        dead = list(self._dead_at.keys())
+        if model_assigner is not None and hasattr(model_assigner, "exclude_providers"):
+            try:
+                model_assigner.exclude_providers(dead)
+            except Exception as exc:  # noqa: BLE001 - fallback logging
+                log.warning("refresh_exclusion_list: assigner update failed: %s", exc)
+        return dead
 
     # -- Provider inference ------------------------------------------------
 
