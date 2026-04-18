@@ -208,14 +208,35 @@ class LiteLLMProvider:
         # 2026-04-17 SWE-bench smoke). Other providers keep the
         # config-driven temperature so deterministic tests / benches still
         # work.
+        # Per-model routing: honor config.model if it names a different model
+        # than the adapter default. Without this, ModelAssigner decisions are
+        # silently dropped — LiteLLMProvider was always calling self.model_string
+        # (the provider default) regardless of what the pipeline assigned.
+        # Flagged by Codex review 2026-04-18.
+        effective_model = self.model_string
+        if config and getattr(config, "model", None):
+            _cfg_model = config.model
+            # config.model is typically a bare id like "gemini-3.1-flash-lite-preview"
+            # or "deepseek-reasoner"; LiteLLM needs "<provider>/<model>". If the
+            # config specifies a different model_id, re-prefix via provider.
+            if "/" in _cfg_model:
+                effective_model = _cfg_model  # already formatted
+            else:
+                # Prefer explicit provider on config; else infer from adapter default.
+                _cfg_provider = getattr(config, "provider", "") or (
+                    self.model_string.split("/", 1)[0] if "/" in self.model_string else ""
+                )
+                if _cfg_provider:
+                    effective_model = _litellm_model_string(_cfg_provider, _cfg_model)
+
         _requested_temp = config.temperature if config else 0.0
-        if "gemini-3" in self.model_string.lower():
+        if "gemini-3" in effective_model.lower():
             _effective_temp = 1.0
         else:
             _effective_temp = _requested_temp
 
         params: dict[str, Any] = {
-            "model": self.model_string,
+            "model": effective_model,
             "messages": oai_messages,
             "max_tokens": config.max_tokens if config else 4096,
             "temperature": _effective_temp,

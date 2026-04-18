@@ -280,3 +280,79 @@ async def test_generate_maps_messages() -> None:
     assert tool_msg["tool_call_id"] == "call_001"
     assert tool_msg["name"] == "get_weather"
     assert tool_msg["content"] == '{"temp": 18, "condition": "sunny"}'
+
+
+# --- Per-model routing tests (Codex review 2026-04-18) ---
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_honors_config_model():
+    """When config.model names a different model than adapter default,
+    LiteLLM should be called with the config model, not the adapter's.
+
+    Regression test for: ModelAssigner decisions were silently discarded
+    because LiteLLMProvider.generate() always sent self.model_string.
+    """
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    assert provider.model_string == "deepseek/deepseek-chat"
+
+    # Request a different model via config
+    cfg = LLMConfig(provider="gemini", model="gemini-3.1-flash-lite-preview", max_tokens=100)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    # The adapter default is deepseek but config asked for gemini.
+    called_with = mock_call.call_args.kwargs["model"]
+    assert called_with == "gemini/gemini-3.1-flash-lite-preview", \
+        f"Expected per-model routing to honor config.model; got {called_with!r}"
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_falls_back_to_adapter_default():
+    """When config.model is None or empty, use adapter default."""
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    cfg = LLMConfig(provider="", model="", max_tokens=100)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    called_with = mock_call.call_args.kwargs["model"]
+    assert called_with == "deepseek/deepseek-chat"
+
+
+@pytest.mark.asyncio
+async def test_per_model_routing_accepts_prefixed_model():
+    """If config.model already has a / in it, treat as pre-formatted and pass through."""
+    from sage.providers.litellm_provider import LiteLLMProvider
+    from sage.llm.base import Message, Role, LLMConfig
+    from unittest.mock import patch, AsyncMock, MagicMock
+
+    provider = LiteLLMProvider.for_sage_provider("deepseek", "deepseek-chat", "sk-test")
+    cfg = LLMConfig(provider="gemini", model="gemini/gemini-2.0-flash", max_tokens=50)
+
+    mock_resp = MagicMock()
+    mock_resp.choices = [MagicMock(message=MagicMock(content="hi", tool_calls=None), finish_reason="stop")]
+    mock_resp.usage = MagicMock(prompt_tokens=5, completion_tokens=1, total_tokens=6)
+
+    with patch("litellm.acompletion", new_callable=AsyncMock, return_value=mock_resp) as mock_call:
+        await provider.generate(messages=[Message(role=Role.USER, content="ok")], config=cfg)
+
+    called_with = mock_call.call_args.kwargs["model"]
+    assert called_with == "gemini/gemini-2.0-flash"
