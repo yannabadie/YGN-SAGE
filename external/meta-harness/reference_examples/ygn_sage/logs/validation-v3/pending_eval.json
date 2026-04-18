@@ -1,0 +1,14 @@
+{
+  "iteration": 1,
+  "timestamp": "2026-04-18T11:20:22.7847996+02:00",
+  "candidates": [
+    {
+      "name": "role_tool_pruned",
+      "module": "reference_examples.ygn_sage.agents.role_tool_pruned",
+      "hypothesis": "Constrain SWE-bench topology nodes to a small set of valid repository and memory tools instead of the full registry; this should reduce wasted tool turns and prevent stale tool-filter mismatches from starving verifier and formatter roles of the intended read-only context.",
+      "axis": "tools",
+      "file_path": "C:\\Code\\YGN-SAGE\\external\\meta-harness\\reference_examples\\ygn_sage\\agents\\role_tool_pruned.py",
+      "changes_from_baseline": "Monkey-patches sage.agent_loop_factory.create_node_agent_loop so planner/coder/verifier/synth roles receive a tight, valid tool subset (execute_bash plus read-only memory tools) instead of the full registry or stale nonexistent tool names."
+    }
+  ]
+}

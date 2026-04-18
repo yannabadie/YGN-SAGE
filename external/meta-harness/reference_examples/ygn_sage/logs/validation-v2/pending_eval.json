@@ -1,0 +1,14 @@
+{
+  "iteration": 1,
+  "timestamp": "2026-04-18T11:06:05.2485036+02:00",
+  "candidates": [
+    {
+      "name": "sink_diff_prompt",
+      "module": "reference_examples.ygn_sage.agents.sink_diff_prompt",
+      "hypothesis": "Override the generic final-node prompt on code tasks so the last topology hop forwards or salvages a fenced unified diff instead of collapsing the pipeline output into a generic final answer.",
+      "axis": "prompts",
+      "file_path": "C:\\Code\\YGN-SAGE\\external\\meta-harness\\reference_examples\\ygn_sage\\agents\\sink_diff_prompt.py",
+      "changes_from_baseline": "Monkey-patch TopologyRunner sink-node execution for code tasks to use a diff-preserving final prompt; no routing, memory, tool, or budget changes."
+    }
+  ]
+}

@@ -119,6 +119,10 @@ def _load_config() -> dict:
 PROPOSER_PROMPT_TEMPLATE = """You are the proposer agent for a Meta-Harness evolution loop
 applied to YGN-SAGE, a Rust+Python self-adaptive multi-agent engine.
 
+**ACT NOW. This is not a design discussion — you will use tools to
+  read source + write a new Python file + write a pending_eval.json.**
+  At the end of this turn, both files MUST exist on disk.
+
 ## Your task
 
 Propose ONE new candidate harness that may improve the aggregate
@@ -366,6 +370,15 @@ def update_frontier(rows: list[dict]) -> None:
 
 
 def main() -> int:
+    # DO NOT REMOVE: Windows consoles default to cp1252 and crash on the
+    # arrows/box-drawing/ellipses sprinkled through our prints. The v2
+    # dry-run (2026-04-18) died on exactly this after Codex succeeded.
+    # Regression guard — if you strip this, restore the log test below.
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except AttributeError:
+            pass
     parser = argparse.ArgumentParser(description="Meta-Harness × YGN-SAGE evolution loop")
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--run-name", type=str, default="default")

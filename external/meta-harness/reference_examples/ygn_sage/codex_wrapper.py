@@ -173,9 +173,13 @@ def run(
     cwd_p.mkdir(parents=True, exist_ok=True)
 
     codex_exe = _resolve_codex_exe()
+    # Pass the prompt via stdin. Avoids Windows command-line escaping
+    # bugs that silently truncated or mangled long multi-line prompts
+    # when passed as an argv arg (the original propose run showed a
+    # 4KB prompt producing 0 tokens of output — exec arg corruption).
+    # Codex treats `-` or a missing prompt argument as "read from stdin".
     cmd = [
-        codex_exe, "exec",
-        prompt,
+        codex_exe, "exec", "-",
         "--json",
         "-m", model,
         "-c", f"model_reasoning_effort={reasoning_effort}",
@@ -191,6 +195,7 @@ def run(
     try:
         proc = subprocess.run(
             cmd,
+            input=prompt,
             capture_output=True,
             text=True,
             encoding="utf-8",
