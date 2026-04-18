@@ -976,6 +976,12 @@ class CognitiveOrchestrationPipeline:
                 agent_loop_factory=_agent_loop_factory,
             )
             result = await runner.run(ctx.task)
+            # Roll up tool-use telemetry from TopologyRunner → ctx. Without
+            # this the bench manifest sees zero even on multi-agent paths
+            # (Codex 2026-04-18 review flagged this gap at pipeline.py:963).
+            ctx.tool_call_count = getattr(runner, "tool_call_count", 0)
+            ctx.tool_turn_count = getattr(runner, "tool_turn_count", 0)
+            ctx.executed_commands = list(getattr(runner, "executed_commands", []))
             if result == "__REROUTE__" and self.engine:
                 log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
                 self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
@@ -1015,6 +1021,11 @@ class CognitiveOrchestrationPipeline:
                     agent_loop_factory=_agent_loop_factory,
                 )
                 result = await runner2.run(ctx.task)
+                # Prefer the post-reroute telemetry (it's the attempt that
+                # actually produced the final output).
+                ctx.tool_call_count = getattr(runner2, "tool_call_count", 0)
+                ctx.tool_turn_count = getattr(runner2, "tool_turn_count", 0)
+                ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
 
             # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
             if result and result != "__REROUTE__" and self.quality_estimator:

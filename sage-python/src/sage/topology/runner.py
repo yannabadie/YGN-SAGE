@@ -102,6 +102,12 @@ class TopologyRunner:
         self._approval_callback = approval_callback  # HITL: async fn(decision) -> bool
         self._node_outputs: dict[int, str] = {}
         self._node_exec_count: dict[int, int] = {}  # track per-node execution count
+        # Aggregate tool-use telemetry summed across all per-node AgentLoops
+        # executed by this runner. Surfaced to pipeline ctx so bench manifests
+        # reflect real multi-agent behavior, not per-node zeros.
+        self.tool_call_count: int = 0
+        self.tool_turn_count: int = 0
+        self.executed_commands: list[str] = []
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -454,9 +460,17 @@ class TopologyRunner:
         # Execute
         result = await loop.run(full_task)
         self._node_outputs[node_idx] = result
+        # Aggregate tool-use telemetry — per-node counters are local to each
+        # AgentLoop; without this rollup the pipeline ctx sees zero even
+        # when nodes did call tools.
+        self.tool_call_count += int(getattr(loop, "tool_call_count", 0) or 0)
+        self.tool_turn_count += int(getattr(loop, "tool_turn_count", 0) or 0)
+        node_commands = list(getattr(loop, "executed_commands", []) or [])
+        if node_commands:
+            self.executed_commands.extend(f"[{role}] {c}" for c in node_commands)
         log.info(
-            "[TopologyRunner] node %d (%s) completed via agent_loop, output %d chars",
-            node_idx, role, len(result),
+            "[TopologyRunner] node %d (%s) completed via agent_loop, output %d chars, tool_calls=%d",
+            node_idx, role, len(result), int(getattr(loop, "tool_call_count", 0) or 0),
         )
 
         # Inter-node quality signal (VPRMs pattern, arXiv 2601.17223):
