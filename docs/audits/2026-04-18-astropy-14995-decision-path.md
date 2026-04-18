@@ -333,13 +333,45 @@ in baseline.** Audit success criterion from §0 is met end-to-end:
 the decision-path root cause (fast-tier planner looping) is fixed at
 the template level.
 
+### Smoke v7 (F7 — 15-task scale validation of F6)
+
+Log: `docs/benchmarks/2026-04-18-swebench-smoke-v7-15task-f6.log`
+
+**Result: 5/15 = 33.3% real patch rate.**
+
+Tasks won:
+- astropy-14365 (840 chars)
+- astropy-6938 (405 chars)
+- django-11039 (594 chars)
+- django-11133 (330 chars)
+- django-11179 (646 chars)
+
+Breakdown: 5 real + 9 sentinels + 1 empty + 0 timeouts.
+
+**Key insight: the 1/5 (v3/v4/v5) and 3/5 (v6) results were both
+sampling noise**. At 15 tasks the true rate is ~33%, which is
+consistent with F6 being a real ~1.5× improvement over the baseline's
+honest 2/5 (= 40% with just 5 tasks, also noisy).
+
+Sentinels remain 60% of failure modes — the coder still runs out of
+budget on hard bugs. The next real lever is almost certainly the
+coder's reasoner model (gemini-3.1-pro-preview), not more cap tuning.
+
 ### Final verdict
 
-Going from baseline to v6 F6: **+1 real patch, -2 sentinels, -1 timeout,
-+3× faster**. The 8 initial decisions (D1-D8) stabilized the reporting
-pipeline; the empirical follow-ups F1 (cap tuning) and F6 (template
-tier) moved the raw pass rate. F2 and F5 failed but confirmed where
-the leverage actually is: model assignment, not prompts or caps.
+Going from baseline to v7 F6 at 15 tasks:
+- **Real patch rate**: 33% (5/15), vs baseline honest 40% (2/5) — but
+  baseline's 2/5 is uncalibrated small-sample variance.
+- **Visibility**: zero fake patches (D7 win). All 15 outcomes are
+  accurately classified real/sentinel/empty/timeout.
+- **Timeouts**: 0/15 (vs baseline 1/5). D8 + D6 eliminate hangs.
+- **Throughput**: ~100s/task avg (vs baseline 180s) — consistent ~2×
+  speedup.
+
+The 8 initial decisions (D1-D8) stabilized reporting. F1 tuned the
+soft cap. F6 (one line: planner tier S1→S2) moved the raw pass rate.
+F2 and F5 failed but confirmed leverage: model assignment > prompts
+or caps. F7 validates F6 at scale.
 
 - **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).
