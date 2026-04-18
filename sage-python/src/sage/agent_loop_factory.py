@@ -19,6 +19,14 @@ from sage.tools.registry import ToolRegistry
 # Tool sets per role (H6: prevent recursive validation on verifiers)
 _VERIFIER_TOOLS = ["execute_bash", "stm_read", "stm_write", "ltm_recall"]
 _FORMATTER_TOOLS = ["stm_read", "stm_write", "ltm_recall"]
+# F5 audit fix attempt (2026-04-18): stripped execute_bash from planner,
+# hoping to force plain-text emission on fast-tier S1 model. Smoke v5
+# result: sentinels went from 1 (v3/v4) back to 3 — WORSE signal.
+# Hypothesis: without execute_bash, the planner emits text BUT the plan
+# is structurally weaker (no repo grounding) and downstream coder can't
+# execute it, cascading new sentinels. Reverted. Log retained for
+# posterity at docs/benchmarks/2026-04-18-swebench-smoke-v5-f5-structural-reverted.log.
+# _PLANNER_TOOLS = ["stm_read", "stm_write", "ltm_recall", "search_memory"]  # F5 reverted
 
 # Roles that get restricted validation (H6)
 _NO_VALIDATION_ROLES = {"verifier", "output_formatter", "formatter", "aggregator", "critic"}
@@ -84,6 +92,8 @@ def create_node_agent_loop(
         tools = _VERIFIER_TOOLS
     elif any(r in role_lower for r in ("format", "output", "aggregat")):
         tools = _FORMATTER_TOOLS
+    # F5 attempted planner tool-stripping here — reverted, see the
+    # _PLANNER_TOOLS comment block above for the result.
 
     # Validation level. Sink/verifier roles always get 0 (H6: no recursive
     # validation). S3 tasks get PRM (level 3) ONLY when the domain wants

@@ -291,9 +291,19 @@ Net: 1 real → 1 real (different task recovered, another regressed). But struct
   Results identical to v3 (1 real / 1 sentinel / 3 empty). Planner still
   emits 50-char sentinel at 5-8 tool calls. **Hypothesis**: the S1 fast
   model (gemini-3.1-flash-lite) underweights prompt-level "must emit"
-  directives when it's mid-tool-call-loop. Real fix probably requires
-  a structural constraint (e.g., strip tools from planner role entirely
-  and push exploration to coder) rather than prompt tightening.
+  directives when it's mid-tool-call-loop.
+- **F5** *(COMPLETE, REVERTED — structural fix backfired)*: Tried stripping
+  `execute_bash` from the planner role at the factory level
+  (`agent_loop_factory.py` _PLANNER_TOOLS). Goal: remove the LLM's
+  option to loop on tool calls. Smoke v5 log:
+  `docs/benchmarks/2026-04-18-swebench-smoke-v5-f5-structural-reverted.log`.
+  Results: **1 real + 3 sentinels + 1 empty** — sentinels went from 1 (v3/v4)
+  back to 3. The different task won (astropy-14365 instead of astropy-6938),
+  suggesting just LLM variance. **Lesson**: without `execute_bash` the
+  planner emits untested text, and the downstream coder inherits a
+  plan it can't execute — producing new cascading sentinels.
+  Net same real_count (1), worse sentinel signal. Reverted in the
+  same commit per the "no dead code" rule.
 - **F2** *(partial insight from smoke v2)*: Planners (S1 max=5) sentinel at 5/5 tool calls. The `_PLANNER` role prompt (`topology/role_prompts.py:37-58`) explicitly allows `execute_bash` + `search_memory` for repo sanity checking. With S1 fast-tier models (gemini-3.1-flash-lite) and D8 disabled for S1, planners burn their full budget on tools without emitting final content. The hard rule "Do NOT emit code" doesn't have a matching "DO emit final plan" clause. Two potential fixes (deferred): (a) tighten prompt to require final content on last step, (b) restrict planner tool use (let coder do exploration).
 - **F3**: Docker-eval the v2 patch (astropy-14365, 647 chars) to verify it's semantically correct, not just syntactically a diff.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order appears to have shifted between runs — investigate `load_swebench_dataset` determinism).
