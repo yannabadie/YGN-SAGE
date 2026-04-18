@@ -127,6 +127,13 @@ class AgentLoop:
         self.step_count = 0
         self.total_inference_time = 0.0
         self.total_cost_usd = 0.0
+        # Tool-call telemetry. Telemetry-only: the counters don't gate any
+        # decision; they're surfaced to PipelineContext and bench manifests
+        # so we can tell "agent never called tools" from "tools were called
+        # but the task budget ran out" without trusting reporter inference.
+        self.tool_call_count = 0   # total individual function_call invocations
+        self.tool_turn_count = 0   # turns on which the LLM returned >=1 tool call
+        self.executed_commands: list[str] = []  # bash commands executed (truncated)
         self.start_time = 0.0
         self._s3_retries = 0
         self._max_s3_retries = S3_MAX_RETRIES
@@ -270,6 +277,9 @@ class AgentLoop:
         # Initialize run state
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
+        self.tool_call_count = 0
+        self.tool_turn_count = 0
+        self.executed_commands = []
         self._s3_retries = 0
         self._s2_avr_retries = 0
         self._avr_error_history = []
@@ -378,6 +388,9 @@ class AgentLoop:
 
         self.start_time = time.perf_counter()
         self.total_cost_usd = 0.0
+        self.tool_call_count = 0
+        self.tool_turn_count = 0
+        self.executed_commands = []
         self._s3_retries = 0
         self._s2_avr_retries = 0
         self._avr_error_history = []

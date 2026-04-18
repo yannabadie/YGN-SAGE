@@ -256,9 +256,27 @@ async def act(
             tool_calls=response.tool_calls or None,
         )
     )
+    # Telemetry — counters previously declared on loop but never incremented.
+    # Telemetry-only: gates no decision; surfaces to PipelineContext and bench
+    # manifests so "agent never called tools" vs "tools were called but step
+    # budget ran out" can be told apart.
+    loop.tool_turn_count += 1
+    loop.tool_call_count += len(response.tool_calls)
     for tc in response.tool_calls:
         loop._emit(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
         output = await loop._execute_tool_call(tc)
+        # Record bash commands specifically — most useful forensic signal
+        # for investigation-style tasks. Truncate to keep manifests bounded.
+        if tc.name == "execute_bash":
+            cmd_str = ""
+            try:
+                import json as _json
+                args = tc.arguments if isinstance(tc.arguments, dict) else _json.loads(tc.arguments or "{}")
+                cmd_str = str(args.get("command", ""))[:120]
+            except (ValueError, TypeError, AttributeError):
+                pass
+            if cmd_str:
+                loop.executed_commands.append(cmd_str)
         loop.working_memory.add_event("TOOL", f"{tc.name} -> {output}")
         messages.append(Message(role=Role.TOOL, content=output,
                                 tool_call_id=tc.id, name=tc.name))

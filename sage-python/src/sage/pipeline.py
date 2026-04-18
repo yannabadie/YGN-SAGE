@@ -906,6 +906,11 @@ class CognitiveOrchestrationPipeline:
                 try:
                     ctx.result = await self._agent_loop.run(ctx.task)
                     ctx.cost = self._agent_loop.total_cost_usd
+                    # Forward tool-use telemetry from the agent loop so bench
+                    # manifests reflect actual usage, not dead zeros.
+                    ctx.tool_call_count = getattr(self._agent_loop, "tool_call_count", 0)
+                    ctx.tool_turn_count = getattr(self._agent_loop, "tool_turn_count", 0)
+                    ctx.executed_commands = list(getattr(self._agent_loop, "executed_commands", []))
                 finally:
                     # Restore agent_loop state (safe for next run)
                     self._agent_loop._skip_routing = False
