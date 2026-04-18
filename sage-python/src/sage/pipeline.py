@@ -289,6 +289,16 @@ class CognitiveOrchestrationPipeline:
         # Expose full context for observability (bench, tracing, debugging)
         self.last_context = ctx
 
+        # Sync the per-task cost back onto the top-level agent_loop so
+        # bench adapters that read `system.agent_loop.total_cost_usd`
+        # (evalplus, humaneval, legacy reporters) observe the value
+        # regardless of whether this task went through bypass or topology.
+        # The bypass path already wrote ctx.cost from its own loop; the
+        # multi-agent path wrote it from runner aggregation. Writing it
+        # back keeps the observable surface consistent.
+        if self._agent_loop is not None and ctx.cost:
+            self._agent_loop.total_cost_usd = float(ctx.cost)
+
         return ctx.result
 
     # ── Stage 0: Classify ───────────────────────────────────────────────────

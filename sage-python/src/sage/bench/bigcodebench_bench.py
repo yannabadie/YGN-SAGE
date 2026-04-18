@@ -237,11 +237,13 @@ class BigCodeBenchBench:
             log.info("[%d/%d] %s %s (%.0fms)", i + 1, len(task_ids), status, task_id, latency_ms)
 
         total = len(results)
-        cost = (
-            getattr(self.system.agent_loop, "total_cost_usd", 0.0)
-            if self.system
-            else 0.0
-        )
+        # Aggregate cost from per-task results. Reading agent_loop.total_cost_usd
+        # at the end was wrong in topology mode: the top-level agent_loop
+        # doesn't run per-task in multi-agent paths, so the value was whatever
+        # had accumulated from the last bypass run. Per-result costs come from
+        # trace.pipeline_cost (per-task pipeline ctx.cost, now provider-reported
+        # since the 2026-04-18 P0.3 wiring) — summing them is the actual total.
+        cost = sum(r.cost_usd or 0.0 for r in results)
         # Build routing breakdown from collected traces
         routing = {"S1": 0, "S2": 0, "S3": 0}
         for r in results:
