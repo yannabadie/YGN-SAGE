@@ -34,6 +34,50 @@ class HarnessPatcher:
         self.config = config
         self._runner_originals: dict[str, Any] = {}
         self._pipeline_originals: dict[str, Any] = {}
+        self._override_module: Any | None = None
+
+    def _load_python_override(self) -> Any | None:
+        """Load the candidate's Python override module, if any.
+
+        Path resolution: config.python_override_path can be absolute,
+        relative to cwd, or relative to the candidate directory under
+        ~/.sage-meta-harness/candidates/<id>/. Returns the imported
+        module, or None if no path was given or load failed.
+        """
+        path_str = (self.config.python_override_path or "").strip()
+        if not path_str:
+            return None
+        import importlib.util
+        from pathlib import Path as _Path
+        candidates = [_Path(path_str)]
+        if not _Path(path_str).is_absolute():
+            ws = _Path.home() / ".sage-meta-harness" / "candidates" / self.config.id
+            candidates.append(ws / path_str)
+            candidates.append(_Path.cwd() / path_str)
+        for p in candidates:
+            if p.exists() and p.is_file():
+                try:
+                    spec = importlib.util.spec_from_file_location(
+                        f"harness_override_{self.config.id}", p,
+                    )
+                    if spec is None or spec.loader is None:
+                        log.warning("HarnessPatcher: spec load failed for %s", p)
+                        return None
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    log.info("HarnessPatcher: loaded python override from %s", p)
+                    return mod
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "HarnessPatcher: python override load failed (%s): %s",
+                        p, exc,
+                    )
+                    return None
+        log.warning(
+            "HarnessPatcher: python_override_path %r not found in any candidate location",
+            path_str,
+        )
+        return None
 
     # ── Runner patching ─────────────────────────────────────────────────
 
@@ -51,6 +95,17 @@ class HarnessPatcher:
             "_execute_node": runner._execute_node,
             "_max_rounds": runner._max_rounds,
         }
+
+        # ── 0. Optional Python-module overrides ─────────────────────────
+        # Structural evolution beyond the dataclass fields. If the candidate
+        # supplied a .py file with well-known hook functions, load it and
+        # let those replace the method implementations after the dataclass
+        # patches. This is the analog of Stanford's reference_examples/
+        # memory_system.py contract — a proposer that needs to reorder
+        # stages or redefine aggregation can do it here rather than being
+        # forced through the numeric search space only.
+        override_module = self._load_python_override()
+        self._override_module = override_module
 
         # ── 1. Context budget ───────────────────────────────────────────
         def _patched_budget(n_predecessors: int, node_idx: int = 0) -> int:
@@ -287,6 +342,24 @@ class HarnessPatcher:
 
         # ── 4. Debate rounds ────────────────────────────────────────────
         runner._max_rounds = exec_cfg.max_debate_rounds
+
+        # ── 5. Apply Python-module hooks AFTER dataclass patches ────────
+        # (Hooks take priority — a proposer that rewrote gather_predecessor
+        # can completely replace our patched version. This is the intended
+        # escape hatch for structural evolution.)
+        if override_module is not None:
+            _hook = getattr(override_module, "gather_predecessor_context_override", None)
+            if callable(_hook):
+                runner._gather_predecessor_context = lambda idx: _hook(runner, idx)
+                log.info("HarnessPatcher: applied gather_predecessor_context_override hook")
+            _exec_hook = getattr(override_module, "execute_llm_node_override", None)
+            if callable(_exec_hook):
+                async def _patched_exec_from_hook(
+                    node_idx: int, task: str, context_override: str | None = None,
+                ) -> str:
+                    return await _exec_hook(runner, node_idx, task, context_override)
+                runner._execute_llm_node = _patched_exec_from_hook
+                log.info("HarnessPatcher: applied execute_llm_node_override hook")
 
         log.info(
             "HarnessPatcher applied config '%s' (%s) to runner",

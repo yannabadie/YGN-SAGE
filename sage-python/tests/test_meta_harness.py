@@ -196,3 +196,85 @@ class TestPatcher:
             assert runner._max_rounds == 7
 
         assert runner._max_rounds == 3
+
+
+# --- Python override module loading (Apr 18) ---
+
+
+class TestPythonOverrideModule:
+    """Structural evolution via importlib hooks, analog of Stanford
+    reference_examples where candidates are Python modules."""
+
+    def test_no_override_path_is_noop(self, tmp_path):
+        from sage.meta_harness.patcher import HarnessPatcher
+        from sage.meta_harness.config import HarnessConfig
+
+        cfg = HarnessConfig(id="c1")
+        patcher = HarnessPatcher(cfg)
+        assert patcher._load_python_override() is None
+
+    def test_override_path_loads_module(self, tmp_path):
+        from sage.meta_harness.patcher import HarnessPatcher
+        from sage.meta_harness.config import HarnessConfig
+
+        mod_file = tmp_path / "my_override.py"
+        mod_file.write_text(
+            "def gather_predecessor_context_override(runner, node_idx):\n"
+            "    return 'OVERRIDE_' + str(node_idx)\n"
+        )
+
+        cfg = HarnessConfig(id="c2", python_override_path=str(mod_file))
+        patcher = HarnessPatcher(cfg)
+        mod = patcher._load_python_override()
+        assert mod is not None
+        assert callable(getattr(mod, "gather_predecessor_context_override", None))
+        assert mod.gather_predecessor_context_override(None, 3) == "OVERRIDE_3"
+
+    def test_override_path_missing_file_is_none(self):
+        from sage.meta_harness.patcher import HarnessPatcher
+        from sage.meta_harness.config import HarnessConfig
+
+        cfg = HarnessConfig(id="c3", python_override_path="/nonexistent/override.py")
+        patcher = HarnessPatcher(cfg)
+        assert patcher._load_python_override() is None
+
+    def test_override_hook_replaces_gather(self, tmp_path):
+        """End-to-end: override module should replace _gather_predecessor_context."""
+        from sage.meta_harness.patcher import HarnessPatcher
+        from sage.meta_harness.config import HarnessConfig
+
+        mod_file = tmp_path / "override_gather.py"
+        mod_file.write_text(
+            "def gather_predecessor_context_override(runner, node_idx):\n"
+            "    return 'STRUCT_OVERRIDE'\n"
+        )
+        cfg = HarnessConfig(id="c4", python_override_path=str(mod_file))
+        patcher = HarnessPatcher(cfg)
+
+        class _Runner:
+            def _gather_predecessor_context(self, idx):
+                return "original"
+            def _context_budget_per_predecessor(self, n, idx=0):
+                return 1000
+            def _execute_node(self, *a, **kw):
+                return None
+            _max_rounds = 3
+            _node_outputs: dict = {}
+            graph = None
+            _llm = None
+            _provider_pool = None
+            _harness = None
+
+        runner = _Runner()
+        patcher.patch_runner(runner)
+        # After patching the hook should have replaced _gather_predecessor_context
+        assert runner._gather_predecessor_context(0) == "STRUCT_OVERRIDE"
+        patcher.unpatch_runner(runner)
+        # Restored
+        assert runner._gather_predecessor_context(0) == "original"
+
+    def test_from_json_round_trip_preserves_override_path(self):
+        from sage.meta_harness.config import HarnessConfig
+        cfg = HarnessConfig(id="rt", python_override_path="agent.py")
+        restored = HarnessConfig.from_json(cfg.to_json())
+        assert restored.python_override_path == "agent.py"

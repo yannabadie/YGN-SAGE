@@ -151,6 +151,25 @@ class HarnessConfig:
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     topology: TopologyConfig = field(default_factory=TopologyConfig)
 
+    # Optional path to a Python module the proposer wrote that overrides
+    # specific runner/pipeline methods. Enables structural evolution
+    # (= the real Meta-Harness search space from the Stanford paper),
+    # not just the numeric dataclass tuning.
+    #
+    # If set, HarnessPatcher will importlib-load the module and look for
+    # well-known hook functions:
+    #   - gather_predecessor_context_override(runner, node_idx) -> str
+    #   - execute_llm_node_override(runner, node_idx, task, context_override) -> awaitable[str]
+    #   - select_macro_topology_override(omega, delta, gamma, domain) -> str | None
+    # Missing hooks are no-ops; present hooks replace the matching
+    # runner/pipeline method for the duration of the patched context.
+    #
+    # This is a PRAGMATIC extension — the upstream Stanford impl
+    # re-imports whole agent modules per candidate, which is much more
+    # invasive. Hook-based overrides get ~80% of the structural
+    # search space while preserving the bulk of SAGE's hot-path intact.
+    python_override_path: str = ""
+
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=2)
 
@@ -165,6 +184,7 @@ class HarnessConfig:
             id=data.get("id", "unknown"),
             description=data.get("description", ""),
             parent_id=data.get("parent_id", ""),
+            python_override_path=data.get("python_override_path", ""),
             context=ContextConfig(**data.get("context", {})),
             prompts=PromptConfig(**data.get("prompts", {})),
             execution=ExecutionConfig(**data.get("execution", {})),
