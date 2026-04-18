@@ -5,7 +5,7 @@ tags:
   - architecture
   - pipeline
   - f7
-updated: 2026-04-17
+updated: 2026-04-18
 ---
 
 # Pipeline — 6 Etapes
@@ -52,7 +52,8 @@ Un bandit contextuel (Thompson sampling) module exploration vs exploitation.
 **Composant** : ModelAssigner (Rust) + `ModelRegistry.select_for_system()` en bypass
 **Score** : `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)` (meme scoring en topologie et en bypass)
 **Bypass** : `select_for_system(S1/S2/S3)` → premier candidat avec provider disponible
-**Provider exclusion** : `ModelAssigner.exclude_providers(dead)` depuis le health check boot
+**Provider exclusion TTL** (Apr 18) : `ProviderPool.refresh_exclusion_list(assigner)` appelée au début de chaque batch. TTL 300s puis re-probe. Exclusion **non permanente** — recovery auto après outages transitoires.
+**Per-model routing réel** (Apr 18) : `LiteLLMProvider.generate()` honore `config.model` (c9ff902) — avant, `self.model_string` écrasait silencieusement les décisions de ModelAssigner. Voir [[ADR-009-Telemetry-And-Routing-Plumbing]].
 **FrugalGPT cascade** : valide provider avant upgrade modele, `json_schema` seulement pour OpenAI, **forwarde `task_system` depuis Apr 17** (voir [[ADR-007-F7-Routing]])
 **Source** : `sage-core/config/cards.toml` — 19 modeles, 7 providers
 
@@ -87,12 +88,14 @@ de S1 → S3 sur math task → remplaçait Rust math gratuit par LLM call à
 ## Stage 5 — EXECUTE (Tool-Calling Loop)
 
 **Single entry point** : `system.run()` → pipeline.run() (Apr 9-10 unified)
-**Per-node max_steps** : F1 scale par task tier (S1=5, S2=10, S3=20)
+**Per-node max_steps** : F1 scale par task tier (S1=5, S2=10, S3=20). **Note Apr 18** : S3=20 trop tight quand planner utilise 20+ tool_calls avant de produire output → sentinel. Dynamic scaling via plateau detection à l'étude.
 **Agent tools** : **14** outils (execute_bash, create_python_tool, create_bash_tool, 8 memoire, 2 knowledge, +`sage_recurse` Apr 17 Sprint 4)
 **Tool-calling** : generate(tools) → LLM retourne tool_calls → execute → re-generate (boucle)
-**Tool choice** : depuis `da839dc` (Apr 17), `tool_choice="required"` sur coder/actor steps 1-2 pour forcer F6 mandate empiriquement ignoré
+**Tool choice** : `tool_choice=None` (auto, default). `da839dc` (force "required" sur coder/actor steps 1-2) reverté Apr 18 via `e69cb7f` — diagnostic basé sur compteur mort (voir [[ADR-009-Telemetry-And-Routing-Plumbing]]). Paramètre plumbing conservé sur `LLMProvider.generate()` pour futures expés.
+**Telemetry Apr 18** : `tool_call_count`, `tool_turn_count`, `executed_commands` désormais câblés — agrégés per-node → TopologyRunner → `ctx`. Bench manifests montrent 19-62 tool_calls réels par tâche (vs 0 dead counter avant).
 **TopologyRunner** : noeuds en ordre DAG via `agent_loop` factory (Apr 9-10 Phase 2 — vrais agents par node)
 **Deduplication** : Jaccard similarity gate (S2-MAD)
+**Sentinel strip** (Apr 18, 85282e0) : outputs match `[sage: agent exited after...]` filtrés hors predecessor context — empêche la cascade où un sentinel upstream fait produire sentinel en aval.
 **ExecutionTrace** : dataclass structuree par run (tokens, cost, latency par noeud)
 
 ### Validation level — domain-symetrique au F7 (Apr 17)

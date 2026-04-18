@@ -4,7 +4,7 @@ type: moc
 tags:
   - issues
   - moc
-updated: 2026-04-17
+updated: 2026-04-18
 ---
 
 # Issues Connues
@@ -14,7 +14,7 @@ updated: 2026-04-17
 | Issue | Status | Detail |
 |-------|--------|--------|
 | [[Sandbox-Safety]] | Durci + structured argv (Apr 17) | CORAL 84fee02 ajoute allowlist argv, pas encore formel |
-| [[Sage-Discover-Broken]] | **Resolu Apr 17** | 3 bugs ExoCortex fixes (`9b8d91c`, `2c994e0`, `60793b7`, `2780bbb`, `d40dc4e`). Rattrapage v3 active |
+| [[Sage-Discover-Broken]] | **Resolu Apr 17** | 3 bugs ExoCortex fixes (`9b8d91c`, `2c994e0`, `60793b7`, `2780bbb`, `d40dc4e`). Rattrapage terminé (132 papers Apr 18) |
 
 ## P2 — Importantes
 
@@ -24,8 +24,26 @@ updated: 2026-04-17
 | [[Robustness-Zero]] | Ouvert | 0% bare ET SAGE |
 | [[Memory-Consolidation-Incomplete]] | Ouvert | Design ok, implementation partielle |
 | [[Path6-Not-Default]] | Design choice | Opt-in, pas dans pipeline defaut |
-| SWE-bench data contamination | **Decouvert Apr 17 PM** | smoke v3 `_tool_call_count=0` sur 3/3 — patches issus du recall LLM. Mitige par `tool_choice="required"` (`da839dc`) sur coder/actor steps 1-2 |
-| Custom prompt registry | Discute, non implemente | Indexation (task_embed, role, template) — alternative cheaper proposee : injecter plan du planner dans system_prompt aval |
+| Step budget S3 trop tight | **Ouvert Apr 18** | planner utilise 20+ tool_calls → sentinel sans patch. Prochaine direction : dynamic scaling via plateau detection |
+| Runtime circuit-breaker sur AgentLoop path | **Ouvert Apr 18** (Codex flag) | `record_failure()` câblé seulement sur `_execute_node`, pas sur chemin AgentLoop |
+| `_cost_usd=0.0` telemetry | **Ouvert Apr 18** | Distinct du tool_call counter — usage tokens pas propagés dans ctx |
+| Custom prompt registry | Discute, non implemente | Meta-Harness couvre déjà ça (MASS arXiv 2502.02533) ; deferred |
+| SWE-bench data contamination | **Mitigation Apr 18** : `--offset` skip memorized prefix (97fc64f) + telemetry réelle montre vraie investigation (62 bash/task)| smoke v5d/v5e : 3-4/5 real avec vrais fixes multi-fichiers, pas recall |
+
+## Recemment fixes (Apr 18 — plumbing + telemetry)
+
+| Issue | Severite | Fix |
+|-------|----------|-----|
+| tool_call_count compteur mort | P0 | `988aa99` (bypass) + `0677376` (topology aggregation) — champ `PipelineContext` jamais incrémenté depuis sa création. Diagnostic v3-v5a entièrement basé sur ce compteur mort |
+| Bench reporter mentait (sentinels comptés comme patches) | P0 | `4a33faa` — classifier `_classify_prediction(real/sentinel/empty)` + `EMPTY_STEP_SENTINEL` nommé + 5 tests sync cross-module |
+| Sentinel cascade dans predecessor context | P1 | `85282e0` — `_is_sentinel()` filter dans `_gather_predecessor_context` |
+| `config.model` ignoré par LiteLLMProvider | P0 | `c9ff902` — per-model routing réel (ModelAssigner décisions silencieusement droppées depuis création cards.toml) |
+| Provider="unknown" → BadRequest litellm | P0 | `4a2c038` — `_infer_provider_from_model_id` + known-prefix check |
+| OpenRouter qwen/* rejeté | P1 | `f754535` — détection known-prefix (pre-formatted) |
+| health_check silence: "coroutine never awaited" | P1 | `fe66d52` — asyncio.run() + thread fallback, logs explicites |
+| 429 insufficient_quota = "alive" | P1 | `fe66d52` — classifier quota-aware (connection / 429+quota → DEAD ; 401/400/429-transient → ALIVE) |
+| Exclusion providers permanente | P1 | `3148667` — TTL 300s + `refresh_exclusion_list()` réprobe périodique, recovery auto |
+| tool_choice="required" cause sentinels | P1 | `e69cb7f` — revert `da839dc` (diagnostic basé sur compteur mort) |
 
 ## Recemment fixes (Apr 17 PM — F7 + ExoCortex)
 

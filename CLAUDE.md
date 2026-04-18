@@ -55,14 +55,15 @@ python -m sage.meta_harness apply                    # Apply best to production
 python -m sage.meta_harness.auto_propose -n 10       # Automated search (10 iterations)
 ```
 
-## Current State (April 17, 2026)
+## Current State (April 18, 2026)
 
-- **Tests**: Python **1897 collected** / Rust **429 passed** (2026-04-10)
-- **Templates**: 11 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout)
-- **Routing**: kNN 92% GT, Rust SystemRouter 88% (now wired end-to-end since 2026-04-10, commit 921cb7e), heuristic 34% (dead code)
-- **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml
-- **Benchmarks**: BigCodeBench Hard **45.9%** (tuned v4, 2026-04-07, above The Conductor 40%) / 37.8% (budget), HumanEval+ 89.6%, MASBENCH breadth **+22pp p=0.015**
-- **Architecture**: Unified entry point Phases 1-3 MERGED (2026-04-10, f212f93). `system.run()` → `pipeline.run()` single path; topology nodes = real agents via factory.
+- **Tests**: Python **1906 collected** (+10 Apr 18: telemetry/per-model routing/TTL health tests) / Rust **441 passed**
+- **Templates**: 12 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout, formal_solver)
+- **Routing**: kNN 100% GT (CORAL exact-match override), Rust SystemRouter 88%, heuristic 34% (dead code)
+- **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml. **TTL'd exclusion** (300s re-probe, Apr 18 3148667) — not permanent.
+- **Benchmarks**: BigCodeBench Hard **45.9%** / **SWE-bench Lite smoke 70% average (v5d 4/5, v5e 3/5)** after Apr 18 plumbing fixes (vs 10% baseline v4)
+- **Architecture**: Unified entry point Phases 1-3 MERGED. `system.run()` → `pipeline.run()` single path; topology nodes = real agents via factory.
+- **Plumbing Apr 18 (13 commits)**: Revert tool_choice=required ; bench real/sentinel/empty classifier ; sentinel cascade strip ; planner-injection opt-in ; `--offset` CLI ; **telemetry wire-up** (tool_call_count was dead counter) ; **per-model routing** (config.model was ignored) ; quota-aware health_check ; TTL exclusion+reprobe ; provider inference by model_id. See [[ADR-009-Telemetry-And-Routing-Plumbing]] in Obsidian vault.
 - **Training**: ⏸ PARKED on main (2026-04-15, b2f59ee). Code on dedicated branch, checkpoints on HF.
 - **Trained models**: `yannabadie/sage-topology-policy-local` (Phase C, best), `yannabadie/sage-topology-policy-v2` (Nemotron)
 - **PyPI**: `pip install ygn-sage` — v0.1.0-alpha

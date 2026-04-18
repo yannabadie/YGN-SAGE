@@ -50,7 +50,10 @@ export HF_HUB_OFFLINE=1 HF_DATASETS_OFFLINE=1 PYTHONUNBUFFERED=1
 ```
 DO NOT manually exclude providers via empty env vars. The boot health check
 (`ProviderPool.health_check()`) probes every provider and the Rust ModelAssigner
-(`exclude_providers()`) removes dead ones from the scoring loop. Trust the system.
+(`exclude_providers()`) removes dead ones from the scoring loop. **Exclusion is
+time-bounded** (Apr 18, DEFAULT_EXCLUSION_TTL_SEC=300) — `SWEBenchBench` calls
+`ProviderPool.refresh_exclusion_list(assigner)` at batch start so recovered
+providers come back automatically. Trust the system.
 
 ### During run — monitor these signals
 ```bash
