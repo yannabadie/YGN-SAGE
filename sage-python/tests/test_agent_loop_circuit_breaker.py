@@ -192,3 +192,60 @@ async def test_three_consecutive_failures_record_three_times() -> None:
         c.args[0] for c in provider_pool.record_failure.call_args_list
     ]
     assert all(p == "flaky-provider" for p in recorded_providers)
+
+
+@pytest.mark.asyncio
+async def test_real_provider_pool_excludes_after_three_failures() -> None:
+    """Integration: real ProviderPool, three consecutive record_failure calls
+    must open the circuit for that provider.
+
+    This is the plan's actual P1.2 done-criterion — "provider is DEAD-marked
+    via ProviderPool.exclude_providers()". The earlier tests only verified
+    the wiring fires; this one proves the downstream effect.
+    """
+    from unittest.mock import MagicMock
+
+    from sage.llm.provider_pool import ProviderPool
+
+    # Minimal ProviderPool — default_provider + registry can be stubs since
+    # we only exercise the circuit-breaker surface.
+    default_provider = MagicMock()
+    registry = MagicMock()
+    pool = ProviderPool(
+        default_provider=default_provider,
+        registry=registry,
+        default_config=None,
+    )
+
+    provider_name = "flaky-openai"
+
+    # Before any failures: provider is available (closed circuit).
+    assert pool.is_available(provider_name), "fresh provider must start available"
+
+    # Record 3 consecutive failures — the default CircuitBreaker threshold.
+    for i in range(3):
+        pool.record_failure(provider_name, RuntimeError(f"429 rate-limit #{i + 1}"))
+
+    # After 3 failures: circuit must be OPEN, so is_available == False.
+    # This is what "DEAD-marked" means in the plan — next `resolve()` call
+    # sees the provider as unavailable and falls back to the default.
+    assert not pool.is_available(provider_name), (
+        "ProviderPool.is_available must return False after 3 consecutive "
+        "record_failure calls. If this fails, the CircuitBreaker threshold "
+        "was raised OR TopologyRunner's wiring no longer reaches the pool — "
+        "both regressions from P1.2 (2026-04-18 mega-plan)."
+    )
+
+    # Sanity: a DIFFERENT provider on the same pool must still be available.
+    # Per-provider circuit breakers must not bleed into each other.
+    assert pool.is_available("other-provider"), (
+        "per-provider circuit breakers must be isolated"
+    )
+
+    # Recovery path: a success call resets the counter and re-opens the
+    # circuit (TTL-bounded per DEFAULT_EXCLUSION_TTL_SEC=300 in the real
+    # boot path; here we exercise the manual-recovery surface).
+    pool.record_success(provider_name)
+    assert pool.is_available(provider_name), (
+        "record_success must reset the failure counter and re-open the circuit"
+    )
