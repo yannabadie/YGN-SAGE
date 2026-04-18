@@ -41,6 +41,40 @@ for _p in (str(_HERE), str(_META_HARNESS_ROOT)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
+
+def _load_sage_env() -> None:
+    """Load the repo `.env` with CRLF stripping.
+
+    The 2026-04-18 first real eval hit AuthenticationError on Gemini
+    because `.env` has CRLF line terminators and `set -a; source .env`
+    trailing \\r ended up appended to every API key value. We parse the
+    file here ourselves so every launch path — bash, PowerShell, CI —
+    behaves the same. Only unset vars are populated; anything already
+    set in the environment wins.
+    """
+    # _META_HARNESS_ROOT = external/meta-harness/. Repo root is two levels
+    # up (.parents[1]). .parents[0] would be external/ — no .env there.
+    env_path = _META_HARNESS_ROOT.parents[1] / ".env"
+    if not env_path.is_file():
+        return
+    try:
+        raw = env_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        # Don't overwrite keys the caller already exported.
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+_load_sage_env()
+
 # Local imports (siblings in reference_examples/ygn_sage/)
 import codex_wrapper  # type: ignore[import-not-found]
 import benchmark  # type: ignore[import-not-found]
