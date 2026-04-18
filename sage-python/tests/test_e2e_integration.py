@@ -799,15 +799,10 @@ class TestConstantsConsistency:
         assert SPECULATIVE_ZONE_MIN < SPECULATIVE_ZONE_MAX
         assert SPECULATIVE_ZONE_MAX <= S3_COMPLEXITY_FLOOR
 
-    def test_quality_weights_sum_to_one(self):
-        """Quality signal weights (baseline + 4 signals) should sum to ~1.0."""
-        from sage.constants import (
-            QUALITY_BASELINE, QUALITY_LENGTH_WEIGHT, QUALITY_CODE_WEIGHT,
-            QUALITY_ERROR_WEIGHT, QUALITY_AVR_WEIGHT,
-        )
-        total = QUALITY_BASELINE + QUALITY_LENGTH_WEIGHT + QUALITY_CODE_WEIGHT
-        total += QUALITY_ERROR_WEIGHT + QUALITY_AVR_WEIGHT
-        assert abs(total - 1.0) < 0.01, f"Quality weights sum to {total}, expected ~1.0"
+    # test_quality_weights_sum_to_one DELETED 2026-04-18: the 5-signal
+    # QUALITY_* heuristic is banned under critical-directives.md §2
+    # (r=0.34 vs ground truth); constants removed from constants.py.
+    # `test_quality_estimator_v2.py` still guards against re-introduction.
 
     def test_drift_weights_sum_to_one(self):
         """Drift signal weights should sum to 1.0."""

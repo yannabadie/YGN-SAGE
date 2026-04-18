@@ -59,8 +59,8 @@ This doc is the single calibration plan.
 
 | # | Symbol | Value | File:line | Source | Blast radius | Ablation |
 |---|---|---|---|---|---|---|
-| Q1 | QUALITY_BASELINE | 0.30 | `constants.py:44` | **BANNED per critical-directives.md §2** — dead heuristic | None (should not be used) | **DELETE**, not ablate. Migrate any caller to Z3 QualityLabeler |
-| Q2 | QUALITY_LENGTH_WEIGHT | 0.20 | `constants.py:45` | **BANNED per §2** — dead heuristic | None | **DELETE** |
+| Q1 | QUALITY_BASELINE | — | `constants.py:42` (deleted 2026-04-18) | Banned §2 — dead heuristic | None | ✅ DELETED along with 8 sibling `QUALITY_*` constants + `test_quality_weights_sum_to_one` |
+| Q2 | QUALITY_LENGTH_WEIGHT | — | `constants.py:42` (deleted 2026-04-18) | Banned §2 — dead heuristic | None | ✅ DELETED |
 | Q3 | similarity_threshold | 0.7 | `sage-core/src/engine.rs` (kNN decision boundary) | Empirical, calibrated initial | Medium | Sweep {0.6, 0.7, 0.8, 0.85} |
 | Q4 | quality_gate_threshold | 0.5 | `sage-core/src/engine.rs` | **Heuristic** — should be replaced with Z3 formal labeler output | Medium | Compare vs Z3 QualityLabeler only |
 

@@ -39,28 +39,19 @@ BRAKE_HISTORY_MAXLEN = 10       # Deque maxlen for entropy history
 ADAPTIVE_C0_THRESHOLD = 0.85    # Stage 0 confidence to accept routing
 ADAPTIVE_C1_THRESHOLD = 0.70    # Stage 1 confidence to accept routing
 
-# -- Quality estimation weights -----------------------------------------------
-# [BENCH] Calibrated from 600 quality triples (DistilBERT training, 2026-03-12)
-QUALITY_BASELINE = 0.30         # Non-empty response baseline (Signal 1)
-QUALITY_LENGTH_WEIGHT = 0.20    # Adequate length signal (Signal 2)
-QUALITY_CODE_WEIGHT = 0.20      # Code presence for code tasks (Signal 3)
-QUALITY_ERROR_WEIGHT = 0.15     # Error/traceback absence (Signal 4)
-QUALITY_AVR_WEIGHT = 0.15       # AVR convergence signal (Signal 5)
-
-# Quality sub-thresholds
-# [ENG] Non-code tasks get full length score if >= 1 word
-QUALITY_NONCODE_BASELINE = 0.1  # Non-code task without code presence
-
-# AVR convergence tiers
-# [ENG] Fewer iterations = higher quality (converged faster)
-QUALITY_AVR_FAST = 0.15         # <= 2 iterations
-QUALITY_AVR_MEDIUM = 0.10       # <= 4 iterations
-QUALITY_AVR_SLOW = 0.05         # > 4 iterations
-
-# Length adequacy denominators
-# [ENG] Short task prompts expect less output; long prompts expect more
-QUALITY_LENGTH_DENOM_SHORT = 20   # Denominator for task_words < 10
-QUALITY_LENGTH_DENOM_LONG = 50    # Denominator for task_words >= 10
+# -- Quality estimation weights (DELETED 2026-04-18) --------------------------
+# The 5-signal heuristic (QUALITY_BASELINE / QUALITY_LENGTH_WEIGHT /
+# QUALITY_CODE_WEIGHT / QUALITY_ERROR_WEIGHT / QUALITY_AVR_WEIGHT plus
+# their sub-thresholds) is BANNED under .claude/rules/critical-directives.md §2
+# and §6 of docs/heuristics-needing-ablation.md: the correlation with
+# ground-truth quality was r=0.34 Pearson, mediocre compared to the Rust
+# Z3 QualityLabeler (formal verification). No production code referenced
+# these constants — only a `test_quality_weights_sum_to_one` regression
+# test, now also deleted. Use `sage_core.QualityLabeler` instead.
+#
+# `test_quality_estimator_v2.py` keeps an assertion that these constants
+# MUST NOT reappear in the QualityEstimator source — don't re-introduce
+# them without a §2 carve-out.
 
 # -- Agent loop limits --------------------------------------------------------
 # [ENG] Tuned on HumanEval+/MBPP+ benchmarks (2026-03-10)
