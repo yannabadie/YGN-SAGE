@@ -1,21 +1,19 @@
 """Benchmark runner for the Meta-Harness × YGN-SAGE reference example.
 
-Evaluates a candidate SageCandidate against SWE-bench Lite (val set) by
-shelling out to `python -m sage.bench`, then parsing the predictions
-manifest that the bench writes.
+Evaluates a candidate SageCandidate against SWE-bench Lite (val set)
+IN-PROCESS so the candidate's monkey-patched AgentSystem actually
+drives the run. An earlier iteration of this file shelled out to
+`python -m sage.bench` which booted a vanilla AgentSystem and silently
+discarded every candidate override — a correctness bug caught before
+any real iteration ran.
 
-Kept tiny on purpose: the real eval logic lives in sage-python
-(`sage/bench/swebench_bench.py`). This file just:
-  1. Imports the candidate module (validates the contract)
-  2. Invokes `python -m sage.bench ... --generate-only`
-  3. Parses the resulting predictions_meta.json
-  4. Returns {val_score, per_task, cost, latency_s}
-
-Design note: we intentionally DON'T instantiate the candidate here —
-`sage.bench` boots its own AgentSystem via boot_agent_system(). A more
-integrated version (where the candidate controls the AgentSystem passed
-to SWEBenchBench) is future work; for v1 we evaluate candidates that
-affect SAGE through its config files / env vars / monkey-patched modules.
+Flow:
+  1. Import the candidate module (validates the contract)
+  2. Call candidate.build_system() → get AgentSystem instance
+  3. Wrap it in SWEBenchBench(system=..., ...)
+  4. await bench.run_generate_only(limit=..., offset=...)
+  5. Parse the resulting predictions_meta.json
+  6. Return {val_score, per_task, cost, latency_s}
 """
 from __future__ import annotations
 
@@ -119,59 +117,40 @@ def validate_candidate(module_name: str) -> str:
     return "ok"
 
 
-def run_sage_bench(
+def _load_candidate_instance(module_name: str):
+    """Return a concrete SageCandidate from a module import path."""
+    mod = importlib.import_module(module_name)
+    SageCandidate = _import_sage_candidate()
+    candidate = getattr(mod, "CANDIDATE", None)
+    if isinstance(candidate, SageCandidate):
+        return candidate
+    for attr in dir(mod):
+        obj = getattr(mod, attr)
+        if isinstance(obj, type) and issubclass(obj, SageCandidate) and obj is not SageCandidate:
+            return obj()
+    raise ImportError(f"no CANDIDATE in {module_name!r}")
+
+
+async def _run_sage_bench_in_process(
+    system: Any,
     dataset: str,
     limit: int,
     offset: int,
     timeout_per_task_s: int,
-    env_overrides: dict[str, str] | None = None,
 ) -> tuple[Path, Path]:
-    """Invoke `python -m sage.bench --type swebench --generate-only` and
-    return (predictions_path, meta_path) once it finishes.
+    """Drive SWEBenchBench directly with the candidate's AgentSystem.
 
-    Raises RuntimeError on non-zero exit.
+    Returns (predictions_path, meta_path). Raises on fatal error.
     """
-    cmd = [
-        sys.executable, "-m", "sage.bench",
-        "--type", "swebench",
-        "--dataset", dataset,
-        "--limit", str(limit),
-        "--offset", str(offset),
-        "--generate-only",
-    ]
-    env = os.environ.copy()
-    env.setdefault("PYTHONUNBUFFERED", "1")
-    env.setdefault("HF_HUB_OFFLINE", "1")
-    env.setdefault("HF_DATASETS_OFFLINE", "1")
-    if env_overrides:
-        env.update(env_overrides)
-
-    log_path = Path(tempfile.mkdtemp(prefix="mh_sage_")) / "bench.log"
-    with log_path.open("w", encoding="utf-8") as log_f:
-        proc = subprocess.run(
-            cmd,
-            stdout=log_f,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout_per_task_s * limit + 120,
-            check=False,
-            env=env,
-        )
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"sage.bench exited {proc.returncode}; see {log_path}"
-        )
-
-    # sage.bench writes to a tempdir named sage_swebench_* and prints the
-    # path near the end. Parse the log to find it.
-    log_text = log_path.read_text(encoding="utf-8", errors="replace")
-    import re
-    m = re.search(r"Predictions saved to:\s+(\S+)", log_text)
-    if not m:
-        raise RuntimeError(f"could not locate predictions path in {log_path}")
-    preds_path = Path(m.group(1))
+    from sage.bench.swebench_bench import SWEBenchBench  # type: ignore[import-not-found]
+    bench = SWEBenchBench(
+        system=system,
+        event_bus=None,
+        dataset=dataset,
+        timeout_per_task=timeout_per_task_s,
+    )
+    preds_path = await bench.run_generate_only(limit=limit, offset=offset)
+    preds_path = Path(preds_path)
     meta_path = preds_path.parent / "predictions_meta.json"
     return preds_path, meta_path
 
@@ -184,10 +163,11 @@ def evaluate(
     offset: int = 3,
     timeout_per_task_s: int = 300,
 ) -> dict[str, Any]:
-    """Full pipeline: validate → invoke bench → score → return.
+    """Full pipeline: validate → build system → run bench → score.
 
-    `candidate_module` should be an import path reachable from Python, e.g.
-    `reference_examples.ygn_sage.agents.baseline`.
+    `candidate_module` must resolve to a SageCandidate via
+    `reference_examples.ygn_sage.agents.<id>` (sys.path is prepped by
+    the import of this module).
     """
     t0 = time.time()
     validation = validate_candidate(candidate_module)
@@ -198,16 +178,33 @@ def evaluate(
             "latency_s": time.time() - t0,
         }
 
-    preds_path, meta_path = run_sage_bench(
-        dataset=dataset,
-        limit=limit,
-        offset=offset,
-        timeout_per_task_s=timeout_per_task_s,
-        # Candidate-specific env vars could be forwarded here (e.g. to
-        # activate feature flags defined by the candidate module). For v1
-        # the baseline doesn't need any.
-        env_overrides=None,
-    )
+    try:
+        candidate = _load_candidate_instance(candidate_module)
+        system = candidate.build_system({"dataset": dataset, "limit": limit, "offset": offset})
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "val_score": 0.0,
+            "error": f"build_system failed: {type(exc).__name__}: {exc}",
+            "latency_s": time.time() - t0,
+        }
+
+    import asyncio
+    try:
+        preds_path, meta_path = asyncio.run(
+            _run_sage_bench_in_process(
+                system=system,
+                dataset=dataset,
+                limit=limit,
+                offset=offset,
+                timeout_per_task_s=timeout_per_task_s,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "val_score": 0.0,
+            "error": f"bench run failed: {type(exc).__name__}: {exc}",
+            "latency_s": time.time() - t0,
+        }
 
     if meta_path.exists():
         preds = json.loads(meta_path.read_text(encoding="utf-8"))
