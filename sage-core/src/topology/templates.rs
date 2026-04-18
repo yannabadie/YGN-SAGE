@@ -927,6 +927,34 @@ mod tests {
     }
 
     #[test]
+    fn test_sequential_planner_tier_is_s2() {
+        // F6 audit fix (2026-04-18 docs/audits/2026-04-18-astropy-14995-*):
+        // planner must be system=2 (reasoner-tier), not system=1. S1 fast
+        // models loop on tool calls without emitting the plan; reasoner-
+        // tier models complete the plan and hand off to the coder.
+        // Empirical proof: smoke v6 jumped 1/5 → 3/5 real patches after
+        // this single-line tier bump. If someone drops the planner back
+        // to S1 "for cost reasons," this test catches it.
+        let g = sequential("model-a");
+        let planner = g.try_get_node(0).expect("sequential has 3 nodes");
+        assert_eq!(planner.role, "planner");
+        assert_eq!(
+            planner.system, 2,
+            "Sequential planner must be system=2 (reasoner). F6 fix; \
+             dropping to system=1 regressed astropy-14995 from real \
+             patch to 52-char sentinel in all earlier smokes."
+        );
+        // Sanity: coder is also S2 (unchanged)
+        let coder = g.try_get_node(1).expect("sequential has 3 nodes");
+        assert_eq!(coder.role, "coder");
+        assert_eq!(coder.system, 2);
+        // Synthesizer remains S1 (sink formatting, cheap is fine)
+        let synth = g.try_get_node(2).expect("sequential has 3 nodes");
+        assert_eq!(synth.role, "synthesizer");
+        assert_eq!(synth.system, 1);
+    }
+
+    #[test]
     fn test_parallel_structure() {
         let g = parallel("model-a", 4);
         // 1 source + 4 workers + 1 aggregator = 6 nodes
