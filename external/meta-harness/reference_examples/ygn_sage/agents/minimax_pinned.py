@@ -53,9 +53,14 @@ class MinimaxPinnedCoder(SageCandidate):
         _original_assign = pipeline._stage_assign_models
 
         def _patched_assign_models(ctx: Any) -> Any:
-            """Inject provider_hints=[(node_idx, 'minimax'), ...] for every
-            coder-role node before ModelAssigner scores candidates."""
-            hints_list = []
+            """Inject provider_hints={node_idx: 'minimax', ...} for every
+            coder-role node before ModelAssigner scores candidates.
+
+            PipelineContext.provider_hints is a dict[int, str] — the 2026-04-18
+            v2 eval crashed with 'list' object has no attribute 'items' when
+            this patch was returning a list of (idx, str) tuples instead.
+            """
+            hints_to_add: dict[int, str] = {}
             topology = getattr(ctx, "topology", None)
             if topology is not None:
                 node_count = int(getattr(topology, "node_count", lambda: 0)() or 0)
@@ -65,10 +70,15 @@ class MinimaxPinnedCoder(SageCandidate):
                     except (AttributeError, Exception):
                         continue
                     if _is_coder(getattr(node, "role", "")):
-                        hints_list.append((idx, "minimax"))
-            if hints_list:
-                existing = getattr(ctx, "provider_hints", None) or []
-                ctx.provider_hints = list(existing) + hints_list
+                        hints_to_add[idx] = "minimax"
+            if hints_to_add:
+                existing = getattr(ctx, "provider_hints", None)
+                if not isinstance(existing, dict):
+                    existing = {}
+                # Patch-injected hints win over whatever was there, by design.
+                merged = dict(existing)
+                merged.update(hints_to_add)
+                ctx.provider_hints = merged
             return _original_assign(ctx)
 
         pipeline._stage_assign_models = _patched_assign_models

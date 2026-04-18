@@ -128,10 +128,22 @@ class OpenAICompatProvider:
         """Apply provider-specific parameter quirks before API call."""
         model = params.get("model", self.model_id).lower()
 
-        # OpenAI GPT-5+ models require max_completion_tokens instead of max_tokens.
-        if self.provider_name == "openai" and "max_tokens" in params:
-            if any(tag in model for tag in ("gpt-5", "o1", "o3", "o4")):
+        # OpenAI GPT-5+ / o-series reasoning models:
+        #   - require max_completion_tokens instead of max_tokens
+        #   - reject any temperature != 1 (observed 2026-04-18 on every
+        #     OpenAI-fallback call during the Meta-Harness v2 real eval)
+        # Mirror the litellm_provider.py clamp here because this compat
+        # adapter is still used as the topology-runner fallback provider
+        # and was the source of 41 temperature-rejection errors that made
+        # 4/5 SWE-Lite tasks look worse than they were.
+        if self.provider_name == "openai" and any(
+            tag in model for tag in ("gpt-5", "o1", "o3", "o4")
+        ):
+            if "max_tokens" in params:
                 params["max_completion_tokens"] = params.pop("max_tokens")
+            # The API rejects anything except 1.0 here; just drop our value.
+            if "temperature" in params and params["temperature"] != 1.0:
+                params["temperature"] = 1.0
 
         if self.provider_name == "deepseek":
             if "reasoner" in model and "temperature" in params:

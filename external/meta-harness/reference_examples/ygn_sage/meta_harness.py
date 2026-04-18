@@ -72,6 +72,13 @@ def _load_sage_env() -> None:
         if key and key not in os.environ:
             os.environ[key] = value
 
+    # LiteLLM expects `GEMINI_API_KEY` for the `gemini/<model>` route — our
+    # .env only has `GOOGLE_API_KEY`, and the v2 real eval on 2026-04-18
+    # produced "API key not valid" errors on Gemini-routed tasks because
+    # LiteLLM's Gemini client didn't find the key it looks for. Mirror it.
+    if os.environ.get("GOOGLE_API_KEY") and not os.environ.get("GEMINI_API_KEY"):
+        os.environ["GEMINI_API_KEY"] = os.environ["GOOGLE_API_KEY"]
+
 
 _load_sage_env()
 
