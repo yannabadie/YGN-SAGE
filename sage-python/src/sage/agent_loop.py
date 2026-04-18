@@ -5,6 +5,7 @@ import time
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
+from collections import deque
 from collections.abc import AsyncIterator
 from typing import Any, Callable
 
@@ -147,6 +148,15 @@ class AgentLoop:
         # CRAG-style relevance gate for memory injection
         self._relevance_gate = RelevanceGate(threshold=RELEVANCE_GATE_THRESHOLD)
 
+        # Plateau detector (P1.1 of 2026-04-18 mega-plan).
+        # Loops that repeat the same tool-call arguments or the same empty
+        # reply step after step usually waste 90 % of their step budget,
+        # then the bench-side wall-clock timeout fires and the prediction
+        # is classified empty. Tracking the last K step signatures lets us
+        # bail early with the current best output. Size 3 = we tolerate one
+        # accidental repeat; three in a row is the "stuck" signal.
+        self._recent_step_signatures: deque[str] = deque(maxlen=3)
+
         # Circuit breakers for best-effort subsystems
         self._cb_semantic = CircuitBreaker("semantic_memory")
         self._cb_smmu = CircuitBreaker("smmu_context")
@@ -280,6 +290,7 @@ class AgentLoop:
         self.tool_call_count = 0
         self.tool_turn_count = 0
         self.executed_commands = []
+        self._recent_step_signatures.clear()
         self._s3_retries = 0
         self._s2_avr_retries = 0
         self._avr_error_history = []
@@ -331,6 +342,35 @@ class AgentLoop:
                 # S3 retry or S3->S2 degradation — re-enter loop
                 await self._maybe_run_consolidation()
                 continue
+
+            # Plateau detector (P1.1): record a signature for this step
+            # and bail early when the last 3 are identical — that means
+            # the agent is repeating itself (same content, same tool calls)
+            # and burning its step budget for nothing. Signature is the
+            # content plus the sorted tool-call argument tuples. No tools
+            # on this turn ⇒ only content is considered (a stuck "I need
+            # to…" monologue still counts).
+            _sig_parts = [str(t_result.content or "").strip()[:512]]
+            _tc = getattr(t_result.response, "tool_calls", None) or []
+            for _call in _tc:
+                _name = getattr(_call, "name", "") or ""
+                _args = getattr(_call, "arguments", None)
+                _sig_parts.append(f"{_name}:{_args!r}")
+            _sig = "|".join(_sig_parts)
+            self._recent_step_signatures.append(_sig)
+            if (
+                len(self._recent_step_signatures) == self._recent_step_signatures.maxlen
+                and len(set(self._recent_step_signatures)) == 1
+                and _sig
+            ):
+                log.warning(
+                    "[%s] plateau detected after step %d — breaking early with "
+                    "current best output to avoid burning remaining step budget",
+                    self.config.name, self.step_count,
+                )
+                result_text = t_result.content or result_text
+                await self._maybe_run_consolidation()
+                break
 
             # === ACT ===
             a_result = await act(
