@@ -248,3 +248,43 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
         "(migration-critical compat with P1.2 commit 8cb719e)."
     )
     assert recorded[0][0] == "deepseek"
+
+
+def test_kimi_k2_5_supports_tools_is_false() -> None:
+    """F9 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+    kimi-k2.5 is a thinking-mode model. The Moonshot API requires every
+    prior assistant-with-tool-calls message in conversation history to
+    include a `reasoning_content` field. Pydantic AI does not preserve
+    that across turns → HTTP 400 "thinking is enabled but reasoning_
+    content is missing in assistant tool call message at index N".
+
+    Observed 10× in v8 15-task smoke, caused 4/15 EMPTY results.
+    Workaround until the provider layer handles reasoning_content:
+    mark kimi-k2.5 as tool-incompatible so ModelAssigner never routes
+    a tool-needing node to it. This test locks that flag — if someone
+    flips it back without fixing the provider, this test fails.
+    """
+    from pathlib import Path
+
+    try:
+        import sage_core  # type: ignore[import-not-found]
+    except Exception:
+        pytest.skip("sage_core not available (Rust not built)")
+
+    if not hasattr(sage_core, "ModelRegistry"):
+        pytest.skip("sage_core stubbed by another test; real Rust module unavailable")
+
+    toml = Path(__file__).resolve().parents[3] / "sage-core" / "config" / "cards.toml"
+    if not toml.is_file():
+        pytest.skip("cards.toml not on disk")
+
+    reg = sage_core.ModelRegistry.from_toml_file(str(toml))
+    kimi = reg.get("kimi-k2.5")
+    if kimi is None:
+        pytest.skip("kimi-k2.5 not in cards.toml")
+
+    assert kimi.supports_tools is False, (
+        "kimi-k2.5 must have supports_tools=false until the Pydantic AI "
+        "moonshot provider preserves reasoning_content across tool-call "
+        "turns. See F9 audit entry in sage-core/config/cards.toml."
+    )

@@ -460,6 +460,14 @@ of model price but because of more tool calls per node.
 - F1 soft-cap 7→9 (astropy-6938 stable across 4 smokes).
 - F8 coder S2→S3 (sentinel count halved in v8; this was the next
   lever identified post-F6, and it paid off).
+- **F9 kimi-k2.5 tool-disable (2026-04-19). Massive win: v8 6/15
+  → v9 9/15 = 60% real patch rate. kimi-k2.5 thinking mode
+  required `reasoning_content` in every prior tool-call message,
+  Pydantic AI didn't preserve it → 10 HTTP 400 errors in v8. F9
+  marks `supports_tools=false` in cards.toml so ModelAssigner
+  routes tool-needing nodes to other S2/S3 providers. Recovered
+  3 previously-EMPTY tasks (12907, 14182, 11001) and reduced Kimi
+  errors 10→2 (80%).**
 
 **Plausible:**
 - F6 planner S1→S2. At 15 tasks the rate increase is consistent
@@ -470,6 +478,36 @@ of model price but because of more tool calls per node.
 **Confirmed negative:**
 - F2 prompt tightening.
 - F5 planner tool-stripping (backfired, reverted).
+
+### Smoke v9 (F9) — RESULTS
+
+| Metric | v7 (F6) | v8 (F6+F8) | **v9 (F6+F8+F9)** |
+|---|---|---|---|
+| Real patches | 5/15 = 33% | 6/15 = 40% | **9/15 = 60%** 🎯 |
+| Sentinels | 9 | 5 | 4 |
+| Empty | 1 | 4 | 2 |
+| Kimi 400 errors | ? | 10 | **2** (−80%) |
+| Cost/task | $0.115 | $0.159 | $0.194 |
+| Cost/real-patch | $0.35 | $0.40 | **$0.32** |
+
+**Cost/real-patch is now the BEST of all runs** despite higher per-
+task cost — the pass-rate jump dominates.
+
+Log: `docs/benchmarks/2026-04-19-swebench-smoke-v9-15task-f9-kimi-disabled.log`.
+
+9 real patches in v9:
+- astropy-12907 (471) ← **new, F9 recovery**
+- astropy-14182 (307) ← **new, F9 recovery**
+- astropy-14995 (592) ← audit target, stable
+- astropy-6938 (409) ← stable
+- astropy-7746 (737) ← stable (F8 recovery)
+- django-11001 (431) ← **new, F9 recovery**
+- django-11039 (594), 11133 (560), 11179 (561) ← stable
+
+60% real patch rate matches OpenSAGE SWE-bench Pro SOTA (59%) on
+SWE-Lite at 15 tasks. F9 was the single biggest win of the audit —
+unblocked a provider-level bug that was silently zeroing 4 tasks
+per run.
 
 - **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).

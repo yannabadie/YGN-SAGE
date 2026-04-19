@@ -559,7 +559,10 @@ s1_affinity = 0.10
 s2_affinity = 0.88
 s3_affinity = 0.88
 recommended_topologies = ["avr", "loop"]
-supports_tools = true
+# F9 audit fix (2026-04-19): Pydantic AI doesn't preserve kimi-k2.5's
+# required `reasoning_content` across tool-call turns → HTTP 400. See
+# matching entry in sage-core/config/cards.toml for full context.
+supports_tools = false
 supports_json_mode = true
 supports_vision = false
 context_window = 128000

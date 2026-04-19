@@ -594,7 +594,20 @@ s1_affinity = 0.10
 s2_affinity = 0.88
 s3_affinity = 0.88
 recommended_topologies = ["avr", "loop"]
-supports_tools = true
+# F9 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+# kimi-k2.5 is a thinking-mode model. The Moonshot API requires every
+# prior assistant-with-tool-calls message in the conversation history
+# to include a `reasoning_content` field. Pydantic AI's message
+# serialization strips internal reasoning between turns, so multi-turn
+# tool-calling against kimi-k2.5 returns HTTP 400:
+#   "thinking is enabled but reasoning_content is missing in assistant
+#    tool call message at index N"
+# Observed 10× in v8 15-task smoke — caused 4/15 tasks to fall through
+# to single-agent and emit 0 chars. Mark tool-incompatible until the
+# provider layer preserves reasoning_content (or Moonshot ships a
+# non-thinking k2.5 variant). kimi stays S2/S3-eligible for pure-text
+# roles (synthesizer-style) where no tools are used.
+supports_tools = false
 supports_json_mode = true
 supports_vision = false
 context_window = 128000
