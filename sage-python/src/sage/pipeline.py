@@ -136,6 +136,42 @@ class CognitiveOrchestrationPipeline:
         self._agent_loop = agent_loop
         self._task_count = 0
 
+        # G-series audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+        # RustCompositeWriteGate was built, exported, but never called at
+        # runtime (investigation confirmed 0 runtime call sites). Memory
+        # writes in phases/act.py and _record_to_memory here all skipped
+        # the 5-signal salience check.
+        #
+        # Weights: w_confidence=0.0 because AgentLoop has no per-turn
+        # confidence signal — redistributing that 0.25 to novelty (+0.10)
+        # and relevance (+0.15) keeps the composite summing to 1.0 and
+        # leans on signals that ARE available (task text + content text).
+        # Not a heuristic tweak: an honest statement that this engine cannot
+        # produce the "confidence" input the research paper assumed.
+        #
+        # Gate is REBUILT per-task in `run()` (not reset in-place) so the
+        # Rust class — which has no `reset_task()` method yet — doesn't need
+        # an ABI bump. `_gate_config` holds the construction args; `write_gate`
+        # is swapped out per task.
+        self._gate_config = dict(
+            threshold=0.35,
+            w_confidence=0.0,
+            w_novelty=0.40,
+            w_reliability=0.20,
+            w_recency=0.10,
+            w_relevance=0.30,
+        )
+        self.write_gate = self._build_write_gate()
+
+    def _build_write_gate(self) -> Any:
+        """Construct a fresh CompositeWriteGate (Rust if available, Python fallback)."""
+        from sage.memory.write_gate import create_composite_write_gate
+        try:
+            return create_composite_write_gate(**self._gate_config)
+        except Exception as exc:
+            log.debug("CompositeWriteGate init failed, memory writes ungated: %s", exc)
+            return None
+
     def _record_to_memory(self, ctx: PipelineContext) -> None:
         """Write execution trace to Tier 0 (working memory) and Tier 1 (episodic).
 
@@ -225,6 +261,11 @@ class CognitiveOrchestrationPipeline:
         """
         t0 = time.monotonic()
         ctx = PipelineContext(task=task, budget=budget_usd)
+
+        # G-series (2026-04-19): rebuild write gate per task so entries from a
+        # previous task don't persist as novelty penalties or exact-dedup hits
+        # on content in THIS task. Rust gate has no in-place reset yet.
+        self.write_gate = self._build_write_gate()
 
         # Stage 0: CLASSIFY
         ctx = self._stage_classify(ctx)
@@ -973,6 +1014,9 @@ class CognitiveOrchestrationPipeline:
                         if self.event_bus and hasattr(self.event_bus, "emit")
                         else None
                     ),
+                    # G-series: pipeline-scoped gate + task text for relevance
+                    write_gate=self.write_gate,
+                    task_text=ctx.task,
                 )
 
             runner = TopologyRunner(

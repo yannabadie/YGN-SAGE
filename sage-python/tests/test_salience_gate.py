@@ -157,6 +157,79 @@ class TestCompositeWriteGate:
             gate.evaluate(f"content_{i}", confidence=0.9)
         assert len(gate._seen_content) <= 3
 
+    # G-series audit (2026-04-19): gate is now wired into phases/act.py.
+    # These tests validate the per-instance weight overrides and the factory
+    # config used by Pipeline (w_confidence=0, w_novelty=0.40, w_relevance=0.30).
+    def test_per_instance_weight_overrides(self):
+        """Pipeline uses w_confidence=0.0 since the loop has no per-turn
+        confidence signal. Weights redistributed to novelty/relevance."""
+        gate = CompositeWriteGate(
+            threshold=0.35,
+            w_confidence=0.0,
+            w_novelty=0.40,
+            w_reliability=0.20,
+            w_recency=0.10,
+            w_relevance=0.30,
+        )
+        assert gate._w_confidence == 0.0
+        assert gate._w_novelty == 0.40
+        assert gate._w_relevance == 0.30
+        # Sanity: with w_confidence=0, a low-confidence write with good
+        # relevance + novelty still passes.
+        d = gate.evaluate(
+            "fix for astropy units parsing bug",
+            confidence=0.0,
+            task="fix astropy units parsing",
+        )
+        assert d.allowed, f"expected allowed with 0 confidence + strong relevance: {d.reason}"
+
+    def test_sentinel_second_occurrence_blocked_by_dedup(self):
+        """The cross-node sentinel cascade (astropy-14995) emits the same
+        sentinel string from planner, coder, synthesizer. With a shared
+        pipeline-scoped gate, the 2nd and 3rd hits block on exact dedup."""
+        sentinel = "[sage: agent exited after 20 steps with no content]"
+        gate = CompositeWriteGate(
+            threshold=0.35,
+            w_confidence=0.0,
+            w_novelty=0.40,
+            w_reliability=0.20,
+            w_recency=0.10,
+            w_relevance=0.30,
+        )
+        d1 = gate.evaluate(sentinel, confidence=0.0, task="fix bug", source_tier="budget")
+        d2 = gate.evaluate(sentinel, confidence=0.0, task="fix bug", source_tier="budget")
+        d3 = gate.evaluate(sentinel, confidence=0.0, task="fix bug", source_tier="budget")
+        # First one may pass or block (composite score depends on defaults);
+        # what matters is d2 and d3 are blocked by exact dedup.
+        assert not d2.allowed, "2nd sentinel should hit exact-dedup hash"
+        assert not d3.allowed, "3rd sentinel should hit exact-dedup hash"
+        assert "duplicate" in d2.reason.lower()
+
+
+# -- Source tier inference (2026-04-19 gate wiring) ----------------------------
+
+class TestInferSourceTier:
+    """Validate infer_source_tier maps model ids to gate reliability tiers."""
+
+    def test_unknown_model_returns_unknown(self):
+        from sage.memory.write_gate import infer_source_tier
+        assert infer_source_tier("no-such-model") == "unknown"
+
+    def test_none_returns_unknown(self):
+        from sage.memory.write_gate import infer_source_tier
+        assert infer_source_tier(None) == "unknown"
+        assert infer_source_tier("") == "unknown"
+
+    def test_real_model_from_cards_toml(self):
+        """If cards.toml is reachable, a known model should map to a known
+        tier. If not reachable (Rust uncompiled), test degrades to 'unknown'
+        without failing — gate just uses default reliability 0.60."""
+        from sage.memory.write_gate import infer_source_tier
+        # These ids come from sage-core/config/cards.toml. If Rust isn't
+        # compiled, the registry is empty and we expect "unknown".
+        tier = infer_source_tier("gemini-3.1-pro-preview")
+        assert tier in {"reasoner", "fast", "budget", "unknown"}
+
     def test_signal_breakdown_has_all_5_keys(self):
         gate = CompositeWriteGate(threshold=0.01)
         d = gate.evaluate("test", confidence=0.7, task="task", source_tier="fast")

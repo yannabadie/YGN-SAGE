@@ -62,6 +62,8 @@ def create_node_agent_loop(
     task_domain: str = "",
     on_event: Any = None,
     on_drift: Any = None,
+    write_gate: Any = None,
+    task_text: str = "",
 ) -> AgentLoop:
     """Create an independent AgentLoop for a topology node.
 
@@ -172,6 +174,16 @@ def create_node_agent_loop(
     # forwarded to ProviderPool.record_failure via the runner's wiring.
     if on_drift is not None:
         loop._on_drift = on_drift
+
+    # G-series audit fix (2026-04-19): share the pipeline's write gate across
+    # nodes and derive the source tier from the assigned model id via cards.toml.
+    # When write_gate is None (e.g. legacy direct callers), memory writes stay
+    # ungated — same behavior as before.
+    loop.write_gate = write_gate
+    loop.gate_current_task = task_text
+    if llm_config and getattr(llm_config, "model", None):
+        from sage.memory.write_gate import infer_source_tier
+        loop.gate_source_tier = infer_source_tier(llm_config.model)
 
     # H1/H4 carryover: pipeline already handled routing and topology
     loop._skip_routing = True

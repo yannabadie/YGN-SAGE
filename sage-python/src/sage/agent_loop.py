@@ -219,6 +219,19 @@ class AgentLoop:
         # CRAG-style relevance gate for memory injection
         self._relevance_gate = RelevanceGate(threshold=RELEVANCE_GATE_THRESHOLD)
 
+        # G-series audit fix (2026-04-19): shared-state write gate for memory
+        # writes in phases/act.py. Injected by boot/factory, None if unavailable.
+        # Shared across nodes of ONE task so cross-node duplicate writes hit
+        # the exact-dedup hash (the failure mode we saw in astropy-14995
+        # where planner/coder/synthesizer each emitted the same sentinel).
+        self.write_gate: Any = None
+        # Source tier string for the gate's reliability signal — mapped from
+        # the LLM model id via cards.toml in agent_loop_factory.py.
+        self.gate_source_tier: str = "unknown"
+        # Current task text for the gate's relevance signal — set at the
+        # start of each run() or forwarded from the outer pipeline context.
+        self.gate_current_task: str = ""
+
         # Plateau detector (P1.1 of 2026-04-18 mega-plan).
         # Loops that repeat the same tool-call arguments or the same empty
         # reply step after step usually waste 90 % of their step budget,

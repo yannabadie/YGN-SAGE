@@ -203,44 +203,79 @@ async def act(
 
     loop.working_memory.add_event("ASSISTANT", content)
 
+    # G-series audit fix (2026-04-19): evaluate the 5-signal composite write
+    # gate before each persistent memory write. Gate is shared across nodes
+    # of one task so cross-node duplicate sentinels/empties hit exact-dedup.
+    # When write_gate is None (legacy/direct callers), we fall back to the
+    # old "always allow" behavior so existing tests and offline use keep
+    # working.
+    gate = loop.write_gate
+    gate_task = loop.gate_current_task or task
+    gate_tier = loop.gate_source_tier
+
+    def _gate_allows(payload: str) -> bool:
+        """Return True if the gate allows the write (or no gate is wired)."""
+        if gate is None:
+            return True
+        try:
+            decision = gate.evaluate(
+                payload,
+                1.0,  # No per-turn confidence signal; w_confidence=0 in config
+                task=gate_task,
+                source_tier=gate_tier,
+                embedding=None,
+            )
+            allowed = bool(getattr(decision, "allowed", True))
+            if not allowed:
+                log.debug("write_gate blocked memory write: %s",
+                          getattr(decision, "reason", "<no reason>"))
+            return allowed
+        except Exception as exc:
+            log.debug("write_gate evaluate raised, allowing write: %s", exc)
+            return True
+
     # Store significant responses in episodic memory (if wired)
     if (loop.episodic_memory and len(content) > 100
             and not loop._cb_episodic.should_skip() and not loop._skip_memory):
-        try:
-            await loop.episodic_memory.store(
-                key=f"step-{loop.step_count}", content=content[:500],
-                metadata={"task": task, "step": loop.step_count})
-            loop._cb_episodic.record_success()
-        except Exception as e:
-            loop._cb_episodic.record_failure(e)
+        episodic_payload = content[:500]
+        if _gate_allows(episodic_payload):
+            try:
+                await loop.episodic_memory.store(
+                    key=f"step-{loop.step_count}", content=episodic_payload,
+                    metadata={"task": task, "step": loop.step_count})
+                loop._cb_episodic.record_success()
+            except Exception as e:
+                loop._cb_episodic.record_failure(e)
 
     # Semantic memory: extract entities from response
     if (loop.memory_agent and loop.semantic_memory and content and len(content) > 50
             and not loop._cb_entity.should_skip() and not loop._skip_memory):
-        try:
-            extraction = await loop.memory_agent.extract(content[:1000])
-            if extraction.entities:
-                loop.semantic_memory.add_extraction(extraction)
-                # Causal edges: consecutive entities form causal chains
-                # AMA-Bench (2602.22769): memory without causality fails
-                if (loop.causal_memory
-                        and len(extraction.entities) >= 2
-                        and not loop._cb_causal.should_skip()):
-                    try:
-                        for i in range(len(extraction.entities) - 1):
-                            src = extraction.entities[i]
-                            tgt = extraction.entities[i + 1]
-                            loop.causal_memory.add_entity(src)
-                            loop.causal_memory.add_entity(tgt)
-                            loop.causal_memory.add_causal_edge(
-                                src, tgt, cause_type="enabled",
-                            )
-                        loop._cb_causal.record_success()
-                    except Exception as exc:
-                        loop._cb_causal.record_failure(exc)
-            loop._cb_entity.record_success()
-        except Exception as e:
-            loop._cb_entity.record_failure(e)
+        semantic_payload = content[:1000]
+        if _gate_allows(semantic_payload):
+            try:
+                extraction = await loop.memory_agent.extract(semantic_payload)
+                if extraction.entities:
+                    loop.semantic_memory.add_extraction(extraction)
+                    # Causal edges: consecutive entities form causal chains
+                    # AMA-Bench (2602.22769): memory without causality fails
+                    if (loop.causal_memory
+                            and len(extraction.entities) >= 2
+                            and not loop._cb_causal.should_skip()):
+                        try:
+                            for i in range(len(extraction.entities) - 1):
+                                src = extraction.entities[i]
+                                tgt = extraction.entities[i + 1]
+                                loop.causal_memory.add_entity(src)
+                                loop.causal_memory.add_entity(tgt)
+                                loop.causal_memory.add_causal_edge(
+                                    src, tgt, cause_type="enabled",
+                                )
+                            loop._cb_causal.record_success()
+                        except Exception as exc:
+                            loop._cb_causal.record_failure(exc)
+                loop._cb_entity.record_success()
+            except Exception as e:
+                loop._cb_entity.record_failure(e)
 
     # No tool calls -> final answer
     if not response.tool_calls:

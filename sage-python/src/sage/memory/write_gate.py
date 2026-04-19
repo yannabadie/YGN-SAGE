@@ -136,11 +136,29 @@ class CompositeWriteGate:
         max_seen: int = 200,
         recency_halflife_s: float = 300.0,
         reliability_scores: dict[str, float] | None = None,
+        w_confidence: float | None = None,
+        w_novelty: float | None = None,
+        w_reliability: float | None = None,
+        w_recency: float | None = None,
+        w_relevance: float | None = None,
+        novelty_sim_threshold: float | None = None,
     ) -> None:
         self.threshold = threshold
         self._recency_halflife = recency_halflife_s
         self._reliability_scores = reliability_scores or DEFAULT_RELIABILITY_SCORES
         self._max_seen = max_seen
+
+        # Per-instance weight overrides (parity with Rust RustCompositeWriteGate).
+        # None → use the module-level SALIENCE_WEIGHT_* constants (default behavior).
+        self._w_confidence = w_confidence if w_confidence is not None else SALIENCE_WEIGHT_CONFIDENCE
+        self._w_novelty = w_novelty if w_novelty is not None else SALIENCE_WEIGHT_NOVELTY
+        self._w_reliability = w_reliability if w_reliability is not None else SALIENCE_WEIGHT_RELIABILITY
+        self._w_recency = w_recency if w_recency is not None else SALIENCE_WEIGHT_RECENCY
+        self._w_relevance = w_relevance if w_relevance is not None else SALIENCE_WEIGHT_RELEVANCE
+        self._novelty_sim_threshold = (
+            novelty_sim_threshold if novelty_sim_threshold is not None
+            else SALIENCE_NOVELTY_SIM_THRESHOLD
+        )
 
         # Ring buffer of recent content embeddings for novelty computation
         self._seen_embeddings: deque[list[float]] = deque(maxlen=max_seen)
@@ -216,13 +234,13 @@ class CompositeWriteGate:
         # Task relevance: keyword overlap
         sig_relevance = self._compute_relevance(task, content) if task else 0.5
 
-        # Composite score
+        # Composite score (per-instance weights, default to module constants)
         score = (
-            SALIENCE_WEIGHT_CONFIDENCE * sig_confidence
-            + SALIENCE_WEIGHT_NOVELTY * sig_novelty
-            + SALIENCE_WEIGHT_RELIABILITY * sig_reliability
-            + SALIENCE_WEIGHT_RECENCY * sig_recency
-            + SALIENCE_WEIGHT_RELEVANCE * sig_relevance
+            self._w_confidence * sig_confidence
+            + self._w_novelty * sig_novelty
+            + self._w_reliability * sig_reliability
+            + self._w_recency * sig_recency
+            + self._w_relevance * sig_relevance
         )
 
         breakdown = {
@@ -273,7 +291,7 @@ class CompositeWriteGate:
             if sim > max_sim:
                 max_sim = sim
 
-        if max_sim > SALIENCE_NOVELTY_SIM_THRESHOLD:
+        if max_sim > self._novelty_sim_threshold:
             return 0.0  # Near-duplicate → zero novelty
 
         return 1.0 - max_sim
@@ -354,3 +372,60 @@ def create_composite_write_gate(
         except Exception:
             pass
     return CompositeWriteGate(threshold=threshold, **kwargs)
+
+
+# -- Source tier resolution (2026-04-19 gate-wiring audit) ---------------------
+#
+# The gate's `source_tier` feeds the reliability signal. Higher-tier models
+# produce more reliable writes, so their entries cross the threshold more
+# easily. Mapping: S3→"reasoner" (0.90), S2→"fast" (0.75), S1→"budget" (0.70).
+# Unknown model → "unknown" (0.60) — degrades gracefully.
+#
+# Source of truth: cards.toml loaded via Rust ModelRegistry (Critical
+# Directive #6: no training-leak hardcodes on provider model strings).
+_TIER_REGISTRY: dict[str, str] = {}
+_TIER_REGISTRY_LOADED = False
+
+
+def _load_tier_registry() -> None:
+    """Populate _TIER_REGISTRY from cards.toml via Rust ModelRegistry."""
+    global _TIER_REGISTRY_LOADED
+    if _TIER_REGISTRY_LOADED:
+        return
+    _TIER_REGISTRY_LOADED = True  # Even if load fails, don't retry every call
+    try:
+        from sage_core import ModelRegistry  # type: ignore[import-not-found]
+        from pathlib import Path
+        for p in [
+            Path.cwd() / "sage-core" / "config" / "cards.toml",
+            Path.cwd().parent / "sage-core" / "config" / "cards.toml",
+            Path.cwd() / "config" / "cards.toml",
+            Path(__file__).resolve().parents[4] / "sage-core" / "config" / "cards.toml",
+        ]:
+            if p.exists():
+                reg = ModelRegistry.from_toml_file(str(p))
+                for card in reg.all_models():
+                    best = max(
+                        ("s1", card.s1_affinity),
+                        ("s2", card.s2_affinity),
+                        ("s3", card.s3_affinity),
+                        key=lambda x: x[1],
+                    )[0]
+                    tier = {"s3": "reasoner", "s2": "fast", "s1": "budget"}[best]
+                    _TIER_REGISTRY[card.id] = tier
+                break
+    except (ImportError, IOError, OSError):
+        pass  # Rust unavailable → all writes get "unknown" (0.60)
+
+
+def infer_source_tier(model_id: str | None) -> str:
+    """Map a model_id to the gate's reliability-tier string.
+
+    Returns: "reasoner" | "fast" | "budget" | "unknown". Uses cards.toml
+    as source of truth per Critical Directive #6 — does NOT pattern-match
+    on model id substrings.
+    """
+    if not model_id:
+        return "unknown"
+    _load_tier_registry()
+    return _TIER_REGISTRY.get(model_id, "unknown")
