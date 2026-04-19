@@ -533,6 +533,26 @@ class CognitiveOrchestrationPipeline:
                         ctx.topology_id = ctx.topology.id
                 elif result:
                     ctx.topology = result
+
+                # H4 audit fix (2026-04-19): cache the generated topology so
+                # record_outcome (called in _stage_learn) can look it up by id
+                # and insert into the MAP-Elites archive. Without this,
+                # `engine.generate` returns a topology with a fresh id, but
+                # `topology_cache.get(id)` MISSES inside record_outcome
+                # (engine.rs:563), the descriptor falls back to None
+                # (engine.rs:577), and the archive insertion at engine.rs:597
+                # is SKIPPED entirely. Empirically observed: 8 record_outcome
+                # calls with diverse ids → cell_count stayed at 0, so
+                # should_evolve was always False and the H1 evolve()
+                # wiring would never fire on a real run. Cache here closes
+                # the loop generate → archive growth → should_evolve → evolve.
+                if (ctx.topology is not None
+                        and hasattr(self.engine, "cache_topology")):
+                    try:
+                        self.engine.cache_topology(ctx.topology)
+                    except (RuntimeError, TypeError) as exc:
+                        log.debug("cache_topology failed: %s", exc)
+
                 self._check_topology_budget(ctx)
                 return ctx
             except (ImportError, RuntimeError) as exc:

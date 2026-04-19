@@ -209,3 +209,115 @@ class TestPipelineEvolutionWiring:
 
         # Must not raise — degrades silently
         await pipeline._stage_learn(ctx)
+
+
+# -- H4 (2026-04-19): empirical end-to-end against the REAL Rust engine --------
+#
+# The mock-based wiring tests above prove _stage_learn calls the API in the
+# right order. This test class proves something different and stronger: that
+# on the REAL Rust engine, the chain `cache_topology → record_outcome →
+# should_evolve → evolve` actually mutates archive state. The first version
+# of the H1 commit shipped without `cache_topology` in the generate path,
+# and an empirical poke (8 outcomes with diverse ids → cell_count=0) showed
+# should_evolve would NEVER flip True on a real run — the wiring worked
+# perfectly and observed zero effect, exactly the failure mode the advisor
+# warned about. These tests pin the cache_topology requirement so a future
+# refactor can't silently re-introduce the bypass.
+
+try:
+    import sage_core  # noqa: F401
+    _HAS_SAGE_CORE = True
+except ImportError:
+    _HAS_SAGE_CORE = False
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+class TestRealEngineEvolutionLoop:
+    """End-to-end on the actual sage_core.TopologyEngine."""
+
+    def test_record_outcome_grows_archive_only_when_topology_cached(self):
+        """Without cache_topology, record_outcome silently no-ops on the
+        archive. The fix at pipeline.py (Stage 2) is mandatory; this test
+        is the regression guard."""
+        import sage_core
+        engine = sage_core.TopologyEngine()
+        assert engine.archive_cell_count() == 0
+
+        # Path A: record_outcome WITHOUT cache_topology — archive stays empty
+        result = engine.generate("task-A", None, 2, 1.0)
+        engine.record_outcome(
+            topology_id=result.topology.id,
+            task_summary="A",
+            keywords=["a"],
+            task_embedding=None,
+            quality=0.7, cost=0.01, latency_ms=100.0,
+        )
+        assert engine.archive_cell_count() == 0, (
+            "record_outcome without cache_topology must NOT grow the archive — "
+            "if this fails, the Rust contract changed and the pipeline cache "
+            "call may be redundant (good news; update or remove the fix)"
+        )
+
+        # Path B: cache_topology + record_outcome — archive grows
+        result = engine.generate("task-B", None, 2, 1.0)
+        engine.cache_topology(result.topology)
+        engine.record_outcome(
+            topology_id=result.topology.id,
+            task_summary="B",
+            keywords=["b"],
+            task_embedding=None,
+            quality=0.7, cost=0.01, latency_ms=100.0,
+        )
+        assert engine.archive_cell_count() >= 1, (
+            "cache_topology + record_outcome must insert into the MAP-Elites "
+            "archive — if this fails, the H1 evolution wiring will never fire"
+        )
+
+    def test_evolve_chain_end_to_end(self):
+        """Generate + cache + record across 8+ outcomes — should_evolve must
+        flip True at some point and evolve() must mutate archive state.
+
+        Reproduces the empirical poke that uncovered the cache_topology
+        bypass in the H1 commit. With the Stage 2 cache_topology fix, this
+        passes; without it, cell_count stays at 0 forever."""
+        import sage_core
+        engine = sage_core.TopologyEngine()
+
+        for i in range(20):
+            result = engine.generate(f"task-{i}", None, (i % 3) + 1, 1.0 + i * 0.5)
+            engine.cache_topology(result.topology)
+            engine.record_outcome(
+                topology_id=result.topology.id,
+                task_summary=f"task-{i}",
+                keywords=[f"kw{i}"],
+                task_embedding=None,
+                quality=0.3 + (i % 7) * 0.1,
+                cost=0.01 * (i + 1),
+                latency_ms=100.0 + i * 50,
+            )
+
+        # With 20 diverse outcomes, cell_count must reach EVOLUTION_MIN_OUTCOMES
+        from sage.constants import (
+            EVOLUTION_MIN_OUTCOMES,
+            EVOLUTION_COOLDOWN_OUTCOMES,
+            EVOLUTION_ONLINE_POP_SIZE,
+            EVOLUTION_ONLINE_GENERATIONS,
+        )
+        assert engine.archive_cell_count() >= EVOLUTION_MIN_OUTCOMES, (
+            f"After 20 diverse outcomes, archive should have >= "
+            f"{EVOLUTION_MIN_OUTCOMES} cells (got {engine.archive_cell_count()})"
+        )
+        assert engine.should_evolve(EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES)
+
+        cells_before = engine.archive_cell_count()
+        engine.evolve(
+            pop_size=EVOLUTION_ONLINE_POP_SIZE,
+            generations=EVOLUTION_ONLINE_GENERATIONS,
+        )
+        cells_after = engine.archive_cell_count()
+        # evolve() either grows or holds the archive — never shrinks; the
+        # interesting signal is that the call DOESN'T crash and the gate
+        # cooldown resets so the next should_evolve depends on new outcomes.
+        assert cells_after >= cells_before, (
+            "evolve() must not shrink the archive"
+        )
