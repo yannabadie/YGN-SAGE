@@ -1,9 +1,43 @@
 # astropy-14995 Decision-Path Audit
 
-**Date:** 2026-04-18
+**Date:** 2026-04-18 (iterated through 2026-04-19)
 **Anchor task:** `astropy__astropy-14995` (SWE-bench Lite, instance 1/5 of baseline_v2)
 **Source log:** `C:\Users\yann.abadie\AppData\Local\Temp\baseline_v2.log` (lines 94–163)
 **Scope:** DECISION-path audit (not codebase audit). Every claim cites `file:line`.
+
+---
+
+## TL;DR — Final result (2026-04-19 validation)
+
+| Metric | Value | Source |
+|---|---|---|
+| **True pass rate (15-task sample, semantic validation)** | **7–8/15 = 47–53%** | `docs/audits/2026-04-19-v12-patches-semantic-validation.md` |
+| Proxy metric on same run (real-looking diffs) | 11/15 = 73% | `docs/benchmarks/2026-04-19-swebench-smoke-v12-*.log` |
+| Proxy → true inflation | ~20 percentage points | Wrong-file (10924), shim (14182), wrong-string (11049) |
+| Pre-audit honest baseline | 2/5 = 40% | One real fake (sentinel) was masked as a patch |
+| **Genuine gain from audit + fixes (D1–D8 + F1–F12)** | **+5–10 pp true rate** | Not the +33pp the proxy suggests |
+
+**Read before planning**: the 73% figure in v12 logs is the proxy, not the
+truth. Plan around 47–53%. The proxy-to-truth gap grew (v8: 0–7pp → v9:
+7–20pp → v12: 20–26pp) because later fixes (F10–F12) added diff-shaped
+output that sometimes targets the wrong file. F11's diff-marker filter
+rejects non-diffs but can't distinguish a well-formed diff on the wrong
+file from a correct one.
+
+**Honest progression (validated, not proxy):**
+
+| Version | Proxy | Validated true rate |
+|---|---|---|
+| baseline | 2/5 = 40% (1 fake masked as real) | 2/5 = 40% |
+| v7 | 5/15 = 33% | ~27% |
+| v9 | 9/15 = 60% | 40–53% |
+| v12 | 11/15 = 73% | **47–53%** |
+
+**Remaining failures are coder-quality (wrong file, wrong message, shim
+instead of feature), not tuning-level.** They do not respond to further
+stall-cap, validation-level, or tool-filter changes. See §5 follow-ups
+for the pivot to architecture-level gaps (RustCompositeWriteGate bypass,
+MAP-Elites archive persistence, Rust TopologyController parallel impl).
 
 ---
 
