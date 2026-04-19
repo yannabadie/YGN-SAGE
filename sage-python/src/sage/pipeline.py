@@ -1273,6 +1273,44 @@ class CognitiveOrchestrationPipeline:
             except (ImportError, RuntimeError) as exc:
                 log.debug("Evolution feedback failed: %s", exc)
 
+        # H1 audit fix (2026-04-19): Online evolution gate.
+        #
+        # Architecture/architecture.md and evolution/README.md both claim
+        # "Online evolution: Rust should_evolve() gates evolve() in agent
+        # loop (SA-3 complete)". The Rust impl exists at
+        # `sage-core/src/topology/engine.rs:644 (should_evolve)` and
+        # `:668 (evolve)`, both exposed via PyO3, but no Python call site
+        # invoked them — same class of bypass as the G-series write-gate
+        # (built, tested in isolation, never wired). `_auto_evolve=True`
+        # is set on AgentLoop in boot.py:332 but no code reads that flag.
+        #
+        # Wiring at the end of LEARN is the correct hook: by here we've
+        # just appended an outcome to the archive, so should_evolve()
+        # has fresh data. Constants come from sage.constants — single
+        # source of truth, already covered by test_online_evolution.py.
+        if self.engine and hasattr(self.engine, "should_evolve"):
+            try:
+                from sage.constants import (
+                    EVOLUTION_MIN_OUTCOMES,
+                    EVOLUTION_COOLDOWN_OUTCOMES,
+                    EVOLUTION_ONLINE_POP_SIZE,
+                    EVOLUTION_ONLINE_GENERATIONS,
+                )
+                if self.engine.should_evolve(
+                    EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
+                ):
+                    self.engine.evolve(
+                        pop_size=EVOLUTION_ONLINE_POP_SIZE,
+                        generations=EVOLUTION_ONLINE_GENERATIONS,
+                    )
+                    log.info(
+                        "Online evolution fired (pop=%d, gens=%d)",
+                        EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS,
+                    )
+            except (ImportError, RuntimeError, AttributeError) as exc:
+                # Engine without these methods (e.g. test stub) → silent skip.
+                log.debug("Online evolution gate skipped: %s", exc)
+
         # ── Periodic maintenance ───────────────────────────────────────────
         self._task_count += 1
 

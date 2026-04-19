@@ -670,6 +670,7 @@ audits. Three candidates were investigated:
 |---|---|---|
 | `RustCompositeWriteGate` bypass | ✅ wired (`c905d06`) | See §2.5 — 3 writes in `phases/act.py` now gated, pipeline-scoped state |
 | MAP-Elites archive updates | ✅ already works | Rust `TopologyEngine.record_outcome` fires at `pipeline.py:1216`; boot loads + atexit saves archive state (`~/.sage/archive_state.db`). Python `TopologyArchive` stub is dead code (separate cleanup, low priority) |
+| Online evolution (`should_evolve`/`evolve`) | ✅ wired (H1, 2026-04-19) | Rust impl at `engine.rs:644,668` + PyO3 bindings existed but no Python call site invoked them — `_auto_evolve=True` flag was set on AgentLoop but read by nothing. Now called at end of `_stage_learn` per documented gate (min_outcomes=5, cooldown=3). Closes the SA-3 "online evolution complete" architecture claim. |
 | Rust `TopologyController` port | ⏸ deferred | Python is sole impl (`topology_controller.py`); violates Critical Directive #1 but bigger work (6 decision paths + PyO3 bindings + threshold constants + Rust tests). Out of session scope; queued for a dedicated sprint |
 
 The gate wiring was picked over the Controller port because it fits a

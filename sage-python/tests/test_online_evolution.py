@@ -115,3 +115,97 @@ class TestEvolutionAblationSetup:
         result = validate_evolution(baseline, evolved)
         # Too few samples -> always fails
         assert result["gate_passed"] is False
+
+
+# -- H-series (2026-04-19): online evolution wiring in LEARN stage -------------
+#
+# Architecture/architecture.md and evolution/README.md claim "Online evolution
+# (SA-3 complete)". The Rust impl (engine.should_evolve + engine.evolve) was
+# wired into Python and ABI-exposed via PyO3, but no Python call site invoked
+# them — the entire Evolution pillar ran zero generations during real runs.
+# These tests pin the Pipeline._stage_learn → should_evolve → evolve call
+# sequence so the gate cannot silently un-wire (same failure mode as the
+# G-series write-gate bypass — a no-op default would mask the regression).
+
+class TestPipelineEvolutionWiring:
+    """Pipeline LEARN stage must call should_evolve + evolve when conditions hold."""
+
+    def _make_pipeline_with_mock_engine(self, should_evolve_returns: bool):
+        """Build a minimal Pipeline whose engine is a controllable mock."""
+        from sage.pipeline import CognitiveOrchestrationPipeline
+        engine = MagicMock()
+        engine.should_evolve.return_value = should_evolve_returns
+        # record_outcome is called BEFORE should_evolve in the LEARN block.
+        engine.record_outcome = MagicMock()
+        engine.evolve = MagicMock()
+
+        pipeline = CognitiveOrchestrationPipeline(
+            router=MagicMock(),
+            engine=engine,
+            assigner=MagicMock(),
+            provider_pool=MagicMock(),
+        )
+        return pipeline, engine
+
+    def _make_learn_ctx(self):
+        """Construct a PipelineContext that satisfies the LEARN-stage guards."""
+        from sage.pipeline import PipelineContext
+        ctx = PipelineContext(task="implement quicksort")
+        ctx.result = "def quicksort(): pass"  # non-empty → quality computable
+        ctx.cost = 0.01
+        ctx.latency_ms = 50.0
+        # Topology with an id so record_outcome's `if topology_id` guard passes
+        topology = MagicMock()
+        topology.id = "topo-test-001"
+        ctx.topology = topology
+        ctx.topology_id = "topo-test-001"
+        return ctx
+
+    @pytest.mark.asyncio
+    async def test_evolve_called_when_gate_fires(self):
+        """should_evolve=True → evolve(pop_size=5, generations=2) must fire."""
+        pipeline, engine = self._make_pipeline_with_mock_engine(should_evolve_returns=True)
+        ctx = self._make_learn_ctx()
+
+        await pipeline._stage_learn(ctx)
+
+        engine.should_evolve.assert_called_once()
+        engine.evolve.assert_called_once()
+        # Args check: must use the canonical constants, not magic numbers
+        from sage.constants import (
+            EVOLUTION_ONLINE_POP_SIZE,
+            EVOLUTION_ONLINE_GENERATIONS,
+        )
+        engine.evolve.assert_called_with(
+            pop_size=EVOLUTION_ONLINE_POP_SIZE,
+            generations=EVOLUTION_ONLINE_GENERATIONS,
+        )
+
+    @pytest.mark.asyncio
+    async def test_evolve_not_called_when_gate_blocks(self):
+        """should_evolve=False → evolve must NOT fire."""
+        pipeline, engine = self._make_pipeline_with_mock_engine(should_evolve_returns=False)
+        ctx = self._make_learn_ctx()
+
+        await pipeline._stage_learn(ctx)
+
+        engine.should_evolve.assert_called_once()
+        engine.evolve.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_evolve_skipped_when_engine_lacks_method(self):
+        """Engine without should_evolve (legacy stub) → silent skip, no crash."""
+        from sage.pipeline import CognitiveOrchestrationPipeline
+        engine = MagicMock(spec=["record_outcome"])  # No should_evolve / evolve
+        engine.record_outcome = MagicMock()
+
+        pipeline = CognitiveOrchestrationPipeline(
+            router=MagicMock(),
+            engine=engine,
+            assigner=MagicMock(),
+            provider_pool=MagicMock(),
+        )
+        ctx = self._make_learn_ctx()
+
+        # Must not raise — degrades silently
+        await pipeline._stage_learn(ctx)
