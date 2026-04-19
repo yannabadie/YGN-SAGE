@@ -509,6 +509,50 @@ SWE-Lite at 15 tasks. F9 was the single biggest win of the audit —
 unblocked a provider-level bug that was silently zeroing 4 tasks
 per run.
 
+### F10 + F11 follow-up (2026-04-19)
+
+**F10**: inspection of v9 log showed all 4 remaining sentinels came
+from `synthesizer` (node 2, S1). The role filter in
+`agent_loop_factory.py` matched "format"/"output"/"aggregat" but NOT
+"synth" — synthesizers got the full actor toolset and burned their
+5-step budget on tool calls instead of forwarding the coder's diff.
+Added "synth" to the filter → synthesizer gets `_FORMATTER_TOOLS`
+(memory-only).
+
+Smoke v10: sentinels 4→0, "real patches" 9→12. **But 3 of the new
+patches were bash exploration blocks forwarded verbatim** by the
+now-toolless synthesizer. The proxy was inflated.
+
+**F11**: strengthen `_extract_patch` to require a unified-diff marker
+(`@@`, `diff --git`, or `\n---`). Without any marker, return ""
+so D7 classifies as EMPTY.
+
+| Metric | v9 (F9) | v10 (F10) | **v11 (F10+F11)** |
+|---|---|---|---|
+| Real patches | 9/15 = 60% | 12/15 = 80% (inflated) | **10/15 = 67%** (honest) |
+| Sentinels | 4 | 0 | 0 |
+| Empty | 2 | 3 | 5 |
+| Cost/task | $0.194 | $0.170 | $0.177 |
+
+Log: `docs/benchmarks/2026-04-19-swebench-smoke-v11-15task-f11-diff-marker-filter.log`
+
+Regression tests:
+- `test_extract_patch_rejects_bash_block_without_diff_markers` (F11 filter)
+- Prior F6 tier-lock + F9 kimi-lock tests unchanged
+
+### Updated verdict
+
+**Proven progression (honest counts after D7 filter):**
+- baseline: 2/5 = 40% (high variance)
+- v7: 5/15 = 33%
+- v9: 9/15 = 60% (validated 40-53% real)
+- **v11: 10/15 = 67%** (honest after F11 rejects shims)
+
+F10 eliminated synthesizer sentinel pathology; F11 tightened the
+classifier so F10's side effect didn't inflate the metric. Together
+they added 1-2 genuine patches over v9 and collapsed the false-
+positive bash-block pattern.
+
 - **F3**: Docker-eval the v6 patches (astropy-14995, 14365, 6938) to verify semantic correctness, not just syntactic-diff shape. Blocked by no Docker on Windows.
 - **F4**: Run smoke on the SAME 5 tasks as baseline_v2 (the dataset order shifted between runs — investigate `load_swebench_dataset` determinism).
 

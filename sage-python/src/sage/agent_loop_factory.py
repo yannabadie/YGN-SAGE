@@ -90,10 +90,20 @@ def create_node_agent_loop(
     tools: list[str] | None = None  # all tools for actors
     if any(r in role_lower for r in ("verif",)):
         tools = _VERIFIER_TOOLS
-    elif any(r in role_lower for r in ("format", "output", "aggregat")):
+    elif any(r in role_lower for r in ("format", "output", "aggregat", "synth")):
+        # F10 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+        # synthesizer was missing from the formatter filter — it matched
+        # neither "format" nor "output" nor "aggregat". That let it
+        # receive the full actor toolset including execute_bash. In v9,
+        # 4/4 sentinels came from synthesizer nodes burning their 5-step
+        # S1 budget on tool calls instead of emitting the SINK_NODE_PROMPT
+        # "output ONLY the final answer". Restricting to memory-only tools
+        # forces text emission.
         tools = _FORMATTER_TOOLS
     # F5 attempted planner tool-stripping here — reverted, see the
-    # _PLANNER_TOOLS comment block above for the result.
+    # _PLANNER_TOOLS comment block above for the result. F10 targets
+    # sinks instead (they SHOULD have no tools by prompt; now enforced
+    # structurally).
 
     # Validation level. Sink/verifier roles always get 0 (H6: no recursive
     # validation). S3 tasks get PRM (level 3) ONLY when the domain wants

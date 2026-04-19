@@ -66,6 +66,34 @@ def test_extract_patch_returns_empty_for_sentinel():
     assert _extract_patch(f"some text\n{sentinel}\nmore") == ""
 
 
+def test_extract_patch_rejects_bash_block_without_diff_markers():
+    """F11 audit (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+    v10 F10 (synthesizer tool-strip) introduced a failure mode where
+    the synthesizer forwarded shell exploration commands verbatim as
+    "the final answer". Those got classified as real patches because
+    they were non-empty, non-sentinel. _extract_patch must now require
+    at least one unified-diff marker (@@, diff --git, or leading ---)
+    before accepting a response as a patch."""
+    from sage.bench.swebench_bench import _extract_patch
+    # Bash exploration block — not a diff
+    assert _extract_patch("```bash\ngrep -RIn 'foo' src/\n```") == ""
+    # Plain shell text
+    assert _extract_patch("grep -n class astropy/io/ascii/rst.py") == ""
+    # Prose response with no diff
+    assert _extract_patch("I need to read more files before patching.") == ""
+    # Real diff with hunk header — kept
+    real_diff = (
+        "diff --git a/x.py b/x.py\n"
+        "--- a/x.py\n+++ b/x.py\n"
+        "@@ -1 +1 @@\n-old\n+new\n"
+    )
+    assert _extract_patch(real_diff).startswith("diff --git")
+    # Response with only @@ hunk (no diff --git header) — still accepted
+    # because @@ is a strong unified-diff signal
+    hunk_only = "@@ -5,7 +5,7 @@\n-bad\n+good\n"
+    assert "@@" in _extract_patch(hunk_only)
+
+
 def test_classify_prediction_dict_form_reads_structured_failure():
     """D7 audit: classifier accepts the full prediction dict and reads
     `_structured_failure` to distinguish sentinel-emptied (step budget

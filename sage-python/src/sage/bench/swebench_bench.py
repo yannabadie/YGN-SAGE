@@ -304,6 +304,21 @@ def _extract_patch(response: str) -> str:
         # Ensure trailing newline (required by git apply)
         return patch + "\n" if not patch.endswith("\n") else patch
 
+    # F11 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
+    # Smoke v10 (F10 synthesizer-no-tools) revealed that a synthesizer
+    # without tools blindly forwards whatever the coder emitted — if
+    # coder emitted a ```bash grep ...``` exploration command, that
+    # gets classified as a "real patch" (non-empty, non-sentinel). The
+    # previous fallback returned the full response on the assumption
+    # that swebench's evaluator would reject invalid diffs — but our
+    # internal classifier counts it as real before evaluator sees it.
+    # A real unified diff MUST contain at least one hunk header (@@)
+    # OR a diff --git / --- header. If the response has none, it's
+    # not a diff and we return "" so D7's `_structured_failure` path
+    # captures it as EMPTY.
+    if "@@" not in response and "diff --git" not in response and "\n---" not in response:
+        return ""
+
     # Fallback: return the entire response (swebench will reject if not a valid diff)
     # Ensure trailing newline
     return response + "\n" if response and not response.endswith("\n") else response
