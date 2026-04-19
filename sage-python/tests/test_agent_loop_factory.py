@@ -244,3 +244,56 @@ def test_max_steps_scales_with_system_level():
     # Monotonic with respect to level.
     s1, s2, s3 = _mk(1).config.max_steps, _mk(2).config.max_steps, _mk(3).config.max_steps
     assert s1 < s2 < s3
+
+
+# -- G-series: write-gate wiring regression (2026-04-19) -----------------------
+#
+# The gate-bypass failure mode (RustCompositeWriteGate built but never
+# called) persisted for months because `_gate_allows` returns True when
+# `loop.write_gate is None`. If these factory lines regress silently, every
+# other test keeps passing and memory writes quietly go ungated again. This
+# test is specifically a guard against that silent regression.
+
+def test_factory_wires_write_gate_onto_loop():
+    """Regression guard: create_node_agent_loop must propagate the gate+task."""
+    gate_sentinel = object()  # Identity check, not a real gate
+    llm_cfg = MagicMock()
+    llm_cfg.model = "gemini-3.1-pro-preview"
+
+    loop = create_node_agent_loop(
+        node_role="actor",
+        node_name="test-gate-wire",
+        llm_provider=MagicMock(),
+        llm_config=llm_cfg,
+        tool_registry=_make_tool_registry(),
+        system_prompt="prompt",
+        system_level=2,
+        write_gate=gate_sentinel,
+        task_text="fix astropy units parser bug",
+    )
+
+    assert loop.write_gate is gate_sentinel, (
+        "factory must forward write_gate onto the loop — without this, "
+        "phases/act.py falls back to ungated writes and the gate bypass "
+        "is silently restored"
+    )
+    assert loop.gate_current_task == "fix astropy units parser bug"
+    # Source tier lookup must run; exact value depends on whether cards.toml
+    # is reachable (Rust compiled) — either way, it must be a valid tier.
+    assert loop.gate_source_tier in {"reasoner", "fast", "budget", "unknown"}
+
+
+def test_factory_gate_defaults_to_none_when_omitted():
+    """Backward compat: direct callers that don't know about write_gate get None.
+    phases/act.py treats None as "allow all writes", preserving legacy behavior."""
+    loop = create_node_agent_loop(
+        node_role="actor",
+        node_name="legacy-call",
+        llm_provider=MagicMock(),
+        llm_config=MagicMock(),
+        tool_registry=_make_tool_registry(),
+        system_prompt="prompt",
+        system_level=1,
+    )
+    assert loop.write_gate is None
+    assert loop.gate_current_task == ""
