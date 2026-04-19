@@ -277,6 +277,90 @@ async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
     )
 
 
+# -- H6 (2026-04-19): single-agent bypass must wire the drift callback --------
+#
+# Mirrors H5 for a different field. runner.py:502-521 builds an `_on_drift`
+# closure and passes it through the factory so SWITCH_MODEL / RESET_AGENT
+# drift classifications forward to ProviderPool.record_failure. The
+# single-agent bypass path at pipeline.py:941 reused the singleton without
+# setting _on_drift → drift events on S1 tasks were silently discarded and
+# bad providers never got circuit-broken on that path.
+
+@pytest.mark.asyncio
+async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
+    """Bypass path must set loop._on_drift so drift → ProviderPool.record_failure."""
+    from unittest.mock import MagicMock
+
+    recorded_failures = []
+
+    class _SpyProviderPool:
+        def __init__(self):
+            self.record_failure = MagicMock(side_effect=self._record)
+
+        def _record(self, key, exc):
+            recorded_failures.append((key, exc))
+
+    class _SpyAgentLoop:
+        def __init__(self):
+            self.config = MagicMock()
+            self.config.llm = MagicMock()
+            self.config.llm.model = "gemini-3.1-pro-preview"
+            self._llm = MagicMock()
+            self._skip_routing = False
+            self._current_topology = None
+            self.sandbox_manager = None
+            self.total_cost_usd = 0.0
+            self.tool_call_count = 0
+            self.tool_turn_count = 0
+            self.executed_commands = []
+            self.write_gate = None
+            self.gate_current_task = ""
+            self.gate_source_tier = ""
+            self._on_drift = None  # unset by default — fix must populate
+
+        async def run(self, task):
+            return "single-agent test response"
+
+    spy_loop = _SpyAgentLoop()
+    spy_pool = _SpyProviderPool()
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=1),
+        engine=_MockEngine(_MockGenerateResult(_MockTopology(n_nodes=1))),
+        assigner=_MockAssigner(),
+        provider_pool=spy_pool,
+        bandit=_MockBandit(),
+        quality_estimator=_MockQualityEstimator(),
+        event_bus=MagicMock(),
+        llm_provider=_MockLLMProvider(),
+        llm_config=None,
+        agent_loop=spy_loop,
+    )
+
+    await pipeline.run("investigate provider drift", budget_usd=3.0)
+
+    # Bypass path must have wired the callback
+    assert spy_loop._on_drift is not None, (
+        "single-agent path must set loop._on_drift so drift events "
+        "propagate to ProviderPool.record_failure — same pattern as H5 "
+        "(write_gate). Without it, drift on S1/bypass paths is silent."
+    )
+
+    # Callback must actually forward SWITCH_MODEL → record_failure
+    spy_loop._on_drift("gemini", "SWITCH_MODEL", {"latency": 12000})
+    assert len(recorded_failures) == 1, (
+        "wired callback must call ProviderPool.record_failure on SWITCH_MODEL"
+    )
+    assert recorded_failures[0][0] == "gemini"
+
+    # Callback must ignore non-actionable actions
+    before = len(recorded_failures)
+    spy_loop._on_drift("gemini", "LOG_ONLY", {"latency": 100})
+    assert len(recorded_failures) == before, (
+        "LOG_ONLY drift must not trip record_failure (only SWITCH_MODEL / RESET_AGENT)"
+    )
+
+
 @pytest.mark.asyncio
 async def test_pipeline_s1_skips_decomposition():
     """S1 tasks skip the decomposition stage entirely."""

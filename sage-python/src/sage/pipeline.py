@@ -968,6 +968,46 @@ class CognitiveOrchestrationPipeline:
                 except (ImportError, AttributeError):
                     self._agent_loop.gate_source_tier = "unknown"
 
+                # H6 audit fix (2026-04-19): wire the drift callback on the
+                # bypass path. The multi-node path sets `_on_drift` via the
+                # factory (topology/runner.py:502-521) so SWITCH_MODEL /
+                # RESET_AGENT classifications forward to
+                # `ProviderPool.record_failure` — tripping the provider's
+                # circuit breaker so subsequent resolve() picks a different
+                # provider. On the bypass path this was never wired; drift
+                # events on S1 tasks logged but had zero effect on routing.
+                # Same silent-bypass class as H5 (write_gate).
+                if (self.provider_pool is not None
+                        and hasattr(self.provider_pool, "record_failure")):
+                    _pool_ref = self.provider_pool
+                    _bypass_model_id = getattr(
+                        getattr(self._agent_loop.config, "llm", None),
+                        "model", "",
+                    ) or "default"
+
+                    def _on_drift_bypass(
+                        provider_hint: str,
+                        action: str,
+                        details: dict[str, Any],
+                        _pool: Any = _pool_ref,
+                        _model: str = _bypass_model_id,
+                    ) -> None:
+                        if action not in ("SWITCH_MODEL", "RESET_AGENT"):
+                            return
+                        _key = (provider_hint or _model or "unknown")
+                        try:
+                            _pool.record_failure(
+                                _key,
+                                RuntimeError(
+                                    f"drift_{action.lower()} "
+                                    f"latency={details.get('latency', '?')}"
+                                ),
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
+
+                    self._agent_loop._on_drift = _on_drift_bypass
+
                 # Set validation level from system classification
                 if ctx.system >= 3:
                     self._agent_loop.config.validation_level = 3
