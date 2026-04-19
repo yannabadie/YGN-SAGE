@@ -947,6 +947,27 @@ class CognitiveOrchestrationPipeline:
                 # H4: Clear topology (pipeline owns topology, not agent_loop)
                 self._agent_loop._current_topology = None
 
+                # H5 audit fix (2026-04-19): wire the pipeline-scoped write gate
+                # onto the shared AgentLoop for the single-agent bypass path.
+                # The G-series fix (commit c905d06) only wired the gate through
+                # `agent_loop_factory.create_node_agent_loop` for multi-node
+                # topology traversal. This code path reuses a pre-existing
+                # `self._agent_loop` singleton built at boot — it never saw the
+                # factory wiring, so `loop.write_gate is None` and phases/act.py
+                # fell through to ungated writes. Same silent-bypass class as
+                # H4 (cache_topology) — fix perfectly wired, never fires.
+                self._agent_loop.write_gate = self.write_gate
+                self._agent_loop.gate_current_task = ctx.task
+                try:
+                    from sage.memory.write_gate import infer_source_tier
+                    model_id = getattr(
+                        getattr(self._agent_loop.config, "llm", None),
+                        "model", None,
+                    )
+                    self._agent_loop.gate_source_tier = infer_source_tier(model_id)
+                except (ImportError, AttributeError):
+                    self._agent_loop.gate_source_tier = "unknown"
+
                 # Set validation level from system classification
                 if ctx.system >= 3:
                     self._agent_loop.config.validation_level = 3

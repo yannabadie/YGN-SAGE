@@ -188,6 +188,95 @@ async def test_pipeline_full_run():
     assert bandit.recorded[0][0] == "mock_decision_001"
 
 
+# -- H5 (2026-04-19): single-agent bypass must wire the write_gate -------------
+#
+# The G-series fix (commit c905d06) wired the pipeline-scoped write_gate
+# through `agent_loop_factory.create_node_agent_loop` — but only on the
+# multi-node topology traversal path. The SINGLE-AGENT path at
+# pipeline.py:941+ reuses a pre-existing `self._agent_loop` singleton that
+# never went through the factory, so `loop.write_gate` stayed None and
+# phases/act.py fell through to ungated writes. Same silent-bypass class as
+# H4 (cache_topology) — fix correct, never fires.
+
+@pytest.mark.asyncio
+async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
+    """Single-agent bypass path must inject write_gate + gate_current_task +
+    gate_source_tier onto self._agent_loop before calling .run(). Without
+    this, the G-series memory-write gate silently does not fire on S1 tasks
+    or single-node topologies."""
+    from unittest.mock import MagicMock, AsyncMock
+
+    # Build a single-agent pipeline with a spy agent_loop. Must look enough
+    # like a real AgentLoop to receive attribute assignments.
+    class _SpyAgentLoop:
+        def __init__(self):
+            self.config = MagicMock()
+            self.config.llm = MagicMock()
+            self.config.llm.model = "gemini-3.1-pro-preview"
+            self._llm = MagicMock()
+            self._skip_routing = False
+            self._current_topology = None
+            self.sandbox_manager = None
+            self.total_cost_usd = 0.0
+            self.tool_call_count = 0
+            self.tool_turn_count = 0
+            self.executed_commands = []
+            self.write_gate = None        # unset by default — fix must populate
+            self.gate_current_task = ""
+            self.gate_source_tier = ""
+
+        async def run(self, task):
+            return "single-agent test response"
+
+    spy_loop = _SpyAgentLoop()
+    # system=1 (S1) skips topology entirely (pipeline.py:474 → ctx.topology=None)
+    # which is the canonical route to the single-agent bypass path at
+    # pipeline.py:941. S2+ tasks build multi-node templates via
+    # _build_topology_from_hint and never enter the bypass branch.
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=1),
+        engine=_MockEngine(_MockGenerateResult(_MockTopology(n_nodes=1))),
+        assigner=_MockAssigner(),
+        provider_pool=MagicMock(),
+        bandit=_MockBandit(),
+        quality_estimator=_MockQualityEstimator(),
+        event_bus=MagicMock(),
+        llm_provider=_MockLLMProvider(),
+        llm_config=None,
+        agent_loop=spy_loop,
+    )
+
+    # Pipeline must have built a real CompositeWriteGate in __init__
+    assert pipeline.write_gate is not None, (
+        "Pipeline.__init__ must build a write_gate — otherwise the G-series "
+        "bypass-fix loop is broken at the root"
+    )
+
+    result = await pipeline.run("fix astropy units bug", budget_usd=3.0)
+
+    # Sanity: spy_loop.run() was actually called (otherwise the test proves nothing)
+    assert result == "single-agent test response", (
+        f"expected spy_loop.run() to be the LLM path, got result={result!r}. "
+        "If this is 'Pipeline test response', stage_execute fell through to the "
+        "llm_provider fallback instead of the agent_loop path — test setup is wrong."
+    )
+
+    # Bypass path must have wired the gate onto the shared agent loop
+    assert spy_loop.write_gate is pipeline.write_gate, (
+        "single-agent path must assign pipeline.write_gate → agent_loop.write_gate; "
+        "without it, phases/act.py sees loop.write_gate=None and memory writes "
+        "silently skip the 5-signal gate"
+    )
+    assert spy_loop.gate_current_task == "fix astropy units bug", (
+        "single-agent path must forward ctx.task into the loop for the "
+        "gate's relevance signal"
+    )
+    assert spy_loop.gate_source_tier in {"reasoner", "fast", "budget", "unknown"}, (
+        f"gate_source_tier should be resolved from cards.toml via "
+        f"infer_source_tier, got: {spy_loop.gate_source_tier!r}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_pipeline_s1_skips_decomposition():
     """S1 tasks skip the decomposition stage entirely."""
