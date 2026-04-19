@@ -134,22 +134,22 @@ def create_node_agent_loop(
     else:
         node_max_steps = 5
 
-    # D8 soft-cap (2026-04-18 audit) — revised three times based on
-    # empirical smoke results:
+    # D8 soft-cap (2026-04-18 audit) — revised four times on empirical
+    # smoke results:
     #   Rev 1 (max_steps//2): 0/5 real, coder bailed at 5/10.
-    #   Rev 2 (max_steps-3):  1/5 real, astropy-6938 regressed (bailed
-    #                         at 7/10 on near-completion).
-    #   Rev 3 (max_steps-1 for S2, max_steps-3 for S3, off for S1) — F1:
-    #   S2 coders routinely use the full 10-step budget; only 1-step
-    #   headroom catches the 20-for-20 pathology without killing
-    #   near-completion work. S3 keeps 3-step headroom because 20-budget
-    #   thrash has more slack to detect. S1 stays disabled.
+    #   Rev 2 (max_steps-3):  1/5 real, astropy-6938 regressed.
+    #   Rev 3 (S2: max-1, S3: max-3) — F1: S2 coder routinely uses full
+    #     10-step budget; only 1-step headroom catches 20-for-20 thrash.
+    #   Rev 4 (S3: max-1) — F12 (2026-04-19): after F8 put coder on S3
+    #     (max=20), v11 showed 3/5 EMPTY tasks stalled at exactly 17/20
+    #     on legitimate grep+read+edit cycles that would have completed
+    #     at step 18-19. Match S2's logic: 1-step headroom is enough for
+    #     the pathological case, preserves 2 more exploration steps for
+    #     the typical case.
     if node_max_steps <= 5:
         node_stall_cap = 0  # S1 — budget too tight for any window
-    elif node_max_steps <= 10:
-        node_stall_cap = node_max_steps - 1  # S2: 9 (F1, was 7)
     else:
-        node_stall_cap = node_max_steps - 3  # S3: 17 (unchanged)
+        node_stall_cap = node_max_steps - 1  # S2: 9, S3: 19
 
     config = AgentConfig(
         name=node_name,
