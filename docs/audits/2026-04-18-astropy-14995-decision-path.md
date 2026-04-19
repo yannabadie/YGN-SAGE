@@ -119,9 +119,16 @@ MAP-Elites archive persistence, Rust TopologyController parallel impl).
 | SQLite Episodic | ✅ | `pipeline.py:168-189` + `phases/act.py:206-213` (step storage) |
 | Entity Semantic (causal) | ❓ unverified | `phases/act.py:217-223` — only activates when content length > 50; sentinel outputs (51 chars but cascade-empty) may NOT trigger it |
 | ExoCortex RAG | ❌ | `tools/exocortex_tools.py:33-39` is query-only; no writes issued on this task |
-| `RustCompositeWriteGate` 5-signal | ❌ bypassed | `memory/write_gate.py:66-93,162-247` exists but runtime writes call storage APIs *directly* — the salience gate is architecturally dead weight |
+| `RustCompositeWriteGate` 5-signal | ✅ wired (2026-04-19 G-series) | `pipeline.py:137+208`, `agent_loop_factory.py:170-178`, `phases/act.py:206-260` — gate shared across nodes of ONE task, rebuilt per `run(task)`; see commit `c905d06` |
 
-**⇒ Memory IS being written (STM+Episodic), but the 5-signal write-gate that exists specifically to suppress low-value writes (sentinel outputs, zero-content turns, drift-flagged events) is never consulted. The RustCompositeWriteGate is architecturally present but bypassed. Consolidator promotes to semantic only when content > 50 chars; sentinel == 51 chars may promote garbage.**
+**⇒ Memory IS being written (STM+Episodic), and the 5-signal write-gate
+is now called before each of the 3 persistent writes in `phases/act.py`.
+Gate blocks on exact-dedup for cross-node sentinel cascades (planner →
+coder → synthesizer emitting the same sentinel within one task) and on
+low composite-salience score for off-topic writes. Honest scope: does
+NOT help the first-occurrence sentinel — that scores ~0.72 > threshold
+0.35 and passes, so single-shot failures are unchanged. Framed as
+observability + hygiene, not a pass-rate claim.**
 
 ### 2.6 Evolution
 
@@ -652,6 +659,22 @@ documentation/validation doc. Zero speculative kept-in-tree code.
 - Whether F6 affects non-SWE tasks (e.g., MASBENCH) — sequential is general-purpose, S2 planner may be overkill for simple tasks.
 - Ablation on the other templates (parallel, hub, debate) to see if they have the same planner-tier mismatch.
 - Meta-Harness on top of a fixed harness (deferred per user decision Apr 18).
+
+### 5.1 Architecture-level follow-ups (post-SWE-Lite pivot, 2026-04-19)
+
+After v12 validation showed diminishing returns from SWE-Lite tuning (true
+rate plateau 47–53% vs proxy 73%), the loop pivoted to architecture-level
+audits. Three candidates were investigated:
+
+| Gap | Status | Commit / next step |
+|---|---|---|
+| `RustCompositeWriteGate` bypass | ✅ wired (`c905d06`) | See §2.5 — 3 writes in `phases/act.py` now gated, pipeline-scoped state |
+| MAP-Elites archive updates | ✅ already works | Rust `TopologyEngine.record_outcome` fires at `pipeline.py:1216`; boot loads + atexit saves archive state (`~/.sage/archive_state.db`). Python `TopologyArchive` stub is dead code (separate cleanup, low priority) |
+| Rust `TopologyController` port | ⏸ deferred | Python is sole impl (`topology_controller.py`); violates Critical Directive #1 but bigger work (6 decision paths + PyO3 bindings + threshold constants + Rust tests). Out of session scope; queued for a dedicated sprint |
+
+The gate wiring was picked over the Controller port because it fits a
+single session. The directive-compliance gap on the Controller remains
+open — **not closed by the gate fix**.
 
 ---
 
