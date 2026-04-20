@@ -468,6 +468,13 @@ impl RustTopologyController {
         self.spawn_count < MAX_SPAWNS
     }
 
+    /// Increment the abstain counter. Used by Python `_compute_quality`
+    /// when QualityEstimator falls back to heuristic (signals an abstain).
+    /// No cap — abstain is diagnostic, not budget-limiting.
+    fn record_abstain(&mut self) {
+        self.abstain_count += 1;
+    }
+
     /// Increment the spawn counter under the MAX_SPAWNS gate.
     /// Returns PyValueError if already at cap (defensive — caller should
     /// check `should_trigger_emergent_spawn` first).
@@ -891,6 +898,15 @@ mod tests {
         let mut c = RustTopologyController::new_inner();
         c.spawn_count = MAX_SPAWNS + 5;
         assert!(!c.should_trigger_emergent_spawn(99));
+    }
+
+    #[test]
+    fn record_abstain_increments_counter() {
+        let mut c = RustTopologyController::new_inner();
+        assert_eq!(c.abstain_count, 0);
+        c.record_abstain();
+        c.record_abstain();
+        assert_eq!(c.abstain_count, 2);
     }
 
     #[test]

@@ -44,14 +44,7 @@ def test_upgrade_model_on_critical_quality(controller, mock_ctx):
 
 def test_upgrade_respects_max_retries(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.1
-    controller._node_retries[0] = 2  # already at max (Python legacy state)
-    # Plan 2.6: mirror onto Rust companion so the Rust-primary cascade sees
-    # the exhausted retry budget. Dict-item assignments can't be caught by
-    # __setattr__, so tests that seed dict-shaped state must also poke
-    # the Rust side explicitly. This mirroring is a test-scaffold concern;
-    # production callers don't set _node_retries from outside.
-    if controller._rust_ctrl is not None:
-        controller._rust_ctrl.set_node_retries(0, 2)
+    controller._seed_for_tests(retries={0: 2})  # already at max
     d = controller.evaluate_and_decide(0, "bad", "task", MagicMock(), mock_ctx)
     assert d.action == "continue"  # no more retries -> accept
 
@@ -69,7 +62,7 @@ def test_reroute_on_inconsistency(controller, mock_ctx):
 
 
 def test_max_reroute_forces_continue(controller, mock_ctx):
-    controller._reroute_count = 1  # at max
+    controller._seed_for_tests(reroute=1)  # at max
     controller._qe.estimate.return_value = 0.5
     with patch('sage.topology_controller.TopologyController.compute_consistency_score', return_value=0.2):
         d = controller.evaluate_and_decide(
@@ -102,7 +95,7 @@ def test_spawn_on_emergent_subtask(controller, mock_ctx):
 
 
 def test_max_spawns_respected(controller, mock_ctx):
-    controller._spawn_count = 3  # at max
+    controller._seed_for_tests(spawn=3)  # at max
     controller._qe.estimate.return_value = 0.5
     topo = MagicMock()
     topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
@@ -136,7 +129,7 @@ def test_heuristic_quality_used_when_estimator_abstains(mock_ctx):
     )
 
     assert quality > 0.3  # short output scores low in the new weighted heuristic
-    assert ctrl._abstain_count == 1
+    assert ctrl.abstain_count == 1
 
 
 def test_debate_disagreement_opens_gate(controller, mock_ctx):
@@ -268,6 +261,94 @@ def test_agent_loop_exhaustion_dataclass_exposes_fields():
     assert e.consecutive_tool_steps == 10
     assert e.last_tool_name == "execute_bash"
     assert e.last_assistant_snippet.startswith("I need to")
+
+
+# --- B.1 / B.2 / B.4 Task-B façade contract tests (2026-04-20) ---
+
+
+def test_missing_sage_core_raises_importerror(monkeypatch):
+    """B.1: TopologyController.__init__ must raise ImportError immediately
+    when sage_core is unavailable. Before Task B it would silently fall
+    back to a legacy Python path; after Task B that path is deleted and
+    the ImportError is the only honest signal."""
+    import sage.topology_controller as tc_mod
+    monkeypatch.setattr(tc_mod, "_HAS_RUST_CTRL", False)
+    monkeypatch.setattr(tc_mod, "_RustTopologyControllerImpl", None)
+    with pytest.raises(ImportError, match="sage_core"):
+        tc_mod.TopologyController()
+
+
+def test_python_facade_reads_rust_state():
+    """B.2: @property getters on TopologyController must proxy Rust state.
+    After _seed_for_tests() plants values in Rust, the properties must
+    return those exact values — confirming they are not reading stale
+    Python shadow fields."""
+    ctrl = TopologyController(assigner=MagicMock(), quality_estimator=None)
+    ctrl._seed_for_tests(reroute=1, spawn=2, retries={3: 4}, abstain=5)
+    assert ctrl.reroute_count == 1
+    assert ctrl.spawn_count == 2
+    assert ctrl.node_retries[3] == 4
+    assert ctrl.abstain_count == 5
+
+
+def test_python_facade_rejects_direct_mutation():
+    """B.2: Setting a façade property directly must raise AttributeError.
+    The old shadow-field pattern allowed ``ctrl._reroute_count = N`` to
+    route around Rust state; that pathway is closed — any attempt to
+    bypass _seed_for_tests() must fail loudly."""
+    ctrl = TopologyController(assigner=MagicMock(), quality_estimator=None)
+    with pytest.raises(AttributeError):
+        ctrl.reroute_count = 99  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        ctrl.spawn_count = 3  # type: ignore[misc]
+    with pytest.raises(AttributeError):
+        ctrl.abstain_count = 1  # type: ignore[misc]
+
+
+def test_state_equivalence_after_cascade_scenario():
+    """B.4: Façade properties must reflect Rust state after a multi-step cascade.
+    Three mutating paths are exercised:
+      1. QE returns None → record_abstain() fires → abstain_count becomes 1.
+      2. QE returns critical (0.1) on a DIFFERENT node → check_quality_cascade
+         increments node_retries[1] to 1.
+    Façade properties read Rust state; shadow fields no longer exist."""
+    qe = MagicMock()
+    # Call 1 (node 0): QE abstains → heuristic used, abstain_count → 1.
+    # Call 2 (node 1): QE returns 0.1 (critical) → upgrade_model, retries[1] → 1.
+    qe.estimate.side_effect = [None, 0.1]
+    topo = MagicMock()
+    node = MagicMock()
+    node.max_retries = 2
+    node.system = 1
+    node.model_id = ""
+    node.required_capabilities = []
+    node.role = "agent"
+    node.max_cost_usd = 1.0
+    topo.get_node.return_value = node
+    topo.get_predecessors.return_value = []
+    ctrl = TopologyController(assigner=MagicMock(), quality_estimator=qe)
+    ctrl._assigner.assign_single_node.return_value = "reasoner-v2"
+
+    ctx = MagicMock()
+    ctx.latency_ms = 100.0
+
+    # Call 1 (node 0): QE abstains → heuristic scores → abstain_count becomes 1.
+    ctrl.evaluate_and_decide(0, "some output for the first node", "task", topo, ctx)
+    assert ctrl.abstain_count == 1, (
+        f"After QE abstain, abstain_count should be 1, got {ctrl.abstain_count}"
+    )
+
+    # Call 2 (node 1, fresh): QE returns 0.1 (critical) → upgrade_model.
+    # node_retries[1] must be 1; abstain_count stays at 1.
+    d2 = ctrl.evaluate_and_decide(1, "poor quality answer", "task", topo, ctx)
+    assert d2.action == "upgrade_model"
+    assert ctrl.node_retries.get(1, 0) == 1, (
+        f"After one critical-quality upgrade on node 1, node_retries[1] should be 1, "
+        f"got {ctrl.node_retries.get(1, 0)}"
+    )
+    assert ctrl.abstain_count == 1, (
+        "abstain_count should still be 1 — QE returned a value on call 2"
+    )
 
 
 def test_agent_loop_budget_exhausted_wraps_detail():

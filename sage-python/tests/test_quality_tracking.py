@@ -10,7 +10,7 @@ from sage.quality_estimator import QualityEstimator
 class TestQualityAbstainTracking:
     def test_abstain_count_starts_at_zero(self):
         ctrl = TopologyController()
-        assert ctrl._abstain_count == 0
+        assert ctrl.abstain_count == 0
 
     def test_quality_stats_structure(self):
         ctrl = TopologyController()
@@ -42,7 +42,7 @@ class TestQualityAbstainTracking:
             node_idx=0, result="hello world", task="test",
             topology=_FakeTopo(), ctx=_FakeCtx(),
         )
-        assert ctrl._abstain_count >= 1
+        assert ctrl.abstain_count >= 1
 
 
 class TestQualityEstimatorBackend:
