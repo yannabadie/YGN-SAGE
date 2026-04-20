@@ -1,0 +1,24 @@
+# YGN-SAGE — development install (root convenience)
+#
+# Full setup:
+#   1. Build the Rust core first (sage-core is not on PyPI; it's built via maturin):
+#        cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor
+#   2. Install the Python workspaces from this file:
+#        pip install -r requirements.txt
+#
+# This file is a convenience alias for:
+#   pip install -e ./sage-python[all,dev] -e ./sage-discover[dev]
+#
+# It pulls the full dev surface: all provider extras (google, openai),
+# arrow, z3, embeddings, ui, bench, mcp, a2a, plus dev tooling (pytest,
+# ruff, mypy, hypothesis). Narrower installs are documented in each
+# package's pyproject.toml.
+#
+# Source of truth for exact dependency versions remains the
+# sage-python/pyproject.toml and sage-discover/pyproject.toml files.
+# This file intentionally does not pin transitive versions — it is a
+# developer onboarding alias, not a production lock. For a pinned lock
+# file, run `pip-compile sage-python/pyproject.toml` separately.
+
+-e ./sage-python[all,dev]
+-e ./sage-discover[dev]
