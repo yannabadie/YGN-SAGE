@@ -188,6 +188,98 @@ def _python_path1_reference(py_ctrl, result, node_idx):
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+def test_rust_path2_quality_cascade_matches_python_on_20_samples():
+    """Plan 2.3 equivalence: Rust `check_quality_cascade` must produce
+    the same (action, target_node) and equivalent reason on 20 samples
+    spanning all three quality bands (good, critical, middle).
+    `invariant_feedback` + `new_model_id` remain Python-resolved for
+    now (scope-clipped per plan; 2.6 ports them) — equivalence here
+    covers the threshold + retry state machine only.
+    """
+    from sage_core import RustTopologyController
+    from sage.topology_controller import TopologyController
+
+    # 20 samples across bands — force each of: good / middle / critical /
+    # critical-retry-exhausted / per-node retry isolation.
+    samples: list[tuple[float, int, int]] = [
+        # Good band (>= THETA_GOOD=0.7) → continue
+        (0.95, 0, 2), (0.80, 1, 2), (0.70, 2, 2), (1.00, 3, 2),
+        # Middle band [0.3, 0.7) → None (gate candidate; Python falls through)
+        (0.69, 4, 2), (0.50, 5, 2), (0.40, 6, 2), (0.30, 7, 2),
+        # Critical (< 0.3) + retries available → upgrade_model, increment retry
+        (0.25, 8, 2), (0.10, 9, 2), (0.00, 10, 2), (0.15, 11, 2),
+        # Retry exhaustion (same node three times) — last one returns None
+        (0.05, 12, 2), (0.05, 12, 2), (0.05, 12, 2),
+        # Per-node retry isolation (node 13 fresh, node 12 exhausted)
+        (0.05, 13, 2), (0.29, 14, 2),
+        # Edge: exactly at THETA_CRITICAL=0.3 → middle band (None)
+        (0.3, 15, 2),
+        # Edge: just below THETA_CRITICAL → critical
+        (0.299, 16, 2),
+        # With retry_limit=0, critical never upgrades
+        (0.1, 17, 0),
+    ]
+
+    rust_ctrl = RustTopologyController()
+    py_ctrl = TopologyController()
+
+    for quality, node_idx, retry_limit in samples:
+        rust_decision = rust_ctrl.check_quality_cascade(quality, node_idx, retry_limit)
+        py_decision = _python_path2_reference(py_ctrl, quality, node_idx, retry_limit)
+
+        if rust_decision is None:
+            assert py_decision is None, (
+                f"rust passed through q={quality} n={node_idx} r={retry_limit} but "
+                f"python returned {py_decision}"
+            )
+            continue
+
+        assert py_decision is not None, (
+            f"rust returned {rust_decision.action!r} on q={quality} n={node_idx} "
+            f"r={retry_limit} but python passed through"
+        )
+        assert rust_decision.action == py_decision.action, (
+            f"action mismatch q={quality} n={node_idx}: "
+            f"rust={rust_decision.action!r} python={py_decision.action!r}"
+        )
+        assert rust_decision.target_node == py_decision.target_node
+        # Reason format: Rust writes "quality=0.10 < 0.3", Python uses f"{q:.2f}"
+        # Accept matching prefix (modulo rounding) on the upgrade path.
+        if rust_decision.action == "upgrade_model":
+            assert rust_decision.reason.startswith("quality="), rust_decision.reason
+            assert py_decision.reason.startswith("quality="), py_decision.reason
+            assert rust_decision.reason.endswith("< 0.3"), rust_decision.reason
+
+
+def _python_path2_reference(py_ctrl, quality, node_idx, retry_limit):
+    """Mirror of path-2 threshold + retry logic from
+    topology_controller.py:175-199 — same scope as Rust check_quality_cascade.
+    No debate gate, no upgrade-model resolution — 2.6 will cover those."""
+    from sage.topology_controller import AdaptationDecision, TopologyController
+
+    py_ctrl._node_qualities[node_idx] = quality
+
+    if quality >= TopologyController.THETA_GOOD:
+        return AdaptationDecision(action="continue", target_node=node_idx)
+
+    if quality < TopologyController.THETA_CRITICAL:
+        retries = py_ctrl._node_retries.get(node_idx, 0)
+        if retries < retry_limit:
+            py_ctrl._node_retries[node_idx] = retries + 1
+            return AdaptationDecision(
+                action="upgrade_model",
+                target_node=node_idx,
+                reason=f"quality={quality:.2f} < {TopologyController.THETA_CRITICAL}",
+                # new_model_id + invariant_feedback deliberately left None —
+                # Rust doesn't compute them either (2.6 scope).
+            )
+        return None
+
+    # Middle band — caller checks debate gate
+    return None
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
 def test_python_controller_attaches_rust_companion_when_available():
     """TopologyController.__init__ must instantiate the Rust companion
     when sage_core is available — this wires the delegation hook that

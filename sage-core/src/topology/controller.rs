@@ -196,6 +196,67 @@ impl RustTopologyController {
         None
     }
 
+    /// Plan 2.3 — port of Python path 2 (quality cascade) + the debate-gate
+    /// threshold check (scope-clipped per plan; `_open_gate` helper stays
+    /// Python for now because it walks the topology graph via predecessors).
+    /// Returns:
+    ///   - Some(continue) when quality >= THETA_GOOD
+    ///   - Some(upgrade_model) (partial — caller fills new_model_id +
+    ///     invariant_feedback via Python resolver) when quality <
+    ///     THETA_CRITICAL AND node retries < retry_limit; increments
+    ///     `node_retries[node_idx]` as a side effect.
+    ///   - None when quality is in the critical band [THETA_CRITICAL,
+    ///     THETA_GOOD) — caller falls through to debate-gate logic. Also
+    ///     None when quality < THETA_CRITICAL but retry budget exhausted
+    ///     (caller continues cascade to parallel inconsistency / prune /
+    ///     spawn).
+    ///
+    /// `retry_limit` is passed in by the caller because it depends on the
+    /// node's `max_retries` attribute — reading that from Python here
+    /// would couple Rust to the Python topology-graph shape. Keep it in
+    /// Python until 2.6 ports `_max_retries_for_node`.
+    #[pyo3(signature = (quality, node_idx, retry_limit))]
+    fn check_quality_cascade(
+        &mut self,
+        quality: f32,
+        node_idx: usize,
+        retry_limit: u32,
+    ) -> Option<RustAdaptationDecision> {
+        self.node_qualities.insert(node_idx, quality);
+        if quality >= THETA_GOOD {
+            return Some(RustAdaptationDecision::continue_at(Some(node_idx), ""));
+        }
+        if quality < THETA_CRITICAL {
+            let retries = *self.node_retries.get(&node_idx).unwrap_or(&0);
+            if retries < retry_limit {
+                self.node_retries.insert(node_idx, retries + 1);
+                return Some(RustAdaptationDecision {
+                    action: "upgrade_model".into(),
+                    target_node: Some(node_idx),
+                    reason: format!("quality={:.2} < {}", quality, THETA_CRITICAL),
+                    new_model_id: None,       // filled by Python _resolve_upgrade_model
+                    invariant_feedback: None, // filled by Python _get_invariant_feedback
+                    gate_source: None,
+                    gate_target: None,
+                });
+            }
+            // retry budget exhausted → caller continues cascade
+            return None;
+        }
+        // In the critical band [THETA_CRITICAL, THETA_GOOD) — caller will
+        // try debate gate, then fall through if gate returns None.
+        None
+    }
+
+    /// Plan 2.3 helper — "is this quality in the debate-gate band?"
+    /// Keeps the threshold check in Rust so Python delegation from 2.6
+    /// doesn't need to hard-code the constants; `_open_gate` itself
+    /// stays Python for now.
+    #[pyo3(signature = (quality))]
+    fn is_in_gate_band(&self, quality: f32) -> bool {
+        (THETA_CRITICAL..THETA_GOOD).contains(&quality)
+    }
+
     /// Plan 2.2 — port of Python path 1 (`topology_controller.py:134-149`).
     /// Empty / sentinel / error-pattern output triggers a reroute_topology
     /// decision, up to MAX_REROUTES. When the budget is exhausted, return
@@ -350,6 +411,66 @@ mod tests {
             .check_empty_error_reroute("normal answer text here", 0)
             .is_none());
         assert_eq!(c.reroute_count, 0);
+    }
+
+    #[test]
+    fn quality_cascade_good_returns_continue() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_quality_cascade(0.85, 0, 2).unwrap();
+        assert_eq!(d.action, "continue");
+        assert_eq!(d.target_node, Some(0));
+        assert_eq!(c.node_qualities.get(&0), Some(&0.85));
+    }
+
+    #[test]
+    fn quality_cascade_at_good_threshold_is_inclusive() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_quality_cascade(THETA_GOOD, 0, 2).unwrap();
+        assert_eq!(d.action, "continue");
+    }
+
+    #[test]
+    fn quality_cascade_critical_upgrades_and_increments_retries() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_quality_cascade(0.1, 3, 2).unwrap();
+        assert_eq!(d.action, "upgrade_model");
+        assert_eq!(d.target_node, Some(3));
+        assert!(d.reason.starts_with("quality="));
+        assert!(d.reason.contains("< 0.3"));
+        assert_eq!(c.node_retries.get(&3), Some(&1));
+    }
+
+    #[test]
+    fn quality_cascade_critical_retry_exhaustion_returns_none() {
+        let mut c = RustTopologyController::new();
+        // Two upgrades allowed (MAX_RETRIES via retry_limit param)
+        c.check_quality_cascade(0.1, 3, 2).unwrap();
+        c.check_quality_cascade(0.1, 3, 2).unwrap();
+        // Third call — budget exhausted, falls through
+        assert!(c.check_quality_cascade(0.1, 3, 2).is_none());
+        // Retries capped at the budget (no over-increment)
+        assert_eq!(c.node_retries.get(&3), Some(&2));
+    }
+
+    #[test]
+    fn quality_cascade_middle_band_returns_none_for_gate() {
+        let mut c = RustTopologyController::new();
+        // Between THETA_CRITICAL=0.3 and THETA_GOOD=0.7 → None so the
+        // Python debate-gate helper can decide
+        assert!(c.check_quality_cascade(0.5, 0, 2).is_none());
+        // Per-node quality tracking still happens
+        assert_eq!(c.node_qualities.get(&0), Some(&0.5));
+    }
+
+    #[test]
+    fn is_in_gate_band_detects_critical_range() {
+        let c = RustTopologyController::new();
+        assert!(c.is_in_gate_band(0.3));  // lower inclusive
+        assert!(c.is_in_gate_band(0.5));
+        assert!(c.is_in_gate_band(0.699));
+        assert!(!c.is_in_gate_band(0.7));   // upper exclusive
+        assert!(!c.is_in_gate_band(0.29));  // below
+        assert!(!c.is_in_gate_band(0.9));
     }
 
     #[test]
