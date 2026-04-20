@@ -82,3 +82,20 @@ async def test_sage_recurse_no_origin_node_skips_gate():
     result = await tool.run({"sub_task": "standalone"})
     assert result == "done: standalone"
     assert ctrl._rust_ctrl.spawn_count == 3  # unchanged — gate skipped
+
+
+@pytest.mark.asyncio
+async def test_sage_recurse_origin_node_isolated_across_tasks():
+    """ContextVar must not leak across concurrent asyncio tasks."""
+    seen: dict[int, int | None] = {}
+
+    async def _capture(node_idx: int) -> None:
+        token = sage_recurse_origin_node.set(node_idx)
+        try:
+            await asyncio.sleep(0.001)  # yield control
+            seen[node_idx] = sage_recurse_origin_node.get()
+        finally:
+            sage_recurse_origin_node.reset(token)
+
+    await asyncio.gather(_capture(1), _capture(2), _capture(3))
+    assert seen == {1: 1, 2: 2, 3: 3}, f"leaked: {seen}"
