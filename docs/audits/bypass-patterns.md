@@ -103,13 +103,12 @@ the singleton. The bypasses found:
 | `gate_source_tier` | ✅ | ❌ → H5 fix |
 | `_on_drift` | ✅ (D6 + runner) | ❌ → H6 fix |
 | `max_steps` | ✅ (by system) | ❌ → H7 fix (commit `b7ced9d`, plan item 1.1) |
-| `stall_cap` | ✅ (D8) | ❌ (uses singleton default — plan item 1.2) |
+| `stall_cap` | ✅ (D8) | ❌ → H8 fix (plan item 1.2, commit TBD) |
 | `tools` | ✅ (by role) | ❌ (uses singleton tools — plan item 1.3) |
 
-**Two more candidate bypasses still to verify**: `stall_cap`, `tools`.
-The singleton may be configured at boot with sensible defaults that
-happen to work. Plan items 1.2 and 1.3 of
-`docs/superpowers/plans/2026-04-20-rust-first-plan.md` close them.
+**One more candidate bypass still to verify**: `tools` — the singleton
+has no role-hint, so factory's per-role tool filter may be intentionally
+N/A on the bypass path. Plan item 1.3 audits empirically.
 
 ### 4. Empirical validation — don't trust mock unit tests alone
 

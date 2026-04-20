@@ -1027,6 +1027,20 @@ class CognitiveOrchestrationPipeline:
                 # the step loop — mutation takes effect on the next .run().
                 self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
 
+                # Plan item 1.2 (2026-04-20): scale singleton D8 stall cap
+                # to match the factory (agent_loop_factory.py:151-154).
+                # AgentConfig.stall_after_tool_steps defaults to 0 (D8
+                # disabled), so the singleton never broke out of a tool-step
+                # thrash on S2/S3 bypass. Factory formula:
+                #   stall_cap = (max_steps - 1) if max_steps > 5 else 0
+                # (S1 budget too tight for any window — D8 off; S2→9, S3→19.)
+                # agent_loop.py:511 live-reads config.stall_after_tool_steps
+                # each step → mutation takes effect on next .run().
+                _new_max = self._agent_loop.config.max_steps
+                self._agent_loop.config.stall_after_tool_steps = (
+                    _new_max - 1 if _new_max > 5 else 0
+                )
+
                 # Resolve model from Rust routing decision (preserve model selection)
                 routing_decision = getattr(self, '_last_routing_decision', None)
                 _original_llm = self._agent_loop._llm

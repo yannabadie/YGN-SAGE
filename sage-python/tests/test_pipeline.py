@@ -434,6 +434,82 @@ async def test_pipeline_single_agent_scales_max_steps_by_system(monkeypatch):
         )
 
 
+# -- Plan item 1.2 (2026-04-20): singleton must set stall_cap matching factory
+#
+# AgentConfig.stall_after_tool_steps defaults to 0 (D8 soft-breaker disabled).
+# Factory computes (agent_loop_factory.py:151-154):
+#   stall_cap = 0                   if max_steps <= 5    (S1 budget too tight)
+#             = max_steps - 1       otherwise            (S2→9, S3→19)
+# Bypass path had never set this → singleton S2/S3 runs could thrash the
+# full step budget on consecutive tool-step cycles without breaking early.
+
+@pytest.mark.asyncio
+async def test_pipeline_single_agent_sets_stall_cap_matching_factory(monkeypatch):
+    """Bypass path must mirror factory's stall_cap formula after 1.1's max_steps scaling.
+
+    Depends on 1.1 — the stall_cap formula reads the just-set max_steps.
+    agent_loop.py:511 live-reads config.stall_after_tool_steps each step
+    so the mutation takes effect on the very next .run().
+    """
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SAGE_ABLATION_NO_TOPOLOGY", "1")
+
+    class _SpyAgentLoop:
+        def __init__(self):
+            self.config = MagicMock()
+            self.config.llm = MagicMock()
+            self.config.llm.model = "gemini-3.1-pro-preview"
+            self._llm = MagicMock()
+            self._skip_routing = False
+            self._current_topology = None
+            self.sandbox_manager = None
+            self.total_cost_usd = 0.0
+            self.tool_call_count = 0
+            self.tool_turn_count = 0
+            self.executed_commands = []
+            self.write_gate = None
+            self.gate_current_task = ""
+            self.gate_source_tier = ""
+            self._on_drift = None
+
+        async def run(self, task):
+            return "single-agent test response"
+
+    # (system, expected_max_steps, expected_stall_cap) — mirrors factory formula.
+    cases = [
+        (1, 5, 0),    # S1 — D8 off: budget too tight for any stall window
+        (2, 10, 9),   # S2 — 1-step headroom: catches pathological thrash, preserves typical
+        (3, 20, 19),  # S3 — same ratio as S2 per F12 revision (2026-04-19)
+    ]
+    for system_level, expected_max, expected_stall in cases:
+        spy_loop = _SpyAgentLoop()
+        pipeline = CognitiveOrchestrationPipeline(
+            router=_MockRouter(system=system_level),
+            engine=_MockEngine(_MockGenerateResult(_MockTopology(n_nodes=1))),
+            assigner=_MockAssigner(),
+            provider_pool=MagicMock(),
+            bandit=_MockBandit(),
+            quality_estimator=_MockQualityEstimator(),
+            event_bus=MagicMock(),
+            llm_provider=_MockLLMProvider(),
+            llm_config=None,
+            agent_loop=spy_loop,
+        )
+
+        await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
+
+        assert spy_loop.config.max_steps == expected_max, (
+            f"system={system_level} max_steps prerequisite (from 1.1) not met: "
+            f"expected {expected_max}, got {spy_loop.config.max_steps!r}"
+        )
+        assert spy_loop.config.stall_after_tool_steps == expected_stall, (
+            f"system={system_level} stall_cap expected {expected_stall}, "
+            f"got {spy_loop.config.stall_after_tool_steps!r}. Bypass path "
+            f"must mirror agent_loop_factory.py:151-154 formula."
+        )
+
+
 @pytest.mark.asyncio
 async def test_pipeline_s1_skips_decomposition():
     """S1 tasks skip the decomposition stage entirely."""
