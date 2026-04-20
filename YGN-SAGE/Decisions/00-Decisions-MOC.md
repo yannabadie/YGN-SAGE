@@ -4,7 +4,7 @@ type: moc
 tags:
   - decisions
   - moc
-updated: 2026-04-07
+updated: 2026-04-20
 ---
 
 # Architecture Decision Records
@@ -17,3 +17,9 @@ updated: 2026-04-07
 | [[ADR-004-Thompson-Sampling]] | Thompson sampling pour le bandit (pas UCB) | accepte |
 | [[ADR-005-ShadowRouter-Deprecated]] | Deprecier le ShadowRouter dual-path | accepte |
 | [[ADR-006-BigCodeBench-Limits]] | BigCodeBench Hard : topology pas le levier (omega=1.3) | accepte |
+| [[ADR-007-F7-Routing]] | F7 routing : floor domain-aware, promotion producer roles | accepte |
+| [[ADR-008-PRM-Gate-Domain]] | Z3 PRM uniquement sur math/formal, AVR sur code/general | accepte |
+| [[ADR-009-Telemetry-And-Routing-Plumbing]] | Wire-up telemetry + per-model routing + quota-aware health | accepte |
+| [[ADR-010-Bypass-Audit-Methodology]] | Methodologie bypass-audit (grep #[pyclass] + empirical validation) | accepte |
+| [[ADR-011-Singleton-vs-Factory-Asymmetry]] | Singleton AgentLoop doit re-configurer tout ce que la factory set | accepte |
+| [[ADR-010-Meta-Harness-Divergence]] | Meta-Harness : divergence vs paper (hyperparam tuner, pas structural search) | accepte |
