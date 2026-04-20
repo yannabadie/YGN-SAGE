@@ -31,6 +31,13 @@ _RECURSION_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar(
     "sage_recurse_depth", default=0,
 )
 
+# Set by TopologyRunner._execute_node to the current node index so the
+# spawn-gate in build_sage_recurse_tool can debit the right Rust state.
+# Default None → gate is skipped (standalone callers, tests).
+sage_recurse_origin_node: contextvars.ContextVar[int | None] = contextvars.ContextVar(
+    "sage_recurse_origin_node", default=None,
+)
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name, "")
@@ -89,12 +96,20 @@ _PARAMETERS: dict[str, Any] = {
 
 def build_sage_recurse_tool(
     run_callable: Callable[..., Awaitable[str]],
+    controller: Any = None,
 ) -> Tool:
     """Create a sage_recurse Tool bound to the given run() coroutine.
 
     ``run_callable`` should behave like ``AgentSystem.run(task, *, system_hint=None)``.
+    ``controller``, when provided, enables spawn-budget gating: each call
+    is checked against ``controller._rust_ctrl.should_trigger_emergent_spawn``
+    and debited via ``record_emergent_spawn`` before dispatch. The debit
+    happens BEFORE dispatch so a failed sub-run still counts toward the
+    budget (DoS guard against loopy agents).
+
     Bench adapters or tests can pass their own coroutine (a mock, a wrapper
-    with extra logging, etc.).
+    with extra logging, etc.) and may omit ``controller`` for unit-test
+    scenarios.
     """
 
     async def _handler(
@@ -121,6 +136,27 @@ def build_sage_recurse_tool(
         if system_hint is not None and system_hint not in (1, 2, 3):
             return f"Error: system_hint must be 1, 2, or 3 (got {system_hint})."
 
+        # Spawn-budget gate (Task D of 2026-04-20 phase-1 stab plan).
+        # Skipped when controller is None (standalone tool use) or when
+        # origin_node is None (no topology run in context).
+        origin_node = sage_recurse_origin_node.get()
+        if controller is not None and origin_node is not None:
+            if not controller._rust_ctrl.should_trigger_emergent_spawn(origin_node):
+                log.info(
+                    "sage_recurse refused: spawn budget exhausted "
+                    "(node=%d, spawn_count=%d)",
+                    origin_node, controller._rust_ctrl.spawn_count,
+                )
+                return (
+                    "Error: sage_recurse refused — spawn budget "
+                    "exhausted for this execution"
+                )
+            try:
+                controller._rust_ctrl.record_emergent_spawn(origin_node)
+            except Exception as exc:
+                log.error("sage_recurse record failed: %s", exc)
+                return f"Error: sage_recurse refused — {exc}"
+
         token = _RECURSION_DEPTH.set(current_depth + 1)
         try:
             log.info(
@@ -128,15 +164,19 @@ def build_sage_recurse_tool(
                 current_depth + 1, MAX_RECURSION_DEPTH,
                 sub_task[:120], budget_usd, system_hint,
             )
-            # Only forward system_hint if the callable accepts it.
             try:
                 if system_hint is not None:
                     result = await run_callable(sub_task, system_hint=system_hint)
                 else:
                     result = await run_callable(sub_task)
             except TypeError:
-                # Callable doesn't accept system_hint kwarg — fall back.
                 result = await run_callable(sub_task)
+            except Exception as exc:
+                log.exception("sage_recurse dispatch failed")
+                return (
+                    f"Error: sage_recurse dispatch failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
             return str(result) if result is not None else ""
         finally:
             _RECURSION_DEPTH.reset(token)
