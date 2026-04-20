@@ -85,25 +85,6 @@ def test_prune_on_low_importance(controller, mock_ctx):
             assert d.action == "prune_node"
 
 
-def test_spawn_on_emergent_subtask(controller, mock_ctx):
-    controller._qe.estimate.return_value = 0.5
-    topo = MagicMock()
-    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
-    result = "The analysis is done. We need to also verify the edge cases for negative inputs."
-    d = controller.evaluate_and_decide(0, result, "task", topo, mock_ctx)
-    assert d.action == "spawn_subagent"
-
-
-def test_max_spawns_respected(controller, mock_ctx):
-    controller._seed_for_tests(spawn=3)  # at max
-    controller._qe.estimate.return_value = 0.5
-    topo = MagicMock()
-    topo.get_predecessors.return_value = []  # no predecessors -> skip open_gate
-    result = "Need to also check the boundary conditions."
-    d = controller.evaluate_and_decide(0, result, "task", topo, mock_ctx)
-    assert d.action == "continue"  # spawn blocked
-
-
 def test_empty_output_reroutes_immediately(controller, mock_ctx):
     d = controller.evaluate_and_decide(0, "", "task", MagicMock(), mock_ctx)
     assert d.action == "reroute_topology"

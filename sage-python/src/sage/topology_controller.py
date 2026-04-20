@@ -334,15 +334,6 @@ class TopologyController:
                 )
                 return _rust_to_py_decision(rd)
 
-        # Path 6 (Rust): emergent subtask spawn.
-        rd = self._rust_ctrl.check_emergent_spawn(result, node_idx)
-        if rd is not None:
-            self._emit(
-                "SPAWN_SUBAGENT",
-                {"node": node_idx, "subtask": rd.reason[:100]},
-            )
-            return _rust_to_py_decision(rd)
-
         # Default: continue (accept imperfect result).
         return AdaptationDecision(action="continue", target_node=node_idx)
 
@@ -663,17 +654,3 @@ class TopologyController:
             return True, ""
         except Exception:
             return True, ""  # On error, don't block
-
-    @staticmethod
-    def _detect_emergent_subtask(result: str) -> str | None:
-        """Detect emergent sub-tasks from node output."""
-        patterns = [
-            r"(?:need to also|additionally|we should also|another step would be)\s+(.{10,200})",
-            r"(?:TODO|FIXME|NOTE):\s+(.{10,200})",
-            r"(?:this requires|prerequisite:)\s+(.{10,200})",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, result, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
