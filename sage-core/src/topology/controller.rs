@@ -451,6 +451,61 @@ impl RustTopologyController {
         *self.node_retries.get(&node_idx).unwrap_or(&0)
     }
 
+    /// Dict-shaped state: expose as Vec<(idx, count)> since PyO3 dict
+    /// conversion would need the GIL token. Python caller wraps in dict().
+    fn node_retries_view(&self) -> Vec<(usize, u32)> {
+        self.node_retries.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    fn node_qualities_view(&self) -> Vec<(usize, f32)> {
+        self.node_qualities.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    /// Budget-only check: can another emergent spawn happen?
+    /// `_node_idx` is accepted for forward compat (future per-node budgets)
+    /// but ignored under the current global MAX_SPAWNS policy.
+    fn should_trigger_emergent_spawn(&self, _node_idx: usize) -> bool {
+        self.spawn_count < MAX_SPAWNS
+    }
+
+    /// Increment the spawn counter under the MAX_SPAWNS gate.
+    /// Returns PyValueError if already at cap (defensive — caller should
+    /// check `should_trigger_emergent_spawn` first).
+    fn record_emergent_spawn(&mut self, _node_idx: usize) -> PyResult<()> {
+        if self.spawn_count >= MAX_SPAWNS {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "spawn budget exhausted ({}/{} reached)",
+                self.spawn_count, MAX_SPAWNS
+            )));
+        }
+        self.spawn_count += 1;
+        Ok(())
+    }
+
+    /// Test-only entry point — set all counters and retry dict in one call.
+    /// Used to replace the Python `__setattr__` mirror that let legacy tests
+    /// do `controller._reroute_count = N` directly. Validates implausible
+    /// values (> MAX_REROUTES + 10) to catch typos.
+    fn seed_state_for_legacy_tests(
+        &mut self,
+        reroute_count: u32,
+        spawn_count: u32,
+        node_retries: Vec<(usize, u32)>,
+        abstain_count: u32,
+    ) -> PyResult<()> {
+        if reroute_count > MAX_REROUTES + 10 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "reroute_count={} implausible (MAX_REROUTES={})",
+                reroute_count, MAX_REROUTES
+            )));
+        }
+        self.reroute_count = reroute_count;
+        self.spawn_count = spawn_count;
+        self.node_retries = node_retries.into_iter().collect();
+        self.abstain_count = abstain_count;
+        Ok(())
+    }
+
     /// Diagnostic view mirroring Python `quality_stats()`. Expose state
     /// early so tests and the Python delegate can both observe it.
     fn quality_stats(&self, py: Python<'_>) -> PyObject {
@@ -791,5 +846,111 @@ mod tests {
         assert_eq!(MAX_REROUTES, 1);
         assert_eq!(MAX_GATE_TURNS, 2);
         assert_eq!(MAX_SPAWNS, 3);
+    }
+
+    // --- Task A: view methods + spawn gate + seed ----------------------------
+
+    #[test]
+    fn getters_match_internal_state_after_decisions() {
+        let mut c = RustTopologyController::new_inner();
+        c.reroute_count = 2;
+        c.spawn_count = 1;
+        c.abstain_count = 3;
+        c.node_retries.insert(5, 7);
+        c.node_qualities.insert(5, 0.42);
+
+        // Getters (existing) return the current state.
+        assert_eq!(c.reroute_count(), 2);
+        assert_eq!(c.spawn_count(), 1);
+        assert_eq!(c.abstain_count(), 3);
+
+        // New view methods expose HashMap state as Vec<(K, V)>.
+        let retries: std::collections::HashMap<usize, u32> =
+            c.node_retries_view().into_iter().collect();
+        assert_eq!(retries.get(&5).copied(), Some(7));
+        let qualities: std::collections::HashMap<usize, f32> =
+            c.node_qualities_view().into_iter().collect();
+        assert_eq!(qualities.get(&5).copied(), Some(0.42));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_allows_within_budget() {
+        let c = RustTopologyController::new_inner();
+        assert!(c.should_trigger_emergent_spawn(0));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_refuses_at_cap() {
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS;
+        assert!(!c.should_trigger_emergent_spawn(0));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_refuses_past_cap() {
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS + 5;
+        assert!(!c.should_trigger_emergent_spawn(99));
+    }
+
+    #[test]
+    fn record_emergent_spawn_increments_counter() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        assert_eq!(c.spawn_count, 0);
+        pyo3::Python::with_gil(|_py| {
+            c.record_emergent_spawn(0).expect("first record ok");
+            c.record_emergent_spawn(1).expect("second record ok");
+        });
+        assert_eq!(c.spawn_count, 2);
+    }
+
+    #[test]
+    fn record_emergent_spawn_errors_at_cap() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS;
+        pyo3::Python::with_gil(|_py| {
+            let err = c.record_emergent_spawn(0).expect_err("should error at cap");
+            let err_str = format!("{err}");
+            assert!(
+                err_str.contains("spawn budget exhausted"),
+                "expected budget message, got: {err_str}"
+            );
+        });
+        assert_eq!(c.spawn_count, MAX_SPAWNS);
+    }
+
+    #[test]
+    fn seed_state_for_legacy_tests_populates_all_fields() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        pyo3::Python::with_gil(|_py| {
+            c.seed_state_for_legacy_tests(
+                1,
+                2,
+                vec![(0, 2), (3, 1)],
+                4,
+            )
+            .expect("seed ok");
+        });
+        assert_eq!(c.reroute_count, 1);
+        assert_eq!(c.spawn_count, 2);
+        assert_eq!(c.abstain_count, 4);
+        assert_eq!(c.node_retries.get(&0).copied(), Some(2));
+        assert_eq!(c.node_retries.get(&3).copied(), Some(1));
+    }
+
+    #[test]
+    fn seed_state_for_legacy_tests_rejects_implausible_reroute() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        pyo3::Python::with_gil(|_py| {
+            let result = c.seed_state_for_legacy_tests(
+                MAX_REROUTES + 20,
+                0, vec![], 0,
+            );
+            assert!(result.is_err());
+        });
     }
 }
