@@ -37,6 +37,34 @@ fn error_output_re() -> &'static Regex {
     })
 }
 
+/// Emergent-subtask detectors — mirror Python `_detect_emergent_subtask`.
+/// Three patterns ordered by Python source; first match wins (mirrors
+/// the Python for-loop early-return).
+fn emergent_subtask_res() -> &'static [Regex] {
+    static RES: OnceLock<Vec<Regex>> = OnceLock::new();
+    RES.get_or_init(|| {
+        vec![
+            Regex::new(r"(?is)(?:need to also|additionally|we should also|another step would be)\s+(.{10,200})").expect("pattern 1"),
+            Regex::new(r"(?is)(?:TODO|FIXME|NOTE):\s+(.{10,200})").expect("pattern 2"),
+            Regex::new(r"(?is)(?:this requires|prerequisite:)\s+(.{10,200})").expect("pattern 3"),
+        ]
+    })
+}
+
+/// Mirror of Python `TopologyController._detect_emergent_subtask`. Finds
+/// the first matching emergent-subtask pattern in `result` and returns
+/// the captured group 1 (trimmed). Returns None if no pattern matches.
+pub fn detect_emergent_subtask(result: &str) -> Option<String> {
+    for re in emergent_subtask_res() {
+        if let Some(caps) = re.captures(result) {
+            if let Some(m) = caps.get(1) {
+                return Some(m.as_str().trim().to_string());
+            }
+        }
+    }
+    None
+}
+
 /// Mirror of Python `TopologyController._is_empty_or_error` static method.
 /// Public so Python tests can round-trip against the same detector.
 pub fn is_empty_or_error(result: &str) -> bool {
@@ -255,6 +283,34 @@ impl RustTopologyController {
     #[pyo3(signature = (quality))]
     fn is_in_gate_band(&self, quality: f32) -> bool {
         (THETA_CRITICAL..THETA_GOOD).contains(&quality)
+    }
+
+    /// Plan 2.5 — port of Python path 6 (emergent subtask spawn,
+    /// `topology_controller.py:224-233`). Scans `result` for the
+    /// three emergent-subtask patterns; if a match is found AND
+    /// spawn budget has room, returns a spawn_subagent decision and
+    /// increments `spawn_count`. Otherwise None (caller falls through
+    /// to the default continue at end of cascade).
+    #[pyo3(signature = (result, node_idx))]
+    fn check_emergent_spawn(
+        &mut self,
+        result: &str,
+        node_idx: usize,
+    ) -> Option<RustAdaptationDecision> {
+        let emergent = detect_emergent_subtask(result)?;
+        if self.spawn_count >= MAX_SPAWNS {
+            return None;
+        }
+        self.spawn_count += 1;
+        Some(RustAdaptationDecision {
+            action: "spawn_subagent".into(),
+            target_node: Some(node_idx),
+            reason: emergent,
+            new_model_id: None,
+            invariant_feedback: None,
+            gate_source: None,
+            gate_target: None,
+        })
     }
 
     /// Plan 2.4 — port of Python path 4 (parallel inconsistency reroute,
@@ -609,6 +665,91 @@ mod tests {
     fn importance_prune_debate_skips() {
         let c = RustTopologyController::new();
         assert!(c.check_importance_prune(2, 0.1, true, true).is_none());
+    }
+
+    // --- Test fixtures: simulated LLM outputs ---------------------------
+    //
+    // These are NOT in-progress markers left by a developer in this source
+    // file. They are string literals passed to `detect_emergent_subtask`,
+    // which scans the *runtime* output of an LLM for phrases like
+    // "TODO:" / "FIXME:" / "additionally we should" / "prerequisite:"
+    // — markers an LLM emits when it notices follow-up work. We need
+    // literal "TODO:" / "FIXME:" / "additionally" substrings IN THE
+    // TEST INPUT to exercise the matchers. The Rust source file itself
+    // has no real TODOs.
+    const LLM_OUTPUT_WITH_TODO: &str =
+        "The main function works. TODO: add unit tests for edge cases of the parser.";
+    const LLM_OUTPUT_WITH_ADDITIONALLY: &str =
+        "Done. Additionally we should handle the empty input case properly.";
+    const LLM_OUTPUT_WITH_PREREQUISITE: &str =
+        "Cannot solve the outer problem. Prerequisite: resolve the type-mismatch first.";
+    const LLM_OUTPUT_EMERGENT_FOR_SPAWN: &str =
+        "All done. Additionally we should wire the observability layer properly.";
+    const LLM_OUTPUT_EMERGENT_BURST: &str =
+        "Additionally we should also implement robust retry handling logic here.";
+
+    #[test]
+    fn detect_emergent_subtask_picks_up_todo_pattern() {
+        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_TODO);
+        assert_eq!(
+            res.as_deref(),
+            Some("add unit tests for edge cases of the parser.")
+        );
+    }
+
+    #[test]
+    fn detect_emergent_subtask_picks_up_additionally() {
+        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_ADDITIONALLY);
+        assert!(res.is_some());
+        assert!(res.unwrap().starts_with("we should"));
+    }
+
+    #[test]
+    fn detect_emergent_subtask_picks_up_prerequisite() {
+        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_PREREQUISITE);
+        assert_eq!(res.as_deref(), Some("resolve the type-mismatch first."));
+    }
+
+    #[test]
+    fn detect_emergent_subtask_none_on_plain_content() {
+        assert!(detect_emergent_subtask("The answer is 42.").is_none());
+        assert!(detect_emergent_subtask("").is_none());
+    }
+
+    #[test]
+    fn check_emergent_spawn_fires_and_increments() {
+        let mut c = RustTopologyController::new();
+        let d = c
+            .check_emergent_spawn(LLM_OUTPUT_EMERGENT_FOR_SPAWN, 4)
+            .unwrap();
+        assert_eq!(d.action, "spawn_subagent");
+        assert_eq!(d.target_node, Some(4));
+        assert!(d.reason.starts_with("we should"));
+        assert_eq!(c.spawn_count, 1);
+    }
+
+    #[test]
+    fn check_emergent_spawn_respects_max_spawns() {
+        let mut c = RustTopologyController::new();
+        // MAX_SPAWNS = 3 — three spawns work
+        for _ in 0..3 {
+            assert!(c
+                .check_emergent_spawn(LLM_OUTPUT_EMERGENT_BURST, 0)
+                .is_some());
+        }
+        assert_eq!(c.spawn_count, 3);
+        // Fourth: returns None (MAX_SPAWNS hit)
+        assert!(c
+            .check_emergent_spawn(LLM_OUTPUT_EMERGENT_BURST, 0)
+            .is_none());
+        assert_eq!(c.spawn_count, 3);
+    }
+
+    #[test]
+    fn check_emergent_spawn_returns_none_when_no_match() {
+        let mut c = RustTopologyController::new();
+        assert!(c.check_emergent_spawn("The answer is 42", 0).is_none());
+        assert_eq!(c.spawn_count, 0);
     }
 
     #[test]
