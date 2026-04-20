@@ -361,6 +361,79 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
     )
 
 
+# -- Plan item 1.1 (2026-04-20): singleton must scale max_steps by system -----
+#
+# boot.py:279 builds the singleton AgentLoop with max_steps=MAX_AGENT_STEPS=20.
+# The factory (agent_loop_factory.py:132-137) scales per-node AgentLoops by
+# system tier: S1=5, S2=10, S3=20. The bypass path at pipeline.py:941+ reused
+# the singleton without re-scaling — S1 tasks burned 4x the intended step
+# budget before the loop could exit. Extends H5/H6 singleton-vs-factory
+# asymmetry pattern documented in docs/audits/bypass-patterns.md.
+#
+# agent_loop.py:424 reads `self.config.max_steps` directly in the step loop,
+# so mutation on the bypass path takes effect on the next .run() call —
+# same contract as validation_level (which was already mirrored).
+
+@pytest.mark.asyncio
+async def test_pipeline_single_agent_scales_max_steps_by_system(monkeypatch):
+    """Bypass path must mirror factory's per-system max_steps scaling.
+
+    SAGE_ABLATION_NO_TOPOLOGY=1 forces ctx.topology=None at Stage 2 for all
+    system tiers so the bypass branch at pipeline.py:941+ is reached
+    regardless of ctx.system. Without it, S2+ tasks with hint="sequential"
+    would enter the template-build branch and never mutate the singleton.
+    """
+    from unittest.mock import MagicMock
+
+    monkeypatch.setenv("SAGE_ABLATION_NO_TOPOLOGY", "1")
+
+    class _SpyAgentLoop:
+        def __init__(self):
+            self.config = MagicMock()
+            self.config.llm = MagicMock()
+            self.config.llm.model = "gemini-3.1-pro-preview"
+            self._llm = MagicMock()
+            self._skip_routing = False
+            self._current_topology = None
+            self.sandbox_manager = None
+            self.total_cost_usd = 0.0
+            self.tool_call_count = 0
+            self.tool_turn_count = 0
+            self.executed_commands = []
+            self.write_gate = None
+            self.gate_current_task = ""
+            self.gate_source_tier = ""
+            self._on_drift = None
+
+        async def run(self, task):
+            return "single-agent test response"
+
+    expected = {1: 5, 2: 10, 3: 20}
+    for system_level, expected_max_steps in expected.items():
+        spy_loop = _SpyAgentLoop()
+        pipeline = CognitiveOrchestrationPipeline(
+            router=_MockRouter(system=system_level),
+            engine=_MockEngine(_MockGenerateResult(_MockTopology(n_nodes=1))),
+            assigner=_MockAssigner(),
+            provider_pool=MagicMock(),
+            bandit=_MockBandit(),
+            quality_estimator=_MockQualityEstimator(),
+            event_bus=MagicMock(),
+            llm_provider=_MockLLMProvider(),
+            llm_config=None,
+            agent_loop=spy_loop,
+        )
+
+        await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
+
+        assert spy_loop.config.max_steps == expected_max_steps, (
+            f"system={system_level} expected max_steps={expected_max_steps}, "
+            f"got {spy_loop.config.max_steps!r}. Bypass path must mirror "
+            f"agent_loop_factory.py:132-137 scaling to prevent S1 tasks "
+            f"from running at 4x the factory-intended step budget."
+        )
+
+
 @pytest.mark.asyncio
 async def test_pipeline_s1_skips_decomposition():
     """S1 tasks skip the decomposition stage entirely."""

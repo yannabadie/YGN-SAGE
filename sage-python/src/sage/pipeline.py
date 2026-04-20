@@ -1016,6 +1016,17 @@ class CognitiveOrchestrationPipeline:
                 else:
                     self._agent_loop.config.validation_level = 1
 
+                # Plan item 1.1 (2026-04-20): scale singleton max_steps by
+                # ctx.system — close the H5-class bypass extending the
+                # singleton-vs-factory asymmetry. boot.py:279 built the
+                # singleton with max_steps=MAX_AGENT_STEPS=20; the factory
+                # (agent_loop_factory.py:132-137) scales 5/10/20 per system
+                # tier for per-node AgentLoops. Without this line, S1 tasks
+                # on the bypass path run at 4x the factory-intended budget.
+                # agent_loop.py:424 reads self.config.max_steps directly in
+                # the step loop — mutation takes effect on the next .run().
+                self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
+
                 # Resolve model from Rust routing decision (preserve model selection)
                 routing_decision = getattr(self, '_last_routing_decision', None)
                 _original_llm = self._agent_loop._llm

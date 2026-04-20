@@ -3,7 +3,7 @@
 **Status:** ACTIVE — plan of record. Every session updates this file.
 **Spec:** [docs/superpowers/specs/2026-04-20-rust-first-plan-design.md](../specs/2026-04-20-rust-first-plan-design.md)
 **Started:** 2026-04-20
-**Session count:** 0 of ~8 planned
+**Session count:** 1 of ~8 planned
 
 ---
 
@@ -34,7 +34,7 @@ Then find the first `[ ]` item below and begin. One item per session maximum. Wh
 
 | Phase | Item | Status | Commit | Session |
 |---|---|---|---|---|
-| 1 | 1.1 `max_steps` singleton audit | [ ] | — | — |
+| 1 | 1.1 `max_steps` singleton audit | [~] | (commit in flight) | 1 |
 | 1 | 1.2 `stall_cap` singleton audit | [ ] | — | — |
 | 1 | 1.3 `tools` filter singleton audit | [ ] | — | — |
 | 1 | 1.4 MAP-Elites archive growth smoke | [ ] | — | — |
@@ -453,3 +453,4 @@ git push origin main
 Every session that touches this file appends a line here.
 
 - 2026-04-20 [plan written, session 0] — spec written, plan checked in, no code yet
+- 2026-04-20 [session 1] — 1.1 max_steps singleton audit: wired `self._agent_loop.config.max_steps = {1:5, 2:10, 3:20}.get(ctx.system, 10)` in `pipeline.py` after the validation_level block; added regression test `test_pipeline_single_agent_scales_max_steps_by_system` using `SAGE_ABLATION_NO_TOPOLOGY=1` to force bypass across all three tiers; updated `docs/audits/bypass-patterns.md`. 36/36 `test_pipeline.py` green; full suite: 1927 passed, 5 errors + 1 failed all pre-existing asyncio-fixture pollution (pass in isolation).
