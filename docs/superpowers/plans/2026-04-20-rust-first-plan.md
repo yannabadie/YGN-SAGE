@@ -41,8 +41,8 @@ Then find the first `[ ]` item below and begin. One item per session maximum. Wh
 | 1 | 1.4a Fix H9 (ID form) + H10 (template branch cache) | [x] | `c65659b` | 1 |
 | 1 | 1.5 PyO3 inventory sweep | [x] | `f6193eb` | 1 |
 | 1 | 1.6 ADR-011 Singleton vs Factory | [x] | `d398196` | 1 |
-| 2 | 2.1 Rust scaffold + PyO3 | [~] | (commit in flight) | 1 |
-| 2 | 2.2 Port path 1 (empty/error) | [ ] | — | — |
+| 2 | 2.1 Rust scaffold + PyO3 | [x] | `152fe5e` | 1 |
+| 2 | 2.2 Port path 1 (empty/error) | [~] | (commit in flight) | 1 |
 | 2 | 2.3 Port paths 2–3 (quality + debate) | [ ] | — | — |
 | 2 | 2.4 Port paths 4–5 (parallel + prune) | [ ] | — | — |
 | 2 | 2.5 Port path 6 (emergent spawn) | [ ] | — | — |

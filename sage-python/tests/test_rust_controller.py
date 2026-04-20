@@ -81,6 +81,113 @@ def test_rust_adaptation_decision_roundtrip_from_python():
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+def test_rust_path1_empty_error_matches_python_on_20_samples():
+    """Plan 2.2 equivalence: Rust path 1 (check_empty_error_reroute) must
+    produce the same (action, target_node, reason) as Python legacy
+    `TopologyController._is_empty_or_error` + reroute logic on 20 sample
+    inputs. Rust-vs-Python drift here is the H4-class bypass pattern
+    applied at port level: if Rust classifies "timed out" as safe but
+    Python rejects it, silent behavior divergence.
+    """
+    from sage_core import RustTopologyController
+    from sage.topology_controller import TopologyController, AdaptationDecision
+
+    # 20 sample inputs exercising every branch of _is_empty_or_error
+    # and the reroute-budget state machine.
+    samples: list[tuple[str, int]] = [
+        # Blank / whitespace-only → empty-output reroute
+        ("", 0),
+        ("   ", 1),
+        ("\n\t ", 2),
+        # Sentinel prefix (D3 audit fix) → sentinel reroute
+        ("[sage: agent exited after 20 steps, no final content]", 3),
+        ("[sage: agent exited after 5 steps, last_tool=execute_bash]", 4),
+        # Error patterns at start of string (case-insensitive)
+        ("Error: something went wrong", 5),
+        ("ERROR: tool not found", 6),
+        ("Exception during call", 7),
+        ("Traceback (most recent call last):\n  File ...", 8),
+        ("timeout after 60s", 9),
+        ("failed to resolve model", 10),
+        # Error phrases anywhere (not just prefix)
+        ("Here is output, but the tool timed out during execution", 11),
+        ("I got no output from the tool, retrying won't help", 12),
+        ("The operation failed with code 42", 13),
+        # Normal content that must pass through to quality cascade
+        ("def solve(): return 42", 14),
+        ("The answer is 42.", 15),
+        ("Here is my analysis of the problem: ...", 16),
+        # Edge cases: leading whitespace but non-empty
+        ("    answer goes here", 17),
+        # Pseudo-error terms embedded but not matching (e.g. "errored out" word-boundary won't match "error" with boundary)
+        ("This commit errored-out the merge", 18),
+        # Empty after strip of sentinel-like (false-positive candidate)
+        ("error handling was improved", 19),
+    ]
+
+    rust_ctrl = RustTopologyController()
+    py_ctrl = TopologyController()
+
+    for result_text, node_idx in samples:
+        rust_decision = rust_ctrl.check_empty_error_reroute(result_text, node_idx)
+
+        # Invoke Python legacy via the same code path — replicate the
+        # path-1 logic locally since evaluate_and_decide wraps it with
+        # additional stages (quality cascade etc.) that we don't want
+        # to mix in here.
+        py_decision = _python_path1_reference(py_ctrl, result_text, node_idx)
+
+        if rust_decision is None:
+            assert py_decision is None, (
+                f"Rust passed through {result_text!r}@{node_idx} but Python "
+                f"classified it as {py_decision!r}. Divergence on "
+                f"_is_empty_or_error classification."
+            )
+            continue
+
+        assert py_decision is not None, (
+            f"Rust issued {rust_decision.action!r} on {result_text!r}@{node_idx} "
+            f"but Python passed through. Path 1 divergence."
+        )
+
+        assert rust_decision.action == py_decision.action, (
+            f"action mismatch on {result_text!r}@{node_idx}: "
+            f"rust={rust_decision.action!r} python={py_decision.action!r}"
+        )
+        assert rust_decision.target_node == py_decision.target_node, (
+            f"target_node mismatch on {result_text!r}@{node_idx}: "
+            f"rust={rust_decision.target_node} python={py_decision.target_node}"
+        )
+        assert rust_decision.reason == py_decision.reason, (
+            f"reason mismatch on {result_text!r}@{node_idx}: "
+            f"rust={rust_decision.reason!r} python={py_decision.reason!r}"
+        )
+
+
+def _python_path1_reference(py_ctrl, result, node_idx):
+    """Mirror of the path-1 logic from topology_controller.py:134-149
+    — isolated from the full evaluate_and_decide so the equivalence
+    test only compares what 2.2 ports."""
+    from sage.topology_controller import AdaptationDecision, TopologyController
+
+    if not TopologyController._is_empty_or_error(result):
+        return None
+    if py_ctrl._reroute_count < TopologyController.MAX_REROUTES:
+        py_ctrl._reroute_count += 1
+        reason = "empty output" if not result.strip() else "error-like output"
+        return AdaptationDecision(
+            action="reroute_topology",
+            target_node=node_idx,
+            reason=reason,
+        )
+    return AdaptationDecision(
+        action="continue",
+        target_node=node_idx,
+        reason="reroute budget exhausted",
+    )
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
 def test_python_controller_attaches_rust_companion_when_available():
     """TopologyController.__init__ must instantiate the Rust companion
     when sage_core is available — this wires the delegation hook that

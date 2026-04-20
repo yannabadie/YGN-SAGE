@@ -46,6 +46,11 @@ oxiz = { version = "0.1", optional = true }
 tracing = "0.1"
 toml = "0.8"
 rand = "0.9"
+# Plan 2.2 (2026-04-20): regex for TopologyController port (path 1
+# error-pattern detection, path 6 emergent-subtask detection). Already
+# in the workspace Cargo.lock transitively; pinning here makes it
+# first-class for this crate.
+regex = "1.10"
 rusqlite = { version = "0.33", features = ["bundled"], optional = true }
 [features]
 default = ["extension-module"]

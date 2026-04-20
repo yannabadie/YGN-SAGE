@@ -15,7 +15,40 @@
 //! calibration table).
 
 use pyo3::prelude::*;
+use regex::Regex;
 use std::collections::HashMap;
+use std::sync::OnceLock;
+
+/// Sentinel prefix emitted by agent_loop_memory when the loop exhausts
+/// its step budget without producing a final answer. Mirrors Python
+/// `topology_controller._SENTINEL_PREFIX` — must stay in sync with
+/// `phases/learn.py::EMPTY_STEP_SENTINEL`.
+pub(crate) const SENTINEL_PREFIX: &str = "[sage: agent exited after";
+
+/// Error-output detector — mirrors Python `_ERROR_OUTPUT` regex.
+/// Lazy-compiled once per process.
+fn error_output_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(
+            r"(?i)^\s*(error|exception|traceback|timeout|failed)\b|\b(traceback|stack trace|timed out|no output|failed with)\b",
+        )
+        .expect("SENTINEL_PREFIX / _ERROR_OUTPUT regex must compile")
+    })
+}
+
+/// Mirror of Python `TopologyController._is_empty_or_error` static method.
+/// Public so Python tests can round-trip against the same detector.
+pub fn is_empty_or_error(result: &str) -> bool {
+    let stripped = result.trim();
+    if stripped.is_empty() {
+        return true;
+    }
+    if stripped.starts_with(SENTINEL_PREFIX) {
+        return true;
+    }
+    error_output_re().is_match(stripped)
+}
 
 // Thresholds — calibrated initial values, subject to ablation.
 pub const THETA_GOOD: f32 = 0.7;
@@ -163,6 +196,36 @@ impl RustTopologyController {
         None
     }
 
+    /// Plan 2.2 — port of Python path 1 (`topology_controller.py:134-149`).
+    /// Empty / sentinel / error-pattern output triggers a reroute_topology
+    /// decision, up to MAX_REROUTES. When the budget is exhausted, return
+    /// a continue decision citing the exhaustion. Returns None when the
+    /// output passes the empty/error check — the caller (Python delegate
+    /// for now) falls through to quality-cascade evaluation.
+    #[pyo3(signature = (result, node_idx))]
+    fn check_empty_error_reroute(
+        &mut self,
+        result: &str,
+        node_idx: usize,
+    ) -> Option<RustAdaptationDecision> {
+        if !is_empty_or_error(result) {
+            return None;
+        }
+        if self.reroute_count >= MAX_REROUTES {
+            return Some(RustAdaptationDecision::continue_at(
+                Some(node_idx),
+                "reroute budget exhausted",
+            ));
+        }
+        self.reroute_count += 1;
+        let reason = if result.trim().is_empty() {
+            "empty output"
+        } else {
+            "error-like output"
+        };
+        Some(RustAdaptationDecision::reroute(node_idx, reason))
+    }
+
     #[getter]
     fn reroute_count(&self) -> u32 {
         self.reroute_count
@@ -223,6 +286,70 @@ mod tests {
         assert_eq!(d.action, "reroute_topology");
         assert_eq!(d.target_node, Some(2));
         assert_eq!(d.reason, "empty output");
+    }
+
+    #[test]
+    fn is_empty_or_error_detects_blanks() {
+        assert!(is_empty_or_error(""));
+        assert!(is_empty_or_error("   "));
+        assert!(is_empty_or_error("\n\t"));
+    }
+
+    #[test]
+    fn is_empty_or_error_detects_sentinel() {
+        assert!(is_empty_or_error(
+            "[sage: agent exited after 20 steps, no final content]"
+        ));
+    }
+
+    #[test]
+    fn is_empty_or_error_detects_error_patterns() {
+        assert!(is_empty_or_error("Error: something went wrong"));
+        assert!(is_empty_or_error("Exception during call"));
+        assert!(is_empty_or_error("Traceback (most recent call last):"));
+        assert!(is_empty_or_error("The job timed out after 60s"));
+        assert!(is_empty_or_error("operation failed with code 42"));
+        assert!(is_empty_or_error("no output from tool"));
+    }
+
+    #[test]
+    fn is_empty_or_error_passes_normal_content() {
+        assert!(!is_empty_or_error("Here is the answer: 42"));
+        assert!(!is_empty_or_error("def solve(): return 42"));
+        assert!(!is_empty_or_error("The quick brown fox jumped"));
+    }
+
+    #[test]
+    fn check_empty_error_reroute_reroutes_empty_then_exhausts() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_empty_error_reroute("", 2).unwrap();
+        assert_eq!(d.action, "reroute_topology");
+        assert_eq!(d.target_node, Some(2));
+        assert_eq!(d.reason, "empty output");
+        assert_eq!(c.reroute_count, 1);
+
+        // Second empty: budget exhausted (MAX_REROUTES=1) → continue with reason
+        let d2 = c.check_empty_error_reroute("", 2).unwrap();
+        assert_eq!(d2.action, "continue");
+        assert_eq!(d2.reason, "reroute budget exhausted");
+        assert_eq!(c.reroute_count, 1, "must NOT increment past the budget");
+    }
+
+    #[test]
+    fn check_empty_error_reroute_tags_error_reason() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_empty_error_reroute("Error: boom", 0).unwrap();
+        assert_eq!(d.action, "reroute_topology");
+        assert_eq!(d.reason, "error-like output");
+    }
+
+    #[test]
+    fn check_empty_error_reroute_passes_through_normal() {
+        let mut c = RustTopologyController::new();
+        assert!(c
+            .check_empty_error_reroute("normal answer text here", 0)
+            .is_none());
+        assert_eq!(c.reroute_count, 0);
     }
 
     #[test]
