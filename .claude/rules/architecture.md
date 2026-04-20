@@ -7,8 +7,8 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). 478 tests (+32 for RustTopologyController 2026-04-20).
-- `sage-python/` — Python SDK. 1939 tests (45 skipped; 5 asyncio-fixture errors pre-existing).
+- `sage-core/` — Rust orchestrator (PyO3). 480 tests (+2 net 2026-04-20 phase-1-stab).
+- `sage-python/` — Python SDK. 1958 tests (49 skipped; 11 pre-existing failures + 5 errors in API-key-dependent files).
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.
@@ -18,7 +18,7 @@ paths:
 2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic + Causal → ExoCortex RAG. S-MMU paging with ULID chunks. Inter-tier consolidation (Episodic→Semantic→Causal, MAGMA). Composite 5-signal write gate (Rust `RustCompositeWriteGate`). Causal edges from entity extraction + tool calls.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution: Rust `should_evolve()` gates `evolve()` in agent loop (SA-3 complete). AdaptiveMutator (Thompson sampling, ShinkaEvolve). Statistical validation via Wilcoxon signed-rank + Cohen's d.
-5. **Strategy** — S1/S2/S3 cognitive routing (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling. Runtime adaptation (`TopologyController`): **Rust-primary since 2026-04-20** (ADR-012) — decision paths 1 (empty/error reroute), 2 (quality cascade), 3 (debate-gate threshold), 4 (parallel inconsistency), 5 (importance prune), 6 (emergent spawn) + state machine all live in Rust `RustTopologyController`. Python wraps for embedder/SmtVerifier/topology-graph access (scoring + enrichment). Legacy Python path preserved as `_evaluate_and_decide_legacy` for sage_core-less environments.
+5. **Strategy** — S1/S2/S3 cognitive routing (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling. Runtime adaptation (`TopologyController`): **Rust-primary since 2026-04-20** (ADR-012) — decision paths 1 (empty/error reroute), 2 (quality cascade), 3 (debate-gate threshold), 4 (parallel inconsistency), 5 (importance prune) + state machine all live in Rust `RustTopologyController`. Python wraps for embedder/SmtVerifier/topology-graph access (scoring + enrichment). Emergent subtasks routed via `sage_recurse` tool with Rust-side `should_trigger_emergent_spawn` budget gate (ADR-012 follow-up, 2026-04-20 phase-1 stab). `sage_core` is required at runtime — `ImportError` raised at `TopologyController.__init__` if absent.
 
 ## Pipeline (5-stage)
 ```

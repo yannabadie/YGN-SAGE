@@ -164,6 +164,18 @@ Budget ~6-8 sessions sur 2-4 semaines. Session-hygiene protocol documenté dans 
 
 MEMORY.md mis à jour avec ⭐ pointer top-of-file vers `docs/superpowers/plans/2026-04-20-rust-first-plan.md` pour bootstrap de session fraîche.
 
+### 2026-04-20 (evening) — Phase 1 Stabilization (post-Rust-First)
+
+Closed all deferred items from ADR-012:
+
+- Removed `__setattr__` mirror + shadow state in TopologyController (commit `4aa161c`)
+- Deleted `_evaluate_and_decide_legacy`; `sage_core` now required at runtime (commit `4aa161c`)
+- **H12**: removed path-6 regex detection — `detect_emergent_subtask` + `check_emergent_spawn` (commit `5cb654d`)
+- Added `RustTopologyController::should_trigger_emergent_spawn` + `record_emergent_spawn` (commit `1edb57d`) + `record_abstain` (commit `4aa161c`)
+- `sage_recurse` tool now budget-gated via `TopologyRunner._execute_node` origin-node ContextVar (commits `a66a846` + `0ab9a97`)
+- 6 commits (A-F), plan: `docs/superpowers/plans/2026-04-20-post-rust-first-phase1-stab-plan.md`
+- Test counts: Rust 478 → 480 (+2 net), Python 1952 → 1958 (+6 net)
+
 ## Source de vérité
 
 `git log --since=2026-04-09 --no-merges` pour la liste exhaustive. Ce fichier doit être régénéré (ou étendu) lors du prochain refactor majeur.

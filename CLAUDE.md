@@ -58,7 +58,7 @@ uv run python meta_harness.py --iterations 10 --fresh
 
 ## Current State (April 20, 2026)
 
-- **Tests**: Python **1939 passed** (45 skipped; +33 net 2026-04-20: plan 1.1/1.2 singleton scaling, 1.4 archive-growth smokes, 2.1-2.6 RustTopologyController equivalence) / Rust **478 passed** (+32 for RustTopologyController controller::)
+- **Tests**: Python **1958 passed** (49 skipped, 11 pre-existing failures + 5 errors in API-key-dependent test files — `test_e2e_live_providers.py`, `test_provider_pool_wiring.py`, `test_e2e_campaign.py`, `test_pydantic_ai_integration.py` flake; NONE in scope of phase-1 stab) / Rust **480 passed** (+2 net 2026-04-20 phase-1-stab: +8 Task A getters/gate/seed, +1 Task B record_abstain, -7 Task C path-6 regex deletions)
 - **Templates**: 12 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout, formal_solver)
 - **Routing**: kNN 100% GT (CORAL exact-match override), Rust SystemRouter 88%, heuristic 34% (dead code)
 - **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml. **TTL'd exclusion** (300s re-probe, Apr 18 3148667) — not permanent.

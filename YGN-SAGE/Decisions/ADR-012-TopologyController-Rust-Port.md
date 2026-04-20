@@ -192,3 +192,16 @@ explicitement pour rendre le mirror grep-able comme test-scaffold.
 - Inventory : `docs/audits/2026-04-20-pyo3-inventory.md` — confirme
   qu'après 2.6 toutes les pyclass wired sont soit runtime-referenced
   soit return-type-accessed (0 bypass restant sur TopologyController).
+
+## Follow-up — 2026-04-20 Phase 1 Stabilization
+
+The scope divergences noted at decision time have been closed by
+`docs/superpowers/plans/2026-04-20-post-rust-first-phase1-stab-plan.md`
+(commits `1edb57d`, `4aa161c`, `5cb654d`, `a66a846`, `0ab9a97`, plus this docs commit):
+
+- **`__setattr__` mirror**: removed (commit `4aa161c`). Replaced by `@property` getters reading Rust-authoritative state + `_seed_for_tests` helper for legacy test setups.
+- **`_evaluate_and_decide_legacy`**: removed (commit `4aa161c`, ~140 lines deleted). `TopologyController.__init__` now raises `ImportError` if `sage_core` is missing — no silent fallback.
+- **Path-6 emergent-regex detection** (`detect_emergent_subtask`, `check_emergent_spawn`, 3 regex patterns): removed (commit `5cb654d`, H12 closure). Emergent subtasks flow through `sage_recurse` tool exclusively; spawn budget enforced by `RustTopologyController::should_trigger_emergent_spawn` + `record_emergent_spawn` (commit `1edb57d`), wired into the tool (commit `a66a846`) and set from `TopologyRunner._execute_node` (commit `0ab9a97`).
+- **Python `topology_controller.py` line count**: the "thin wrapper" target is now achieved — ~440 lines (was 770 at ADR-012 authorship).
+
+All deferred items from ADR-012 are closed. Directive #1 (Rust first) and Directive #2 (minimal heuristics) are both satisfied on the `TopologyController` surface.

@@ -171,12 +171,17 @@ Skip these — they're fine despite grep showing low Python use:
 
 ## Next audit (queued for future session)
 
-- [ ] Verify `max_steps`, `stall_cap`, `tools` on singleton AgentLoop
+- [x] Verify `max_steps`, `stall_cap`, `tools` on singleton AgentLoop
       match what the factory would set. If the singleton is built for
       S2 but the task is S3, the singleton underflows.
-- [ ] Rust `TopologyController` port — the biggest remaining
+      **RESOLVED** — H7 (`b7ced9d`), H8 (`0b5a272`), tools false-positive audited (plan item 1.3).
+- [x] Rust `TopologyController` port — the biggest remaining
       Critical-Directive-#1 violation. ~6 decision paths in Python,
       zero in Rust. Deferred (doesn't fit a session). Covered in
       `2026-04-18-astropy-14995-decision-path.md` §5.1.
+      **RESOLVED** — ADR-012 (Rust-First plan 2.1-2.6). Follow-up H12 (path-6 regex
+      `detect_emergent_subtask` + `check_emergent_spawn`) closed by post-rust-first-phase1-stab-plan
+      commit `5cb654d`; `_evaluate_and_decide_legacy` deleted commit `4aa161c`; `sage_recurse`
+      budget-gated via `should_trigger_emergent_spawn` (commits `1edb57d`, `a66a846`, `0ab9a97`).
 - [ ] `RustEntityGraph` consolidation with Python `CausalMemory`.
       Refactor, not bypass.
