@@ -280,6 +280,145 @@ def _python_path2_reference(py_ctrl, quality, node_idx, retry_limit):
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+def test_rust_path4_parallel_inconsistency_matches_python_on_20_samples():
+    """Plan 2.4 equivalence for path 4 (parallel inconsistency reroute).
+    Scoring stays in Python (embedder-backed). Rust takes pre-computed
+    consistency score + is_debate flag and applies threshold + reroute
+    state machine."""
+    from sage_core import RustTopologyController
+    from sage.topology_controller import TopologyController, AdaptationDecision
+
+    # (node_idx, consistency, is_debate) — 20 samples
+    cases: list[tuple[int, float, bool]] = [
+        (0, 0.9, False),   # above threshold → None
+        (0, 0.5, False),   # at threshold (exclusive) → None
+        (1, 0.49, False),  # below → reroute
+        (2, 0.1, False),   # way below → reroute (but budget already used)
+        (3, 0.0, False),   # orthogonal
+        (4, 0.3, True),    # debate → suppress
+        (5, 0.0, True),    # debate → suppress even at 0
+        (6, 0.8, False),   # above → None
+        (7, 1.0, False),   # perfect → None
+        (8, 0.49, False),  # budget may be exhausted from sample 1
+        (9, 0.2, False),   # depends on budget
+        (10, 0.5, True),   # debate
+        (11, 0.6, False),  # above
+        (12, 0.4, False),  # below (if budget available)
+        (13, 0.55, False),
+        (14, 0.45, False),
+        (15, 0.7, False),
+        (16, 0.99, True),
+        (17, 0.15, True),
+        (18, 0.5, False),  # exactly at — above-or-equal returns None
+        (19, 0.0, False),  # final check
+    ]
+
+    rust_ctrl = RustTopologyController()
+    py_ctrl = TopologyController()
+
+    for node_idx, consistency, is_debate in cases[:20]:
+        rust_decision = rust_ctrl.check_parallel_inconsistency(node_idx, consistency, is_debate)
+        py_decision = _python_path4_reference(py_ctrl, node_idx, consistency, is_debate)
+
+        if rust_decision is None:
+            assert py_decision is None, (
+                f"rust passed node={node_idx} consistency={consistency} debate={is_debate} "
+                f"but python returned {py_decision}"
+            )
+            continue
+        assert py_decision is not None
+        assert rust_decision.action == py_decision.action == "reroute_topology"
+        assert rust_decision.target_node == py_decision.target_node == node_idx
+        # Reason: both f"consistency=X.XX < 0.5"
+        assert rust_decision.reason.startswith("consistency=")
+        assert py_decision.reason.startswith("consistency=")
+
+
+def _python_path4_reference(py_ctrl, node_idx, consistency, is_debate):
+    """Mirror of path-4 state machine from topology_controller.py:202-211."""
+    from sage.topology_controller import AdaptationDecision, TopologyController
+
+    if is_debate or py_ctrl._reroute_count >= TopologyController.MAX_REROUTES:
+        return None
+    if consistency >= TopologyController.THETA_CONSISTENCY:
+        return None
+    py_ctrl._reroute_count += 1
+    return AdaptationDecision(
+        action="reroute_topology",
+        target_node=node_idx,
+        reason=f"consistency={consistency:.2f} < {TopologyController.THETA_CONSISTENCY}",
+    )
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+def test_rust_path5_importance_prune_matches_python_on_20_samples():
+    """Plan 2.4 equivalence for path 5 (importance prune)."""
+    from sage_core import RustTopologyController
+    from sage.topology_controller import TopologyController, AdaptationDecision
+
+    # (node_idx, importance, is_debate, quality_is_known) — 20 samples
+    cases: list[tuple[int, float, bool, bool]] = [
+        (0, 0.1, False, True),    # prune (below THETA_PRUNE=0.2)
+        (1, 0.19, False, True),   # just below → prune
+        (2, 0.2, False, True),    # at threshold → None
+        (3, 0.21, False, True),   # above → None
+        (4, 0.9, False, True),    # way above → None
+        (5, 0.0, False, True),    # zero → prune
+        (6, 0.15, False, True),   # below → prune
+        (7, 0.1, True, True),     # debate → suppress
+        (8, 0.0, True, True),     # debate → suppress
+        (9, 0.19, False, False),  # quality abstain → suppress
+        (10, 0.0, False, False),  # quality abstain → suppress
+        (11, 0.5, False, True),   # above → None
+        (12, 0.199, False, True), # just below → prune
+        (13, 0.25, False, True),
+        (14, 0.05, False, True),
+        (15, 0.18, True, False),  # both suppressed
+        (16, 0.12, True, True),   # debate suppressed
+        (17, 0.7, False, True),
+        (18, 0.1, False, False),  # abstain suppressed
+        (19, 0.0, False, True),   # prune
+    ]
+
+    rust_ctrl = RustTopologyController()
+    py_ctrl = TopologyController()
+
+    for node_idx, importance, is_debate, quality_is_known in cases:
+        rust_decision = rust_ctrl.check_importance_prune(
+            node_idx, importance, is_debate, quality_is_known
+        )
+        py_decision = _python_path5_reference(
+            py_ctrl, node_idx, importance, is_debate, quality_is_known
+        )
+
+        if rust_decision is None:
+            assert py_decision is None, (
+                f"rust passed node={node_idx} importance={importance} debate={is_debate} "
+                f"known={quality_is_known} but python returned {py_decision}"
+            )
+            continue
+        assert py_decision is not None
+        assert rust_decision.action == py_decision.action == "prune_node"
+        assert rust_decision.target_node == py_decision.target_node == node_idx
+        assert rust_decision.reason.startswith("importance=")
+
+
+def _python_path5_reference(py_ctrl, node_idx, importance, is_debate, quality_is_known):
+    """Mirror of path-5 state machine from topology_controller.py:213-222."""
+    from sage.topology_controller import AdaptationDecision, TopologyController
+
+    if is_debate or not quality_is_known:
+        return None
+    if importance >= TopologyController.THETA_PRUNE:
+        return None
+    return AdaptationDecision(
+        action="prune_node",
+        target_node=node_idx,
+        reason=f"importance={importance:.2f} < {TopologyController.THETA_PRUNE}",
+    )
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
 def test_python_controller_attaches_rust_companion_when_available():
     """TopologyController.__init__ must instantiate the Rust companion
     when sage_core is available — this wires the delegation hook that

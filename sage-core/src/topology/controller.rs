@@ -257,6 +257,75 @@ impl RustTopologyController {
         (THETA_CRITICAL..THETA_GOOD).contains(&quality)
     }
 
+    /// Plan 2.4 — port of Python path 4 (parallel inconsistency reroute,
+    /// `topology_controller.py:202-211`). Consistency scoring stays in
+    /// Python (it requires the embedder) — Rust takes the pre-computed
+    /// `consistency` float and applies the threshold + state machine.
+    /// Same pattern as `check_quality_cascade` taking pre-computed quality.
+    /// Does nothing for debate topologies (multi-turn disagreement is
+    /// part of the intended flow, not a reroute signal) or when the
+    /// reroute budget is exhausted.
+    #[pyo3(signature = (node_idx, consistency, is_debate))]
+    fn check_parallel_inconsistency(
+        &mut self,
+        node_idx: usize,
+        consistency: f32,
+        is_debate: bool,
+    ) -> Option<RustAdaptationDecision> {
+        if is_debate || self.reroute_count >= MAX_REROUTES {
+            return None;
+        }
+        if consistency >= THETA_CONSISTENCY {
+            return None;
+        }
+        self.reroute_count += 1;
+        Some(RustAdaptationDecision {
+            action: "reroute_topology".into(),
+            target_node: Some(node_idx),
+            reason: format!(
+                "consistency={:.2} < {}",
+                consistency, THETA_CONSISTENCY
+            ),
+            new_model_id: None,
+            invariant_feedback: None,
+            gate_source: None,
+            gate_target: None,
+        })
+    }
+
+    /// Plan 2.4 — port of Python path 5 (importance prune,
+    /// `topology_controller.py:213-222`). Importance scoring stays in
+    /// Python (embedder-backed); Rust threshold-checks. Quality must be
+    /// KNOWN (not abstained) — an abstained quality means the estimator
+    /// had no signal, pruning would be premature. Caller passes that
+    /// bool; Rust doesn't track abstain_count at this scope. Debate
+    /// topologies also suppress prune (the multi-node structure is
+    /// deliberate).
+    #[pyo3(signature = (node_idx, importance, is_debate, quality_is_known))]
+    fn check_importance_prune(
+        &self,
+        node_idx: usize,
+        importance: f32,
+        is_debate: bool,
+        quality_is_known: bool,
+    ) -> Option<RustAdaptationDecision> {
+        if is_debate || !quality_is_known {
+            return None;
+        }
+        if importance >= THETA_PRUNE {
+            return None;
+        }
+        Some(RustAdaptationDecision {
+            action: "prune_node".into(),
+            target_node: Some(node_idx),
+            reason: format!("importance={:.2} < {}", importance, THETA_PRUNE),
+            new_model_id: None,
+            invariant_feedback: None,
+            gate_source: None,
+            gate_target: None,
+        })
+    }
+
     /// Plan 2.2 — port of Python path 1 (`topology_controller.py:134-149`).
     /// Empty / sentinel / error-pattern output triggers a reroute_topology
     /// decision, up to MAX_REROUTES. When the budget is exhausted, return
@@ -471,6 +540,75 @@ mod tests {
         assert!(!c.is_in_gate_band(0.7));   // upper exclusive
         assert!(!c.is_in_gate_band(0.29));  // below
         assert!(!c.is_in_gate_band(0.9));
+    }
+
+    #[test]
+    fn parallel_inconsistency_reroutes_below_threshold() {
+        let mut c = RustTopologyController::new();
+        let d = c.check_parallel_inconsistency(1, 0.3, false).unwrap();
+        assert_eq!(d.action, "reroute_topology");
+        assert_eq!(d.target_node, Some(1));
+        assert!(d.reason.starts_with("consistency="));
+        assert_eq!(c.reroute_count, 1);
+    }
+
+    #[test]
+    fn parallel_inconsistency_above_threshold_is_none() {
+        let mut c = RustTopologyController::new();
+        assert!(c
+            .check_parallel_inconsistency(1, THETA_CONSISTENCY, false)
+            .is_none());
+        assert!(c.check_parallel_inconsistency(1, 0.8, false).is_none());
+        assert_eq!(c.reroute_count, 0);
+    }
+
+    #[test]
+    fn parallel_inconsistency_debate_topology_skips_reroute() {
+        let mut c = RustTopologyController::new();
+        // Would normally reroute, but debate topology suppresses
+        assert!(c
+            .check_parallel_inconsistency(1, 0.1, true)
+            .is_none());
+        assert_eq!(c.reroute_count, 0);
+    }
+
+    #[test]
+    fn parallel_inconsistency_respects_reroute_budget() {
+        let mut c = RustTopologyController::new();
+        c.check_parallel_inconsistency(0, 0.2, false).unwrap();
+        assert_eq!(c.reroute_count, 1);
+        // Budget exhausted (MAX_REROUTES=1) — next call returns None
+        assert!(c.check_parallel_inconsistency(0, 0.1, false).is_none());
+        assert_eq!(c.reroute_count, 1);
+    }
+
+    #[test]
+    fn importance_prune_below_threshold() {
+        let c = RustTopologyController::new();
+        let d = c.check_importance_prune(2, 0.1, false, true).unwrap();
+        assert_eq!(d.action, "prune_node");
+        assert_eq!(d.target_node, Some(2));
+        assert!(d.reason.starts_with("importance="));
+    }
+
+    #[test]
+    fn importance_prune_above_threshold_is_none() {
+        let c = RustTopologyController::new();
+        assert!(c.check_importance_prune(2, THETA_PRUNE, false, true).is_none());
+        assert!(c.check_importance_prune(2, 0.8, false, true).is_none());
+    }
+
+    #[test]
+    fn importance_prune_abstain_skips() {
+        let c = RustTopologyController::new();
+        // Quality unknown (estimator abstained) — never prune
+        assert!(c.check_importance_prune(2, 0.1, false, false).is_none());
+    }
+
+    #[test]
+    fn importance_prune_debate_skips() {
+        let c = RustTopologyController::new();
+        assert!(c.check_importance_prune(2, 0.1, true, true).is_none());
     }
 
     #[test]
