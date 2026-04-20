@@ -5,7 +5,7 @@ pillar: 3
 tags:
   - architecture
   - memory
-updated: 2026-04-07
+updated: 2026-04-19
 ---
 
 # Pilier 3 — Memory
@@ -43,12 +43,13 @@ Fonctionnalites :
 - Eviction utility-based (recency x access_count)
 - Auto-GC a 10K chunks
 - Write gate composite (5 signaux) :
-  - Salience 25%
+  - Salience 25% (confidence)
   - Novelty 30%
   - Reliability 20%
   - Recency 10%
   - Relevance 15%
   - Ref: [[Write-Gate|arXiv 2603.15994]] — 100% precision vs 13% sans gate
+  - **Status (2026-04-19):** `[wired]` sur les 2 paths — Pipeline détient l'instance (rebuilt per-task), phases/act.py gate les 3 writes mémoire (episodic.store, semantic.add_extraction, causal.add_entity). Voir commits `c905d06` (G-series multi-node), `27a9a4c` (H5 single-agent bypass). Weights réajustés pour YGN-SAGE : w_confidence=0.0 (AgentLoop n'a pas de per-turn confidence signal), redistribué → w_novelty=0.40, w_relevance=0.30, w_reliability=0.20, w_recency=0.10. Régression test : `test_factory_wires_write_gate_onto_loop` + `test_pipeline_single_agent_wires_write_gate_onto_agent_loop`.
 
 ## Causal Wiring
 

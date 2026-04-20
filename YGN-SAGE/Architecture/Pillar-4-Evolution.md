@@ -5,7 +5,7 @@ pillar: 4
 tags:
   - architecture
   - evolution
-updated: 2026-04-07
+updated: 2026-04-19
 ---
 
 # Pilier 4 — Evolution
@@ -22,9 +22,13 @@ updated: 2026-04-07
 `should_evolve()` (Rust) : trigger mutation quand >5 outcomes accumules.
 Les topologies s'ameliorent **entre** les taches, pas seulement pendant le training.
 
-> [!warning] Opt-in
-> L'evolution online n'est pas activee par defaut dans `system.run()`.
-> Necessite `_auto_evolve=True`.
+**Status (2026-04-19):** `[wired + empirically validated]`
+- H1 commit `2cd840e` — wired `should_evolve()` + `evolve()` dans `_stage_learn`
+- H4 commit `dc51976` — fix critique : ajouté `cache_topology()` après `generate()`. Sans ce fix, `record_outcome` no-op silencieusement sur le MAP-Elites archive et `should_evolve` ne déclenche jamais (caught via empirical validation — advisor warning prouvé)
+- Constants : `EVOLUTION_MIN_OUTCOMES=5`, `EVOLUTION_COOLDOWN_OUTCOMES=3`, `EVOLUTION_ONLINE_POP_SIZE=5`, `EVOLUTION_ONLINE_GENERATIONS=2`
+- Régression tests : `TestPipelineEvolutionWiring` (mock-level) + `TestRealEngineEvolutionLoop` (empirical end-to-end avec real Rust engine — pin la contrainte cache_topology, asserte archive grandit 0 → 7 cells sur 20 outcomes, evolve fires post-cooldown)
+- Clôture la claim "SA-3 online evolution complete" de architecture.md, qui était *fausse* jusqu'au 19 avril
+- Validation empirique sur un vrai smoke SWE-Lite = Phase 1.4 du plan `docs/superpowers/plans/2026-04-20-rust-first-plan.md`
 
 ## 7 Operateurs de Mutation
 

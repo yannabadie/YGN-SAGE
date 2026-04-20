@@ -1,17 +1,18 @@
 ---
-title: "Changelog April 9 → 17, 2026"
+title: "Changelog April 9 → 20, 2026"
 type: changelog
-date: 2026-04-17
+date: 2026-04-20
 tags:
   - changelog
   - architecture
   - sprint
-updated: 2026-04-17
+  - bypass-audit
+updated: 2026-04-20
 ---
 
-# Changelog — April 9 → 17, 2026
+# Changelog — April 9 → 20, 2026
 
-50+ commits depuis le 8 avril en deux blocs thématiques majeurs (architecture + sprints) puis intensification monodomaine (routing F7 + ExoCortex).
+70+ commits depuis le 8 avril en cinq blocs thématiques : architecture (Apr 9-10) → training removed (Apr 15) → autonomous sprints + F7 routing (Apr 17) → D-series + F-series SWE-Lite loop (Apr 18-19 AM) → **G-series + H-series architectural bypass sweep (Apr 19 evening)** → plan de transition (Apr 20).
 
 ## Vue d'ensemble
 
@@ -23,6 +24,10 @@ updated: 2026-04-17
 | F7 routing sequence | Apr 17 PM | 7 | role-aware tier promotion (Rust+Python) |
 | ExoCortex bugs + perf | Apr 17 PM | 5 | 3 bugs fixed, manifest grew 3 → 39 |
 | Agent loop fixes | Apr 17 PM | 3 | orphan-tool, PRM domain gate, tool_choice |
+| D-series plumbing (D1–D8) | Apr 18 | ~8 | stall cap, sentinel-filter, typed exceptions, drift actionable |
+| F-series SWE-Lite loop (F1–F12) | Apr 19 AM | ~12 | prompt + template + tier + tool-filter tuning, 40% → 73% proxy / 47–53% true |
+| **G-series + H-series bypass sweep** | **Apr 19 evening** | **7** | **6 architectural bypasses closed, bypass-patterns.md methodology** |
+| Plan de transition Phase 1+2 | Apr 20 AM | 2 | spec + plan pour session autonome fraîche |
 
 ## Bloc 1 — Unified Entry Point (April 9-10)
 
@@ -104,6 +109,60 @@ Voir [[ADR-007-F7-Routing|ADR-007]].
 - `project_april17_autonomous_sprints.md` (Sprints 1-6)
 - `project_april17_session_f7_exocortex.md` (F7 + ExoCortex)
 - `project_april15_training_parked.md` (training branch)
+
+## Bloc 7 — D-series & F-series SWE-Lite loop (April 18 → April 19 AM)
+
+Après le D-series (plumbing: D1 stall cap, D4 typed exceptions, D6 drift actionable, D7 sentinel filter), une boucle d'optimisation F-series a ajusté prompt / template / tier / tool-filter sur un smoke SWE-Lite 15 tâches. Proxy pass rate passé de 40% baseline à 73% (v12), mais la validation sémantique vs gold a révélé une inflation de ~20pp (wrong-file / shim / wrong-string patches).
+
+- Vrai pass rate validé : **47-53%** (7-8/15 semantic validation)
+- Voir `docs/audits/2026-04-19-v12-patches-semantic-validation.md`
+- La boucle a été honnêtement arrêtée par l'advisor après v12 : "loop has reached useful end on SWE-Lite surface"
+
+Apprentissage : les fixes F ne closent plus de gaps architecturaux, seulement coder-quality (wrong file / wrong string / shim instead of feature), hors scope tuning.
+
+## Bloc 8 — **G-series + H-series architectural bypass sweep (April 19 evening)** ⭐
+
+Soirée autonome, 7 commits, un seul thème : **"Rust built, Python doesn't call it"**.
+
+Le pattern : une classe Rust existe, est exposée via PyO3, est importée par Python, a des unit tests qui passent — **mais zéro call site runtime**. L'architecture.md documente la feature comme "wired", elle ne l'est pas. Le `if X is not None` guard dans le call site masque silencieusement le wiring défaillant.
+
+| ID | Commit | Surface concernée |
+|---|---|---|
+| G-series | `c905d06` | `CompositeWriteGate` dans `phases/act.py` — 3 writes mémoire gatés, state partagé par task |
+| Factory guard | `0b00abd` | Test régression pinnant le wiring factory (évite silent un-wire) |
+| H1 | `2cd840e` | `engine.should_evolve()` / `evolve()` wirés dans LEARN stage |
+| H4 | `dc51976` | `cache_topology()` après generate — **empirical validation a caught un bypass silencieux dans mon propre H1**. Sans cache_topology, record_outcome no-op sur MAP-Elites archive. |
+| H5 | `27a9a4c` | `write_gate` sur singleton AgentLoop (G-series câblait seulement multi-node factory path) |
+| H6 | `aa348e1` | `_on_drift` sur singleton AgentLoop |
+| Meta-deliverable | `aa348e1` | `docs/audits/bypass-patterns.md` — catalogue méthodologique + checklist systématique |
+
+**Le plus important :** la méthodologie plutôt que les fixes individuels. L'advisor warning sur H1 ("if record_outcome silently fails, you'd wire engine.evolve() perfectly and observe zero effect") a été prouvé par H4 — 8 outcomes avec diverse ids → cell_count stayed à 0. La leçon : tous les "wires X" commits doivent inclure un integration test empirical contre le Rust state réel, pas juste mocks.
+
+## Bloc 9 — Plan de transition (April 20 AM)
+
+Deux fichiers écrits pour permettre une session fraîche autonome d'exécuter la suite :
+
+- [[2026-04-20-rust-first-plan-design]] — spec approuvé via `superpowers:brainstorming` skill
+- `docs/superpowers/plans/2026-04-20-rust-first-plan.md` — checklist exec-ready, 12 items sur 2 phases
+
+**Phase 1** (audits queuées): max_steps / stall_cap / tools singleton, MAP-Elites archive growth empirical, PyO3 inventory sweep, ADR-011.
+
+**Phase 2** (TopologyController Rust port): scaffold + 6 decision paths + ADR-012 + CLAUDE.md update.
+
+Budget ~6-8 sessions sur 2-4 semaines. Session-hygiene protocol documenté dans les 2 fichiers.
+
+## ADRs ajoutés (Apr 19-20)
+
+- [[ADR-010-Bypass-Audit-Methodology]] — **la méthodologie** issue de la sweep G+H
+- [[ADR-011-Singleton-vs-Factory-Asymmetry]] — placeholder en attendant Phase 1.1–1.3
+- ADR-012 (réservé) — `TopologyController` Rust port (écrit à la fin de Phase 2.6)
+
+## Memory files créés (Apr 19-20)
+
+- `project_april19_bypass_audit_evening.md` (7 commits bypass sweep)
+- `project_april20_rust_first_plan.md` (plan écrit pour session autonome)
+
+MEMORY.md mis à jour avec ⭐ pointer top-of-file vers `docs/superpowers/plans/2026-04-20-rust-first-plan.md` pour bootstrap de session fraîche.
 
 ## Source de vérité
 
