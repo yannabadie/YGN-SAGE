@@ -44,7 +44,14 @@ def test_upgrade_model_on_critical_quality(controller, mock_ctx):
 
 def test_upgrade_respects_max_retries(controller, mock_ctx):
     controller._qe.estimate.return_value = 0.1
-    controller._node_retries[0] = 2  # already at max
+    controller._node_retries[0] = 2  # already at max (Python legacy state)
+    # Plan 2.6: mirror onto Rust companion so the Rust-primary cascade sees
+    # the exhausted retry budget. Dict-item assignments can't be caught by
+    # __setattr__, so tests that seed dict-shaped state must also poke
+    # the Rust side explicitly. This mirroring is a test-scaffold concern;
+    # production callers don't set _node_retries from outside.
+    if controller._rust_ctrl is not None:
+        controller._rust_ctrl.set_node_retries(0, 2)
     d = controller.evaluate_and_decide(0, "bad", "task", MagicMock(), mock_ctx)
     assert d.action == "continue"  # no more retries -> accept
 

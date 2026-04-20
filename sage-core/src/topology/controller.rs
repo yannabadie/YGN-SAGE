@@ -427,6 +427,23 @@ impl RustTopologyController {
         self.abstain_count
     }
 
+    /// Plan 2.6 helpers — setters so Python callers (tests, legacy
+    /// state-injection patterns) can seed Rust state before invoking
+    /// a decision path. Intentionally not made `#[setter]` so misuse
+    /// is grep-able as an explicit call site rather than an attribute
+    /// assignment.
+    fn set_reroute_count(&mut self, value: u32) {
+        self.reroute_count = value;
+    }
+
+    fn set_spawn_count(&mut self, value: u32) {
+        self.spawn_count = value;
+    }
+
+    fn set_node_retries(&mut self, node_idx: usize, value: u32) {
+        self.node_retries.insert(node_idx, value);
+    }
+
     /// Diagnostic view mirroring Python `quality_stats()`. Expose state
     /// early so tests and the Python delegate can both observe it.
     fn quality_stats(&self, py: Python<'_>) -> PyObject {

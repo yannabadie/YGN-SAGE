@@ -43,6 +43,25 @@ class AdaptationDecision:
     gate_target: int | None = None  # for open_gate: target node to re-execute
 
 
+def _rust_to_py_decision(rust_decision: Any) -> AdaptationDecision:
+    """Convert `RustAdaptationDecision` (PyO3 pyclass) → Python dataclass.
+
+    Used by the Rust-primary delegation path in
+    `TopologyController.evaluate_and_decide`. Every field is a direct
+    one-to-one; Rust uses Option<T> for nullables which PyO3 surfaces as
+    Python None.
+    """
+    return AdaptationDecision(
+        action=rust_decision.action,
+        target_node=rust_decision.target_node,
+        reason=rust_decision.reason,
+        new_model_id=rust_decision.new_model_id,
+        invariant_feedback=rust_decision.invariant_feedback,
+        gate_source=rust_decision.gate_source,
+        gate_target=rust_decision.gate_target,
+    )
+
+
 # Regex for detecting structured reasoning content
 _STRUCTURED_CONTENT = re.compile(r'<think>|```|assert\s|def\s+test_|proof:|invariant:', re.IGNORECASE)
 _TASK_TOKEN = re.compile(r"[a-zA-Z_]{4,}")
@@ -101,13 +120,31 @@ class TopologyController:
         self._spawn_count = 0
         self._abstain_count = 0
 
-        # Plan 2.1 (2026-04-20): companion Rust controller. For this
-        # scaffold commit it's instantiated-but-dormant — Python legacy
-        # path handles every decision, Rust stub returns None. Commits
-        # 2.2..2.6 populate per-path delegation.
+        # Plan 2.1 (2026-04-20): companion Rust controller. 2.6 wired
+        # per-path delegation; Rust is primary, Python is fallback.
         self._rust_ctrl: Any = (
             _RustTopologyControllerImpl() if _HAS_RUST_CTRL else None
         )
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Plan 2.6: mirror reroute / spawn counter assignments onto the
+        Rust companion controller so legacy callers (tests, external
+        controllers) that set `controller._reroute_count = N` continue
+        to affect decision-path state under the Rust-primary cascade.
+
+        Scoped to the two counters that Rust exposes setters for. Dict-
+        shaped state (`_node_retries`, `_node_qualities`) needs item
+        assignments which `__setattr__` can't intercept — those callers
+        use `self._rust_ctrl.set_node_retries(idx, value)` directly.
+        """
+        super().__setattr__(name, value)
+        rust_ctrl = self.__dict__.get("_rust_ctrl")
+        if rust_ctrl is None:
+            return
+        if name == "_reroute_count" and isinstance(value, int):
+            rust_ctrl.set_reroute_count(max(0, value))
+        elif name == "_spawn_count" and isinstance(value, int):
+            rust_ctrl.set_spawn_count(max(0, value))
 
     def quality_stats(self) -> dict:
         """Return quality tracking stats for diagnostics."""
@@ -139,6 +176,12 @@ class TopologyController:
     ) -> AdaptationDecision:
         """Core decision logic — called after each node execution.
 
+        Plan 2.6 (2026-04-20): delegates per-path decisions to Rust
+        `RustTopologyController` when available. Paths 1, 2, 4, 5, 6 run
+        Rust-primary; path 3 (debate gate) and upgrade_model enrichment
+        (invariant_feedback, new_model_id) remain Python because they
+        need embedder / topology-graph / Z3 access. See ADR-012.
+
         Args:
             node_idx: index of the node that just completed
             result: the node's output text
@@ -149,13 +192,151 @@ class TopologyController:
         """
         result = result if result is not None else (output or "")
 
+        if self._rust_ctrl is None:
+            return self._evaluate_and_decide_legacy(
+                node_idx, result, task, topology, ctx, parallel_outputs
+            )
+
+        # ── Rust-primary path ────────────────────────────────────────
+
+        # Early max-reroute logging (Rust owns the counter; Python only
+        # fires the MAX_REROUTE_HIT event for observability).
+        if (
+            self._rust_ctrl.reroute_count >= self.MAX_REROUTES
+            and parallel_outputs
+            and self.compute_consistency_score(parallel_outputs) < self.THETA_CONSISTENCY
+        ):
+            self._emit(
+                "MAX_REROUTE_HIT",
+                {"node": node_idx, "reroute_count": self._rust_ctrl.reroute_count},
+            )
+            log.warning(
+                "Max reroute limit reached (count=%d), forcing continue",
+                self._rust_ctrl.reroute_count,
+            )
+
+        # Path 1 (Rust): empty / sentinel / error reroute.
+        rd = self._rust_ctrl.check_empty_error_reroute(result, node_idx)
+        if rd is not None:
+            if rd.action == "reroute_topology":
+                self._emit("REROUTE_TOPOLOGY", {"node": node_idx, "reason": rd.reason})
+            return _rust_to_py_decision(rd)
+
+        # Quality compute stays Python (estimator is Python-held; Rust
+        # takes the pre-computed float — same pattern as 2.3's port).
+        _abstain_before = self._abstain_count
+        quality = self._compute_quality(node_idx, result, task, ctx)
+        _quality_is_known = self._abstain_count == _abstain_before
+        self._node_qualities[node_idx] = quality  # kept for legacy-path parity
+
+        # Depth axis arithmetic verify stays Python — MASPRM-specific,
+        # not one of the six ported paths.
+        axis_hint = str(self._ctx_value(ctx, "axis_hint", "") or "")
+        if axis_hint == "depth":
+            verified, feedback = self._verify_arithmetic(result)
+            if not verified:
+                retry_limit = self._max_retries_for_node(topology, node_idx)
+                # Rust tracks node_retries; fetch current via internal state
+                # (quality_stats exposes it; fallback on legacy dict).
+                retries_d = self._node_retries.get(node_idx, 0)
+                if retries_d < retry_limit:
+                    self._node_retries[node_idx] = retries_d + 1
+                    return AdaptationDecision(
+                        action="upgrade_model",
+                        target_node=node_idx,
+                        reason=f"arithmetic verification failed: {feedback}",
+                        invariant_feedback=feedback,
+                    )
+
+        # Path 2 (Rust): quality cascade — good / critical-with-retry.
+        retry_limit = self._max_retries_for_node(topology, node_idx)
+        rd = self._rust_ctrl.check_quality_cascade(quality, node_idx, retry_limit)
+        if rd is not None:
+            if rd.action == "continue":
+                return _rust_to_py_decision(rd)
+            if rd.action == "upgrade_model":
+                # Rust wrote reason + action + retry counter; Python
+                # enriches with invariant feedback + new_model_id which
+                # need topology / SmtVerifier / assigner access.
+                feedback = self._get_invariant_feedback(result, topology, node_idx)
+                new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
+                return AdaptationDecision(
+                    action="upgrade_model",
+                    target_node=node_idx,
+                    reason=rd.reason,
+                    invariant_feedback=feedback,
+                    new_model_id=new_model_id,
+                )
+
+        # Path 3 (Python): debate gate — walks topology.get_predecessors,
+        # stays Python until Graph accessors reach Rust side. Threshold
+        # check delegated to Rust.
+        if self._rust_ctrl.is_in_gate_band(quality):
+            gate_decision = self._open_gate(node_idx, topology, parallel_outputs)
+            if gate_decision is not None:
+                return gate_decision
+
+        # Paths 4 (parallel inconsistency) + 5 (importance prune) share
+        # parallel_outputs preconditions — compute scores once, delegate
+        # threshold+state to Rust. Both need is_debate pre-resolved from
+        # the topology object (Python side).
+        if parallel_outputs:
+            is_debate = self._is_debate_topology(topology)
+            consistency = self.compute_consistency_score(parallel_outputs)
+            rd = self._rust_ctrl.check_parallel_inconsistency(
+                node_idx, consistency, is_debate
+            )
+            if rd is not None:
+                self._emit(
+                    "REROUTE_TOPOLOGY",
+                    {"consistency": consistency, "node": node_idx},
+                )
+                return _rust_to_py_decision(rd)
+
+            importance = self.compute_importance_score(
+                node_idx, result, parallel_outputs
+            )
+            rd = self._rust_ctrl.check_importance_prune(
+                node_idx, importance, is_debate, _quality_is_known
+            )
+            if rd is not None:
+                self._emit(
+                    "PRUNE_NODE",
+                    {"node": node_idx, "importance": importance},
+                )
+                return _rust_to_py_decision(rd)
+
+        # Path 6 (Rust): emergent subtask spawn.
+        rd = self._rust_ctrl.check_emergent_spawn(result, node_idx)
+        if rd is not None:
+            self._emit(
+                "SPAWN_SUBAGENT",
+                {"node": node_idx, "subtask": rd.reason[:100]},
+            )
+            return _rust_to_py_decision(rd)
+
+        # Default: continue (accept imperfect result).
+        return AdaptationDecision(action="continue", target_node=node_idx)
+
+    # ── Legacy Python path (retained for envs without sage_core) ───────
+
+    def _evaluate_and_decide_legacy(
+        self,
+        node_idx: int,
+        result: str,
+        task: str,
+        topology: Any,
+        ctx: Any,
+        parallel_outputs: list[str] | None,
+    ) -> AdaptationDecision:
+        """Pure Python cascade — preserved for sage_core-less environments
+        and as a bisectable fallback if the Rust delegation regresses."""
         # Early exit: max reroute hit
         if self._reroute_count >= self.MAX_REROUTES:
             if parallel_outputs and self.compute_consistency_score(parallel_outputs) < self.THETA_CONSISTENCY:
                 self._emit("MAX_REROUTE_HIT", {"node": node_idx, "reroute_count": self._reroute_count})
                 log.warning("Max reroute limit reached (count=%d), forcing continue", self._reroute_count)
 
-        # Empty/error outputs are structural failures, not quality failures.
         if self._is_empty_or_error(result):
             if self._reroute_count < self.MAX_REROUTES:
                 self._reroute_count += 1
@@ -172,16 +353,13 @@ class TopologyController:
                 reason="reroute budget exhausted",
             )
 
-        # Compute quality (formal estimator when available, heuristic fallback otherwise).
         _abstain_before = self._abstain_count
         quality = self._compute_quality(node_idx, result, task, ctx)
-        _quality_is_known = self._abstain_count == _abstain_before  # True if estimator gave a real score
+        _quality_is_known = self._abstain_count == _abstain_before
         self._node_qualities[node_idx] = quality
 
-        # Depth axis: verify arithmetic before quality cascade (MASPRM arXiv 2510.24803)
-        axis_hint = ""
         axis_hint = str(self._ctx_value(ctx, "axis_hint", "") or "")
-        if axis_hint == 'depth':
+        if axis_hint == "depth":
             verified, feedback = self._verify_arithmetic(result)
             if not verified:
                 retries_d = self._node_retries.get(node_idx, 0)
@@ -195,23 +373,18 @@ class TopologyController:
                         invariant_feedback=feedback,
                     )
 
-        # Decision cascade
-        # 1. Good quality -> continue
         if quality >= self.THETA_GOOD:
             return AdaptationDecision(action="continue", target_node=node_idx)
 
-        # 1.5. Debate refinement is gated by disagreement between peer debaters.
         if self.THETA_CRITICAL <= quality < self.THETA_GOOD:
             gate_decision = self._open_gate(node_idx, topology, parallel_outputs)
             if gate_decision is not None:
                 return gate_decision
 
-        # 2. Critical quality -> upgrade model
         retries = self._node_retries.get(node_idx, 0)
         retry_limit = self._max_retries_for_node(topology, node_idx)
         if quality < self.THETA_CRITICAL and retries < retry_limit:
             self._node_retries[node_idx] = retries + 1
-            # Get invariant feedback for S3 nodes if available
             feedback = self._get_invariant_feedback(result, topology, node_idx)
             new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
             return AdaptationDecision(
@@ -222,7 +395,6 @@ class TopologyController:
                 new_model_id=new_model_id,
             )
 
-        # 3. Parallel inconsistency -> reroute topology
         if parallel_outputs and self._reroute_count < self.MAX_REROUTES and not self._is_debate_topology(topology):
             consistency = self.compute_consistency_score(parallel_outputs)
             if consistency < self.THETA_CONSISTENCY:
@@ -234,7 +406,6 @@ class TopologyController:
                     reason=f"consistency={consistency:.2f} < {self.THETA_CONSISTENCY}",
                 )
 
-        # 4. Low importance -> prune (only when quality is KNOWN, not abstained)
         if parallel_outputs and _quality_is_known and not self._is_debate_topology(topology):
             importance = self.compute_importance_score(node_idx, result, parallel_outputs)
             if importance < self.THETA_PRUNE:
@@ -245,7 +416,6 @@ class TopologyController:
                     reason=f"importance={importance:.2f} < {self.THETA_PRUNE}",
                 )
 
-        # 5. Emergent sub-task detected -> spawn
         emergent = self._detect_emergent_subtask(result)
         if emergent and self._spawn_count < self.MAX_SPAWNS:
             self._spawn_count += 1
@@ -256,7 +426,6 @@ class TopologyController:
                 reason=emergent,
             )
 
-        # 6. Default: continue (accept imperfect result)
         return AdaptationDecision(action="continue", target_node=node_idx)
 
     def _compute_quality(self, node_idx: int, result: str, task: str, ctx: Any) -> float:

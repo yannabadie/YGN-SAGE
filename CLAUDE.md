@@ -56,9 +56,9 @@ uv sync
 uv run python meta_harness.py --iterations 10 --fresh
 ```
 
-## Current State (April 18, 2026)
+## Current State (April 20, 2026)
 
-- **Tests**: Python **1906 collected** (+10 Apr 18: telemetry/per-model routing/TTL health tests) / Rust **441 passed**
+- **Tests**: Python **1939 passed** (45 skipped; +33 net 2026-04-20: plan 1.1/1.2 singleton scaling, 1.4 archive-growth smokes, 2.1-2.6 RustTopologyController equivalence) / Rust **478 passed** (+32 for RustTopologyController controller::)
 - **Templates**: 12 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout, formal_solver)
 - **Routing**: kNN 100% GT (CORAL exact-match override), Rust SystemRouter 88%, heuristic 34% (dead code)
 - **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml. **TTL'd exclusion** (300s re-probe, Apr 18 3148667) — not permanent.

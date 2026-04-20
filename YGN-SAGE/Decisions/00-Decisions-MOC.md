@@ -22,4 +22,5 @@ updated: 2026-04-20
 | [[ADR-009-Telemetry-And-Routing-Plumbing]] | Wire-up telemetry + per-model routing + quota-aware health | accepte |
 | [[ADR-010-Bypass-Audit-Methodology]] | Methodologie bypass-audit (grep #[pyclass] + empirical validation) | accepte |
 | [[ADR-011-Singleton-vs-Factory-Asymmetry]] | Singleton AgentLoop doit re-configurer tout ce que la factory set | accepte |
+| [[ADR-012-TopologyController-Rust-Port]] | TopologyController ported: 6 decision paths + state Rust-primary, helpers Python | accepte |
 | [[ADR-010-Meta-Harness-Divergence]] | Meta-Harness : divergence vs paper (hyperparam tuner, pas structural search) | accepte |

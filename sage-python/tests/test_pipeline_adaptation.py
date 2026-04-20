@@ -63,7 +63,13 @@ def test_budget_exhausted_graceful():
     qe = MagicMock()
     qe.estimate.return_value = 0.2  # critical
     ctrl = TopologyController(assigner=None, quality_estimator=qe)
-    ctrl._node_retries[0] = 2  # exhausted retries
+    ctrl._node_retries[0] = 2  # exhausted retries (Python legacy state)
+    # Plan 2.6: mirror dict-shaped state onto Rust companion. __setattr__
+    # forwards scalar counters but can't catch dict-item assignments,
+    # so test-scaffold code that seeds per-node state must also call
+    # the explicit Rust setter.
+    if ctrl._rust_ctrl is not None:
+        ctrl._rust_ctrl.set_node_retries(0, 2)
     ctx = MagicMock()
     ctx.latency_ms = 100.0
 
