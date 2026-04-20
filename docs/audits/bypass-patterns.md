@@ -102,7 +102,7 @@ the singleton. The bypasses found:
 | `gate_current_task` | ✅ | ❌ → H5 fix |
 | `gate_source_tier` | ✅ | ❌ → H5 fix |
 | `_on_drift` | ✅ (D6 + runner) | ❌ → H6 fix |
-| `max_steps` | ✅ (by system) | ❌ → H7 fix (plan item 1.1, commit TBD) |
+| `max_steps` | ✅ (by system) | ❌ → H7 fix (commit `b7ced9d`, plan item 1.1) |
 | `stall_cap` | ✅ (D8) | ❌ (uses singleton default — plan item 1.2) |
 | `tools` | ✅ (by role) | ❌ (uses singleton tools — plan item 1.3) |
 
