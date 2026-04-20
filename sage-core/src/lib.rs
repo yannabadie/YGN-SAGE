@@ -71,6 +71,10 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<topology::density::DensityScore>()?;
     m.add_class::<topology::reward::TopologyReward>()?;
     m.add_class::<topology::reward::RewardScore>()?;
+    // Plan 2.1 (2026-04-20): Rust TopologyController port — scaffold
+    // with full state, decision paths populated in 2.2–2.6.
+    m.add_class::<topology::controller::RustTopologyController>()?;
+    m.add_class::<topology::controller::RustAdaptationDecision>()?;
     #[cfg(feature = "onnx")]
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;

@@ -4,6 +4,12 @@ Evaluates node output quality after each execution step and decides
 whether to continue, upgrade model, prune node, reroute topology,
 or spawn a sub-agent. Research basis: AgentDropout (ACL 2025),
 AdaptOrch (arXiv 2026), OpenSage (ICML), Self-Regulation (arXiv).
+
+Plan item 2.1 (2026-04-20): the Rust `RustTopologyController` is under
+construction as a companion to this Python class — decision paths
+will be delegated to Rust one-by-one in commits 2.2..2.6. For this
+scaffold commit, the Rust instance is created but never consulted;
+existing behavior is unchanged.
 """
 from __future__ import annotations
 
@@ -13,6 +19,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 log = logging.getLogger(__name__)
+
+# Plan 2.1 import guard — Rust scaffold becomes available after
+# `maturin develop` rebuild. When absent (e.g. Python-only dev env),
+# _HAS_RUST_CTRL stays False and the Python legacy path continues.
+try:
+    from sage_core import RustTopologyController as _RustTopologyControllerImpl  # noqa: F401
+    _HAS_RUST_CTRL = True
+except ImportError:
+    _RustTopologyControllerImpl = None  # type: ignore[assignment]
+    _HAS_RUST_CTRL = False
 
 
 @dataclass
@@ -84,6 +100,14 @@ class TopologyController:
         self._reroute_count = 0
         self._spawn_count = 0
         self._abstain_count = 0
+
+        # Plan 2.1 (2026-04-20): companion Rust controller. For this
+        # scaffold commit it's instantiated-but-dormant — Python legacy
+        # path handles every decision, Rust stub returns None. Commits
+        # 2.2..2.6 populate per-path delegation.
+        self._rust_ctrl: Any = (
+            _RustTopologyControllerImpl() if _HAS_RUST_CTRL else None
+        )
 
     def quality_stats(self) -> dict:
         """Return quality tracking stats for diagnostics."""
