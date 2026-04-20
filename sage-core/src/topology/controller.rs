@@ -444,6 +444,13 @@ impl RustTopologyController {
         self.node_retries.insert(node_idx, value);
     }
 
+    /// H11 audit (2026-04-20): expose per-node retry counter for
+    /// cross-path equivalence tests and any caller that needs to
+    /// observe the Rust-side state independently of quality_stats.
+    fn get_node_retries(&self, node_idx: usize) -> u32 {
+        *self.node_retries.get(&node_idx).unwrap_or(&0)
+    }
+
     /// Diagnostic view mirroring Python `quality_stats()`. Expose state
     /// early so tests and the Python delegate can both observe it.
     fn quality_stats(&self, py: Python<'_>) -> PyObject {
@@ -456,6 +463,11 @@ impl RustTopologyController {
             let _ = node_qualities.set_item(*k, *v);
         }
         let _ = dict.set_item("node_qualities", &node_qualities);
+        let node_retries = pyo3::types::PyDict::new(py);
+        for (k, v) in &self.node_retries {
+            let _ = node_retries.set_item(*k, *v);
+        }
+        let _ = dict.set_item("node_retries", &node_retries);
         dict.into()
     }
 }

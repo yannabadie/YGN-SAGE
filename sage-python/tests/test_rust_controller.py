@@ -508,6 +508,109 @@ def _python_path6_reference(py_ctrl, result, node_idx):
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
+def test_h11_arithmetic_retry_syncs_onto_rust_state():
+    """H11 regression (2026-04-20 advisor+Codex review). The cascade has
+    two different branches that consume a retry on the same node:
+      1. Python `_verify_arithmetic` fails on axis=depth and increments
+         `self._node_retries[node_idx]` Python-side.
+      2. Rust `check_quality_cascade` reads Rust-side `node_retries` on
+         the NEXT evaluation of the same node; if the Python-side
+         increment didn't mirror to Rust, Rust sees retries=0 and
+         issues an EXTRA upgrade_model — bypassing the budget by one.
+
+    Per-method equivalence tests missed this because they exercise one
+    path at a time; the bug only appears in a cross-path trajectory.
+    This test pins the contract.
+    """
+    from unittest.mock import MagicMock
+    from sage.topology_controller import TopologyController
+
+    qe = MagicMock()
+    # qe.estimate is called ONCE per evaluate_and_decide (before the
+    # depth branch runs, per the Rust-primary cascade structure).
+    # Step 1: quality=0.5 (middle — path 2 returns None; arithmetic branch fires upgrade)
+    # Step 2: quality=0.1 (critical — path 2 upgrade_model, Rust increments retries 1→2)
+    # Step 3: quality=0.1 (critical — retries exhausted at 2/2 → path 2 returns None → default continue)
+    qe.estimate.side_effect = [0.5, 0.1, 0.1]
+
+    ctrl = TopologyController(assigner=None, quality_estimator=qe)
+    assert ctrl._rust_ctrl is not None, "test requires sage_core"
+
+    # Explicitly configure the topology mock so _max_retries_for_node
+    # returns MAX_RETRIES=2 (not the auto-MagicMock coercion which
+    # defaults node.max_retries to int(MagicMock())=1). Also set
+    # `system = 1` so `_get_invariant_feedback`'s `< 3` int comparison
+    # doesn't blow up on a bare MagicMock auto-attr.
+    node = MagicMock()
+    node.max_retries = 2
+    node.system = 1
+    node.model_id = ""
+    node.required_capabilities = []
+    node.role = "agent"
+    node.max_cost_usd = 1.0
+    topo = MagicMock()
+    topo.get_node.return_value = node
+    ctx_depth = MagicMock()
+    ctx_depth.latency_ms = 100.0
+    ctx_depth.get = lambda k, d=None: {"axis_hint": "depth"}.get(k, d)
+
+    # Step 1: arithmetic branch fires (result contains wrong equation)
+    bad_math = "The answer is 5 + 3 = 9. Done."
+    d1 = ctrl.evaluate_and_decide(
+        node_idx=7, result=bad_math, task="compute", topology=topo, ctx=ctx_depth,
+    )
+    assert d1.action == "upgrade_model"
+    assert "arithmetic" in d1.reason
+    assert ctrl._node_retries[7] == 1, "Python-side retries must increment"
+    assert ctrl._rust_ctrl.quality_stats()["reroute_count"] == 0  # sanity: wrong counter
+    # The critical invariant — Rust-side retry count for node 7 must also be 1
+    rust_stats_retries = _rust_node_retries_for(ctrl._rust_ctrl, 7)
+    assert rust_stats_retries == 1, (
+        f"H11 regression: Python arithmetic branch incremented its dict to 1 but "
+        f"Rust node_retries[7] = {rust_stats_retries}. Without the "
+        f"set_node_retries mirror, check_quality_cascade sees retries=0 on "
+        f"subsequent calls and over-issues upgrade_model decisions."
+    )
+
+    # Step 2: different evaluation of the SAME node hits critical quality
+    # via the normal (non-depth) path. Rust should now see retries=1 (from
+    # step 1's arithmetic), retry_limit=2 → one more upgrade available.
+    ctx_normal = MagicMock()
+    ctx_normal.latency_ms = 100.0
+    ctx_normal.get = lambda k, d=None: {}.get(k, d)
+    d2 = ctrl.evaluate_and_decide(
+        node_idx=7, result="some answer text here", task="compute",
+        topology=topo, ctx=ctx_normal,
+    )
+    # d2 should upgrade (retry still available: 1 of 2 used). Rust increments to 2.
+    assert d2.action == "upgrade_model"
+    rust_stats_retries = _rust_node_retries_for(ctrl._rust_ctrl, 7)
+    assert rust_stats_retries == 2, (
+        f"After step 2, Rust retries[7] should be 2 (1 from arithmetic + "
+        f"1 from critical-quality), got {rust_stats_retries}"
+    )
+
+    # Step 3: third evaluation — budget now exhausted at 2. No upgrade.
+    d3 = ctrl.evaluate_and_decide(
+        node_idx=7, result="answer text", task="compute",
+        topology=topo, ctx=ctx_normal,
+    )
+    assert d3.action != "upgrade_model", (
+        f"After 2 retries used, a third critical eval must NOT upgrade_model; "
+        f"got {d3.action!r}. This is the H11 behavioral regression — "
+        f"without the mirror, Rust thinks it has retries still available."
+    )
+
+
+def _rust_node_retries_for(rust_ctrl, node_idx):
+    """Direct Rust-side retry-count observation — H11 audit exposes
+    `get_node_retries(node_idx) -> u32` for this purpose so the
+    cross-path trajectory assertions can check invariants without
+    reaching into HashMap internals."""
+    return rust_ctrl.get_node_retries(node_idx)
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
 def test_python_controller_attaches_rust_companion_when_available():
     """TopologyController.__init__ must instantiate the Rust companion
     when sage_core is available — this wires the delegation hook that

@@ -236,11 +236,21 @@ class TopologyController:
             verified, feedback = self._verify_arithmetic(result)
             if not verified:
                 retry_limit = self._max_retries_for_node(topology, node_idx)
-                # Rust tracks node_retries; fetch current via internal state
-                # (quality_stats exposes it; fallback on legacy dict).
                 retries_d = self._node_retries.get(node_idx, 0)
                 if retries_d < retry_limit:
-                    self._node_retries[node_idx] = retries_d + 1
+                    new_retries = retries_d + 1
+                    self._node_retries[node_idx] = new_retries
+                    # H11 audit fix (2026-04-20 advisor+Codex review): mirror
+                    # the increment onto Rust so a later call to
+                    # check_quality_cascade on the SAME node reads the
+                    # bumped retry count, not 0. Without this, the
+                    # arithmetic-fail branch consumes a retry from
+                    # Python's dict while Rust's HashMap still reports
+                    # retries=0, letting the node over-upgrade its
+                    # effective budget by one on the next critical-
+                    # quality evaluation.
+                    if self._rust_ctrl is not None:
+                        self._rust_ctrl.set_node_retries(node_idx, new_retries)
                     return AdaptationDecision(
                         action="upgrade_model",
                         target_node=node_idx,
