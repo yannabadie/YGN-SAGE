@@ -1,8 +1,10 @@
 # Rust-First Architectural Completion — Executable Plan
 
-**Status:** ACTIVE — plan of record. Every session updates this file.
+**Status:** ✅ **COMPLETE — 2026-04-20** (1 session, 12 items + 1 follow-up (1.4a), 13 commits).
+Plan originally budgeted 6-8 sessions; completed in a single autonomous run after user authorized scope.
 **Spec:** [docs/superpowers/specs/2026-04-20-rust-first-plan-design.md](../specs/2026-04-20-rust-first-plan-design.md)
 **Started:** 2026-04-20
+**Finished:** 2026-04-20
 **Session count:** 1 of ~8 planned
 
 ---
@@ -46,7 +48,7 @@ Then find the first `[ ]` item below and begin. One item per session maximum. Wh
 | 2 | 2.3 Port paths 2–3 (quality + debate) | [x] | `84b1c1f` | 1 |
 | 2 | 2.4 Port paths 4–5 (parallel + prune) | [x] | `6684665` | 1 |
 | 2 | 2.5 Port path 6 (emergent spawn) | [x] | `b1d75c9` | 1 |
-| 2 | 2.6 Finalize + ADR-012 | [~] | (commit in flight) | 1 |
+| 2 | 2.6 Finalize + ADR-012 | [x] | `e26cd7b` | 1 |
 
 **Legend:** `[ ]` todo · `[~]` in progress · `[x]` done.
 
@@ -455,3 +457,17 @@ Every session that touches this file appends a line here.
 
 - 2026-04-20 [plan written, session 0] — spec written, plan checked in, no code yet
 - 2026-04-20 [session 1] — 1.1 max_steps singleton audit: wired `self._agent_loop.config.max_steps = {1:5, 2:10, 3:20}.get(ctx.system, 10)` in `pipeline.py` after the validation_level block; added regression test `test_pipeline_single_agent_scales_max_steps_by_system` using `SAGE_ABLATION_NO_TOPOLOGY=1` to force bypass across all three tiers; updated `docs/audits/bypass-patterns.md`. 36/36 `test_pipeline.py` green; full suite: 1927 passed, 5 errors + 1 failed all pre-existing asyncio-fixture pollution (pass in isolation).
+- 2026-04-20 [session 1 continued] — user lifted the "one item per session" rule, plan completed fully:
+  - 1.2 stall_cap (`0b5a272`) — mirror factory's `max_steps-1` or 0 formula
+  - 1.3 tools filter (`e5e3811`) — false positive, no code change
+  - 1.4/1.4a archive-growth smoke (`c65659b`) — found H9 (wrong id form) + H10 (template branch bypass); fixed via new `_apply_topology_budget_and_cache` helper + ULID id. Pipeline-level integration test replaces full SWE-bench smoke.
+  - 1.5 PyO3 inventory (`f6193eb`) — 47 pyclass, 0 new bypasses
+  - 1.6 ADR-011 (`d398196`) — singleton-vs-factory asymmetry rule formalized
+  - 2.1 Rust scaffold (`152fe5e`) — RustTopologyController + RustAdaptationDecision scaffolded, maturin rebuild verified
+  - 2.2 path 1 port (`3ee6b5f`) — empty/error reroute in Rust, 20-sample equivalence
+  - 2.3 paths 2-3 port (`84b1c1f`) — quality cascade + debate-gate threshold
+  - 2.4 paths 4-5 port (`6684665`) — parallel inconsistency + importance prune (scoring stays Python, state Rust)
+  - 2.5 path 6 port (`b1d75c9`) — emergent spawn with regex
+  - 2.6 finalize (`e26cd7b`) — Python delegation, state mirror via `__setattr__`, ADR-012, architecture.md + CLAUDE.md updates
+  - Final: Rust 478/478, Python 1939 passed (+12 from session start), 5 pre-existing errors unchanged.
+  - 2 out-of-scope memories saved: feedback_no_litellm, feedback_no_todos_in_test_strings.
