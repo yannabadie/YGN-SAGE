@@ -103,12 +103,12 @@ the singleton. The bypasses found:
 | `gate_source_tier` | ✅ | ❌ → H5 fix |
 | `_on_drift` | ✅ (D6 + runner) | ❌ → H6 fix |
 | `max_steps` | ✅ (by system) | ❌ → H7 fix (commit `b7ced9d`, plan item 1.1) |
-| `stall_cap` | ✅ (D8) | ❌ → H8 fix (plan item 1.2, commit TBD) |
-| `tools` | ✅ (by role) | ❌ (uses singleton tools — plan item 1.3) |
+| `stall_cap` | ✅ (D8) | ❌ → H8 fix (commit `0b5a272`, plan item 1.2) |
+| `tools` | ✅ (by role) | ✅ (all tools — false positive, plan item 1.3) |
 
-**One more candidate bypass still to verify**: `tools` — the singleton
-has no role-hint, so factory's per-role tool filter may be intentionally
-N/A on the bypass path. Plan item 1.3 audits empirically.
+All three candidate singleton bypasses from the 2026-04-19 catalog are
+now resolved: two real (H7, H8) + one false positive (`tools`, see
+§"Not a bypass" below for evidence).
 
 ### 4. Empirical validation — don't trust mock unit tests alone
 
@@ -161,6 +161,7 @@ Skip these — they're fine despite grep showing low Python use:
 | `HardwareProfile` | Utility for `detect() + is_simd_capable()` — trivially optional |
 | `RustRagCache`, `RustSmmu` | Grep-name mismatch — Python uses `sage_core.WorkingMemory` etc. which delegate to these under different names |
 | `RustEntityGraph` | Duplicate surface. Python `CausalMemory` is the wired impl; Rust version is either dead or awaiting a future refactor to SQLite-backed storage. Refactor scope, not bypass scope |
+| `tools` filter on singleton AgentLoop | Plan item 1.3 (2026-04-20) — audited, false positive. Singleton has no role concept; factory's `tools=None` actor-default matches singleton's unset (→ None → all tools). Role-based filters (verifier, formatter, synthesizer) only apply in multi-node topology traversal because `_make_single_node_topology` always creates `role="agent"` (pipeline.py:603) and single-node paths hit the bypass branch before any role-filter ever runs. No code change needed. The singleton behaves identically to a factory-built actor node. |
 
 ---
 
