@@ -170,7 +170,17 @@ def build_sage_recurse_tool(
                 else:
                     result = await run_callable(sub_task)
             except TypeError:
-                result = await run_callable(sub_task)
+                # Callable doesn't accept system_hint kwarg — retry without.
+                # Guard the fallback call too; otherwise a raise here would
+                # escape the tool and violate the "never raise" contract.
+                try:
+                    result = await run_callable(sub_task)
+                except Exception as exc:
+                    log.exception("sage_recurse dispatch failed on fallback")
+                    return (
+                        f"Error: sage_recurse dispatch failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
             except Exception as exc:
                 log.exception("sage_recurse dispatch failed")
                 return (

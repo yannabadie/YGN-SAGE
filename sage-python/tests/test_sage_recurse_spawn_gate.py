@@ -85,6 +85,36 @@ async def test_sage_recurse_no_origin_node_skips_gate():
 
 
 @pytest.mark.asyncio
+async def test_sage_recurse_fallback_dispatch_failure_returns_string():
+    """TypeError-fallback path must also be guarded (I1 review fix).
+
+    Scenario: callable rejects the system_hint kwarg (TypeError), fallback
+    retry without kwargs raises a different exception. The fallback must
+    be guarded — otherwise the exception escapes the tool, violating the
+    "never raise" contract.
+    """
+    first_call = True
+
+    async def _flaky_run(sub_task: str, **kwargs: Any) -> str:
+        nonlocal first_call
+        if first_call:
+            first_call = False
+            raise TypeError("unexpected keyword argument 'system_hint'")
+        raise RuntimeError("fallback also exploded")
+
+    ctrl = _make_controller()
+    tool = build_sage_recurse_tool(_flaky_run, controller=ctrl)
+    token = sage_recurse_origin_node.set(0)
+    try:
+        result = await tool.run({"sub_task": "trigger fallback", "system_hint": 1})
+    finally:
+        sage_recurse_origin_node.reset(token)
+    assert "dispatch failed" in result
+    assert "fallback also exploded" in result or "RuntimeError" in result
+    assert ctrl._rust_ctrl.spawn_count == 1  # debited before dispatch
+
+
+@pytest.mark.asyncio
 async def test_sage_recurse_origin_node_isolated_across_tasks():
     """ContextVar must not leak across concurrent asyncio tasks."""
     seen: dict[int, int | None] = {}
