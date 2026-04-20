@@ -258,32 +258,52 @@ def build_sage_recurse_tool(
 
 ### 4.5 `boot.py` wiring — `sage-python/src/sage/boot.py`
 
+Resolved accessor path: `boot_pipeline.py:297` already wires `_pipeline.controller = _controller`, so at boot.py tool-registration time (l.520) the controller is reachable via `system.pipeline.controller`. No new accessor needed.
+
 ```python
-# l.519-521 becomes:
-from sage.tools.sage_recurse import build_sage_recurse_tool
-controller = system.topology_controller  # acquire reference
-tool_registry.register(build_sage_recurse_tool(system.run, controller=controller))
-_log.info("Core tools: sage_recurse registered (max depth 3, budget-gated)")
+# sage-python/src/sage/boot.py  (l.518-523 becomes:)
+try:
+    from sage.tools.sage_recurse import build_sage_recurse_tool
+    controller = getattr(system.pipeline, "controller", None)
+    tool_registry.register(build_sage_recurse_tool(system.run, controller=controller))
+    _log.info("Core tools: sage_recurse registered (max depth 3, budget-gated=%s)",
+              controller is not None)
+except (ImportError, RuntimeError) as exc:
+    _log.debug("sage_recurse not available: %s", exc)
 ```
 
-The `system.topology_controller` accessor may need adding if it doesn't exist. Default pattern: `system` holds the pipeline which holds the controller; a property on `System` returning `self._pipeline._controller` or equivalent. Plan will confirm the exact accessor.
+`getattr(..., None)` keeps graceful-degrade: if a deployment builds the system without `TopologyController` (e.g. `model_assigner=None` per `boot_pipeline.py:266` gate), the tool still registers without a gate (equivalent to pre-refactor behavior). Logged so operators can see the gate status.
 
 ### 4.6 `TopologyRunner` hook
 
-In the topology execution loop (`sage-python/src/sage/execution/topology_runner.py` or equivalent — plan will locate exact file):
+Exact seam: `sage-python/src/sage/topology/runner.py:840` — `TopologyRunner._execute_node(self, node_idx, task, context_override)`. This method is the single entry point that dispatches to `_execute_code_node`, `_execute_solver_node`, or `_execute_node_via_agent_loop` (code-node, solver-node, and LLM-node respectively). Wrapping here covers all three node types.
 
 ```python
+# sage-python/src/sage/topology/runner.py
 from sage.tools.sage_recurse import sage_recurse_origin_node
 
-# Around the per-node agent dispatch:
-async def _run_node(self, node, ctx):
-    token = sage_recurse_origin_node.set(node.index)
+async def _execute_node(
+    self, node_idx: int, task: str, context_override: str | None = None,
+) -> str:
+    """Execute a single topology node — LLM call or code sandbox."""
+    token = sage_recurse_origin_node.set(node_idx)
     try:
-        result = await node.agent.run(ctx)
+        node = self.graph.get_node(node_idx)
+        node_type = getattr(node, "node_type", "llm")
+        if node_type == "code":
+            return await self._execute_code_node(node_idx, task, context_override)
+        if node_type == "solver" or getattr(node, "role", "") == "solver":
+            return await self._execute_solver_node(node_idx, task, context_override)
+        if self._agent_loop_factory:
+            return await self._execute_node_via_agent_loop(node_idx, task, context_override)
+        # ...existing fallback path for LLM nodes without factory...
     finally:
         sage_recurse_origin_node.reset(token)
-    return result
 ```
+
+Note: the fallback path after `_agent_loop_factory` check (lines ~870+ of the current file) must also sit inside the try block — the existing code falls through without an explicit return in one branch. Plan step will verify by running the LLM-fallback tests.
+
+Parallel branches (`asyncio.gather` at l.1154, l.1331): each concurrent call to `_execute_node` gets its own ContextVar token via `.set()` — ContextVars are copied per-task in asyncio, so parallel nodes see their own `origin_node` without cross-pollination. No additional locking needed.
 
 ## 5. Data flow (summary)
 
@@ -377,7 +397,7 @@ Plan skill will produce the detailed step-by-step executing-plans version.
 | `sage_recurse` backwards-compat for standalone callers | `controller` param is `Optional`, defaults to `None`. Existing callers unchanged. |
 | Test migrations miss a shadow-state reference and runtime fails | Grep-guided audit + the equivalence test in §7.5 would catch drift. Commit B lands tests and production code together. |
 | `record_emergent_spawn` debits on failure too — DoS guard may feel "unfair" | Documented behavior in tool docstring + integration test. Alternative (debit only on success) reopens the looping-agent attack surface. |
-| `TopologyRunner` file location TBD | Plan will locate exact file via `grep -rn "async def.*node" sage-python/src/sage/execution/`. If no clean seam exists, the plan may introduce a small adapter layer. |
+| Parallel node execution via `asyncio.gather` (l.1154, l.1331 of runner.py) — ContextVar coherence | Python 3.7+ asyncio copies ContextVar on `asyncio.create_task` / `asyncio.gather`, so each concurrent `_execute_node` call has its own `sage_recurse_origin_node`. Verified behavior; add an explicit parallel test (origin_node differs per concurrent node) for regression. |
 
 ## 10. References
 
