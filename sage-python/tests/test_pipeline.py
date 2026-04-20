@@ -510,6 +510,148 @@ async def test_pipeline_single_agent_sets_stall_cap_matching_factory(monkeypatch
         )
 
 
+# -- Plan item 1.4 (2026-04-20): MAP-Elites archive growth at pipeline level -
+#
+# TestRealEngineEvolutionLoop (test_online_evolution.py) already proves the
+# engine.generate → cache_topology → record_outcome chain grows the archive
+# at ENGINE level. Plan item 1.4 wants the same empirical validation at
+# PIPELINE level — does pipeline.run() actually drive that chain? A full
+# SWE-bench smoke (plan's original method) gives the same signal at 50× the
+# cost of this test. Using the real sage_core.TopologyEngine + mock LLM
+# isolates the wiring question from provider/network variance.
+#
+# To force the engine path (instead of the template branch), this test
+# stubs _build_topology_from_hint to return None — mirroring the fallback
+# path the pipeline already exercises when a TemplateStore lookup misses.
+
+try:
+    import sage_core as _sage_core  # noqa: F401
+    _HAS_SAGE_CORE_PIPELINE = True
+except ImportError:
+    _HAS_SAGE_CORE_PIPELINE = False
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE_PIPELINE, reason="sage_core (Rust) not compiled")
+@pytest.mark.asyncio
+async def test_pipeline_real_engine_grows_map_elites_archive():
+    """Pipeline-level empirical validation of the generate→cache→record chain.
+
+    Asserts that repeated pipeline.run() calls cause the REAL
+    sage_core.TopologyEngine archive to grow past 0 cells. This is what
+    plan item 1.4 asks for — the existing H4 test covers the engine contract
+    in isolation; this test covers the pipeline-level wiring (Stage 2
+    cache_topology + Stage 5 record_outcome) that consumes that contract.
+
+    Failure modes diagnosed by the assertion error:
+    - cell_count stays 0 despite >= 10 runs → cache_topology or
+      record_outcome regressed (same H4-class bypass).
+    - cell_count == 0 on fewer runs → budget degrade path intercepted;
+      diagnose via log grep for "Topology budget" warnings.
+    """
+    import sage_core
+    engine = sage_core.TopologyEngine()
+    assert engine.archive_cell_count() == 0, "fresh engine must start empty"
+
+    class _PipelineForcingEngineGenerate(CognitiveOrchestrationPipeline):
+        """Force Stage 2 to fall through to engine.generate() instead of the
+        template branch — templates don't hit the archive-growth wiring."""
+        def _build_topology_from_hint(self, hint):
+            return None
+
+    pipeline = _PipelineForcingEngineGenerate(
+        router=_MockRouter(system=3),   # S1 skips topology entirely; S2 may
+                                        # take sequential-template shortcut —
+                                        # S3 survives both filters.
+        engine=engine,                  # REAL engine → real archive
+        assigner=_MockAssigner(),
+        provider_pool=MagicMock(),
+        bandit=_MockBandit(),
+        quality_estimator=_MockQualityEstimator(),  # returns 0.85 — stable
+                                                    # signal avoids a zero
+                                                    # outcome forcing abstain.
+        event_bus=MagicMock(),
+        llm_provider=_MockLLMProvider(),
+        llm_config=None,
+    )
+
+    # Drive 10 diverse tasks so the MAP-Elites descriptor grid gets enough
+    # variance to land in at least one cell even on conservative descriptors.
+    # The engine-level test uses 20 for EVOLUTION_MIN_OUTCOMES; 10 is
+    # sufficient here because we're testing archive growth, not the
+    # should_evolve gate.
+    for i in range(10):
+        try:
+            await pipeline.run(f"hierarchical synthesis task variant {i}", budget_usd=5.0)
+        except Exception as exc:  # noqa: BLE001
+            # Some paths in pipeline.run may raise on mocks — we only care
+            # about whether record_outcome fires at least once, so log and
+            # move on rather than masking the assertion below.
+            import logging
+            logging.warning("run %d raised (non-fatal for archive check): %s", i, exc)
+
+    cells = engine.archive_cell_count()
+    assert cells > 0, (
+        f"After 10 pipeline.run() calls with the real Rust engine, the "
+        f"MAP-Elites archive should have >= 1 cell, got {cells}. This is "
+        f"the H4-class regression: engine.generate() ran but either "
+        f"cache_topology (pipeline.py:549-554) or record_outcome "
+        f"(pipeline.py:1349-1380) silently no-opped. Diagnose by grepping "
+        f"pipeline logs for 'cache_topology failed' or 'Evolution feedback "
+        f"failed'."
+    )
+
+
+@pytest.mark.skipif(not _HAS_SAGE_CORE_PIPELINE, reason="sage_core (Rust) not compiled")
+@pytest.mark.asyncio
+async def test_pipeline_template_branch_grows_map_elites_archive():
+    """Plan item 1.4a (2026-04-20): template branch — dominant production path.
+
+    Before the 1.4a fix (pipeline.py::_apply_topology_budget_and_cache),
+    cache_topology only ran on the engine branch. The common S2/S3
+    sequential task took the template branch at pipeline.py:~502 which
+    returned early → cache never populated → record_outcome miss →
+    archive stuck at 0. This regressed the SA-3 "online evolution" claim
+    silently because unit tests mocked around the template → archive
+    chain. Empirical pipeline-level smoke caught it.
+    """
+    import sage_core
+    engine = sage_core.TopologyEngine()
+    assert engine.archive_cell_count() == 0
+
+    # No subclass override → _build_topology_from_hint uses real
+    # PyTemplateStore.create() which builds real multi-node topologies.
+    # System=2 + hint="sequential" (default) routes through the template
+    # branch at pipeline.py:~500.
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=2),
+        engine=engine,
+        assigner=_MockAssigner(),
+        provider_pool=MagicMock(),
+        bandit=_MockBandit(),
+        quality_estimator=_MockQualityEstimator(),
+        event_bus=MagicMock(),
+        llm_provider=_MockLLMProvider(),
+        llm_config=None,
+    )
+
+    for i in range(10):
+        try:
+            await pipeline.run(f"refactor module {i}", budget_usd=10.0)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+            logging.warning("template-branch run %d raised: %s", i, exc)
+
+    cells = engine.archive_cell_count()
+    assert cells > 0, (
+        f"Template branch (production path) must cache topology so "
+        f"record_outcome can insert into the archive. Got {cells} cells "
+        f"after 10 runs — H10 regression: _apply_topology_budget_and_cache "
+        f"not called on the template branch, or cache_topology silently "
+        f"no-opped. See plan item 1.4a in "
+        f"docs/superpowers/plans/2026-04-20-rust-first-plan.md."
+    )
+
+
 @pytest.mark.asyncio
 async def test_pipeline_s1_skips_decomposition():
     """S1 tasks skip the decomposition stage entirely."""

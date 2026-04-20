@@ -36,8 +36,9 @@ Then find the first `[ ]` item below and begin. One item per session maximum. Wh
 |---|---|---|---|---|
 | 1 | 1.1 `max_steps` singleton audit | [x] | `b7ced9d` | 1 |
 | 1 | 1.2 `stall_cap` singleton audit | [x] | `0b5a272` | 1 |
-| 1 | 1.3 `tools` filter singleton audit | [x] | (doc-only, see below) | 1 |
-| 1 | 1.4 MAP-Elites archive growth smoke | [ ] | — | — |
+| 1 | 1.3 `tools` filter singleton audit | [x] | `e5e3811` (doc-only) | 1 |
+| 1 | 1.4 MAP-Elites archive growth smoke | [~] | (H9+H10 found) | 1 |
+| 1 | 1.4a Fix H9 (ID form) + H10 (template branch cache) | [~] | (commit in flight) | 1 |
 | 1 | 1.5 PyO3 inventory sweep | [ ] | — | — |
 | 1 | 1.6 ADR-011 Singleton vs Factory | [ ] | — | — |
 | 2 | 2.1 Rust scaffold + PyO3 | [ ] | — | — |

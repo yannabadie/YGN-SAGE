@@ -469,7 +469,7 @@ class CognitiveOrchestrationPipeline:
                 if topo:
                     ctx.topology = topo
                     log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
-                    self._check_topology_budget(ctx)
+                    self._apply_topology_budget_and_cache(ctx)
                     return ctx
             ctx.topology = None
             log.debug("S1 task: skipping topology (direct single-agent)")
@@ -508,7 +508,7 @@ class CognitiveOrchestrationPipeline:
                     ctx.dag_features.delta if ctx.dag_features else "?",
                     f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
                 )
-                self._check_topology_budget(ctx)
+                self._apply_topology_budget_and_cache(ctx)
                 return ctx
 
         # Try DynamicTopologyEngine
@@ -527,33 +527,17 @@ class CognitiveOrchestrationPipeline:
                 result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
                 if result and hasattr(result, "topology"):
                     ctx.topology = result.topology
-                    if hasattr(result, "topology_id"):
-                        ctx.topology_id = result.topology_id()
-                    elif hasattr(ctx.topology, "id"):
-                        ctx.topology_id = ctx.topology.id
+                    # Plan item 1.4a (2026-04-20): always use ctx.topology.id
+                    # (full ULID) — the engine's topology_cache / archive lookup
+                    # is keyed by this ULID. result.topology_id() returns a
+                    # descriptor-keyed semantic ID (e.g. "avr:n3:01KPN3XZ")
+                    # which is NOT cache-compatible; using it caused record_outcome
+                    # cache misses → archive never grew on the engine branch.
+                    ctx.topology_id = getattr(ctx.topology, "id", "")
                 elif result:
                     ctx.topology = result
 
-                # H4 audit fix (2026-04-19): cache the generated topology so
-                # record_outcome (called in _stage_learn) can look it up by id
-                # and insert into the MAP-Elites archive. Without this,
-                # `engine.generate` returns a topology with a fresh id, but
-                # `topology_cache.get(id)` MISSES inside record_outcome
-                # (engine.rs:563), the descriptor falls back to None
-                # (engine.rs:577), and the archive insertion at engine.rs:597
-                # is SKIPPED entirely. Empirically observed: 8 record_outcome
-                # calls with diverse ids → cell_count stayed at 0, so
-                # should_evolve was always False and the H1 evolve()
-                # wiring would never fire on a real run. Cache here closes
-                # the loop generate → archive growth → should_evolve → evolve.
-                if (ctx.topology is not None
-                        and hasattr(self.engine, "cache_topology")):
-                    try:
-                        self.engine.cache_topology(ctx.topology)
-                    except (RuntimeError, TypeError) as exc:
-                        log.debug("cache_topology failed: %s", exc)
-
-                self._check_topology_budget(ctx)
+                self._apply_topology_budget_and_cache(ctx)
                 return ctx
             except (ImportError, RuntimeError) as exc:
                 log.warning(
@@ -573,8 +557,32 @@ class CognitiveOrchestrationPipeline:
             log.debug("sage_core unavailable, topology=None (single-agent mode)")
             ctx.topology = None
 
-        self._check_topology_budget(ctx)
+        self._apply_topology_budget_and_cache(ctx)
         return ctx
+
+    def _apply_topology_budget_and_cache(self, ctx: PipelineContext) -> None:
+        """Plan item 1.4a (2026-04-20): apply budget check + cache the final topology.
+
+        _check_topology_budget may replace ctx.topology with a degraded
+        single-node fallback; we cache AFTER that replacement so the id
+        stored in topology_cache matches whatever record_outcome will
+        reference in Stage 5. Before this helper existed, cache_topology
+        was only wired on the engine branch (H4, commit dc51976), leaving
+        three production paths silently uncached:
+          - template branch (line ~502, dominant production path)
+          - engine-branch budget degrade (_make_single_node_topology)
+          - fallback TopologyGraph + TopologyNode path
+        Empirically verified by plan-1.4 smoke: template branch → 0 cells
+        after 10 pipeline.run() calls; with this helper → archive grows.
+        """
+        self._check_topology_budget(ctx)
+        if (ctx.topology is not None
+                and self.engine is not None
+                and hasattr(self.engine, "cache_topology")):
+            try:
+                self.engine.cache_topology(ctx.topology)
+            except (RuntimeError, TypeError) as exc:
+                log.debug("cache_topology failed: %s", exc)
 
     def _check_topology_budget(self, ctx: PipelineContext) -> None:
         """Pre-validate budget feasibility — degrade to single-node if over budget."""
