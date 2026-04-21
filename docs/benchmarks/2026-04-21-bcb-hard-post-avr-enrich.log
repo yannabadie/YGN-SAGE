@@ -1,0 +1,630 @@
+kNN: loaded 60 exemplars from C:\Code\YGN-SAGE\sage-python\config\routing_exemplars.npz
+kNN: Rust acceleration active (60 exemplars)
+Embedder: using RustEmbedder (ONNX, native)
+Boot: kNN router loaded (60 exemplars, rust_onnx)
+AdaptiveRouter: Python heuristic fallback
+Boot: Rust SystemRouter active (19 models from C:\Code\YGN-SAGE\sage-core\config\cards.toml)
+Boot: Bandit wired into SystemRouter for integrated routing
+Boot: Bandit warm-started with 19 models x 4 templates (76 arms)
+Boot: Phase 6 active -- TopologyEngine + ContextualBandit ready
+Boot: Restored persisted state -- 11 bandit arms, 3 archive cells from C:\Users\yann.abadie\.sage
+Boot: atexit handler registered for engine state persistence
+S-MMU bootstrapped with 3 template topologies (3 chunks)
+Embedder: using RustEmbedder (ONNX, native)
+Embedder: using RustEmbedder (ONNX, native)
+ToolExecutor (Rust): tree-sitter validator + subprocess executor
+Online evolution enabled (Rust TopologyEngine available)
+ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)
+EvolutionMemory wired (CORAL persistent skills at C:\Users\yann.abadie\.sage\evolution_memory.db)
+Core tools: execute_bash registered (file read, git, tests, system commands)
+Sandbox: tree-sitter + subprocess (no Wasm component loaded). Load a .wasm module via ToolExecutor.load_component() for full isolation.
+Loaded model profiles from C:\Code\YGN-SAGE\sage-python\config\model_profiles.toml (5 entries)
+Using cached deepseek model list (2 models)
+Discovered 2 models from deepseek
+Using cached google model list (1 models)
+Discovered 1 models from google
+Using cached openai model list (2 models)
+Discovered 2 models from openai
+Using cached xai model list (11 models)
+Discovered 11 models from xai
+Using cached kimi model list (14 models)
+Discovered 14 models from kimi
+Discovered 1 models from minimax
+Discovered 1 models from openrouter
+New model discovered: deepseek-reasoner (deepseek) -- no TOML profile, using defaults
+New model discovered: gpt-5-mini (openai) -- no TOML profile, using defaults
+New model discovered: grok-3 (xai) -- no TOML profile, using defaults
+New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-multi-agent-0309 (xai) -- no TOML profile, using defaults
+New model discovered: grok-code-fast-1 (xai) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2.6 (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2.5 (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+New model discovered: minimax-m2.7 (minimax) -- no TOML profile, using defaults
+New model discovered: qwen/qwen3.5-plus-02-15 (openrouter) -- no TOML profile, using defaults
+ModelRegistry: 34 total profiles, 32 available
+Boot: discovered 34 models (32 available) -- deepseek: 2, google: 1, kimi: 14, minimax: 1, openai: 2, openrouter: 1, xai: 11
+ProviderPool: 7 live providers -- ['deepseek', 'google', 'openai', 'xai', 'kimi', 'minimax', 'openrouter']
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.481271 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.877766 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Circuit OPEN for provider_openai after 3 failures (last: status_code: 429, model_name: gpt-5.4, body: {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}). Will probe in 60s.
+Health check DEAD for openai (quota exhausted): ModelHTTPError — circuit opened
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1776775130.285249   71904 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775130.399998   76524 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775131.229608  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775131.491120   71904 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Circuit OPEN for provider_xai after 3 failures (last: status_code: 503, model_name: grok-4-1-fast-reasoning, body: failed to connect to all addresses; last error: UNKNOWN: ipv4:104.18.18.80:443: Tls handshake failed (TSI_PROTOCOL_FAILURE): SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain). Will probe in 60s.
+Health check DEAD for xai (unreachable): ModelHTTPError — circuit opened
+I0000 00:00:1776775133.027943  114912 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775134.324574   70072 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775135.734358   71160 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775136.343359  106640 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775140.450173   55444 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775141.066730  108552 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+Health check OK for openrouter (API error on probe, but reachable: ValueError)
+Provider health check: 5/7 alive {'deepseek': True, 'google': True, 'openai': False, 'xai': False, 'kimi': True, 'minimax': True, 'openrouter': True}
+Dead providers excluded: ['openai', 'xai']
+CompositeWriteGate: using Rust acceleration
+CognitiveOrchestrationPipeline initialized
+QualityEstimator: Z3 formal labeler active
+TopologyController initialized (Phase C)
+ToolForge initialized (autonomous tool synthesis)
+Memory backend: rust_smmu
+Capabilities: pipeline=True, quality=True, bandit=True, engine=True
+Core tools: sage_recurse registered (max depth 3, budget-gated=True)
+I0000 00:00:1776775146.018102  117404 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775148.338079   71904 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+Retrying request to /chat/completions in 0.388697 seconds
+I0000 00:00:1776775156.836397   98948 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775159.540823   55444 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775175.454751  106640 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775176.876497   49292 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775202.278939  114912 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775204.738992  108552 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775239.450192   76524 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776775248.761208   70072 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 2743 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+[1/20] FAIL BigCodeBench/13 (120009ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1962 chars, tool_calls=0
+topology.runner: injecting planner output (1962 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775298.968279   70072 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775318.643121   70072 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1896 chars, tool_calls=7
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1896 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=4 task_id=0
+Embedder: using RustEmbedder (ONNX, native)
+memory.archive.grow cells=5 delta=1 coverage=0.046 topology=01KPR0Y4 quality=0.50
+evolution.should_evolve.decision decision=true cells=5 coverage=0.046 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=5 cells_after=10
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776775407.261377   98948 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+  Repair succeeded for BigCodeBench/15 (reasoner tier)
+[2/20] PASS BigCodeBench/15 (85062ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 2001 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775442.686101   76524 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1999 chars, tool_calls=0
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1999 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=8 task_id=1
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=10 coverage=0.093 min_outcomes=5 cooldown=3
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+  Repair succeeded for BigCodeBench/17 (reasoner tier)
+[3/20] PASS BigCodeBench/17 (35771ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.91, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 875 chars, tool_calls=0
+topology.runner: injecting planner output (875 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775531.969078  114912 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775548.278964   98948 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 940 chars, tool_calls=7
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 872 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=12 task_id=2
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=10 coverage=0.093 min_outcomes=5 cooldown=3
+[4/20] PASS BigCodeBench/19 (80837ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.91, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 817 chars, tool_calls=0
+topology.runner: injecting planner output (817 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 814 chars, tool_calls=4
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 814 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=16 task_id=3
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=true cells=10 coverage=0.093 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=10 cells_after=12
+[5/20] PASS BigCodeBench/34 (53351ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1168 chars, tool_calls=0
+topology.runner: injecting planner output (1168 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775670.036560   74092 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775677.411315  121872 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1520 chars, tool_calls=6
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1185 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=20 task_id=4
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=12 coverage=0.111 min_outcomes=5 cooldown=3
+[6/20] PASS BigCodeBench/37 (95716ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 4273 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775777.657045   70072 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 3561 chars, tool_calls=13
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 3175 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=24 task_id=5
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=12 coverage=0.111 min_outcomes=5 cooldown=3
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776775807.112983   49292 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[7/20] FAIL BigCodeBench/82 (65206ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 4371 chars, tool_calls=0
+Node 0 model upgraded to minimax-m2.7
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 3350 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775904.069600  106640 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 4931 chars, tool_calls=8
+Node 1 model upgraded to qwen/qwen3.5-plus-02-15
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776775915.555414  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[8/20] FAIL BigCodeBench/89 (120013ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1858 chars, tool_calls=0
+topology.runner: injecting planner output (1858 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 2301 chars, tool_calls=5
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1999 chars, tool_calls=0
+Node 2 model upgraded to gemini-2.5-flash
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1999 chars, tool_calls=0
+Stage 4: quality=0.08 < 0.3, triggering FrugalGPT cascade retry
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776776029.410299  108552 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 2398 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+I0000 00:00:1776776052.023185   74092 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[9/20] FAIL BigCodeBench/92 (120007ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 2523 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 2802 chars, tool_calls=3
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 2553 chars, tool_calls=0
+Stage 4: quality=0.22 < 0.3, triggering FrugalGPT cascade retry
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 3934 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+I0000 00:00:1776776156.936280   98948 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+I0000 00:00:1776776166.896057   55444 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[10/20] FAIL BigCodeBench/93 (120016ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.78, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=2 gamma=0.67)
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 873 chars, tool_calls=2
+Retrying request to /chat/completions in 0.489923 seconds
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 749 chars, tool_calls=0
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 1425 chars, tool_calls=0
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 3 (worker_2) completed via agent_loop, output 852 chars, tool_calls=0
+Node 1 pruned by controller
+Node 2 pruned by controller
+Node 3 pruned by controller
+Embedder: using RustEmbedder (ONNX, native)
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.623 action=SWITCH_MODEL details={'latency': 0.0, 'errors': 0.0, 'cost': 0.7333}
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 4 (verifier) completed via agent_loop, output 748 chars, tool_calls=3
+memory.smmu.tier_transition from=stm to=arrow events=28 task_id=6
+Embedder: using RustEmbedder (ONNX, native)
+memory.archive.grow cells=13 delta=1 coverage=0.120 topology=01KPR1T4 quality=0.67
+evolution.should_evolve.decision decision=true cells=13 coverage=0.120 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=13 cells_after=15
+[11/20] PASS BigCodeBench/99 (72127ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776776270.397224  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776776282.615827   55444 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 3224 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.419 action=SWITCH_MODEL details={'latency': 0.4933, 'errors': 0.0, 'cost': 0.1558}
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.450 action=SWITCH_MODEL details={'latency': 0.5297, 'errors': 0.0, 'cost': 0.0517}
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.0438}
+Circuit OPEN for provider_qwen/qwen3.5-plus-02-15 after 3 failures (last: drift_reset_agent score=1.0). Will probe in 60s.
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 2195 chars, tool_calls=9
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1919 chars, tool_calls=0
+Stage 4: quality=0.25 < 0.3, triggering FrugalGPT cascade retry
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[12/20] FAIL BigCodeBench/100 (120014ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776776403.891944   74092 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776776422.557502  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 2524 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.1155}
+Circuit RE-OPENED for provider_qwen/qwen3.5-plus-02-15 — half-open probe failed: drift_reset_agent score=1.0. Will retry in 60s.
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 3243 chars, tool_calls=4
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 2768 chars, tool_calls=0
+Stage 4: quality=0.18 < 0.3, triggering FrugalGPT cascade retry
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1950 chars, tool_calls=0
+topology.runner: injecting planner output (1950 chars, role=planner) into node 1 system prompt
+[13/20] FAIL BigCodeBench/101 (120016ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776776524.627794  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776776532.540212  121872 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 4803 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.104}
+Circuit RE-OPENED for provider_qwen/qwen3.5-plus-02-15 — half-open probe failed: drift_reset_agent score=1.0. Will retry in 60s.
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 5339 chars, tool_calls=4
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 6007 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=32 task_id=7
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776776635.004877  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776776657.257026  125564 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[14/20] FAIL BigCodeBench/108 (99446ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=2 gamma=1.00)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776776742.768939  106640 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1702 chars, tool_calls=0
+topology.runner: injecting planner output (1702 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776776776.230197  101988 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1874 chars, tool_calls=7
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1699 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=36 task_id=8
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776776840.776541   10536 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776776887.571415   71904 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[15/20] FAIL BigCodeBench/120 (94541ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=3 gamma=0.67)
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 2367 chars, tool_calls=0
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 1779 chars, tool_calls=0
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 1337 chars, tool_calls=2
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 3 (worker_2) completed via agent_loop, output 1476 chars, tool_calls=0
+Node 1 pruned by controller
+Node 2 pruned by controller
+Node 3 pruned by controller
+Embedder: using RustEmbedder (ONNX, native)
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+[16/20] FAIL BigCodeBench/123 (120012ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1378 chars, tool_calls=0
+topology.runner: injecting planner output (1378 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1337 chars, tool_calls=0
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 1180 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=40 task_id=9
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=true cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=15 cells_after=15
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+Consolidation: processed=0 entities=0 causal_edges=0 skipped=0
+memory.consolidation.fired processed=0 entities=0 causal_edges=0 task_id=10
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+  Repair succeeded for BigCodeBench/124 (reasoner tier)
+[17/20] PASS BigCodeBench/124 (52190ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 3459 chars, tool_calls=0
+topology.runner: injecting planner output (2016 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[18/20] FAIL BigCodeBench/129 (120020ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 967 chars, tool_calls=0
+topology.runner: injecting planner output (967 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1477 chars, tool_calls=15
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 964 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=44 task_id=10
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+[19/20] PASS BigCodeBench/139 (96243ms)
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S2 model=deepseek-chat (conf=0.77, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=2, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1467 chars, tool_calls=0
+topology.runner: injecting planner output (1467 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.577 action=SWITCH_MODEL details={'latency': 0.6792, 'errors': 0.0, 'cost': 0.0898}
+Circuit RE-OPENED for provider_qwen/qwen3.5-plus-02-15 — half-open probe failed: drift_switch_model score=0.6792. Will retry in 60s.
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 2539 chars, tool_calls=4
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 731 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=48 task_id=11
+Embedder: using RustEmbedder (ONNX, native)
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+  Repair succeeded for BigCodeBench/147 (reasoner tier)
+[20/20] PASS BigCodeBench/147 (62709ms)
+Wrote 20 predictions to docs\benchmarks\2026-04-21-predictions-hard-instruct.jsonl

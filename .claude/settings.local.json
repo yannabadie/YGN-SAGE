@@ -18,7 +18,17 @@
       "Read(//c/Code/YGN-SAGE/$HOME/**)",
       "Read(//c/Code/YGN-SAGE/$APPDATA/**)",
       "Bash(forge:*)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_anhwd28n/predictions.jsonl /c/Code/YGN-SAGE/docs/benchmarks/2026-04-17-swebench-lite-v5a-predictions.jsonl)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_anhwd28n/predictions_meta.json /c/Code/YGN-SAGE/docs/benchmarks/2026-04-17-swebench-lite-v5a-meta.json)",
+      "Bash(mkdir -p /c/Code/YGN-SAGE/.claude/consult)",
+      "Bash(cat)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_lpxo35bx/predictions.jsonl /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5e-predictions.jsonl)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_lpxo35bx/predictions_meta.json /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5e-meta.json)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_bt6zfawk/predictions.jsonl /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5f-predictions.jsonl)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_bt6zfawk/predictions_meta.json /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5f-meta.json)"
     ]
   }
 }
