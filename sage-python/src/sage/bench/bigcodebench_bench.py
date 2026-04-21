@@ -148,12 +148,46 @@ class BigCodeBenchBench:
                 was_bypassed = trace.get("topology_nodes", 0) == 0
 
                 # Step 1: Reasoner repair (arXiv 2306.09896: 1 repair optimal)
+                #
+                # 2026-04-21 audit (docs/audits/2026-04-21-bcb-hard-failure-analysis.md,
+                # top-1 lever). Prior prompt only gave the LLM the NL description
+                # + last 500 chars of stderr. The repair stage fired 72/72 times
+                # on non-API failures in the Apr-08 run and repaired 0 of them —
+                # classic "not enough signal" bottleneck. Expected lift +5-8 pp.
+                #
+                # Enrichments (all already public for this instance — no leakage):
+                #   - Function template (``task['code_prompt']``) — signature +
+                #     docstring. Anchors the repair on the exact entry-point shape.
+                #   - Acceptance tests (``task['test']``) — the tests that just
+                #     failed. This is the contract, not the solution. Equivalent
+                #     to what SWE-bench's agent discovers via ``grep test_*``;
+                #     BCB has no tool loop, so we inject directly. Standard Aider
+                #     / OpenHands / SWE-agent practice.
+                #   - Stderr window raised 500 → 1500 chars (cap is 2000 since
+                #     this morning's commit c6e40e9); keeps full tracebacks.
+                #   - Entry-point explicitly named again to prevent LLM renaming.
+                #
+                # NOT included (would be overfitting / leakage):
+                #   - ``task['canonical_solution']`` — ground-truth code. Excluded.
                 if not task_passed and eval_stderr:
+                    code_template = task.get("code_prompt", "") or task.get("prompt", "")
+                    test_code = task.get("test", "")
                     retry_prompt = (
-                        f"Your previous code for this task failed with this error:\n"
-                        f"```\n{eval_stderr[-500:]}\n```\n\n"
-                        f"Original task:\n{prompt}\n\n"
-                        f"Please fix the code. Return ONLY the corrected Python code."
+                        f"Your previous code for this task failed. Read the error, "
+                        f"the function template, and the acceptance tests, then "
+                        f"return a corrected implementation.\n\n"
+                        f"## Error from the failing test run\n"
+                        f"```\n{eval_stderr[-1500:]}\n```\n\n"
+                        f"## Original task description\n"
+                        f"{prompt}\n\n"
+                        f"## Function template to complete\n"
+                        f"```python\n{code_template}\n```\n\n"
+                        f"## Acceptance tests (these are what just failed)\n"
+                        f"```python\n{test_code}\n```\n\n"
+                        f"Return ONLY the corrected Python code inside a "
+                        f"```python fenced block. The function must be named "
+                        f"exactly `{entry}`. Do not include the tests — only "
+                        f"the implementation."
                     )
                     try:
                         raw = await asyncio.wait_for(
