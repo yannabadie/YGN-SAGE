@@ -64,25 +64,51 @@ minimax outage pattern.
 | Archive growth | MAP-Elites cell count > 0 | `1 archive cells from ~/.sage` restored at boot | ✅ |
 | No ContextVar leak | No cross-task pollution | 10 tasks independent, no leakage | ✅ |
 
-## Docker evaluation failure — NOT a Phase 1 issue
+## Docker evaluation — initial failure then fixed
 
-The `build_env_images` step inside the Docker harness failed:
-```
-swebench.harness.docker_build.BuildImageError:
-  Error building image sweb.base.py.x86_64:latest:
-  The command '/bin/sh -c wget 'https://repo.anaconda.com/miniconda/...'
-  returned a non-zero code: 5
-```
+**First run** (this smoke, before CA patch): the `build_env_images`
+step failed because `wget` inside the base Ubuntu container couldn't
+verify `https://repo.anaconda.com/miniconda/...` against the corporate
+TLS-inspecting proxy (exit code 5 — cert `CN=*.adgroupe.com`). Pre-existing
+env issue, unrelated to Phase 1.
 
-`wget` exit code 5 = SSL verification failure. The Docker base image
-doesn't have the corporate CA bundle (`C:/Code/certs/ca-bundle.pem`), so
-it can't download Miniconda over HTTPS. This is a **known environment
-issue** that predates Phase 1 — same root cause as CLAUDE.md §SSL (host
-uses ca-bundle.pem, but Docker build environment doesn't inherit it).
+**Fix** (committed in `a799143` + `5fc2869`): new module
+`sage.bench.swebench_ca_patch` that:
+- Injects `truststore` into the host Python (fixes
+  `requests`-to-raw.githubusercontent.com that swebench calls before
+  Docker build)
+- Patches the swebench base-image Dockerfile template (and its
+  aggregator dict `_DOCKERFILE_BASE["py"]`) to:
+  - `COPY` `ca-bundle.pem` → `/etc/ssl/certs/ca-certificates.crt`
+  - `wget --no-check-certificate` for Miniconda (acceptable:
+    ephemeral sandbox + public installer)
+  - `conda config --set ssl_verify false` + `pip config trusted-host
+    pypi.org files.pythonhosted.org pypi.python.org` (same rationale)
+- Wraps `build_image` so `ca-bundle.crt` is copied into every
+  base-image build_dir before Docker reads the Dockerfile.
 
-**To get a real Docker pass-rate**, the fix is to inject the CA bundle
-into the swebench base image build context (Dockerfile `COPY` + `update-ca-certificates`).
-Separate concern, separate plan.
+After the patch, eval runs to completion — see the final2 log +
+`2026-04-21-swebench-v13-eval-report.json`:
+
+| Metric | Value |
+|---|---|
+| Submitted | 10 |
+| Empty patches | 5 (minimax 529, pre-existing) |
+| Completed+evaluated | 3 (patches applied, tests run) |
+| Errors (patch apply) | 2 (astropy-7746, django-10914) |
+| **Resolved (pass rate)** | **0/10 (0%)** |
+
+The 0% graded rate is a real signal: 3 patches applied cleanly but
+none resolved the FAIL_TO_PASS tests of the instance. The "70%"
+claim in CLAUDE.md §Benchmarks refers to the **generation** rate
+of v5d/v5e (how many patches were produced, not how many passed);
+until this smoke, no Docker-graded pass-rate had been recorded in
+this repo.
+
+This is first-light data — treat as the v13 anchor point for future
+improvement. Next investigation: whether the 3 applied-but-unresolved
+patches are close to correct (patches-in-vicinity) vs totally wrong;
+whether the 2 patch-apply errors are format issues in SAGE output.
 
 ## Verdict
 

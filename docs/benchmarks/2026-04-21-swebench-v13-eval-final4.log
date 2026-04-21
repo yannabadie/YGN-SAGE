@@ -1,0 +1,52 @@
+
+  Evaluating pre-generated predictions: C:/Users/yann.abadie/AppData/Local/Temp/sage_swebench_kfhxbz7i/predictions.jsonl
+
+  Building Docker images and evaluating 5 instances...
+  Run ID: sage-20260421-083658
+  Timeout per instance: 300s
+  Max workers: 4
+
+Building base image (sweb.base.py.x86_64:latest)
+Base images built successfully.
+Total environment images to build: 3
+All environment images built successfully.
+Running 5 instances...
+astropy__astropy-7746: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file astropy/wcs/wcs.py
+patch: **** malformed patch at line 25: @@ -1264,28 +1279,35 @@
+
+
+Check (logs\run_evaluation\sage-20260421-083658\sage__gemini-3.1-flash-lite-preview\astropy__astropy-7746\run_instance.log) for more information.
+django__django-10914: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file django/conf/global_settings.py
+Hunk #1 FAILED at 348.
+1 out of 1 hunk FAILED -- saving rejects to file django/conf/global_settings.py.rej
+(Stripping trailing CRs from patch; use --binary to disable.)
+patch: **** malformed patch at line 25:          if not os.path.exists(directory):
+
+patching file django/core/files/storage.py
+
+Check (logs\run_evaluation\sage-20260421-083658\sage__gemini-3.1-flash-lite-preview\django__django-10914\run_instance.log) for more information.
+All instances run.
+Cleaning cached images...
+Removed 0 images.
+Total instances: 10
+Instances submitted: 10
+Instances completed: 3
+Instances incomplete: 0
+Instances resolved: 0
+Instances unresolved: 3
+Instances with empty patches: 5
+Instances with errors: 2
+Unstopped containers: 0
+Unremoved images: 0
+Report written to sage__gemini-3.1-flash-lite-preview.sage-20260421-083658.json
+
+============================================================
+  SWE-Bench Evaluation Results
+============================================================
+  Resolved: 0/10 (0.0%)
+  Report: sage__gemini-3.1-flash-lite-preview.sage-20260421-083658.json
+

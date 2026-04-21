@@ -46,8 +46,11 @@ def _fresh_patch_module():
     if "sage.bench.swebench_ca_patch" in sys.modules:
         del sys.modules["sage.bench.swebench_ca_patch"]
     # Also reset the swebench modules we'll patch so the template resets.
+    # Must include the dockerfiles package (__init__) because it holds the
+    # aggregator dict _DOCKERFILE_BASE, which is rebuilt only on fresh import.
     for mod in (
         "swebench.harness.dockerfiles.python",
+        "swebench.harness.dockerfiles",
         "swebench.harness.docker_build",
         "swebench.harness.run_evaluation",
     ):
@@ -100,10 +103,20 @@ def test_applies_dockerfile_and_wrapper(monkeypatch, tmp_path):
     from swebench.harness import docker_build
 
     tpl = dockerfile_python._DOCKERFILE_BASE_PY
-    assert "corporate.crt" in tpl, "COPY line not injected"
-    assert "update-ca-certificates" in tpl
+    # Marker string that identifies our injected block
+    marker = "corporate-ca-bundle.crt"
+    assert marker in tpl, "COPY line not injected"
     # Correctness of ordering: the COPY must come BEFORE the wget miniconda.
-    assert tpl.index("corporate.crt") < tpl.index("miniconda.sh")
+    assert tpl.index(marker) < tpl.index("miniconda.sh")
+    # The append to system bundle must be present (replaces update-ca-certificates)
+    assert "/etc/ssl/certs/ca-certificates.crt" in tpl
+    # The wget for Miniconda must be patched with --no-check-certificate
+    # because wget doesn't use /etc/ssl/certs/ca-certificates.crt directly.
+    assert "wget --no-check-certificate 'https://repo.anaconda.com/miniconda/" in tpl
+    # conda + pip must have SSL verify off / trusted-host for public registries
+    # so env-image builds don't fail on the corporate cert chain.
+    assert "conda config --set ssl_verify false" in tpl
+    assert "pip config --global set global.trusted-host" in tpl
 
     # build_image wrapper flag present
     assert getattr(docker_build.build_image, "_sage_ca_wrapped", False) is True
@@ -111,7 +124,7 @@ def test_applies_dockerfile_and_wrapper(monkeypatch, tmp_path):
     # Aggregator dict (dockerfiles.__init__._DOCKERFILE_BASE["py"]) must ALSO be
     # patched, otherwise get_dockerfile_base returns the stale original.
     from swebench.harness import dockerfiles as _dockerfiles_pkg
-    assert "corporate.crt" in _dockerfiles_pkg._DOCKERFILE_BASE["py"], (
+    assert marker in _dockerfiles_pkg._DOCKERFILE_BASE["py"], (
         "aggregator dict still holds pre-patch template — "
         "get_dockerfile_base would return unfixed Dockerfile"
     )
@@ -129,8 +142,8 @@ def test_idempotent_second_call_no_double_patch(monkeypatch, tmp_path):
 
     from swebench.harness.dockerfiles import python as dockerfile_python
     tpl = dockerfile_python._DOCKERFILE_BASE_PY
-    # Only one occurrence of the marker line.
-    assert tpl.count("corporate.crt") == 1
+    # Only one occurrence of the appended-to system bundle line.
+    assert tpl.count("/etc/ssl/certs/ca-certificates.crt") == 1
 
 
 def test_wrapper_copies_bundle_into_build_dir(monkeypatch, tmp_path):

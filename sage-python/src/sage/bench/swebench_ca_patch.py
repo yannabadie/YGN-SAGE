@@ -136,15 +136,44 @@ def apply_corporate_ca_patch() -> bool:
     # captured the original string by reference at import time.
     original_tpl = dockerfile_python._DOCKERFILE_BASE_PY
     marker = "# Download and install conda"
-    if "corporate.crt" not in original_tpl and marker in original_tpl:
-        injected = (
+    if "corporate-ca-bundle" not in original_tpl and marker in original_tpl:
+        # 1. Inject our CA bundle into the system trust store so OpenSSL-
+        #    based tools (curl, python-requests, etc. in downstream steps)
+        #    trust the corporate chain.
+        # 2. Add --no-check-certificate to the Miniconda wget. wget doesn't
+        #    consult /etc/ssl/certs/ca-certificates.crt directly; it uses
+        #    hashed symlinks from update-ca-certificates, which our
+        #    multi-cert bundle is skipped by (each .crt file must contain
+        #    exactly one cert per Debian convention). Bypassing verification
+        #    for this single download is safe: Miniconda is a public
+        #    installer, and the container is an ephemeral sandbox.
+        injected_ca = (
             "# Install corporate CA bundle (SAGE swebench_ca_patch)\n"
-            "COPY ca-bundle.crt /usr/local/share/ca-certificates/corporate.crt\n"
-            "RUN apt-get update && apt-get install -y ca-certificates "
-            "&& update-ca-certificates\n\n"
+            "COPY ca-bundle.crt /tmp/corporate-ca-bundle.crt\n"
+            "RUN cat /tmp/corporate-ca-bundle.crt >> /etc/ssl/certs/ca-certificates.crt "
+            "&& rm /tmp/corporate-ca-bundle.crt\n\n"
             + marker
         )
-        patched_tpl = original_tpl.replace(marker, injected)
+        patched_tpl = original_tpl.replace(marker, injected_ca)
+        # wget inside the container can't use the appended bundle directly
+        # (see above). Bypass verification for the Miniconda download only.
+        patched_tpl = patched_tpl.replace(
+            "RUN wget 'https://repo.anaconda.com/miniconda/",
+            "RUN wget --no-check-certificate 'https://repo.anaconda.com/miniconda/",
+        )
+        # conda + pip inside the env-image build call repo.anaconda.com +
+        # pypi.org through their own certifi store which doesn't include the
+        # corporate CA. Disable SSL verification for these public-registry
+        # downloads — acceptable in an ephemeral sandbox container.
+        patched_tpl = patched_tpl.replace(
+            "RUN conda init --all",
+            (
+                "RUN conda config --set ssl_verify false\n"
+                "RUN pip config --global set global.trusted-host "
+                "\"pypi.org files.pythonhosted.org pypi.python.org\"\n"
+                "RUN conda init --all"
+            ),
+        )
         dockerfile_python._DOCKERFILE_BASE_PY = patched_tpl
 
         # Also update the aggregator dict; get_dockerfile_base reads from here.
