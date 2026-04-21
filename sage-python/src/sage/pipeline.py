@@ -1709,6 +1709,50 @@ class CognitiveOrchestrationPipeline:
                         EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS,
                         cells_pre_evolve, cells_post_evolve,
                     )
+                    # Per-child operator logs. Rust's TopologyEngine tracks
+                    # the Thompson-sampled operator name for every mutation
+                    # attempt inside evolve() (see pyo3_wrappers.rs
+                    # PyTopologyEngine.drain_last_applied_ops). We drain the
+                    # buffer here and emit one `evolution.mutation.applied`
+                    # line per attempt. Closes gap #3 from the 0bcb92b
+                    # pillar-logging pass (per-mutation-operator observability).
+                    #
+                    # tier: best-effort — the pipeline's most recent routing
+                    # decision. evolve() mutations aren't bound to a specific
+                    # routing tier (they operate on cached topologies), so we
+                    # emit the current-task tier purely for correlation in
+                    # post-run analysis.
+                    if hasattr(self.engine, "drain_last_applied_ops"):
+                        try:
+                            applied_ops = list(self.engine.drain_last_applied_ops())
+                        except (RuntimeError, TypeError):
+                            applied_ops = []
+                        if applied_ops:
+                            import hashlib as _hashlib
+                            tier = ""
+                            rd = getattr(self, "_last_routing_decision", None)
+                            if rd is not None:
+                                tier = getattr(rd, "llm_tier", "") or ""
+                            topo_id = ctx.topology_id or getattr(
+                                ctx.topology, "id", "",
+                            )
+                            parent_cell = cells_pre_evolve
+                            for child_idx, op_name in enumerate(applied_ops):
+                                # child_hash: stable short hash mixing the
+                                # topology id, child index, and op name.
+                                # Opaque but reproducible per-run identifier.
+                                h_src = f"{topo_id}:{child_idx}:{op_name}".encode(
+                                    "utf-8",
+                                )
+                                child_hash = _hashlib.blake2b(
+                                    h_src, digest_size=4,
+                                ).hexdigest()
+                                log.info(
+                                    "evolution.mutation.applied op=%s "
+                                    "parent_cell=%d child_hash=%s tier=%s",
+                                    op_name, parent_cell, child_hash,
+                                    tier or "unknown",
+                                )
             except (ImportError, RuntimeError, AttributeError) as exc:
                 # Engine without these methods (e.g. test stub) → silent skip.
                 log.debug("Online evolution gate skipped: %s", exc)

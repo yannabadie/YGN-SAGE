@@ -163,6 +163,16 @@ class _MockEngine:
     def evolve(self, pop_size: int = 5, generations: int = 2) -> None:
         self.evolve_calls += 1
         self._cell_count += generations  # simulate archive growth via evolve
+        # Simulate the Rust-side op-name buffer being populated by evolve().
+        # The real Rust impl (topology/engine.rs) pushes one entry per inner
+        # per-child mutation attempt into last_applied_ops; we mirror that
+        # with fixed ops so the Python log-drain hook can be unit-tested.
+        self._last_ops_buffer = ["add_node", "swap_model", "mutate_prompt"]
+
+    def drain_last_applied_ops(self) -> list[str]:
+        buf = getattr(self, "_last_ops_buffer", [])
+        self._last_ops_buffer = []
+        return buf
 
 
 class _MockAssigner:
@@ -516,6 +526,52 @@ async def test_evolution_should_evolve_logs_false_decision(caplog: pytest.LogCap
     )
     # Archive context should travel with the log so ops can correlate
     assert "cells=" in msg, f"should_evolve log missing cells=: {msg!r}"
+
+
+@pytest.mark.asyncio
+async def test_evolution_mutation_applied_logs_per_child(caplog: pytest.LogCaptureFixture) -> None:
+    """After engine.evolve() fires, pipeline must drain Rust's per-child
+    op-name buffer and emit one evolution.mutation.applied log per attempt.
+
+    The Rust `TopologyEngine.drain_last_applied_ops()` (pyo3_wrappers.rs)
+    surfaces the operator Thompson-sampled for every mutation inside
+    evolve()'s inner loop. The mock engine above returns three hard-coded
+    ops (add_node, swap_model, mutate_prompt) so the pipeline must emit
+    three structured log lines with real op names (not UNKNOWN).
+    """
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+
+    pipeline, engine, _spy = _build_pipeline(should_evolve_ret=True, system=2)
+    await _run_with_injected_topology(pipeline, engine, "Evolve a topology")
+
+    assert engine.evolve_calls == 1, "evolve() should fire once"
+
+    mutation_logs = [
+        r for r in caplog.records
+        if "evolution.mutation.applied" in r.getMessage()
+    ]
+    assert len(mutation_logs) == 3, (
+        "Expected 3 evolution.mutation.applied log lines (one per child "
+        f"mutation from the mock ops buffer); got {len(mutation_logs)}. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    combined = " ".join(r.getMessage() for r in mutation_logs)
+    # Each of the 3 hard-coded op names must appear verbatim — proves we
+    # emit the real Rust OPERATOR_NAMES strings, not a stub.
+    for expected_op in ("add_node", "swap_model", "mutate_prompt"):
+        assert f"op={expected_op}" in combined, (
+            f"expected op={expected_op} somewhere in mutation logs; got: "
+            f"{combined!r}"
+        )
+    # Structured fields: parent_cell, child_hash, tier must all appear.
+    first_msg = mutation_logs[0].getMessage()
+    assert "parent_cell=" in first_msg, (
+        f"mutation log missing parent_cell=: {first_msg!r}"
+    )
+    assert "child_hash=" in first_msg, (
+        f"mutation log missing child_hash=: {first_msg!r}"
+    )
+    assert "tier=" in first_msg, f"mutation log missing tier=: {first_msg!r}"
 
 
 @pytest.mark.asyncio

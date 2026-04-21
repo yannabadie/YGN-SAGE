@@ -117,6 +117,36 @@ impl MutationStats {
         self.alphas[operator_idx] / (self.alphas[operator_idx] + self.betas[operator_idx])
     }
 
+    /// Raw alpha (Beta posterior successes + 1) for an operator. Returns `1.0`
+    /// for out-of-range indices to mirror the uninformed Beta(1,1) prior.
+    pub fn alpha(&self, operator_idx: usize) -> f64 {
+        if operator_idx >= 7 { 1.0 } else { self.alphas[operator_idx] }
+    }
+
+    /// Raw beta (Beta posterior failures + 1) for an operator. Returns `1.0`
+    /// for out-of-range indices to mirror the uninformed Beta(1,1) prior.
+    pub fn beta(&self, operator_idx: usize) -> f64 {
+        if operator_idx >= 7 { 1.0 } else { self.betas[operator_idx] }
+    }
+
+    /// Attempts = alpha + beta - 2 (drop the Beta(1,1) prior mass).
+    pub fn attempts(&self, operator_idx: usize) -> u32 {
+        if operator_idx >= 7 {
+            return 0;
+        }
+        let raw = (self.alphas[operator_idx] + self.betas[operator_idx] - 2.0).max(0.0);
+        raw.round() as u32
+    }
+
+    /// Successes = alpha - 1 (drop the Beta(1,1) prior mass).
+    pub fn successes(&self, operator_idx: usize) -> u32 {
+        if operator_idx >= 7 {
+            return 0;
+        }
+        let raw = (self.alphas[operator_idx] - 1.0).max(0.0);
+        raw.round() as u32
+    }
+
     /// Summary string for logging.
     pub fn summary(&self) -> String {
         OPERATOR_NAMES

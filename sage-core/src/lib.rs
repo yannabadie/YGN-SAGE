@@ -67,6 +67,7 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<topology::pyo3_wrappers::PyTopologyEngine>()?;
     m.add_class::<topology::pyo3_wrappers::PyGenerateResult>()?;
     m.add_class::<topology::pyo3_wrappers::PyTopologyExecutor>()?;
+    m.add_class::<topology::pyo3_wrappers::PyMutationStats>()?;
     m.add_class::<topology::density::TopologyDensity>()?;
     m.add_class::<topology::density::DensityScore>()?;
     m.add_class::<topology::reward::TopologyReward>()?;

@@ -24,7 +24,7 @@ use super::cma_me::{CmaEmitter, DimensionBounds};
 use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mcts::MctsSearcher;
-use super::mutations::{apply_random_mutation, apply_mutation_tracked, MutationResult, MutationStats};
+use super::mutations::{apply_mutation_tracked, MutationResult, MutationStats};
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;
 use super::topology_graph::TopologyGraph;
@@ -99,6 +99,15 @@ pub struct TopologyEngine {
     /// Tracks success rates to prefer operators that produce valid topologies.
     /// Mutex for thread-safe interior mutability — stats updated in &self methods.
     mutation_stats: std::sync::Mutex<MutationStats>,
+    /// Ring buffer of operator names applied during the most recent `evolve()`
+    /// pass — one entry per child mutation attempt (not per child, since
+    /// `evolve()` may apply 1-3 mutations per candidate). Drained by Python
+    /// via `PyTopologyEngine.drain_last_applied_ops()` so the pipeline can log
+    /// `evolution.mutation.applied` lines after the evolve call returns.
+    ///
+    /// Capped at 1024 entries (FIFO eviction) to cap memory even on
+    /// pathological evolve configurations.
+    last_applied_ops: std::sync::Mutex<Vec<String>>,
 }
 
 impl TopologyEngine {
@@ -124,7 +133,40 @@ impl TopologyEngine {
             last_decision_id: None,
             outcomes_since_last_evolve: 0,
             mutation_stats: std::sync::Mutex::new(MutationStats::new()),
+            last_applied_ops: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// Take ownership of the list of mutation operator names applied during
+    /// the most recent `evolve()` call. Clears the internal buffer so
+    /// subsequent `evolve()` calls start fresh.
+    ///
+    /// Order is generation-major, candidate-major: every attempt inside the
+    /// per-child 1..=3 inner loop pushes exactly one entry, regardless of
+    /// whether the attempt produced a valid graph.
+    pub fn drain_last_applied_ops(&self) -> Vec<String> {
+        let mut guard = self.last_applied_ops.lock().unwrap();
+        std::mem::take(&mut *guard)
+    }
+
+    /// Read-only snapshot of the per-operator Thompson-sampling stats.
+    /// Returns `(op_name, attempts, successes, alpha, beta)` for each of the
+    /// 7 operators in the same order as `OPERATOR_NAMES`.
+    pub fn mutation_stats_snapshot(&self) -> Vec<(String, u32, u32, f64, f64)> {
+        let stats = self.mutation_stats.lock().unwrap();
+        super::mutations::OPERATOR_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, name)| {
+                (
+                    (*name).to_string(),
+                    stats.attempts(i),
+                    stats.successes(i),
+                    stats.alpha(i),
+                    stats.beta(i),
+                )
+            })
+            .collect()
     }
 
     /// Accessor: read-only reference to the MAP-Elites archive.
@@ -676,6 +718,10 @@ impl TopologyEngine {
         // Reset cooldown counter
         self.outcomes_since_last_evolve = 0;
 
+        // Reset per-evolve op history. Python drains this buffer after
+        // evolve() returns to emit per-child `evolution.mutation.applied` logs.
+        self.last_applied_ops.lock().unwrap().clear();
+
         if self.archive.cell_count() == 0 {
             debug!("evolve_skip_empty_archive");
             return;
@@ -730,11 +776,40 @@ impl TopologyEngine {
                         Some(g) => g,
                         None => break,
                     };
-                    match apply_random_mutation(g, &mut rng) {
+                    // Use the tracked variant so Thompson-sampling stats and
+                    // the per-evolve op-name buffer stay in sync. The buffer
+                    // is drained by Python (`PyTopologyEngine.drain_last_applied_ops`)
+                    // and surfaced as `evolution.mutation.applied` log lines.
+                    let (op_idx, mutation_result) = {
+                        let stats_guard = self.mutation_stats.lock().unwrap();
+                        apply_mutation_tracked(g, &mut rng, &stats_guard)
+                    };
+                    let op_name = super::mutations::OPERATOR_NAMES
+                        .get(op_idx as usize)
+                        .copied()
+                        .unwrap_or("unknown");
+                    {
+                        let mut ops = self.last_applied_ops.lock().unwrap();
+                        // FIFO cap at 1024 so pathological configs can't grow
+                        // the buffer unboundedly.
+                        if ops.len() >= 1024 {
+                            ops.remove(0);
+                        }
+                        ops.push(op_name.to_string());
+                    }
+                    match mutation_result {
                         MutationResult::Success(mutated) => {
+                            self.mutation_stats
+                                .lock()
+                                .unwrap()
+                                .record(op_idx as usize, true);
                             current = Some(mutated);
                         }
                         MutationResult::Invalid(_reason) => {
+                            self.mutation_stats
+                                .lock()
+                                .unwrap()
+                                .record(op_idx as usize, false);
                             // current stays None — signals invalid
                             break;
                         }
