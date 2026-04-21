@@ -859,6 +859,41 @@ def test_memory_causal_chain_logs_hits(caplog: pytest.LogCaptureFixture) -> None
 # ── Write-gate skip observability (Gap 5 investigation) ─────────────────────
 
 
+def test_tool_heavy_turn_opens_episodic_path(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A turn with short prose (< 100 chars) but tool_calls MUST now pass
+    the episodic length check (previously skipped silently).
+
+    This is the fix for the write_gate=0 finding (0bcb92b): SWE-bench
+    turns are mostly tool_calls with minimal prose, and the prior
+    `len(content) > 100` gate on episodic persistence meant exploration
+    knowledge was never written to memory. Fix: OR-in `bool(tool_names)`.
+    """
+    from sage.phases import act as _act  # noqa: F401 — import smoke
+    import re
+    src = (
+        __import__("pathlib").Path(__file__)
+        .resolve().parents[1]
+        / "src/sage/bench/../phases/act.py"
+    ).resolve()
+    text = src.read_text(encoding="utf-8")
+    # Fingerprint check: the episodic guard must accept either prose
+    # length OR tool activity. Catches accidental revert.
+    assert re.search(
+        r"len\(content\)\s*>\s*100\s+or\s+bool\(tool_names\)",
+        text,
+    ), (
+        "act.py episodic guard regressed to prose-only length check — "
+        "tool-heavy turns will skip episodic memory again"
+    )
+    # Stored payload must switch to turn_signal when tool_names exist.
+    assert "turn_signal[:500] if tool_names else content[:500]" in text, (
+        "act.py episodic_payload composition regressed — lost the "
+        "tool_signal marker in stored content"
+    )
+
+
 def test_memory_write_gate_skipped_short_content(caplog: pytest.LogCaptureFixture) -> None:
     """When act phase has short content and tool calls, the gate path is never
     entered (content<100 for episodic, <50 for semantic). We MUST log the

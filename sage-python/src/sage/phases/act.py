@@ -243,13 +243,30 @@ async def act(
             log.debug("write_gate evaluate raised, allowing write: %s", exc)
             return True
 
+    # Compose a "turn signal" that reflects activity in either prose OR tool
+    # use. On tool-heavy turns (SWE-bench, BCB exploration steps), `content`
+    # is often short (e.g. "I'll check the file."), with all the work in
+    # tool_calls + tool_results. Gating purely on `len(content)` made the
+    # write_gate never fire for those turns (Gap 5 diagnosis: Agent #51
+    # `0bcb92b`), and the episodic path was skipped entirely — the agent
+    # explored, found the issue, and the trace vanished after the task.
+    # Fix: append a compact tool-activity marker so the gate can evaluate
+    # tool-heavy turns and the episodic store keeps them. Semantic entity
+    # extraction still requires real prose (entities from "[tools: bash]"
+    # are meaningless) so its threshold is unchanged.
+    tool_names = [tc.name for tc in (response.tool_calls or [])]
+    tool_signal = f"[tools: {', '.join(tool_names)}]" if tool_names else ""
+    turn_signal = f"{content}\n{tool_signal}".strip()
+
     # Gap 5 (2026-04-21): when content is too short for either memory path,
     # the gate is never evaluated and observability breaks (see v17 audit
     # docs/audits/2026-04-21-exocortex-swebench-usage.md). Emit an explicit
     # skip log so `grep memory.write_gate` post-run distinguishes "not wired"
     # from "wired but short content". Only fires when gate IS wired; no-op
     # for ungated legacy callers.
-    _episodic_content_ok = bool(loop.episodic_memory) and len(content) > 100
+    _episodic_content_ok = bool(loop.episodic_memory) and (
+        len(content) > 100 or bool(tool_names)
+    )
     _semantic_content_ok = bool(
         loop.memory_agent and loop.semantic_memory and content and len(content) > 50
     )
@@ -267,15 +284,22 @@ async def act(
         except Exception:
             pass  # never break the act path on logging
 
-    # Store significant responses in episodic memory (if wired)
-    if (loop.episodic_memory and len(content) > 100
+    # Store significant responses in episodic memory (if wired).
+    # Tool-heavy turns (short prose, many tool_calls) also go through the gate
+    # and the episodic path — store `turn_signal[:500]` so the tool-activity
+    # marker is preserved for later retrieval and causal edge building.
+    if (loop.episodic_memory and (len(content) > 100 or bool(tool_names))
             and not loop._cb_episodic.should_skip() and not loop._skip_memory):
-        episodic_payload = content[:500]
+        episodic_payload = turn_signal[:500] if tool_names else content[:500]
         if _gate_allows(episodic_payload):
             try:
                 await loop.episodic_memory.store(
                     key=f"step-{loop.step_count}", content=episodic_payload,
-                    metadata={"task": task, "step": loop.step_count})
+                    metadata={
+                        "task": task,
+                        "step": loop.step_count,
+                        "tool_activity": bool(tool_names),
+                    })
                 loop._cb_episodic.record_success()
             except Exception as e:
                 loop._cb_episodic.record_failure(e)
