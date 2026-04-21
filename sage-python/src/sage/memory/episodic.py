@@ -128,7 +128,13 @@ class EpisodicMemory:
         """
         await self._ensure_initialized()
         if self._db_path is not None:
-            return await self._sqlite_search(query, top_k)
+            results = await self._sqlite_search(query, top_k)
+            # Gap 4 (2026-04-21): read log for sqlite branch
+            _log.info(
+                "memory.episodic.query scope=sqlite query=%r top_k=%d hits=%d",
+                query[:40], top_k, len(results),
+            )
+            return results
 
         # --- In-memory keyword scoring ---
         query_lower = query.lower()
@@ -148,7 +154,15 @@ class EpisodicMemory:
                 scored.append((score, entry))
 
         scored.sort(key=lambda x: x[0], reverse=True)
-        return [entry for _, entry in scored[:top_k]]
+        results = [entry for _, entry in scored[:top_k]]
+        # Gap 4 (2026-04-21): emit read log on every search so post-run grep
+        # can count episodic reads during a benchmark run.
+        top_score = float(scored[0][0]) if scored else 0.0
+        _log.info(
+            "memory.episodic.query scope=inmem query=%r top_k=%d hits=%d top_score=%.1f",
+            query[:40], top_k, len(results), top_score,
+        )
+        return results
 
     async def update(
         self,

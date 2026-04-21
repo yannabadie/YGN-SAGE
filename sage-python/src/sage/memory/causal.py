@@ -11,10 +11,13 @@ Inspired by AMA-Bench (2602.22769) causal memory baselines.
 """
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -119,6 +122,11 @@ class CausalMemory:
                 if edge.target not in seen:
                     queue.append(edge.target)
 
+        # Gap 4 (2026-04-21): read log for forward causal chain traversal.
+        log.info(
+            "memory.causal.query scope=chain source=%r hits=%d entities_seen=%d",
+            entity[:40], len(visited), len(self._entities),
+        )
         return visited
 
     def get_causal_ancestors(self, entity: str) -> list[str]:
@@ -136,6 +144,11 @@ class CausalMemory:
                     ancestors.append(edge.source)
                     queue.append(edge.source)
 
+        # Gap 4 (2026-04-21): read log for backward ancestor traversal.
+        log.info(
+            "memory.causal.query scope=ancestors source=%r hits=%d entities_seen=%d",
+            entity[:40], len(ancestors), len(self._entities),
+        )
         return ancestors
 
     # -- Temporal ordering --------------------------------------------------
@@ -153,6 +166,12 @@ class CausalMemory:
 
         mentioned = [ent for ent in self._entities if ent in task]
         if not mentioned:
+            # Gap 4 (2026-04-21): emit zero-hit read log so the causal pillar
+            # is auditable from grep on every call, not only hits.
+            log.info(
+                "memory.causal.query scope=context hits=0 entities_seen=%d mentioned=0",
+                len(self._entities),
+            )
             return ""
 
         lines: list[str] = []
@@ -189,6 +208,14 @@ class CausalMemory:
 
         if self.max_context_lines > 0:
             unique = unique[:self.max_context_lines]
+
+        # Gap 4 (2026-04-21): emit read log with first-mentioned entity as
+        # the primary source and hits = total relation lines returned.
+        log.info(
+            "memory.causal.query scope=context source=%r hits=%d entities_seen=%d mentioned=%d",
+            mentioned[0][:40] if mentioned else "<none>",
+            len(unique), len(self._entities), len(mentioned),
+        )
 
         return "\n".join(unique)
 

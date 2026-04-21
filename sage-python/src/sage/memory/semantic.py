@@ -6,11 +6,14 @@ multi-hop neighbourhood queries and task-context generation.
 """
 from __future__ import annotations
 
+import logging
 import re
 import sqlite3
 from collections import defaultdict, deque
 
 from sage.memory.memory_agent import ExtractionResult
+
+log = logging.getLogger(__name__)
 
 
 class SemanticMemory:
@@ -147,6 +150,12 @@ class SemanticMemory:
         # Find entities present in the task text (word-boundary match)
         mentioned = [ent for ent in candidate_entities if re.search(r'\b' + re.escape(ent) + r'\b', task, re.IGNORECASE)]
         if not mentioned:
+            # Gap 4 (2026-04-21): emit a read log on every call, even 0-hit,
+            # so the memory read path is auditable from grep alone.
+            log.info(
+                "memory.semantic.query entity=%s hits=0 top_score=0.000 entities_seen=%d",
+                "<none>", len(candidate_entities),
+            )
             return ""
 
         # Gather 1-hop relations for each mentioned entity
@@ -160,6 +169,14 @@ class SemanticMemory:
                 if idx not in seen:
                     seen.add(idx)
                     all_rels.append(self._relations[rel_idx])
+
+        # Gap 4 (2026-04-21): always emit a read log so post-run analysis can
+        # count semantic memory activity during a benchmark.
+        log.info(
+            "memory.semantic.query entity=%r hits=%d entities_seen=%d mentioned=%d",
+            mentioned[0][:40] if mentioned else "<none>",
+            len(all_rels), len(candidate_entities), len(mentioned),
+        )
 
         if not all_rels:
             return ""

@@ -243,6 +243,30 @@ async def act(
             log.debug("write_gate evaluate raised, allowing write: %s", exc)
             return True
 
+    # Gap 5 (2026-04-21): when content is too short for either memory path,
+    # the gate is never evaluated and observability breaks (see v17 audit
+    # docs/audits/2026-04-21-exocortex-swebench-usage.md). Emit an explicit
+    # skip log so `grep memory.write_gate` post-run distinguishes "not wired"
+    # from "wired but short content". Only fires when gate IS wired; no-op
+    # for ungated legacy callers.
+    _episodic_content_ok = bool(loop.episodic_memory) and len(content) > 100
+    _semantic_content_ok = bool(
+        loop.memory_agent and loop.semantic_memory and content and len(content) > 50
+    )
+    if (gate is not None
+            and not _episodic_content_ok
+            and not _semantic_content_ok):
+        try:
+            from sage.memory.write_gate import log_write_gate_skipped
+            log_write_gate_skipped(
+                reason="content_too_short",
+                content_len=len(content or ""),
+                has_tool_calls=bool(response.tool_calls),
+                source_tier=gate_tier,
+            )
+        except Exception:
+            pass  # never break the act path on logging
+
     # Store significant responses in episodic memory (if wired)
     if (loop.episodic_memory and len(content) > 100
             and not loop._cb_episodic.should_skip() and not loop._skip_memory):

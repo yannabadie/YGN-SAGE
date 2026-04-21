@@ -375,6 +375,37 @@ def log_write_gate_decision(decision: Any, source_tier: str = "unknown") -> None
     )
 
 
+def log_write_gate_skipped(
+    reason: str,
+    content_len: int,
+    has_tool_calls: bool,
+    source_tier: str = "unknown",
+) -> None:
+    """Emit a structured INFO log when the write_gate was BYPASSED entirely.
+
+    Gap 5 (2026-04-21): on tool-heavy SWE-bench-style runs, act.py's gate
+    call-sites are wrapped by `if len(content) > 100` (episodic) / `> 50`
+    (semantic). Tool-call turns carry very short prose content, so the
+    gate is never evaluated -- `memory.write_gate.fired` stays at zero.
+    Without this explicit skip log, 0 fires is indistinguishable from
+    "gate was never wired" (H5 bypass class).
+
+    Emitting this log at the act-phase short-content exit restores
+    observability and lets us diagnose the coverage gap without running
+    the pipeline at DEBUG level.
+
+    Format: key=value pairs, one line.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    _log.info(
+        "memory.write_gate.skipped reason=%s content_len=%d has_tool_calls=%s tier=%s",
+        reason, content_len,
+        "true" if has_tool_calls else "false",
+        source_tier or "unknown",
+    )
+
+
 # -- Rust acceleration (same pattern as RustRelevanceGate) ---------------------
 
 try:

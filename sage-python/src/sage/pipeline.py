@@ -479,6 +479,7 @@ class CognitiveOrchestrationPipeline:
                 if topo:
                     ctx.topology = topo
                     log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
+                    self._log_topology_structure(topo, source="dag_template", confidence=None)
                     self._apply_topology_budget_and_cache(ctx)
                     return ctx
             ctx.topology = None
@@ -518,6 +519,10 @@ class CognitiveOrchestrationPipeline:
                     ctx.dag_features.delta if ctx.dag_features else "?",
                     f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
                 )
+                # Gap 1+2 (2026-04-21): emit structure log alongside template
+                # name so post-run analysis can attribute pass-rate by DAG
+                # shape (edges) and 6-path source, not just template name.
+                self._log_topology_structure(topo, source="dag_template", confidence=None)
                 self._apply_topology_budget_and_cache(ctx)
                 return ctx
 
@@ -547,6 +552,33 @@ class CognitiveOrchestrationPipeline:
                 elif result:
                     ctx.topology = result
 
+                # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
+                # (smmu_hit / archive_hit / llm_synthesis / mutation /
+                # mcts_search / template_fallback) with confidence. The
+                # source is exposed by PyGenerateResult.source() per
+                # sage-core/src/topology/pyo3_wrappers.rs.
+                _src = None
+                _conf = None
+                if result is not None:
+                    _src_attr = getattr(result, "source", None)
+                    if callable(_src_attr):
+                        try:
+                            _src = _src_attr()
+                        except Exception:
+                            _src = None
+                    else:
+                        _src = _src_attr
+                    _conf_attr = getattr(result, "confidence", None)
+                    if callable(_conf_attr):
+                        try:
+                            _conf = _conf_attr()
+                        except Exception:
+                            _conf = None
+                    else:
+                        _conf = _conf_attr
+                self._log_topology_structure(
+                    ctx.topology, source=_src or "engine_unknown", confidence=_conf,
+                )
                 self._apply_topology_budget_and_cache(ctx)
                 return ctx
             except (ImportError, RuntimeError) as exc:
@@ -567,8 +599,101 @@ class CognitiveOrchestrationPipeline:
             log.debug("sage_core unavailable, topology=None (single-agent mode)")
             ctx.topology = None
 
+        # Gap 1+2 (2026-04-21): log structure for the fallback path too.
+        if ctx.topology is not None:
+            self._log_topology_structure(
+                ctx.topology, source="template_fallback", confidence=None,
+            )
         self._apply_topology_budget_and_cache(ctx)
         return ctx
+
+    def _log_topology_structure(
+        self,
+        topology: Any,
+        source: str,
+        confidence: float | None,
+    ) -> None:
+        """Gap 1+2 (2026-04-21): emit two INFO lines describing the DAG shape.
+
+        Called from each Stage-2 branch right before the final cache step so
+        every selected topology gets attribution regardless of which of the
+        6 paths (smmu_hit / archive_hit / llm_synthesis / mutation /
+        mcts_search / template_fallback) or fallback branches produced it.
+
+        topology.edges — adjacency list. Truncated at 20 tuples; when the
+        graph has >20 edges, include `total=N` so readers can tell the
+        truncation happened. When the graph exposes no `get_edges`, we
+        emit count-only so post-run analysis still sees the structure.
+
+        topology.source — 6-path attribution with confidence. "dag_template"
+        and "template_fallback" are Python-side branches (no engine call);
+        all Rust-side sources are the canonical string from
+        PyGenerateResult.source() (sage-core/src/topology/pyo3_wrappers.rs).
+        """
+        if topology is None:
+            return
+
+        nodes = 0
+        try:
+            if hasattr(topology, "node_count"):
+                nc = topology.node_count()
+                nodes = nc() if callable(nc) else int(nc)
+        except Exception:
+            nodes = 0
+
+        template = getattr(topology, "template_type", None) or "unknown"
+        topo_id = getattr(topology, "id", "") or ""
+
+        # --- edges line ---
+        edges_render: str = "[]"
+        total_edges = 0
+        truncated = False
+        try:
+            if hasattr(topology, "get_edges"):
+                raw_edges = topology.get_edges()
+                edges_iter = list(raw_edges) if raw_edges is not None else []
+                total_edges = len(edges_iter)
+                # Keep only (from, to) tuples; flow_type (3rd field) omitted
+                # to keep the line short. Flow type is dominated by "control"
+                # for DAG templates and not load-bearing for grep.
+                pairs = [(int(e[0]), int(e[1])) for e in edges_iter[:20]]
+                edges_render = repr(pairs)
+                if total_edges > 20:
+                    truncated = True
+            elif hasattr(topology, "edge_count"):
+                ec = topology.edge_count()
+                total_edges = ec() if callable(ec) else int(ec)
+                edges_render = f"<count-only>"
+        except Exception:
+            edges_render = "<unreadable>"
+
+        if truncated:
+            log.info(
+                "topology.edges nodes=%d template=%s id=%s edges=%s total=%d",
+                nodes, template, (topo_id[:8] if topo_id else "none"),
+                edges_render, total_edges,
+            )
+        else:
+            log.info(
+                "topology.edges nodes=%d template=%s id=%s edges=%s",
+                nodes, template, (topo_id[:8] if topo_id else "none"),
+                edges_render,
+            )
+
+        # --- source line ---
+        conf_str = (
+            f"{float(confidence):.3f}"
+            if confidence is not None
+            else "n/a"
+        )
+        # archive_hit flag (boolean) distinguishes the fast archive path from
+        # every other 6-path source — useful for MAP-Elites growth attribution.
+        archive_hit = (source == "archive_hit")
+        log.info(
+            "topology.source source=%s confidence=%s archive_hit=%s template=%s id=%s",
+            source, conf_str, "true" if archive_hit else "false",
+            template, (topo_id[:8] if topo_id else "none"),
+        )
 
     def _apply_topology_budget_and_cache(self, ctx: PipelineContext) -> None:
         """Plan item 1.4a (2026-04-20): apply budget check + cache the final topology.

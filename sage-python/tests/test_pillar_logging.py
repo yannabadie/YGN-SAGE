@@ -1,20 +1,29 @@
-"""In-run logging for Memory and Evolution pillars.
+"""In-run logging for Memory, Evolution, and Topology pillars.
 
-The Memory and Evolution pillars emit only boot-time signal today. Nothing is
-captured during a benchmark run, so gains/regressions cannot be attributed to
-pillar behavior. This module pins six structured log lines so future smokes
-show per-task pillar activity:
+The Memory / Evolution / Topology pillars emitted only boot-time signal
+before the 2026-04-21 logging pass. Nothing was captured during a benchmark
+run so gains/regressions could not be attributed to pillar behavior. This
+module pins the structured log lines so future smokes show per-task pillar
+activity:
 
   Memory pillar:
     memory.write_gate.fired             -- RustCompositeWriteGate decision
+    memory.write_gate.skipped           -- gate bypassed (short content, etc.)
     memory.smmu.tier_transition         -- STM chunk compacted to Arrow
     memory.archive.grow                 -- MAP-Elites archive cell count delta
     memory.consolidation.fired          -- episodic -> semantic consolidation
+    memory.semantic.query               -- SemanticMemory.get_context_for() read
+    memory.episodic.query               -- EpisodicMemory.search() read
+    memory.causal.query                 -- CausalMemory.get_context_for() / chain
 
   Evolution pillar:
     evolution.should_evolve.decision    -- every Rust should_evolve() call
     evolution.evolve.called             -- when evolve() actually fires
     evolution.mutator.update            -- AdaptiveMutator.record() posterior update
+
+  Topology pillar:
+    topology.edges                      -- DAG adjacency list (truncated >20)
+    topology.source                     -- 6-path attribution + confidence
 
 Format: key=value pairs with %-formatting, one line per event, INFO level.
 All log lines must be parseable by a simple regex.
@@ -572,3 +581,309 @@ def test_evolution_mutator_update_logs_posterior_update(caplog: pytest.LogCaptur
     assert "success_rate=" in combined or "alpha=" in combined, (
         f"missing posterior stats in {combined!r}"
     )
+
+
+# ── Topology pillar logs ────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_topology_edges_logs_adjacency_list(caplog: pytest.LogCaptureFixture) -> None:
+    """Stage 2 must emit a topology.edges log line with an adjacency list.
+
+    A full topology produces an edge list that reveals the DAG structure
+    (not just node count). Post-run analysis can then attribute pass-rate
+    differences to topology shape, not just template name.
+
+    We run pipeline.run() without injected topology so the real sequential
+    template (3 nodes, 2 edges: 0->1, 1->2) fires through Stage 2 and the
+    structure log captures it. Stage 4 will later fail because the
+    _MockLLMProvider isn't a real provider, but that happens AFTER the
+    Stage 2 log — which is all this test cares about.
+    """
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+
+    pipeline, engine, _spy = _build_pipeline(system=2)
+    # Safe to let pipeline.run raise from Stage 4; we only assert on Stage 2 logs.
+    try:
+        await pipeline.run("Multi-node task", budget_usd=3.0)
+    except Exception:
+        pass
+
+    edge_logs = [
+        r for r in caplog.records if "topology.edges" in r.getMessage()
+    ]
+    assert edge_logs, (
+        "No topology.edges log emitted. Stage 2 must log an adjacency list "
+        f"alongside the template line. caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = edge_logs[0].getMessage()
+    assert "nodes=3" in msg, f"topology.edges missing nodes=3: {msg!r}"
+    assert "edges=" in msg, f"topology.edges missing edges=: {msg!r}"
+    # Adjacency tuple pair present in the rendered edges list
+    assert "(0, 1)" in msg or "(0,1)" in msg, (
+        f"topology.edges missing (0, 1) tuple: {msg!r}"
+    )
+
+
+def test_topology_edges_truncates_huge_adjacency(caplog: pytest.LogCaptureFixture) -> None:
+    """_log_topology_structure() must cap adjacency at 20 entries and emit total=N.
+
+    Unit-level test: call the helper directly with a 50-edge mock so we
+    don't need to exercise the full pipeline (which would fail at Stage 4
+    when the TopologyExecutor rejects non-Rust graph objects).
+    """
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+
+    class _BigTopo:
+        def __init__(self) -> None:
+            self.id = "big-topo-ulid-12345"
+            self.template_type = "selfmoa"
+            self._edges = [(i, i + 1, "control") for i in range(50)]
+
+        def node_count(self) -> int:
+            return 51
+
+        def edge_count(self) -> int:
+            return 50
+
+        def get_edges(self) -> list[tuple[int, int, str]]:
+            return list(self._edges)
+
+    pipeline, _engine, _spy = _build_pipeline(system=2)
+    pipeline._log_topology_structure(_BigTopo(), source="archive_hit", confidence=0.90)
+
+    edge_logs = [
+        r for r in caplog.records if "topology.edges" in r.getMessage()
+    ]
+    assert edge_logs, "No topology.edges log emitted for big topology"
+    msg = edge_logs[0].getMessage()
+    assert "nodes=51" in msg, f"missing nodes=51: {msg!r}"
+    # Truncation marker
+    assert "total=50" in msg, (
+        f"topology.edges must emit total=50 when truncated: {msg!r}"
+    )
+    # Log line bounded — single line, not huge
+    assert len(msg) <= 500, (
+        f"topology.edges log must be <= 500 chars for large topos, got {len(msg)}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_topology_source_logs_attribution_template_branch(caplog: pytest.LogCaptureFixture) -> None:
+    """Template branch (no engine call) must log topology.source=dag_template.
+
+    The dominant production path (per April 20 plan 1.4 comment) must be
+    visible to source-attribution analysis.
+    """
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+
+    pipeline, engine, _spy = _build_pipeline(system=2)
+
+    # _MockRouter omega=0 → select_macro_topology returns "sequential" which
+    # IS in the template shortcut list (pipeline.py:510-522). Stage 4 may
+    # raise later (mock LLM provider), which is after Stage-2 logs fired.
+    try:
+        await pipeline.run("Simple sequential task", budget_usd=3.0)
+    except Exception:
+        pass
+
+    source_logs = [
+        r for r in caplog.records if "topology.source" in r.getMessage()
+    ]
+    assert source_logs, (
+        "No topology.source log emitted from template branch. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = source_logs[0].getMessage()
+    assert "source=dag_template" in msg, (
+        f"Template branch topology.source must attribute to dag_template: {msg!r}"
+    )
+    assert "archive_hit=false" in msg, (
+        f"template branch source log must emit archive_hit=false: {msg!r}"
+    )
+
+
+def test_topology_source_logs_attribution_engine_branch(caplog: pytest.LogCaptureFixture) -> None:
+    """Engine branch must log topology.source from PyGenerateResult.source().
+
+    Unit-level: call the helper with a mock result-like topology. The
+    engine-branch code path in _stage_select_topology extracts source/
+    confidence from result (PyGenerateResult.source() returns str,
+    .confidence() returns float) and forwards to _log_topology_structure.
+    """
+    caplog.set_level(logging.INFO, logger="sage.pipeline")
+
+    class _EngineTopo:
+        def __init__(self) -> None:
+            self.id = "engine-topo-ulid"
+            self.template_type = "selfmoa"
+
+        def node_count(self) -> int:
+            return 4
+
+        def edge_count(self) -> int:
+            return 3
+
+        def get_edges(self) -> list[tuple[int, int, str]]:
+            return [(0, 1, "control"), (0, 2, "control"), (1, 3, "message")]
+
+    pipeline, _engine, _spy = _build_pipeline(system=2)
+    pipeline._log_topology_structure(
+        _EngineTopo(), source="archive_hit", confidence=0.85,
+    )
+
+    source_logs = [
+        r for r in caplog.records if "topology.source" in r.getMessage()
+    ]
+    assert source_logs, (
+        "No topology.source log emitted from engine branch. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = source_logs[0].getMessage()
+    assert "source=archive_hit" in msg, (
+        f"topology.source missing source=archive_hit: {msg!r}"
+    )
+    assert "confidence=0.850" in msg, (
+        f"topology.source missing confidence=0.850: {msg!r}"
+    )
+    assert "archive_hit=true" in msg, (
+        f"engine archive_hit path must emit archive_hit=true flag: {msg!r}"
+    )
+
+
+# ── Memory read logs ────────────────────────────────────────────────────────
+
+
+def test_memory_semantic_query_logs_hits(caplog: pytest.LogCaptureFixture) -> None:
+    """SemanticMemory.get_context_for() must log memory.semantic.query.
+
+    Captures read activity when an agent's perceive phase injects semantic
+    context — currently invisible.
+    """
+    caplog.set_level(logging.INFO, logger="sage.memory.semantic")
+
+    from sage.memory.memory_agent import ExtractionResult
+    from sage.memory.semantic import SemanticMemory
+
+    sm = SemanticMemory(max_relations=100, max_context_lines=10)
+    sm.add_extraction(ExtractionResult(
+        entities=["quicksort", "array"],
+        relationships=[("quicksort", "sorts", "array")],
+    ))
+    sm.get_context_for("Implement quicksort on an array")
+
+    query_logs = [
+        r for r in caplog.records if "memory.semantic.query" in r.getMessage()
+    ]
+    assert query_logs, (
+        "No memory.semantic.query log emitted. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = query_logs[0].getMessage()
+    assert "hits=" in msg, f"missing hits= in {msg!r}"
+
+
+def test_memory_episodic_query_logs_hits(caplog: pytest.LogCaptureFixture) -> None:
+    """EpisodicMemory.search() must log memory.episodic.query."""
+    import asyncio
+
+    caplog.set_level(logging.INFO, logger="sage.memory.episodic")
+
+    from sage.memory.episodic import EpisodicMemory
+
+    em = EpisodicMemory()  # in-memory
+    asyncio.run(em.store("step-1", "quicksort implementation note"))
+    asyncio.run(em.store("step-2", "another memory item"))
+    results = asyncio.run(em.search("quicksort"))
+    assert results, "Episodic search should find at least one match"
+
+    query_logs = [
+        r for r in caplog.records if "memory.episodic.query" in r.getMessage()
+    ]
+    assert query_logs, (
+        "No memory.episodic.query log emitted. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = query_logs[-1].getMessage()  # last search
+    assert "hits=" in msg, f"missing hits= in {msg!r}"
+
+
+def test_memory_causal_query_logs_hits(caplog: pytest.LogCaptureFixture) -> None:
+    """CausalMemory.get_context_for() must log memory.causal.query."""
+    caplog.set_level(logging.INFO, logger="sage.memory.causal")
+
+    from sage.memory.causal import CausalMemory
+
+    cm = CausalMemory()
+    cm.add_entity("file_a")
+    cm.add_entity("file_b")
+    cm.add_causal_edge("file_a", "file_b", cause_type="modifies")
+    cm.get_context_for("refactor file_a")
+
+    query_logs = [
+        r for r in caplog.records if "memory.causal.query" in r.getMessage()
+    ]
+    assert query_logs, (
+        "No memory.causal.query log emitted. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = query_logs[0].getMessage()
+    assert "hits=" in msg, f"missing hits= in {msg!r}"
+
+
+def test_memory_causal_chain_logs_hits(caplog: pytest.LogCaptureFixture) -> None:
+    """CausalMemory.get_causal_chain() must log memory.causal.query scope=chain."""
+    caplog.set_level(logging.INFO, logger="sage.memory.causal")
+
+    from sage.memory.causal import CausalMemory
+
+    cm = CausalMemory()
+    cm.add_entity("A")
+    cm.add_entity("B")
+    cm.add_entity("C")
+    cm.add_causal_edge("A", "B")
+    cm.add_causal_edge("B", "C")
+
+    chain = cm.get_causal_chain("A")
+    assert chain == ["A", "B", "C"]
+
+    query_logs = [
+        r for r in caplog.records if "memory.causal.query" in r.getMessage()
+    ]
+    assert query_logs, "No memory.causal.query log emitted for chain traversal"
+    assert any("scope=chain" in r.getMessage() for r in query_logs), (
+        f"missing scope=chain tag; logs: {[r.getMessage() for r in query_logs]}"
+    )
+
+
+# ── Write-gate skip observability (Gap 5 investigation) ─────────────────────
+
+
+def test_memory_write_gate_skipped_short_content(caplog: pytest.LogCaptureFixture) -> None:
+    """When act phase has short content and tool calls, the gate path is never
+    entered (content<100 for episodic, <50 for semantic). We MUST log the
+    skip so post-run analysis can distinguish "gate never fired" from
+    "gate evaluated and abstained". Without this, 0 gate fires on a
+    tool-heavy SWE-bench run looks identical to gate-not-wired.
+    """
+    caplog.set_level(logging.INFO, logger="sage.memory.write_gate")
+
+    from sage.memory.write_gate import log_write_gate_skipped
+    log_write_gate_skipped(
+        reason="content_too_short",
+        content_len=42,
+        has_tool_calls=True,
+        source_tier="fast",
+    )
+
+    skip_logs = [
+        r for r in caplog.records if "memory.write_gate.skipped" in r.getMessage()
+    ]
+    assert skip_logs, (
+        "log_write_gate_skipped() must emit memory.write_gate.skipped. "
+        f"caplog: {[r.getMessage() for r in caplog.records]}"
+    )
+    msg = skip_logs[0].getMessage()
+    assert "reason=content_too_short" in msg, f"missing reason=: {msg!r}"
+    assert "content_len=42" in msg, f"missing content_len=: {msg!r}"
+    assert "has_tool_calls=true" in msg.lower(), f"missing has_tool_calls=: {msg!r}"
