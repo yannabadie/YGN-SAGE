@@ -1,0 +1,283 @@
+{
+  "source": {
+    "report": "docs\\benchmarks\\2026-04-08-bigcodebench-hard-instruct.json",
+    "predictions": "sage-python\\docs\\benchmarks\\2026-04-08-predictions-hard-instruct.jsonl"
+  },
+  "report_header": {
+    "total": 148,
+    "passed": 68,
+    "failed": 80,
+    "errors_marked": 8,
+    "pass_rate": 0.4594594594594595,
+    "avg_latency_ms": 30386.471279569574,
+    "routing_breakdown": {
+      "S1": 0,
+      "S2": 140,
+      "S3": 0,
+      "unknown": 8
+    }
+  },
+  "alignment": {
+    "tasks_in_report": 148,
+    "tasks_in_predictions": 148,
+    "missing_in_preds": [],
+    "missing_in_report": []
+  },
+  "totals": {
+    "passes": 68,
+    "failures": 80
+  },
+  "categories": {
+    "assertion_failure_logical": {
+      "count": 25,
+      "fraction_of_failures": 0.3125,
+      "example_task_id": "BigCodeBench/17",
+      "example_reason": "======================================================================\nFAIL: test_process_found_restarts_process (__main__.TestCases.test_process_found_restarts",
+      "avr_attempted_count": 25,
+      "bypass_count": 21,
+      "mean_omega": 1.16,
+      "task_ids": [
+        "BigCodeBench/17",
+        "BigCodeBench/93",
+        "BigCodeBench/100",
+        "BigCodeBench/124",
+        "BigCodeBench/211",
+        "BigCodeBench/267",
+        "BigCodeBench/313",
+        "BigCodeBench/324",
+        "BigCodeBench/326",
+        "BigCodeBench/360",
+        "BigCodeBench/374",
+        "BigCodeBench/409",
+        "BigCodeBench/424",
+        "BigCodeBench/454",
+        "BigCodeBench/509",
+        "BigCodeBench/528",
+        "BigCodeBench/945",
+        "BigCodeBench/952",
+        "BigCodeBench/955",
+        "BigCodeBench/964",
+        "BigCodeBench/1012",
+        "BigCodeBench/1022",
+        "BigCodeBench/1039",
+        "BigCodeBench/1057",
+        "BigCodeBench/1077"
+      ],
+      "sample_reasons": [
+        "======================================================================\nFAIL: test_multiple_processes_with_different_exit_codes (__main__.TestCases.test_multiple",
+        "======================================================================\nFAIL: test_default_input (__main__.TestCases.test_default_input)\nTest with default inputs",
+        "======================================================================\nFAIL: test_case_1 (__main__.TestCases.test_case_1)\n--------------------------------------",
+        "======================================================================\nFAIL: test_no_future_dates (__main__.TestCases.test_no_future_dates)\nTest case where all ",
+        "======================================================================\nFAIL: test_case_3 (__main__.TestCases.test_case_3)\n--------------------------------------"
+      ]
+    },
+    "runtime_exception_in_test": {
+      "count": 24,
+      "fraction_of_failures": 0.3,
+      "example_task_id": "BigCodeBench/129",
+      "example_reason": "======================================================================\nERROR: test_return_type (__main__.TestCases.test_return_type)\n---------------------------",
+      "avr_attempted_count": 24,
+      "bypass_count": 17,
+      "mean_omega": 1.292,
+      "task_ids": [
+        "BigCodeBench/129",
+        "BigCodeBench/161",
+        "BigCodeBench/241",
+        "BigCodeBench/368",
+        "BigCodeBench/443",
+        "BigCodeBench/458",
+        "BigCodeBench/486",
+        "BigCodeBench/492",
+        "BigCodeBench/503",
+        "BigCodeBench/511",
+        "BigCodeBench/513",
+        "BigCodeBench/560",
+        "BigCodeBench/567",
+        "BigCodeBench/594",
+        "BigCodeBench/654",
+        "BigCodeBench/720",
+        "BigCodeBench/723",
+        "BigCodeBench/765",
+        "BigCodeBench/785",
+        "BigCodeBench/914",
+        "BigCodeBench/985",
+        "BigCodeBench/988",
+        "BigCodeBench/1042",
+        "BigCodeBench/1137"
+      ],
+      "sample_reasons": [
+        "======================================================================\nERROR: test_basic_functionality (__main__.TestCases.test_basic_functionality)\n-----------",
+        "======================================================================\nERROR: test_task_func_copies_to_backup_directory (__main__.TestCases.test_task_func_copie",
+        "======================================================================\nERROR: test_archiving_in_nonexistent_directory (__main__.TestCases.test_archiving_in_none",
+        "======================================================================\nERROR: test_phone_numbers_page_3 (__main__.TestCases.test_phone_numbers_page_3)\nTest extr",
+        "======================================================================\nERROR: test_functionality (__main__.TestCases.test_functionality)\nTest the overall functi"
+      ]
+    },
+    "truncated_warning_prefix": {
+      "count": 10,
+      "fraction_of_failures": 0.125,
+      "example_task_id": "BigCodeBench/89",
+      "example_reason": "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp646fiuqi.py:84: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown\n  plt.show()\nC:\\Users\\YANN~1",
+      "avr_attempted_count": 10,
+      "bypass_count": 7,
+      "mean_omega": 1.3,
+      "task_ids": [
+        "BigCodeBench/89",
+        "BigCodeBench/101",
+        "BigCodeBench/214",
+        "BigCodeBench/239",
+        "BigCodeBench/346",
+        "BigCodeBench/461",
+        "BigCodeBench/593",
+        "BigCodeBench/771",
+        "BigCodeBench/777",
+        "BigCodeBench/916"
+      ],
+      "sample_reasons": [
+        "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpw3bg0qtf.py:129: ResourceWarning: unclosed file <_io.BufferedReader name=3>\n  resources = task_func(self.script_path_1",
+        "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpg3osf9gr.py:44: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown\n  plt.show()\n===============",
+        "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpulhvd52f.py:41: UserWarning: FigureCanvasAgg is non-interactive, and thus cannot be shown\n  plt.show()\n===============",
+        "C:\\ProgramData\\miniforge3\\Lib\\site-packages\\seaborn\\categorical.py:700: PendingDeprecationWarning: vert: bool will be deprecated in a future version. Use orient",
+        "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpin0fvgnx.py:66: SyntaxWarning: invalid escape sequence '\\s'\n  df = pd.read_csv(io.StringIO(data_string), sep='\\s+', he"
+      ]
+    },
+    "import_error": {
+      "count": 8,
+      "fraction_of_failures": 0.1,
+      "example_task_id": "BigCodeBench/108",
+      "example_reason": "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp5_gk0jiz.py\", line 8, in <module>\n    from statsmodels.tsa.seasonal import ",
+      "avr_attempted_count": 8,
+      "bypass_count": 6,
+      "mean_omega": 1.375,
+      "task_ids": [
+        "BigCodeBench/108",
+        "BigCodeBench/227",
+        "BigCodeBench/273",
+        "BigCodeBench/274",
+        "BigCodeBench/501",
+        "BigCodeBench/583",
+        "BigCodeBench/590",
+        "BigCodeBench/917"
+      ],
+      "sample_reasons": [
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpyc9qnez6.py\", line 6, in <module>\n    import cgi\nModuleNotFoundError: No mo",
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpedc7qeez.py\", line 15, in <module>\n    from Crypto.Random import get_random",
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp_27qhjs3.py\", line 9, in <module>\n    from statsmodels.tsa.arima.model impo",
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp5_gk0jiz.py\", line 8, in <module>\n    from statsmodels.tsa.seasonal import ",
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpowddx7ln.py\", line 8, in <module>\n    import soundfile as sf\nModuleNotFound"
+      ]
+    },
+    "api_error": {
+      "count": 8,
+      "fraction_of_failures": 0.1,
+      "example_task_id": "BigCodeBench/287",
+      "example_reason": "Error code: 400 - {'error': {'message': 'Model Not Exist', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}",
+      "avr_attempted_count": 0,
+      "bypass_count": 8,
+      "mean_omega": null,
+      "task_ids": [
+        "BigCodeBench/287",
+        "BigCodeBench/417",
+        "BigCodeBench/418",
+        "BigCodeBench/477",
+        "BigCodeBench/574",
+        "BigCodeBench/582",
+        "BigCodeBench/657",
+        "BigCodeBench/845"
+      ],
+      "sample_reasons": [
+        "Error code: 400 - {'error': {'message': 'Model Not Exist', 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_request_error'}}"
+      ]
+    },
+    "other": {
+      "count": 2,
+      "fraction_of_failures": 0.025,
+      "example_task_id": "BigCodeBench/177",
+      "example_reason": "[nltk_data] Error loading punkt: <urlopen error [SSL:\n[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:\n[nltk_data]     Missing Authority Ke",
+      "avr_attempted_count": 2,
+      "bypass_count": 2,
+      "mean_omega": 1.0,
+      "task_ids": [
+        "BigCodeBench/177",
+        "BigCodeBench/655"
+      ],
+      "sample_reasons": [
+        "[nltk_data] Error loading punkt: <urlopen error [SSL:\n[nltk_data]     CERTIFICATE_VERIFY_FAILED] certificate verify failed:\n[nltk_data]     Missing Authority Ke",
+        "C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmp4okc7sot.py:15: SyntaxWarning: invalid escape sequence '\\W'\n  ALPHANUMERIC = re.compile('[\\W_]+')\n[nltk_data] Error lo"
+      ]
+    },
+    "import_error_truncated": {
+      "count": 1,
+      "fraction_of_failures": 0.0125,
+      "example_task_id": "BigCodeBench/82",
+      "example_reason": "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpnyhobvv_.py\", line 7, in <module>\n    from flask_login import LoginManager,",
+      "avr_attempted_count": 1,
+      "bypass_count": 1,
+      "mean_omega": 1.0,
+      "task_ids": [
+        "BigCodeBench/82"
+      ],
+      "sample_reasons": [
+        "Traceback (most recent call last):\n  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpnyhobvv_.py\", line 7, in <module>\n    from flask_login import LoginManager,"
+      ]
+    },
+    "syntax_error": {
+      "count": 1,
+      "fraction_of_failures": 0.0125,
+      "example_task_id": "BigCodeBench/1019",
+      "example_reason": "  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpfa9fb4q1.py\", line 38\n    import unittest\nIndentationError: expected an indented block after 'except' statemen",
+      "avr_attempted_count": 1,
+      "bypass_count": 1,
+      "mean_omega": 1.0,
+      "task_ids": [
+        "BigCodeBench/1019"
+      ],
+      "sample_reasons": [
+        "  File \"C:\\Users\\YANN~1.ABA\\AppData\\Local\\Temp\\tmpfa9fb4q1.py\", line 38\n    import unittest\nIndentationError: expected an indented block after 'except' statemen"
+      ]
+    },
+    "timeout_eval": {
+      "count": 1,
+      "fraction_of_failures": 0.0125,
+      "example_task_id": "BigCodeBench/1040",
+      "example_reason": "TIMEOUT: evaluation exceeded time limit",
+      "avr_attempted_count": 1,
+      "bypass_count": 1,
+      "mean_omega": 1.0,
+      "task_ids": [
+        "BigCodeBench/1040"
+      ],
+      "sample_reasons": [
+        "TIMEOUT: evaluation exceeded time limit"
+      ]
+    }
+  },
+  "discriminators": {
+    "avr": {
+      "assertion_failure_logical|avr_attempted=True|avr_repaired=False": 25,
+      "runtime_exception_in_test|avr_attempted=True|avr_repaired=False": 24,
+      "truncated_warning_prefix|avr_attempted=True|avr_repaired=False": 10,
+      "import_error|avr_attempted=True|avr_repaired=False": 8,
+      "api_error|avr_attempted=False|avr_repaired=False": 8,
+      "other|avr_attempted=True|avr_repaired=False": 2,
+      "import_error_truncated|avr_attempted=True|avr_repaired=False": 1,
+      "syntax_error|avr_attempted=True|avr_repaired=False": 1,
+      "timeout_eval|avr_attempted=True|avr_repaired=False": 1
+    },
+    "bypass": {
+      "assertion_failure_logical|bypassed=True": 21,
+      "runtime_exception_in_test|bypassed=True": 17,
+      "api_error|bypassed=True": 8,
+      "truncated_warning_prefix|bypassed=True": 7,
+      "runtime_exception_in_test|bypassed=False": 7,
+      "import_error|bypassed=True": 6,
+      "assertion_failure_logical|bypassed=False": 4,
+      "truncated_warning_prefix|bypassed=False": 3,
+      "other|bypassed=True": 2,
+      "import_error|bypassed=False": 2,
+      "import_error_truncated|bypassed=True": 1,
+      "syntax_error|bypassed=True": 1,
+      "timeout_eval|bypassed=True": 1
+    }
+  }
+}

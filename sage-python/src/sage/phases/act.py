@@ -300,18 +300,31 @@ async def act(
     for tc in response.tool_calls:
         loop._emit(LoopPhase.ACT, tool=tc.name, args=tc.arguments)
         output = await loop._execute_tool_call(tc)
-        # Record bash commands specifically — most useful forensic signal
-        # for investigation-style tasks. Truncate to keep manifests bounded.
-        if tc.name == "execute_bash":
-            cmd_str = ""
-            try:
-                import json as _json
-                args = tc.arguments if isinstance(tc.arguments, dict) else _json.loads(tc.arguments or "{}")
-                cmd_str = str(args.get("command", ""))[:120]
-            except (ValueError, TypeError, AttributeError):
-                pass
-            if cmd_str:
-                loop.executed_commands.append(cmd_str)
+        # Record every tool call as "<tool_name>: <first_120_char_arg>".
+        # 2026-04-21 audit (docs/audits/2026-04-21-exocortex-swebench-usage.md)
+        # showed the prior bash-only gate meant `_executed_commands` only
+        # counted bash, so `tool_call_count - len(executed_commands) > 0`
+        # was invisible — we couldn't tell "agent called search_exocortex
+        # but didn't bash" from "agent called nothing". Now every tool
+        # gets a forensic entry; bash keeps its command payload, others
+        # get a short arg summary.
+        arg_summary = ""
+        try:
+            import json as _json
+            args = tc.arguments if isinstance(tc.arguments, dict) else _json.loads(tc.arguments or "{}")
+            if tc.name == "execute_bash":
+                arg_summary = str(args.get("command", ""))[:120]
+            elif isinstance(args, dict) and args:
+                # Pick the first string-valued arg as the summary
+                first = next(
+                    (str(v) for v in args.values() if isinstance(v, str) and v),
+                    "",
+                )
+                arg_summary = first[:120]
+        except (ValueError, TypeError, AttributeError):
+            pass
+        entry = f"{tc.name}: {arg_summary}" if arg_summary else tc.name
+        loop.executed_commands.append(entry)
         loop.working_memory.add_event("TOOL", f"{tc.name} -> {output}")
         messages.append(Message(role=Role.TOOL, content=output,
                                 tool_call_id=tc.id, name=tc.name))
