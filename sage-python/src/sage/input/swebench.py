@@ -42,16 +42,22 @@ Use relative paths (no absolute paths, no /tmp/...).
 You have these tools available:
 - **execute_bash** — run any shell command on the checked-out repo \
 (cat, grep, find, git log, sed, python, pytest).
-- **search_exocortex** — query the local research ExoCortex for library \
-API contracts, deprecation notices, and upstream docs when the issue \
-references behavior outside this repo's source tree.
+- **lookup_library_docs** — fetch official documentation and code \
+examples for a third-party library from Context7 (requests, Django, \
+astropy, SQLAlchemy, Flask, etc.). Use this for API-contract \
+questions the checked-out source tree cannot answer on its own.
+- **search_exocortex** (optional) — query the local research corpus \
+for papers on formal verification, cognitive architectures, \
+evolutionary computation, or memory systems. Almost never the right \
+tool for day-to-day bug fixes; reach for it only when the issue is \
+genuinely research-shaped.
 - Memory + knowledge tools registered at boot (if any).
 
 You MUST make at least THREE distinct tool calls *before* writing any \
 patch. Use `execute_bash` for everything that lives in the checked-out \
 source tree (locate files, read functions, check tests, verify line \
-numbers); reach for `search_exocortex` when the issue hinges on a \
-third-party library API contract or an upstream specification you \
+numbers); reach for `lookup_library_docs` when the issue hinges on a \
+third-party library API contract or version-specific behavior you \
 cannot confirm from the repo alone. One-shot patches are almost always \
 wrong — the line numbers and context lines will not match the real \
 source, and the harness will reject the diff.
@@ -62,9 +68,10 @@ source, and the harness will reject the diff.
    Example: `sed -n '200,260p' src/package/module.py`
 3. **Check tests** that reference the target. They often reveal the contract.
    Example: `grep -RIn "function_name" tests/ | head -20`
-4. **(Optional)** Consult `search_exocortex` if the issue depends on a \
-library's documented behavior (e.g., "requests.Response.json should \
-raise on empty body"): one targeted query beats guessing at an API shape.
+4. **(When the issue is about an external library)** Call \
+`lookup_library_docs` with the library name and a specific question \
+(e.g., library_name="requests", query="Response.json behavior on \
+empty body"). One targeted lookup beats guessing at an API shape.
 5. **Verify** hunk line numbers immediately before emitting them.
    Example: `grep -n "^def function_name" src/package/module.py`
 6. Reason about the minimal change. If unsure, read more. Never guess line numbers.

@@ -161,43 +161,70 @@ def test_build_task_prompt_delegates_to_input_layer():
 
 def test_c2b_must_clause_is_tool_generic_not_bash_specific():
     """Post-C2b, the MUST clause asks for "tool calls" (not bash
-    calls) and explicitly names both `execute_bash` and
-    `search_exocortex`. If a future edit reverts to the old
-    bash-exclusive phrasing, the smoke attribution window for
-    tool-usage shifts gets muddied — fail loudly here so the
-    fixture churn is visible in review."""
+    calls). The tool-exclusive old phrasing must not regress — it
+    was the 2026-04-21 audit's complaint."""
     prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
     assert "MUST make at least THREE distinct tool calls" in prompt
     assert "MUST make at least THREE distinct execute_bash calls" not in prompt
 
 
-def test_search_exocortex_listed_in_tool_menu():
-    """The 2026-04-21 ExoCortex audit found that in 10 SWE-bench
-    runs, `search_exocortex` was called 0 times — the prior prompt
-    didn't surface the affordance. C2b fixes that by naming the
-    tool explicitly in the "## Mandatory Workflow" tool menu."""
+def test_c2c_library_docs_tool_named_in_menu():
+    """C2c wires a real library-docs tool (Context7-backed
+    `lookup_library_docs`) to close the gap the C2b smoke found —
+    `search_exocortex`'s schema targeted research domains, so 0
+    calls across 10 SWE-bench tasks even after C2b's prompt surge.
+    `lookup_library_docs` is domain-right for library API
+    contracts, so this test locks its presence in the menu."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    assert "**lookup_library_docs**" in prompt
+    assert "Context7" in prompt
+
+
+def test_c2c_must_clause_points_at_library_docs_tool():
+    """The MUST clause must name `lookup_library_docs` (not
+    `search_exocortex`) for third-party library API questions —
+    the C2b smoke proved pointing at the wrong tool doesn't
+    move behavior even with a full prompt dedicated to it."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    # Find the MUST block and check that library_docs is inside it
+    must_start = prompt.index("MUST make at least THREE distinct tool calls")
+    must_end = prompt.index("One-shot patches", must_start)
+    must_block = prompt[must_start:must_end]
+    assert "lookup_library_docs" in must_block
+    assert "library API contract" in must_block
+
+
+def test_c2c_workflow_step_for_library_docs_is_concrete():
+    """Step 4 should give a concrete, copy-pastable invocation
+    pattern. Abstract "consider consulting docs" guidance didn't
+    move usage in pre-C2c runs."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    # Concrete arg example is the anchor — if it disappears, the
+    # step has drifted back to abstract phrasing.
+    assert 'library_name="requests"' in prompt
+    assert "lookup_library_docs" in prompt
+
+
+def test_c2c_search_exocortex_rescoped_to_research():
+    """`search_exocortex` stays listed but honestly — its scope
+    is research-paper queries (formal verif, cognitive arch, evo
+    comp, memory systems), which is what the tool's own schema
+    advertises. C2b's incorrect "library API contracts" framing
+    is removed."""
     prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
     assert "**search_exocortex**" in prompt
-    assert "library API contracts" in prompt
-
-
-def test_search_exocortex_workflow_step_present():
-    """Step 4 (optional) tells the model WHEN to reach for
-    `search_exocortex` — library-contract questions the repo
-    alone can't answer. Without this step the tool is listed
-    but not motivated; the 2026-04-21 audit showed listing alone
-    didn't move usage."""
-    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
-    assert "**(Optional)**" in prompt
-    assert "search_exocortex" in prompt
-    assert "library's documented behavior" in prompt
+    # New honest scope
+    assert "research corpus" in prompt
+    assert "formal verification" in prompt
+    # Old overclaim removed
+    assert "reach for `search_exocortex` when the issue hinges" not in prompt
 
 
 def test_execute_bash_still_the_primary_repo_tool():
-    """Softening the MUST clause must NOT drop `execute_bash` from
-    the menu or the steps — it remains the right tool for repo
-    exploration (grep, sed, pytest). C2b broadens the affordance;
-    it does not replace bash."""
+    """Softening the MUST clause must NOT drop `execute_bash`
+    from the menu or the steps — it remains the right tool for
+    repo exploration (grep, sed, pytest). C2b/C2c broaden the
+    affordance; they do not replace bash."""
     prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
     assert "**execute_bash**" in prompt
     assert "on the checked-out repo" in prompt

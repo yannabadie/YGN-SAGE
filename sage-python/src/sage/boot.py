@@ -439,10 +439,18 @@ def boot_agent_system(
     tool_registry.register(bash_tool)
     _log.info("Core tools: execute_bash registered (file read, git, tests, system commands)")
 
-    # ExoCortex tools (search)
+    # ExoCortex tools (research-paper search — not library docs)
     from sage.tools.exocortex_tools import create_exocortex_tools
     for tool in create_exocortex_tools(mem["exocortex"]):
         tool_registry.register(tool)
+
+    # Context7 library-docs tool (C2c 2026-04-21) — bridges the gap that
+    # search_exocortex is research-paper-scoped; this is the right tool
+    # for django/astropy/requests/etc. API-contract questions.
+    from sage.tools.context7_tools import create_context7_tools
+    for tool in create_context7_tools():
+        tool_registry.register(tool)
+        _log.info("Core tools: %s registered (Context7 library docs)", tool.spec.name)
 
     # Guardrails
     from sage.guardrails.base import GuardrailPipeline
