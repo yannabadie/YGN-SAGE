@@ -225,6 +225,15 @@ async def act(
                 source_tier=gate_tier,
                 embedding=None,
             )
+            # In-run observability: one structured line per gate.evaluate()
+            # call so smoke runs can attribute memory writes to pillar
+            # behavior. Shared helper ensures the format is stable across all
+            # call sites (phases/act.py, tests, future bypass paths).
+            try:
+                from sage.memory.write_gate import log_write_gate_decision
+                log_write_gate_decision(decision, source_tier=gate_tier)
+            except Exception:
+                pass  # never let logging break the write path
             allowed = bool(getattr(decision, "allowed", True))
             if not allowed:
                 log.debug("write_gate blocked memory write: %s",

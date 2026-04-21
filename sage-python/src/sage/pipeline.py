@@ -196,8 +196,18 @@ class CognitiveOrchestrationPipeline:
                     f"latency={ctx.latency_ms:.0f}ms, cost={ctx.cost:.4f}, path={getattr(self, '_last_path', 'pipeline')}",
                 )
                 # Compact to Arrow chunk for S-MMU graph storage
-                if self.working_memory.event_count() >= 4:
+                # In-run observability: log the STM → Arrow tier transition so
+                # smoke runs can track S-MMU paging frequency per task. The 4
+                # events added above (TASK/TOPOLOGY/RESULT/METRICS) guarantee
+                # the threshold is met on every pipeline.run().
+                events_before = self.working_memory.event_count()
+                if events_before >= 4:
                     self.working_memory.compact_to_arrow()
+                    log.info(
+                        "memory.smmu.tier_transition from=stm to=arrow "
+                        "events=%d task_id=%s",
+                        events_before, self._task_count,
+                    )
             except (RuntimeError, IOError) as exc:
                 log.debug("Memory write (Tier 0) failed: %s", exc)
 
@@ -1456,6 +1466,18 @@ class CognitiveOrchestrationPipeline:
                     except (ImportError, RuntimeError):
                         pass  # Embedding unavailable, degrade gracefully
 
+                    # In-run observability: read archive cell count before +
+                    # after record_outcome so we can attribute MAP-Elites growth
+                    # to a specific topology_id. The H4 incident (dc51976)
+                    # proved this delta is frequently 0 even when record_outcome
+                    # returns cleanly — the log would have caught that bypass
+                    # immediately, so we keep it structured going forward.
+                    cells_before = 0
+                    if hasattr(self.engine, 'archive_cell_count'):
+                        try:
+                            cells_before = int(self.engine.archive_cell_count())
+                        except (RuntimeError, TypeError):
+                            cells_before = 0
                     self.engine.record_outcome(
                         topology_id,
                         ctx.task[:200],
@@ -1465,6 +1487,27 @@ class CognitiveOrchestrationPipeline:
                         ctx.cost,
                         ctx.latency_ms,
                     )
+                    cells_after = cells_before
+                    if hasattr(self.engine, 'archive_cell_count'):
+                        try:
+                            cells_after = int(self.engine.archive_cell_count())
+                        except (RuntimeError, TypeError):
+                            cells_after = cells_before
+                    if cells_after > cells_before:
+                        # Get descriptor shape for the new cell when available
+                        coverage = 0.0
+                        if hasattr(self.engine, 'archive_coverage'):
+                            try:
+                                coverage = float(self.engine.archive_coverage())
+                            except (RuntimeError, TypeError):
+                                coverage = 0.0
+                        log.info(
+                            "memory.archive.grow cells=%d delta=%d "
+                            "coverage=%.3f topology=%s quality=%.2f",
+                            cells_after, cells_after - cells_before,
+                            coverage, topology_id[:8] if topology_id else "unknown",
+                            quality,
+                        )
                     log.debug(
                         "Evolution: recorded outcome for topology %s (quality=%.2f)",
                         topology_id[:8], quality,
@@ -1519,12 +1562,19 @@ class CognitiveOrchestrationPipeline:
                 and self.consolidator is not None):
             try:
                 consolidation_result = await self.consolidator.consolidate()
-                if hasattr(consolidation_result, 'processed') and consolidation_result.processed > 0:
-                    log.debug(
-                        "Pipeline consolidation: %d episodes → %d entities",
-                        consolidation_result.processed,
-                        getattr(consolidation_result, 'entities_added', 0),
-                    )
+                # In-run observability: emit a structured log regardless of
+                # whether any entries were processed, so smoke runs can see
+                # consolidation ran on the scheduled interval. The old DEBUG
+                # log was silent for zero-processed passes — now every firing
+                # is accounted for.
+                processed = getattr(consolidation_result, 'processed', 0)
+                entities = getattr(consolidation_result, 'entities_added', 0)
+                edges = getattr(consolidation_result, 'causal_edges_added', 0)
+                log.info(
+                    "memory.consolidation.fired processed=%d entities=%d "
+                    "causal_edges=%d task_id=%d",
+                    processed, entities, edges, self._task_count,
+                )
             except (RuntimeError, IOError):
                 pass  # Best-effort, never blocks pipeline
 

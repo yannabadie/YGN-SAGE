@@ -344,6 +344,37 @@ class CompositeWriteGate:
         }
 
 
+def log_write_gate_decision(decision: Any, source_tier: str = "unknown") -> None:
+    """Emit a structured INFO log for a WriteDecision.
+
+    Factored out so every runtime path that calls `gate.evaluate()` can share
+    the exact same format -- `grep -c "memory.write_gate.fired"` on a smoke
+    run is then a reliable signal of Memory-pillar activity. Callers MUST
+    invoke this immediately after `gate.evaluate()` returns.
+
+    Format: key=value pairs, one line. Parseable by a simple regex.
+    """
+    import logging as _logging
+    _log = _logging.getLogger(__name__)
+    allowed = bool(getattr(decision, "allowed", True))
+    salience = float(getattr(decision, "salience_score", 0.0) or 0.0)
+    breakdown = getattr(decision, "signal_breakdown", {}) or {}
+    reason = getattr(decision, "reason", "") or ""
+    _log.info(
+        "memory.write_gate.fired decision=%s salience=%.3f tier=%s "
+        "conf=%.2f nov=%.2f rel=%.2f rec=%.2f relv=%.2f reason=%r",
+        "persist" if allowed else "abstain",
+        salience,
+        source_tier or "unknown",
+        float(breakdown.get("confidence", 0.0)),
+        float(breakdown.get("novelty", 0.0)),
+        float(breakdown.get("reliability", 0.0)),
+        float(breakdown.get("recency", 0.0)),
+        float(breakdown.get("relevance", 0.0)),
+        reason[:80],
+    )
+
+
 # -- Rust acceleration (same pattern as RustRelevanceGate) ---------------------
 
 try:
