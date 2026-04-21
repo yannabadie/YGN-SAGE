@@ -102,6 +102,20 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
 
     # Build system prompt with validation-level augmentation
     system_prompt = loop.config.system_prompt
+
+    # Inject tool affordance block (2026-04-21 audit fix). The agent
+    # already gets structured tool schemas via ``tool_defs`` below, but
+    # on some benches (SWE-bench in particular) the user-facing prompt
+    # only named execute_bash so the agent never discovered other tools
+    # like search_exocortex. Auto-injecting a ``## Available Tools``
+    # section at the system-prompt level fixes this for every caller
+    # without each bench having to list tools by hand. See
+    # ``docs/audits/2026-04-21-exocortex-swebench-usage.md``.
+    tool_names = loop.config.tools if loop.config.tools else None
+    tool_affordance = loop._tools.describe_for_prompt(tool_names)
+    if tool_affordance:
+        system_prompt = f"{system_prompt}\n\n{tool_affordance}"
+
     if loop.config.validation_level >= 3:
         system_prompt += (
             "\n\nCRITICAL: Use <think>...</think> tags for formal reasoning. "

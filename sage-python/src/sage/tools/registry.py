@@ -33,6 +33,52 @@ class ToolRegistry:
             or query_lower in tool.spec.description.lower()
         ]
 
+    def describe_for_prompt(
+        self,
+        names: list[str] | None = None,
+        max_desc_chars: int = 200,
+    ) -> str:
+        """Render a Markdown block listing registered tools for prompt inclusion.
+
+        Single source of truth for "what tools does the agent have?" — any
+        tool registered at boot (including runtime-forged ToolForge tools)
+        is auto-documented without bench templates needing to hand-roll
+        their own lists.
+
+        Motivated by the 2026-04-21 ExoCortex usage audit
+        (``docs/audits/2026-04-21-exocortex-swebench-usage.md``): the
+        search_exocortex tool was registered in the structured tool-call
+        schema but invisible in the prompt because SWE-bench's
+        ``_TASK_TEMPLATE`` only named ``execute_bash``. The agent called
+        ``search_exocortex`` zero times across v13/v15/v17 smoke runs
+        (157/157 tool calls were bash). Auto-injecting the tool list into
+        the system prompt removes the per-bench anti-affordance.
+
+        Args:
+            names: Filter to a subset of tool names. None = all.
+            max_desc_chars: Truncate each description to this length to
+                bound token use.
+
+        Returns:
+            Empty string if no tools registered. Otherwise a Markdown
+            section starting with "## Available Tools" and one bullet
+            per tool.
+        """
+        tools = (
+            [self._tools[n] for n in names if n in self._tools]
+            if names is not None
+            else list(self._tools.values())
+        )
+        if not tools:
+            return ""
+        lines = ["## Available Tools", ""]
+        for tool in sorted(tools, key=lambda t: t.spec.name):
+            desc = (tool.spec.description or "").strip().replace("\n", " ")
+            if max_desc_chars > 0 and len(desc) > max_desc_chars:
+                desc = desc[: max_desc_chars - 3] + "..."
+            lines.append(f"- **{tool.spec.name}** — {desc}")
+        return "\n".join(lines) + "\n"
+
     def get_tool_defs(self, names: list[str] | None = None) -> list:
         """Get tool definitions in OpenAI function-calling format."""
         specs = (
