@@ -21,6 +21,15 @@ The patch is:
   a different PEM file (default: ``C:/Code/certs/ca-bundle.pem``).
 - **Graceful**: if the bundle file is missing, emits a warning and
   returns False — the original (unpatched) Dockerfile is used.
+- **Secure by default**: only COPY+append the corporate CA into the
+  container trust store. SSL verification is NOT disabled unless
+  ``SAGE_SWEBENCH_ALLOW_INSECURE=1`` is set — opt-in escape hatch for
+  the narrow case where a MITM-CA-augmented trust store still can't
+  verify ``repo.anaconda.com`` / ``pypi.org`` (e.g. wget reads hashed
+  symlinks from update-ca-certificates, which our multi-cert PEM is
+  skipped by per Debian convention). When active, the bypass logs a
+  prominent warning. Off by default to comply with CLAUDE.md
+  Directive #3 ("never add ``verify=False``").
 
 Call :func:`apply_corporate_ca_patch` from any swebench entry point
 before ``build_env_images`` / ``build_base_images`` is invoked.
@@ -37,6 +46,7 @@ log = logging.getLogger(__name__)
 _DEFAULT_CA_BUNDLE = Path("C:/Code/certs/ca-bundle.pem")
 _ENV_CA_BUNDLE = "SAGE_CORPORATE_CA_BUNDLE"
 _ENV_DISABLE = "SAGE_SWEBENCH_DISABLE_CA_PATCH"
+_ENV_ALLOW_INSECURE = "SAGE_SWEBENCH_ALLOW_INSECURE"
 
 _APPLIED = False  # idempotence guard
 
@@ -89,13 +99,21 @@ def _inject_truststore() -> bool:
 def apply_corporate_ca_patch() -> bool:
     """Monkey-patch swebench to accept the corporate CA during Docker builds.
 
-    Does two things:
+    Does two things unconditionally (secure path):
     1. Injects ``truststore`` into the Python SSL subsystem so the host
        process trusts whatever the OS trusts (fixes requests.get() against
        raw.githubusercontent.com behind a corporate TLS proxy).
-    2. Modifies the base Dockerfile to COPY an explicit CA bundle into
-       ``/usr/local/share/ca-certificates/`` + run update-ca-certificates
-       so ``wget`` inside the container trusts the same chain.
+    2. Modifies the base Dockerfile to COPY an explicit CA bundle and
+       append it to ``/etc/ssl/certs/ca-certificates.crt`` inside the
+       container so OpenSSL-based tools trust the corporate chain.
+
+    Optionally, only when ``SAGE_SWEBENCH_ALLOW_INSECURE=1``:
+    3. Adds ``--no-check-certificate`` to Miniconda wget, and disables
+       SSL verification for conda + pip inside the Dockerfile. Escape
+       hatch for hosts where the MITM-augmented trust store still can't
+       verify ``repo.anaconda.com`` / ``pypi.org``. A prominent WARNING
+       is logged when this path is taken. Off by default per CLAUDE.md
+       Directive #3.
 
     Returns:
         True if the patch is in effect (either freshly applied or already
@@ -137,16 +155,10 @@ def apply_corporate_ca_patch() -> bool:
     original_tpl = dockerfile_python._DOCKERFILE_BASE_PY
     marker = "# Download and install conda"
     if "corporate-ca-bundle" not in original_tpl and marker in original_tpl:
-        # 1. Inject our CA bundle into the system trust store so OpenSSL-
-        #    based tools (curl, python-requests, etc. in downstream steps)
-        #    trust the corporate chain.
-        # 2. Add --no-check-certificate to the Miniconda wget. wget doesn't
-        #    consult /etc/ssl/certs/ca-certificates.crt directly; it uses
-        #    hashed symlinks from update-ca-certificates, which our
-        #    multi-cert bundle is skipped by (each .crt file must contain
-        #    exactly one cert per Debian convention). Bypassing verification
-        #    for this single download is safe: Miniconda is a public
-        #    installer, and the container is an ephemeral sandbox.
+        # Always inject our CA bundle into the system trust store so OpenSSL-
+        # based tools (curl, python-requests, etc. in downstream steps) trust
+        # the corporate chain. This is the secure path — no verification is
+        # disabled, we just teach the container about the MITM root.
         injected_ca = (
             "# Install corporate CA bundle (SAGE swebench_ca_patch)\n"
             "COPY ca-bundle.crt /tmp/corporate-ca-bundle.crt\n"
@@ -155,25 +167,38 @@ def apply_corporate_ca_patch() -> bool:
             + marker
         )
         patched_tpl = original_tpl.replace(marker, injected_ca)
-        # wget inside the container can't use the appended bundle directly
-        # (see above). Bypass verification for the Miniconda download only.
-        patched_tpl = patched_tpl.replace(
-            "RUN wget 'https://repo.anaconda.com/miniconda/",
-            "RUN wget --no-check-certificate 'https://repo.anaconda.com/miniconda/",
-        )
-        # conda + pip inside the env-image build call repo.anaconda.com +
-        # pypi.org through their own certifi store which doesn't include the
-        # corporate CA. Disable SSL verification for these public-registry
-        # downloads — acceptable in an ephemeral sandbox container.
-        patched_tpl = patched_tpl.replace(
-            "RUN conda init --all",
-            (
-                "RUN conda config --set ssl_verify false\n"
-                "RUN pip config --global set global.trusted-host "
-                "\"pypi.org files.pythonhosted.org pypi.python.org\"\n"
-                "RUN conda init --all"
-            ),
-        )
+
+        # Directive #3 compliance: only disable SSL verification when the
+        # caller explicitly opts in via SAGE_SWEBENCH_ALLOW_INSECURE=1.
+        # Needed when the augmented trust store still can't verify
+        # repo.anaconda.com / pypi.org — e.g. wget, which doesn't consult
+        # /etc/ssl/certs/ca-certificates.crt directly but reads hashed
+        # symlinks from update-ca-certificates (and our multi-cert PEM is
+        # skipped per Debian convention: one cert per .crt file).
+        allow_insecure = os.environ.get(_ENV_ALLOW_INSECURE) == "1"
+        if allow_insecure:
+            log.warning(
+                "swebench CA patch: SAGE_SWEBENCH_ALLOW_INSECURE=1 — "
+                "disabling SSL verification for Miniconda wget, conda, "
+                "and pip inside the Docker build (public-registry "
+                "downloads in an ephemeral sandbox). Clear the env var "
+                "to restore full verification (Directive #3 default)."
+            )
+            patched_tpl = patched_tpl.replace(
+                "RUN wget 'https://repo.anaconda.com/miniconda/",
+                "RUN wget --no-check-certificate "
+                "'https://repo.anaconda.com/miniconda/",
+            )
+            patched_tpl = patched_tpl.replace(
+                "RUN conda init --all",
+                (
+                    "RUN conda config --set ssl_verify false\n"
+                    "RUN pip config --global set global.trusted-host "
+                    "\"pypi.org files.pythonhosted.org pypi.python.org\"\n"
+                    "RUN conda init --all"
+                ),
+            )
+
         dockerfile_python._DOCKERFILE_BASE_PY = patched_tpl
 
         # Also update the aggregator dict; get_dockerfile_base reads from here.

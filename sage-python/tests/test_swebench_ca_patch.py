@@ -90,10 +90,13 @@ def test_missing_bundle_returns_false(monkeypatch, tmp_path, caplog):
     assert any("no bundle found" in rec.message.lower() for rec in caplog.records)
 
 
-def test_applies_dockerfile_and_wrapper(monkeypatch, tmp_path):
-    """Happy path: template gains COPY + update-ca-certificates; wrapper set."""
+def test_applies_dockerfile_and_wrapper_secure_default(monkeypatch, tmp_path):
+    """Default secure path: template gains COPY + append-to-ca-certificates
+    and the build_image wrapper is installed, but SSL verification is NOT
+    disabled (Directive #3 compliance)."""
     bundle = _make_tmp_bundle(tmp_path)
     monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
     monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
 
     mod = _fresh_patch_module()
@@ -103,20 +106,26 @@ def test_applies_dockerfile_and_wrapper(monkeypatch, tmp_path):
     from swebench.harness import docker_build
 
     tpl = dockerfile_python._DOCKERFILE_BASE_PY
-    # Marker string that identifies our injected block
     marker = "corporate-ca-bundle.crt"
     assert marker in tpl, "COPY line not injected"
     # Correctness of ordering: the COPY must come BEFORE the wget miniconda.
     assert tpl.index(marker) < tpl.index("miniconda.sh")
-    # The append to system bundle must be present (replaces update-ca-certificates)
+    # Append to system bundle is the secure path — always present.
     assert "/etc/ssl/certs/ca-certificates.crt" in tpl
-    # The wget for Miniconda must be patched with --no-check-certificate
-    # because wget doesn't use /etc/ssl/certs/ca-certificates.crt directly.
-    assert "wget --no-check-certificate 'https://repo.anaconda.com/miniconda/" in tpl
-    # conda + pip must have SSL verify off / trusted-host for public registries
-    # so env-image builds don't fail on the corporate cert chain.
-    assert "conda config --set ssl_verify false" in tpl
-    assert "pip config --global set global.trusted-host" in tpl
+
+    # Directive #3: SSL verification must NOT be disabled by default.
+    assert "--no-check-certificate" not in tpl, (
+        "wget --no-check-certificate injected without "
+        "SAGE_SWEBENCH_ALLOW_INSECURE=1 — Directive #3 violation"
+    )
+    assert "ssl_verify false" not in tpl, (
+        "conda ssl_verify=false injected without opt-in env — "
+        "Directive #3 violation"
+    )
+    assert "trusted-host" not in tpl, (
+        "pip trusted-host injected without opt-in env — "
+        "Directive #3 violation"
+    )
 
     # build_image wrapper flag present
     assert getattr(docker_build.build_image, "_sage_ca_wrapped", False) is True
@@ -128,6 +137,33 @@ def test_applies_dockerfile_and_wrapper(monkeypatch, tmp_path):
         "aggregator dict still holds pre-patch template — "
         "get_dockerfile_base would return unfixed Dockerfile"
     )
+
+
+def test_insecure_bypass_adds_ssl_overrides(monkeypatch, tmp_path, caplog):
+    """With SAGE_SWEBENCH_ALLOW_INSECURE=1, the Dockerfile gains SSL-bypass
+    flags for Miniconda wget, conda, and pip AND a WARNING is logged."""
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.setenv("SAGE_SWEBENCH_ALLOW_INSECURE", "1")
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    with caplog.at_level(logging.WARNING):
+        assert mod.apply_corporate_ca_patch() is True
+
+    from swebench.harness.dockerfiles import python as dockerfile_python
+    tpl = dockerfile_python._DOCKERFILE_BASE_PY
+
+    # All three bypasses must now be present (opt-in path).
+    assert "wget --no-check-certificate 'https://repo.anaconda.com/miniconda/" in tpl
+    assert "conda config --set ssl_verify false" in tpl
+    assert "pip config --global set global.trusted-host" in tpl
+
+    # A WARNING must have been logged (audit trail for opt-out of Directive #3).
+    assert any(
+        "ALLOW_INSECURE" in rec.message or "disabling SSL verification" in rec.message
+        for rec in caplog.records
+    ), "expected a WARNING when SAGE_SWEBENCH_ALLOW_INSECURE=1 is active"
 
 
 def test_idempotent_second_call_no_double_patch(monkeypatch, tmp_path):
