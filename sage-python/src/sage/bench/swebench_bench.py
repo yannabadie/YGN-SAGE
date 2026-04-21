@@ -159,86 +159,19 @@ def load_swebench_dataset(
 #    at least three exploration steps before any patch is written, and forces
 #    line-number verification before emitting hunk headers.
 
-_TASK_TEMPLATE = """\
-You are an expert software engineer working inside a checked-out repository \
-clone. Your job is to resolve a GitHub issue by producing a minimal unified \
-diff patch.
-
-## Repository
-- **Repo:** {repo}
-- **Version:** {version}
-- **Base commit:** {base_commit}
-- **Working directory:** the repo is checked out in the current directory. \
-Use relative paths (no absolute paths, no /tmp/...).
-
-## Issue Description
-
-{problem_statement}
-
-{hints_section}\
-## Mandatory Workflow — Follow Every Step
-
-You have these tools available:
-- **execute_bash** — run any shell command (cat, grep, find, git log, sed, python, pytest)
-- Memory + knowledge tools registered at boot (if any)
-
-You MUST make at least THREE distinct execute_bash calls *before* writing any \
-patch. One-shot patches are almost always wrong — the line numbers and \
-context lines will not match the real source, and the harness will reject \
-the diff.
-
-1. **Locate** the code mentioned in the issue.
-   Example: `grep -RIn "ClassName\\|function_name" src/ tests/ | head -40`
-2. **Read** the full function/class being modified (not just the snippet in the issue).
-   Example: `sed -n '200,260p' src/package/module.py`
-3. **Check tests** that reference the target. They often reveal the contract.
-   Example: `grep -RIn "function_name" tests/ | head -20`
-4. **Verify** hunk line numbers immediately before emitting them.
-   Example: `grep -n "^def function_name" src/package/module.py`
-5. Reason about the minimal change. If unsure, read more. Never guess line numbers.
-6. Write the patch.
-
-## Patch Format — Strict
-
-Output your final patch in unified diff format inside a fenced ```diff block:
-
-```diff
-diff --git a/path/to/file.py b/path/to/file.py
---- a/path/to/file.py
-+++ b/path/to/file.py
-@@ -<start>,<count> +<start>,<count> @@ <optional context>
- unchanged line
--removed line
-+added line
- unchanged line
-```
-
-Hard requirements:
-- `diff --git` headers and `--- a/` / `+++ b/` paths MUST use forward slashes.
-- Every context and removed line MUST match the real source exactly — you \
-verified this with execute_bash.
-- Hunk ranges (`@@ -s,c +s,c @@`) MUST be correct. Re-check with grep -n.
-- Keep the change minimal. Do not refactor unrelated code."""
+from sage.input.swebench import normalize_swebench, render_swebench_prompt
 
 
 def _build_task_prompt(instance: dict[str, Any]) -> str:
-    """Build the task prompt for an SWE-Bench instance.
+    """Build the task prompt for a SWE-bench instance.
 
-    Note: the system prompt and task body are merged into a single text
-    because AgentSystem.run() accepts only a single task string.
+    Thin wrapper around the `sage.input.swebench` normalizer path.
+    `AgentSystem.run()` still takes a single string today; C4 will
+    teach `perceive()` to consume the full `TaskInput` and render
+    the same text through a generic builder. Until then, this keeps
+    the bench's external behavior byte-identical.
     """
-    hints = instance.get("hints_text") or ""
-    hints_section = ""
-    if hints and hints.strip():
-        hints_section = f"## Hints (from the issue comments)\n\n{hints.strip()}\n\n"
-
-    return _TASK_TEMPLATE.format(
-        repo=instance["repo"],
-        version=instance.get("version", "unknown"),
-        base_commit=instance["base_commit"],
-        problem_statement=instance["problem_statement"],
-        hints_section=hints_section,
-    )
+    return render_swebench_prompt(normalize_swebench(instance))
 
 
 def _extract_patch(response: str) -> str:

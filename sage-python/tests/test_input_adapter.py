@@ -222,13 +222,16 @@ def test_normalize_chat_no_hints_no_instructions_no_length_hint():
 
 
 def test_package_public_api_surface():
-    """Lock the __all__ exports — external callers should only touch
-    these four symbols in C1."""
+    """Lock the __all__ exports so the package surface grows only on
+    purpose. Expanded in C2a to include the SWE-bench normalizer."""
     import sage.input as pkg
 
     assert set(pkg.__all__) == {
         "CHAT_DEFAULT_TOOLS",
         "ResponseFormat",
+        "SWEBENCH_SYSTEM_TEMPLATE",
         "TaskInput",
         "normalize_chat",
+        "normalize_swebench",
+        "render_swebench_prompt",
     }
