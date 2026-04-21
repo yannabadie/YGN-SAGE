@@ -698,6 +698,12 @@ class SWEBenchBench:
                 "resolved_rate": 0.0,
             }
 
+        # Inject corporate CA bundle into the base-image build context so
+        # `wget` inside the container can resolve repo.anaconda.com behind
+        # TLS-inspecting proxies. No-op outside corporate networks.
+        from sage.bench.swebench_ca_patch import apply_corporate_ca_patch
+        apply_corporate_ca_patch()
+
         import docker
 
         predictions_path = str(predictions_path)
