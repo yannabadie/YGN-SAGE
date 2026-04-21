@@ -517,8 +517,14 @@ def boot_agent_system(
     else:
         try:
             from sage.tools.sage_recurse import build_sage_recurse_tool
-            tool_registry.register(build_sage_recurse_tool(system.run))
-            _log.info("Core tools: sage_recurse registered (max depth 3)")
+            controller = getattr(system.pipeline, "controller", None)
+            tool_registry.register(
+                build_sage_recurse_tool(system.run, controller=controller)
+            )
+            _log.info(
+                "Core tools: sage_recurse registered (max depth 3, budget-gated=%s)",
+                controller is not None,
+            )
         except (ImportError, RuntimeError) as exc:
             _log.debug("sage_recurse not available: %s", exc)
 

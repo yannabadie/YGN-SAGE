@@ -37,34 +37,6 @@ fn error_output_re() -> &'static Regex {
     })
 }
 
-/// Emergent-subtask detectors — mirror Python `_detect_emergent_subtask`.
-/// Three patterns ordered by Python source; first match wins (mirrors
-/// the Python for-loop early-return).
-fn emergent_subtask_res() -> &'static [Regex] {
-    static RES: OnceLock<Vec<Regex>> = OnceLock::new();
-    RES.get_or_init(|| {
-        vec![
-            Regex::new(r"(?is)(?:need to also|additionally|we should also|another step would be)\s+(.{10,200})").expect("pattern 1"),
-            Regex::new(r"(?is)(?:TODO|FIXME|NOTE):\s+(.{10,200})").expect("pattern 2"),
-            Regex::new(r"(?is)(?:this requires|prerequisite:)\s+(.{10,200})").expect("pattern 3"),
-        ]
-    })
-}
-
-/// Mirror of Python `TopologyController._detect_emergent_subtask`. Finds
-/// the first matching emergent-subtask pattern in `result` and returns
-/// the captured group 1 (trimmed). Returns None if no pattern matches.
-pub fn detect_emergent_subtask(result: &str) -> Option<String> {
-    for re in emergent_subtask_res() {
-        if let Some(caps) = re.captures(result) {
-            if let Some(m) = caps.get(1) {
-                return Some(m.as_str().trim().to_string());
-            }
-        }
-    }
-    None
-}
-
 /// Mirror of Python `TopologyController._is_empty_or_error` static method.
 /// Public so Python tests can round-trip against the same detector.
 pub fn is_empty_or_error(result: &str) -> bool {
@@ -285,34 +257,6 @@ impl RustTopologyController {
         (THETA_CRITICAL..THETA_GOOD).contains(&quality)
     }
 
-    /// Plan 2.5 — port of Python path 6 (emergent subtask spawn,
-    /// `topology_controller.py:224-233`). Scans `result` for the
-    /// three emergent-subtask patterns; if a match is found AND
-    /// spawn budget has room, returns a spawn_subagent decision and
-    /// increments `spawn_count`. Otherwise None (caller falls through
-    /// to the default continue at end of cascade).
-    #[pyo3(signature = (result, node_idx))]
-    fn check_emergent_spawn(
-        &mut self,
-        result: &str,
-        node_idx: usize,
-    ) -> Option<RustAdaptationDecision> {
-        let emergent = detect_emergent_subtask(result)?;
-        if self.spawn_count >= MAX_SPAWNS {
-            return None;
-        }
-        self.spawn_count += 1;
-        Some(RustAdaptationDecision {
-            action: "spawn_subagent".into(),
-            target_node: Some(node_idx),
-            reason: emergent,
-            new_model_id: None,
-            invariant_feedback: None,
-            gate_source: None,
-            gate_target: None,
-        })
-    }
-
     /// Plan 2.4 — port of Python path 4 (parallel inconsistency reroute,
     /// `topology_controller.py:202-211`). Consistency scoring stays in
     /// Python (it requires the embedder) — Rust takes the pre-computed
@@ -449,6 +393,68 @@ impl RustTopologyController {
     /// observe the Rust-side state independently of quality_stats.
     fn get_node_retries(&self, node_idx: usize) -> u32 {
         *self.node_retries.get(&node_idx).unwrap_or(&0)
+    }
+
+    /// Dict-shaped state: expose as Vec<(idx, count)> since PyO3 dict
+    /// conversion would need the GIL token. Python caller wraps in dict().
+    fn node_retries_view(&self) -> Vec<(usize, u32)> {
+        self.node_retries.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    fn node_qualities_view(&self) -> Vec<(usize, f32)> {
+        self.node_qualities.iter().map(|(k, v)| (*k, *v)).collect()
+    }
+
+    /// Budget-only check: can another emergent spawn happen?
+    /// `_node_idx` is accepted for forward compat (future per-node budgets)
+    /// but ignored under the current global MAX_SPAWNS policy.
+    fn should_trigger_emergent_spawn(&self, _node_idx: usize) -> bool {
+        self.spawn_count < MAX_SPAWNS
+    }
+
+    /// Increment the abstain counter. Used by Python `_compute_quality`
+    /// when QualityEstimator falls back to heuristic (signals an abstain).
+    /// No cap — abstain is diagnostic, not budget-limiting.
+    fn record_abstain(&mut self) {
+        self.abstain_count += 1;
+    }
+
+    /// Increment the spawn counter under the MAX_SPAWNS gate.
+    /// Returns PyValueError if already at cap (defensive — caller should
+    /// check `should_trigger_emergent_spawn` first).
+    fn record_emergent_spawn(&mut self, _node_idx: usize) -> PyResult<()> {
+        if self.spawn_count >= MAX_SPAWNS {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "spawn budget exhausted ({}/{} reached)",
+                self.spawn_count, MAX_SPAWNS
+            )));
+        }
+        self.spawn_count += 1;
+        Ok(())
+    }
+
+    /// Test-only entry point — set all counters and retry dict in one call.
+    /// Used to replace the Python `__setattr__` mirror that let legacy tests
+    /// do `controller._reroute_count = N` directly. Validates implausible
+    /// values (> MAX_REROUTES + 10) to catch typos.
+    fn seed_state_for_legacy_tests(
+        &mut self,
+        reroute_count: u32,
+        spawn_count: u32,
+        node_retries: Vec<(usize, u32)>,
+        abstain_count: u32,
+    ) -> PyResult<()> {
+        if reroute_count > MAX_REROUTES + 10 {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "reroute_count={} implausible (MAX_REROUTES={})",
+                reroute_count, MAX_REROUTES
+            )));
+        }
+        self.reroute_count = reroute_count;
+        self.spawn_count = spawn_count;
+        self.node_retries = node_retries.into_iter().collect();
+        self.abstain_count = abstain_count;
+        Ok(())
     }
 
     /// Diagnostic view mirroring Python `quality_stats()`. Expose state
@@ -696,91 +702,6 @@ mod tests {
         assert!(c.check_importance_prune(2, 0.1, true, true).is_none());
     }
 
-    // --- Test fixtures: simulated LLM outputs ---------------------------
-    //
-    // These are NOT in-progress markers left by a developer in this source
-    // file. They are string literals passed to `detect_emergent_subtask`,
-    // which scans the *runtime* output of an LLM for phrases like
-    // "TODO:" / "FIXME:" / "additionally we should" / "prerequisite:"
-    // — markers an LLM emits when it notices follow-up work. We need
-    // literal "TODO:" / "FIXME:" / "additionally" substrings IN THE
-    // TEST INPUT to exercise the matchers. The Rust source file itself
-    // has no real TODOs.
-    const LLM_OUTPUT_WITH_TODO: &str =
-        "The main function works. TODO: add unit tests for edge cases of the parser.";
-    const LLM_OUTPUT_WITH_ADDITIONALLY: &str =
-        "Done. Additionally we should handle the empty input case properly.";
-    const LLM_OUTPUT_WITH_PREREQUISITE: &str =
-        "Cannot solve the outer problem. Prerequisite: resolve the type-mismatch first.";
-    const LLM_OUTPUT_EMERGENT_FOR_SPAWN: &str =
-        "All done. Additionally we should wire the observability layer properly.";
-    const LLM_OUTPUT_EMERGENT_BURST: &str =
-        "Additionally we should also implement robust retry handling logic here.";
-
-    #[test]
-    fn detect_emergent_subtask_picks_up_todo_pattern() {
-        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_TODO);
-        assert_eq!(
-            res.as_deref(),
-            Some("add unit tests for edge cases of the parser.")
-        );
-    }
-
-    #[test]
-    fn detect_emergent_subtask_picks_up_additionally() {
-        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_ADDITIONALLY);
-        assert!(res.is_some());
-        assert!(res.unwrap().starts_with("we should"));
-    }
-
-    #[test]
-    fn detect_emergent_subtask_picks_up_prerequisite() {
-        let res = detect_emergent_subtask(LLM_OUTPUT_WITH_PREREQUISITE);
-        assert_eq!(res.as_deref(), Some("resolve the type-mismatch first."));
-    }
-
-    #[test]
-    fn detect_emergent_subtask_none_on_plain_content() {
-        assert!(detect_emergent_subtask("The answer is 42.").is_none());
-        assert!(detect_emergent_subtask("").is_none());
-    }
-
-    #[test]
-    fn check_emergent_spawn_fires_and_increments() {
-        let mut c = RustTopologyController::new();
-        let d = c
-            .check_emergent_spawn(LLM_OUTPUT_EMERGENT_FOR_SPAWN, 4)
-            .unwrap();
-        assert_eq!(d.action, "spawn_subagent");
-        assert_eq!(d.target_node, Some(4));
-        assert!(d.reason.starts_with("we should"));
-        assert_eq!(c.spawn_count, 1);
-    }
-
-    #[test]
-    fn check_emergent_spawn_respects_max_spawns() {
-        let mut c = RustTopologyController::new();
-        // MAX_SPAWNS = 3 — three spawns work
-        for _ in 0..3 {
-            assert!(c
-                .check_emergent_spawn(LLM_OUTPUT_EMERGENT_BURST, 0)
-                .is_some());
-        }
-        assert_eq!(c.spawn_count, 3);
-        // Fourth: returns None (MAX_SPAWNS hit)
-        assert!(c
-            .check_emergent_spawn(LLM_OUTPUT_EMERGENT_BURST, 0)
-            .is_none());
-        assert_eq!(c.spawn_count, 3);
-    }
-
-    #[test]
-    fn check_emergent_spawn_returns_none_when_no_match() {
-        let mut c = RustTopologyController::new();
-        assert!(c.check_emergent_spawn("The answer is 42", 0).is_none());
-        assert_eq!(c.spawn_count, 0);
-    }
-
     #[test]
     fn thresholds_mirror_python_constants() {
         assert_eq!(THETA_GOOD, 0.7);
@@ -791,5 +712,120 @@ mod tests {
         assert_eq!(MAX_REROUTES, 1);
         assert_eq!(MAX_GATE_TURNS, 2);
         assert_eq!(MAX_SPAWNS, 3);
+    }
+
+    // --- Task A: view methods + spawn gate + seed ----------------------------
+
+    #[test]
+    fn getters_match_internal_state_after_decisions() {
+        let mut c = RustTopologyController::new_inner();
+        c.reroute_count = 2;
+        c.spawn_count = 1;
+        c.abstain_count = 3;
+        c.node_retries.insert(5, 7);
+        c.node_qualities.insert(5, 0.42);
+
+        // Getters (existing) return the current state.
+        assert_eq!(c.reroute_count(), 2);
+        assert_eq!(c.spawn_count(), 1);
+        assert_eq!(c.abstain_count(), 3);
+
+        // New view methods expose HashMap state as Vec<(K, V)>.
+        let retries: std::collections::HashMap<usize, u32> =
+            c.node_retries_view().into_iter().collect();
+        assert_eq!(retries.get(&5).copied(), Some(7));
+        let qualities: std::collections::HashMap<usize, f32> =
+            c.node_qualities_view().into_iter().collect();
+        assert_eq!(qualities.get(&5).copied(), Some(0.42));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_allows_within_budget() {
+        let c = RustTopologyController::new_inner();
+        assert!(c.should_trigger_emergent_spawn(0));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_refuses_at_cap() {
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS;
+        assert!(!c.should_trigger_emergent_spawn(0));
+    }
+
+    #[test]
+    fn should_trigger_emergent_spawn_refuses_past_cap() {
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS + 5;
+        assert!(!c.should_trigger_emergent_spawn(99));
+    }
+
+    #[test]
+    fn record_abstain_increments_counter() {
+        let mut c = RustTopologyController::new_inner();
+        assert_eq!(c.abstain_count, 0);
+        c.record_abstain();
+        c.record_abstain();
+        assert_eq!(c.abstain_count, 2);
+    }
+
+    #[test]
+    fn record_emergent_spawn_increments_counter() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        assert_eq!(c.spawn_count, 0);
+        pyo3::Python::with_gil(|_py| {
+            c.record_emergent_spawn(0).expect("first record ok");
+            c.record_emergent_spawn(1).expect("second record ok");
+        });
+        assert_eq!(c.spawn_count, 2);
+    }
+
+    #[test]
+    fn record_emergent_spawn_errors_at_cap() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        c.spawn_count = MAX_SPAWNS;
+        pyo3::Python::with_gil(|_py| {
+            let err = c.record_emergent_spawn(0).expect_err("should error at cap");
+            let err_str = format!("{err}");
+            assert!(
+                err_str.contains("spawn budget exhausted"),
+                "expected budget message, got: {err_str}"
+            );
+        });
+        assert_eq!(c.spawn_count, MAX_SPAWNS);
+    }
+
+    #[test]
+    fn seed_state_for_legacy_tests_populates_all_fields() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        pyo3::Python::with_gil(|_py| {
+            c.seed_state_for_legacy_tests(
+                1,
+                2,
+                vec![(0, 2), (3, 1)],
+                4,
+            )
+            .expect("seed ok");
+        });
+        assert_eq!(c.reroute_count, 1);
+        assert_eq!(c.spawn_count, 2);
+        assert_eq!(c.abstain_count, 4);
+        assert_eq!(c.node_retries.get(&0).copied(), Some(2));
+        assert_eq!(c.node_retries.get(&3).copied(), Some(1));
+    }
+
+    #[test]
+    fn seed_state_for_legacy_tests_rejects_implausible_reroute() {
+        pyo3::prepare_freethreaded_python();
+        let mut c = RustTopologyController::new_inner();
+        pyo3::Python::with_gil(|_py| {
+            let result = c.seed_state_for_legacy_tests(
+                MAX_REROUTES + 20,
+                0, vec![], 0,
+            );
+            assert!(result.is_err());
+        });
     }
 }

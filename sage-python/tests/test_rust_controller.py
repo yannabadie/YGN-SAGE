@@ -126,16 +126,19 @@ def test_rust_path1_empty_error_matches_python_on_20_samples():
     ]
 
     rust_ctrl = RustTopologyController()
-    py_ctrl = TopologyController()
+    # Local mutable state dict: mirrors what the old py_ctrl scratchpad held.
+    # Using a dict instead of a TopologyController instance keeps the helper
+    # independent of shadow fields that were deleted in Task B.
+    py_state: dict = {}
 
     for result_text, node_idx in samples:
         rust_decision = rust_ctrl.check_empty_error_reroute(result_text, node_idx)
 
-        # Invoke Python legacy via the same code path — replicate the
+        # Invoke Python reference via the same code path — replicate the
         # path-1 logic locally since evaluate_and_decide wraps it with
         # additional stages (quality cascade etc.) that we don't want
         # to mix in here.
-        py_decision = _python_path1_reference(py_ctrl, result_text, node_idx)
+        py_decision = _python_path1_reference(py_state, result_text, node_idx)
 
         if rust_decision is None:
             assert py_decision is None, (
@@ -164,16 +167,20 @@ def test_rust_path1_empty_error_matches_python_on_20_samples():
         )
 
 
-def _python_path1_reference(py_ctrl, result, node_idx):
-    """Mirror of the path-1 logic from topology_controller.py:134-149
-    — isolated from the full evaluate_and_decide so the equivalence
-    test only compares what 2.2 ports."""
+def _python_path1_reference(state: dict, result: str, node_idx: int):
+    """Mirror of the path-1 logic from topology_controller.py — reroute on
+    empty/error result. Uses a local ``state`` dict (not a TopologyController
+    instance) so helper independence survives shadow-field deletion.
+
+    state keys: ``reroute_count`` (int, default 0).
+    """
     from sage.topology_controller import AdaptationDecision, TopologyController
 
     if not TopologyController._is_empty_or_error(result):
         return None
-    if py_ctrl._reroute_count < TopologyController.MAX_REROUTES:
-        py_ctrl._reroute_count += 1
+    reroute_count = state.get("reroute_count", 0)
+    if reroute_count < TopologyController.MAX_REROUTES:
+        state["reroute_count"] = reroute_count + 1
         reason = "empty output" if not result.strip() else "error-like output"
         return AdaptationDecision(
             action="reroute_topology",
@@ -221,11 +228,11 @@ def test_rust_path2_quality_cascade_matches_python_on_20_samples():
     ]
 
     rust_ctrl = RustTopologyController()
-    py_ctrl = TopologyController()
+    py_state: dict = {}
 
     for quality, node_idx, retry_limit in samples:
         rust_decision = rust_ctrl.check_quality_cascade(quality, node_idx, retry_limit)
-        py_decision = _python_path2_reference(py_ctrl, quality, node_idx, retry_limit)
+        py_decision = _python_path2_reference(py_state, quality, node_idx, retry_limit)
 
         if rust_decision is None:
             assert py_decision is None, (
@@ -251,21 +258,25 @@ def test_rust_path2_quality_cascade_matches_python_on_20_samples():
             assert rust_decision.reason.endswith("< 0.3"), rust_decision.reason
 
 
-def _python_path2_reference(py_ctrl, quality, node_idx, retry_limit):
-    """Mirror of path-2 threshold + retry logic from
-    topology_controller.py:175-199 — same scope as Rust check_quality_cascade.
-    No debate gate, no upgrade-model resolution — 2.6 will cover those."""
+def _python_path2_reference(state: dict, quality: float, node_idx: int, retry_limit: int):
+    """Mirror of path-2 threshold + retry logic — same scope as Rust
+    check_quality_cascade. No debate gate, no upgrade-model resolution.
+
+    state keys: ``node_retries`` (dict[int, int], default {}),
+                ``node_qualities`` (dict[int, float], default {}).
+    """
     from sage.topology_controller import AdaptationDecision, TopologyController
 
-    py_ctrl._node_qualities[node_idx] = quality
+    state.setdefault("node_qualities", {})[node_idx] = quality
 
     if quality >= TopologyController.THETA_GOOD:
         return AdaptationDecision(action="continue", target_node=node_idx)
 
     if quality < TopologyController.THETA_CRITICAL:
-        retries = py_ctrl._node_retries.get(node_idx, 0)
+        node_retries: dict[int, int] = state.setdefault("node_retries", {})
+        retries = node_retries.get(node_idx, 0)
         if retries < retry_limit:
-            py_ctrl._node_retries[node_idx] = retries + 1
+            node_retries[node_idx] = retries + 1
             return AdaptationDecision(
                 action="upgrade_model",
                 target_node=node_idx,
@@ -314,11 +325,11 @@ def test_rust_path4_parallel_inconsistency_matches_python_on_20_samples():
     ]
 
     rust_ctrl = RustTopologyController()
-    py_ctrl = TopologyController()
+    py_state: dict = {}
 
     for node_idx, consistency, is_debate in cases[:20]:
         rust_decision = rust_ctrl.check_parallel_inconsistency(node_idx, consistency, is_debate)
-        py_decision = _python_path4_reference(py_ctrl, node_idx, consistency, is_debate)
+        py_decision = _python_path4_reference(py_state, node_idx, consistency, is_debate)
 
         if rust_decision is None:
             assert py_decision is None, (
@@ -334,15 +345,19 @@ def test_rust_path4_parallel_inconsistency_matches_python_on_20_samples():
         assert py_decision.reason.startswith("consistency=")
 
 
-def _python_path4_reference(py_ctrl, node_idx, consistency, is_debate):
-    """Mirror of path-4 state machine from topology_controller.py:202-211."""
+def _python_path4_reference(state: dict, node_idx: int, consistency: float, is_debate: bool):
+    """Mirror of path-4 state machine — parallel inconsistency reroute.
+
+    state keys: ``reroute_count`` (int, default 0).
+    """
     from sage.topology_controller import AdaptationDecision, TopologyController
 
-    if is_debate or py_ctrl._reroute_count >= TopologyController.MAX_REROUTES:
+    reroute_count = state.get("reroute_count", 0)
+    if is_debate or reroute_count >= TopologyController.MAX_REROUTES:
         return None
     if consistency >= TopologyController.THETA_CONSISTENCY:
         return None
-    py_ctrl._reroute_count += 1
+    state["reroute_count"] = reroute_count + 1
     return AdaptationDecision(
         action="reroute_topology",
         target_node=node_idx,
@@ -419,95 +434,6 @@ def _python_path5_reference(py_ctrl, node_idx, importance, is_debate, quality_is
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
-def test_rust_path6_emergent_spawn_matches_python_on_20_samples():
-    """Plan 2.5 equivalence for path 6 (emergent subtask spawn). Rust's
-    regex crate and Python's `re` module have compatible semantics for
-    the three emergent patterns; any drift here (e.g. Unicode-class
-    differences, \\s anchoring) would be caught by the 20 sample inputs."""
-    from sage_core import RustTopologyController
-    from sage.topology_controller import TopologyController, AdaptationDecision
-
-    # Each sample is the LLM-output string a node might produce.
-    # Wrapped in a named constant vector so it reads as a fixture, not
-    # as work-in-progress markers (see feedback memory
-    # feedback_no_todos_in_test_strings).
-    llm_outputs: list[str] = [
-        # Pattern 1 matches: "need to also|additionally|we should also|another step would be"
-        "Done with the current step. Additionally we should handle the retry logic properly.",
-        "Finished parsing. Another step would be validating the output schema against spec.",
-        "Main fix done. We should also wire the observability counters for throughput.",
-        "Fixed the race. Need to also update the migration script for the new schema.",
-        # Pattern 2 matches: "TODO|FIXME|NOTE"
-        "Refactored the loop. TODO: add unit tests for the edge cases of the parser.",
-        "Added the feature. FIXME: this has a known off-by-one when the list is empty list.",
-        "Shipped. NOTE: the caching strategy still needs a review by the infra team later.",
-        # Pattern 3 matches: "this requires|prerequisite:"
-        "Cannot proceed. Prerequisite: resolve the type-mismatch in the base config first.",
-        "Blocked. This requires a schema migration before the new fields become readable.",
-        # Plain content (no match)
-        "The answer is 42.",
-        "Function completed successfully with all tests passing.",
-        "",
-        # Edge: pattern match but content too short (< 10 chars) — Python rejects
-        "TODO: fix",        # 3 chars captured → rejected
-        "NOTE: lol",        # 3 chars captured → rejected
-        # Match but content exactly 10 chars — accepted at boundary
-        "TODO: 0123456789012",  # 13 chars after colon+space → accepted
-        # Match near 200-char boundary
-        "Additionally we should " + "x" * 180 + ".",  # content near 200
-        # Content > 200 → truncated match (regex greedy-cap at 200)
-        "TODO: " + "x" * 250,
-        # Case-insensitive match
-        "Wrapped up. todo: add more integration tests for the edge case of the decoder.",
-        "Done. FIXME: this should really handle unicode normalization for the text input.",
-        # Multi-pattern (Python for-loop takes first hit — pattern 1)
-        "Additionally we should handle case X. TODO: also handle case Y properly.",
-    ]
-
-    rust_ctrl = RustTopologyController()
-    py_ctrl = TopologyController()
-
-    for idx, output in enumerate(llm_outputs):
-        rust_decision = rust_ctrl.check_emergent_spawn(output, idx)
-        py_decision = _python_path6_reference(py_ctrl, output, idx)
-
-        if rust_decision is None:
-            assert py_decision is None, (
-                f"sample #{idx}: rust passed, python returned {py_decision!r}. "
-                f"Output: {output!r}"
-            )
-            continue
-
-        assert py_decision is not None, (
-            f"sample #{idx}: rust returned {rust_decision!r}, python passed"
-        )
-        assert rust_decision.action == py_decision.action == "spawn_subagent"
-        assert rust_decision.target_node == py_decision.target_node == idx
-        # Reason is the captured emergent subtask text — must match exactly
-        assert rust_decision.reason == py_decision.reason, (
-            f"sample #{idx} reason mismatch:\n"
-            f"  rust:   {rust_decision.reason!r}\n"
-            f"  python: {py_decision.reason!r}\n"
-            f"  output: {output!r}"
-        )
-
-
-def _python_path6_reference(py_ctrl, result, node_idx):
-    """Mirror of path-6 logic from topology_controller.py:224-233."""
-    from sage.topology_controller import AdaptationDecision, TopologyController
-
-    emergent = TopologyController._detect_emergent_subtask(result)
-    if not emergent or py_ctrl._spawn_count >= TopologyController.MAX_SPAWNS:
-        return None
-    py_ctrl._spawn_count += 1
-    return AdaptationDecision(
-        action="spawn_subagent",
-        target_node=node_idx,
-        reason=emergent,
-    )
-
-
-@pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
 def test_h11_arithmetic_retry_syncs_onto_rust_state():
     """H11 regression (2026-04-20 advisor+Codex review). The cascade has
     two different branches that consume a retry on the same node:
@@ -561,7 +487,7 @@ def test_h11_arithmetic_retry_syncs_onto_rust_state():
     )
     assert d1.action == "upgrade_model"
     assert "arithmetic" in d1.reason
-    assert ctrl._node_retries[7] == 1, "Python-side retries must increment"
+    assert ctrl.node_retries[7] == 1, "Rust-side retries must increment (via arithmetic-branch mirror)"
     assert ctrl._rust_ctrl.quality_stats()["reroute_count"] == 0  # sanity: wrong counter
     # The critical invariant — Rust-side retry count for node 7 must also be 1
     rust_stats_retries = _rust_node_retries_for(ctrl._rust_ctrl, 7)

@@ -18,6 +18,7 @@ import os
 
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
+from sage.tools.sage_recurse import sage_recurse_origin_node
 
 log = logging.getLogger(__name__)
 
@@ -851,174 +852,182 @@ class TopologyRunner:
         context_override : str, optional
             Pre-captured context snapshot. Used by parallel batches to avoid
             race conditions on ``_node_outputs`` during ``asyncio.gather``.
+
+        Sets ``sage_recurse_origin_node`` to ``node_idx`` around the
+        dispatch so the sage_recurse tool's budget gate (Task D) can
+        debit the right originating node.
         """
-        node = self.graph.get_node(node_idx)
-
-        # HyEvo code node dispatch: deterministic sandbox execution
-        node_type = getattr(node, "node_type", "llm")
-        if node_type == "code":
-            return await self._execute_code_node(node_idx, task, context_override)
-
-        # Formal solver node: parse equations from predecessor, solve via Rust
-        if node_type == "solver" or getattr(node, "role", "") == "solver":
-            return await self._execute_solver_node(node_idx, task, context_override)
-
-        # Phase 2: LLM nodes use agent_loop when factory available
-        if self._agent_loop_factory:
-            return await self._execute_node_via_agent_loop(node_idx, task, context_override)
-
-        role = getattr(node, "role", f"node-{node_idx}")
-        caps = getattr(node, "required_capabilities", [])
-
-        # Use custom prompt if available, otherwise generate from role
-        custom_prompt = getattr(node, "prompt", "")
-        if custom_prompt:
-            system_prompt = custom_prompt
-        else:
-            # Meta-Harness: configurable default template
-            _default_tmpl = (
-                self._harness.prompts.default_template if self._harness
-                else "You are acting as: {role}."
-            )
-            system_prompt = _default_tmpl.format(
-                role=role, capabilities=", ".join(caps) if caps else "",
-                task_preview=task[:200], n_predecessors=0,
-            )
-            if caps:
-                _cap_tmpl = (
-                    self._harness.prompts.capability_template if self._harness
-                    else " Your capabilities: {capabilities}."
-                )
-                system_prompt += _cap_tmpl.format(capabilities=", ".join(caps))
-
-        # Meta-Harness: global prefix/suffix applied to ALL system prompts
-        if self._harness:
-            if self._harness.prompts.global_prefix:
-                system_prompt = self._harness.prompts.global_prefix + "\n" + system_prompt
-            if self._harness.prompts.global_suffix:
-                system_prompt = system_prompt + "\n" + self._harness.prompts.global_suffix
-
-        messages: list[Message] = [
-            Message(role=Role.SYSTEM, content=system_prompt),
-        ]
-
-        context = context_override if context_override is not None else self._gather_predecessor_context(node_idx)
-        if context:
-            messages.append(Message(
-                role=Role.SYSTEM,
-                content=f"Context from previous agents:\n{context}",
-            ))
-
-        messages.append(Message(role=Role.USER, content=task))
-
-        # Resolve per-node model if ProviderPool available
-        node_model_id = getattr(node, "model_id", "")
-        if node_model_id and self._provider_pool:
-            provider, config = self._provider_pool.resolve(node_model_id)
-        else:
-            provider, config = self._llm, self._config
-
-        # Context gate: if payload exceeds model window, compress via summarization
-        # Uses context_window (input limit, e.g. 128K) NOT max_tokens (output limit, e.g. 8K)
-        total_chars = sum(len(m.content) for m in messages)
-        context_window = getattr(config, 'context_window', 0) or 128000
-        estimated_tokens = total_chars // 4
-        if estimated_tokens > context_window * 0.85:
-            # Compress the context message to fit
-            context_msg = next(
-                (m for m in messages if m.content.startswith("Context from previous")),
-                None,
-            )
-            if context_msg:
-                log.warning(
-                    "Context overflow for node %d (%s): %d tokens > %d * 0.85, compressing",
-                    node_idx, role, estimated_tokens, context_window,
-                )
-                try:
-                    summary_msgs = [
-                        Message(role=Role.SYSTEM, content="Summarize concisely. Preserve all key facts, numbers, code, and conclusions."),
-                        Message(role=Role.USER, content=context_msg.content[:context_window * 2]),
-                    ]
-                    summary_resp = await asyncio.wait_for(
-                        provider.generate(messages=summary_msgs, config=config),
-                        timeout=30.0,
-                    )
-                    context_msg.content = f"Context (summarized):\n{summary_resp.content or ''}"
-                except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
-                    # Compression failed — hard truncate as last resort
-                    max_chars = int(context_window * 0.6 * 4)
-                    context_msg.content = context_msg.content[:max_chars] + "\n[truncated]"
-                    log.error("Context compression failed for node %d: %s", node_idx, exc)
-
-        # Per-node resilience: timeout + retry with fallback provider
-        output = ""
+        token = sage_recurse_origin_node.set(node_idx)
         try:
-            response = await asyncio.wait_for(
-                provider.generate(messages=messages, config=config),
-                timeout=60.0,  # 60s per node, not per topology
-            )
-            output = response.content or ""
-            # Record success in circuit breaker
-            provider_name = getattr(config, "provider", "unknown")
-            if self._provider_pool and hasattr(self._provider_pool, "record_success"):
-                self._provider_pool.record_success(provider_name)
-        except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
-            provider_name = getattr(config, "provider", "unknown")
-            # Record failure in circuit breaker
-            if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
-                self._provider_pool.record_failure(provider_name, exc)
-            log.warning(
-                "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
-                node_idx, role, provider_name, str(exc)[:150],
-            )
-            # Fallback to first available provider (connector.py = source of truth)
-            if provider is not self._llm:
-                try:
-                    import os
-                    from sage.providers.connector import get_available_providers
-                    from sage.providers.openai_compat import OpenAICompatProvider
-                    fallback_cfgs = get_available_providers()
-                    fallback_cfg = fallback_cfgs[0] if fallback_cfgs else None
-                    if fallback_cfg and fallback_cfg.get("sdk") != "google-genai":
-                        fallback_provider = OpenAICompatProvider(
-                            api_key=os.environ.get(fallback_cfg["api_key_env"], ""),
-                            base_url=fallback_cfg["base_url"],
-                            provider_name=fallback_cfg["provider"],
-                        )
-                        fallback_model = fallback_cfg.get("default_model", "")
-                        fallback_config = LLMConfig(provider=fallback_cfg["provider"], model=fallback_model)
-                        response = await fallback_provider.generate(
-                            messages=messages,
-                            config=fallback_config,
-                        )
-                    else:
-                        response = await self._llm.generate(
-                            messages=messages,
-                            config=self._config or LLMConfig(provider="default", model="default"),
-                        )
-                    output = response.content or ""
-                    log.info(
-                        "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
-                        node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
-                    )
-                except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as fallback_exc:
-                    log.error(
-                        "[TopologyRunner] node %d (%s) fallback also failed: %s",
-                        node_idx, role, str(fallback_exc)[:150],
-                    )
+            node = self.graph.get_node(node_idx)
+
+            # HyEvo code node dispatch: deterministic sandbox execution
+            node_type = getattr(node, "node_type", "llm")
+            if node_type == "code":
+                return await self._execute_code_node(node_idx, task, context_override)
+
+            # Formal solver node: parse equations from predecessor, solve via Rust
+            if node_type == "solver" or getattr(node, "role", "") == "solver":
+                return await self._execute_solver_node(node_idx, task, context_override)
+
+            # Phase 2: LLM nodes use agent_loop when factory available
+            if self._agent_loop_factory:
+                return await self._execute_node_via_agent_loop(node_idx, task, context_override)
+
+            role = getattr(node, "role", f"node-{node_idx}")
+            caps = getattr(node, "required_capabilities", [])
+
+            # Use custom prompt if available, otherwise generate from role
+            custom_prompt = getattr(node, "prompt", "")
+            if custom_prompt:
+                system_prompt = custom_prompt
             else:
-                log.error(
-                    "[TopologyRunner] node %d (%s) default provider failed, no fallback: %s",
-                    node_idx, role, str(exc)[:150],
+                # Meta-Harness: configurable default template
+                _default_tmpl = (
+                    self._harness.prompts.default_template if self._harness
+                    else "You are acting as: {role}."
                 )
-        self._node_outputs[node_idx] = output
-        log.info(
-            "[TopologyRunner] node %d (%s) completed, output %d chars",
-            node_idx,
-            role,
-            len(output),
-        )
-        return output
+                system_prompt = _default_tmpl.format(
+                    role=role, capabilities=", ".join(caps) if caps else "",
+                    task_preview=task[:200], n_predecessors=0,
+                )
+                if caps:
+                    _cap_tmpl = (
+                        self._harness.prompts.capability_template if self._harness
+                        else " Your capabilities: {capabilities}."
+                    )
+                    system_prompt += _cap_tmpl.format(capabilities=", ".join(caps))
+
+            # Meta-Harness: global prefix/suffix applied to ALL system prompts
+            if self._harness:
+                if self._harness.prompts.global_prefix:
+                    system_prompt = self._harness.prompts.global_prefix + "\n" + system_prompt
+                if self._harness.prompts.global_suffix:
+                    system_prompt = system_prompt + "\n" + self._harness.prompts.global_suffix
+
+            messages: list[Message] = [
+                Message(role=Role.SYSTEM, content=system_prompt),
+            ]
+
+            context = context_override if context_override is not None else self._gather_predecessor_context(node_idx)
+            if context:
+                messages.append(Message(
+                    role=Role.SYSTEM,
+                    content=f"Context from previous agents:\n{context}",
+                ))
+
+            messages.append(Message(role=Role.USER, content=task))
+
+            # Resolve per-node model if ProviderPool available
+            node_model_id = getattr(node, "model_id", "")
+            if node_model_id and self._provider_pool:
+                provider, config = self._provider_pool.resolve(node_model_id)
+            else:
+                provider, config = self._llm, self._config
+
+            # Context gate: if payload exceeds model window, compress via summarization
+            # Uses context_window (input limit, e.g. 128K) NOT max_tokens (output limit, e.g. 8K)
+            total_chars = sum(len(m.content) for m in messages)
+            context_window = getattr(config, 'context_window', 0) or 128000
+            estimated_tokens = total_chars // 4
+            if estimated_tokens > context_window * 0.85:
+                # Compress the context message to fit
+                context_msg = next(
+                    (m for m in messages if m.content.startswith("Context from previous")),
+                    None,
+                )
+                if context_msg:
+                    log.warning(
+                        "Context overflow for node %d (%s): %d tokens > %d * 0.85, compressing",
+                        node_idx, role, estimated_tokens, context_window,
+                    )
+                    try:
+                        summary_msgs = [
+                            Message(role=Role.SYSTEM, content="Summarize concisely. Preserve all key facts, numbers, code, and conclusions."),
+                            Message(role=Role.USER, content=context_msg.content[:context_window * 2]),
+                        ]
+                        summary_resp = await asyncio.wait_for(
+                            provider.generate(messages=summary_msgs, config=config),
+                            timeout=30.0,
+                        )
+                        context_msg.content = f"Context (summarized):\n{summary_resp.content or ''}"
+                    except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
+                        # Compression failed — hard truncate as last resort
+                        max_chars = int(context_window * 0.6 * 4)
+                        context_msg.content = context_msg.content[:max_chars] + "\n[truncated]"
+                        log.error("Context compression failed for node %d: %s", node_idx, exc)
+
+            # Per-node resilience: timeout + retry with fallback provider
+            output = ""
+            try:
+                response = await asyncio.wait_for(
+                    provider.generate(messages=messages, config=config),
+                    timeout=60.0,  # 60s per node, not per topology
+                )
+                output = response.content or ""
+                # Record success in circuit breaker
+                provider_name = getattr(config, "provider", "unknown")
+                if self._provider_pool and hasattr(self._provider_pool, "record_success"):
+                    self._provider_pool.record_success(provider_name)
+            except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
+                provider_name = getattr(config, "provider", "unknown")
+                # Record failure in circuit breaker
+                if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
+                    self._provider_pool.record_failure(provider_name, exc)
+                log.warning(
+                    "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
+                    node_idx, role, provider_name, str(exc)[:150],
+                )
+                # Fallback to first available provider (connector.py = source of truth)
+                if provider is not self._llm:
+                    try:
+                        import os
+                        from sage.providers.connector import get_available_providers
+                        from sage.providers.openai_compat import OpenAICompatProvider
+                        fallback_cfgs = get_available_providers()
+                        fallback_cfg = fallback_cfgs[0] if fallback_cfgs else None
+                        if fallback_cfg and fallback_cfg.get("sdk") != "google-genai":
+                            fallback_provider = OpenAICompatProvider(
+                                api_key=os.environ.get(fallback_cfg["api_key_env"], ""),
+                                base_url=fallback_cfg["base_url"],
+                                provider_name=fallback_cfg["provider"],
+                            )
+                            fallback_model = fallback_cfg.get("default_model", "")
+                            fallback_config = LLMConfig(provider=fallback_cfg["provider"], model=fallback_model)
+                            response = await fallback_provider.generate(
+                                messages=messages,
+                                config=fallback_config,
+                            )
+                        else:
+                            response = await self._llm.generate(
+                                messages=messages,
+                                config=self._config or LLMConfig(provider="default", model="default"),
+                            )
+                        output = response.content or ""
+                        log.info(
+                            "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
+                            node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
+                        )
+                    except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as fallback_exc:
+                        log.error(
+                            "[TopologyRunner] node %d (%s) fallback also failed: %s",
+                            node_idx, role, str(fallback_exc)[:150],
+                        )
+                else:
+                    log.error(
+                        "[TopologyRunner] node %d (%s) default provider failed, no fallback: %s",
+                        node_idx, role, str(exc)[:150],
+                    )
+            self._node_outputs[node_idx] = output
+            log.info(
+                "[TopologyRunner] node %d (%s) completed, output %d chars",
+                node_idx,
+                role,
+                len(output),
+            )
+            return output
+        finally:
+            sage_recurse_origin_node.reset(token)
 
     async def _retry_with_upgrade(self, node_idx: int, decision: Any, task: str) -> str:
         """Model upgrade: re-resolve provider via ProviderPool and retry node.

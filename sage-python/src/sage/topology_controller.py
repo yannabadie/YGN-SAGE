@@ -5,17 +5,17 @@ whether to continue, upgrade model, prune node, reroute topology,
 or spawn a sub-agent. Research basis: AgentDropout (ACL 2025),
 AdaptOrch (arXiv 2026), OpenSage (ICML), Self-Regulation (arXiv).
 
-Plan item 2.1 (2026-04-20): the Rust `RustTopologyController` is under
-construction as a companion to this Python class — decision paths
-will be delegated to Rust one-by-one in commits 2.2..2.6. For this
-scaffold commit, the Rust instance is created but never consulted;
-existing behavior is unchanged.
+Task B (2026-04-20, ADR-012): TopologyController is now a thin Python façade
+over `RustTopologyController`. All runtime counters (reroute_count,
+spawn_count, abstain_count, node_retries, node_qualities) live in Rust.
+Python exposes read-only @property getters and a _seed_for_tests() helper.
+sage_core (Rust) is required — ImportError raised at __init__ if absent.
 """
 from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -107,53 +107,85 @@ class TopologyController:
         embedder: Any = None,
         event_bus: Any = None,
     ) -> None:
+        # B.1 (2026-04-20): Rust companion is mandatory. All runtime counters
+        # live in Rust; Python is a thin façade. Raise ImportError early rather
+        # than silently falling back to a Python path that no longer exists.
+        if not _HAS_RUST_CTRL:
+            raise ImportError(
+                "sage_core (Rust) is required for TopologyController. "
+                "Run `maturin develop --features smt,onnx,cognitive,tool-executor` "
+                "to build it."
+            )
         self._assigner = assigner
         self._qe = quality_estimator
         self._prm = prm
         self._pv = policy_verifier
         self._embedder = embedder
         self._event_bus = event_bus
-        self._node_retries: dict[int, int] = {}
-        self._node_qualities: dict[int, float] = {}
-        self._gate_loops: dict[int, int] = {}  # Multi-turn refinement tracker
-        self._reroute_count = 0
-        self._spawn_count = 0
-        self._abstain_count = 0
+        self._gate_loops: dict[int, int] = {}  # Multi-turn refinement tracker (Python-only)
+        self._rust_ctrl: Any = _RustTopologyControllerImpl()
 
-        # Plan 2.1 (2026-04-20): companion Rust controller. 2.6 wired
-        # per-path delegation; Rust is primary, Python is fallback.
-        self._rust_ctrl: Any = (
-            _RustTopologyControllerImpl() if _HAS_RUST_CTRL else None
+    # ── B.2 read-only façade properties (2026-04-20) ──────────────────────
+    # All runtime counters live in Rust. Python reads via property; direct
+    # attribute assignment raises AttributeError (no setter). Production code
+    # calls record_abstain() / set_node_retries() on the Rust companion;
+    # tests use _seed_for_tests() to populate state atomically.
+
+    @property
+    def reroute_count(self) -> int:
+        """Reroute budget consumed so far. Rust-authoritative."""
+        return int(self._rust_ctrl.reroute_count)
+
+    @property
+    def spawn_count(self) -> int:
+        """Emergent-spawn count so far. Rust-authoritative."""
+        return int(self._rust_ctrl.spawn_count)
+
+    @property
+    def abstain_count(self) -> int:
+        """QualityEstimator abstain count. Rust-authoritative."""
+        return int(self._rust_ctrl.abstain_count)
+
+    @property
+    def node_retries(self) -> dict[int, int]:
+        """Per-node retry counts. Read-only snapshot from Rust."""
+        return dict(self._rust_ctrl.node_retries_view())
+
+    @property
+    def node_qualities(self) -> dict[int, float]:
+        """Per-node quality scores. Read-only snapshot from Rust."""
+        return dict(self._rust_ctrl.node_qualities_view())
+
+    def _seed_for_tests(
+        self,
+        *,
+        reroute: int = 0,
+        spawn: int = 0,
+        retries: dict[int, int] | None = None,
+        abstain: int = 0,
+    ) -> None:
+        """Populate Rust-side counters atomically for test scaffolding.
+
+        Replaces the old pattern of setting ``controller._reroute_count = N``
+        or ``controller._node_retries[0] = 2`` directly. Those shadow fields
+        are gone; this helper is the single seeding path.
+
+        Args:
+            reroute: desired reroute_count (validated: <= MAX_REROUTES + 10)
+            spawn:   desired spawn_count
+            retries: {node_idx: retry_count} mapping
+            abstain: desired abstain_count
+        """
+        self._rust_ctrl.seed_state_for_legacy_tests(
+            reroute,
+            spawn,
+            list((retries or {}).items()),
+            abstain,
         )
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        """Plan 2.6: mirror reroute / spawn counter assignments onto the
-        Rust companion controller so legacy callers (tests, external
-        controllers) that set `controller._reroute_count = N` continue
-        to affect decision-path state under the Rust-primary cascade.
-
-        Scoped to the two counters that Rust exposes setters for. Dict-
-        shaped state (`_node_retries`, `_node_qualities`) needs item
-        assignments which `__setattr__` can't intercept — those callers
-        use `self._rust_ctrl.set_node_retries(idx, value)` directly.
-        """
-        super().__setattr__(name, value)
-        rust_ctrl = self.__dict__.get("_rust_ctrl")
-        if rust_ctrl is None:
-            return
-        if name == "_reroute_count" and isinstance(value, int):
-            rust_ctrl.set_reroute_count(max(0, value))
-        elif name == "_spawn_count" and isinstance(value, int):
-            rust_ctrl.set_spawn_count(max(0, value))
-
     def quality_stats(self) -> dict:
-        """Return quality tracking stats for diagnostics."""
-        return {
-            "abstain_count": self._abstain_count,
-            "node_qualities": dict(self._node_qualities),
-            "reroute_count": self._reroute_count,
-            "spawn_count": self._spawn_count,
-        }
+        """Return quality tracking stats for diagnostics. Reads Rust state."""
+        return self._rust_ctrl.quality_stats()
 
     def _emit(self, event_type: str, data: dict) -> None:
         if self._event_bus and hasattr(self._event_bus, 'emit'):
@@ -192,11 +224,6 @@ class TopologyController:
         """
         result = result if result is not None else (output or "")
 
-        if self._rust_ctrl is None:
-            return self._evaluate_and_decide_legacy(
-                node_idx, result, task, topology, ctx, parallel_outputs
-            )
-
         # ── Rust-primary path ────────────────────────────────────────
 
         # Early max-reroute logging (Rust owns the counter; Python only
@@ -224,10 +251,9 @@ class TopologyController:
 
         # Quality compute stays Python (estimator is Python-held; Rust
         # takes the pre-computed float — same pattern as 2.3's port).
-        _abstain_before = self._abstain_count
+        _abstain_before = self._rust_ctrl.abstain_count
         quality = self._compute_quality(node_idx, result, task, ctx)
-        _quality_is_known = self._abstain_count == _abstain_before
-        self._node_qualities[node_idx] = quality  # kept for legacy-path parity
+        _quality_is_known = self._rust_ctrl.abstain_count == _abstain_before
 
         # Depth axis arithmetic verify stays Python — MASPRM-specific,
         # not one of the six ported paths.
@@ -236,21 +262,13 @@ class TopologyController:
             verified, feedback = self._verify_arithmetic(result)
             if not verified:
                 retry_limit = self._max_retries_for_node(topology, node_idx)
-                retries_d = self._node_retries.get(node_idx, 0)
+                retries_d = int(self._rust_ctrl.get_node_retries(node_idx))
                 if retries_d < retry_limit:
                     new_retries = retries_d + 1
-                    self._node_retries[node_idx] = new_retries
-                    # H11 audit fix (2026-04-20 advisor+Codex review): mirror
-                    # the increment onto Rust so a later call to
-                    # check_quality_cascade on the SAME node reads the
-                    # bumped retry count, not 0. Without this, the
-                    # arithmetic-fail branch consumes a retry from
-                    # Python's dict while Rust's HashMap still reports
-                    # retries=0, letting the node over-upgrade its
-                    # effective budget by one on the next critical-
-                    # quality evaluation.
-                    if self._rust_ctrl is not None:
-                        self._rust_ctrl.set_node_retries(node_idx, new_retries)
+                    # H11 audit fix (2026-04-20): write retries onto Rust so
+                    # check_quality_cascade reads the bumped count on the next
+                    # call for the same node.
+                    self._rust_ctrl.set_node_retries(node_idx, new_retries)
                     return AdaptationDecision(
                         action="upgrade_model",
                         target_node=node_idx,
@@ -316,126 +334,7 @@ class TopologyController:
                 )
                 return _rust_to_py_decision(rd)
 
-        # Path 6 (Rust): emergent subtask spawn.
-        rd = self._rust_ctrl.check_emergent_spawn(result, node_idx)
-        if rd is not None:
-            self._emit(
-                "SPAWN_SUBAGENT",
-                {"node": node_idx, "subtask": rd.reason[:100]},
-            )
-            return _rust_to_py_decision(rd)
-
         # Default: continue (accept imperfect result).
-        return AdaptationDecision(action="continue", target_node=node_idx)
-
-    # ── Legacy Python path (retained for envs without sage_core) ───────
-
-    def _evaluate_and_decide_legacy(
-        self,
-        node_idx: int,
-        result: str,
-        task: str,
-        topology: Any,
-        ctx: Any,
-        parallel_outputs: list[str] | None,
-    ) -> AdaptationDecision:
-        """Pure Python cascade — preserved for sage_core-less environments
-        and as a bisectable fallback if the Rust delegation regresses."""
-        # Early exit: max reroute hit
-        if self._reroute_count >= self.MAX_REROUTES:
-            if parallel_outputs and self.compute_consistency_score(parallel_outputs) < self.THETA_CONSISTENCY:
-                self._emit("MAX_REROUTE_HIT", {"node": node_idx, "reroute_count": self._reroute_count})
-                log.warning("Max reroute limit reached (count=%d), forcing continue", self._reroute_count)
-
-        if self._is_empty_or_error(result):
-            if self._reroute_count < self.MAX_REROUTES:
-                self._reroute_count += 1
-                reason = "empty output" if not result.strip() else "error-like output"
-                self._emit("REROUTE_TOPOLOGY", {"node": node_idx, "reason": reason})
-                return AdaptationDecision(
-                    action="reroute_topology",
-                    target_node=node_idx,
-                    reason=reason,
-                )
-            return AdaptationDecision(
-                action="continue",
-                target_node=node_idx,
-                reason="reroute budget exhausted",
-            )
-
-        _abstain_before = self._abstain_count
-        quality = self._compute_quality(node_idx, result, task, ctx)
-        _quality_is_known = self._abstain_count == _abstain_before
-        self._node_qualities[node_idx] = quality
-
-        axis_hint = str(self._ctx_value(ctx, "axis_hint", "") or "")
-        if axis_hint == "depth":
-            verified, feedback = self._verify_arithmetic(result)
-            if not verified:
-                retries_d = self._node_retries.get(node_idx, 0)
-                retry_limit = self._max_retries_for_node(topology, node_idx)
-                if retries_d < retry_limit:
-                    self._node_retries[node_idx] = retries_d + 1
-                    return AdaptationDecision(
-                        action="upgrade_model",
-                        target_node=node_idx,
-                        reason=f"arithmetic verification failed: {feedback}",
-                        invariant_feedback=feedback,
-                    )
-
-        if quality >= self.THETA_GOOD:
-            return AdaptationDecision(action="continue", target_node=node_idx)
-
-        if self.THETA_CRITICAL <= quality < self.THETA_GOOD:
-            gate_decision = self._open_gate(node_idx, topology, parallel_outputs)
-            if gate_decision is not None:
-                return gate_decision
-
-        retries = self._node_retries.get(node_idx, 0)
-        retry_limit = self._max_retries_for_node(topology, node_idx)
-        if quality < self.THETA_CRITICAL and retries < retry_limit:
-            self._node_retries[node_idx] = retries + 1
-            feedback = self._get_invariant_feedback(result, topology, node_idx)
-            new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
-            return AdaptationDecision(
-                action="upgrade_model",
-                target_node=node_idx,
-                reason=f"quality={quality:.2f} < {self.THETA_CRITICAL}",
-                invariant_feedback=feedback,
-                new_model_id=new_model_id,
-            )
-
-        if parallel_outputs and self._reroute_count < self.MAX_REROUTES and not self._is_debate_topology(topology):
-            consistency = self.compute_consistency_score(parallel_outputs)
-            if consistency < self.THETA_CONSISTENCY:
-                self._reroute_count += 1
-                self._emit("REROUTE_TOPOLOGY", {"consistency": consistency, "node": node_idx})
-                return AdaptationDecision(
-                    action="reroute_topology",
-                    target_node=node_idx,
-                    reason=f"consistency={consistency:.2f} < {self.THETA_CONSISTENCY}",
-                )
-
-        if parallel_outputs and _quality_is_known and not self._is_debate_topology(topology):
-            importance = self.compute_importance_score(node_idx, result, parallel_outputs)
-            if importance < self.THETA_PRUNE:
-                self._emit("PRUNE_NODE", {"node": node_idx, "importance": importance})
-                return AdaptationDecision(
-                    action="prune_node",
-                    target_node=node_idx,
-                    reason=f"importance={importance:.2f} < {self.THETA_PRUNE}",
-                )
-
-        emergent = self._detect_emergent_subtask(result)
-        if emergent and self._spawn_count < self.MAX_SPAWNS:
-            self._spawn_count += 1
-            self._emit("SPAWN_SUBAGENT", {"node": node_idx, "subtask": emergent[:100]})
-            return AdaptationDecision(
-                action="spawn_subagent",
-                target_node=node_idx,
-                reason=emergent,
-            )
-
         return AdaptationDecision(action="continue", target_node=node_idx)
 
     def _compute_quality(self, node_idx: int, result: str, task: str, ctx: Any) -> float:
@@ -449,7 +348,7 @@ class TopologyController:
                 pass
 
         if base_score is None:
-            self._abstain_count += 1
+            self._rust_ctrl.record_abstain()
             base_score = self._heuristic_quality(result, task)
             log.debug(
                 "QualityEstimator abstained for node %d, using heuristic fallback=%.3f",
@@ -755,17 +654,3 @@ class TopologyController:
             return True, ""
         except Exception:
             return True, ""  # On error, don't block
-
-    @staticmethod
-    def _detect_emergent_subtask(result: str) -> str | None:
-        """Detect emergent sub-tasks from node output."""
-        patterns = [
-            r"(?:need to also|additionally|we should also|another step would be)\s+(.{10,200})",
-            r"(?:TODO|FIXME|NOTE):\s+(.{10,200})",
-            r"(?:this requires|prerequisite:)\s+(.{10,200})",
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, result, re.IGNORECASE)
-            if match:
-                return match.group(1).strip()
-        return None
