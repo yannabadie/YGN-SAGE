@@ -912,6 +912,68 @@ class CognitiveOrchestrationPipeline:
 
     # ── Stage 4: Execute ────────────────────────────────────────────────────
 
+    def _pick_fallback_provider(self):
+        """Return (provider, config) for a healthy fallback, or (None, None).
+
+        Preference order (first match wins):
+          1. ``self.llm_provider`` if its provider name is alive in the
+             pool (i.e. the boot default is not currently dead).
+          2. Any provider in ``self.provider_pool._providers`` whose
+             circuit is closed and whose TTL'd exclusion hasn't fired.
+          3. ``self.llm_provider`` as a last resort (better than nothing).
+
+        Used by Stage 4 single-agent fallback after multi-agent execution
+        failed. The previous implementation used ``self.llm_provider``
+        unconditionally, which on a provider-outage (minimax 529 storm
+        2026-04-21 morning) meant the fallback hit the same dead provider
+        and returned empty content. Routing to a different healthy
+        provider recovers 3-5/10 tasks that would otherwise be EMPTY.
+        """
+        pool = getattr(self, "provider_pool", None)
+
+        # Helper: is a provider alive?
+        def _alive(pname: str) -> bool:
+            if pool is None:
+                return True  # No pool → assume alive
+            # Dead if TTL'd exclusion or circuit-open.
+            if pname in getattr(pool, "_dead_at", {}):
+                return False
+            if hasattr(pool, "is_available") and not pool.is_available(pname):
+                return False
+            return True
+
+        # 1. Try the default provider first if it's alive.
+        default = self.llm_provider
+        default_name = ""
+        if default is not None:
+            default_name = getattr(default, "name", "") or getattr(default, "provider_name", "")
+            if default_name and _alive(default_name):
+                return default, self.llm_config
+
+        # 2. Iterate the pool for any alive provider that's not the dead default.
+        if pool is not None:
+            providers = getattr(pool, "_providers", {}) or {}
+            for pname, prov in providers.items():
+                if pname == default_name:
+                    continue
+                if not _alive(pname):
+                    continue
+                model_id = getattr(prov, "model_id", "") or getattr(prov, "model_string", "")
+                from sage.llm.base import LLMConfig
+                cfg = LLMConfig(
+                    provider=pname,
+                    model=model_id,
+                    context_window=getattr(self.llm_config, "context_window", 128000) if self.llm_config else 128000,
+                )
+                log.info(
+                    "Stage 4 fallback: rerouting from dead default=%s to healthy %s",
+                    default_name or "(none)", pname,
+                )
+                return prov, cfg
+
+        # 3. Last resort: default even if marked dead (better than nothing).
+        return default, self.llm_config
+
     async def _stage_execute(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
         # Bandit: choose arm BEFORE execution to get decision_id
@@ -1286,20 +1348,43 @@ class CognitiveOrchestrationPipeline:
                 ctx.cost = self._estimate_topology_cost(ctx)
         except (ImportError, RuntimeError, TimeoutError) as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
-            # Fallback: run task directly with default provider
-            if self.llm_provider:
+            # Fallback: run task directly on a healthy provider.
+            #
+            # 2026-04-21 v17 fix: previously used self.llm_provider
+            # unconditionally, which is typically the boot-default — often
+            # the same provider the multi-agent stage just failed on (e.g.
+            # minimax 529 storm). Result: fallback hits the same 529
+            # immediately, or returns "" as "success" and SAGE emits an
+            # EMPTY patch (5/10 tasks on 2026-04-21 v13 smoke). Now we
+            # prefer a healthy provider from the pool — if the default is
+            # dead we try the first alive one instead. If the provider
+            # returns empty content, we RAISE (not silently emit "") so
+            # the bench classifier records an honest error.
+            fallback_provider, fallback_config = self._pick_fallback_provider()
+            if fallback_provider is not None:
                 try:
                     from sage.llm.base import Message, Role
-                    response = await self.llm_provider.generate(
+                    response = await fallback_provider.generate(
                         messages=[Message(role=Role.USER, content=ctx.task)],
-                        config=self.llm_config,
+                        config=fallback_config or self.llm_config,
                     )
+                    content = (response.content or "").strip()
+                    if not content:
+                        raise RuntimeError(
+                            "Stage 4 fallback returned empty content — "
+                            "treating as failure rather than emitting empty patch"
+                        )
                     ctx.result = response.content or ""
-                    log.info("Stage 4 fallback single-agent succeeded (%d chars)", len(ctx.result))
+                    log.info(
+                        "Stage 4 fallback single-agent succeeded (%d chars, provider=%s)",
+                        len(ctx.result),
+                        getattr(fallback_provider, "name", type(fallback_provider).__name__),
+                    )
                 except (RuntimeError, TimeoutError) as fallback_exc:
                     log.error("Stage 4 fallback also failed: %s", fallback_exc)
                     ctx.result = ""
             else:
+                log.error("Stage 4 fallback: no healthy provider available")
                 ctx.result = ""
 
         return ctx
