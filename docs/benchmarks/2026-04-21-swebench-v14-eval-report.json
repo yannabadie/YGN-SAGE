@@ -1,0 +1,18 @@
+{
+  "resolved_ids": [
+    "astropy__astropy-12907"
+  ],
+  "completed_ids": [
+    "astropy__astropy-12907",
+    "astropy__astropy-14182",
+    "django__django-11001"
+  ],
+  "error_ids": [
+    "astropy__astropy-7746",
+    "django__django-10914"
+  ],
+  "total": 10,
+  "resolved": 1,
+  "resolved_rate": 0.1,
+  "report_path": "sage__gemini-3.1-flash-lite-preview.sage-v14-crlf-20260421-092637.json"
+}
