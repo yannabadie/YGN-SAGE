@@ -1,0 +1,912 @@
+kNN: loaded 60 exemplars from C:\Code\YGN-SAGE\sage-python\config\routing_exemplars.npz
+kNN: Rust acceleration active (60 exemplars)
+Embedder: using RustEmbedder (ONNX, native)
+Boot: kNN router loaded (60 exemplars, rust_onnx)
+AdaptiveRouter: Python heuristic fallback
+Boot: Rust SystemRouter active (19 models from C:\Code\YGN-SAGE\sage-core\config\cards.toml)
+Boot: Bandit wired into SystemRouter for integrated routing
+Boot: Bandit warm-started with 19 models x 4 templates (76 arms)
+Boot: Phase 6 active -- TopologyEngine + ContextualBandit ready
+Boot: Restored persisted state -- 10 bandit arms, 1 archive cells from C:\Users\yann.abadie\.sage
+Boot: atexit handler registered for engine state persistence
+S-MMU bootstrapped with 3 template topologies (3 chunks)
+Embedder: using RustEmbedder (ONNX, native)
+Embedder: using RustEmbedder (ONNX, native)
+ToolExecutor (Rust): tree-sitter validator + subprocess executor
+Online evolution enabled (Rust TopologyEngine available)
+ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)
+EvolutionMemory wired (CORAL persistent skills at C:\Users\yann.abadie\.sage\evolution_memory.db)
+Core tools: execute_bash registered (file read, git, tests, system commands)
+Sandbox: tree-sitter + subprocess (no Wasm component loaded). Load a .wasm module via ToolExecutor.load_component() for full isolation.
+Loaded model profiles from C:\Code\YGN-SAGE\sage-python\config\model_profiles.toml (5 entries)
+Using cached deepseek model list (2 models)
+Discovered 2 models from deepseek
+Using cached google model list (1 models)
+Discovered 1 models from google
+Using cached openai model list (2 models)
+Discovered 2 models from openai
+Using cached xai model list (11 models)
+Discovered 11 models from xai
+Using cached kimi model list (13 models)
+Discovered 13 models from kimi
+Discovered 1 models from minimax
+Discovered 1 models from openrouter
+New model discovered: deepseek-reasoner (deepseek) -- no TOML profile, using defaults
+New model discovered: gpt-5-mini (openai) -- no TOML profile, using defaults
+New model discovered: grok-3 (xai) -- no TOML profile, using defaults
+New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-multi-agent-0309 (xai) -- no TOML profile, using defaults
+New model discovered: grok-code-fast-1 (xai) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2.5 (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+New model discovered: minimax-m2.7 (minimax) -- no TOML profile, using defaults
+New model discovered: qwen/qwen3.5-plus-02-15 (openrouter) -- no TOML profile, using defaults
+ModelRegistry: 33 total profiles, 31 available
+Boot: discovered 33 models (31 available) -- deepseek: 2, google: 1, kimi: 13, minimax: 1, openai: 2, openrouter: 1, xai: 11
+ProviderPool: 7 live providers -- ['deepseek', 'google', 'openai', 'xai', 'kimi', 'minimax', 'openrouter']
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.383017 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.827114 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Circuit OPEN for provider_openai after 3 failures (last: status_code: 429, model_name: gpt-5.4, body: {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}). Will probe in 60s.
+Health check DEAD for openai (quota exhausted): ModelHTTPError — circuit opened
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1776756453.098825  105772 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756453.194580  133096 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756454.022967   92760 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756454.126542   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Circuit OPEN for provider_xai after 3 failures (last: status_code: 503, model_name: grok-4-1-fast-reasoning, body: failed to connect to all addresses; last error: UNKNOWN: ipv4:104.18.19.80:443: Tls handshake failed (TSI_PROTOCOL_FAILURE): SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain). Will probe in 60s.
+Health check DEAD for xai (unreachable): ModelHTTPError — circuit opened
+I0000 00:00:1776756455.576693  142272 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756455.592897  134952 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756457.724687  136472 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756457.803690  133216 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756461.517259  105772 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756461.604091  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+Health check OK for openrouter (API error on probe, but reachable: ValueError)
+Provider health check: 5/7 alive {'deepseek': True, 'google': True, 'openai': False, 'xai': False, 'kimi': True, 'minimax': True, 'openrouter': True}
+Dead providers excluded: ['openai', 'xai']
+CompositeWriteGate: using Rust acceleration
+CognitiveOrchestrationPipeline initialized
+QualityEstimator: Z3 formal labeler active
+TopologyController initialized (Phase C)
+ToolForge initialized (autonomous tool synthesis)
+Memory backend: rust_smmu
+Capabilities: pipeline=True, quality=True, bandit=True, engine=True
+Core tools: sage_recurse registered (max depth 3, budget-gated=True)
+I0000 00:00:1776756467.140220  142272 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756467.436105  139520 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Loading princeton-nlp/SWE-bench_Lite (split=test) from HuggingFace...
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/revision/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2 "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2?recursive=false&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+Loaded 300 instances from princeton-nlp/SWE-bench_Lite
+[generate_patches] provider exclusion refreshed: still dead=['openai', 'xai']
+I0000 00:00:1776756476.840364  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756478.194948  133216 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Repo cloned: astropy/astropy @ d16bfe05 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe__l57km4g\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Retrying request to /chat/completions in 0.443515 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+I0000 00:00:1776756492.042931  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756493.390276  134268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756518.460912  135904 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=9
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756523.076128  139520 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.1314}
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756559.440032  136472 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756568.388908  134268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1096 chars, tool_calls=11
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 479 chars, tool_calls=0
+  [1/10] astropy__astropy-12907: PATCH (119316ms, 468 chars)
+Repo cloned: astropy/astropy @ a5917978 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_cgdycj6s\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756632.517468  136472 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756632.763170  134952 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=18
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.446 action=SWITCH_MODEL details={'latency': 0.5244, 'errors': 0.0, 'cost': 0.0336}
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 672 chars, tool_calls=16
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 468 chars, tool_calls=0
+  [2/10] astropy__astropy-14182: PATCH (130939ms, 457 chars)
+Repo cloned: astropy/astropy @ 7269fa3e -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_hwans8f4\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776756738.999428   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.389004 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.818744 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Stage 4 multi-agent execution failed: status_code: 529, model_name: minimax-m2.7, body: {'type': 'overloaded_error', 'message': 'The server cluster is currently under high load. Please retry after a short wait and thank you for your patience. (2064)', 'http_code': '529'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback single-agent succeeded (0 chars)
+Embedder: using RustEmbedder (ONNX, native)
+  [3/10] astropy__astropy-14365: EMPTY (32651ms, 0 chars)
+Repo cloned: astropy/astropy @ b16c7d12 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_mqzb8nex\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776756763.260821  134268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.379826 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.929953 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Stage 4 multi-agent execution failed: status_code: 529, model_name: minimax-m2.7, body: {'type': 'overloaded_error', 'message': 'The server cluster is currently under high load. Please retry after a short wait and thank you for your patience. (2064)', 'http_code': '529'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback single-agent succeeded (0 chars)
+Embedder: using RustEmbedder (ONNX, native)
+  [4/10] astropy__astropy-14995: EMPTY (19698ms, 0 chars)
+Repo cloned: astropy/astropy @ c76af9ed -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_ci4jl7s_\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.477847 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.437394 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.788991 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Circuit OPEN for provider_minimax after 3 failures (last: status_code: 529, model_name: minimax-m2.7, body: {'type': 'overloaded_error', 'message': 'The server cluster is currently under high load. Please retry after a short wait and thank you for your patience. (2064)', 'http_code': '529'}). Will probe in 60s.
+Stage 4 multi-agent execution failed: status_code: 529, model_name: minimax-m2.7, body: {'type': 'overloaded_error', 'message': 'The server cluster is currently under high load. Please retry after a short wait and thank you for your patience. (2064)', 'http_code': '529'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback single-agent succeeded (0 chars)
+Embedder: using RustEmbedder (ONNX, native)
+  [5/10] astropy__astropy-6938: EMPTY (29473ms, 0 chars)
+Repo cloned: astropy/astropy @ d5bd3f68 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_jz7k1ix_\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.93, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=5 gamma=0.40)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Circuit OPEN for provider_minimax — skipping call
+Stage 3: minimax provider unavailable, node 0 reassigned minimax-m2.7 -> gemini-3.1-flash-lite-preview
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Drift detected: score=0.475 action=SWITCH_MODEL details={'latency': 0.5585, 'errors': 0.0, 'cost': 0.3333}
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 1439 chars, tool_calls=7
+topology.runner: injecting planner output (1439 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756864.500601  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776756897.067282  134268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.0283}
+Circuit OPEN for provider_qwen/qwen3.5-plus-02-15 after 3 failures (last: drift_reset_agent score=1.0). Will probe in 60s.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=19
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776756982.536978  136472 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776756998.251784  133216 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 59037 chars, tool_calls=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+[ANALYZE] Conflict clause id=ClauseId(0)
+[ANALYZE] Conflict clause: (v1@1=False | v2@0=False | ~v0@0=False)
+[ANALYZE] Trail:
+  v0@0 reason=Decision
+  ~v2@0 reason=Decision
+  ~v1@1 reason=Decision
+[ANALYZE] Learned clause: (v1), backtrack_level=0
+Embedder: using RustEmbedder (ONNX, native)
+Online evolution fired (pop=5, gens=2)
+  [6/10] astropy__astropy-7746: PATCH (224685ms, 3375 chars)
+Repo cloned: django/django @ e7fd69d0 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe___7dsnxq\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.94, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=3 gamma=0.67)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Circuit HALF_OPEN for provider_minimax — allowing probe call
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757078.699481   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+Circuit CLOSED for provider_minimax — half-open probe succeeded
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=9
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757104.517816  135436 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=19
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 2606 chars, tool_calls=0
+Node 2 model upgraded to gemini-2.5-flash
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 621 chars, tool_calls=0
+Stage 4: quality=0.00 < 0.3, triggering FrugalGPT cascade retry
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757208.069573  139520 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 50 chars, tool_calls=9
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+I0000 00:00:1776757225.784248   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=19
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 2101 chars, tool_calls=0
+Stage 4: FrugalGPT cascade succeeded on retry
+Embedder: using RustEmbedder (ONNX, native)
+  [7/10] django__django-10914: PATCH (267092ms, 2089 chars)
+Repo cloned: django/django @ bceadd27 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_jg2ssg27\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.94, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.472475 seconds
+I0000 00:00:1776757314.653269  133216 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.417124 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.430760 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757368.314768   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.466837 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Retrying request to /chat/completions in 0.829362 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 529 Unknown Status Code"
+Stage 4 multi-agent execution failed: status_code: 529, model_name: minimax-m2.7, body: {'type': 'overloaded_error', 'message': 'The server cluster is currently under high load. Please retry after a short wait and thank you for your patience. (2064)', 'http_code': '529'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback single-agent succeeded (0 chars)
+Embedder: using RustEmbedder (ONNX, native)
+  [8/10] django__django-10924: EMPTY (88233ms, 0 chars)
+Repo cloned: django/django @ ef082ebb -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_1si5w20t\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757437.297021  135108 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776757465.065970   92760 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757535.694980  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757578.678000   87268 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=13
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776757632.460683  139520 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.428 action=SWITCH_MODEL details={'latency': 0.5035, 'errors': 0.0, 'cost': 0.03}
+Circuit RE-OPENED for provider_qwen/qwen3.5-plus-02-15 — half-open probe failed: drift_switch_model score=0.5035. Will retry in 60s.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=19
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 836 chars, tool_calls=0
+  [9/10] django__django-11001: PATCH (284361ms, 825 chars)
+I0000 00:00:1776757676.051291  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Repo cloned: django/django @ 93e892bb -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_41nu8kjc\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=4 gamma=0.50)
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 50 chars, tool_calls=5
+Retrying request to /chat/completions in 0.463977 seconds
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+Stage 4 multi-agent execution failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 2', 'type': 'invalid_request_error'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback single-agent succeeded (0 chars)
+Embedder: using RustEmbedder (ONNX, native)
+Online evolution fired (pop=5, gens=2)
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/deepseek-chat:generateContent "HTTP/1.1 404 Not Found"
+Consolidation: processed=0 entities=0 causal_edges=0 skipped=0
+  [10/10] django__django-11019: EMPTY (47853ms, 0 chars)
+Wrote 10 predictions to C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_kfhxbz7i\predictions.jsonl
+
+  Predictions saved to: C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_kfhxbz7i\predictions.jsonl
+  Starting Docker evaluation...
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+Evaluating 5 instances
+
+  Building Docker images and evaluating 5 instances...
+  Run ID: sage-20260421-072744
+  Timeout per instance: 300s
+  Max workers: 4
+
+Building base image (sweb.base.py.x86_64:latest)
+I0000 00:00:1776757762.589003  134952 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776757779.656464  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776757866.598366  142960 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776757909.474423  135108 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Traceback (most recent call last):
+  File "C:\ProgramData\miniforge3\Lib\site-packages\swebench\harness\docker_build.py", line 148, in build_image
+    raise docker.errors.BuildError(
+        chunk["errorDetail"]["message"], buildlog
+    )
+docker.errors.BuildError: The command '/bin/sh -c wget 'https://repo.anaconda.com/miniconda/Miniconda3-py311_23.11.0-2-Linux-x86_64.sh' -O miniconda.sh     && bash miniconda.sh -b -p /opt/miniconda3' returned a non-zero code: 5
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Code\YGN-SAGE\sage-python\src\sage\bench\__main__.py", line 584, in <module>
+    main()
+    ~~~~^^
+  File "C:\Code\YGN-SAGE\sage-python\src\sage\bench\__main__.py", line 513, in main
+    asyncio.run(_run_swebench(args))
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\asyncio\runners.py", line 195, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\asyncio\runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "C:\ProgramData\miniforge3\Lib\asyncio\base_events.py", line 725, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "C:\Code\YGN-SAGE\sage-python\src\sage\bench\__main__.py", line 297, in _run_swebench
+    report = await bench.run(limit=args.limit, offset=_offset)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Code\YGN-SAGE\sage-python\src\sage\bench\swebench_bench.py", line 823, in run
+    eval_results = self.evaluate_with_harness(preds_path)
+  File "C:\Code\YGN-SAGE\sage-python\src\sage\bench\swebench_bench.py", line 743, in evaluate_with_harness
+    build_env_images(
+    ~~~~~~~~~~~~~~~~^
+        client,
+        ^^^^^^^
+    ...<5 lines>...
+        "latest",  # env_image_tag
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\swebench\harness\docker_build.py", line 301, in build_env_images
+    build_base_images(
+    ~~~~~~~~~~~~~~~~~^
+        client, dataset, force_rebuild, namespace, instance_image_tag, env_image_tag
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\swebench\harness\docker_build.py", line 204, in build_base_images
+    build_image(
+    ~~~~~~~~~~~^
+        image_name=image_name,
+        ^^^^^^^^^^^^^^^^^^^^^^
+    ...<4 lines>...
+        build_dir=BASE_IMAGE_BUILD_DIR / image_name.replace(":", "__"),
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "C:\ProgramData\miniforge3\Lib\site-packages\swebench\harness\docker_build.py", line 154, in build_image
+    raise BuildImageError(image_name, str(e), logger) from e
+swebench.harness.docker_build.BuildImageError: Error building image sweb.base.py.x86_64:latest: The command '/bin/sh -c wget 'https://repo.anaconda.com/miniconda/Miniconda3-py311_23.11.0-2-Linux-x86_64.sh' -O miniconda.sh     && bash miniconda.sh -b -p /opt/miniconda3' returned a non-zero code: 5
+Check (logs\build_images\base\sweb.base.py.x86_64__latest\build_image.log) for more information.
+I0000 00:00:1776757979.772453  142272 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776758031.817670  133096 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776758090.361153  135108 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
