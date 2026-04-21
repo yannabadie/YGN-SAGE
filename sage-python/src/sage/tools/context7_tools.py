@@ -16,6 +16,12 @@ open-source libraries. The tool does `resolve` + `query` in one
 invocation so the LLM gets "library name + question → docs snippets"
 with a single call.
 
+The REST API is asymmetric:
+  * `/libs/search` → JSON `{"results": [{"id": ..., "title": ...}, ...]}`
+  * `/context`     → plain-text markdown (already formatted with
+    `###` headers + `------` separators) — NOT JSON. We pass it
+    through after light truncation.
+
 Configuration:
 
     CONTEXT7_API_KEY=ctx7sk-...   (preferred)
@@ -28,10 +34,8 @@ one-shot WARN so misconfigurations are visible.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-from typing import Any
 
 import httpx
 
@@ -44,8 +48,11 @@ _CONTEXT7_BASE = "https://context7.com/api/v2"
 _RESOLVE_PATH = "/libs/search"
 _DOCS_PATH = "/context"
 _TIMEOUT_S = 30.0
-_MAX_SNIPPETS = 6
-_MAX_INFO_ITEMS = 4
+
+# Cap docs response size so a single tool call can't blow the context
+# budget. 6 KB ≈ 1500 tokens — enough for ~10 code examples with
+# surrounding prose.
+_MAX_DOCS_CHARS = 6000
 
 
 def _load_api_key() -> str | None:
@@ -57,43 +64,26 @@ def _load_api_key() -> str | None:
     return os.environ.get("CONTEXT7_API_KEY") or os.environ.get("CONTEXT7") or None
 
 
-def _format_snippets(payload: dict[str, Any]) -> str:
-    """Render Context7's JSON response into an LLM-readable string.
+def _format_docs_text(raw_text: str) -> str:
+    """Light post-processing for the `/context` markdown response.
 
-    Context7 returns:
-        {"codeSnippets": [{"codeTitle": ..., "codeList": [{"code": ...}]}, ...],
-         "infoSnippets": [{"content": ...}, ...]}
-
-    We cap output to keep prompts / tool-result blocks manageable.
+    Context7 returns plain text already formatted with `###` section
+    headers and `------` separators. We only: (1) strip leading /
+    trailing whitespace, (2) cap length, (3) return a stable
+    not-found sentinel when the body is empty.
     """
-    lines: list[str] = []
-
-    infos = payload.get("infoSnippets") or []
-    if infos:
-        lines.append("## Documentation")
-        for item in infos[:_MAX_INFO_ITEMS]:
-            content = (item.get("content") or "").strip()
-            if content:
-                lines.append(content)
-                lines.append("")
-
-    snippets = payload.get("codeSnippets") or []
-    if snippets:
-        lines.append("## Code examples")
-        for snippet in snippets[:_MAX_SNIPPETS]:
-            title = (snippet.get("codeTitle") or "").strip() or "(untitled)"
-            lines.append(f"### {title}")
-            for code_block in snippet.get("codeList") or []:
-                code = (code_block.get("code") or "").strip()
-                if code:
-                    lines.append("```")
-                    lines.append(code)
-                    lines.append("```")
-            lines.append("")
-
-    if not lines:
+    stripped = (raw_text or "").strip()
+    if not stripped:
         return "No documentation found for this query."
-    return "\n".join(lines).rstrip() + "\n"
+
+    if len(stripped) <= _MAX_DOCS_CHARS:
+        return stripped + "\n"
+
+    truncated = stripped[:_MAX_DOCS_CHARS].rstrip()
+    return (
+        truncated
+        + "\n\n... (truncated — call again with a more specific query)\n"
+    )
 
 
 async def _resolve_library_id(
@@ -122,22 +112,24 @@ async def _fetch_docs(
     api_key: str,
     library_id: str,
     query: str,
-) -> dict[str, Any]:
-    """Call Context7's context endpoint and return the raw JSON payload."""
+) -> str:
+    """Call Context7's context endpoint and return the raw text body.
+
+    Unlike `/libs/search`, this endpoint returns `text/plain; charset=utf-8`
+    with the docs already formatted as markdown (`###` section headers +
+    `------` separators). We pass the body through verbatim.
+    """
     resp = await client.get(
         _CONTEXT7_BASE + _DOCS_PATH,
         params={"libraryId": library_id, "query": query},
         headers={"Authorization": f"Bearer {api_key}"},
     )
     resp.raise_for_status()
-    body = resp.json()
-    if not isinstance(body, dict):
-        raise ValueError(f"unexpected Context7 response shape: {type(body).__name__}")
-    return body
+    return resp.text
 
 
 async def _lookup(api_key: str, library_name: str, query: str) -> str:
-    """Resolve the library id then fetch docs; return a formatted string."""
+    """Resolve the library id then fetch docs; return the rendered text."""
     async with httpx.AsyncClient(verify=ssl_verify(), timeout=_TIMEOUT_S) as client:
         try:
             library_id = await _resolve_library_id(client, api_key, library_name, query)
@@ -152,13 +144,11 @@ async def _lookup(api_key: str, library_name: str, query: str) -> str:
             )
 
         try:
-            payload = await _fetch_docs(client, api_key, library_id, query)
+            body = await _fetch_docs(client, api_key, library_id, query)
         except httpx.HTTPError as e:
             return f"Context7 docs query failed ({library_id}): {type(e).__name__}: {e}"
-        except (ValueError, json.JSONDecodeError) as e:
-            return f"Context7 returned unparseable response for {library_id}: {e}"
 
-    return _format_snippets(payload)
+    return _format_docs_text(body)
 
 
 _DESCRIPTION = (

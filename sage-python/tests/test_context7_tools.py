@@ -20,8 +20,9 @@ import pytest
 from sage.tools.context7_tools import (
     _CONTEXT7_BASE,
     _DOCS_PATH,
+    _MAX_DOCS_CHARS,
     _RESOLVE_PATH,
-    _format_snippets,
+    _format_docs_text,
     _lookup,
     create_context7_tools,
 )
@@ -102,71 +103,76 @@ def test_tool_description_targets_library_api_scope():
 
 
 # ---------------------------------------------------------------------------
-# _format_snippets — response rendering
+# _format_docs_text — plain-text response passthrough
+#
+# Context7's /context endpoint returns text/plain markdown already
+# formatted with `###` section headers and `------` separators — NOT
+# JSON. The formatter only strips, caps length, and returns a stable
+# sentinel for empty bodies.
 # ---------------------------------------------------------------------------
 
+_REAL_CONTEXT7_RESPONSE = """\
+### Parse JSON Response with Requests
 
-def test_format_snippets_renders_docs_and_code():
-    payload = {
-        "infoSnippets": [
-            {"content": "Django's FILE_UPLOAD_PERMISSION defaults to None."},
-        ],
-        "codeSnippets": [
-            {
-                "codeTitle": "settings.py",
-                "codeList": [{"code": "FILE_UPLOAD_PERMISSIONS = 0o644"}],
-            }
-        ],
-    }
-    out = _format_snippets(payload)
-    assert "## Documentation" in out
-    assert "defaults to None" in out
-    assert "## Code examples" in out
-    assert "### settings.py" in out
-    assert "FILE_UPLOAD_PERMISSIONS = 0o644" in out
+Source: https://github.com/psf/requests/blob/main/docs/user/quickstart.md
 
+Use `r.json()` to automatically decode a JSON response body. Raises
+`requests.exceptions.JSONDecodeError` on invalid JSON or 204 No Content.
 
-def test_format_snippets_empty_response_returns_stable_string():
-    """Empty payload must produce a fixed human-readable string, not a
-    crash or blank output — the LLM needs something to react to."""
-    assert _format_snippets({}) == "No documentation found for this query."
-    assert _format_snippets({"codeSnippets": [], "infoSnippets": []}) == (
-        "No documentation found for this query."
-    )
+```python
+import requests
+r = requests.get('https://api.github.com/events')
+r.json()
+```
+
+--------------------------------
+
+### Call Response.json() method in Requests 1.x
+
+Source: https://github.com/psf/requests/blob/main/docs/api.md
+
+Response.json is now a callable method rather than a property.
+"""
 
 
-def test_format_snippets_caps_code_examples_at_max():
-    """Uncapped Context7 responses can be large; we cap at _MAX_SNIPPETS
-    so tool output stays under the model's context-window budget."""
-    from sage.tools.context7_tools import _MAX_SNIPPETS
-
-    payload = {
-        "codeSnippets": [
-            {"codeTitle": f"t{i}", "codeList": [{"code": f"c{i}"}]}
-            for i in range(_MAX_SNIPPETS + 5)
-        ]
-    }
-    out = _format_snippets(payload)
-    for i in range(_MAX_SNIPPETS):
-        assert f"### t{i}" in out
-    # Indices >= cap must NOT appear
-    assert f"### t{_MAX_SNIPPETS}" not in out
+def test_format_docs_text_passes_real_markdown_through():
+    """The live Context7 body is already LLM-friendly markdown. We
+    only trim + ensure a trailing newline; no structural parsing."""
+    out = _format_docs_text(_REAL_CONTEXT7_RESPONSE)
+    assert "### Parse JSON Response with Requests" in out
+    assert "r.json()" in out
+    assert "JSONDecodeError" in out
+    assert "--------------------------------" in out
+    assert out.endswith("\n")
 
 
-def test_format_snippets_skips_empty_items():
-    """Robustness: missing fields / empty strings don't blow up the
-    renderer, they just get skipped."""
-    payload = {
-        "infoSnippets": [{"content": ""}, {"content": "kept"}],
-        "codeSnippets": [
-            {"codeTitle": "", "codeList": []},
-            {"codeTitle": "real", "codeList": [{"code": "x=1"}]},
-        ],
-    }
-    out = _format_snippets(payload)
-    assert "kept" in out
-    assert "### real" in out
-    assert "x=1" in out
+def test_format_docs_text_empty_body_returns_stable_sentinel():
+    """Empty body → fixed "No documentation found for this query."
+    string so the LLM has something deterministic to react to."""
+    assert _format_docs_text("") == "No documentation found for this query."
+    assert _format_docs_text("   \n\t  ") == "No documentation found for this query."
+
+
+def test_format_docs_text_caps_at_max_chars():
+    """Huge responses get truncated at _MAX_DOCS_CHARS to protect
+    the LLM's context budget. The user gets a truncation hint."""
+    big = "X" * (_MAX_DOCS_CHARS + 5000)
+    out = _format_docs_text(big)
+    # The truncated body should be ≤ the cap + the truncation message;
+    # allow a small slack for the trailing hint.
+    assert len(out) <= _MAX_DOCS_CHARS + 200
+    assert "(truncated" in out
+    assert "more specific query" in out
+
+
+def test_format_docs_text_strips_leading_trailing_whitespace():
+    """Real responses sometimes have stray blank lines at edges —
+    strip them but preserve internal formatting."""
+    payload = "\n\n  ### Real heading\n\nbody line\n\n"
+    out = _format_docs_text(payload)
+    assert out.startswith("### Real heading")
+    # Internal blank line between heading and body kept
+    assert "### Real heading\n\nbody line" in out
 
 
 # ---------------------------------------------------------------------------
@@ -174,10 +180,21 @@ def test_format_snippets_skips_empty_items():
 # ---------------------------------------------------------------------------
 
 
-def _mk_response(payload: Any, status: int = 200) -> httpx.Response:
-    """Build an httpx.Response synchronously for mocking."""
+def _mk_json_response(payload: Any, status: int = 200) -> httpx.Response:
+    """httpx.Response carrying a JSON body (for /libs/search)."""
     req = httpx.Request("GET", "https://context7.com/dummy")
     return httpx.Response(status, request=req, content=json.dumps(payload).encode())
+
+
+def _mk_text_response(text: str, status: int = 200) -> httpx.Response:
+    """httpx.Response carrying a plain-text body (for /context)."""
+    req = httpx.Request("GET", "https://context7.com/dummy")
+    return httpx.Response(
+        status,
+        request=req,
+        content=text.encode("utf-8"),
+        headers={"content-type": "text/plain; charset=utf-8"},
+    )
 
 
 class _AsyncClientMock:
@@ -198,19 +215,22 @@ class _AsyncClientMock:
 
 @pytest.mark.asyncio
 async def test_lookup_happy_path_resolves_then_fetches():
-    """Two sequential GETs: search (returns top id) then context
-    (returns snippets). Output contains the library's docs."""
+    """Two sequential GETs: /libs/search returns JSON with the top id,
+    /context returns plain-text markdown. Output contains the docs."""
     calls: list[tuple[str, dict]] = []
 
     async def fake_get(url, params=None, headers=None):
         calls.append((url, params or {}))
         if url.endswith(_RESOLVE_PATH):
-            return _mk_response({"results": [{"id": "/django/django/4.2", "title": "Django"}]})
+            return _mk_json_response(
+                {"results": [{"id": "/django/django/4.2", "title": "Django"}]}
+            )
         if url.endswith(_DOCS_PATH):
-            return _mk_response({
-                "infoSnippets": [{"content": "Django default upload permission is None"}],
-                "codeSnippets": [],
-            })
+            return _mk_text_response(
+                "### FILE_UPLOAD_PERMISSION\n\n"
+                "Default is None. Setting it to 0o644 makes uploaded files "
+                "world-readable under the default umask.\n"
+            )
         raise AssertionError(f"unexpected URL {url}")
 
     with patch(
@@ -219,7 +239,8 @@ async def test_lookup_happy_path_resolves_then_fetches():
     ):
         out = await _lookup("ctx7sk-fake", "Django", "FILE_UPLOAD_PERMISSION default")
 
-    assert "Django default upload permission" in out
+    assert "FILE_UPLOAD_PERMISSION" in out
+    assert "Default is None" in out
     # Two calls in order: resolve, then docs.
     assert [c[0] for c in calls] == [
         _CONTEXT7_BASE + _RESOLVE_PATH,
@@ -236,7 +257,7 @@ async def test_lookup_library_not_found_returns_helpful_message():
     suggest the execute_bash fallback. No exception."""
     async def fake_get(url, params=None, headers=None):
         if url.endswith(_RESOLVE_PATH):
-            return _mk_response({"results": []})
+            return _mk_json_response({"results": []})
         raise AssertionError("docs endpoint should not be called when resolve fails")
 
     with patch(
@@ -274,7 +295,9 @@ async def test_lookup_docs_http_error_returns_error_string_with_library_id():
     can decide whether to retry with a different library."""
     async def fake_get(url, params=None, headers=None):
         if url.endswith(_RESOLVE_PATH):
-            return _mk_response({"results": [{"id": "/django/django", "title": "Django"}]})
+            return _mk_json_response(
+                {"results": [{"id": "/django/django", "title": "Django"}]}
+            )
         raise httpx.HTTPError("docs endpoint down")
 
     with patch(
@@ -296,8 +319,8 @@ async def test_lookup_sends_bearer_authorization_header():
     async def fake_get(url, params=None, headers=None):
         seen_headers.append(headers or {})
         if url.endswith(_RESOLVE_PATH):
-            return _mk_response({"results": [{"id": "/x/y", "title": "x"}]})
-        return _mk_response({"infoSnippets": [], "codeSnippets": []})
+            return _mk_json_response({"results": [{"id": "/x/y", "title": "x"}]})
+        return _mk_text_response("### hi\nhello\n")
 
     with patch(
         "sage.tools.context7_tools.httpx.AsyncClient",
@@ -319,16 +342,19 @@ async def test_lookup_sends_bearer_authorization_header():
 async def test_registered_tool_executes_end_to_end(monkeypatch):
     """Register via the public API, invoke through Tool.execute() as
     the agent loop would — confirms the closure + decorator + handler
-    wiring all compose correctly."""
+    wiring all compose correctly with the plain-text /context shape."""
     monkeypatch.setenv("CONTEXT7_API_KEY", "ctx7sk-integration")
 
     async def fake_get(url, params=None, headers=None):
         if url.endswith(_RESOLVE_PATH):
-            return _mk_response({"results": [{"id": "/requests/docs", "title": "Requests"}]})
-        return _mk_response({
-            "infoSnippets": [{"content": "Response.json() raises on empty body."}],
-            "codeSnippets": [],
-        })
+            return _mk_json_response(
+                {"results": [{"id": "/psf/requests", "title": "Requests"}]}
+            )
+        return _mk_text_response(
+            "### Response.json behavior\n\n"
+            "Raises `requests.exceptions.JSONDecodeError` on invalid JSON "
+            "or 204 No Content responses.\n"
+        )
 
     tools = create_context7_tools()
     assert len(tools) == 1
@@ -342,4 +368,5 @@ async def test_registered_tool_executes_end_to_end(monkeypatch):
         )
 
     assert not result.is_error
-    assert "raises on empty body" in result.output
+    assert "Response.json behavior" in result.output
+    assert "JSONDecodeError" in result.output
