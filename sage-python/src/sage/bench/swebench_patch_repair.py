@@ -1,0 +1,299 @@
+"""Patch validation + programmatic/LLM repair for SWE-bench predictions.
+
+Two-stage repair pipeline for malformed unified-diff patches emitted
+by SAGE's agent loop. Motivated by the 2026-04-21 v15 smoke: 2/10
+tasks (`astropy-7746`, `django-10914`) failed with `git apply` / `patch`
+rejecting the hunk headers or context lines (LLM hallucination on
+large files).
+
+Pipeline:
+  1. **Programmatic counts-fix** — ``_fix_hunk_header_counts(patch)``
+     recomputes ``@@ -s,c +s,c @@`` from the real body line counts.
+     Zero-cost, deterministic. Catches ``astropy-7746``-class errors
+     (wrong counts) but not ``django-10914``-class errors (stale
+     context lines that no longer exist in the file).
+
+  2. **LLM repair** — ``repair_patch_via_llm()`` does a single one-shot
+     direct LLM call (no tools, no agent state) with the ``git apply``
+     stderr as feedback. Aider's "apply-with-feedback" pattern.
+
+Validator:
+  ``validate_patch_apply(patch, repo_dir)`` runs ``git apply --check``
+  in the cloned repo. Returns ``(ok, stderr)``. 10-second timeout caps
+  pathological cases.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import subprocess
+from typing import Any
+
+log = logging.getLogger(__name__)
+
+# ``@@ -<start>[,<count>] +<start>[,<count>] @@ <trailer>``
+# When count is omitted, unified-diff spec says count=1. We treat
+# missing count as 1 on parse and always write an explicit count on
+# output to avoid ambiguity.
+_HUNK_HEADER_RE = re.compile(
+    r"^@@ -(?P<src_start>\d+)(?:,(?P<src_count>\d+))? "
+    r"\+(?P<dst_start>\d+)(?:,(?P<dst_count>\d+))? @@(?P<trailer>.*)$"
+)
+
+
+def _fix_hunk_header_counts(patch: str) -> str:
+    """Recompute ``-s,c +s,c`` counts from the hunk body.
+
+    Deterministic fix for the ``astropy-7746``-class failure where
+    the LLM emits ``@@ -1264,28 +1279,35 @@`` but the hunk body
+    doesn't actually contain 28 source / 35 destination lines. GNU
+    patch and ``git apply`` both reject these; the counts can be
+    recomputed directly from the body.
+
+    Counting rules per the unified-diff spec (RFC 2822-like):
+      - ``' '`` (context): counts in both src_count and dst_count
+      - ``'-'`` (removed): counts only in src_count
+      - ``'+'`` (added):   counts only in dst_count
+      - ``'\\'`` (no-newline marker): ignored
+      - Empty line: treated as context ``' '`` (most tools do this)
+
+    No-op on well-formed patches (recomputed counts match original).
+    """
+    lines = patch.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        m = _HUNK_HEADER_RE.match(line)
+        if m is None:
+            out.append(line)
+            i += 1
+            continue
+
+        # Find end of this hunk body. Body line MUST start with one of
+        # ``' '`` / ``'-'`` / ``'+'`` / ``'\\'`` per the unified-diff
+        # spec. An empty line or any other char ends the body — this
+        # handles both the trailing ``""`` artefact of ``split("\n")``
+        # and the "prose between hunks" edge case where the LLM wraps
+        # its diff in explanatory text.
+        body_start = i + 1
+        body_end = body_start
+        while body_end < len(lines):
+            nxt = lines[body_end]
+            if not nxt:
+                break
+            c0 = nxt[0]
+            if c0 not in (" ", "-", "+", "\\"):
+                # Could be the start of another hunk / diff header or
+                # prose. Stop.
+                break
+            body_end += 1
+
+        body = lines[body_start:body_end]
+
+        src_count = 0
+        dst_count = 0
+        for b in body:
+            c = b[0]  # body guaranteed non-empty with a known prefix above
+            if c == " ":
+                src_count += 1
+                dst_count += 1
+            elif c == "-":
+                src_count += 1
+            elif c == "+":
+                dst_count += 1
+            # c == "\\" -> "\ No newline at end of file" -> doesn't count
+
+        src_start = int(m.group("src_start"))
+        dst_start = int(m.group("dst_start"))
+        trailer = m.group("trailer") or ""
+        new_header = (
+            f"@@ -{src_start},{src_count} "
+            f"+{dst_start},{dst_count} @@{trailer}"
+        )
+        out.append(new_header)
+        out.extend(body)
+        i = body_end
+
+    return "\n".join(out)
+
+
+def validate_patch_apply(patch: str, repo_dir: str) -> tuple[bool, str]:
+    """Run ``git apply --check`` against ``repo_dir``.
+
+    Returns ``(ok, stderr_text)``. ``--check`` validates without
+    modifying the working tree. 10-second timeout.
+
+    ``repo_dir`` must be a git clone at the instance's ``base_commit``
+    (which is what ``SWEBenchBench._setup_repo`` already produces).
+    """
+    if not patch.strip():
+        return False, "empty patch"
+    try:
+        result = subprocess.run(
+            ["git", "apply", "--check", "-"],
+            input=patch.encode("utf-8"),
+            cwd=repo_dir,
+            capture_output=True,
+            timeout=10,
+        )
+        ok = result.returncode == 0
+        stderr = result.stderr.decode("utf-8", errors="replace").strip()
+        return ok, stderr
+    except subprocess.TimeoutExpired:
+        return False, "git apply --check timed out after 10s"
+    except FileNotFoundError:
+        return False, "git not found on PATH"
+    except Exception as exc:  # noqa: BLE001 — surface any validator fault
+        return False, f"validator exception: {type(exc).__name__}: {exc}"
+
+
+_REPAIR_PROMPT_TEMPLATE = """\
+The unified-diff patch below was rejected by `git apply`. Fix it.
+
+## Original issue
+
+{problem_statement}
+
+## Patch that failed to apply
+
+```diff
+{broken_patch}
+```
+
+## `git apply --check` stderr
+
+```
+{error_msg}
+```
+
+Output ONLY a corrected unified diff inside a single ```diff fenced \
+block. Fix hunk-header counts, realign context lines to the real \
+source, or rewrite the hunks if the line numbers are unrecoverable. \
+No prose, no explanation — just the diff.\
+"""
+
+
+async def repair_patch_via_llm(
+    llm: Any,
+    problem_statement: str,
+    broken_patch: str,
+    error_msg: str,
+    timeout: float = 60.0,
+) -> str:
+    """One-shot LLM repair of a failed patch. No tools, no agent state.
+
+    Aider-style "apply-with-feedback" — the LLM sees the stderr from
+    ``git apply`` and emits a corrected diff. Direct call on the
+    underlying ``LLMProvider`` (not through the agent loop) so the
+    exploration state from the original run doesn't bleed in.
+
+    ``llm`` must expose ``async def generate(messages, ...)``
+    returning an object with a ``.content`` attribute (see
+    ``sage.llm.base.LLMProvider`` protocol).
+
+    Returns the extracted diff text, or ``""`` on failure / empty
+    response.
+    """
+    from sage.llm.base import Message, Role
+
+    try:
+        from sage.bench.swebench_bench import _extract_patch
+    except ImportError:
+        # Defensive: if module path changes, degrade to raw content.
+        def _extract_patch(s: str) -> str:  # type: ignore[misc]
+            return s
+
+    repair_prompt = _REPAIR_PROMPT_TEMPLATE.format(
+        problem_statement=(problem_statement or "")[:2000],
+        broken_patch=broken_patch,
+        error_msg=(error_msg or "unknown error")[:1000],
+    )
+
+    try:
+        response = await asyncio.wait_for(
+            llm.generate(
+                messages=[Message(role=Role.USER, content=repair_prompt)],
+            ),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        log.warning("[patch-repair] LLM repair timed out after %.0fs", timeout)
+        return ""
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[patch-repair] LLM repair failed: %s", exc)
+        return ""
+
+    return _extract_patch(response.content or "")
+
+
+async def try_repair_patch(
+    patch: str,
+    repo_dir: str | None,
+    llm: Any,
+    problem_statement: str,
+    instance_id: str = "",
+    llm_timeout: float = 60.0,
+) -> tuple[str, str]:
+    """Validate + repair pipeline. Returns ``(final_patch, repair_stage)``.
+
+    ``repair_stage`` ∈ ``{"", "unchanged", "programmatic_counts",
+    "llm_repair", "failed"}``:
+      - ``""``: validation was skipped (empty patch or no repo_dir).
+      - ``"unchanged"``: original patch validated, no repair needed.
+      - ``"programmatic_counts"``: ``_fix_hunk_header_counts`` fixed it.
+      - ``"llm_repair"``: LLM one-shot fixed it.
+      - ``"failed"``: neither stage produced a valid patch — original
+        returned unchanged so the downstream swebench evaluator can
+        still classify as apply-error (same behavior as pre-fix).
+    """
+    if not patch or not repo_dir:
+        return patch, ""
+
+    ok, err = validate_patch_apply(patch, repo_dir)
+    if ok:
+        return patch, "unchanged"
+
+    log.info(
+        "[%s] patch validation failed: %s",
+        instance_id or "?", err[:200],
+    )
+
+    # Stage 1: programmatic fix (free).
+    fixed = _fix_hunk_header_counts(patch)
+    if fixed != patch:
+        ok2, err2 = validate_patch_apply(fixed, repo_dir)
+        if ok2:
+            log.info("[%s] programmatic counts-fix resolved patch", instance_id or "?")
+            return fixed, "programmatic_counts"
+        err = err2 or err  # latest error feeds LLM repair
+
+    # Stage 2: LLM repair (costs one call).
+    if llm is None:
+        return patch, "failed"
+
+    repaired = await repair_patch_via_llm(
+        llm, problem_statement, patch, err, timeout=llm_timeout,
+    )
+    if not repaired:
+        return patch, "failed"
+
+    ok3, err3 = validate_patch_apply(repaired, repo_dir)
+    if ok3:
+        log.info("[%s] LLM repair resolved patch", instance_id or "?")
+        return repaired, "llm_repair"
+
+    log.info(
+        "[%s] LLM repair still invalid: %s",
+        instance_id or "?", (err3 or "no stderr")[:200],
+    )
+    return patch, "failed"
+
+
+__all__ = [
+    "_fix_hunk_header_counts",
+    "validate_patch_apply",
+    "repair_patch_via_llm",
+    "try_repair_patch",
+]

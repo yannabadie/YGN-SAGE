@@ -534,6 +534,30 @@ class SWEBenchBench:
                 if response and _SENTINEL_MARKER in response:
                     structured_failure = "step_budget_exhausted"
                 patch = _extract_patch(response)
+
+                # v16 fix (2026-04-21): validate + repair malformed patches
+                # before emission. Addresses the astropy-7746 / django-10914
+                # ERROR bucket (LLM hallucinates hunk-header counts or
+                # stale context lines on large files). Two-stage:
+                #   1. programmatic counts-fix (zero-cost)
+                #   2. LLM one-shot repair with `git apply --check` stderr
+                # See docs/benchmarks/2026-04-21-swebench-v15-eval-results.md
+                # and sage.bench.swebench_patch_repair.
+                repair_stage = ""
+                if patch and repo_dir:
+                    from sage.bench.swebench_patch_repair import try_repair_patch
+                    llm_handle = getattr(
+                        getattr(self.system, "agent_loop", None), "_llm", None,
+                    )
+                    patch, repair_stage = await try_repair_patch(
+                        patch=patch,
+                        repo_dir=repo_dir,
+                        llm=llm_handle,
+                        problem_statement=instance.get("problem_statement", ""),
+                        instance_id=instance_id,
+                        llm_timeout=60.0,
+                    )
+
                 pipeline_ctx = getattr(getattr(self.system, "pipeline", None), "last_context", None)
                 execution_path = getattr(self.system, "_last_execution_path", "")
                 system_used = (
@@ -586,6 +610,7 @@ class SWEBenchBench:
                 "_error": error,
                 "_structured_failure": structured_failure,  # D7 audit
                 "_repo": instance["repo"],
+                "_repair_stage": repair_stage,  # v16: "", unchanged, programmatic_counts, llm_repair, failed
             })
 
             self.manifest.add(TaskTrace(
