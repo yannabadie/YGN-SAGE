@@ -231,23 +231,90 @@ Each commit is independently testable and reversible.
 - The 2026-04-21 tool-affordance fix (`3622ac5`) composes cleanly with
   source-specific instructions instead of being overridden by them.
 
-## Questions for user before implementation
+## Decisions (answered 2026-04-21, advisor-reviewed)
 
-1. **Chat tools filter.** In chat mode, should the agent have full tool
-   access by default (execute_bash available) or restricted (no bash, only
-   `search_exocortex` + maybe a web-fetch tool)? Default matters — chat that
-   runs bash is powerful but surprising.
-2. **Chat persistence.** Multi-turn chat needs session state (history,
-   prior tool outputs). Use WorkingMemory (per-run) or a new `ChatSession`
-   object? Affects where the history lives.
-3. **Response format default for chat.** `ResponseFormat.TEXT` seems right
-   but some chat users want `CODE` when they ask for code. Auto-detect from
-   the prompt text or require an explicit mode switch?
-4. **Migration pace.** 5 commits as described, or bundle 1+2+3+4 into one
-   bigger commit and iterate on chat (5) separately? I'd prefer the
-   incremental pace so regressions are attributable to one change.
+1. **Chat tools filter — bash OFF by default.** Chat default tool set:
+   `search_exocortex` + future read-only tools (web-fetch, etc.). Bash
+   is opt-in per-session via a `/shell` REPL command or
+   `SAGE_CHAT_ALLOW_BASH=1`. Benches pass their own `tools_filter` via
+   TaskInput and keep bash. Rationale: aligns with Claude Desktop /
+   Cursor / Aider defaults; users don't typically expect a chat
+   window to run shell commands without explicit opt-in.
+
+2. **Chat persistence — jsonl append-only from day 1.** `ChatSession`
+   streams each turn to `~/.sage/chat_sessions/<ulid>.jsonl` as it
+   happens. `sage chat --resume <session_id>` replays from disk.
+   Single-session-per-REPL at MVP (no in-process dict, no GC). ~20
+   extra LOC over pure in-memory; buys "resume yesterday's chat" and
+   transcript inspection for free. Pattern mirrors Claude Code's own
+   `.claude/projects/<cwd>/<session_id>.jsonl`.
+
+3. **Response format default — NO format enforcement in chat mode.**
+   `_response_format_block()` is injected only when
+   `task_input.response_format != ResponseFormat.TEXT`. Chat users
+   get raw model output — the LLM chooses prose/code/markdown based
+   on the request. Benches still inject their strict format
+   constraints (PATCH, CODE, JSON) because their evaluators need
+   parseable output. Aider-style slash commands (`/code`, `/patch`)
+   land in a Phase-2 follow-up if user demand appears.
+
+4. **Migration rhythm — 5 incremental commits, atomic.** Matches
+   today's 12-commit session pattern (one commit per fix, attribution
+   per next smoke). Each step independently testable and revertible.
+
+## Migration plan (revised per advisor)
+
+- **C1**: Introduce `sage.input` package with `TaskInput`,
+  `ResponseFormat`, and `normalize_chat()`. No bench changes. 15+
+  unit tests. No collision with running files — safe to start
+  alongside an in-progress smoke. **Zero user-visible change.**
+
+- **C2a**: Byte-identical migration of SWE-bench. Old `_TASK_TEMPLATE`
+  becomes `SWEBENCH_WORKFLOW` (exact same text, verbatim) routed
+  through the new `normalize_swebench()` → TaskInput → prompt
+  builder path. Regression test: a known SWE-bench instance
+  produces **byte-identical** prompt text. Preserves the
+  "MUST execute_bash THREE times" anti-affordance DELIBERATELY.
+  Zero behavioral change, pure refactor.
+
+- **C2b**: Soften the MUST-bash anti-affordance. Change
+  "You MUST make at least THREE distinct `execute_bash` calls"
+  to "You MUST make at least THREE distinct tool calls, using
+  `execute_bash` for repo exploration and `search_exocortex`
+  for library-specific API contract questions when needed."
+  This is where the 2026-04-21 ExoCortex audit finding
+  (`docs/audits/2026-04-21-exocortex-swebench-usage.md`) gets
+  resolved in code. Smoke after C2b should finally see
+  non-zero `search_exocortex` calls. Split from C2a so the next
+  smoke attributes the tool-usage shift to C2b alone.
+
+- **C3**: Migrate BCB. Same refactor pattern as C2a (byte-identical).
+  The AVR prompt-enrichment from commit `9eb05b0` gets preserved
+  as part of the `instructions` field, not rewritten.
+
+- **C4**: `AgentSystem.run()` accepts `str | TaskInput`. Wire
+  `perceive()` to consume `TaskInput` and produce the layered
+  prompt. Chat tests + integration tests.
+
+- **C5**: `python -m sage.chat` REPL prototype. In-process single
+  session with jsonl persistence. `/shell` to toggle bash tools
+  per session. `--resume <id>` to continue from disk.
+
+Each commit is independently testable, revertible, and kicks the
+full pytest suite. Expected session count: **3 sessions** (C1 now,
+C2+C3+C4 batch, C5 ship).
+
+## Out of scope (for now)
+
+- **Streaming responses.** Chat mode probably wants token streaming; the
+  loop already has `generate_stream` plumbing (`StreamingLLMProvider`
+  protocol). Wiring into the new CLI is a follow-up.
+- **Multi-session concurrent REPLs.** MVP is one REPL, one session.
+  Multiplexing sessions behind a daemon is a separate design.
+- **Graphical chat UI.** Out of scope for SAGE; the CLI is enough for dogfood.
+- **Aider-style per-turn `/code` `/patch` slash commands.** Only
+  add if user demand appears after the CLI ships.
 
 ---
 
-**Status:** awaiting user answers on the 4 questions before starting
-Commit 1.
+**Status:** decisions frozen; starting C1 now (parallel to running N=50 smoke, no file collision).
