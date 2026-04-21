@@ -96,19 +96,74 @@ def _inject_truststore() -> bool:
         return False
 
 
+def _apply_crlf_fix() -> bool:
+    """Force LF line endings for shell scripts written via Path.write_text.
+
+    Background:
+      ``swebench.harness.run_evaluation.run_instance`` writes ``/eval.sh``
+      with ``eval_file.write_text(test_spec.eval_script)`` (no
+      ``newline=`` argument). On Windows, Python text mode translates
+      every ``\\n`` → ``\\r\\n``. The Linux Docker container then
+      receives a CRLF script; bash fails on ``set -uxo pipefail\\r``
+      ("invalid option name") and conda is never activated → pytest is
+      not in PATH → 100 % of FAIL_TO_PASS tests report "command not
+      found". The upstream Dockerfile only strips CRLF from
+      ``setup_env.sh`` / ``setup_repo.sh`` (baked in at build time);
+      ``/eval.sh`` is written at RUNTIME per-container and has no such
+      treatment on the host writer side. This was the root cause of the
+      2026-04-21 v13 smoke 0/10 result (see
+      ``docs/benchmarks/2026-04-21-swebench-smoke-v13-post-phase1-stab.md``).
+
+    Fix:
+      Monkey-patch ``pathlib.Path.write_text`` once per process so any
+      ``.sh`` / ``.bash`` write goes through ``write_bytes`` with UTF-8
+      encoding (pure LF). Other file types fall through untouched. On
+      Linux this is a no-op (text mode already writes LF). Idempotent
+      via a marker attribute on the replacement — safe across fresh
+      re-imports of this module (pathlib itself keeps the wrapper).
+    """
+    import pathlib
+
+    current = pathlib.Path.write_text
+    if getattr(current, "_sage_crlf_wrapped", False):
+        return True
+
+    def _lf_safe_write_text(self, data, encoding=None, errors=None, newline=None):
+        suffix = self.suffix.lower()
+        if suffix in (".sh", ".bash"):
+            enc = encoding or "utf-8"
+            return self.write_bytes(data.encode(enc, errors=errors or "strict"))
+        return current(
+            self, data, encoding=encoding, errors=errors, newline=newline
+        )
+
+    _lf_safe_write_text._sage_crlf_wrapped = True  # type: ignore[attr-defined]
+    pathlib.Path.write_text = _lf_safe_write_text  # type: ignore[method-assign]
+    log.info(
+        "swebench CA patch: pathlib.Path.write_text wrapped with LF-safe "
+        "handler for .sh/.bash files (Windows CRLF fix for /eval.sh inside "
+        "the Docker container)."
+    )
+    return True
+
+
 def apply_corporate_ca_patch() -> bool:
     """Monkey-patch swebench to accept the corporate CA during Docker builds.
 
-    Does two things unconditionally (secure path):
+    Does three things unconditionally (secure path):
     1. Injects ``truststore`` into the Python SSL subsystem so the host
        process trusts whatever the OS trusts (fixes requests.get() against
        raw.githubusercontent.com behind a corporate TLS proxy).
-    2. Modifies the base Dockerfile to COPY an explicit CA bundle and
+    2. Wraps ``pathlib.Path.write_text`` so ``.sh`` / ``.bash`` scripts
+       are written with pure LF bytes on Windows (fixes CRLF in
+       ``/eval.sh`` inside the Docker container — see
+       :func:`_apply_crlf_fix`).
+    3. Modifies the base Dockerfile to COPY an explicit CA bundle and
        append it to ``/etc/ssl/certs/ca-certificates.crt`` inside the
        container so OpenSSL-based tools trust the corporate chain.
 
     Optionally, only when ``SAGE_SWEBENCH_ALLOW_INSECURE=1``:
-    3. Adds ``--no-check-certificate`` to Miniconda wget, and disables
+    4. Adds ``--no-check-certificate`` to Miniconda wget, and disables
        SSL verification for conda + pip inside the Dockerfile. Escape
        hatch for hosts where the MITM-augmented trust store still can't
        verify ``repo.anaconda.com`` / ``pypi.org``. A prominent WARNING
@@ -131,6 +186,10 @@ def apply_corporate_ca_patch() -> bool:
     # Host-side fix — unconditional. Safe on non-corporate networks (no-op
     # if the OS store already matches certifi).
     _inject_truststore()
+
+    # Windows CRLF fix for /eval.sh in Docker — unconditional (no-op on
+    # Linux). Independent of CA bundle presence, so run before _resolve.
+    _apply_crlf_fix()
 
     ca_bundle = _resolve_ca_bundle()
     if ca_bundle is None:

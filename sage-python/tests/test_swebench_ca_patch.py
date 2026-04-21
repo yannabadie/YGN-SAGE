@@ -242,3 +242,77 @@ def test_no_bundle_env_uses_default_when_it_exists(monkeypatch, tmp_path):
     mod = _fresh_patch_module()
     monkeypatch.setattr(mod, "_DEFAULT_CA_BUNDLE", default_bundle)
     assert mod.apply_corporate_ca_patch() is True
+
+
+# -- CRLF fix (Windows /eval.sh) -------------------------------------------
+
+
+def test_crlf_fix_forces_lf_for_shell_scripts(monkeypatch, tmp_path):
+    """After apply, Path.write_text on .sh files produces pure-LF bytes.
+
+    This is the kernel of the v14 CRLF fix: /eval.sh in Docker must not
+    have \\r — bash inside Linux containers fails with
+    ``set: pipefail\\r: invalid option name`` if it does.
+    """
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+
+    sh_path = tmp_path / "eval.sh"
+    sh_path.write_text("set -uxo pipefail\nconda activate testbed\n")
+    on_disk = sh_path.read_bytes()
+    assert b"\r\n" not in on_disk, (
+        "Path.write_text(.sh) still produced CRLF after the LF-safe "
+        "wrap — /eval.sh in Docker would still fail on bash"
+    )
+    assert on_disk == b"set -uxo pipefail\nconda activate testbed\n"
+
+    # .bash is handled identically.
+    bash_path = tmp_path / "script.bash"
+    bash_path.write_text("echo foo\nexit 0\n")
+    assert b"\r\n" not in bash_path.read_bytes()
+
+
+def test_crlf_fix_leaves_other_extensions_alone(monkeypatch, tmp_path):
+    """Only .sh/.bash paths are diverted — .py/.json/.txt go through the
+    original Path.write_text (platform-default line-ending behavior)."""
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+
+    # .py — platform-default encoding/newlines; we don't assert specific
+    # bytes (CRLF on Windows, LF on *nix) — just verify the wrapper
+    # doesn't mangle round-tripping through read_text().
+    py_path = tmp_path / "script.py"
+    py_path.write_text("x = 1\ny = 2\n")
+    assert py_path.read_text() == "x = 1\ny = 2\n"
+
+
+def test_crlf_fix_idempotent_no_double_wrap(monkeypatch, tmp_path):
+    """Two apply() calls don't re-wrap pathlib.Path.write_text — the
+    function identity must stay stable after the first install."""
+    import pathlib as _pathlib
+
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+    first_wrap = _pathlib.Path.write_text
+    assert getattr(first_wrap, "_sage_crlf_wrapped", False) is True
+
+    assert mod.apply_corporate_ca_patch() is True
+    assert _pathlib.Path.write_text is first_wrap, (
+        "second apply() re-wrapped pathlib.Path.write_text — "
+        "idempotence broken"
+    )
