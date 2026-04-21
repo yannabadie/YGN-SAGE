@@ -296,6 +296,79 @@ def test_crlf_fix_leaves_other_extensions_alone(monkeypatch, tmp_path):
     assert py_path.read_text() == "x = 1\ny = 2\n"
 
 
+def test_utf8_open_fix_defaults_text_write_to_utf8(monkeypatch, tmp_path):
+    """After apply, swebench.harness.run_evaluation.open() defaults to
+    UTF-8 for text-mode writes, allowing pytest's Unicode output to be
+    persisted to test_output.txt on Windows (cp1252 locale default)."""
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+
+    from swebench.harness import run_evaluation as _run_eval
+    wrapped_open = _run_eval.__dict__["open"]
+    assert getattr(wrapped_open, "_sage_utf8_wrapped", False) is True
+
+    # Exercise the wrapper with a string containing the box-drawing char
+    # pytest emits in its tree view — this is the exact character that
+    # tripped cp1252 on 2026-04-21 v14.
+    out_path = tmp_path / "test_output.txt"
+    with wrapped_open(out_path, "w") as f:
+        f.write("Line 1 with box: \u2502 and tree: \u251c\u2500\u2500 end\n")
+    assert out_path.read_text(encoding="utf-8").startswith("Line 1 with box:")
+
+
+def test_utf8_open_fix_passes_through_binary_and_explicit_encoding(
+    monkeypatch, tmp_path,
+):
+    """Binary modes and explicit-encoding calls bypass the UTF-8 default
+    (caller's intent wins)."""
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+
+    from swebench.harness import run_evaluation as _run_eval
+    wrapped_open = _run_eval.__dict__["open"]
+
+    # Binary mode — no encoding should be forced.
+    bin_path = tmp_path / "binary.bin"
+    with wrapped_open(bin_path, "wb") as f:
+        f.write(b"\x00\x01\x02")
+    assert bin_path.read_bytes() == b"\x00\x01\x02"
+
+    # Explicit encoding — caller's choice wins.
+    ascii_path = tmp_path / "ascii.txt"
+    with wrapped_open(ascii_path, "w", encoding="ascii") as f:
+        f.write("plain ascii\n")
+    assert ascii_path.read_text(encoding="ascii") == "plain ascii\n"
+
+
+def test_utf8_open_fix_idempotent(monkeypatch, tmp_path):
+    """Two apply() calls don't re-wrap the swebench open — the reference
+    identity stays stable after first install."""
+    bundle = _make_tmp_bundle(tmp_path)
+    monkeypatch.delenv("SAGE_SWEBENCH_DISABLE_CA_PATCH", raising=False)
+    monkeypatch.delenv("SAGE_SWEBENCH_ALLOW_INSECURE", raising=False)
+    monkeypatch.setenv("SAGE_CORPORATE_CA_BUNDLE", str(bundle))
+
+    mod = _fresh_patch_module()
+    assert mod.apply_corporate_ca_patch() is True
+
+    from swebench.harness import run_evaluation as _run_eval
+    first = _run_eval.__dict__["open"]
+
+    assert mod.apply_corporate_ca_patch() is True
+    second = _run_eval.__dict__["open"]
+    assert first is second, "second apply() re-wrapped open — idempotence broken"
+
+
 def test_crlf_fix_idempotent_no_double_wrap(monkeypatch, tmp_path):
     """Two apply() calls don't re-wrap pathlib.Path.write_text — the
     function identity must stay stable after the first install."""

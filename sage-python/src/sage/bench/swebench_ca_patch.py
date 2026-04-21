@@ -147,6 +147,69 @@ def _apply_crlf_fix() -> bool:
     return True
 
 
+def _apply_utf8_open_fix() -> bool:
+    """Force UTF-8 encoding for text-mode ``open()`` inside swebench.
+
+    Background:
+      ``swebench.harness.run_evaluation.py:211`` writes container test
+      output to disk with bare ``open(test_output_path, "w")``. On
+      Windows, Python's text-mode ``open()`` defaults to the locale
+      preferred encoding (``cp1252``). pytest output inside the
+      container routinely contains Unicode box-drawing characters
+      (``│`` U+2502, ``├``, etc. from its tree display) → ``UnicodeEncodeError:
+      'charmap' codec can't encode character '\\u2502'`` → the test run
+      is reported as ERROR even though the patch applied cleanly and
+      tests actually ran. This is what turned 2/10 would-be-resolved
+      cases into v14 ERRORs.
+
+    Fix:
+      Replace ``swebench.harness.run_evaluation.open`` with a wrapper
+      that defaults to ``encoding='utf-8'`` whenever mode is text-write
+      (``'w'``, ``'wt'``, ``'a'``, ``'at'``) and no explicit encoding is
+      passed. Binary modes and explicit-encoding calls pass through
+      untouched. Scoped to the swebench module so we don't touch
+      ``builtins.open`` globally. No-op on Linux (UTF-8 is the default
+      there).
+    """
+    try:
+        from swebench.harness import run_evaluation as _run_eval
+    except ImportError:
+        log.warning(
+            "swebench CA patch: could not import run_evaluation — "
+            "UTF-8 open fix skipped."
+        )
+        return False
+
+    existing = _run_eval.__dict__.get("open", open)
+    if getattr(existing, "_sage_utf8_wrapped", False):
+        return True
+
+    _builtin_open = open
+
+    def _utf8_default_open(file, mode="r", buffering=-1, encoding=None,
+                           errors=None, newline=None, closefd=True, opener=None):
+        is_text_write = (
+            "b" not in mode
+            and encoding is None
+            and any(c in mode for c in ("w", "a", "x", "+"))
+        )
+        if is_text_write:
+            encoding = "utf-8"
+        return _builtin_open(
+            file, mode=mode, buffering=buffering, encoding=encoding,
+            errors=errors, newline=newline, closefd=closefd, opener=opener,
+        )
+
+    _utf8_default_open._sage_utf8_wrapped = True  # type: ignore[attr-defined]
+    _run_eval.open = _utf8_default_open  # type: ignore[attr-defined]
+    log.info(
+        "swebench CA patch: swebench.harness.run_evaluation.open wrapped "
+        "to default text-mode writes to UTF-8 (Windows cp1252 fix for "
+        "pytest Unicode output in test_output.txt)."
+    )
+    return True
+
+
 def apply_corporate_ca_patch() -> bool:
     """Monkey-patch swebench to accept the corporate CA during Docker builds.
 
@@ -190,6 +253,12 @@ def apply_corporate_ca_patch() -> bool:
     # Windows CRLF fix for /eval.sh in Docker — unconditional (no-op on
     # Linux). Independent of CA bundle presence, so run before _resolve.
     _apply_crlf_fix()
+
+    # Windows cp1252 fix for pytest Unicode output written to
+    # test_output.txt by swebench — unconditional, no-op on Linux.
+    # Must run after swebench import; _apply_utf8_open_fix does its own
+    # import + guard so it's safe to call unconditionally here.
+    _apply_utf8_open_fix()
 
     ca_bundle = _resolve_ca_bundle()
     if ca_bundle is None:
