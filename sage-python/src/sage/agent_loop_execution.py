@@ -107,6 +107,13 @@ async def execute_tool_call(
         )
     try:
         result = await tool.execute(kwargs.copy())
+        output_len = len(result.output) if result and result.output else 0
+        log.info(
+            "tool.call name=%s args_keys=%s output_len=%d",
+            tc.name,
+            sorted(kwargs.keys()),
+            output_len,
+        )
         return result.output
     except (RuntimeError, ValueError, TimeoutError) as e:
         log.error("Tool '%s' execution failed: %s", tc.name, e)
