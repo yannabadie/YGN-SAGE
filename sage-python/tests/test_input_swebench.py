@@ -152,25 +152,62 @@ def test_build_task_prompt_delegates_to_input_layer():
 
 
 # ---------------------------------------------------------------------------
-# Content guards — these tests intentionally lock specific phrasing so
-# that C2b's softening becomes a visible fixture edit, not silent drift.
+# Content guards — these tests lock specific phrasing so any future edit
+# to the template shows up as a fixture diff, not silent drift. C2b
+# deliberately rewrote the tool-affordance lines from bash-exclusive
+# to tool-generic; these tests reflect the new state.
 # ---------------------------------------------------------------------------
 
 
-def test_c2a_preserves_must_bash_clause():
-    """C2a is a pure refactor — the "MUST make at least THREE
-    distinct execute_bash calls" anti-affordance is locked until
-    C2b rewrites it. If this test fails in a commit that isn't
-    labeled C2b, the refactor leaked content."""
-    ti = normalize_swebench(CANONICAL_INSTANCE)
-    prompt = render_swebench_prompt(ti)
-    assert "MUST make at least THREE distinct execute_bash calls" in prompt
+def test_c2b_must_clause_is_tool_generic_not_bash_specific():
+    """Post-C2b, the MUST clause asks for "tool calls" (not bash
+    calls) and explicitly names both `execute_bash` and
+    `search_exocortex`. If a future edit reverts to the old
+    bash-exclusive phrasing, the smoke attribution window for
+    tool-usage shifts gets muddied — fail loudly here so the
+    fixture churn is visible in review."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    assert "MUST make at least THREE distinct tool calls" in prompt
+    assert "MUST make at least THREE distinct execute_bash calls" not in prompt
 
 
-def test_c2a_preserves_patch_format_strict_block():
-    """The grader-facing patch format contract stays locked through
-    C2a. Weakening the "Hard requirements" bullet list would break
-    the Docker eval's patch validator."""
+def test_search_exocortex_listed_in_tool_menu():
+    """The 2026-04-21 ExoCortex audit found that in 10 SWE-bench
+    runs, `search_exocortex` was called 0 times — the prior prompt
+    didn't surface the affordance. C2b fixes that by naming the
+    tool explicitly in the "## Mandatory Workflow" tool menu."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    assert "**search_exocortex**" in prompt
+    assert "library API contracts" in prompt
+
+
+def test_search_exocortex_workflow_step_present():
+    """Step 4 (optional) tells the model WHEN to reach for
+    `search_exocortex` — library-contract questions the repo
+    alone can't answer. Without this step the tool is listed
+    but not motivated; the 2026-04-21 audit showed listing alone
+    didn't move usage."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    assert "**(Optional)**" in prompt
+    assert "search_exocortex" in prompt
+    assert "library's documented behavior" in prompt
+
+
+def test_execute_bash_still_the_primary_repo_tool():
+    """Softening the MUST clause must NOT drop `execute_bash` from
+    the menu or the steps — it remains the right tool for repo
+    exploration (grep, sed, pytest). C2b broadens the affordance;
+    it does not replace bash."""
+    prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
+    assert "**execute_bash**" in prompt
+    assert "on the checked-out repo" in prompt
+    assert "pytest" in prompt  # still in the bash bullet
+
+
+def test_patch_format_strict_block_preserved():
+    """The grader-facing patch-format contract is untouched by C2b.
+    Weakening the "Hard requirements" bullets would break the
+    Docker eval's patch validator."""
     prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
     assert "## Patch Format — Strict" in prompt
     assert "diff --git" in prompt

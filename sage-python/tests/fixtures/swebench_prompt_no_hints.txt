@@ -14,10 +14,11 @@ Hello, the default setting of FILE_UPLOAD_PERMISSION (None) can lead to surprisi
 ## Mandatory Workflow — Follow Every Step
 
 You have these tools available:
-- **execute_bash** — run any shell command (cat, grep, find, git log, sed, python, pytest)
-- Memory + knowledge tools registered at boot (if any)
+- **execute_bash** — run any shell command on the checked-out repo (cat, grep, find, git log, sed, python, pytest).
+- **search_exocortex** — query the local research ExoCortex for library API contracts, deprecation notices, and upstream docs when the issue references behavior outside this repo's source tree.
+- Memory + knowledge tools registered at boot (if any).
 
-You MUST make at least THREE distinct execute_bash calls *before* writing any patch. One-shot patches are almost always wrong — the line numbers and context lines will not match the real source, and the harness will reject the diff.
+You MUST make at least THREE distinct tool calls *before* writing any patch. Use `execute_bash` for everything that lives in the checked-out source tree (locate files, read functions, check tests, verify line numbers); reach for `search_exocortex` when the issue hinges on a third-party library API contract or an upstream specification you cannot confirm from the repo alone. One-shot patches are almost always wrong — the line numbers and context lines will not match the real source, and the harness will reject the diff.
 
 1. **Locate** the code mentioned in the issue.
    Example: `grep -RIn "ClassName\|function_name" src/ tests/ | head -40`
@@ -25,10 +26,11 @@ You MUST make at least THREE distinct execute_bash calls *before* writing any pa
    Example: `sed -n '200,260p' src/package/module.py`
 3. **Check tests** that reference the target. They often reveal the contract.
    Example: `grep -RIn "function_name" tests/ | head -20`
-4. **Verify** hunk line numbers immediately before emitting them.
+4. **(Optional)** Consult `search_exocortex` if the issue depends on a library's documented behavior (e.g., "requests.Response.json should raise on empty body"): one targeted query beats guessing at an API shape.
+5. **Verify** hunk line numbers immediately before emitting them.
    Example: `grep -n "^def function_name" src/package/module.py`
-5. Reason about the minimal change. If unsure, read more. Never guess line numbers.
-6. Write the patch.
+6. Reason about the minimal change. If unsure, read more. Never guess line numbers.
+7. Write the patch.
 
 ## Patch Format — Strict
 
