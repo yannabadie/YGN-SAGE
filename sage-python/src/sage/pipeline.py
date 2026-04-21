@@ -1538,16 +1538,51 @@ class CognitiveOrchestrationPipeline:
                     EVOLUTION_ONLINE_POP_SIZE,
                     EVOLUTION_ONLINE_GENERATIONS,
                 )
-                if self.engine.should_evolve(
+                decision = self.engine.should_evolve(
                     EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
-                ):
+                )
+                # In-run observability: log every should_evolve() call, not
+                # just the True branch. Without this, False branches are
+                # invisible -- we can't tell if the gate was even evaluated
+                # on a given task, which is exactly the class of silent-bypass
+                # that H1 (2cd840e) and H4 (dc51976) were. Archive context
+                # travels with the log so post-run analysis can correlate.
+                cells = 0
+                coverage = 0.0
+                if hasattr(self.engine, "archive_cell_count"):
+                    try:
+                        cells = int(self.engine.archive_cell_count())
+                    except (RuntimeError, TypeError):
+                        cells = 0
+                if hasattr(self.engine, "archive_coverage"):
+                    try:
+                        coverage = float(self.engine.archive_coverage())
+                    except (RuntimeError, TypeError):
+                        coverage = 0.0
+                log.info(
+                    "evolution.should_evolve.decision decision=%s cells=%d "
+                    "coverage=%.3f min_outcomes=%d cooldown=%d",
+                    "true" if decision else "false", cells, coverage,
+                    EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
+                )
+                if decision:
+                    # Read cells before evolve to show the effect of the call
+                    cells_pre_evolve = cells
                     self.engine.evolve(
                         pop_size=EVOLUTION_ONLINE_POP_SIZE,
                         generations=EVOLUTION_ONLINE_GENERATIONS,
                     )
+                    cells_post_evolve = cells_pre_evolve
+                    if hasattr(self.engine, "archive_cell_count"):
+                        try:
+                            cells_post_evolve = int(self.engine.archive_cell_count())
+                        except (RuntimeError, TypeError):
+                            cells_post_evolve = cells_pre_evolve
                     log.info(
-                        "Online evolution fired (pop=%d, gens=%d)",
+                        "evolution.evolve.called pop_size=%d generations=%d "
+                        "cells_before=%d cells_after=%d",
                         EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS,
+                        cells_pre_evolve, cells_post_evolve,
                     )
             except (ImportError, RuntimeError, AttributeError) as exc:
                 # Engine without these methods (e.g. test stub) → silent skip.

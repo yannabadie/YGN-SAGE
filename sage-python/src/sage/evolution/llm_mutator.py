@@ -157,6 +157,19 @@ class AdaptiveMutator:
             self._successes[tier] += 1.0
         else:
             self._failures[tier] += 1.0
+        # In-run observability: log every Thompson-sampling posterior update so
+        # future evolution runs show per-tier arm statistics. Note:
+        # AdaptiveMutator is NOT invoked on the pipeline runtime path today
+        # (no call sites outside this module) -- the log is wired now so the
+        # observability is ready when the offline evolution training path is
+        # re-activated.
+        a = self._successes[tier]
+        b = self._failures[tier]
+        log.info(
+            "evolution.mutator.update tier=%s improved=%s alpha=%.1f beta=%.1f "
+            "success_rate=%.3f",
+            tier, "true" if improved else "false", a, b, a / (a + b),
+        )
 
     def success_rate(self, tier: str) -> float:
         """Estimated success rate for a tier (mean of Beta posterior)."""
