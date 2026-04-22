@@ -79,11 +79,21 @@ def _resolve_within_cwd(user_path: str | os.PathLike[str]) -> Path:
     """Resolve ``user_path`` relative to CWD and reject escapes.
 
     Rules:
+      * ``None`` is rejected with a clear error.
+      * Paths containing embedded null bytes are rejected (cheap
+        defense against C-string truncation tricks; Python would
+        raise ValueError later anyway, but we surface it as
+        PathJailError for a consistent error class).
       * Absolute paths are rejected. Even if the caller means well,
-        we never let a tool touch `/etc/passwd` or `C:\\Windows`.
+        we never let a tool touch ``/etc/passwd`` or
+        ``C:\\Windows``. On Windows, ``/etc/passwd``-style paths
+        that start with ``/`` or ``\\`` are ALSO rejected even
+        though ``Path.is_absolute()`` returns False on them —
+        leading-slash signals intent to use an absolute path, so we
+        don't silently rebind it to ``cwd/etc/passwd``.
       * Paths are resolved (symlinks expanded) then checked against
         the current working directory. Anything not underneath CWD
-        is rejected.
+        is rejected (this is what catches symlink escapes).
       * The special tokens ``.`` / empty string resolve to CWD.
       * Normalisation uses :meth:`Path.resolve(strict=False)` so we
         can reason about not-yet-created paths (apply_patch may
@@ -91,6 +101,20 @@ def _resolve_within_cwd(user_path: str | os.PathLike[str]) -> Path:
     """
     if user_path is None:
         raise PathJailError("path must not be None")
+    path_str = str(user_path)
+    if "\x00" in path_str:
+        raise PathJailError(
+            f"path contains an embedded null byte (got {user_path!r})"
+        )
+    # Leading `/` or `\` signals the caller intends an absolute path.
+    # On POSIX this is caught by Path.is_absolute(); on Windows it is
+    # NOT (Windows needs a drive letter), which would otherwise leave
+    # `/etc/passwd` silently rebound to `cwd\etc\passwd`. Reject both.
+    if path_str.startswith(("/", "\\")):
+        raise PathJailError(
+            f"absolute paths are not allowed (got {user_path!r}); "
+            "pass a path relative to the working directory"
+        )
     p = Path(user_path)
     if p.is_absolute():
         raise PathJailError(
@@ -202,7 +226,17 @@ def _build_read_file_tool() -> Tool:
             return f"[ERROR] file not found: {path}"
         if not resolved.is_file():
             return f"[ERROR] path is not a regular file: {path}"
-        cap = min(max(0, int(max_bytes or MAX_FILE_BYTES)), 4 * MAX_FILE_BYTES)
+        # Clamp: non-positive / missing values → default; hard cap
+        # always applied. Non-positive values indicate a caller bug
+        # (or a red-team probe); prefer the safer default to a
+        # truncation marker on an empty read.
+        try:
+            requested = int(max_bytes) if max_bytes else MAX_FILE_BYTES
+        except (TypeError, ValueError):
+            requested = MAX_FILE_BYTES
+        if requested <= 0:
+            requested = MAX_FILE_BYTES
+        cap = min(requested, 4 * MAX_FILE_BYTES)
         try:
             with resolved.open("rb") as f:
                 raw = f.read(cap + 1)
@@ -421,8 +455,31 @@ def _build_list_files_tool() -> Tool:
 # ---------------------------------------------------------------------------
 
 
+_SHELL_METACHARS: tuple[str, ...] = (";", "|", "&", "`", "$", ">", "<", "\n", "\r")
+
+
+def _contains_shell_metachar(s: str) -> str | None:
+    """Return the first shell metachar found in ``s`` or None."""
+    for c in _SHELL_METACHARS:
+        if c in s:
+            return c
+    return None
+
+
 def _validate_pytest_args(args: list[str]) -> tuple[list[str] | None, str]:
-    """Return (validated_args, "") on success or (None, "error message")."""
+    """Return (validated_args, "") on success or (None, "error message").
+
+    Reject classes (every token runs through the metachar scan, not
+    just positionals — see red-team test_pytest_args_rejects_injection
+    for the motivating cases):
+      * non-list input
+      * non-string element
+      * flag not in PYTEST_ARG_ALLOWLIST
+      * flag value starting with `-` (looks like a smuggled flag)
+      * any token containing ``; | & ` $ > < \\n \\r``
+      * flag like ``-k=value`` where value contains a shell metachar
+      * ``--foo=bar`` where ``--foo`` is not in the allowlist
+    """
     if args is None:
         return [], ""
     if not isinstance(args, list):
@@ -444,8 +501,17 @@ def _validate_pytest_args(args: list[str]) -> tuple[list[str] | None, str]:
         if not isinstance(arg, str):
             return None, f"pytest_args must be a list of strings (element {i} is {type(arg).__name__})"
         if arg.startswith("-"):
-            # Long form split: "--tb=short" → key "--tb"
-            key = arg.split("=", 1)[0]
+            # Long form split: "--tb=short" → key "--tb", val "short"
+            if "=" in arg:
+                key, _, inline_val = arg.partition("=")
+                meta = _contains_shell_metachar(inline_val)
+                if meta is not None:
+                    return None, (
+                        f"pytest flag value in {arg!r} contains a "
+                        f"shell metacharacter {meta!r}"
+                    )
+            else:
+                key = arg
             if key not in PYTEST_ARG_ALLOWLIST:
                 return None, (
                     f"pytest flag {arg!r} is not in the allowlist "
@@ -460,14 +526,24 @@ def _validate_pytest_args(args: list[str]) -> tuple[list[str] | None, str]:
                 value = args[i + 1]
                 if not isinstance(value, str) or value.startswith("-"):
                     return None, f"flag {arg!r} requires a non-flag value (got {value!r})"
+                meta = _contains_shell_metachar(value)
+                if meta is not None:
+                    return None, (
+                        f"pytest flag value {value!r} contains a "
+                        f"shell metacharacter {meta!r}"
+                    )
                 cleaned.append(value)
                 i += 2
                 continue
         else:
             # Positional arg: a test node id like "tests/foo.py::test_bar".
             # Reject anything that looks like a shell metachar.
-            if any(c in arg for c in (";", "|", "&", "`", "$", ">", "<", "\n")):
-                return None, f"pytest_args element {arg!r} contains a shell metacharacter"
+            meta = _contains_shell_metachar(arg)
+            if meta is not None:
+                return None, (
+                    f"pytest_args element {arg!r} contains a shell "
+                    f"metacharacter {meta!r}"
+                )
             cleaned.append(arg)
         i += 1
     return cleaned, ""
