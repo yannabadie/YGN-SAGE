@@ -37,13 +37,26 @@
 
 #![cfg(all(feature = "sandbox", feature = "cranelift"))]
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use wasmtime::{Config, Engine, Linker, Module, Store};
+use wasmtime::{Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
 use wasmtime_wasi::p1::{self, WasiP1Ctx};
 use wasmtime_wasi::p2::pipe::MemoryOutputPipe;
 use wasmtime_wasi::{I32Exit, WasiCtxBuilder};
+
+/// Memory cap for a single sandbox call. wasm32 allows up to 4 GiB
+/// linear memory by default — catastrophic for a shared host on a
+/// DoS probe like `x = [0] * (10 ** 9)`. 256 MiB is generous for a
+/// single CPython-equivalent REPL script and low enough that even a
+/// dozen concurrent sandbox calls stay well under host pressure.
+const SANDBOX_MAX_MEMORY_BYTES: usize = 256 * 1024 * 1024;
+
+/// Stdout/stderr cap per call. Sized to match the red-team plan's
+/// ENG-4 assertion (truncation cap) while staying small enough to
+/// avoid memory pressure when many sandbox calls run concurrently.
+const SANDBOX_PIPE_CAPACITY: usize = 64 * 1024;
 
 use super::subprocess::ExecResult;
 
@@ -81,6 +94,15 @@ impl std::fmt::Display for WasmPythonInitError {
 
 impl std::error::Error for WasmPythonInitError {}
 
+/// Per-call store state. `wasi` holds the WASI-p1 capability
+/// context, `limits` is the memory cap enforced by wasmtime on
+/// every linear-memory grow. Both live in the Store so they can
+/// be read from inside the wasm guest at syscall / grow time.
+struct StoreState {
+    wasi: WasiP1Ctx,
+    limits: StoreLimits,
+}
+
 /// Embedded-RustPython executor backed by wasmtime.
 ///
 /// Construction is expensive (compiles the .wasm via cranelift) so
@@ -90,6 +112,16 @@ impl std::error::Error for WasmPythonInitError {}
 pub struct WasmPythonExecutor {
     engine: Engine,
     module: Arc<Module>,
+    /// Monotonic counter: each `execute()` call claims the next
+    /// value as its epoch deadline. wasmtime `set_epoch_deadline`
+    /// is ABSOLUTE (interrupt when engine.epoch >= deadline), and
+    /// the shared engine's epoch grows across calls because each
+    /// watchdog thread bumps it once after its timeout. Using a
+    /// per-call monotonic deadline keeps every new call starting
+    /// at `engine.epoch + 1`, so a prior call's watchdog firing
+    /// can't interrupt a subsequent call. Initialised at 1 so
+    /// deadline for the first call is 1 (engine starts at 0).
+    next_deadline: AtomicU64,
 }
 
 impl WasmPythonExecutor {
@@ -114,6 +146,7 @@ impl WasmPythonExecutor {
         Ok(Self {
             engine,
             module: Arc::new(module),
+            next_deadline: AtomicU64::new(1),
         })
     }
 
@@ -134,8 +167,8 @@ impl WasmPythonExecutor {
     /// wasmtime epoch interrupt.
     pub fn execute(&self, code: &str, args_json: &str, timeout_secs: u64) -> ExecResult {
         let start = Instant::now();
-        let stdout = MemoryOutputPipe::new(64 * 1024);
-        let stderr = MemoryOutputPipe::new(64 * 1024);
+        let stdout = MemoryOutputPipe::new(SANDBOX_PIPE_CAPACITY);
+        let stderr = MemoryOutputPipe::new(SANDBOX_PIPE_CAPACITY);
 
         let wrapped = Self::wrap_code(code, args_json);
 
@@ -154,11 +187,30 @@ impl WasmPythonExecutor {
 
         let wasi: WasiP1Ctx = builder.build_p1();
 
-        let mut store: Store<WasiP1Ctx> = Store::new(&self.engine, wasi);
-        store.set_epoch_deadline(1);
+        // StoreState holds both the WASI context and the memory
+        // limiter. wasmtime requires the limiter to be stored in the
+        // Store's data so it can read it during memory-grow calls.
+        let state = StoreState {
+            wasi,
+            limits: StoreLimitsBuilder::new()
+                .memory_size(SANDBOX_MAX_MEMORY_BYTES)
+                .build(),
+        };
+        // Claim a fresh monotonic deadline. The watchdog will bump
+        // engine.epoch exactly once after `timeout_secs`, so our
+        // deadline must be > current engine.epoch. We track this
+        // via AtomicU64 — previous calls' watchdogs have driven
+        // engine.epoch up by exactly (deadline_val - 1).
+        let deadline_val = self.next_deadline.fetch_add(1, Ordering::SeqCst);
+        let mut store: Store<StoreState> = Store::new(&self.engine, state);
+        store.limiter(|s| &mut s.limits);
+        store.set_epoch_deadline(deadline_val);
 
         // Spawn a watchdog thread that bumps the epoch after the
         // timeout. This is how wasmtime cancels long-running Wasm.
+        // Detached on purpose — if it fires after the call returned
+        // cleanly, the epoch just ticks past this call's deadline,
+        // which is harmless because next_deadline has moved on.
         let watchdog_engine = self.engine.clone();
         let deadline = Duration::from_secs(timeout_secs);
         let timer = std::thread::spawn(move || {
@@ -166,8 +218,8 @@ impl WasmPythonExecutor {
             watchdog_engine.increment_epoch();
         });
 
-        let mut linker: Linker<WasiP1Ctx> = Linker::new(&self.engine);
-        if let Err(e) = p1::add_to_linker_sync(&mut linker, |s: &mut WasiP1Ctx| s) {
+        let mut linker: Linker<StoreState> = Linker::new(&self.engine);
+        if let Err(e) = p1::add_to_linker_sync(&mut linker, |s: &mut StoreState| &mut s.wasi) {
             return mk_error_result(format!("linker wire-up failed: {}", e), &start);
         }
 

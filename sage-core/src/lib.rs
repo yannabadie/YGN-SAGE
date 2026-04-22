@@ -37,6 +37,11 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<sandbox::subprocess::ExecResult>()?;
         m.add_class::<sandbox::tool_executor::ToolExecutor>()?;
     }
+    // Embedded-RustPython availability probe. Red-team harness uses
+    // this to skip tests when sage-core was built without the wasm
+    // bytes bundled. `has_wasm()` on ToolExecutor only answers for
+    // the Component-Model path — this covers the execute_raw path.
+    m.add_function(pyo3::wrap_pyfunction!(embedded_wasm_available, m)?)?;
     m.add_class::<memory::rag_cache::RagCache>()?;
     m.add_class::<memory::relevance_gate::RustRelevanceGate>()?;
     m.add_class::<memory::write_gate::RustCompositeWriteGate>()?;
@@ -104,4 +109,23 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sort_utils::h96_argsort, m)?)?;
 
     Ok(())
+}
+
+/// True iff the embedded RustPython wasm runtime was bundled into
+/// this build. The red-team harness uses this as its skip gate
+/// because `ToolExecutor.has_wasm()` only answers for the
+/// Component-Model path loaded via `load_precompiled_component()`,
+/// not the `execute_raw`→embedded-RustPython path. Always exported
+/// so Python callers get a stable import even on builds without the
+/// sandbox feature.
+#[pyfunction]
+fn embedded_wasm_available() -> bool {
+    #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+    {
+        sandbox::wasm_python::WasmPythonExecutor::is_available()
+    }
+    #[cfg(not(all(feature = "sandbox", feature = "cranelift")))]
+    {
+        false
+    }
 }
