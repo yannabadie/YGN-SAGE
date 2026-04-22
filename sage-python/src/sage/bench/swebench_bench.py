@@ -432,7 +432,12 @@ class SWEBenchBench:
 
         for i, instance in enumerate(instances):
             instance_id = instance["instance_id"]
-            task_prompt = _build_task_prompt(instance)
+            # C4 (2026-04-22): pass TaskInput directly; AgentSystem.run()
+            # dispatches to render_swebench_prompt internally. The
+            # module-level `_build_task_prompt` wrapper is preserved
+            # for the byte-identity regression test in
+            # tests/test_input_swebench.py.
+            task_input = normalize_swebench(instance)
             t0 = time.perf_counter()
             error = ""
             system_used = 0
@@ -457,7 +462,7 @@ class SWEBenchBench:
                 # SWE-bench tasks are always S3 (complex multi-step code work).
                 # Skip router misclassification by hinting explicitly.
                 response = await asyncio.wait_for(
-                    self.system.run(task_prompt, system_hint=3),
+                    self.system.run(task_input, system_hint=3),
                     timeout=self.timeout_per_task,
                 )
                 # D7 audit (2026-04-18): flag sentinel BEFORE _extract_patch

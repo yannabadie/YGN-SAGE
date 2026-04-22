@@ -74,13 +74,13 @@ class BigCodeBenchBench:
         self._predictions: list[dict[str, str]] = []
         passed_count = 0
 
-        from sage.input.bcb import normalize_bcb, render_bcb_prompt
+        from sage.input.bcb import normalize_bcb
 
         for i, task_id in enumerate(task_ids):
             task = problems[task_id]
-            # C3 (2026-04-22): prompt composition moved to sage.input.bcb.
-            # Byte-identical refactor — same text reaches the model.
-            prompt = render_bcb_prompt(normalize_bcb(task, self.split))
+            # C4 (2026-04-22): pass TaskInput directly; AgentSystem.run()
+            # dispatches to render_bcb_prompt internally.
+            task_input = normalize_bcb(task, self.split)
 
             entry = task["entry_point"]
             tid = task_id
@@ -96,7 +96,7 @@ class BigCodeBenchBench:
             if self.system:
                 try:
                     raw = await asyncio.wait_for(
-                        self.system.run(prompt),
+                        self.system.run(task_input),
                         timeout=self.task_timeout,
                     )
                     solution = extract_code(raw, entry)
@@ -168,6 +168,12 @@ class BigCodeBenchBench:
                 if not task_passed and eval_stderr:
                     code_template = task.get("code_prompt", "") or task.get("prompt", "")
                     test_code = task.get("test", "")
+                    # C4 (2026-04-22): `prompt` was renamed to `task_input`
+                    # at the loop head. Rebuild the pre-C4 string on the fly
+                    # so the AVR retry prompt stays byte-identical with what
+                    # the commit 9eb05b0 smoke measured.
+                    from sage.input.bcb import render_bcb_prompt
+                    original_prompt = render_bcb_prompt(task_input)
                     retry_prompt = (
                         f"Your previous code for this task failed. Read the error, "
                         f"the function template, and the acceptance tests, then "
@@ -175,7 +181,7 @@ class BigCodeBenchBench:
                         f"## Error from the failing test run\n"
                         f"```\n{eval_stderr[-1500:]}\n```\n\n"
                         f"## Original task description\n"
-                        f"{prompt}\n\n"
+                        f"{original_prompt}\n\n"
                         f"## Function template to complete\n"
                         f"```python\n{code_template}\n```\n\n"
                         f"## Acceptance tests (these are what just failed)\n"
@@ -212,7 +218,7 @@ class BigCodeBenchBench:
                         if pipe:
                             pipe._force_topology = True  # Override bypass
                         raw = await asyncio.wait_for(
-                            self.system.run(prompt),
+                            self.system.run(task_input),
                             timeout=self.task_timeout,
                         )
                         if pipe:

@@ -33,6 +33,7 @@ except ImportError:
 
 from sage.agent import AgentConfig  # noqa: E402
 from sage.agent_loop import AgentLoop  # noqa: E402
+from sage.input.types import TaskInput  # noqa: E402
 from sage.agent_pool import AgentPool  # noqa: E402
 from sage.llm.base import LLMConfig  # noqa: E402
 from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
@@ -83,6 +84,9 @@ class AgentSystem:
     pipeline: Any = None
     # Execution path tracking (Issue A audit fix): set after each run()
     _last_execution_path: str = ""
+    # C4 observability: the TaskInput the bench passed (if any). `None`
+    # when run() was called with a raw string (legacy path).
+    _last_task_input: Any = None
 
     @property
     def model_info(self) -> dict[str, str]:
@@ -98,7 +102,7 @@ class AgentSystem:
 
     async def run(
         self,
-        task: str,
+        task: "str | TaskInput",
         *,
         system_hint: int | None = None,
     ) -> str:
@@ -109,13 +113,49 @@ class AgentSystem:
         Fallback: direct AgentLoop if pipeline not initialized.
 
         Args:
-            task: The user's task.
+            task: The user's task. Accepts either a raw string (legacy
+                path, still the canonical API for chat interfaces and
+                anything that hasn't gone through a normalizer) OR a
+                `TaskInput` produced by `sage.input.normalize_*`
+                (universal input adapter, C4 of the
+                2026-04-21-universal-input-adapter-design plan). When a
+                TaskInput is passed, the source tag selects the
+                appropriate renderer (`swebench` →
+                `render_swebench_prompt`, `bcb` → `render_bcb_prompt`,
+                `chat` / any other → the raw `prompt` field). The
+                rendered string then flows through the same pipeline as
+                a legacy string task — `perceive()` still sees a
+                `str` argument. A deeper refactor teaching
+                `perceive()` to consume `TaskInput` directly is
+                deferred to a follow-up (C4b).
             system_hint: Optional override for Stage 0 routing (1, 2, or 3).
                 Passed through to ``pipeline.run(system_hint=...)`` when the
                 pipeline is active. Benchmark adapters that already know the
                 task class (e.g. SWE-bench tasks are always S3) use this to
                 skip router misclassification.
         """
+        # C4 (2026-04-22): TaskInput dispatch at entry point.
+        # Each bench used to call `render_X_prompt(normalize_X(task))`
+        # itself; now it just passes `normalize_X(task)` here and we
+        # dispatch. Zero behavioral change — byte-identical output for
+        # every source, because the renderers are the same functions
+        # the benches used to call directly.
+        if isinstance(task, TaskInput):
+            self._last_task_input = task
+            if task.source == "swebench":
+                from sage.input.swebench import render_swebench_prompt
+                task = render_swebench_prompt(task)
+            elif task.source == "bcb":
+                from sage.input.bcb import render_bcb_prompt
+                task = render_bcb_prompt(task)
+            else:
+                # `chat` and any future source: the raw NL prompt IS the
+                # task text. Benches that want richer rendering ship
+                # their own renderer + source tag.
+                task = task.prompt
+        else:
+            self._last_task_input = None
+
         _budget = self._guardrail_budget if hasattr(self, '_guardrail_budget') else DEFAULT_BUDGET_USD
 
         # Mock bypass: tested exception (H9).
