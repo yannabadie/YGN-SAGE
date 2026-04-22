@@ -100,3 +100,56 @@ Single-line revert in `sage-core/Cargo.toml`. No code state to roll back in `smt
 ## Decision
 
 **Unpark.** The 2026-04-20 deferral was a reasonable "don't upgrade blindly" precaution; the audit shows the blindspot is narrow. Bump to 0.2, run `cargo test --features smt`, and ship if green. If you want even more conservatism, bump to `version = "0.2.0"` (pinned exact) to avoid picking up a hypothetical 0.2.1 with its own surprises — but sage-core's pin is already `version = "0.1"` (major-line only), so keeping `"0.2"` matches that policy.
+
+---
+
+## 2026-04-22 empirical validation (post-audit)
+
+After this audit was drafted, user pushed back: "did you actually retrieve the new code? do you know what it does? what are potential consequences?" — a well-placed challenge given the "one-line zero risk" framing. Follow-up verification done before committing the bump:
+
+### Dependency-tree check — new transitive sub-crates
+
+`cargo tree --no-default-features --features smt,tool-executor -p sage-core`:
+
+```
+sage-core v0.1.0
+└── oxiz v0.2.0
+    ├── oxiz-core v0.2.0
+    ├── oxiz-math v0.2.0
+    ├── oxiz-sat v0.2.0
+    ├── oxiz-solver v0.2.0
+    │   ├── oxiz-proof v0.2.0   ← NEW transitive in v0.2
+    │   └── oxiz-theories v0.2.0
+    │       └── oxiz-nlsat v0.2.0   ← NEW transitive in v0.2
+    └── oxiz-theories v0.2.0 (dup)
+```
+
+Two new sub-crates are linked via transitive deps, **not opt-in via features**:
+
+* `oxiz-proof` — proof-generation machinery. Pulled by `oxiz-solver` unconditionally. Binary size grows but CPU cost is zero unless our code calls into proof-producing mode (we don't).
+* `oxiz-nlsat` — nonlinear-arithmetic solver. Pulled by `oxiz-theories` unconditionally. Same deal: present but inert as long as we stick to QF_LIA.
+
+**Consequence:** larger compiled binary (~70 MB of extra .rlib in debug; release will strip most of it), no runtime overhead on our existing workload.
+
+### Paired-run semantic + performance check
+
+Flipped `Cargo.toml` back to `oxiz = "0.1"`, ran the test suite, flipped forward to `"0.2"`, ran again. Both configurations built and tested the **same sage-core source tree**.
+
+| Configuration | Tests passed | Total test time | 97 verification tests |
+|---------------|-------------:|----------------:|----------------------:|
+| v0.1.3 (`oxiz = "0.1"`) | 485 / 485 | 2.13 s | 0.02 s |
+| v0.2.0 (`oxiz = "0.2"`) | 485 / 485 | 2.15 s | 0.02 s |
+
+**Semantic equivalence on the test workload:** every SMT formula in the 97 verification tests (bounds checks, loop bounds, arithmetic violations, invariant implications, provider-assignment SAT) produces the same `Sat` / `Unsat` decision in both versions. If v0.2.0 had changed any decision procedure in a way that affects our queries, those specific tests would have failed.
+
+**Performance:** 1 % delta on test execution, deep inside noise. The 97 verification tests stay at 0.02 s total, meaning per-query SMT time is sub-millisecond on average in both versions.
+
+### What this still does NOT prove
+
+* **Non-test production inputs.** A pathological formula our tests don't cover could behave differently. The test suite is a representative sample, not an exhaustive probe.
+* **Release-build size delta.** Only measured debug artifacts. Release-stripped `.pyd` size was not benchmarked — low priority since the wheel is a maturin build-artifact, not on a deployment hot path.
+* **Long-tail numerical stability.** Integer arithmetic in QF_LIA is exact (no float semantics to drift), so this class of risk is small.
+
+### Net conclusion
+
+Evidence supports the bump. The v0.1 / v0.2 paired run produces identical test outcomes and identical execution time; the two new transitive sub-crates add weight but not work. If a production formula behaves differently, the smoke logs (benches already run multiple times per day) will surface it within one run — and the one-line revert stays available.
