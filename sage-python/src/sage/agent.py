@@ -33,6 +33,15 @@ class AgentConfig:
     # "stalled") and return early. Default 0 disables the soft cap for
     # backward compat; runner wires it to 10 for sequential nodes.
     stall_after_tool_steps: int = 0
+    # P0.1 (2026-04-22 audit remediation): gate for the raw `execute_bash`
+    # tool. OFF by default — boot registers the 6 typed repo tools
+    # (read_file / search_repo / list_files / run_tests / apply_patch /
+    # git_diff) instead. Flip to True for bench paths / advanced users
+    # who need unconstrained shell. When True the typed tools are also
+    # registered (they compose cleanly with bash), just with bash
+    # additionally available. See sage.tools.typed_repo and
+    # docs/superpowers/specs/2026-04-22-safe-sandbox-redesign-spec.md.
+    dangerous_tools: bool = False
 
 
 class Agent:

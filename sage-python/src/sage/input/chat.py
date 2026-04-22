@@ -17,15 +17,29 @@ import os
 from sage.input.types import ResponseFormat, TaskInput
 
 CHAT_DEFAULT_TOOLS: list[str] = [
+    # Research + library lookup (post-C2c chat pivot)
     "search_exocortex",
     "refresh_knowledge",
     "lookup_library_docs",
+    # Memory / context inspection (read-only)
     "search_memory",
     "retrieve_context",
     "summarize_context",
     "filter_context",
     "search_causal_chain",
     "list_active_agents",
+    # P0.1 (2026-04-22 audit remediation): typed repo tools are safe
+    # by construction — path-jail, argv-list execution, scrubbed env,
+    # output caps. Chat users asking "what's in my repo?" / "run my
+    # tests" / "show the diff" get them without needing
+    # SAGE_CHAT_ALLOW_BASH. Full-power bash stays gated by the
+    # existing opt-in env var / /shell REPL command.
+    "read_file",
+    "search_repo",
+    "list_files",
+    "run_tests",
+    "apply_patch",
+    "git_diff",
 ]
 """Safe read-only tools enabled by default in chat mode.
 

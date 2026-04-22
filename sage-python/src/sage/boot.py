@@ -323,6 +323,17 @@ def boot_agent_system(
         ),
         max_steps=MAX_AGENT_STEPS,
         validation_level=1,  # Default S1 — routing promotes to S2 only for code tasks
+        # P0.1 migration (2026-04-22): bench paths (SWE-bench, BCB AVR
+        # repair) today still tell the model to use execute_bash via
+        # the SWEBENCH_SYSTEM_TEMPLATE. We register typed repo tools as
+        # the new default surface, but keep raw bash available here so
+        # the existing bench prompts don't break overnight. A paired
+        # smoke (typed-only vs bash) is the decision gate for flipping
+        # this to False — see docs/superpowers/specs/
+        # 2026-04-22-safe-sandbox-redesign-spec.md §Migration path.
+        # Chat mode is safe regardless: CHAT_DEFAULT_TOOLS filters
+        # `execute_bash` out at perceive time.
+        dangerous_tools=True,
     )
 
     # Event bus (central nervous system)
@@ -419,47 +430,31 @@ def boot_agent_system(
     for tool in create_memory_tools(loop.working_memory, episodic_memory, memory_compressor, causal_memory=causal_memory):
         tool_registry.register(tool)
 
-    # Core code tools: bash execution for file reading, git, tests
-    # These are the foundation for SWE-bench, code review, and self-programming.
+    # Core code tools:
+    # - Typed repo tools (P0.1 2026-04-22): read_file, search_repo,
+    #   list_files, run_tests, apply_patch, git_diff. Registered
+    #   ALWAYS — they're the default surface for any code/bench task.
+    # - Raw bash (`execute_bash`): registered only when
+    #   AgentConfig.dangerous_tools is True. Off by default; bench
+    #   adapters that need unconstrained shell flip the flag per
+    #   their config. See sage.tools.typed_repo and
+    #   docs/superpowers/specs/2026-04-22-safe-sandbox-redesign-spec.md.
     from sage.tools.base import Tool
+    from sage.tools._env_safe import safe_subprocess_env
+    from sage.tools.typed_repo import create_typed_repo_tools
     from sage.llm.base import ToolDef
 
-    # P0.2 (2026-04-22 audit remediation): allowlist the environment
-    # variables the bash subprocess sees. Pre-fix, the handler inherited
-    # the full process environment, exposing every *_API_KEY,
-    # CONTEXT7, SAGE_EXOCORTEX_STORE etc. to any command the LLM
-    # emitted — a direct API-key exfiltration path. Now we pass a
-    # curated safe env containing only platform essentials + generic
-    # locale. Can be overridden per-call via the `env_passthrough`
-    # bash kwarg (not yet exposed), but the default path is safe.
-    _BASH_ENV_ALLOWLIST = {
-        "PATH",
-        "HOME",
-        "PWD",
-        "USER",
-        "USERNAME",
-        "SHELL",
-        "TEMP",
-        "TMP",
-        "TMPDIR",
-        "LANG",
-        "LC_ALL",
-        "SYSTEMROOT",    # needed by Windows python under git bash
-        "WINDIR",
-        "COMSPEC",
-        "PATHEXT",
-        "PROGRAMFILES",
-        "PROGRAMFILES(X86)",
-        "PROGRAMDATA",
-    }
+    for tool in create_typed_repo_tools():
+        tool_registry.register(tool)
+    _log.info(
+        "Core tools: 6 typed repo tools registered (read_file, search_repo, "
+        "list_files, run_tests, apply_patch, git_diff)"
+    )
 
+    # Keep a module-level thin wrapper so existing imports (boot.py
+    # tests etc.) that used `_safe_subprocess_env` still work.
     def _safe_subprocess_env() -> dict[str, str]:
-        """Return a scrubbed copy of os.environ with only allowlist vars."""
-        return {
-            key: val
-            for key, val in os.environ.items()
-            if key in _BASH_ENV_ALLOWLIST
-        }
+        return safe_subprocess_env()
 
     async def _execute_bash_handler(command: str, timeout: int = 30, **_kwargs) -> str:
         """Execute a bash command in a subprocess. Returns stdout+stderr.
@@ -538,8 +533,19 @@ def boot_agent_system(
         ),
         handler=_execute_bash_handler,
     )
-    tool_registry.register(bash_tool)
-    _log.info("Core tools: execute_bash registered (file read, git, tests, system commands)")
+    # P0.1 (2026-04-22 audit remediation): gate raw bash behind the
+    # `dangerous_tools=True` opt-in on the agent config. Typed repo
+    # tools cover the common cases; bench paths that still need
+    # unconstrained shell explicitly flip the flag.
+    if getattr(loop.config, "dangerous_tools", False):
+        tool_registry.register(bash_tool)
+        _log.warning(
+            "Core tools: execute_bash registered (AgentConfig.dangerous_tools=True — raw shell opt-in)"
+        )
+    else:
+        _log.info(
+            "Core tools: execute_bash NOT registered (AgentConfig.dangerous_tools=False; using typed repo tools only)"
+        )
 
     # ExoCortex tools (research-paper search — not library docs)
     from sage.tools.exocortex_tools import create_exocortex_tools
