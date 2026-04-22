@@ -296,8 +296,12 @@ def init_pipeline(
     if _pipeline and _controller:
         _pipeline.controller = _controller
 
-    # Wire QualityEstimator into pipeline Stage 5 LEARN for bandit feedback
-    # (ETH-SRI ICLR '25, PILOT 2508.21141: bandit must learn from actual quality)
+    # Wire QualityEstimator into pipeline Stage 5 LEARN for bandit feedback.
+    # The research principle — bandits must learn from actual reward signal,
+    # not a fabricated proxy — is well established (ETH-SRI ICLR '25, arxiv
+    # 2410.10347). The "PILOT 2508.21141" citation that used to sit here
+    # referred to a paper whose arxiv ID is now dead (see 2026-04-22 audit
+    # verification D.1); removed rather than kept as a ghost reference.
     _pipeline_qe = _qe
     if not _pipeline_qe:
         try:

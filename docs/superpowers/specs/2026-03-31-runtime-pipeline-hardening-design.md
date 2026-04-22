@@ -245,7 +245,7 @@ No behavioral change — purely observability improvement.
 
 SAGE has `create_python_tool` and `create_bash_tool` (meta-tools in `tools/meta.py`) but these are **passive** — the agent must be explicitly told to create a tool. There is no **autonomous** tool synthesis loop: detect capability gap → generate → validate → register → feedback.
 
-This is the primary gap vs OpenSage (ICML 2026, arXiv 2602.16891) which creates tools and agents at runtime autonomously.
+This is the primary gap vs OpenSage (arXiv 2602.16891, ICML 2026 submission) which creates tools and agents at runtime autonomously.
 
 ### Research Basis
 
@@ -411,8 +411,7 @@ Wire ToolForge into the pipeline:
 - UCT (arXiv 2602.01983): Build Loop + dual-gate, +20.86% on multi-domain
 - CRAFT (arXiv 2309.17428, ICLR 2024): multi-view retrieval for tools
 - Cascade Routing (arXiv 2410.10347, ETH-SRI ICLR 2025): quality estimation is the bottleneck
-- PILOT (arXiv 2508.21141): contextual bandit routing with budget
-- OpenSage (arXiv 2602.16891, ICML 2026): AI-created agents+tools at runtime
+- OpenSage (arXiv 2602.16891, ICML 2026 submission): AI-created agents+tools at runtime
 - ToolLibGen (arXiv 2510.07768): hierarchical clustering mandatory at scale
 - AlphaEvolve (arXiv 2506.13131): dual-LLM evolutionary synthesis
 - Yunjue Agent (arXiv 2601.18226): EGL convergence metric

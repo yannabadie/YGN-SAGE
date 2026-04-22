@@ -21,7 +21,7 @@ Additionally, OxiZ (sub-0.1ms Rust SMT solver) with 10 PyO3 methods is wired but
 | AdaptOrch (2602.16873) | arXiv 2026 | Consistency scoring + topology re-routing |
 | OpenSage (2602.16891) | ICML | Runtime sub-agent spawn |
 | Self-Regulation (2502.04576) | arXiv | PRM-guided model escalation |
-| Cascade Routing (2410.10347) | ICML 2025 | Quality estimation as bottleneck |
+| Cascade Routing (2410.10347) | ICLR 2025 | Quality estimation as bottleneck |
 | SYMPHONY (2601.22623) | NeurIPS 2025 | UCB-driven heterogeneous model scheduling |
 
 ## Design Overview

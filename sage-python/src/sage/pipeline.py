@@ -1529,7 +1529,13 @@ class CognitiveOrchestrationPipeline:
     async def _stage_learn(self, ctx: PipelineContext) -> None:
         """Stage 5: Record outcome for learning.
 
-        Quality signal for bandit feedback (ETH-SRI ICLR '25, PILOT 2508.21141):
+        Quality signal for bandit feedback. Research background: ETH-SRI's
+        Cascade Routing (arxiv 2410.10347, ICLR 2025) established that
+        quality estimation — not the routing algorithm — is the bottleneck
+        in LLM-routing bandits. A "PILOT 2508.21141" citation previously
+        sat here but that arxiv ID is dead (see 2026-04-22 audit
+        verification D.1); removed rather than kept as a ghost reference.
+
         - Empty result: quality = 0.0 (definitively bad, bandit learns from it)
         - QualityEstimator returns float: use it
         - QualityEstimator returns None: abstain — bandit does NOT record

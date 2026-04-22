@@ -27,7 +27,7 @@ Additionally, the codebase has accumulated incoherence:
 | AdaptOrch (2602.16873) | arXiv 2026 | DAG features (ω,δ,γ) for topology routing |
 | OpenSage (2602.16891) | ICML | AI-driven model-per-sub-agent assignment |
 | SYMPHONY (2601.22623) | NeurIPS 2025 | UCB on heterogeneous model pool |
-| Cascade Routing (2410.10347) | ICML 2025 | Quality estimation > routing algorithm |
+| Cascade Routing (2410.10347) | ICLR 2025 | Quality estimation > routing algorithm |
 | AgentDropout (2503.18891) | ACL 2025 | Runtime agent pruning (Phase C hook) |
 
 **Key finding:** AdaptOrch proves `Var_topology / Var_model >= 20` for code tasks — topology choice has 20x more impact than model choice. But within a chosen topology, per-node model assignment using capability profiles yields measurable gains (OpenSage: Gemini 3 Pro planning + GPT-5 Mini execution matches GPT-5 at lower cost).

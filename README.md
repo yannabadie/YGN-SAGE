@@ -333,10 +333,10 @@ YGN-SAGE/
 
 | Feature | Paper | Venue |
 |---------|-------|-------|
-| Architecture inspiration | [OpenSAGE](https://arxiv.org/abs/2602.16891) | ICML 2026 |
+| Architecture inspiration | [OpenSAGE](https://arxiv.org/abs/2602.16891) | arXiv 2026 (ICML 2026 submission; notification Apr 30 2026) |
 | Topology > model | [AdaptOrch](https://arxiv.org/abs/2602.16873) | arXiv 2026 |
 | kNN routing | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) | 2025 |
-| Cascade routing | [ETH-SRI](https://arxiv.org/abs/2410.10347) | ICML 2025 |
+| Cascade routing | [ETH-SRI](https://arxiv.org/abs/2410.10347) | ICLR 2025 |
 | Bandit routing | [PILOT](https://arxiv.org/abs/2508.21141) | EMNLP 2025 |
 | Routing survey | [6 paradigms](https://arxiv.org/abs/2603.04445) | 2026 |
 | 3-flow edges | [MASFactory](https://arxiv.org/abs/2603.06007) | 2026 |
