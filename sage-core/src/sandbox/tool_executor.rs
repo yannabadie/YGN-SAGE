@@ -170,8 +170,19 @@ impl ToolExecutor {
     }
 
     /// Validate and execute Python code.
-    /// Tries Wasm sandbox first (if loaded), falls back to subprocess.
-    /// Raises ValueError if validation fails.
+    /// Priority:
+    ///   1. Wasm sandbox (if a component is loaded and the `sandbox`
+    ///      feature is compiled in).
+    ///   2. Subprocess fallback — **fail-closed by default**. Reached
+    ///      only when (a) the Wasm path is unavailable or errored
+    ///      AND (b) the operator explicitly opted in via
+    ///      `SAGE_UNSAFE_UNSANDBOXED=1` (or true/yes/on). Without
+    ///      that opt-in, this returns an ExecResult with exit_code
+    ///      != 0 and a stderr naming the opt-in var.
+    /// Raises ValueError if AST validation fails.
+    ///
+    /// This is P0.4 of the 2026-04-22 audit remediation (see
+    /// docs/superpowers/specs/2026-04-22-safe-sandbox-redesign-spec.md).
     pub fn validate_and_execute(
         &self,
         py: Python<'_>,
@@ -194,14 +205,43 @@ impl ToolExecutor {
                 match self.execute_wasm_internal(engine, component, code, args_json) {
                     Ok(result) => return Ok(result),
                     Err(e) => {
-                        // Log warning and fall through to subprocess
-                        eprintln!("Wasm execution failed ({}), falling back to subprocess", e);
+                        warn!(
+                            wasm_error = %e,
+                            "Wasm execution failed; deciding fall-back based on SAGE_UNSAFE_UNSANDBOXED opt-in"
+                        );
                     }
                 }
             }
         }
 
-        // 3. Subprocess fallback (release GIL)
+        // 3. Subprocess fallback — P0.4 gate. Fail-closed unless the
+        //    operator explicitly opted in. Empty stdout on deny so
+        //    no partial output leaks; stderr names the var.
+        if !is_unsafe_unsandboxed_enabled() {
+            warn!(
+                has_wasm = self.has_wasm(),
+                "validate_and_execute DENIED subprocess fallback — SAGE_UNSAFE_UNSANDBOXED not set"
+            );
+            return Ok(ExecResult {
+                stdout: String::new(),
+                stderr: "No sandbox available and SAGE_UNSAFE_UNSANDBOXED is not set. \
+                         Load a Wasm component via load_precompiled_component() / \
+                         load_component(), or set SAGE_UNSAFE_UNSANDBOXED=1 to allow \
+                         unsandboxed subprocess execution (not recommended; only for \
+                         trusted environments or bench paths)."
+                    .to_string(),
+                exit_code: -1,
+                timed_out: false,
+                duration_ms: 0,
+            });
+        }
+
+        warn!(
+            has_wasm = self.has_wasm(),
+            "validate_and_execute falling back to unsandboxed subprocess (SAGE_UNSAFE_UNSANDBOXED=1)"
+        );
+
+        // Subprocess fallback (release GIL)
         let python_exe = self.python_exe.clone();
         let code = code.to_string();
         let args = args_json.to_string();
@@ -260,7 +300,21 @@ impl ToolExecutor {
 /// setting `SAGE_UNSAFE_RAW_EXEC` to a truthy value. Any other
 /// value — including unset — denies `execute_raw`.
 fn is_unsafe_raw_exec_enabled() -> bool {
-    match std::env::var("SAGE_UNSAFE_RAW_EXEC") {
+    read_truthy_env("SAGE_UNSAFE_RAW_EXEC")
+}
+
+/// True iff the operator has opted into the unsandboxed subprocess
+/// fallback by setting `SAGE_UNSAFE_UNSANDBOXED` to a truthy value.
+/// Without this opt-in, `validate_and_execute` fails closed when no
+/// Wasm component is loaded or when Wasm execution errors. Part of
+/// P0.4 (2026-04-22 audit remediation).
+fn is_unsafe_unsandboxed_enabled() -> bool {
+    read_truthy_env("SAGE_UNSAFE_UNSANDBOXED")
+}
+
+/// Common truthy-env reader used by both unsafe opt-ins.
+fn read_truthy_env(var: &str) -> bool {
+    match std::env::var(var) {
         Ok(v) => {
             let v = v.trim().to_ascii_lowercase();
             matches!(v.as_str(), "1" | "true" | "yes" | "on")
@@ -338,18 +392,57 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_and_execute_subprocess_fallback() {
+    fn test_validate_and_execute_subprocess_fallback_gated_by_env_var() {
+        // P0.4 (2026-04-22): validate_and_execute fails CLOSED when
+        // no Wasm component is loaded and SAGE_UNSAFE_UNSANDBOXED
+        // is not set. Combined into ONE test because cargo runs
+        // tests in parallel and env-var mutation is process-global
+        // — splitting would race.
         init_python();
-        // Without Wasm loaded, should fall back to subprocess
         let executor = ToolExecutor::new(None, 10);
-        let result = Python::with_gil(|py| {
+
+        // Part 1: denied when env var is unset.
+        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
+        let r_denied = Python::with_gil(|py| {
+            executor.validate_and_execute(py, r#"print("should not run")"#, "{}")
+        });
+        assert!(r_denied.is_ok(), "fail-closed should return Ok(ExecResult), not Err");
+        let r_denied = r_denied.unwrap();
+        assert_ne!(
+            r_denied.exit_code, 0,
+            "fail-closed must signal non-zero exit_code"
+        );
+        assert!(
+            r_denied.stderr.contains("SAGE_UNSAFE_UNSANDBOXED"),
+            "fail-closed stderr must name the opt-in var: {}",
+            r_denied.stderr
+        );
+        assert!(
+            r_denied.stdout.is_empty(),
+            "fail-closed must not leak stdout: {}",
+            r_denied.stdout
+        );
+        assert!(
+            !r_denied.stdout.contains("should not run"),
+            "subprocess must not have executed"
+        );
+
+        // Part 2: subprocess runs when explicitly opted in.
+        std::env::set_var("SAGE_UNSAFE_UNSANDBOXED", "1");
+        let r_allowed = Python::with_gil(|py| {
             executor.validate_and_execute(py, r#"print("fallback works")"#, "{}")
         });
-        assert!(result.is_ok());
-        let r = result.unwrap();
-        assert_eq!(r.exit_code, 0, "stderr: {}", r.stderr);
-        assert!(r.stdout.contains("fallback works"));
+        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
+        assert!(r_allowed.is_ok());
+        let r_allowed = r_allowed.unwrap();
+        assert_eq!(
+            r_allowed.exit_code, 0,
+            "opted-in fallback should succeed; stderr: {}",
+            r_allowed.stderr
+        );
+        assert!(r_allowed.stdout.contains("fallback works"));
     }
+
 
     #[test]
     fn test_validate_rejects_blocked_code() {

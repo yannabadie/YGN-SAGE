@@ -1,16 +1,20 @@
 # Safe sandbox redesign — P0.1 + P0.4 spec (2026-04-22)
 
-> **Status:** spec only. Implementation is a follow-up sprint (1-2 weeks) and is **not** shipped in this audit-remediation batch. The audit items P0.1 (replace `execute_bash` with typed tools) and P0.4 (make Wasm sandbox mandatory / fail-closed) collapse into this one design because they address the same threat model.
+> **Status (updated 2026-04-22 post-remediation):** partial ship. The audit items P0.1 (replace `execute_bash` with typed tools) and P0.4 (make Wasm sandbox mandatory / fail-closed) collapse into this one design because they address the same threat model.
 >
-> What IS shipped on 2026-04-22:
+> What IS shipped as of 2026-04-22:
 > * P0.2 subprocess env allowlist (scrubs API keys from any bash command)
 > * P0.3 `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC` (denies by default)
 > * Chat-mode deployment safety via `CHAT_DEFAULT_TOOLS` (excludes `execute_bash`)
 > * Deprecation notice added to the `execute_bash` tool description so LLMs see it
+> * **P0.1 full implementation** — 6 typed repo tools (read_file / search_repo / list_files / run_tests / apply_patch / git_diff), path-jailed, argv-list-based, output-capped, env-scrubbed, survived a 47-test red-team (commits `585b649` + `ef2100b`)
+> * **P0.4 fail-closed subprocess fallback** — `ToolExecutor.validate_and_execute` now fails closed when no Wasm component is loaded AND `SAGE_UNSAFE_UNSANDBOXED` is not set. The old silent subprocess fallback is gated behind an explicit operator opt-in. Covers the AUDIT-SEC V-5 "Wasm fallback to subprocess on any error" class. Paired with the existing P0.3 gate on `execute_raw`, both bypass paths are now deny-by-default.
 >
-> What's deferred to follow-up work:
-> * Typed-tool library (this spec, P0.1)
-> * Mandatory Wasm + fail-closed architecture (this spec, P0.4)
+> What's still deferred to follow-up work:
+> * **Bundled Wasm component** for typed tools — requires a componentize-py or Rust-to-wasm build step and `include_bytes!` in sage-core. Without it, operators who compile with `--features sandbox` get the fail-closed gate but have no sandbox actually loaded; to execute code they must either call `load_precompiled_component()` with their own .wasm or opt into the subprocess path via `SAGE_UNSAFE_UNSANDBOXED=1`. Est. 4-5 days.
+> * **Flip `sandbox` into default Cargo features** — blocked on the bundled component above (adding wasmtime to defaults without a component just adds binary size with no security benefit).
+> * **Paired SWE-bench smoke** (typed-only vs bash baseline on same N=50 slice) to validate parity before flipping `boot_agent_system()`'s `dangerous_tools=True` default to `False`. Est. 4h wallclock + $60-120 API cost.
+> * **Adversarial sandbox red-team** (seccomp / filesystem / network each confirmed denied) — waits on the bundled Wasm component.
 
 ---
 
