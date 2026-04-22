@@ -61,7 +61,22 @@ rusqlite = { version = "0.33", features = ["bundled"], optional = true }
 # builds not including the SQLite-backed persistence; this closes that
 # gap. Operators who explicitly want the leanest build can still pass
 # `--no-default-features` and opt back in per-feature.
-default = ["extension-module", "cognitive"]
+#
+# §5 flip (2026-04-22 post red-team corpus): `sandbox` + `cranelift`
+# + `tool-executor` moved into default. `validate_and_execute` now
+# runs in the embedded RustPython wasm sandbox by default; the old
+# SAGE_UNSAFE_UNSANDBOXED subprocess gate is removed. Default builds
+# bundle a ~37 MB rustpython.wasm (once built per the recipe in
+# sage-core/src/sandbox/wasm_python.rs). Operators who want the
+# leanest build can still pass `--no-default-features` and opt back
+# in per-feature.
+default = [
+    "extension-module",
+    "cognitive",
+    "sandbox",
+    "cranelift",
+    "tool-executor",
+]
 extension-module = ["pyo3/extension-module", "pyo3/multiple-pymethods"]
 sandbox = ["wasmtime", "dep:wasmtime-wasi"]
 # On Linux CI, use sandbox + cranelift for JIT compilation.

@@ -298,9 +298,15 @@ impl WasmPythonExecutor {
             .iter()
             .map(|b| format!("{:02x}", b))
             .collect();
+        // Match the subprocess-path contract: `json`, `sys`, and
+        // `args` are available to user code as top-level names. Tool
+        // authors expect them pre-imported since that was the
+        // behaviour before the §5 sandbox flip. `codecs` stays
+        // underscore-prefixed because it's only used internally to
+        // decode the hex-escaped args payload.
         format!(
-            "import json as _sage_json\nimport codecs as _sage_codecs\n\
-             args = _sage_json.loads(_sage_codecs.decode(\"{}\", \"hex\").decode(\"utf-8\"))\n\
+            "import json\nimport sys\nimport codecs as _sage_codecs\n\
+             args = json.loads(_sage_codecs.decode(\"{}\", \"hex\").decode(\"utf-8\"))\n\
              {}",
             hex, code
         )

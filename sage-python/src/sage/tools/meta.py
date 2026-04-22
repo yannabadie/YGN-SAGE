@@ -202,10 +202,22 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
         if not validation.valid:
             return "Blocked: " + "; ".join(validation.errors)
 
-        # Create sandboxed handler using Rust executor
+        # Create sandboxed handler using Rust executor.
+        # §5 flip (2026-04-22): now uses validate_and_execute — which
+        # runs the code in the embedded RustPython wasm sandbox by
+        # default. No opt-in required: the code was already tree-
+        # sitter-validated above, and the Wasm layer enforces the
+        # deny-by-default filesystem / network / env / subprocess
+        # contract even if validation missed something.
         saved_code = code
         async def _rust_handler(**kwargs):
-            result = _executor.execute_raw(saved_code, json.dumps(kwargs))
+            try:
+                result = _executor.validate_and_execute(saved_code, json.dumps(kwargs))
+            except ValueError as e:
+                # Re-validation inside validate_and_execute rejected
+                # the code (shouldn't happen — we validated above —
+                # but surface cleanly if it does).
+                return f"Error (validation): {e}"
             if result.exit_code != 0:
                 return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
             stdout = result.stdout.strip()

@@ -1,6 +1,6 @@
 # Wasm sandbox adversarial red-team plan (2026-04-22)
 
-> **Status:** test plan, not yet executed. The bundled Wasm component (P0.4 follow-up item B) **landed 2026-04-22** — embedded RustPython wasm32-wasip1 + freeze-stdlib runtime loaded via wasmtime cranelift JIT, wired into `execute_raw` as the preferred sandboxed path. 8 Rust tests in `sandbox::wasm_python::tests` cover hello/exit/timeout/args-roundtrip/deny-filesystem/deny-env. **This corpus still needs to run** before the §5 decision gate fires (flip `AgentConfig.dangerous_tools=False`, flip `sandbox` into Cargo default features, remove `SAGE_UNSAFE_UNSANDBOXED`).
+> **Status:** executed 2026-04-22 — **40 / 40 attacks blocked**, zero SENTINEL leaks, zero wasm panics, 138 s wallclock. Harness at `sage-python/tests/test_wasm_sandbox_redteam.py`; run via `python -m pytest tests/test_wasm_sandbox_redteam.py -v`. §5 flip shipped in ADR-013 (`docs/adr/ADR-013-wasm-sandbox-default.md`): `validate_and_execute` runs sandboxed by default, `SAGE_UNSAFE_UNSANDBOXED` removed, `sandbox`+`cranelift`+`tool-executor` are now Cargo default features. The `AgentConfig.dangerous_tools=False` flip is **deferred** to a separate commit gated on the paired SWE-bench smoke (§5 item 1 of the original list).
 
 Scope: adversarial verification that code executed inside the sandbox (Wasm component loaded by `ToolExecutor`) cannot escape to host resources. The sandbox's declared guarantees — deny-by-default filesystem, no network, no subprocess, no env-var inheritance — must hold against every attack in this corpus.
 

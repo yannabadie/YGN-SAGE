@@ -185,19 +185,30 @@ impl ToolExecutor {
     }
 
     /// Validate and execute Python code.
-    /// Priority:
-    ///   1. Wasm sandbox (if a component is loaded and the `sandbox`
-    ///      feature is compiled in).
-    ///   2. Subprocess fallback — **fail-closed by default**. Reached
-    ///      only when (a) the Wasm path is unavailable or errored
-    ///      AND (b) the operator explicitly opted in via
-    ///      `SAGE_UNSAFE_UNSANDBOXED=1` (or true/yes/on). Without
-    ///      that opt-in, this returns an ExecResult with exit_code
-    ///      != 0 and a stderr naming the opt-in var.
-    /// Raises ValueError if AST validation fails.
     ///
-    /// This is P0.4 of the 2026-04-22 audit remediation (see
-    /// docs/superpowers/specs/2026-04-22-safe-sandbox-redesign-spec.md).
+    /// Priority (2026-04-22 §5 flip — post red-team corpus):
+    ///   1. Wasm Component-Model sandbox (if the operator explicitly
+    ///      loaded a component via `load_component` /
+    ///      `load_precompiled_component`).
+    ///   2. Embedded RustPython wasm sandbox (deny-by-default WASI-p1,
+    ///      no filesystem / network / env / subprocess). Available
+    ///      on any build with `sandbox + cranelift` AND a bundled
+    ///      `rustpython.wasm` — the default for release builds since
+    ///      the §5 flip.
+    ///   3. **Hard fail** — no subprocess fallback. If neither Wasm
+    ///      path is available, the only route forward is to rebuild
+    ///      with `sandbox + cranelift` or call the explicitly-named
+    ///      `execute_raw` (gated by `SAGE_UNSAFE_RAW_EXEC=1`), which
+    ///      is a separate audited bypass with its own gate.
+    ///
+    /// The old `SAGE_UNSAFE_UNSANDBOXED=1` silent subprocess fallback
+    /// was removed in the §5 flip once the 40-attack red-team corpus
+    /// showed the Wasm sandbox is safe-by-default. Callers who still
+    /// need an unsandboxed exit must use `execute_raw` with the
+    /// `SAGE_UNSAFE_RAW_EXEC` opt-in and accept that their code
+    /// bypasses BOTH AST validation AND the Wasm sandbox.
+    ///
+    /// Raises ValueError if AST validation fails.
     pub fn validate_and_execute(
         &self,
         py: Python<'_>,
@@ -213,7 +224,7 @@ impl ToolExecutor {
             )));
         }
 
-        // 2. Try Wasm execution first
+        // 2. Try operator-loaded Wasm Component-Model first (if any).
         #[cfg(feature = "sandbox")]
         if let Some(ref component) = self.wasm_component {
             if let Some(ref engine) = self.wasm_engine {
@@ -222,50 +233,60 @@ impl ToolExecutor {
                     Err(e) => {
                         warn!(
                             wasm_error = %e,
-                            "Wasm execution failed; deciding fall-back based on SAGE_UNSAFE_UNSANDBOXED opt-in"
+                            "Wasm Component-Model execution failed; trying embedded RustPython"
                         );
                     }
                 }
             }
         }
 
-        // 3. Subprocess fallback — P0.4 gate. Fail-closed unless the
-        //    operator explicitly opted in. Empty stdout on deny so
-        //    no partial output leaks; stderr names the var.
-        if !is_unsafe_unsandboxed_enabled() {
-            warn!(
-                has_wasm = self.has_wasm(),
-                "validate_and_execute DENIED subprocess fallback — SAGE_UNSAFE_UNSANDBOXED not set"
-            );
-            return Ok(ExecResult {
-                stdout: String::new(),
-                stderr: "No sandbox available and SAGE_UNSAFE_UNSANDBOXED is not set. \
-                         Load a Wasm component via load_precompiled_component() / \
-                         load_component(), or set SAGE_UNSAFE_UNSANDBOXED=1 to allow \
-                         unsandboxed subprocess execution (not recommended; only for \
-                         trusted environments or bench paths)."
-                    .to_string(),
-                exit_code: -1,
-                timed_out: false,
-                duration_ms: 0,
+        // 3. Embedded RustPython wasm sandbox — default sandboxed
+        //    path since the §5 flip. Deny-by-default filesystem /
+        //    network / env; 256 MiB memory cap; epoch-interrupt
+        //    timeout.
+        #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+        {
+            let wasm = self.wasm_python.get_or_init(|| {
+                match WasmPythonExecutor::new() {
+                    Ok(e) => Some(Arc::new(e)),
+                    Err(err) => {
+                        warn!(error = %err, "embedded RustPython unavailable");
+                        None
+                    }
+                }
             });
+            if let Some(wp) = wasm {
+                let wp = Arc::clone(wp);
+                let code_owned = code.to_string();
+                let args_owned = args_json.to_string();
+                let timeout = self.timeout_secs;
+                let result = py.allow_threads(move || {
+                    wp.execute(&code_owned, &args_owned, timeout)
+                });
+                return Ok(result);
+            }
         }
 
+        // 4. Hard fail — no Wasm path available. Tell the operator
+        //    exactly how to fix their build.
         warn!(
             has_wasm = self.has_wasm(),
-            "validate_and_execute falling back to unsandboxed subprocess (SAGE_UNSAFE_UNSANDBOXED=1)"
+            "validate_and_execute has no sandbox available — all Wasm paths absent"
         );
-
-        // Subprocess fallback (release GIL)
-        let python_exe = self.python_exe.clone();
-        let code = code.to_string();
-        let args = args_json.to_string();
-        let timeout = self.timeout_secs;
-
-        let result =
-            py.allow_threads(move || execute_python_subprocess(&python_exe, &code, &args, timeout));
-
-        Ok(result)
+        Ok(ExecResult {
+            stdout: String::new(),
+            stderr: "No Wasm sandbox available. Either load a Component-Model \
+                     component via load_precompiled_component() / load_component(), \
+                     or rebuild sage-core with --features sandbox,cranelift and \
+                     ensure build.rs bundles a compiled rustpython.wasm. \
+                     If you genuinely need unsandboxed execution, use execute_raw() \
+                     with SAGE_UNSAFE_RAW_EXEC=1 (bypasses AST validation AND the \
+                     Wasm sandbox — audited backdoor for trusted callers only)."
+                .to_string(),
+            exit_code: -1,
+            timed_out: false,
+            duration_ms: 0,
+        })
     }
 
     /// Execute Python code without validation (for pre-validated code).
@@ -344,22 +365,13 @@ impl ToolExecutor {
 /// True iff the operator has opted into the raw-exec backdoor by
 /// setting `SAGE_UNSAFE_RAW_EXEC` to a truthy value. Any other
 /// value — including unset — denies `execute_raw`.
+///
+/// Note: `SAGE_UNSAFE_UNSANDBOXED` (the old silent-subprocess-
+/// fallback gate for `validate_and_execute`) was removed in the
+/// §5 flip after the 40-attack red-team corpus validated the Wasm
+/// sandbox. `execute_raw` remains the only opt-in bypass.
 fn is_unsafe_raw_exec_enabled() -> bool {
-    read_truthy_env("SAGE_UNSAFE_RAW_EXEC")
-}
-
-/// True iff the operator has opted into the unsandboxed subprocess
-/// fallback by setting `SAGE_UNSAFE_UNSANDBOXED` to a truthy value.
-/// Without this opt-in, `validate_and_execute` fails closed when no
-/// Wasm component is loaded or when Wasm execution errors. Part of
-/// P0.4 (2026-04-22 audit remediation).
-fn is_unsafe_unsandboxed_enabled() -> bool {
-    read_truthy_env("SAGE_UNSAFE_UNSANDBOXED")
-}
-
-/// Common truthy-env reader used by both unsafe opt-ins.
-fn read_truthy_env(var: &str) -> bool {
-    match std::env::var(var) {
+    match std::env::var("SAGE_UNSAFE_RAW_EXEC") {
         Ok(v) => {
             let v = v.trim().to_ascii_lowercase();
             matches!(v.as_str(), "1" | "true" | "yes" | "on")
@@ -420,11 +432,14 @@ mod tests {
     use std::sync::Mutex;
 
     /// Serialise the env-var-mutating tests. `SAGE_UNSAFE_RAW_EXEC`
-    /// and `SAGE_UNSAFE_UNSANDBOXED` are process-global, so parallel
-    /// tests that set/unset them race — this matters more now that
-    /// the embedded wasm sandbox holds the process for 30+ s per
-    /// call. Tests that touch those vars MUST hold this lock for
-    /// their whole duration.
+    /// is process-global, so parallel tests that set/unset it race —
+    /// this matters more now that the embedded wasm sandbox holds
+    /// the process for 30+ s per call. Tests that touch the var
+    /// MUST hold this lock for their whole duration.
+    ///
+    /// Post §5 flip: `SAGE_UNSAFE_UNSANDBOXED` was removed so only
+    /// one env var needs serialising, but the mutex name is kept
+    /// for forward-compat if a future gate is added.
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn init_python() {
@@ -446,56 +461,35 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_and_execute_subprocess_fallback_gated_by_env_var() {
-        // P0.4 (2026-04-22): validate_and_execute fails CLOSED when
-        // no Wasm component is loaded and SAGE_UNSAFE_UNSANDBOXED
-        // is not set. Combined into ONE test because cargo runs
-        // tests in parallel and env-var mutation is process-global
-        // — splitting would race.
-        let _env_guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+    #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+    fn test_validate_and_execute_uses_embedded_wasm_by_default() {
+        // Post §5 flip (2026-04-22 after red-team corpus passed):
+        // `validate_and_execute` runs code in the embedded RustPython
+        // wasm sandbox by default — no opt-in required. The old
+        // `SAGE_UNSAFE_UNSANDBOXED` gate is gone. Defense-in-depth
+        // against filesystem / network / env escape is locked down
+        // separately by the 40-attack red-team corpus in
+        // sage-python/tests/test_wasm_sandbox_redteam.py. This Rust
+        // test only locks the *structural* invariant: safe code runs
+        // through the Wasm path end-to-end with no env-var opt-in.
         init_python();
         let executor = ToolExecutor::new(None, 10);
 
-        // Part 1: denied when env var is unset.
-        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
-        let r_denied = Python::with_gil(|py| {
-            executor.validate_and_execute(py, r#"print("should not run")"#, "{}")
+        let r_ok = Python::with_gil(|py| {
+            executor.validate_and_execute(py, r#"print("hello from wasm default")"#, "{}")
         });
-        assert!(r_denied.is_ok(), "fail-closed should return Ok(ExecResult), not Err");
-        let r_denied = r_denied.unwrap();
-        assert_ne!(
-            r_denied.exit_code, 0,
-            "fail-closed must signal non-zero exit_code"
-        );
-        assert!(
-            r_denied.stderr.contains("SAGE_UNSAFE_UNSANDBOXED"),
-            "fail-closed stderr must name the opt-in var: {}",
-            r_denied.stderr
-        );
-        assert!(
-            r_denied.stdout.is_empty(),
-            "fail-closed must not leak stdout: {}",
-            r_denied.stdout
-        );
-        assert!(
-            !r_denied.stdout.contains("should not run"),
-            "subprocess must not have executed"
-        );
-
-        // Part 2: subprocess runs when explicitly opted in.
-        std::env::set_var("SAGE_UNSAFE_UNSANDBOXED", "1");
-        let r_allowed = Python::with_gil(|py| {
-            executor.validate_and_execute(py, r#"print("fallback works")"#, "{}")
-        });
-        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
-        assert!(r_allowed.is_ok());
-        let r_allowed = r_allowed.unwrap();
+        assert!(r_ok.is_ok(), "validate_and_execute should return Ok");
+        let r_ok = r_ok.unwrap();
         assert_eq!(
-            r_allowed.exit_code, 0,
-            "opted-in fallback should succeed; stderr: {}",
-            r_allowed.stderr
+            r_ok.exit_code, 0,
+            "default sandboxed execution should succeed; stderr: {}",
+            r_ok.stderr
         );
-        assert!(r_allowed.stdout.contains("fallback works"));
+        assert!(
+            r_ok.stdout.contains("hello from wasm default"),
+            "stdout captured through the sandbox: {}",
+            r_ok.stdout
+        );
     }
 
 
@@ -551,68 +545,56 @@ mod tests {
     }
 
     #[test]
-    fn test_double_opt_in_structural_invariants() {
-        // 2026-04-22 P0.4 follow-up — both arbitrary-Python-execution
-        // bypasses are gated independently. This test locks the
-        // structural invariant: flipping only ONE of the two env
-        // vars must NOT let the other path through.
+    #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+    fn test_execute_raw_gate_independent_of_validate_and_execute() {
+        // Post §5 flip (was `test_double_opt_in_structural_invariants`
+        // before the flip; the unsandboxed-subprocess gate is gone so
+        // the matrix collapses from 4 states to 2).
         //
-        // Matrix:
-        //   - neither set: both deny
-        //   - only UNSAFE_UNSANDBOXED set: raw denies, validate-path runs
-        //   - only UNSAFE_RAW_EXEC set:    raw runs, validate denies
-        //   - both set: both run
+        // Contract now: `execute_raw` is the ONLY gated bypass —
+        // requires SAGE_UNSAFE_RAW_EXEC because it bypasses AST
+        // validation AND the Wasm sandbox. `validate_and_execute`
+        // runs in the Wasm sandbox by default, no opt-in. Flipping
+        // the raw gate must have zero effect on the validate-path
+        // behaviour.
         let _env_guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         init_python();
         let executor = ToolExecutor::new(None, 10);
         let safe_code = r#"print("probe")"#;
 
-        // State A: neither set — double deny.
+        // State A: raw gate closed.
         std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
-        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
         let a_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
         assert_ne!(a_raw.exit_code, 0, "raw must deny without its opt-in");
         assert!(a_raw.stderr.contains("SAGE_UNSAFE_RAW_EXEC"));
         let a_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
-            .expect("validate should return Ok even when fail-closed");
-        assert_ne!(a_val.exit_code, 0, "validate must deny without unsandboxed opt-in");
-        assert!(a_val.stderr.contains("SAGE_UNSAFE_UNSANDBOXED"));
-
-        // State B: only UNSAFE_UNSANDBOXED — raw still denies; validate runs.
-        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
-        std::env::set_var("SAGE_UNSAFE_UNSANDBOXED", "1");
-        let b_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
-        assert_ne!(
-            b_raw.exit_code, 0,
-            "raw must STILL deny when only the unsandboxed gate is open"
+            .expect("validate should return Ok");
+        assert_eq!(
+            a_val.exit_code, 0,
+            "validate-path runs sandboxed regardless of raw gate; stderr: {}",
+            a_val.stderr
         );
+        assert!(a_val.stdout.contains("probe"));
+
+        // State B: raw gate open.
+        std::env::set_var("SAGE_UNSAFE_RAW_EXEC", "1");
+        let b_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        assert_eq!(
+            b_raw.exit_code, 0,
+            "raw should now run (gate open); stderr: {}",
+            b_raw.stderr
+        );
+        assert!(b_raw.stdout.contains("probe"));
         let b_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
             .expect("validate ok");
         assert_eq!(
             b_val.exit_code, 0,
-            "validate should now run (gate open); stderr: {}",
-            b_val.stderr
-        );
-
-        // State C: only UNSAFE_RAW_EXEC — raw runs; validate still denies.
-        std::env::set_var("SAGE_UNSAFE_RAW_EXEC", "1");
-        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
-        let c_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
-        assert_eq!(
-            c_raw.exit_code, 0,
-            "raw should now run (gate open); stderr: {}",
-            c_raw.stderr
-        );
-        let c_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
-            .expect("validate ok");
-        assert_ne!(
-            c_val.exit_code, 0,
-            "validate must STILL deny when only the raw gate is open"
+            "validate-path still runs regardless of raw gate state"
         );
 
         // Clean up so other parallel tests aren't affected.
         std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
-        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
     }
 
     #[cfg(feature = "sandbox")]
