@@ -121,10 +121,23 @@ def z3_verify_sql_update(table: str, where_clause: str, update_values: Dict[str,
 
     z3_latency_ms = (time.perf_counter() - start_time) * 1000
 
+    # P3.3 (2026-04-22 audit remediation): relabel this guard from
+    # "mathematically proven safe" to "heuristic structural guard".
+    # What this function actually does: (a) checks WHERE presence,
+    # (b) string-substring scans for `drop`/`delete`, (c) rejects
+    # literal tautologies like `1=1` / `true`. It does NOT parse SQL,
+    # does not understand schemas, does not handle comments/aliases/
+    # subqueries/joins/functions/transactions/permissions. Calling
+    # this "formal verification" was false per AUDIT2 §10 — the name
+    # + message now reflect what it actually checks.
     return {
-        "status": "VERIFIED",
-        "message": f"Update on {table} mathematically proven safe.",
-        "z3_latency_ms": round(z3_latency_ms, 4)
+        "status": "HEURISTIC_PASS",
+        "message": (
+            f"Update on {table} passed the heuristic structural guard "
+            f"(WHERE clause present, no drop/delete substrings, no "
+            f"literal tautology). NOT a formal SQL proof."
+        ),
+        "heuristic_latency_ms": round(z3_latency_ms, 4),
     }
 
 

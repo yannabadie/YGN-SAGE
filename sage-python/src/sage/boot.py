@@ -201,12 +201,17 @@ class AgentSystem:
             cost = self.agent_loop.total_cost_usd
             latency_ms = (time.perf_counter() - run_start) * 1000
 
-            # When quality is unknown (None), use 0.5 as neutral recording.
-            # The bandit needs observations to learn, even imprecise ones.
-            # Only truly empty results (quality=0.0) are definitively bad.
+            # P1.5 (2026-04-22 audit remediation): when quality is unknown
+            # (QualityEstimator abstains), the bandit / MAP-Elites / router
+            # now ABSTAIN from recording instead of injecting a fabricated
+            # 0.5 reward. Pre-fix behaviour contaminated Thompson posteriors
+            # with non-evidence and let the learner drift toward the
+            # evaluator's blind spots (audit AUDIT2 §4, AUDIT3#5).
             if quality is None:
-                quality = 0.5
-                _log.info("Topology outcome: quality=None -> 0.5 (neutral recording)")
+                _log.info(
+                    "Topology outcome: quality=None — abstaining from bandit/archive/router update"
+                )
+                return
 
             # Extract keywords from task
             keywords = list(set(
@@ -419,13 +424,55 @@ def boot_agent_system(
     from sage.tools.base import Tool
     from sage.llm.base import ToolDef
 
+    # P0.2 (2026-04-22 audit remediation): allowlist the environment
+    # variables the bash subprocess sees. Pre-fix, the handler inherited
+    # the full process environment, exposing every *_API_KEY,
+    # CONTEXT7, SAGE_EXOCORTEX_STORE etc. to any command the LLM
+    # emitted — a direct API-key exfiltration path. Now we pass a
+    # curated safe env containing only platform essentials + generic
+    # locale. Can be overridden per-call via the `env_passthrough`
+    # bash kwarg (not yet exposed), but the default path is safe.
+    _BASH_ENV_ALLOWLIST = {
+        "PATH",
+        "HOME",
+        "PWD",
+        "USER",
+        "USERNAME",
+        "SHELL",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "LANG",
+        "LC_ALL",
+        "SYSTEMROOT",    # needed by Windows python under git bash
+        "WINDIR",
+        "COMSPEC",
+        "PATHEXT",
+        "PROGRAMFILES",
+        "PROGRAMFILES(X86)",
+        "PROGRAMDATA",
+    }
+
+    def _safe_subprocess_env() -> dict[str, str]:
+        """Return a scrubbed copy of os.environ with only allowlist vars."""
+        return {
+            key: val
+            for key, val in os.environ.items()
+            if key in _BASH_ENV_ALLOWLIST
+        }
+
     async def _execute_bash_handler(command: str, timeout: int = 30, **_kwargs) -> str:
         """Execute a bash command in a subprocess. Returns stdout+stderr.
 
         Uses bash (git bash on Windows) for Unix compatibility.
         Inherits current working directory (set by SWE-bench to repo root).
+
+        P0.2: env scrubbed via `_safe_subprocess_env()` — only
+        PATH/HOME/PWD/USER/locale-level vars pass through. No API
+        keys, no CONTEXT7, no SAGE_EXOCORTEX_STORE, no DB URLs.
         """
         import asyncio, subprocess, shutil
+        safe_env = _safe_subprocess_env()
         # Use bash for Unix commands (git bash on Windows, /bin/bash on Linux)
         bash = shutil.which("bash") or shutil.which("sh")
         if bash:
@@ -439,6 +486,7 @@ def boot_agent_system(
                         *cmd_args,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
+                        env=safe_env,
                     ),
                     timeout=timeout,
                 )
@@ -448,6 +496,7 @@ def boot_agent_system(
                         cmd_args,
                         stdout=subprocess.PIPE,
                         stderr=subprocess.PIPE,
+                        env=safe_env,
                     ),
                     timeout=timeout,
                 )

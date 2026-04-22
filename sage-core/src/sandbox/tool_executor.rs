@@ -215,15 +215,36 @@ impl ToolExecutor {
 
     /// Execute Python code without validation (for pre-validated code).
     ///
-    /// # Security Warning (Audit5 §6)
+    /// # Security Warning (Audit5 §6 + 2026-04-22 audit P0.3)
     /// This method bypasses tree-sitter AST validation entirely.
-    /// Caller is responsible for ensuring code safety.
-    /// Every call is logged at WARN level for audit trail.
+    /// As of the 2026-04-22 audit remediation, it is **gated** by the
+    /// `SAGE_UNSAFE_RAW_EXEC` environment variable — without that set
+    /// to `1` / `true` / `yes` / `on`, every call returns a fatal
+    /// `ExecResult` with an explanatory error. Legitimate callers
+    /// (ToolForge self-synthesis, etc.) opt in explicitly per-process;
+    /// accidental or LLM-triggered paths now fail closed.
+    ///
+    /// Every successful call is still logged at WARN level for audit
+    /// trail. Every denied call is logged at WARN level as well so
+    /// operators notice the attempt.
     pub fn execute_raw(&self, py: Python<'_>, code: &str, args_json: &str) -> ExecResult {
+        if !is_unsafe_raw_exec_enabled() {
+            warn!(
+                code_len = code.len(),
+                "execute_raw DENIED — SAGE_UNSAFE_RAW_EXEC not set to a truthy value"
+            );
+            return ExecResult {
+                stdout: String::new(),
+                stderr: "execute_raw is disabled. Set SAGE_UNSAFE_RAW_EXEC=1 to opt in (bypasses AST validation — only for trusted callers).".to_string(),
+                exit_code: -1,
+                timed_out: false,
+                duration_ms: 0,
+            };
+        }
         warn!(
             code_len = code.len(),
             has_wasm = self.has_wasm(),
-            "execute_raw called — bypassing AST validation"
+            "execute_raw called — bypassing AST validation (SAGE_UNSAFE_RAW_EXEC=1)"
         );
 
         let python_exe = self.python_exe.clone();
@@ -232,6 +253,19 @@ impl ToolExecutor {
         let timeout = self.timeout_secs;
 
         py.allow_threads(move || execute_python_subprocess(&python_exe, &code, &args, timeout))
+    }
+}
+
+/// True iff the operator has opted into the raw-exec backdoor by
+/// setting `SAGE_UNSAFE_RAW_EXEC` to a truthy value. Any other
+/// value — including unset — denies `execute_raw`.
+fn is_unsafe_raw_exec_enabled() -> bool {
+    match std::env::var("SAGE_UNSAFE_RAW_EXEC") {
+        Ok(v) => {
+            let v = v.trim().to_ascii_lowercase();
+            matches!(v.as_str(), "1" | "true" | "yes" | "on")
+        }
+        Err(_) => false,
     }
 }
 
@@ -328,12 +362,43 @@ mod tests {
     }
 
     #[test]
-    fn test_execute_raw_bypasses_validation() {
+    fn test_execute_raw_gated_by_env_var() {
+        // P0.3 (2026-04-22): `execute_raw` is gated by
+        // SAGE_UNSAFE_RAW_EXEC. Combined into ONE test because
+        // cargo test runs tests in parallel and env-var mutation
+        // is process-global — splitting across two tests races.
         init_python();
         let executor = ToolExecutor::new(None, 10);
-        let r = Python::with_gil(|py| executor.execute_raw(py, r#"print("raw exec")"#, "{}"));
-        assert_eq!(r.exit_code, 0, "stderr: {}", r.stderr);
-        assert!(r.stdout.contains("raw exec"));
+
+        // Part 1: denied when env var is not set.
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        let r_denied = Python::with_gil(|py| {
+            executor.execute_raw(py, r#"print("should not run")"#, "{}")
+        });
+        assert_ne!(r_denied.exit_code, 0, "execute_raw must deny by default");
+        assert!(
+            r_denied.stderr.contains("SAGE_UNSAFE_RAW_EXEC"),
+            "deny stderr should name the opt-in var: {}",
+            r_denied.stderr
+        );
+        assert!(r_denied.stdout.is_empty(), "no stdout leak on deny");
+
+        // Part 2: bypass works when explicitly opted in.
+        std::env::set_var("SAGE_UNSAFE_RAW_EXEC", "1");
+        let r_allowed = Python::with_gil(|py| {
+            executor.execute_raw(py, r#"print("raw exec")"#, "{}")
+        });
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        assert_eq!(
+            r_allowed.exit_code, 0,
+            "execute_raw should succeed when opted in; stderr: {}",
+            r_allowed.stderr
+        );
+        assert!(
+            r_allowed.stdout.contains("raw exec"),
+            "opted-in exec should show stdout: {}",
+            r_allowed.stdout
+        );
     }
 
     #[cfg(feature = "sandbox")]
