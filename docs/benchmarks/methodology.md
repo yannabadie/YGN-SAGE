@@ -79,7 +79,9 @@ The `sage.bench.ablation` module implements a 6-configuration ablation study to 
 
 ---
 
-## TopologyBench Protocol
+## sage-topo-bench Protocol (internal suite; name corrected 2026-04-22 per audit)
+
+> **Naming note:** This is an internal SAGE sweep over the 9 topology templates. It is distinct from (a) the UCL TopologyBench 2024 dataset for optical network topology analysis, and (b) TopoBench (arXiv 2603.12133) for LLM topological reasoning puzzles. Previous mentions of "TopologyBench" in this doc and results referred to this internal suite; the rename is bookkeeping, the protocol below is unchanged.
 
 Tests the hypothesis that agent topology structure impacts performance more than model capability (per AdaptOrch, arXiv 2602.16873).
 
@@ -106,7 +108,7 @@ Previous results (9 topologies, mean 94.0%, spread 4.3pp) were invalidated due t
 
 ### Cost Estimation
 
-A full TopologyBench run across all 9 topologies on 164 tasks costs approximately $28 in API calls. Use `--dry-run` for cost estimation before running.
+A full `sage-topo-bench` run across all 9 topologies on 164 tasks costs approximately $28 in API calls. Use `--dry-run` for cost estimation before running.
 
 ---
 

@@ -40,7 +40,7 @@ All results as of March 13, 2026. Tests run using the YGN-SAGE framework with bu
 
 ---
 
-## TopologyBench
+## sage-topo-bench (internal suite; name corrected 2026-04-22 per audit — distinct from UCL TopologyBench and TopoBench)
 
 ### GSM8K Reasoning (50 tasks, Gemini 2.5 Flash)
 
@@ -253,7 +253,7 @@ python -m sage.bench --type evalplus --dataset humaneval --limit 20
 python -m sage.bench --type evalplus --dataset mbpp
 ```
 
-### TopologyBench
+### sage-topo-bench (internal suite; name corrected 2026-04-22 per audit — distinct from UCL TopologyBench and TopoBench)
 
 ```bash
 cd sage-python

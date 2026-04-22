@@ -83,7 +83,7 @@ YGN-SAGE/
 | EvalPlus HumanEval+ | **84.1%** pass@1 | 164 problems, 80x harder tests |
 | EvalPlus MBPP+ | **75.1%** pass@1 | 378 problems, 35x harder tests |
 | Routing accuracy (kNN) | **92%** | 50 human-labeled tasks |
-| TopologyBench best | **96.3%** | Evolved topology on HumanEval+ |
+| sage-topo-bench best (internal sweep, not the UCL TopologyBench dataset) | **96.3%** | Evolved topology on HumanEval+ |
 | Ablation: full vs baseline | **+15pp** | Same model, framework value proof |
 
 SOTA context for HumanEval+ pass@1: O1 ~89%, GPT-4o ~87%, Qwen2.5-Coder-32B ~87%, **YGN-SAGE 84.1%** (using budget Gemini 2.5 Flash), Claude Sonnet 3.5 ~82%.

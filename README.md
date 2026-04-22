@@ -38,7 +38,7 @@ SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a mul
 
 YGN-SAGE is an open-source Agent Development Kit that **learns** which multi-agent topology to use for each task. Inspired by [OpenSAGE](https://arxiv.org/abs/2602.16891) (UC Berkeley), SAGE extends it with formal verification, evolutionary topology search, and a Rust performance core.
 
-Unlike frameworks that use fixed agent pipelines, SAGE designs, executes, and improves its own multi-agent architectures autonomously — adding **+27pp over bare LLM calls** on multi-agent benchmarks (MASBENCH).
+Unlike frameworks that use fixed agent pipelines, SAGE designs, executes, and improves its own multi-agent architectures autonomously. On our internal multi-agent suite (`sage-mas-bench`, inspired by but NOT the published MAS-Bench of arXiv 2509.06477 or the AAMAS 2021 crowd-simulation benchmark — distinct from both) a statistically-significant +22pp gain on the *breadth* axis (p=0.015, N=50) is reported; other axes show p>0.05, not significant. Earlier "+27pp" / "+30pp" headlines have been retracted (see [2026-04-22 audit verification](docs/audits/2026-04-22-audit-verification-master.md) and commit 796af27).
 
 ## How a task flows through SAGE
 
@@ -172,7 +172,7 @@ Verification components (scope and framing corrected 2026-04-22 per audit — so
 Training code (veRL integration, SFT/GRPO scripts, datasets, checkpoints) was moved out of `main` on 2026-04-15 (commit `b2f59ee`, ~4.3 GB removed). Focus shifted to orchestration correctness and agentic benchmarks. The code lives in a dedicated training branch; revive it there when needed.
 
 Trained checkpoints remain available on HuggingFace:
-- [yannabadie/sage-topology-policy-local](https://huggingface.co/yannabadie/sage-topology-policy-local) — Qwen3-4B (Phase C: 0.922 structural, 40% MASBENCH depth — **best local model**)
+- [yannabadie/sage-topology-policy-local](https://huggingface.co/yannabadie/sage-topology-policy-local) — Qwen3-4B (Phase C: 0.922 structural, 40% on our internal sage-mas-bench depth — **best local model**)
 - [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2) — Nemotron-Orchestrator-8B (veRL pod checkpoints)
 
 Path 6 (learned topology policy) is currently off by default. To use a trained model:
@@ -201,10 +201,10 @@ Each topology node can use a different provider. The policy model can express `p
 |-----------|-------|-------|
 | **BigCodeBench Hard Instruct (tuned)** | **45.9%** (68/148) | 2026-04-07 v4: pre-filter + reasoner repair + escalation. Above SOTA 40.0% (The Conductor). |
 | **BigCodeBench Hard Instruct (budget)** | **37.8%** (56/148) | Budget model baseline (2026-03). |
-| **MASBENCH breadth** | **+22pp** p=0.015 | Only statistically significant axis (N=50). Other axes p>0.05. |
-| **HumanEval+ pipeline** | **89.6%** (147/164) | +5.5pp over pre-pipeline (84.1%). Saturated benchmark — prefer BCB for framework delta. |
+| **sage-mas-bench breadth** (our internal suite, NOT the published MAS-Bench arXiv 2509.06477) | **+22pp** p=0.015 | Only statistically significant axis (N=50). Other axes p>0.05. |
+| **HumanEval+ pipeline** | **84.1%** (138/164) | The "89.6%" figure previously cited here was an aspirational projection of 84.1% + 5.5pp; it was never actually measured. Saturated benchmark — prefer BCB for framework delta. |
 | **kNN routing GT** | **92%** (46/50) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601). Rust SystemRouter 88%. |
-| **TopologyBench** | **94.0%** mean (9/9) | 4.3pp spread across topologies |
+| **sage-topo-bench** (our internal topology sweep, NOT the UCL TopologyBench 2024 optical-network dataset) | **94.0%** mean (9/9) | 4.3pp spread across topologies. Distinct from both the optical-network TopologyBench and the TopoBench (arXiv 2603.12133) LLM puzzle benchmark. |
 | **SWE-bench Lite** | 0% (0/5) diagnostic | 2026-04-08: 3 gaps — routing S2→S3, tool-use prompt, multi-turn loop. Remediation in progress. |
 
 ### Tests
@@ -289,7 +289,7 @@ YGN-SAGE/
 |-- sage-python/         # Python SDK: 175 modules, 31K+ lines
 |   +-- src/sage/
 |       |-- agents/      #   Sequential, Parallel, Loop, Handoff composition
-|       |-- bench/       #   15+ benchmarks (BigCodeBench, MASBENCH, GAIA, HumanEval+, etc.)
+|       |-- bench/       #   15+ benchmarks (BigCodeBench, sage-mas-bench internal, GAIA, HumanEval+, etc.)
 |       |-- contracts/   #   Z3 verification, TaskDAG, auto-repair
 |       |-- events/      #   EventBus (central nervous system)
 |       |-- evolution/   #   MAP-Elites population, LLM mutator, self-improve, drift monitor 12D

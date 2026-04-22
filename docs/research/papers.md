@@ -67,7 +67,7 @@ YGN-SAGE draws on and extends research from multi-agent systems, LLM routing, ev
 ### AdaptOrch
 **arXiv 2602.16873** -- Demonstrates that topology structure impacts agent performance more than model capability.
 
-**SAGE implementation**: The entire Topology pillar is built on this hypothesis. `DynamicTopologyEngine` with 6-path generation, `MapElitesArchive` for quality-diversity search, and `TopologyBench` for empirical validation. TopologyBench results show a 4.3pp spread across 9 topologies (92.1% -- 96.3%), though confidence intervals overlap at 164 tasks.
+**SAGE implementation**: The entire Topology pillar is built on this hypothesis. `DynamicTopologyEngine` with 6-path generation, `MapElitesArchive` for quality-diversity search, and `sage-topo-bench (internal, not the UCL TopologyBench dataset)` for empirical validation. sage-topo-bench (internal, not the UCL TopologyBench dataset) results show a 4.3pp spread across 9 topologies (92.1% -- 96.3%), though confidence intervals overlap at 164 tasks.
 
 ---
 
@@ -88,7 +88,7 @@ YGN-SAGE draws on and extends research from multi-agent systems, LLM routing, ev
 ### Topology Structure Learning
 **arXiv 2505.22467** -- Demonstrates up to 10% performance gap between different agent topologies.
 
-**SAGE validation**: TopologyBench confirms a 4.3pp spread across topologies, consistent with this paper's findings at a smaller scale.
+**SAGE validation**: sage-topo-bench (internal, not the UCL TopologyBench dataset) confirms a 4.3pp spread across topologies, consistent with this paper's findings at a smaller scale.
 
 ---
 
