@@ -234,7 +234,7 @@ def test_normalize_chat_no_hints_no_instructions_no_length_hint():
 
 def test_package_public_api_surface():
     """Lock the __all__ exports so the package surface grows only on
-    purpose. Expanded in C2a to include the SWE-bench normalizer."""
+    purpose. Expanded in C2a (SWE-bench) and C3 (BCB)."""
     import sage.input as pkg
 
     assert set(pkg.__all__) == {
@@ -242,7 +242,9 @@ def test_package_public_api_surface():
         "ResponseFormat",
         "SWEBENCH_SYSTEM_TEMPLATE",
         "TaskInput",
+        "normalize_bcb",
         "normalize_chat",
         "normalize_swebench",
+        "render_bcb_prompt",
         "render_swebench_prompt",
     }

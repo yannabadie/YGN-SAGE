@@ -1,0 +1,12 @@
+Use this function signature and imports:
+```python
+import subprocess
+import ftplib
+import os
+
+def task_func(directory: str) -> list:
+
+```
+
+"""Download all files from FTP."""
+def task_func(...): pass

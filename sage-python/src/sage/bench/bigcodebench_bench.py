@@ -74,17 +74,13 @@ class BigCodeBenchBench:
         self._predictions: list[dict[str, str]] = []
         passed_count = 0
 
+        from sage.input.bcb import normalize_bcb, render_bcb_prompt
+
         for i, task_id in enumerate(task_ids):
             task = problems[task_id]
-            prompt_key = "instruct_prompt" if self.split == "instruct" else "complete_prompt"
-            prompt = task.get(prompt_key, task.get("instruct_prompt", ""))
-            # Inject code_prompt (imports + function signature) as context
-            code_prompt = task.get("code_prompt", "")
-            if code_prompt:
-                prompt = (
-                    f"Use this function signature and imports:\n"
-                    f"```python\n{code_prompt}\n```\n\n{prompt}"
-                )
+            # C3 (2026-04-22): prompt composition moved to sage.input.bcb.
+            # Byte-identical refactor — same text reaches the model.
+            prompt = render_bcb_prompt(normalize_bcb(task, self.split))
 
             entry = task["entry_point"]
             tid = task_id

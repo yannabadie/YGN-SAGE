@@ -5,6 +5,7 @@ for the full design. Every source (chat REPL, SWE-bench, BigCodeBench, a
 future API endpoint) produces a `TaskInput` via its own `normalize_*`
 function, and the pipeline consumes that one shape.
 """
+from sage.input.bcb import normalize_bcb, render_bcb_prompt
 from sage.input.chat import CHAT_DEFAULT_TOOLS, normalize_chat
 from sage.input.swebench import (
     SWEBENCH_SYSTEM_TEMPLATE,
@@ -18,7 +19,9 @@ __all__ = [
     "ResponseFormat",
     "SWEBENCH_SYSTEM_TEMPLATE",
     "TaskInput",
+    "normalize_bcb",
     "normalize_chat",
     "normalize_swebench",
+    "render_bcb_prompt",
     "render_swebench_prompt",
 ]

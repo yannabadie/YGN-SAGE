@@ -1,0 +1,11 @@
+Use this function signature and imports:
+```python
+import subprocess
+import ftplib
+import os
+
+def task_func(directory: str) -> list:
+
+```
+
+Download all files from a specific directory on an FTP server using wget in a subprocess.
