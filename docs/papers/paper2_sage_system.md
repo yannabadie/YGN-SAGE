@@ -38,9 +38,9 @@ CRAG-style relevance gate (keyword overlap, threshold=0.3) prevents irrelevant m
 
 ### 2.2 Formal Verification
 
-- **OxiZ** (pure Rust SMT, QF_LIA): invariant verification, memory safety proofs, provider assignment. Sub-0.1ms verification (0.024ms PRM, 0.060ms mutation validation).
-- **LTL model checking**: temporal properties on TopologyGraph — reachability (BFS), safety (no HIGH->LOW paths), liveness (entries reach exits), bounded liveness (depth <= K).
-- **CEGAR**: counterexample-guided invariant synthesis (max 5 rounds) with clause-level diagnostic feedback.
+- **OxiZ** (pure Rust SMT, QF_LIA): invariant verification, memory safety proofs (for literal-integer bounds), provider assignment SAT. Sub-millisecond on the verifiable fragments we exercise (0.024ms PRM, 0.060ms mutation validation). Scope is quantifier-free linear integer arithmetic — no quantifiers, heaps, arrays, or non-linear arithmetic.
+- **Graph-property checks (class: `LtlVerifier`)**: BFS/DFS verification on TopologyGraph — reachability, safety (no HIGH→LOW paths), liveness (entries reach exits), bounded liveness (depth ≤ K). Not LTL model checking in the Büchi-automaton sense; class name retained for API compatibility. Corrected per 2026-04-22 audit.
+- **Invariant synthesis (candidate enumeration with syntactic weakening)**: iterates over given post-condition candidates; if none succeed, applies `>` → `>=` / `==` → `>=` weakening. Max 5 rounds. Clause-level diagnostic feedback for S3 escalation. Not Counter-Example Guided Abstraction Refinement; previous "CEGAR" label was inaccurate. Corrected per 2026-04-22 audit.
 
 ### 2.3 Agent Composition
 

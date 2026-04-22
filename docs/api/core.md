@@ -232,7 +232,9 @@ result = verifier.prove_memory_safety("x >= 0", "x < buffer_size")
 # Loop bound verification
 result = verifier.check_loop_bound("i < n", max_iterations=1000)
 
-# Invariant synthesis (CEGAR)
+# Invariant synthesis (candidate enumeration with syntactic weakening;
+# previously labelled "CEGAR", corrected 2026-04-22 per audit — this is
+# NOT Counter-Example Guided Abstraction Refinement)
 result = verifier.synthesize_invariant(
     pre="x > 0",
     post_candidates=["x >= 1", "x > -1"],
@@ -250,7 +252,7 @@ result = verifier.synthesize_invariant(
 | `verify_arithmetic_expr` | Check arithmetic expressions |
 | `verify_invariant` | Verify loop invariants |
 | `verify_invariant_with_feedback` | Invariant check with clause-level diagnostics |
-| `synthesize_invariant` | CEGAR invariant synthesis (max 5 rounds) |
+| `synthesize_invariant` | Candidate-enumeration invariant synthesis (max 5 rounds; previously labelled "CEGAR", corrected 2026-04-22) |
 | `verify_array_bounds` | Check array access bounds |
 | `validate_mutation` | Verify topology mutation correctness |
 | `verify_provider_assignment` | SAT check for provider assignment |

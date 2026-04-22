@@ -244,6 +244,6 @@ The `MctsSearcher` uses Monte Carlo Tree Search with UCB1 selection and random m
 
 Every mutation is validated by the `HybridVerifier` before acceptance. The `SmtVerifier` can additionally validate mutations via `validate_mutation()`, and the `LtlVerifier` checks temporal properties (safety, liveness) on the resulting topology graph.
 
-### CEGAR Invariant Synthesis
+### Invariant Synthesis (candidate enumeration with syntactic weakening)
 
-The `synthesize_invariant()` method implements Counterexample-Guided Abstraction Refinement: it iteratively weakens or strengthens post-conditions over up to 5 rounds. `verify_invariant_with_feedback()` returns clause-level diagnostic violations that feed into S3 escalation prompts.
+The `synthesize_invariant()` method tries each post-condition candidate in order and, if none succeed, applies a naive syntactic weakening (`>` → `>=`, `==` → `>=`). Corrected 2026-04-22 per audit (B.2): this is **not** Counter-Example Guided Abstraction Refinement. The earlier "CEGAR" label conflated candidate-enumeration with the counterexample-driven refinement loop that defines real CEGAR. The API method name remains `synthesize_invariant`; the label above is what it does. `verify_invariant_with_feedback()` returns clause-level diagnostic violations that feed into S3 escalation prompts.

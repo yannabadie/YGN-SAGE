@@ -130,7 +130,7 @@ Plus:
 - **Tier 2 — Semantic Memory**: entity-relation graph with embeddings (arctic-embed-m 768-dim)
 - **Tier 3 — ExoCortex** (Google File Search RAG): 500+ research papers, arXiv discovery pipeline
 
-**S-MMU** (Selective Memory Management Unit, Rust): 4-view graph (temporal, semantic, causal, entity) with:
+**S-MMU** (Structured Memory Multi-view graph, Rust — not an OS MMU; naming clarified per 2026-04-22 audit): 4-view graph (temporal, semantic, causal, entity) with:
 - Utility-based eviction (recency × access_count)
 - Auto-GC at 10K chunks
 - Composite write gate (5 signals: salience 25%, novelty 30%, reliability 20%, recency 10%, relevance 15%) — [arXiv 2603.15994](https://arxiv.org/abs/2603.15994): 100% precision vs 13% without gate
@@ -144,27 +144,28 @@ Plus:
 - **MAP-Elites + CMA-ME** (Rust): quality-diversity search over topology space with configurable behavior descriptors
 - **Online evolution**: `should_evolve()` in Rust triggers mutation when >5 outcomes accumulate. Topologies improve between tasks, not just during training.
 - **7 mutation operators**: add/remove node, swap model, rewire edge, split/merge, mutate prompt
-- **LLM-as-mutator**: GPT-based intelligent mutations with AdaptiveMutator (Thompson sampling on mutation operators). Based on [ShinkaEvolve, ICLR 2026](https://arxiv.org/abs/2601.04170).
+- **LLM-as-mutator**: GPT-based intelligent mutations with AdaptiveMutator (Thompson sampling on mutation operators). Based on [ShinkaEvolve, arXiv 2509.19349](https://arxiv.org/abs/2509.19349).
 - **Statistical validation**: Wilcoxon signed-rank test + Cohen's d for evolution significance
-- **Drift monitor 12D**: 9 signals (semantic, behavioral, thematic) detect performance degradation. Agent Stability Index from [arXiv 2601.04170](https://arxiv.org/abs/2601.04170).
+- **Drift monitor 12D**: 9 signals (semantic, behavioral, thematic) detect performance degradation. Agent Stability Index from [Agent Drift, arXiv 2601.04170](https://arxiv.org/abs/2601.04170).
 
 ### 5. Strategy — Cognitive Routing (Rust)
 
-- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (92% GT), SystemRouter (88% GT)
-- **ContextualBandit** (Rust): per-arm Thompson sampling with Beta/Gamma posteriors, Pareto front selection. Based on [PILOT, EMNLP 2025](https://arxiv.org/abs/2508.21141).
+- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (92% GT on our internal 50-task set; the [backing research arXiv 2505.12601](https://arxiv.org/abs/2505.12601) validates kNN as a viable router class, reporting 52-77% AUC on public RouterBench/AlpacaEval), SystemRouter (88% GT on the same set)
+- **ContextualBandit** (Rust): per-arm Thompson sampling with Beta/Gamma posteriors, Pareto front selection. General principle — bandit must learn from actual quality signal — is from the [Cascade Routing ETH-SRI ICLR 2025](https://arxiv.org/abs/2410.10347) line of work.
 - **ModelAssigner** (Rust): per-node model selection with configurable weights + provider hints (+0.15 bonus)
 - **ProviderPool**: 7 API providers + Codex, per-node resolution, circuit breaker with auto-failover
-- **4-stage cascade routing**: validated by [ETH-SRI ICML 2025](https://arxiv.org/abs/2410.10347) and [routing survey 2603.04445](https://arxiv.org/abs/2603.04445)
+- **4-stage cascade routing**: validated by [ETH-SRI ICLR 2025](https://arxiv.org/abs/2410.10347) and [routing survey 2603.04445](https://arxiv.org/abs/2603.04445)
 
 ## Formal Verification (Rust)
 
-Unique among agent frameworks — no competitor has this:
-- **OxiZ SmtVerifier**: sub-0.1ms formal proofs (memory safety, loop bounds, arithmetic, invariants, CEGAR synthesis with 5 refinement rounds)
+Verification components (scope and framing corrected 2026-04-22 per audit — some competitors have structural workflow verification, though SMT-grounded component verification for agent runtimes is not standard):
+- **OxiZ SmtVerifier**: QF_LIA SMT solving for verifiable fragments — memory safety (bounds with literal integers), loop bounds (concrete caps), arithmetic (constants + linear expressions), invariants (pre → post implication). Solve time is sub-millisecond on the fragments we verify; claim is scoped, not a general-case performance promise.
+- **Invariant synthesis**: candidate enumeration with simple syntactic weakening (`>` → `>=`). This is **not** Counter-Example Guided Abstraction Refinement; the previous "CEGAR" label was inaccurate and is removed.
 - **HybridVerifier**: 6 structural + 4 semantic checks on TopologyGraph, O(V+E)
-- **LtlVerifier**: 4 temporal property checks (reachability, safety, liveness, bounded liveness)
-- **QualityLabeler**: tree-sitter AST + Z3 SMT formal quality scoring
+- **LtlVerifier** (graph-property checker): reachability (BFS source→target), safety (no HIGH→LOW edges), liveness (entries reach exits by BFS), bounded liveness (DFS with depth cap). This is not LTL model checking in the Büchi-automaton sense — no formula parser, no temporal operators. Name retained for API compat; the 2026-04-22 audit recommends renaming to `GraphPropertyChecker` in a future breaking change.
+- **QualityLabeler** (hybrid, **not zero-heuristics**): tree-sitter AST formal parsing + OxiZ SMT for arithmetic assertions, combined with heuristic checks for structural completeness, code-block extraction, and answer-pattern matching. The audit-verified ratio is ~80% heuristic / ~20% formal; the earlier "zero heuristics" claim was incorrect.
 - **TopologyDensity**: S_complex cost metric from [AgentConductor Theorem 1](https://arxiv.org/abs/2602.17100) + N_max bounds
-- **DistilBERT QualityEstimator** (ONNX): learned quality prediction for text outputs where formal verification can't apply. Trained on 600 (task, result, quality) triples.
+- **DistilBERT QualityEstimator** (ONNX) — *planned, not shipped*: this learned quality predictor was planned to complement the Rust formal path but the ONNX artifact is not in this repo or on a release. Current runtime uses the Rust QualityLabeler + abstention; 600-triple training is a future item.
 
 ## Training Pipeline
 

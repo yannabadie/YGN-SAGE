@@ -24,7 +24,7 @@ The system is organized around **five cognitive pillars**:
 
 **Cognitive routing, not keyword matching.** Tasks are classified into S1 (fast/intuitive), S2 (analytical), or S3 (formal verification) cognitive systems using a 4-stage learned pipeline: structural features, kNN embeddings, BERT ONNX classifier, and entropy probing (with cascade fallback to heuristic). The kNN router achieves 92% accuracy on human-labeled ground truth versus 52% for keyword heuristics.
 
-**SMT formal verification.** S3 tasks get genuine satisfiability checking via OxiZ (pure-Rust SMT solver) with Z3 fallback. This includes memory safety proofs, loop bound verification, CEGAR invariant synthesis, and LTL temporal model checking on topology graphs.
+**SMT-backed verification (for verifiable fragments).** S3 tasks get QF_LIA satisfiability checking via OxiZ (pure-Rust SMT solver). This covers memory safety (literal-integer bounds), loop bound verification (concrete caps), arithmetic invariants, and candidate-enumeration invariant synthesis. Also includes a graph-property checker for topology graphs (reachability / safety / liveness via BFS/DFS) — not LTL model checking in the Büchi-automaton sense. Scope clarified 2026-04-22 per audit.
 
 **Rust-native performance core.** The orchestrator, memory system (Arrow/SIMD), embedder (ONNX Runtime), router, topology engine, and SMT verifier all run in Rust via PyO3 bindings. Python is the SDK layer; the hot path is native.
 

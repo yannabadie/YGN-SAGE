@@ -136,11 +136,11 @@ Iterative refinement of invariants using counterexamples.
 
 ---
 
-### LTL Model Checking
+### Graph-property checks (retained class name `LtlVerifier`)
 
-Linear Temporal Logic verification on graph structures.
+BFS/DFS graph-property verification on topology graphs. Corrected 2026-04-22 per audit (B.3): this is **not** Linear Temporal Logic model checking in the academic sense — there is no formula parser, no translation to Büchi automata, no temporal operators (G / F / X / U). The class name `LtlVerifier` was misleading and is retained only for API compatibility.
 
-**SAGE implementation**: `sage_core.LtlVerifier` with 4 checks on TopologyGraph: reachability (BFS), safety (no HIGH->LOW paths), liveness (all entries reach exits), bounded liveness (depth <= K). Wired into HybridVerifier (safety produces errors, liveness produces warnings).
+**SAGE implementation**: `sage_core.LtlVerifier` with 4 checks on TopologyGraph: reachability (BFS source → target), safety (no HIGH → LOW paths, edge iteration), liveness (all entries reach any exit, BFS), bounded liveness (DFS with depth <= K). Wired into HybridVerifier (safety produces errors, liveness produces warnings).
 
 ---
 

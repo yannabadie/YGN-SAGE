@@ -86,7 +86,7 @@ The agent framework layer that wires pillars together and provides the developer
 | `guardrails/` | 3-layer pipeline (input, runtime, output) |
 | `agents/` | SequentialAgent, ParallelAgent, LoopAgent, Handoff |
 | `topology/` | Evolutionary topology, Process Reward Model (Z3 DSL), LLM caller |
-| `contracts/` | TaskDAG, verification, policy, DAGExecutor, RepairLoop (CEGAR) |
+| `contracts/` | TaskDAG, verification, policy, DAGExecutor, RepairLoop (candidate-enumeration; previously labelled "CEGAR", corrected 2026-04-22 per audit) |
 | `bench/` | EvalPlus, ablation, routing GT, memory/evolution ablation |
 | `protocols/` | MCP server + A2A agent |
 
@@ -151,7 +151,7 @@ flowchart LR
 
 - **S1 (Fast/Intuitive)**: Simple tasks handled by budget models with minimal overhead
 - **S2 (Analytical)**: Complex tasks requiring reasoning, with AVR (Act-Verify-Refine) self-correction
-- **S3 (Formal)**: Tasks requiring formal verification via SMT solvers and LTL model checking
+- **S3 (Formal)**: Tasks requiring formal verification via QF_LIA SMT (OxiZ) plus graph-property checks (reachability / safety / liveness via BFS/DFS — not LTL in the Büchi-automaton sense; scope corrected 2026-04-22 per audit)
 
 The TopologyEngine generates a multi-agent graph (6-path strategy: S-MMU recall, archive lookup, LLM synthesis, mutation, MCTS, template fallback). The S-MMU injects relevant context from prior interactions as a SYSTEM message.
 
