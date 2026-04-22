@@ -753,14 +753,30 @@ class CognitiveOrchestrationPipeline:
     # ── Cost Estimation ──────────────────────────────────────────────────────
 
     def _estimate_topology_cost(self, ctx: PipelineContext) -> float:
-        """Estimate execution cost from per-model pricing in cards.toml.
+        """PREDICTIVE cost estimate (pre-execution budget check only).
+
+        P1.6 clarification (2026-04-22 audit remediation): this function is
+        a PREDICTION used by the topology-budget gate BEFORE execution. It
+        is NOT the actual cost tracker. The real runtime cost comes from
+        `AgentLoop.total_cost_usd`, which is computed by
+        `sage.phases.think._extract_step_cost` using the provider-reported
+        token usage (`response.usage.prompt_tokens` +
+        `response.usage.completion_tokens`) times the per-model rate in
+        cards.toml. That path is the truth; ctx.cost gets updated from it
+        post-execution (see lines 1270, 1353, 1398 in this file).
+
+        This predictor uses a fixed ~500 input / ~300 output token budget
+        per node — a known imprecise heuristic acceptable for a pre-run
+        budget-gate. The audit (AUDIT4 bug #1 "cost estimation fictive")
+        correctly flagged this as fiction for POST-EXEC reporting, but
+        pre-exec gating is a distinct problem from per-token accounting.
+        A token-count PREDICTOR (rather than a fixed 500/300) is a separate
+        research task; the $0.001 fallback fires only when cards.toml has
+        no entry for the assigned model.
 
         Loads the model catalog once (cached) and looks up cost_input_per_m /
         cost_output_per_m for each node's assigned model.  Falls back to
         $0.001 per node when the catalog or model is unavailable.
-
-        Assumes ~500 input tokens + ~300 output tokens per node call (conservative
-        estimate for typical multi-agent pipeline nodes).
         """
         if not ctx.topology or not hasattr(ctx.topology, 'node_count'):
             return 0.0

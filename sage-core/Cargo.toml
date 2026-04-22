@@ -53,7 +53,15 @@ rand = "0.9"
 regex = "1.10"
 rusqlite = { version = "0.33", features = ["bundled"], optional = true }
 [features]
-default = ["extension-module"]
+# P3.4 (2026-04-22 audit remediation): `cognitive` moved into default so
+# persistent bandit state (load_state/save_state wired in
+# sage-python/src/sage/boot_topology.py) works out of the box without
+# requiring `maturin develop --features cognitive`. AUDIT4 bug #6's
+# complaint "apprentissage perdu au redemarrage" was driven by default
+# builds not including the SQLite-backed persistence; this closes that
+# gap. Operators who explicitly want the leanest build can still pass
+# `--no-default-features` and opt back in per-feature.
+default = ["extension-module", "cognitive"]
 extension-module = ["pyo3/extension-module", "pyo3/multiple-pymethods"]
 sandbox = ["wasmtime", "dep:wasmtime-wasi"]
 # On Linux CI, use sandbox + cranelift for JIT compilation.
