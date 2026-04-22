@@ -18,6 +18,21 @@
 
 ---
 
+## Architectural reframe (2026-04-22 post-P0.1)
+
+When this spec was first written the threat model assumed the LLM would be given `execute_bash` and could emit arbitrary Python / shell payloads. Under that model the Wasm sandbox had to protect ALL code-execution paths.
+
+After P0.1 shipped (commits `585b649` + `ef2100b`), the picture has changed:
+
+* The 6 typed repo tools (`read_file`, `search_repo`, `list_files`, `run_tests`, `apply_patch`, `git_diff`) are **not code-execution surfaces**. Each is a curated handler with a typed schema, a path-jail, argv-list invocation (no `shell=True`), an env-scrub, and an output cap. Their safety is structural, not runtime.
+* `execute_bash` is now gated by `AgentConfig.dangerous_tools=True`. Chat mode filters it out entirely via `CHAT_DEFAULT_TOOLS`. Bench paths keep it during the paired-smoke validation window.
+* `execute_raw()` is gated by `SAGE_UNSAFE_RAW_EXEC=1` — P0.3 closure.
+* `ToolExecutor.validate_and_execute()`'s subprocess fallback is gated by `SAGE_UNSAFE_UNSANDBOXED=1` — P0.4 closure shipped in commit `2ce671a`.
+
+**Remaining arbitrary-Python-execution surface:** `execute_raw()` and the `validate_and_execute()` → subprocess path. Both are opt-in as of 2026-04-22. A Wasm sandbox is the runtime-isolation layer for those two paths — **not** for the typed tools, which don't need it.
+
+This reframes the Wasm component's scope: it's the safety net for ToolForge self-synthesis and any future direct-Python-eval path, not the default run-every-bench substrate.
+
 ## Threat model
 
 Today, every non-chat `AgentSystem.run()` call loads an `execute_bash` tool that forwards model-generated commands to `bash -c`. Post-2026-04-22 the env is scrubbed (no API-key leak) but the LLM can still:

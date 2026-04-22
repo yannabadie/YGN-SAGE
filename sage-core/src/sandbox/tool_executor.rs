@@ -494,6 +494,70 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_double_opt_in_structural_invariants() {
+        // 2026-04-22 P0.4 follow-up — both arbitrary-Python-execution
+        // bypasses are gated independently. This test locks the
+        // structural invariant: flipping only ONE of the two env
+        // vars must NOT let the other path through.
+        //
+        // Matrix:
+        //   - neither set: both deny
+        //   - only UNSAFE_UNSANDBOXED set: raw denies, validate-path runs
+        //   - only UNSAFE_RAW_EXEC set:    raw runs, validate denies
+        //   - both set: both run
+        init_python();
+        let executor = ToolExecutor::new(None, 10);
+        let safe_code = r#"print("probe")"#;
+
+        // State A: neither set — double deny.
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
+        let a_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
+        assert_ne!(a_raw.exit_code, 0, "raw must deny without its opt-in");
+        assert!(a_raw.stderr.contains("SAGE_UNSAFE_RAW_EXEC"));
+        let a_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
+            .expect("validate should return Ok even when fail-closed");
+        assert_ne!(a_val.exit_code, 0, "validate must deny without unsandboxed opt-in");
+        assert!(a_val.stderr.contains("SAGE_UNSAFE_UNSANDBOXED"));
+
+        // State B: only UNSAFE_UNSANDBOXED — raw still denies; validate runs.
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        std::env::set_var("SAGE_UNSAFE_UNSANDBOXED", "1");
+        let b_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
+        assert_ne!(
+            b_raw.exit_code, 0,
+            "raw must STILL deny when only the unsandboxed gate is open"
+        );
+        let b_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
+            .expect("validate ok");
+        assert_eq!(
+            b_val.exit_code, 0,
+            "validate should now run (gate open); stderr: {}",
+            b_val.stderr
+        );
+
+        // State C: only UNSAFE_RAW_EXEC — raw runs; validate still denies.
+        std::env::set_var("SAGE_UNSAFE_RAW_EXEC", "1");
+        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
+        let c_raw = Python::with_gil(|py| executor.execute_raw(py, safe_code, "{}"));
+        assert_eq!(
+            c_raw.exit_code, 0,
+            "raw should now run (gate open); stderr: {}",
+            c_raw.stderr
+        );
+        let c_val = Python::with_gil(|py| executor.validate_and_execute(py, safe_code, "{}"))
+            .expect("validate ok");
+        assert_ne!(
+            c_val.exit_code, 0,
+            "validate must STILL deny when only the raw gate is open"
+        );
+
+        // Clean up so other parallel tests aren't affected.
+        std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
+        std::env::remove_var("SAGE_UNSAFE_UNSANDBOXED");
+    }
+
     #[cfg(feature = "sandbox")]
     #[test]
     fn test_wasi_context_is_restrictive() {
