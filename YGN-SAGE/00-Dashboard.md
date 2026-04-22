@@ -1,7 +1,7 @@
 ---
 title: YGN-SAGE Dashboard
 type: moc
-updated: 2026-04-18
+updated: 2026-04-22
 ---
 
 # YGN-SAGE — Self-Adaptive Generation Engine
@@ -9,12 +9,12 @@ updated: 2026-04-18
 Agent Development Kit qui **apprend** quelle topologie multi-agent utiliser pour chaque tache.
 Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
-## Etat du projet (18 Avril 2026)
+## Etat du projet (22 Avril 2026)
 
 | Metrique | Valeur | Notes |
 |----------|--------|-------|
-| Tests Python | **1906/1906** | +10 Apr 18 (telemetry, per-model routing, health TTL) |
-| Tests Rust | **441/441** | Stable depuis Apr 17 |
+| Tests Python | **1999/1999** | +41 Apr 22 (40 red-team wasm sandbox + 1 fix meta_security regression) |
+| Tests Rust | **496/496** | +16 Apr 22 (8 wasm_python + 8 structural sandbox tests — ADR-013 §5 flip) |
 | kNN Routing GT | **100%** (60/60) | exact-match override (CORAL ff41e53) |
 | MASBENCH breadth | **+22pp (p=0.015)** | Seul axe statistiquement significatif |
 | MASBENCH depth/horizon | +2/+4pp | Non significatifs (p>0.05) |
@@ -66,7 +66,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > - **Path 6 (learned policy)** : opt-in (`SAGE_ENABLE_PATH6=1`), pas dans le pipeline par defaut
 > - **sage-discover ExoCortex** : 3 bugs latents fixes Apr 17 (if/else, upload timeout, manifest persistence). Rattrapage v3 active
 > - **Memory consolidation** : design documente, implementation incomplete
-> - **Sandbox meta-tools** : durci (regex) + structured argv allowlist (CORAL 84fee02), pas formellement sur
+> - **Sandbox meta-tools** : ~~durci (regex) + structured argv allowlist~~ **résolu Apr 22** — embedded RustPython wasm sandbox est le chemin par defaut (ADR-013) ; 40/40 red-team attaques bloquées ; deny-by-default FS/net/proc/env/mem. `SAGE_UNSAFE_UNSANDBOXED` supprimé.
 > - **Benchmarks** : leaderboard BigCodeBench gele avril 2025, comparaison biaisee
 > - **`_tool_call_count=0` interprétation mensongère (résolu Apr 18)** : le compteur était mort (champ `PipelineContext` déclaré jamais incrémenté). v3/v4/v5a conclusions "modèles refusent outils" fausses. Avec telemetry réel (988aa99 + 0677376) : 31-62 bash/task, vraie investigation multi-fichiers
 > - **Z3 PRM** : applicable uniquement à math/formal (voir [[ADR-008-PRM-Gate-Domain]]). Sur code l'AVR niveau 2 suffit
@@ -75,6 +75,13 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > [!info] Architecture vs Realite
 > ~90% de l'architecture documentee est implementee et integree (Apr 18).
 > Les 10% restants : evolution (opt-in), consolidation memoire, preuves formelles sandbox, learned prompt registry (discuté, pas implémenté), dynamic step budget.
+
+> [!success] Recemment fixe (Apr 22, **4 commits P0.4 B + §5 flip** — voir [[ADR-013-Wasm-Sandbox-Default]])
+> - **P0.4 A+C+D** (511ac87) — spec reframe + `test_double_opt_in_structural_invariants` + red-team plan
+> - **P0.4 B embedded wasm** (fe142e2) — RustPython 0.5.0 wasm32-wasip1 + freeze-stdlib (37 MB), wasmtime 43 + cranelift JIT, câblé dans `execute_raw`. deny-by-default WASI-p1 : no fs/net/proc/env/stdio inheritance
+> - **Red-team corpus** (cf12ea4) — 40/40 attaques bloquées en 138s ; 0 SENTINEL leak ; 0 panic wasmtime. Bugs révélés + fix : epoch deadline monotonique (AtomicU64), StoreLimits memory cap (256 MiB)
+> - **§5 flip sandbox-par-défaut** (c2113d8) — `validate_and_execute` tourne sandboxé par défaut ; `SAGE_UNSAFE_UNSANDBOXED` supprimé ; `sandbox`+`cranelift`+`tool-executor` dans les features Cargo par défaut ; `create_python_tool` passe à `validate_and_execute` (fixe régression P0.3) ; ADR-013 publiée
+> - **Différé** : smoke SWE-bench parity (typed vs bash, ±2pp) → prérequis pour `AgentConfig.dangerous_tools=False` default flip
 
 > [!success] Recemment fixe (Apr 18, **13 commits plumbing** + 5 commits Apr 17)
 > - **Bench reporter classifier** (4a33faa) — real/sentinel/empty, le header cesse de mentir

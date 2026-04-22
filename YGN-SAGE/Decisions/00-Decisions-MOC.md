@@ -4,7 +4,7 @@ type: moc
 tags:
   - decisions
   - moc
-updated: 2026-04-20
+updated: 2026-04-22
 ---
 
 # Architecture Decision Records
@@ -24,3 +24,4 @@ updated: 2026-04-20
 | [[ADR-011-Singleton-vs-Factory-Asymmetry]] | Singleton AgentLoop doit re-configurer tout ce que la factory set | accepte |
 | [[ADR-012-TopologyController-Rust-Port]] | TopologyController ported: 6 decision paths + state Rust-primary, helpers Python | accepte |
 | [[ADR-010-Meta-Harness-Divergence]] | Meta-Harness : divergence vs paper (hyperparam tuner, pas structural search) | accepte |
+| [[ADR-013-Wasm-Sandbox-Default]] | Wasm sandbox (RustPython embarque) est le chemin Python par defaut ; SAGE_UNSAFE_UNSANDBOXED supprime ; 40/40 red-team bloque | accepte |

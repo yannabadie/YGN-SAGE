@@ -7,15 +7,15 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). 480 tests (+2 net 2026-04-20 phase-1-stab).
-- `sage-python/` — Python SDK. 1958 tests (49 skipped; 11 pre-existing failures + 5 errors in API-key-dependent files).
+- `sage-core/` — Rust orchestrator (PyO3). **496 tests** (+16 net 2026-04-22 P0.4 B sandbox: 8 wasm_python + 8 structural).
+- `sage-python/` — Python SDK. **1999 tests** (+41 net 2026-04-22 P0.4 B: 40 red-team attacks + 1 fixed regression; 11 pre-existing failures in API-key-dependent files).
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.
 
 ## 5 Cognitive Pillars
 1. **Topology** — Rust TopologyEngine: 6-path generation (S-MMU → archive → LLM → mutation → MCTS → template). 11 templates (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout). DAG-driven selection via `select_macro_topology(omega, delta, gamma)`. MAP-Elites + CMA-ME evolution. Multi-turn debate loop (reset_node + open_gate, max 3 rounds). Per-node streaming via `run_stream()`. HITL approval callback. Path 6 learned policy opt-in via `SAGE_ENABLE_PATH6=1`.
-2. **Tools** — AgentTool.from_agent(), 3-layer sandbox (tree-sitter → Wasm WASI → subprocess).
+2. **Tools** — AgentTool.from_agent(), 2-layer sandbox since 2026-04-22 §5 flip (ADR-013): tree-sitter AST validator + embedded RustPython wasm32-wasip1 runtime (deny-by-default WASI). `validate_and_execute` runs sandboxed by default (no opt-in), subprocess fallback removed. `execute_raw` bypasses both layers and stays gated by `SAGE_UNSAFE_RAW_EXEC=1`.
 3. **Memory** — 4-tier: Rust Arrow STM → SQLite Episodic → Entity Semantic + Causal → ExoCortex RAG. S-MMU paging with ULID chunks. Inter-tier consolidation (Episodic→Semantic→Causal, MAGMA). Composite 5-signal write gate (Rust `RustCompositeWriteGate`). Causal edges from entity extraction + tool calls.
 4. **Evolution** — MAP-Elites quality-diversity + CMA-ME + MCTS topology search. DGM/SAMPO 5 strategic actions. Online evolution: Rust `should_evolve()` gates `evolve()` in agent loop (SA-3 complete). AdaptiveMutator (Thompson sampling, ShinkaEvolve). Statistical validation via Wilcoxon signed-rank + Cohen's d.
 5. **Strategy** — S1/S2/S3 cognitive routing (Kahneman). kNN primary (92%), Rust SystemRouter (88%). ContextualBandit Thompson sampling. Runtime adaptation (`TopologyController`): **Rust-primary since 2026-04-20** (ADR-012) — decision paths 1 (empty/error reroute), 2 (quality cascade), 3 (debate-gate threshold), 4 (parallel inconsistency), 5 (importance prune) + state machine all live in Rust `RustTopologyController`. Python wraps for embedder/SmtVerifier/topology-graph access (scoring + enrichment). Emergent subtasks routed via `sage_recurse` tool with Rust-side `should_trigger_emergent_spawn` budget gate (ADR-012 follow-up, 2026-04-20 phase-1 stab). `sage_core` is required at runtime — `ImportError` raised at `TopologyController.__init__` if absent.

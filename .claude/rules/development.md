@@ -10,14 +10,18 @@ paths:
 
 ## Build
 ```bash
-cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor  # Full Rust build
-cd sage-python && pip install -e ".[all,dev]"                                 # Python SDK
+# Since 2026-04-22 ADR-013 §5 flip: sandbox + cranelift + tool-executor
+# + cognitive are default features. `onnx` stays opt-in (pulls ort,
+# tokenizers, ndarray; requires onnxruntime DLL at runtime). `smt`
+# stays opt-in (pulls oxiz).
+cd sage-core && maturin develop --features smt,onnx    # Full Rust build
+cd sage-python && pip install -e ".[all,dev]"          # Python SDK
 ```
 
 ## Test
 ```bash
-cd sage-core && cargo test --no-default-features --features smt,tool-executor --lib  # Rust (270+ tests)
-cd sage-python && python -m pytest tests/ -v                                          # Python (1500+ tests, 68 veRL-specific)
+cd sage-core && cargo test --features smt --lib     # Rust (496 tests; default features now include sandbox+cranelift+tool-executor)
+cd sage-python && python -m pytest tests/ -v        # Python (1999 tests including the 40-attack red-team corpus)
 ```
 
 ## Benchmarks — USE THESE (not HumanEval+)

@@ -26,12 +26,26 @@ sage-discover/ — Knowledge Pipeline (arXiv → ExoCortex)
 ## Quick Commands
 
 ```bash
-# Build
-cd sage-core && maturin develop --features smt,onnx,cognitive,tool-executor
+# Build — since 2026-04-22 ADR-013 §5 flip, sandbox+cranelift+tool-executor
+# are in Cargo default features. `maturin develop` with no flags bundles
+# the embedded RustPython wasm sandbox (~37 MB) for validate_and_execute.
+# Add `--features smt,onnx` when you need the formal QualityLabeler /
+# ONNX embedder / tokeniser paths.
+cd sage-core && maturin develop --features smt,onnx
 cd sage-python && pip install -e ".[all,dev]"
 
+# Build recipe for the embedded RustPython wasm (one-time, cached):
+#   rustup target add wasm32-wasip1
+#   git clone https://github.com/RustPython/RustPython external/rustpython
+#   cd external/rustpython && CARGO_TARGET_DIR=../rustpython-wasm-target \
+#     cargo build --release --target wasm32-wasip1 --features freeze-stdlib
+# build.rs picks it up from external/rustpython-wasm-target/.../rustpython.wasm
+# and include_bytes!s it into sage-core. Without the artifact, the sandbox
+# module emits a placeholder and callers fall through to the hard-fail
+# path in validate_and_execute.
+
 # Test
-cd sage-core && cargo test --no-default-features --features smt,tool-executor --lib
+cd sage-core && cargo test --features smt --lib
 cd sage-python && python -m pytest tests/ -v
 
 # Benchmark (USE BigCodeBench, NOT HumanEval+)
@@ -56,9 +70,10 @@ uv sync
 uv run python meta_harness.py --iterations 10 --fresh
 ```
 
-## Current State (April 20, 2026)
+## Current State (April 22, 2026)
 
-- **Tests**: Python **1958 passed** (49 skipped, 11 pre-existing failures + 5 errors in API-key-dependent test files — `test_e2e_live_providers.py`, `test_provider_pool_wiring.py`, `test_e2e_campaign.py`, `test_pydantic_ai_integration.py` flake; NONE in scope of phase-1 stab) / Rust **480 passed** (+2 net 2026-04-20 phase-1-stab: +8 Task A getters/gate/seed, +1 Task B record_abstain, -7 Task C path-6 regex deletions)
+- **Tests**: Python **1999 passed** (+41 net 2026-04-22 P0.4 B: +40 red-team attacks in `tests/test_wasm_sandbox_redteam.py`, +1 formerly-broken `test_created_tool_executes_in_sandbox` now passing after §5 flip routed `create_python_tool` through `validate_and_execute`. Unchanged pre-existing failures: 11 in API-key-dependent files — `test_e2e_live_providers.py`, `test_provider_pool_wiring.py`, `test_e2e_campaign.py`, `test_pydantic_ai_integration.py`) / Rust **496 passed** (+16 net 2026-04-22 P0.4 B: +8 `sandbox::wasm_python` tests — hello/exit/timeout/args-roundtrip/deny-filesystem/deny-env; +8 structural sandbox tests — double opt-in matrix, env-mutex, wasm-default invariant)
+- **Sandbox (2026-04-22, ADR-013)**: `validate_and_execute` runs Python inside embedded RustPython wasm32-wasip1 sandbox **by default** (no env-var opt-in). Deny-by-default WASI-p1 contract: no filesystem, no network, no subprocess, no env inheritance, 256 MiB memory cap, epoch-interrupt timeout. 40 adversarial attacks validated (FS/net/proc/env/clock/mem/introspection/engine). `execute_raw` (which bypasses both AST validation AND the sandbox) still requires `SAGE_UNSAFE_RAW_EXEC=1`. `SAGE_UNSAFE_UNSANDBOXED` gate removed.
 - **Templates**: 12 (sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout, formal_solver)
 - **Routing**: kNN 100% GT (CORAL exact-match override), Rust SystemRouter 88%, heuristic 34% (dead code)
 - **Providers**: 7 (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter), 20 models in cards.toml. **TTL'd exclusion** (300s re-probe, Apr 18 3148667) — not permanent.
