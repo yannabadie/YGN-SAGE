@@ -156,3 +156,6 @@ masbench_*.log
 masbench_*_results.json
 Notebooklm.png
 YGN-SAGE/.obsidian/
+scripts/c2c_manual_injection_probe.py
+solution/
+btw.md

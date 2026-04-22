@@ -1,5 +1,7 @@
 # C2c validation smoke — N=10 SWE-bench Lite, 2026-04-21
 
+> **Correction (2026-04-22):** The fourth bullet below — "gen rate moved +30pp vs C2b, likely prompt scaffolding" — is **retracted**. A byte-identical re-run of the C2b prompt on the same slice (see [`2026-04-22-c2b-resmoke-settles-30pp-mystery.md`](2026-04-22-c2b-resmoke-settles-30pp-mystery.md)) landed at 70 %. Three runs of the same slice spread 50 / 70 / 80 % — the "30 pp lift" was topology-routing variance, not a prompt effect. The rest of this document stands.
+
 ## TL;DR
 
 Mixed result:
@@ -7,7 +9,7 @@ Mixed result:
 * **Tool registered, tool available, tool never called** — 277 tool calls across 10 tasks, **0 `lookup_library_docs`** invocations. The boot log confirms registration (`Core tools: lookup_library_docs registered (Context7 library docs)`), the function-calling schema is rich and concrete, and the prompt explicitly points at the tool with a copy-pastable example.
 * **Reframe: this is arguably a null result, not a failure.** The first-10 SWE-bench Lite slice is 6 astropy tasks fixing astropy code and 4 django tasks fixing django code — **intra-repo** work where bash is the right answer. The tool would only fire when a fix depends on a *different* library's contract (e.g., a django task hinging on psycopg2 behavior, an astropy task hinging on numpy quirks). None of the 10 was such a task.
 * **Bug found + fixed in the same session:** the Context7 REST v2 `/context` endpoint returns `text/plain; charset=utf-8` (already-formatted markdown), **not** JSON. The initial C2c commit (`68ef3fa`) parsed the body as JSON and would have returned `"Context7 returned unparseable response for …"` on every actual call. Fixed in the follow-up commit — live integration probe now returns real docs.
-* **Gen rate moved +30pp vs C2b** (50 % → 80 %) despite 0 new-tool usage. Within noise for N=10 (±10pp per task flip) but the same tasks `astropy-14182` and `astropy-14365` flipped from EMPTY → PATCH. Most likely the expanded prompt primed the model to think more carefully about library behavior even while staying on bash.
+* ~~**Gen rate moved +30pp vs C2b** (50 % → 80 %) despite 0 new-tool usage. Within noise for N=10 (±10pp per task flip) but the same tasks `astropy-14182` and `astropy-14365` flipped from EMPTY → PATCH. Most likely the expanded prompt primed the model to think more carefully about library behavior even while staying on bash.~~ **Retracted** — the 2026-04-22 re-smoke rules this out. See the correction note above.
 
 ## What we ran
 
