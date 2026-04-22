@@ -14,6 +14,11 @@ use tracing::warn;
 #[cfg(feature = "sandbox")]
 use std::sync::Arc;
 
+#[cfg(all(feature = "sandbox", feature = "cranelift"))]
+use std::sync::OnceLock;
+#[cfg(all(feature = "sandbox", feature = "cranelift"))]
+use super::wasm_python::WasmPythonExecutor;
+
 /// Combined validator + executor for dynamic tool creation.
 ///
 /// Usage from Python:
@@ -41,6 +46,14 @@ pub struct ToolExecutor {
     /// Whether the loaded component needs WASI imports (e.g., CPython components).
     #[cfg(feature = "sandbox")]
     needs_wasi: bool,
+    /// Lazily-initialised embedded RustPython wasm executor. Built on
+    /// first use; shared across calls. `None` inside the OnceLock means
+    /// "we tried and couldn't build one" — typically because build.rs
+    /// didn't find a compiled `rustpython.wasm`. `execute_raw` prefers
+    /// this path when populated and falls through to subprocess
+    /// otherwise.
+    #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+    wasm_python: OnceLock<Option<Arc<WasmPythonExecutor>>>,
 }
 
 #[pymethods]
@@ -73,6 +86,8 @@ impl ToolExecutor {
             wasm_engine,
             #[cfg(feature = "sandbox")]
             needs_wasi,
+            #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+            wasm_python: OnceLock::new(),
         }
     }
 
@@ -281,10 +296,40 @@ impl ToolExecutor {
                 duration_ms: 0,
             };
         }
+
+        // Prefer the embedded RustPython Wasm sandbox when it's
+        // available — deny-by-default filesystem/network/env, bounded
+        // runtime, no host access. Falls through to subprocess only
+        // when the wasm bytes aren't bundled (feature off or build.rs
+        // didn't find a compiled rustpython.wasm).
+        #[cfg(all(feature = "sandbox", feature = "cranelift"))]
+        {
+            let wasm = self.wasm_python.get_or_init(|| {
+                match WasmPythonExecutor::new() {
+                    Ok(e) => Some(Arc::new(e)),
+                    Err(err) => {
+                        warn!(error = %err, "WasmPythonExecutor unavailable — falling back to subprocess");
+                        None
+                    }
+                }
+            });
+            if let Some(wp) = wasm {
+                warn!(
+                    code_len = code.len(),
+                    "execute_raw routed through embedded RustPython wasm sandbox (SAGE_UNSAFE_RAW_EXEC=1)"
+                );
+                let wp = Arc::clone(wp);
+                let code_owned = code.to_string();
+                let args_owned = args_json.to_string();
+                let timeout = self.timeout_secs;
+                return py.allow_threads(move || wp.execute(&code_owned, &args_owned, timeout));
+            }
+        }
+
         warn!(
             code_len = code.len(),
             has_wasm = self.has_wasm(),
-            "execute_raw called — bypassing AST validation (SAGE_UNSAFE_RAW_EXEC=1)"
+            "execute_raw called — bypassing AST validation, using subprocess (SAGE_UNSAFE_RAW_EXEC=1)"
         );
 
         let python_exe = self.python_exe.clone();
@@ -372,6 +417,15 @@ impl ToolExecutor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialise the env-var-mutating tests. `SAGE_UNSAFE_RAW_EXEC`
+    /// and `SAGE_UNSAFE_UNSANDBOXED` are process-global, so parallel
+    /// tests that set/unset them race — this matters more now that
+    /// the embedded wasm sandbox holds the process for 30+ s per
+    /// call. Tests that touch those vars MUST hold this lock for
+    /// their whole duration.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     fn init_python() {
         pyo3::prepare_freethreaded_python();
@@ -398,6 +452,7 @@ mod tests {
         // is not set. Combined into ONE test because cargo runs
         // tests in parallel and env-var mutation is process-global
         // — splitting would race.
+        let _env_guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         init_python();
         let executor = ToolExecutor::new(None, 10);
 
@@ -460,6 +515,7 @@ mod tests {
         // SAGE_UNSAFE_RAW_EXEC. Combined into ONE test because
         // cargo test runs tests in parallel and env-var mutation
         // is process-global — splitting across two tests races.
+        let _env_guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         init_python();
         let executor = ToolExecutor::new(None, 10);
 
@@ -506,6 +562,7 @@ mod tests {
         //   - only UNSAFE_UNSANDBOXED set: raw denies, validate-path runs
         //   - only UNSAFE_RAW_EXEC set:    raw runs, validate denies
         //   - both set: both run
+        let _env_guard = ENV_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
         init_python();
         let executor = ToolExecutor::new(None, 10);
         let safe_code = r#"print("probe")"#;
