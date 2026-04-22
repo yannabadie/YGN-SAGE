@@ -19,6 +19,7 @@ from sage.input.types import ResponseFormat, TaskInput
 CHAT_DEFAULT_TOOLS: list[str] = [
     "search_exocortex",
     "refresh_knowledge",
+    "lookup_library_docs",
     "search_memory",
     "retrieve_context",
     "summarize_context",
@@ -32,6 +33,17 @@ Excluded by design: `bash`, `create_python_tool`, `create_bash_tool`,
 `store_memory`, `update_memory`, `delete_memory`, `create_agent`,
 `call_agent`, `sage_recurse`. These mutate state, spawn processes, or
 recurse — all opt-in only.
+
+Added 2026-04-22 (post C2c benchmark-validation pivot): `lookup_library_docs`
+joins the chat-default allowlist. The C2b/C2c/C2b-resmoke triple proved the
+tool's benchmark impact cannot be cleanly measured on our current SWE-bench
+Lite / BCB slices without a variance-controlled gate we don't yet want to
+fund (~11 h + $60-120 per validation pass). Instead, we ship it
+opportunistically: chat users asking "how does Django X work" / "what changed
+in requests 2.28" get the tool for free with zero claim about benchmark lift.
+If a future cross-library benchmark (SWE-bench Pro, synthetic) justifies it,
+the plan file `crystalline-crafting-shore.md` Step 4 spells out the
+variance-controlled validation that would earn the infrastructure step.
 """
 
 _BASH_OPT_IN_ENV = "SAGE_CHAT_ALLOW_BASH"

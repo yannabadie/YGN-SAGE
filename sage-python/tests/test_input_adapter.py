@@ -169,6 +169,17 @@ def test_normalize_chat_tools_filter_includes_search_exocortex():
     assert "search_exocortex" in ti.tools_filter
 
 
+def test_normalize_chat_tools_filter_includes_lookup_library_docs():
+    """Post-C2c pivot (2026-04-22): `lookup_library_docs` ships on the
+    chat allowlist. Chat users asking 'how does Django / requests /
+    astropy X behave' get the tool without a benchmark-proven lift —
+    zero-code-cost deployment while keeping the door open for a
+    variance-controlled benchmark validation later."""
+    ti = normalize_chat("how does requests.Response.json handle empty body?")
+    assert ti.tools_filter is not None
+    assert "lookup_library_docs" in ti.tools_filter
+
+
 def test_normalize_chat_bash_opt_in_env_var(monkeypatch):
     """SAGE_CHAT_ALLOW_BASH=1 → no tool filter applied (all tools
     available). Matches the spec Q1 escape hatch."""
