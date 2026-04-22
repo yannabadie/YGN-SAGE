@@ -1,12 +1,31 @@
 """PERCEIVE phase: routing, input guardrails, memory context injection, code-task detection.
 
 Extracted from agent_loop.py run() — lines 419-521 of the original.
+
+C4b (2026-04-22): `perceive()` now accepts either `str` (legacy path,
+what `AgentLoop.run()` calls after the C4 early-rendering dispatch
+in `AgentSystem.run()`) OR a `TaskInput` (direct-caller path for
+future consumers that want layered composition without round-tripping
+through a rendered string). When a `TaskInput` is passed:
+  * The `prompt` field becomes the USER message (what routing /
+    guardrails / working memory see).
+  * `instructions` (if non-empty) is injected into the system prompt
+    as a `## Workflow` section, layered after the tool-affordance
+    block and before the validation-level augmentation.
+  * `tools_filter` (if not None) overrides `loop.config.tools` for
+    `get_tool_defs` + `describe_for_prompt`. This lets chat REPLs
+    and future benches restrict the toolset per-turn without
+    mutating the underlying agent config.
+For string callers, perceive wraps the input in a minimal TaskInput
+with all the new fields at their zero-values — behavior is
+byte-identical to the pre-C4b path.
 """
 from __future__ import annotations
 
 import logging
 from typing import Any, TYPE_CHECKING
 
+from sage.input.types import TaskInput
 from sage.llm.base import Message, Role, ToolDef
 
 if TYPE_CHECKING:
@@ -33,13 +52,31 @@ class _PerceiveResult:
         self.blocked_reason = blocked_reason
 
 
-async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
+def _coerce_to_task_input(task: "str | TaskInput") -> TaskInput:
+    """Wrap a raw string into a minimal TaskInput for unified handling.
+
+    Pre-C4b behavior is preserved byte-for-byte because the wrapped
+    TaskInput has `instructions=""`, `tools_filter=None`, and
+    `response_format=TEXT` — so every downstream branch that checks
+    those fields falls into the same path a string caller used to
+    take.
+    """
+    if isinstance(task, TaskInput):
+        return task
+    return TaskInput(prompt=task, source="direct")
+
+
+async def perceive(
+    task: "str | TaskInput", loop: AgentLoop
+) -> _PerceiveResult:
     """Execute the PERCEIVE phase of the agent loop.
 
     Handles:
     - Metacognitive routing (S1/S2/S3 classification)
     - Input guardrail checks (may block early)
     - System prompt augmentation (S2 edge-case hints, S3 Z3 instructions)
+    - Tool-affordance injection
+    - Per-source workflow section (C4b) from `task_input.instructions`
     - Semantic memory context injection
     - S-MMU context injection
     - Working memory initialization
@@ -49,14 +86,20 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
     """
     from sage.agent_loop import LoopPhase, _is_code_task
 
-    perceive_meta: dict[str, Any] = {"task": task, "agent": loop.config.name}
+    # C4b: coerce inputs to a single shape so every branch below
+    # operates on the same fields. String callers keep byte-identical
+    # behavior via a wrapper with zero-value fields.
+    task_input = _coerce_to_task_input(task)
+    task_str = task_input.prompt
+
+    perceive_meta: dict[str, Any] = {"task": task_str, "agent": loop.config.name}
 
     # Metacognitive routing (if wired)
     if loop._skip_routing:
         perceive_meta["system"] = 2
         perceive_meta["routing_source"] = "ablation_forced_s2"
     elif loop.metacognition:
-        profile = await loop.metacognition.assess_complexity_async(task)
+        profile = await loop.metacognition.assess_complexity_async(task_str)
         decision = loop.metacognition.route(profile)
         perceive_meta["system"] = decision.system
         perceive_meta["routed_tier"] = decision.llm_tier
@@ -76,7 +119,7 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
     if loop.guardrail_pipeline and not loop._skip_guardrails:
         try:
             input_results = await loop.guardrail_pipeline.check_all(
-                input=task, context={"step": 0, "agent": loop.config.name}
+                input=task_str, context={"step": 0, "agent": loop.config.name}
             )
             for r in input_results:
                 loop._emit(
@@ -103,6 +146,17 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
     # Build system prompt with validation-level augmentation
     system_prompt = loop.config.system_prompt
 
+    # C4b: prefer the TaskInput's tools_filter when the caller
+    # supplied one (e.g. chat mode's read-only allowlist). Fall back
+    # to the agent's static config.tools (e.g. per-node topology
+    # filtering from agent_loop_factory) so topology verifier /
+    # formatter / aggregator nodes keep their restricted toolset.
+    tool_names = (
+        task_input.tools_filter
+        if task_input.tools_filter is not None
+        else (loop.config.tools if loop.config.tools else None)
+    )
+
     # Inject tool affordance block (2026-04-21 audit fix). The agent
     # already gets structured tool schemas via ``tool_defs`` below, but
     # on some benches (SWE-bench in particular) the user-facing prompt
@@ -111,10 +165,19 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
     # section at the system-prompt level fixes this for every caller
     # without each bench having to list tools by hand. See
     # ``docs/audits/2026-04-21-exocortex-swebench-usage.md``.
-    tool_names = loop.config.tools if loop.config.tools else None
     tool_affordance = loop._tools.describe_for_prompt(tool_names)
     if tool_affordance:
         system_prompt = f"{system_prompt}\n\n{tool_affordance}"
+
+    # C4b: source-specific workflow section. When a TaskInput carries
+    # `instructions` (e.g. SWE-bench's "Mandatory Workflow" block),
+    # inject it under a dedicated heading. String callers get an
+    # empty `instructions` field (wrapper default) so this is a no-op
+    # for them and pre-C4b byte-identity is preserved.
+    if task_input.instructions:
+        system_prompt = (
+            f"{system_prompt}\n\n## Workflow\n\n{task_input.instructions}"
+        )
 
     if loop.config.validation_level >= 3:
         system_prompt += (
@@ -132,7 +195,7 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
             "\n\nUse step-by-step reasoning to solve this task. "
             "Show your work clearly."
         )
-        if _is_code_task(task):
+        if _is_code_task(task_str):
             system_prompt += (
                 "\n\nIMPORTANT edge cases to handle: "
                 'empty inputs ([], ""), negative numbers, zero values, '
@@ -144,12 +207,11 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
 
     messages: list[Message] = [
         Message(role=Role.SYSTEM, content=system_prompt),
-        Message(role=Role.USER, content=task),
+        Message(role=Role.USER, content=task_str),
     ]
-    loop.working_memory.add_event("USER", task)
-    tool_defs = loop._tools.get_tool_defs(
-        loop.config.tools if loop.config.tools else None
-    )
+    loop.working_memory.add_event("USER", task_str)
+    # C4b: same tool-filter precedence as the affordance block above.
+    tool_defs = loop._tools.get_tool_defs(tool_names)
 
     # Semantic memory context injection (one-time, before loop)
     if (
@@ -158,8 +220,8 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
         and not loop._skip_memory
     ):
         try:
-            sem_context = loop.semantic_memory.get_context_for(task)
-            if sem_context and loop._relevance_gate.is_relevant(task, sem_context):
+            sem_context = loop.semantic_memory.get_context_for(task_str)
+            if sem_context and loop._relevance_gate.is_relevant(task_str, sem_context):
                 messages.insert(
                     1,
                     Message(
@@ -177,7 +239,7 @@ async def perceive(task: str, loop: AgentLoop) -> _PerceiveResult:
             from sage.memory.smmu_context import retrieve_smmu_context
 
             smmu_context = retrieve_smmu_context(loop.working_memory)
-            if smmu_context and loop._relevance_gate.is_relevant(task, smmu_context):
+            if smmu_context and loop._relevance_gate.is_relevant(task_str, smmu_context):
                 messages.insert(
                     min(2, len(messages)),  # After system + semantic, before user
                     Message(role=Role.SYSTEM, content=smmu_context),
