@@ -513,7 +513,20 @@ def boot_agent_system(
     bash_tool = Tool(
         spec=ToolDef(
             name="execute_bash",
-            description="Execute a bash/shell command. Use for: reading files (cat, head), searching code (grep, find), running tests (pytest, python), git operations (git diff, git log), and any system command. Returns stdout+stderr (max 10K chars).",
+            description=(
+                "Execute a bash/shell command. Use for: reading files "
+                "(cat, head), searching code (grep, find), running tests "
+                "(pytest, python), git operations (git diff, git log), and "
+                "any system command. Returns stdout+stderr (max 10K chars). "
+                "[SECURITY NOTE 2026-04-22]: this tool executes arbitrary "
+                "shell commands. The process env is scrubbed to an allowlist "
+                "(PATH/HOME/PWD/etc) so API keys cannot leak, but any other "
+                "host-side state is still reachable. A typed-tools library "
+                "(read_file / search_repo / run_tests / apply_patch / "
+                "git_diff) is specified in docs/superpowers/specs/"
+                "2026-04-22-safe-sandbox-redesign-spec.md and will supersede "
+                "this tool; prefer typed tools when they become available."
+            ),
             parameters={
                 "type": "object",
                 "properties": {
