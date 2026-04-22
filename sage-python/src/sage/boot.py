@@ -11,6 +11,23 @@ from typing import Any
 
 _log = logging.getLogger("sage.boot")
 
+
+def _read_truthy_env(name: str, *, default: bool) -> bool:
+    """Read a boolean-ish env var; unset falls back to `default`.
+    Accepts 1/true/yes/on (truthy) and 0/false/no/off (falsy); anything
+    else logs a warning and uses `default`. Mirrors the Rust-side
+    helper in `sage-core/src/sandbox/tool_executor.rs`."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    v = raw.strip().lower()
+    if v in ("1", "true", "yes", "on"):
+        return True
+    if v in ("0", "false", "no", "off"):
+        return False
+    _log.warning("%s=%r is not a boolean, using default=%s", name, raw, default)
+    return default
+
 # Use OS certificate store (Windows/macOS) instead of certifi.
 # Fixes SSL errors behind corporate proxies (e.g., AD Groupe *.adgroupe.com).
 try:
@@ -333,7 +350,11 @@ def boot_agent_system(
         # 2026-04-22-safe-sandbox-redesign-spec.md §Migration path.
         # Chat mode is safe regardless: CHAT_DEFAULT_TOOLS filters
         # `execute_bash` out at perceive time.
-        dangerous_tools=True,
+        #
+        # Override via `SAGE_DANGEROUS_TOOLS={0,1,true,false,...}` so the
+        # parity smoke can flip between bash-on and typed-only runs
+        # without editing boot.py between invocations.
+        dangerous_tools=_read_truthy_env("SAGE_DANGEROUS_TOOLS", default=True),
     )
 
     # Event bus (central nervous system)
