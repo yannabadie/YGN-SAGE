@@ -69,6 +69,12 @@ _DATASET_MAP = {
 _KEY_INSTANCE_ID = "instance_id"
 _KEY_MODEL = "model_name_or_path"
 _KEY_PREDICTION = "model_patch"
+# SAGE-specific metadata key (leading underscore = "not part of the official
+# SWE-bench harness spec"). Persisted through write_predictions so that
+# per-bucket analysis reads the jsonl directly instead of grepping agent
+# logs (2026-04-23 emission-format smoke finding #4). The harness tolerates
+# extra fields — it reads predictions.jsonl by key, not by schema.
+_KEY_EXTRACTION_METHOD = "_extraction_method"
 
 # Sentinel string returned by agent_loop when the LLM produces no content for
 # N consecutive steps. MUST stay in sync with phases/learn.py. We classify
@@ -1146,6 +1152,13 @@ class SWEBenchBench:
                     _KEY_MODEL: pred[_KEY_MODEL],
                     _KEY_PREDICTION: pred[_KEY_PREDICTION],
                 }
+                # Persist SAGE-specific metadata when the annotator set it
+                # (generate_patches always does since T2.4; older callers or
+                # hand-built fixtures may not). Guarded on ``in`` rather than
+                # ``.get()`` so we never write a ``_extraction_method: None``
+                # record — absence stays absence.
+                if _KEY_EXTRACTION_METHOD in pred:
+                    entry[_KEY_EXTRACTION_METHOD] = pred[_KEY_EXTRACTION_METHOD]
                 f.write(json.dumps(entry) + "\n")
 
         log.info("Wrote %d predictions to %s", len(predictions), path)

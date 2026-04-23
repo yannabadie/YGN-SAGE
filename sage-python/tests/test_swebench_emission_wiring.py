@@ -394,3 +394,68 @@ def test_render_swebench_prompt_follows_emission_format(monkeypatch):
     sr_prompt = render_swebench_prompt(normalize_swebench(CANONICAL_INSTANCE))
     assert "<<<<<<< SEARCH" in sr_prompt
     assert "## Patch Format — Strict\n\nOutput your final patch in unified diff" not in sr_prompt
+
+
+# ---------------------------------------------------------------------------
+# 7. F3 — ``write_predictions`` persists ``_extraction_method`` into the
+#    on-disk predictions.jsonl so per-bucket analysis can read it
+#    directly instead of grepping agent logs. Finding #4 of the
+#    2026-04-23 emission-format smoke motivated this fix.
+# ---------------------------------------------------------------------------
+
+
+def test_write_predictions_persists_extraction_method(tmp_path):
+    """The ``_extraction_method`` metadata set by ``generate_patches``
+    must survive ``write_predictions`` so that downstream bucket
+    analysis can parse the jsonl directly, not grep the agent log."""
+    import json
+
+    bench = SWEBenchBench(system=_FakeSystem(""), dataset="lite")
+    predictions = [
+        {
+            "instance_id": "demo__repo-1",
+            "model_name_or_path": "sage/fake-model",
+            "model_patch": "diff --git a/x b/x\n",
+            "_extraction_method": "search-replace-exact",
+        }
+    ]
+    out_path = tmp_path / "p.jsonl"
+    bench.write_predictions(predictions, out_path)
+
+    lines = out_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    # Standard SWE-bench harness keys still present and unchanged.
+    assert entry["instance_id"] == "demo__repo-1"
+    assert entry["model_name_or_path"] == "sage/fake-model"
+    assert entry["model_patch"] == "diff --git a/x b/x\n"
+    # The SAGE-specific metadata now rides along.
+    assert entry["_extraction_method"] == "search-replace-exact"
+
+
+def test_write_predictions_omits_extraction_method_when_absent(tmp_path):
+    """Negative case — an older/legacy caller that doesn't annotate the
+    prediction dict must still produce a valid 3-key record. No
+    KeyError, no ``_extraction_method: None`` leaking through."""
+    import json
+
+    bench = SWEBenchBench(system=_FakeSystem(""), dataset="lite")
+    predictions = [
+        {
+            "instance_id": "demo__repo-1",
+            "model_name_or_path": "sage/fake-model",
+            "model_patch": "",
+        }
+    ]
+    out_path = tmp_path / "p.jsonl"
+    bench.write_predictions(predictions, out_path)
+
+    lines = out_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry == {
+        "instance_id": "demo__repo-1",
+        "model_name_or_path": "sage/fake-model",
+        "model_patch": "",
+    }
+    assert "_extraction_method" not in entry
