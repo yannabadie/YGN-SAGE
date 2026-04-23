@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-1999%20Py%20%2B%20496%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2339%20Py%20%2B%20501%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -206,13 +206,14 @@ Each topology node can use a different provider. The policy model can express `p
 | **kNN routing GT** | **92%** (46/50) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601). Rust SystemRouter 88%. |
 | **sage-topo-bench** (our internal topology sweep, NOT the UCL TopologyBench 2024 optical-network dataset) | **94.0%** mean (9/9) | 4.3pp spread across topologies. Distinct from both the optical-network TopologyBench and the TopoBench (arXiv 2603.12133) LLM puzzle benchmark. |
 | **SWE-bench Lite** | 10% (1/10) resolved, 40% (4/10) patch-generated | 2026-04-21 v15 Docker-graded smoke after 3-fix chain (Directive #3 gating, CRLF, UTF-8). Gen-rate prior to Docker grading was 70% (patch-produce rate), not pass-rate. |
+| **Pre-emission diff-context verifier** | observe-mode instrumentation, opt-in | 2026-04-23: `SAGE_DIFF_VERIFIER_MODE=observe` annotates predictions.jsonl with `_diff_verifier_mismatches` when an emitted hunk's context/removed lines don't match file bytes at the hunk position. First observability smoke caught a parser false-negative (commit `711008a`) — both emitted patches in the N=10 slice flagged `content_mismatch` post-fix, zero false positives. Repair mode deferred until ≥10 clean + ≥10 flagged observations accumulate. See `docs/superpowers/specs/2026-04-23-diff-context-verifier-design.md`. |
 
 ### Tests
 
 | Suite | Result |
 |-------|--------|
-| Python | **1999 passed** (2026-04-22 P0.4 B +41: 40 red-team attacks + 1 fixed regression; 11 pre-existing failures are API-key-dependent) |
-| Rust | **496 passed** with `smt` feature (2026-04-22 P0.4 B +16: 8 `wasm_python` + 8 structural sandbox tests). `sandbox`, `cranelift`, `tool-executor`, `cognitive` are now Cargo default features (ADR-013 §5 flip). |
+| Python | **~2290 passed / 45 skipped** (2339 collected excl. API-key-dependent files; 11 pre-existing failures sit in `test_e2e_*`, `test_provider_pool_wiring.py`, `test_pydantic_ai_integration.py`). Full green on bench + sandbox + verifier modules. |
+| Rust | **501 passed** with `smt` feature (2026-04-23 `+5` cache_tests for the wasm-python JIT cache). `sandbox`, `cranelift`, `tool-executor`, `cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery | 95 tests |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 

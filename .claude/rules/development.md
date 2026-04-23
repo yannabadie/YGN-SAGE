@@ -20,8 +20,8 @@ cd sage-python && pip install -e ".[all,dev]"          # Python SDK
 
 ## Test
 ```bash
-cd sage-core && cargo test --features smt --lib     # Rust (496 tests; default features now include sandbox+cranelift+tool-executor)
-cd sage-python && python -m pytest tests/ -v        # Python (1999 tests including the 40-attack red-team corpus)
+cd sage-core && cargo test --features smt --lib     # Rust (501 tests; +5 wasm_python cache_tests landed 2026-04-23)
+cd sage-python && python -m pytest tests/ -v        # Python (2339 collected excl API-key-deps; 40-attack red-team corpus + diff-verifier + bench-logging + SR-missing-sidecar added since mid-April)
 ```
 
 ## Benchmarks — USE THESE (not HumanEval+)
@@ -34,7 +34,28 @@ python -m sage.bench --type routing_gt
 
 # Ablation (framework value proof)
 python -m sage.bench --type ablation --limit 50
+
+# SWE-bench Lite (gen-only or gen+Docker)
+# RECOMMENDED: opt in to verifier observe-mode so we accumulate
+# `_diff_verifier_mismatches` data passively (default is off, zero-cost).
+SAGE_DIFF_VERIFIER_MODE=observe \
+  python -m sage.bench --type swebench --dataset lite --limit 10 \
+    --output docs/benchmarks/$(date +%F)-observe.json
 ```
+
+## Environment variables (bench + sandbox)
+
+| Var | Default | Purpose |
+|---|---|---|
+| `SAGE_DANGEROUS_TOOLS` | `0` (False) | Register `execute_bash` at boot. 2026-04-23 flipped from `True`. |
+| `SAGE_UNSAFE_RAW_EXEC` | unset | Allow `ToolExecutor.execute_raw` (bypasses AST + Wasm sandbox). Audited escape hatch. |
+| `SAGE_EMISSION_FORMAT` | `unified` | `search-replace` enables SR-block emission for SWE-bench templates. |
+| `SAGE_PERSIST_SR_MISSING` | `0` | When `1`, write raw LLM response + parsed SR blocks to `<out_dir>/sr_missing/<instance_id>.json` on SR extraction failure. Unlocks post-hoc F2-class diagnosis. |
+| `SAGE_DIFF_VERIFIER_MODE` | `off` | `observe` annotates predictions.jsonl with `_diff_verifier_mismatches`. `repair` downgrades to observe with a warning (repair mode is spec'd but not shipped). |
+| `SAGE_BENCH_LOG_FILE` | derive | Where to write the SWE-bench gen log. Unset → `<args.output.stem>-gen.log`. `0` or empty → skip file logging. Absolute path → use verbatim. |
+| `SAGE_WASM_CACHE_DIR` | `$HOME/.sage/wasm_python_cache/` | Where the precompiled `.cwasm` artefact lands. |
+| `SAGE_WASM_CACHE_DISABLE` | `0` | When `1`, skip the cache entirely (always recompile, never write). |
+| `SAGE_REQUIRE_WASM` | `0` | **Build-time** flag. When `1`, missing `rustpython.wasm` is a `panic!` instead of a placeholder warning. Set in release/CI builds. |
 
 ## DO NOT USE for proving SAGE value
 - HumanEval+ — saturated (99%+ SOTA), measures LLM not framework
