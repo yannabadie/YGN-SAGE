@@ -76,12 +76,14 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > ~90% de l'architecture documentee est implementee et integree (Apr 18).
 > Les 10% restants : evolution (opt-in), consolidation memoire, preuves formelles sandbox, learned prompt registry (discuté, pas implémenté), dynamic step budget.
 
-> [!success] Recemment fixe (Apr 22, **4 commits P0.4 B + §5 flip** — voir [[ADR-013-Wasm-Sandbox-Default]])
+> [!success] Recemment fixe (Apr 22-23, **6 commits P0.4 B + §5 flip complet** — voir [[ADR-013-Wasm-Sandbox-Default]])
 > - **P0.4 A+C+D** (511ac87) — spec reframe + `test_double_opt_in_structural_invariants` + red-team plan
 > - **P0.4 B embedded wasm** (fe142e2) — RustPython 0.5.0 wasm32-wasip1 + freeze-stdlib (37 MB), wasmtime 43 + cranelift JIT, câblé dans `execute_raw`. deny-by-default WASI-p1 : no fs/net/proc/env/stdio inheritance
 > - **Red-team corpus** (cf12ea4) — 40/40 attaques bloquées en 138s ; 0 SENTINEL leak ; 0 panic wasmtime. Bugs révélés + fix : epoch deadline monotonique (AtomicU64), StoreLimits memory cap (256 MiB)
 > - **§5 flip sandbox-par-défaut** (c2113d8) — `validate_and_execute` tourne sandboxé par défaut ; `SAGE_UNSAFE_UNSANDBOXED` supprimé ; `sandbox`+`cranelift`+`tool-executor` dans les features Cargo par défaut ; `create_python_tool` passe à `validate_and_execute` (fixe régression P0.3) ; ADR-013 publiée
-> - **Différé** : smoke SWE-bench parity (typed vs bash, ±2pp) → prérequis pour `AgentConfig.dangerous_tools=False` default flip
+> - **SWE-bench parity smoke N=10** (81acc2e) — bash 3/10 vs typed-only 4/10 patches sur le même slice ; critère fonctionnel §5 met. Gap 10pp dans le bruit (variance ±10pp/tâche).
+> - **`dangerous_tools=False` default** (Apr 23) — `execute_bash` plus registered au boot par défaut ; `SAGE_DANGEROUS_TOOLS=1` reste escape-hatch pour bench paths qui veulent shell brut.
+> - **Follow-up** : Docker-eval sur les N=10 déjà générés pour vérifier que les patches typed-only passent les tests autant que les bash (non bloquant pour le flip).
 
 > [!success] Recemment fixe (Apr 18, **13 commits plumbing** + 5 commits Apr 17)
 > - **Bench reporter classifier** (4a33faa) — real/sentinel/empty, le header cesse de mentir

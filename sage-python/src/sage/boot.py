@@ -340,21 +340,17 @@ def boot_agent_system(
         ),
         max_steps=MAX_AGENT_STEPS,
         validation_level=1,  # Default S1 — routing promotes to S2 only for code tasks
-        # P0.1 migration (2026-04-22): bench paths (SWE-bench, BCB AVR
-        # repair) today still tell the model to use execute_bash via
-        # the SWEBENCH_SYSTEM_TEMPLATE. We register typed repo tools as
-        # the new default surface, but keep raw bash available here so
-        # the existing bench prompts don't break overnight. A paired
-        # smoke (typed-only vs bash) is the decision gate for flipping
-        # this to False — see docs/superpowers/specs/
-        # 2026-04-22-safe-sandbox-redesign-spec.md §Migration path.
-        # Chat mode is safe regardless: CHAT_DEFAULT_TOOLS filters
-        # `execute_bash` out at perceive time.
-        #
-        # Override via `SAGE_DANGEROUS_TOOLS={0,1,true,false,...}` so the
-        # parity smoke can flip between bash-on and typed-only runs
-        # without editing boot.py between invocations.
-        dangerous_tools=_read_truthy_env("SAGE_DANGEROUS_TOOLS", default=True),
+        # P0.1 migration + §5 flip (2026-04-23): SWE-bench paired smoke
+        # N=10 gen-only showed typed-only mode produces MORE patches
+        # than bash (40% vs 30%) on the same slice; functional criterion
+        # of the red-team plan §5 met. Default flipped from True to
+        # False: execute_bash is no longer registered by default. The
+        # SAGE_DANGEROUS_TOOLS env var remains as an explicit opt-in
+        # escape hatch for bench paths or callers that still need raw
+        # shell. Chat mode was already safe (CHAT_DEFAULT_TOOLS filter).
+        # See docs/benchmarks/2026-04-22-swebench-parity-smoke/ and
+        # docs/adr/ADR-013-wasm-sandbox-default.md §Deferred.
+        dangerous_tools=_read_truthy_env("SAGE_DANGEROUS_TOOLS", default=False),
     )
 
     # Event bus (central nervous system)

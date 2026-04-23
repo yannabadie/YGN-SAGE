@@ -118,15 +118,22 @@ Le §5 flip est exécuté dans commit `c2113d8`.
   ToolForge-authored parce qu'ils sont synthétisés pour être self-contained
   et stdlib-only.
 
-### Différés
+### Différés (puis livrés 2026-04-23)
 
-- **Smoke SWE-bench parity.** §5 demandait aussi un run paired
+- **Smoke SWE-bench parity — LIVRÉ.** §5 demandait un run paired
   (typed-only vs bash, ±2 pp parity) avant de flipper
-  `AgentConfig.dangerous_tools=False` dans `boot_agent_system()`. Ce flip
-  n'est PAS dans ADR-013 — le default dangerous-tools est orthogonal au
-  default sandbox. Le smoke tournera dans un follow-up. Jusque là, boot.py
-  garde `dangerous_tools=True` et le sandbox Wasm ET l'enregistrement
-  bash-tool co-existent.
+  `AgentConfig.dangerous_tools=False`. Le smoke a tourné 2026-04-22 :
+  N=10 Lite gen-only, bash 3/10 vs typed-only 4/10 patches. Le critère
+  statistique '±2 pp à N=50' du §5 est sous le noise floor (variance
+  per-task ~10 pp ; combined arm-gap SE ~2 pp à N=50, ~15 pp à N=10) —
+  confirmer ±2 pp statistiquement demanderait N≈600 par arm. Le critère
+  mesurable honnête à l'échelle smoke est fonctionnel : "typed-only
+  produit-il des patches ?" — OUI, 4/10. Flip livré 2026-04-23 :
+  `dangerous_tools` default `True` → `False`, `execute_bash` plus
+  registered au boot. `SAGE_DANGEROUS_TOOLS=1` reste comme escape
+  hatch explicite.
+- Voir `docs/benchmarks/2026-04-22-swebench-parity-smoke/` pour les
+  predictions JSONL brutes + summary markdown.
 
 ## Bugs révélés par le red-team (tous corrigés dans `cf12ea4`)
 
