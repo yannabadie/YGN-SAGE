@@ -22,7 +22,7 @@ sentence-transformers>=5.0
 onnxruntime>=1.18            # For Rust ONNX embedder (if pkg-config available)
 
 # === Training (verl 0.7.1 on RunPod) ===
-torch>=2.4
+torch>=2.11.0
 transformers>=4.45
 peft>=0.13
 datasets>=3.0
