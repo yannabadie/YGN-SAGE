@@ -234,9 +234,18 @@ def _parse_hunks(
 ) -> list[tuple[str | None, int, int, list[str]]]:
     """Parse a unified diff into ``(file, old_start, old_count, body)``.
 
-    Returns ``[]`` if the diff has no ``diff --git`` header (we defer
-    malformed diffs to ``try_repair_patch``). Otherwise, returns one
-    tuple per hunk across all file sections.
+    Returns one tuple per hunk across all file sections. A hunk with no
+    preceding ``--- ``/``+++ `` pair gets ``file=None`` and is skipped
+    by the caller (nothing to verify).
+
+    Note (2026-04-23 b9b25c0 bug fix): the earlier implementation returned
+    ``[]`` when the diff had no ``diff --git`` header. That turned out
+    to be a false-negative gate — real-world model emissions often use
+    the shorter ``--- a/path`` / ``+++ b/path`` / ``@@ ... @@`` form
+    that ``git apply`` accepts. Observability smoke on django-10914
+    surfaced the bug (verifier passed a patch with clearly-mismatched
+    context because the patch lacked ``diff --git``). Parsing now keys
+    off ``---``/``+++``/``@@`` triples directly.
 
     ``file`` is ``None`` for old-side ``/dev/null`` sections (file
     creation) — those are skipped by the caller. Otherwise, ``file`` is
@@ -248,12 +257,6 @@ def _parse_hunks(
     verifier checks against. ``\\ No newline at end of file`` markers
     are skipped (they don't count toward ``old_count``).
     """
-    # Defensive: spec says return [] on missing ``diff --git``. We also
-    # require at least one hunk header after a file header — a bare
-    # ``@@`` with no file context can't be verified.
-    if "diff --git " not in diff:
-        return []
-
     hunks: list[tuple[str | None, int, int, list[str]]] = []
     current_old_file: str | None = None
     have_file_header = False

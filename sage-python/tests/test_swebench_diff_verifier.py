@@ -317,6 +317,46 @@ def test_malformed_diff_no_file_headers_returns_empty(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Test 6b — observability-smoke regression (2026-04-23 b9b25c0):
+# models often emit `--- a/... / +++ b/... / @@ ... @@` WITHOUT the
+# `diff --git a/... b/...` header. `git apply` accepts both shapes;
+# the verifier MUST accept both too. The django-10914 observe run
+# exposed a parser gate that early-returned `[]` on missing
+# `diff --git` — a false-negative on patches that were clearly
+# content-mismatched against file bytes.
+# ---------------------------------------------------------------------------
+
+
+def test_headerless_unified_diff_is_parsed(tmp_path):
+    """A unified diff without ``diff --git`` header MUST still be
+    verified — ``git apply`` accepts that shape and models emit it."""
+    # Fixture file where line 379 has content that does NOT match the
+    # hunk body — the verifier should surface the mismatch.
+    file_content = "\n".join(
+        [f"# line {i}" for i in range(1, 400)]
+        + ["DATETIME_INPUT_FORMATS = ["]          # line 400
+    ) + "\n"
+    _write(tmp_path, "pkg/settings.py", file_content)
+
+    # NOTE: no ``diff --git`` prefix — just --- / +++ / @@.
+    patch = (
+        "--- a/pkg/settings.py\n"
+        "+++ b/pkg/settings.py\n"
+        "@@ -379,2 +379,2 @@\n"
+        " # Default permissions for uploaded files.\n"
+        "-FILE_UPLOAD_PERMISSIONS = None\n"
+        "+FILE_UPLOAD_PERMISSIONS = 0o644\n"
+    )
+    mismatches = verify_diff_context(patch, tmp_path)
+    assert len(mismatches) == 1, (
+        f"Headerless unified diff should verify; got {mismatches!r}"
+    )
+    assert mismatches[0].kind == "content_mismatch"
+    assert mismatches[0].file == "pkg/settings.py"
+    assert mismatches[0].old_start == 379
+
+
+# ---------------------------------------------------------------------------
 # Test 7 — hunk-header line count mismatch → scope of counts-repair.
 # ---------------------------------------------------------------------------
 
