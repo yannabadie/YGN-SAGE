@@ -291,10 +291,10 @@ def normalize_swebench(instance: dict[str, Any]) -> TaskInput:
     `base_commit` (required), `hints_text` (optional).
 
     The `problem_statement` becomes the `prompt` field; the rest
-    flows through `hints`. `instructions` is set to the full
-    SWE-bench workflow template so C4 can render it through the
-    generic prompt builder while C2a's byte-identical renderer stays
-    wired to `_build_task_prompt`.
+    flows through `hints`. `instructions` is set to the SWE-bench
+    workflow template that matches the current
+    ``SAGE_EMISSION_FORMAT`` (T2.4 wiring — defaults to the unified
+    template so pre-opt-in callers keep byte-identical behavior).
     """
     return TaskInput(
         prompt=instance["problem_statement"],
@@ -305,20 +305,25 @@ def normalize_swebench(instance: dict[str, Any]) -> TaskInput:
             "base_commit": instance["base_commit"],
             "hints_text": instance.get("hints_text", "") or "",
         },
-        instructions=SWEBENCH_SYSTEM_TEMPLATE,
+        instructions=get_swebench_template(),
         source="swebench",
     )
 
 
 def render_swebench_prompt(task_input: TaskInput) -> str:
-    """Reproduce the pre-C2a `_build_task_prompt` output **byte-for-byte**.
+    """Render the SWE-bench task prompt.
 
-    This function is only responsible for SWE-bench-shaped inputs (i.e.
-    `task_input.source == "swebench"` and hints carry the four expected
-    keys). The generic prompt builder that lands in C4 will replace this
-    with a layered composition; until then, byte-identity is what makes
-    the refactor safe to merge without disturbing the running smoke
-    baseline.
+    The template is resolved via ``get_swebench_template()`` so the
+    emission-format env gate (T2.3+T2.4) also swaps the rendered
+    prompt. Under the default (``SAGE_EMISSION_FORMAT`` unset), this
+    reproduces the pre-T2.4 `_build_task_prompt` output byte-for-byte
+    — both fixture files in ``tests/fixtures/swebench_prompt_*.txt``
+    still match.
+
+    This function is only responsible for SWE-bench-shaped inputs
+    (i.e. `task_input.source == "swebench"` and hints carry the four
+    expected keys). The generic prompt builder that lands in C4 will
+    replace this with a layered composition.
     """
     hints = task_input.hints
     hints_text = (hints.get("hints_text") or "").strip()
@@ -328,7 +333,7 @@ def render_swebench_prompt(task_input: TaskInput) -> str:
         else ""
     )
 
-    return SWEBENCH_SYSTEM_TEMPLATE.format(
+    return get_swebench_template().format(
         repo=hints["repo"],
         version=hints.get("version", "unknown"),
         base_commit=hints["base_commit"],

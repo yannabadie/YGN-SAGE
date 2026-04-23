@@ -904,6 +904,14 @@ class SWEBenchBench:
             tool_turn_count = 0
             executed_commands: list[str] = []
             execution_path = ""
+            # T2.4: attribute which extraction path produced the patch so
+            # post-hoc paired smokes can bucket empty outcomes by cause.
+            # Values: "unified" | "search-replace-exact" | "search-replace-fuzzy"
+            # | "search-replace-missing" | "empty". Initialised to "empty" so
+            # a timeout / exception before the extractor runs records the
+            # right bucket.
+            extraction_method = "empty"
+            repair_stage = ""
 
             # Clone repo at base_commit so agent tools (execute_bash) can read code
             repo_dir = None
@@ -929,6 +937,59 @@ class SWEBenchBench:
                 if response and _SENTINEL_MARKER in response:
                     structured_failure = "step_budget_exhausted"
                 patch = _extract_patch(response)
+                if patch:
+                    extraction_method = "unified"
+
+                # T2.4: SEARCH/REPLACE fallback. Only runs when the env
+                # gate opts in AND the unified extractor returned empty —
+                # the advisor-flagged graceful-degradation contract ("the
+                # cleanest patch we got", not "the format we asked for")
+                # is what the ordering enforces. Step 7 of the Mandatory
+                # Workflow still references a ```diff fence in both
+                # templates, so models will sometimes emit a diff even
+                # under SR mode; that path wins when it yields content.
+                if (
+                    not patch
+                    and response
+                    and _get_emission_format() == "search-replace"
+                    and repo_dir
+                ):
+                    from pathlib import PurePath
+                    raw_blocks = _extract_search_replace_blocks(response, repo_dir)
+                    # Normalise backslash paths (spec reviewer flag):
+                    # LLMs on Windows sometimes emit ``pkg\mod.py`` even
+                    # under a forward-slash prompt. Doing this inside
+                    # the bench wiring (not inside the extractor) keeps
+                    # the extractor's contract tests byte-stable.
+                    normalised_blocks = [
+                        (str(PurePath(p)).replace("\\", "/"), s, r)
+                        for p, s, r in raw_blocks
+                    ]
+                    if normalised_blocks:
+                        sr_diff, sr_meta = _blocks_to_unified_diff(
+                            normalised_blocks, repo_dir,
+                        )
+                        if sr_diff:
+                            patch = sr_diff
+                            kinds = [
+                                b["match_kind"] for b in sr_meta.get("per_block", [])
+                            ]
+                            # Precedence: any fuzzy wins, else all-exact
+                            # counts as exact; any missing without a
+                            # concrete exact/fuzzy alongside collapses to
+                            # missing (caller's diff is empty in that
+                            # branch, but we reach here only when sr_diff
+                            # is non-empty, so at least one block matched).
+                            if "fuzzy" in kinds:
+                                extraction_method = "search-replace-fuzzy"
+                            elif "exact" in kinds:
+                                extraction_method = "search-replace-exact"
+                            else:
+                                extraction_method = "search-replace-missing"
+                        else:
+                            # Blocks parsed but none matched — mark missing
+                            # so the decision-gate histogram surfaces it.
+                            extraction_method = "search-replace-missing"
 
                 # v16 fix (2026-04-21): validate + repair malformed patches
                 # before emission. Addresses the astropy-7746 / django-10914
@@ -938,7 +999,6 @@ class SWEBenchBench:
                 #   2. LLM one-shot repair with `git apply --check` stderr
                 # See docs/benchmarks/2026-04-21-swebench-v15-eval-results.md
                 # and sage.bench.swebench_patch_repair.
-                repair_stage = ""
                 if patch and repo_dir:
                     from sage.bench.swebench_patch_repair import try_repair_patch
                     llm_handle = getattr(
@@ -1006,6 +1066,7 @@ class SWEBenchBench:
                 "_structured_failure": structured_failure,  # D7 audit
                 "_repo": instance["repo"],
                 "_repair_stage": repair_stage,  # v16: "", unchanged, programmatic_counts, llm_repair, failed
+                "_extraction_method": extraction_method,  # T2.4: unified | search-replace-{exact,fuzzy,missing} | empty
             })
 
             self.manifest.add(TaskTrace(
