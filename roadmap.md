@@ -21,6 +21,20 @@ Reference frames:
 
 ## Horizon A — short-term (next 1-2 weeks)
 
+### A0 — ALIRE2 triage remediations (2026-04-23)
+
+The 2026-04-23 ALIRE2 verification (`docs/audits/2026-04-23-alire-verification.md`)
+confirmed 4 high-severity live gaps on main. All 4 were shipped the
+same session as small, reviewable commits — kept here so the audit
+trail is explicit.
+
+| Item | Shipped commit | Note |
+|---|---|---|
+| **A0a** Restore all 10 mutated AgentLoop fields in the pipeline bypass `finally`. Targeted fix; full refactor = B9. | `9067be5` | `pipeline.py` snapshots `_orig_bypass_state` dict pre-mutation; finally restores all 10 (happy + exception). +2 regression tests. |
+| **A0b** `SAGE_STRICT_GOVERNANCE=1` turns the write-gate-init-failure and verification-failed paths into hard aborts (emit `EXECUTE_HALTED_UNVERIFIED`). Default off; byte-identical. | `2bd966c` | `pipeline.py` + `_is_strict_governance()` helper. +16 regression tests. |
+| **A0c** Redact raw traceback from `Tool.execute()` model-visible output (info-leak fix, ALIRE2 §6). | `684bb17` | `tools/base.py` returns type:message; `log.exception` keeps operator-side visibility. +3 regression tests. |
+| **A0d** Caveat the "DistilBERT ONNX QualityEstimator" claim in 6 docs — active backend is Z3 QualityLabeler + abstention; ONNX artefact NOT shipped. | `bf220e0` | README.md, pillars.md, results.md, methodology.md, Obsidian Papers/CascadeRouting.md + Architecture/Pipeline.md. |
+
 ### A1. Accumulate observe-mode data across opportunistic SWE-bench smokes
 **Why:** the 2026-04-23 observe smoke (N=10) gave us 2 flagged patches.
 Repair-mode flip needs ≥10 flagged + ≥10 clean observations to discriminate
@@ -161,6 +175,46 @@ CI (cacheable via `actions/cache`).
 **Why:** whatever A2 surfaces, fixing the 20% fast-abort rate has
 proportional payoff on every SWE-bench smoke.
 
+### B8. Finish or de-scope the Rust controller orchestration entry
+**Why:** ALIRE2 verification (A0a companion, 2026-04-23) confirmed
+`RustTopologyController::evaluate_and_decide` returns `None` (scaffold
+stub) in `sage-core/src/topology/controller.rs:189–197`. Per-path
+methods (`check_empty_error_reroute`, `check_quality_cascade`,
+`check_parallel_inconsistency`, etc.) ARE populated and ARE called
+from Python's `TopologyController`. So "Rust-primary since 2026-04-20"
+(ADR-012) is factually correct for each decision path, but misleading
+if read as "complete Rust control plane".
+
+Two options:
+
+1. **Populate** the orchestration body so Rust composes the per-path
+   methods itself — Python just consumes the `Option<Decision>`
+   return. Frees Python from the adapter layer.
+2. **De-scope** — remove or rename `evaluate_and_decide` to make the
+   scaffold obvious, and update ADR-012 to say "Rust per-path checks
+   with Python-side orchestration" instead of implying a single
+   Rust entry point.
+
+Gated on: do we have a real concurrency use case where the per-path
+methods need top-level Rust orchestration? If not, de-scope is cheaper
+and more honest.
+
+**Estimated effort:** 1-2 days if populate; 2-3 hours if de-scope.
+
+### B9. Per-run immutable execution context (AgentLoop refactor)
+**Why:** A0a (shipped `9067be5`) fixes incomplete restoration of the
+10 mutated fields in the bypass path's `finally`. That closes
+state-bleed under serial nested calls, but NOT under concurrent ones —
+two `run()` coroutines on the same singleton AgentLoop would still
+race on the shared fields between the snapshot and the `finally`.
+
+The architectural fix is stop mutating a shared object entirely: build
+a fresh, immutable execution context per run. References ALIRE2 §4.
+
+**Estimated effort:** 1-2 weeks. Don't start until A1/A3 (observe +
+repair mode) stabilise; this is a big refactor and interleaving it
+with Track 3 work multiplies risk.
+
 ### B7. Test count drift gate automation
 **Why:** the `test_mypy_count.py` ceiling drifted by 5 between commits
 over weeks (caught in this session). The ceiling-bump flow is manual
@@ -281,6 +335,23 @@ here so they don't get lost.
 * **Noise-floor calibration via paired identical-config runs** —
   advisor correctly flagged this as "measurement theater"; noise floor
   can be computed post-hoc from any future N=50+ smoke via resampling.
+
+* **ALIRE2 §6 sandbox claims E/F/G (subprocess-based execution paths)**
+  — accurate-as-described in code but **orphaned** post ADR-013 §5
+  flip (`c2113d8`, 2026-04-22). `sandbox/manager.py` +
+  `sandbox/isolated_executor.py` remain in the tree as legacy fallback
+  that is unreachable on the default path (`allow_local=False`, Wasm
+  first, hard-fail if Wasm absent). `sage-core/src/sandbox/subprocess.rs`
+  gated behind `SAGE_UNSAFE_RAW_EXEC=1`. Deletion of the Python-side
+  orphan files is tidy-but-not-urgent — ticketed as a separate B-tier
+  cleanup; see `docs/audits/2026-04-23-alire-verification.md` for the
+  divergence note.
+
+* **ALIRE2 §3 "heuristic extraction in QualityEstimator" (claim I)**
+  — refuted by code inspection. No regex / length / keyword signals in
+  `quality_estimator.py`. Path is Z3 + (optional ONNX) + None
+  abstention. The ONNX-not-shipped half of the claim IS true (handled
+  by A0d docs sweep, `bf220e0`).
 
 ---
 
