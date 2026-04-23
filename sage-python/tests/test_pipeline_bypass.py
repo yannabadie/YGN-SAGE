@@ -116,9 +116,21 @@ async def test_bypass_clears_topology():
 
 @pytest.mark.asyncio
 async def test_bypass_sets_validation_level():
-    """Validation level should match system classification from routing."""
+    """Validation level should match system classification from routing.
+
+    A0a (2026-04-23) restores config.validation_level to its pre-bypass
+    value in the `finally` — so this test captures the mutated value
+    DURING the run via the same `_capture_run` idiom as the
+    sibling tests in this file.
+    """
+    captured = {}
+
+    async def _capture_run(task):
+        captured["during"] = mock_loop.config.validation_level
+        return "result"
+
     mock_loop = MagicMock()
-    mock_loop.run = AsyncMock(return_value="result")
+    mock_loop.run = _capture_run
     mock_loop.total_cost_usd = 0.0
     mock_loop._skip_routing = False
     mock_loop._current_topology = None
@@ -132,7 +144,15 @@ async def test_bypass_sets_validation_level():
 
     await pipeline._stage_execute(ctx)
 
-    assert mock_loop.config.validation_level == 3
+    assert captured["during"] == 3, (
+        "bypass path must set config.validation_level=3 for system=3 "
+        f"during run; got {captured.get('during')!r}"
+    )
+    # A0a restoration: post-run the value returns to pre-bypass (1).
+    assert mock_loop.config.validation_level == 1, (
+        f"A0a: validation_level must be restored to 1 after run; "
+        f"got {mock_loop.config.validation_level!r}"
+    )
 
 
 @pytest.mark.asyncio

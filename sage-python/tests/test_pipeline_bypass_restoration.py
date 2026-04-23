@@ -132,6 +132,91 @@ async def test_bypass_path_restores_all_mutated_fields():
 
 
 @pytest.mark.asyncio
+async def test_bypass_path_actually_mutates_during_run():
+    """The restoration contract is only meaningful if the mutations
+    happen in the first place — otherwise A0a's expanded ``finally``
+    is guarding against nothing.
+
+    We capture the agent_loop state from *inside* ``agent_loop.run`` via
+    a side_effect, then assert the mutated fields have the bypass-path
+    values (max_steps ∈ {5,10,20}, validation_level ∈ {1,2,3},
+    _skip_routing=True, _current_topology=None, etc.) — NOT the prior
+    sentinel state. This catches a hypothetical regression where the
+    mutation block is deleted along with the restoration block.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._agent_loop = _make_loop_with_prior_state()
+    pipeline.bandit = None
+    pipeline.write_gate = "pipeline-gate-sentinel"
+    pipeline.provider_pool = None
+    pipeline.llm_provider = None
+    pipeline._last_routing_decision = None
+    pipeline._emit = MagicMock()
+    pipeline.event_bus = None
+
+    captured: dict[str, Any] = {}
+
+    async def _capture_during_run(*_args, **_kwargs):
+        # Snapshot the mutated state at the exact moment agent_loop.run
+        # is invoked — after the mutation block, before the finally.
+        loop = pipeline._agent_loop
+        captured["max_steps"] = loop.config.max_steps
+        captured["validation_level"] = loop.config.validation_level
+        captured["stall_after_tool_steps"] = loop.config.stall_after_tool_steps
+        captured["_skip_routing"] = loop._skip_routing
+        captured["_current_topology"] = loop._current_topology
+        captured["write_gate"] = loop.write_gate
+        captured["gate_current_task"] = loop.gate_current_task
+        return "bypass-output"
+
+    pipeline._agent_loop.run = AsyncMock(side_effect=_capture_during_run)
+
+    ctx = SimpleNamespace(
+        task="bypass-mutation-check",
+        topology=None,
+        system=2,  # expect max_steps=10, validation_level=2, stall=9
+        result=None,
+        cost=0.0,
+        tool_call_count=0,
+        tool_turn_count=0,
+        executed_commands=[],
+        verification_passed=True,
+        bandit_decision_id=None,
+    )
+    await pipeline._stage_execute(ctx)
+
+    # The bypass block SHOULD have mutated these — if it didn't, we
+    # restored "nothing" and A0a is a no-op.
+    assert captured["max_steps"] == 10, (
+        f"expected max_steps=10 for system=2; got {captured['max_steps']}. "
+        "Either the {1:5,2:10,3:20} scaling line was deleted or "
+        "the bypass branch didn't run."
+    )
+    assert captured["validation_level"] == 2, (
+        f"expected validation_level=2 for system=2 (with sandbox_manager); "
+        f"got {captured['validation_level']}"
+    )
+    assert captured["stall_after_tool_steps"] == 9, (
+        f"expected stall_after_tool_steps=9 (max_steps - 1); "
+        f"got {captured['stall_after_tool_steps']}"
+    )
+    assert captured["_skip_routing"] is True, (
+        "expected _skip_routing=True during bypass run"
+    )
+    assert captured["_current_topology"] is None, (
+        "expected _current_topology=None during bypass run"
+    )
+    assert captured["write_gate"] == "pipeline-gate-sentinel", (
+        "expected pipeline.write_gate to be installed on agent_loop"
+    )
+    assert captured["gate_current_task"] == "bypass-mutation-check", (
+        "expected gate_current_task to be set to ctx.task"
+    )
+
+
+@pytest.mark.asyncio
 async def test_bypass_path_restores_even_on_exception():
     """If ``agent_loop.run`` raises, the finally must still restore.
 

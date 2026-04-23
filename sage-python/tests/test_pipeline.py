@@ -203,7 +203,13 @@ async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
     """Single-agent bypass path must inject write_gate + gate_current_task +
     gate_source_tier onto self._agent_loop before calling .run(). Without
     this, the G-series memory-write gate silently does not fire on S1 tasks
-    or single-node topologies."""
+    or single-node topologies.
+
+    Note (2026-04-23, A0a): the gate is restored to its pre-bypass value
+    in the `finally` block — so this test captures the wired state
+    *during* `.run()` via the spy, not the post-run state (which is
+    correctly None again).
+    """
     from unittest.mock import MagicMock, AsyncMock
 
     # Build a single-agent pipeline with a spy agent_loop. Must look enough
@@ -224,8 +230,20 @@ async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
             self.write_gate = None        # unset by default — fix must populate
             self.gate_current_task = ""
             self.gate_source_tier = ""
+            self.during_run_snapshot: dict = {}
 
         async def run(self, task):
+            # Capture state DURING the run (post-mutation, pre-restoration)
+            # — that's what the H5 fix requires for phases/act.py to see a
+            # populated gate. A0a restores all 10 fields in the `finally`,
+            # including write_gate, so checking post-run would fail for
+            # the correct reason (restoration working) not for the wrong
+            # reason (gate not wired).
+            self.during_run_snapshot = {
+                "write_gate": self.write_gate,
+                "gate_current_task": self.gate_current_task,
+                "gate_source_tier": self.gate_source_tier,
+            }
             return "single-agent test response"
 
     spy_loop = _SpyAgentLoop()
@@ -262,18 +280,29 @@ async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
     )
 
     # Bypass path must have wired the gate onto the shared agent loop
-    assert spy_loop.write_gate is pipeline.write_gate, (
-        "single-agent path must assign pipeline.write_gate → agent_loop.write_gate; "
-        "without it, phases/act.py sees loop.write_gate=None and memory writes "
-        "silently skip the 5-signal gate"
+    # *during* the run — A0a correctly restores it to None post-run.
+    during = spy_loop.during_run_snapshot
+    assert during, "spy_loop.run() was never called — pipeline took the wrong branch"
+    assert during["write_gate"] is pipeline.write_gate, (
+        "single-agent path must assign pipeline.write_gate → agent_loop.write_gate "
+        "DURING the run; without it, phases/act.py sees loop.write_gate=None and "
+        "memory writes silently skip the 5-signal gate"
     )
-    assert spy_loop.gate_current_task == "fix astropy units bug", (
+    assert during["gate_current_task"] == "fix astropy units bug", (
         "single-agent path must forward ctx.task into the loop for the "
         "gate's relevance signal"
     )
-    assert spy_loop.gate_source_tier in {"reasoner", "fast", "budget", "unknown"}, (
+    assert during["gate_source_tier"] in {"reasoner", "fast", "budget", "unknown"}, (
         f"gate_source_tier should be resolved from cards.toml via "
-        f"infer_source_tier, got: {spy_loop.gate_source_tier!r}"
+        f"infer_source_tier, got: {during['gate_source_tier']!r}"
+    )
+
+    # A0a restoration contract: write_gate is returned to pre-bypass value
+    # (None for this spy) after the run so concurrent callers don't see
+    # stale state.
+    assert spy_loop.write_gate is None, (
+        "A0a: write_gate must be restored to pre-bypass value after run. "
+        f"Got {spy_loop.write_gate!r} — restoration is leaking."
     )
 
 
@@ -317,8 +346,13 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
             self.gate_current_task = ""
             self.gate_source_tier = ""
             self._on_drift = None  # unset by default — fix must populate
+            self.during_run_on_drift = None
 
         async def run(self, task):
+            # A0a (2026-04-23) restores _on_drift to pre-bypass None in the
+            # finally — capture the wired callback DURING the run for the
+            # H6 contract instead of post-run.
+            self.during_run_on_drift = self._on_drift
             return "single-agent test response"
 
     spy_loop = _SpyAgentLoop()
@@ -339,15 +373,16 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
 
     await pipeline.run("investigate provider drift", budget_usd=3.0)
 
-    # Bypass path must have wired the callback
-    assert spy_loop._on_drift is not None, (
-        "single-agent path must set loop._on_drift so drift events "
-        "propagate to ProviderPool.record_failure — same pattern as H5 "
-        "(write_gate). Without it, drift on S1/bypass paths is silent."
+    # Bypass path must have wired the callback during the run
+    wired = spy_loop.during_run_on_drift
+    assert wired is not None, (
+        "single-agent path must set loop._on_drift DURING the run so drift "
+        "events propagate to ProviderPool.record_failure — same pattern as "
+        "H5 (write_gate). Without it, drift on S1/bypass paths is silent."
     )
 
     # Callback must actually forward SWITCH_MODEL → record_failure
-    spy_loop._on_drift("gemini", "SWITCH_MODEL", {"latency": 12000})
+    wired("gemini", "SWITCH_MODEL", {"latency": 12000})
     assert len(recorded_failures) == 1, (
         "wired callback must call ProviderPool.record_failure on SWITCH_MODEL"
     )
@@ -355,9 +390,16 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
 
     # Callback must ignore non-actionable actions
     before = len(recorded_failures)
-    spy_loop._on_drift("gemini", "LOG_ONLY", {"latency": 100})
+    wired("gemini", "LOG_ONLY", {"latency": 100})
     assert len(recorded_failures) == before, (
         "LOG_ONLY drift must not trip record_failure (only SWITCH_MODEL / RESET_AGENT)"
+    )
+
+    # A0a restoration contract: _on_drift is returned to pre-bypass None
+    # after run — enforces no state leakage.
+    assert spy_loop._on_drift is None, (
+        "A0a: _on_drift must be restored to pre-bypass value (None) after run. "
+        f"Got {spy_loop._on_drift!r} — restoration is leaking."
     )
 
 
@@ -404,8 +446,12 @@ async def test_pipeline_single_agent_scales_max_steps_by_system(monkeypatch):
             self.gate_current_task = ""
             self.gate_source_tier = ""
             self._on_drift = None
+            self.during_run_max_steps = None
 
         async def run(self, task):
+            # A0a restores config.max_steps to pre-bypass value. Capture
+            # the scaled value DURING the run instead of post-run.
+            self.during_run_max_steps = self.config.max_steps
             return "single-agent test response"
 
     expected = {1: 5, 2: 10, 3: 20}
@@ -426,11 +472,12 @@ async def test_pipeline_single_agent_scales_max_steps_by_system(monkeypatch):
 
         await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
 
-        assert spy_loop.config.max_steps == expected_max_steps, (
-            f"system={system_level} expected max_steps={expected_max_steps}, "
-            f"got {spy_loop.config.max_steps!r}. Bypass path must mirror "
-            f"agent_loop_factory.py:132-137 scaling to prevent S1 tasks "
-            f"from running at 4x the factory-intended step budget."
+        assert spy_loop.during_run_max_steps == expected_max_steps, (
+            f"system={system_level} expected max_steps={expected_max_steps} "
+            f"during run, got {spy_loop.during_run_max_steps!r}. Bypass "
+            f"path must mirror agent_loop_factory.py:132-137 scaling to "
+            f"prevent S1 tasks from running at 4x the factory-intended "
+            f"step budget."
         )
 
 
@@ -472,8 +519,14 @@ async def test_pipeline_single_agent_sets_stall_cap_matching_factory(monkeypatch
             self.gate_current_task = ""
             self.gate_source_tier = ""
             self._on_drift = None
+            self.during_run_max_steps = None
+            self.during_run_stall = None
 
         async def run(self, task):
+            # A0a restores config.{max_steps, stall_after_tool_steps} to
+            # pre-bypass values in the finally — capture DURING the run.
+            self.during_run_max_steps = self.config.max_steps
+            self.during_run_stall = self.config.stall_after_tool_steps
             return "single-agent test response"
 
     # (system, expected_max_steps, expected_stall_cap) — mirrors factory formula.
@@ -499,13 +552,13 @@ async def test_pipeline_single_agent_sets_stall_cap_matching_factory(monkeypatch
 
         await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
 
-        assert spy_loop.config.max_steps == expected_max, (
+        assert spy_loop.during_run_max_steps == expected_max, (
             f"system={system_level} max_steps prerequisite (from 1.1) not met: "
-            f"expected {expected_max}, got {spy_loop.config.max_steps!r}"
+            f"expected {expected_max} during run, got {spy_loop.during_run_max_steps!r}"
         )
-        assert spy_loop.config.stall_after_tool_steps == expected_stall, (
-            f"system={system_level} stall_cap expected {expected_stall}, "
-            f"got {spy_loop.config.stall_after_tool_steps!r}. Bypass path "
+        assert spy_loop.during_run_stall == expected_stall, (
+            f"system={system_level} stall_cap expected {expected_stall} during run, "
+            f"got {spy_loop.during_run_stall!r}. Bypass path "
             f"must mirror agent_loop_factory.py:151-154 formula."
         )
 
