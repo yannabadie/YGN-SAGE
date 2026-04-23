@@ -1,0 +1,16 @@
+{
+  "benchmark": "swebench_lite",
+  "model": "gemini-3.1-flash-lite-preview",
+  "provider": "PydanticAIProvider",
+  "git_sha": "5efdd421df0d",
+  "feature_flags": [
+    "sage_core",
+    "tool-executor",
+    "sandbox"
+  ],
+  "total": 10,
+  "passed": 1,
+  "pass_rate": 0.1,
+  "avg_latency_ms": 118547.1,
+  "total_cost_usd": 6.056519
+}
