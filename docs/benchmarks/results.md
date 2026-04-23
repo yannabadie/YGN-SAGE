@@ -152,7 +152,7 @@ The Rust SystemRouter is well-calibrated against ground truth. The Python Adapti
 
 ## Quality Estimation
 
-### DistilBERT QualityEstimator
+### DistilBERT QualityEstimator (historical training result — artefact NOT shipped)
 
 | Metric | Value |
 |--------|-------|
@@ -161,9 +161,25 @@ The Rust SystemRouter is well-calibrated against ground truth. The Python Adapti
 | **Improvement** | **+34.4pp** |
 | Training data | 600 quality triples |
 | Model size | 0.9 MB (ONNX, opset 18) |
-| Status | **Strong SHIP** |
+| Status | **Training artefact — NOT shipped in this repo or any release** |
 
-The DistilBERT quality estimator replaces the `len > 10` heuristic with a 5-signal learned scorer. The +34.4pp Pearson improvement on held-out data confirms meaningful signal extraction.
+These numbers come from the 2026-Q1 training sweep on held-out data.
+The DistilBERT learned scorer replaces the `len > 10` heuristic with a
+5-signal learned path — the +34.4pp Pearson delta confirms signal
+extraction.
+
+**As of 2026-04-23 (ALIRE2 verification):** the resulting `.onnx`
+artefact was never shipped. `sage-python/src/sage/quality_estimator.py`
+loads it only when `models/quality_estimator_v2.onnx` + tokenizer are
+on disk; in the default checkout neither exists, so the
+`QualityEstimator` runs on the Rust Z3 `QualityLabeler` (formal
+checks over code outputs) and **abstains** for anything it can't
+assess. No in-tree heuristic fallback.
+
+Reviving this path requires either (a) training + publishing the
+ONNX artefact on a release or HF, or (b) retiring the DistilBERT
+claim from docs entirely. This cell stays for benchmark-historical
+accuracy.
 
 ---
 

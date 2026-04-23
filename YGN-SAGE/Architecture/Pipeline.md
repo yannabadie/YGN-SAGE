@@ -113,7 +113,7 @@ PRM avec `<think>` blocks → 17 CEGAR failures × 6 RESET_AGENT × 6
 SWITCH_MODEL → 0/3 patches sur smoke v2.
 
 Apres chaque noeud :
-- **QualityEstimator** — OxiZ (code) ou DistilBERT ONNX (texte)
+- **QualityEstimator** — OxiZ (code) backend actif ; DistilBERT ONNX (texte) **non-shippe** (2026-04-23 ALIRE2) ; sinon abstention
 - **TopologyController** decide : `continue` / `upgrade_model` / `prune_node` / `reroute_topology` / `spawn_subagent` / `open_gate`
 - **Escalation Conductor** : bypass → repair (reasoner tier) → topology fallback
 - **Code nodes** (HyEvo) : execution sandbox

@@ -77,7 +77,7 @@ A contextual bandit (Thompson sampling) modulates exploration vs exploitation.
 **Stage 4 — Assign Models:** The Rust ModelAssigner scores each candidate model for each node: `0.4 * affinity + 0.4 * domain + 0.2 * (1 - cost)`. Provider hints from the topology can bias selection (+0.15 bonus). 7 providers available: DeepSeek, Google, OpenAI, xAI, Kimi, MiniMax, OpenRouter — each node can use a different provider. The bandit's learned quality priors override assignments for underperforming models (quality < 0.4).
 
 **Stage 5 — Execute:** TopologyRunner executes nodes in DAG order with adaptive context — each node receives predecessor outputs sized to the model's context window (no fixed truncation). Near-identical outputs from parallel workers are deduplicated via Jaccard similarity gate (S2-MAD, -94% tokens). After each node:
-- **QualityEstimator** evaluates the output (OxiZ formal verification for code, DistilBERT ONNX for text)
+- **QualityEstimator** evaluates the output (OxiZ formal verification for code is the active backend; the DistilBERT ONNX path for text is wired but the model artefact is not shipped — see "DistilBERT QualityEstimator" note below)
 - **TopologyController** decides: `continue` (quality > 0.7), `upgrade_model` (quality < 0.3, retry with better model), `prune_node` (skip useless node), `reroute_topology` (rebuild from scratch), `spawn_subagent`, or `open_gate` (re-execute a node for multi-turn refinement, max 3 rounds)
 - **Code nodes** (HyEvo-inspired) are executed in a sandbox instead of LLM calls
 - **Arithmetic verification** catches calculation errors and triggers model upgrade

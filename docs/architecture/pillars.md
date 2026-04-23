@@ -112,7 +112,9 @@ The `SystemRouter` combines multiple signals in priority order:
 
 ### Quality Estimation
 
-The `QualityEstimator` uses 5 signals to score outputs: non-empty, length adequacy, code presence, error absence, and AVR convergence. A DistilBERT ONNX model (0.9 MB, trained on 600 triples) achieves +34.4pp Pearson correlation improvement over the baseline heuristic.
+**Current active backend** (since the 2026-Q1 "zero heuristics" reshape, and confirmed again by the 2026-04-23 ALIRE2 verification): `QualityEstimator` delegates to the Rust `QualityLabeler` (formal Z3-based checks over code outputs) first; if the learned path is loadable it tries `RustLearnedQualityEstimator` (ONNX, DistilBERT-class); if neither can assess the output, the estimator **abstains** (returns `None`) and the bandit skips recording that datapoint. No in-tree heuristic fallback.
+
+**DistilBERT ONNX model status:** the 0.9 MB, 600-triple-trained DistilBERT ONNX referenced in prior benchmark docs (+34.4pp Pearson vs baseline) was a training-phase artefact. The `.onnx` file is **not shipped** in this repo or any release. `quality_estimator.py` loads it only when `models/quality_estimator_v2.onnx` + tokenizer both exist on disk. In practice, Z3 `QualityLabeler` + abstention is the entire live quality-estimation surface.
 
 ---
 

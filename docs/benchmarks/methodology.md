@@ -187,7 +187,7 @@ After analysis of 1090 traces (49.6% divergence), it was determined that diverge
 
 ## Quality Estimation Evaluation
 
-The `DistilBERT QualityEstimator` is evaluated using the SHIP (Statistical Hypothesis of Improved Performance) protocol:
+The `DistilBERT QualityEstimator` **was** evaluated using the SHIP (Statistical Hypothesis of Improved Performance) protocol during the 2026-Q1 training sweep. The resulting ONNX artefact is **not shipped** in this repo or any release as of 2026-04-23; the active runtime path is the Rust Z3 `QualityLabeler` + abstention. The SHIP results below are recorded for benchmark-historical accuracy:
 
 - **Training data**: 600 quality triples collected via `scripts/collect_quality_triples.py`
 - **Metric**: Pearson correlation between predicted and actual quality scores

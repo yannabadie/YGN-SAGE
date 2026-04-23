@@ -35,7 +35,7 @@ pas les algorithmes de routing eux-memes. Propose un routing en cascade
 | Claim | Feature SAGE | Fichier | Statut |
 |-------|-------------|---------|--------|
 | FrugalGPT cascade | Skip excluded models | sage-core/src/routing/model_assigner.rs:242 | integre |
-| Quality estimator focus | DistilBERT QualityEstimator (ONNX) | sage-python/src/sage/ | integre |
+| Quality estimator focus | DistilBERT QualityEstimator (ONNX) | sage-python/src/sage/ | wire en place, modele `.onnx` **non-shippe** (2026-04-23) ; Z3 QualityLabeler actif |
 | 4-stage cascade | Pipeline routing complet | architecture globale | integre |
 
 ## Ce qui n'a PAS ete retenu
