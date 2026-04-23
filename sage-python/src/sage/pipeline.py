@@ -31,6 +31,20 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
+def _is_strict_governance() -> bool:
+    """Read the SAGE_STRICT_GOVERNANCE env var (A0b, 2026-04-23).
+
+    When truthy, governance failures (write-gate init failure,
+    verification-failed provider assignment) abort the pipeline
+    instead of logging-and-continuing. Default off — the existing
+    dev-friendly fail-open behaviour is preserved unless an operator
+    explicitly opts in. Accepts ``1`` / ``true`` / ``yes`` / ``on``
+    (case-insensitive) as truthy; everything else is off.
+    """
+    v = os.environ.get("SAGE_STRICT_GOVERNANCE", "").strip().lower()
+    return v in {"1", "true", "yes", "on"}
+
+
 @dataclass
 class PipelineContext:
     """State that flows through the 5 pipeline stages."""
@@ -164,11 +178,26 @@ class CognitiveOrchestrationPipeline:
         self.write_gate = self._build_write_gate()
 
     def _build_write_gate(self) -> Any:
-        """Construct a fresh CompositeWriteGate (Rust if available, Python fallback)."""
+        """Construct a fresh CompositeWriteGate (Rust if available, Python fallback).
+
+        Governance (A0b, 2026-04-23, ALIRE2 §6): in normal mode a failure
+        here logs-and-returns-None (memory writes continue ungated — the
+        pre-A0b default that keeps dev smoke runs resilient to a broken
+        Rust build). Under ``SAGE_STRICT_GOVERNANCE=1`` the failure is
+        re-raised so the caller aborts the pipeline — the posture we
+        want in production / audit runs where "continuing ungated"
+        silently falsifies the governance claim.
+        """
         from sage.memory.write_gate import create_composite_write_gate
         try:
             return create_composite_write_gate(**self._gate_config)
         except Exception as exc:
+            if _is_strict_governance():
+                log.error(
+                    "CompositeWriteGate init failed under SAGE_STRICT_GOVERNANCE=1; "
+                    "aborting pipeline: %s", exc,
+                )
+                raise
             log.debug("CompositeWriteGate init failed, memory writes ungated: %s", exc)
             return None
 
@@ -1152,6 +1181,24 @@ class CognitiveOrchestrationPipeline:
                 pass
 
         if not ctx.verification_passed:
+            # A0b (2026-04-23, ALIRE2 §6): strict mode aborts here instead
+            # of falling through to EXECUTE_UNVERIFIED. The default keeps
+            # the historical "log and continue" behaviour so dev smokes
+            # don't break on a Z3 unsat that would normally be a soft
+            # signal. Production / audit runs set SAGE_STRICT_GOVERNANCE=1.
+            if _is_strict_governance():
+                log.error(
+                    "Stage 4: aborting under SAGE_STRICT_GOVERNANCE=1 — "
+                    "verification failed on provider assignment (SAT check)."
+                )
+                self._emit(
+                    "EXECUTE_HALTED_UNVERIFIED",
+                    {"reason": "SAT check failed in Stage 3"},
+                )
+                raise RuntimeError(
+                    "SAGE_STRICT_GOVERNANCE: pipeline aborted — provider "
+                    "assignment failed verification (SAT check)."
+                )
             log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
             self._emit("EXECUTE_UNVERIFIED", {"reason": "SAT check failed in Stage 3"})
 
