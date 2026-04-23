@@ -459,3 +459,189 @@ def test_write_predictions_omits_extraction_method_when_absent(tmp_path):
         "model_patch": "",
     }
     assert "_extraction_method" not in entry
+
+
+# ---------------------------------------------------------------------------
+# 8. SR-missing diagnostic sidecar — persists raw LLM response + parsed
+#    blocks when ``_extraction_method == "search-replace-missing"`` and
+#    ``SAGE_PERSIST_SR_MISSING=1``. Unlocks post-hoc F2-class diagnosis
+#    (per docs/benchmarks/2026-04-23-emission-format-smoke/
+#    2026-04-23-f2-sr-missing-diagnosis.md) without re-run.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_sr_missing_sidecar_written_when_env_on(monkeypatch, tmp_path):
+    """With ``SAGE_PERSIST_SR_MISSING=1`` and an SR response whose blocks
+    don't match anything in the repo, the sidecar at
+    ``<out_dir>/sr_missing/<instance_id>.json`` must be written with
+    the documented schema."""
+    import json
+
+    monkeypatch.setenv("SAGE_EMISSION_FORMAT", "search-replace")
+    monkeypatch.setenv("SAGE_PERSIST_SR_MISSING", "1")
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    # The file on disk does NOT contain the SEARCH text the model emits,
+    # so _blocks_to_unified_diff marks match_kind=missing.
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def actual_function():\n    return 42\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "Here is the fix for the hallucinated function:\n"
+        "\n"
+        "## File: pkg/mod.py\n"
+        "<<<<<<< SEARCH\n"
+        "def fabricated_function():\n"
+        "    return 99\n"
+        "=======\n"
+        "def fabricated_function():\n"
+        "    return 100\n"
+        ">>>>>>> REPLACE\n"
+    )
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1, out_dir=out_dir)
+    assert preds[0]["_extraction_method"] == "search-replace-missing"
+
+    sidecar = out_dir / "sr_missing" / "demo__repo-1.json"
+    assert sidecar.exists(), "sidecar file must exist when env var is 1"
+    data = json.loads(sidecar.read_text(encoding="utf-8"))
+    assert data["instance_id"] == "demo__repo-1"
+    assert data["extraction_method"] == "search-replace-missing"
+    assert data["raw_response"] == canned
+    assert isinstance(data["raw_blocks"], list) and len(data["raw_blocks"]) == 1
+    assert data["raw_blocks"][0]["file"] == "pkg/mod.py"
+    assert "fabricated_function" in data["raw_blocks"][0]["search"]
+    assert "fabricated_function" in data["raw_blocks"][0]["replace"]
+    assert isinstance(data["normalised_blocks"], list) and len(data["normalised_blocks"]) == 1
+    assert data["normalised_blocks"][0]["file"] == "pkg/mod.py"
+    assert isinstance(data["per_block_match"], list)
+    # _blocks_to_unified_diff returns per_block entries, wire-through.
+    assert data["per_block_match"][0]["file"] == "pkg/mod.py"
+    assert data["per_block_match"][0]["match_kind"] == "missing"
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_sr_missing_sidecar_not_written_when_env_off(monkeypatch, tmp_path):
+    """Without the env var, zero I/O — no sidecar dir, no sidecar file,
+    regardless of an SR-missing outcome."""
+    monkeypatch.setenv("SAGE_EMISSION_FORMAT", "search-replace")
+    monkeypatch.delenv("SAGE_PERSIST_SR_MISSING", raising=False)
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def actual_function():\n    return 42\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "## File: pkg/mod.py\n"
+        "<<<<<<< SEARCH\n"
+        "def fabricated_function():\n"
+        "    return 99\n"
+        "=======\n"
+        "def fabricated_function():\n"
+        "    return 100\n"
+        ">>>>>>> REPLACE\n"
+    )
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1, out_dir=out_dir)
+    assert preds[0]["_extraction_method"] == "search-replace-missing"
+
+    # Directory and file must both be absent — no stray mkdir either.
+    assert not (out_dir / "sr_missing").exists()
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_sr_missing_sidecar_truncates_large_raw_response(
+    monkeypatch, tmp_path
+):
+    """A raw_response exceeding 32 KiB must be truncated in the sidecar
+    such that both SR markers remain visible. Construction below places
+    SEARCH near the start and REPLACE near the end, with a large block
+    of filler prose in the middle, so a naive head-only or tail-only
+    truncator would drop one of the two markers. Marker-aware truncation
+    keeps both."""
+    import json
+
+    monkeypatch.setenv("SAGE_EMISSION_FORMAT", "search-replace")
+    monkeypatch.setenv("SAGE_PERSIST_SR_MISSING", "1")
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def actual_function():\n    return 42\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    # A 50 KiB response. SEARCH/REPLACE are intentionally wedged so the
+    # natural-SR-block ordering holds, with a giant bloat section in the
+    # middle. 50 KiB > 32 KiB cap, so the sidecar MUST truncate.
+    sr_block = (
+        "## File: pkg/mod.py\n"
+        "<<<<<<< SEARCH\n"
+        "def fabricated_function():\n"
+        "    return 99\n"
+        "=======\n"
+        "def fabricated_function():\n"
+        "    return 100\n"
+        ">>>>>>> REPLACE\n"
+    )
+    # Wrap the whole block in 25 KiB of prose on each side so the markers
+    # land neither in the strict head window nor the strict tail window.
+    # Prose lines end in "\n" so the line-oriented SR extractor sees the
+    # ``## File:`` header at the start of its own line.
+    head_prose = "Reasoning step reasoning step reasoning step.\n" * 700  # ~32 KiB
+    tail_prose = "Further reflection further reflection further.\n" * 700  # ~33 KiB
+    canned = head_prose + sr_block + tail_prose
+    assert len(canned.encode("utf-8")) > 32 * 1024, "fixture must exceed cap"
+
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1, out_dir=out_dir)
+    assert preds[0]["_extraction_method"] == "search-replace-missing"
+
+    sidecar = out_dir / "sr_missing" / "demo__repo-1.json"
+    data = json.loads(sidecar.read_text(encoding="utf-8"))
+    raw = data["raw_response"]
+    assert len(raw.encode("utf-8")) <= 32 * 1024, (
+        "raw_response must be truncated to <= 32 KiB (UTF-8 bytes)"
+    )
+    assert "<<<<<<< SEARCH" in raw, (
+        "marker-aware truncation must preserve SEARCH marker"
+    )
+    assert ">>>>>>> REPLACE" in raw, (
+        "marker-aware truncation must preserve REPLACE marker"
+    )

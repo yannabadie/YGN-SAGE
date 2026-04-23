@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import platform
+import re
 import sys
 import time
 import types
@@ -312,6 +313,33 @@ _SR_FUZZY_THRESHOLD = 0.95
 _EMISSION_FORMAT_ENV = "SAGE_EMISSION_FORMAT"
 _VALID_EMISSION_FORMATS = frozenset({"unified", "search-replace"})
 
+# ---------------------------------------------------------------------------
+# SR-missing diagnostic sidecar env gate.
+#
+# When set strictly to "1" AND an instance's ``_extraction_method`` lands
+# on ``"search-replace-missing"``, ``generate_patches`` writes a sidecar
+# file to ``<out_dir>/sr_missing/<instance_id>.json`` with the raw LLM
+# response, the parsed SR blocks (raw + normalised), and the per-block
+# match attempts returned by ``_blocks_to_unified_diff``. Motivated by
+# the 2026-04-23 emission-format smoke's F2 diagnosis note — post-hoc
+# root-cause analysis of SR-missing cases was blocked because neither
+# ``predictions.jsonl`` nor ``meta.json`` persisted the raw response.
+#
+# Default OFF: zero I/O for production runs unless explicitly opted in.
+# ---------------------------------------------------------------------------
+_PERSIST_SR_MISSING_ENV = "SAGE_PERSIST_SR_MISSING"
+
+# Raw response cap — the model can go long on stalled-synthesizer paths.
+# 32 KiB bounds per-instance disk usage while leaving room for typical
+# LLM outputs. Truncation is marker-aware (see _truncate_raw_response).
+_SR_MISSING_RAW_CAP_BYTES = 32 * 1024
+
+# Filename sanitisation allow-list. Instance IDs from SWE-bench match
+# ``[A-Za-z0-9._-]+`` in practice (e.g. ``astropy__astropy-7746``), but
+# we run the replacement unconditionally as a defence against upstream
+# dataset drift / path-traversal injection.
+_SR_MISSING_FILENAME_SAFE = re.compile(r"[^A-Za-z0-9._-]")
+
 
 def _get_emission_format() -> str:
     """Read ``SAGE_EMISSION_FORMAT``. Returns ``"unified"`` (default) or
@@ -331,6 +359,169 @@ def _get_emission_format() -> str:
         sorted(_VALID_EMISSION_FORMATS),
     )
     return "unified"
+
+def _truncate_raw_response(raw: str, cap_bytes: int) -> tuple[str, bool]:
+    """Truncate ``raw`` to at most ``cap_bytes`` UTF-8 bytes, preserving
+    both SR markers when present.
+
+    Returns ``(out, truncated)``. If the encoded size is already within
+    the cap, returns ``(raw, False)`` unchanged.
+
+    Strategy when truncating:
+
+    - **Marker-present path** (the F2-diagnosis case): emit one
+      contiguous slice centred between the ``<<<<<<< SEARCH`` and
+      ``>>>>>>> REPLACE`` markers. Both markers stay visible as long as
+      the SR block itself fits inside ``cap_bytes``; the "…[truncated
+      N bytes …]…" marker-suffixes tell the reader what was dropped.
+      Motivated by an earlier head+tail split that shaved the SEARCH
+      marker off the head once the head had to shrink past
+      ``search_idx`` to honour the cap.
+    - **Marker-absent path** (defensive fallback): emit head-then-tail
+      halves with a mid-truncation separator. The sidecar writer's
+      contract is documented for SR-missing cases that carry both
+      markers by construction, but this branch avoids crashing on
+      malformed fixtures.
+    """
+    enc = raw.encode("utf-8")
+    if len(enc) <= cap_bytes:
+        return raw, False
+
+    search_idx = raw.find(_SR_SEARCH_MARKER)
+    replace_idx = raw.find(_SR_REPLACE_MARKER)
+
+    # Separator bytes subtracted from the slice budget. We emit at most
+    # one prefix + one suffix, ~40 bytes each; 128 total is a safe cap.
+    _SEP_OVERHEAD = 128
+    body_budget = max(cap_bytes - _SEP_OVERHEAD, 512)
+
+    if search_idx >= 0 and replace_idx > search_idx:
+        # Centre the slice on the midpoint between the two markers. If
+        # the slice hits an edge (slice_start == 0 or slice_end == len),
+        # grow the other side to fill the budget.
+        mid = (search_idx + replace_idx) // 2
+        half = body_budget // 2
+        slice_start = max(0, mid - half)
+        slice_end = min(len(raw), mid + half)
+        if slice_end - slice_start < body_budget:
+            if slice_start == 0:
+                slice_end = min(len(raw), body_budget)
+            elif slice_end == len(raw):
+                slice_start = max(0, len(raw) - body_budget)
+
+        body = raw[slice_start:slice_end]
+        prefix = ""
+        suffix = ""
+        if slice_start > 0:
+            dropped_before = len(raw[:slice_start].encode("utf-8"))
+            prefix = f"...[truncated {dropped_before} bytes before]...\n"
+        if slice_end < len(raw):
+            dropped_after = len(raw[slice_end:].encode("utf-8"))
+            suffix = f"\n...[truncated {dropped_after} bytes after]..."
+        out = prefix + body + suffix
+    else:
+        # Fallback: head-then-tail split. No markers to anchor on.
+        half = body_budget // 2
+        head = raw[:half]
+        tail = raw[-half:] if half > 0 else ""
+        dropped = len(enc) - (len(head.encode("utf-8")) + len(tail.encode("utf-8")))
+        separator = f"\n...[truncated {max(0, dropped)} bytes]...\n"
+        out = head + separator + tail
+
+    # Defence in depth: if multi-byte characters push us over the cap,
+    # shave from the outer edges (shrink prose, keep centre intact).
+    while len(out.encode("utf-8")) > cap_bytes and len(out) > 2:
+        out = out[1:-1]
+
+    return out, True
+
+
+def _blocks_to_sidecar_dicts(
+    blocks: list[tuple[str, str, str]],
+) -> list[dict[str, str]]:
+    """Turn the extractor's ``(file, search, replace)`` tuples into
+    JSON-friendly dicts for the sidecar payload. Kept separate from
+    the extractor so its test contract stays byte-stable."""
+    return [{"file": p, "search": s, "replace": r} for p, s, r in blocks]
+
+
+def _write_sr_missing_sidecar(
+    out_dir: Path | None,
+    instance_id: str,
+    raw_response: str,
+    raw_blocks: list[tuple[str, str, str]],
+    normalised_blocks: list[tuple[str, str, str]],
+    per_block_match: list[dict[str, str]],
+) -> None:
+    """Persist an SR-missing diagnostic sidecar under ``out_dir/sr_missing/``.
+
+    Returns silently (with a debug log) when the env var is unset, when
+    ``out_dir`` is ``None``, or on any write error. The bench must never
+    fail on sidecar IO — instrumentation is strictly diagnostic.
+
+    Schema::
+
+        {
+          "instance_id": "...",
+          "extraction_method": "search-replace-missing",
+          "raw_response": "<up to 32 KiB, marker-aware truncation>",
+          "raw_blocks": [{"file": p, "search": s, "replace": r}, ...],
+          "normalised_blocks": [... same shape ...],
+          "per_block_match": [{"file": p, "match_kind": "exact|fuzzy|missing"}, ...]
+        }
+
+    ``per_block_match`` is a direct pass-through of the ``per_block``
+    list returned by ``_blocks_to_unified_diff``. That function does NOT
+    currently record ``matched_path`` / ``attempted_paths`` — the task
+    spec tolerates this ("If not, leave the list empty and note it in a
+    doc comment"); the pass-through shape is deliberately minimal to
+    avoid coupling the sidecar schema to extractor internals.
+    """
+    if os.environ.get(_PERSIST_SR_MISSING_ENV) != "1":
+        return
+    if out_dir is None:
+        log.debug(
+            "[%s] SR-missing sidecar skipped: out_dir is None",
+            instance_id,
+        )
+        return
+
+    truncated_raw, was_truncated = _truncate_raw_response(
+        raw_response, _SR_MISSING_RAW_CAP_BYTES,
+    )
+    if was_truncated:
+        log.info(
+            "[%s] SR-missing sidecar: truncated raw_response %d -> %d bytes",
+            instance_id,
+            len(raw_response.encode("utf-8")),
+            len(truncated_raw.encode("utf-8")),
+        )
+
+    safe_name = _SR_MISSING_FILENAME_SAFE.sub("_", instance_id)
+    payload = {
+        "instance_id": instance_id,
+        "extraction_method": "search-replace-missing",
+        "raw_response": truncated_raw,
+        "raw_blocks": _blocks_to_sidecar_dicts(raw_blocks),
+        "normalised_blocks": _blocks_to_sidecar_dicts(normalised_blocks),
+        "per_block_match": per_block_match,
+    }
+
+    try:
+        sidecar_dir = Path(out_dir) / "sr_missing"
+        sidecar_dir.mkdir(parents=True, exist_ok=True)
+        sidecar_path = sidecar_dir / f"{safe_name}.json"
+        with open(sidecar_path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+        log.info(
+            "[%s] SR-missing sidecar written to %s", instance_id, sidecar_path,
+        )
+    except OSError as exc:
+        log.warning(
+            "[%s] SR-missing sidecar write failed: %s (bench continues)",
+            instance_id, exc,
+        )
+
 
 # Defensive caps for the ``## File:``-less content-scan fallback. SWE-bench
 # repos (django, sympy, matplotlib, ...) ship multi-MB binary blobs, cached
@@ -838,6 +1029,7 @@ class SWEBenchBench:
         self,
         limit: int | None = None,
         offset: int = 0,
+        out_dir: Path | None = None,
     ) -> list[dict[str, Any]]:
         """Generate patches for SWE-Bench instances via AgentSystem.
 
@@ -845,6 +1037,14 @@ class SWEBenchBench:
         model has memorized (well-known SWE-bench Lite first few are
         astropy/scikit-learn classics that show up in training data). If
         offset >= len(instances), returns an empty list.
+
+        ``out_dir`` is the directory where ``write_predictions`` will later
+        write ``predictions.jsonl``. It is forwarded here (before the
+        JSONL is written) so the SR-missing diagnostic sidecar — gated
+        by ``SAGE_PERSIST_SR_MISSING=1`` — can be dropped next to the
+        predictions file in ``<out_dir>/sr_missing/<instance_id>.json``.
+        When ``None`` (the default, e.g. unit-test callers that never
+        serialise predictions), no sidecar is written.
 
         Returns list of prediction dicts in swebench format:
         {instance_id, model_name_or_path, model_patch, ...metadata}
@@ -974,6 +1174,11 @@ class SWEBenchBench:
                         "[%s] SR fallback: %d raw blocks, %d after normalisation",
                         instance_id, len(raw_blocks), len(normalised_blocks),
                     )
+                    # Preserve sr_meta across the branches below so the
+                    # SR-missing diagnostic sidecar (below) can wire the
+                    # per_block list through. Default to an empty per_block
+                    # when _blocks_to_unified_diff never ran (zero blocks).
+                    sr_meta: dict = {"per_block": []}
                     if normalised_blocks:
                         sr_diff, sr_meta = _blocks_to_unified_diff(
                             normalised_blocks, repo_dir,
@@ -1006,6 +1211,21 @@ class SWEBenchBench:
                             # Blocks parsed but none matched — mark missing
                             # so the decision-gate histogram surfaces it.
                             extraction_method = "search-replace-missing"
+
+                    # SR-missing diagnostic sidecar (F2 instrumentation).
+                    # Writes only when SAGE_PERSIST_SR_MISSING=1 AND the
+                    # outcome landed on search-replace-missing. Helper
+                    # is internally env-gated so zero I/O happens on
+                    # production runs that don't set the flag.
+                    if extraction_method == "search-replace-missing":
+                        _write_sr_missing_sidecar(
+                            out_dir=out_dir,
+                            instance_id=instance_id,
+                            raw_response=response,
+                            raw_blocks=raw_blocks,
+                            normalised_blocks=normalised_blocks,
+                            per_block_match=list(sr_meta.get("per_block", [])),
+                        )
 
                 # v16 fix (2026-04-21): validate + repair malformed patches
                 # before emission. Addresses the astropy-7746 / django-10914
@@ -1313,8 +1533,15 @@ class SWEBenchBench:
 
         Returns a BenchReport compatible with the existing benchmark framework.
         """
-        # Phase 1: Generate patches
-        predictions = await self.generate_patches(limit=limit, offset=offset)
+        # Phase 1: Generate patches. Create the output directory up-front so
+        # SR-missing diagnostic sidecars (SAGE_PERSIST_SR_MISSING=1) land
+        # next to the predictions.jsonl that write_predictions emits below.
+        import tempfile
+        out_dir = Path(tempfile.mkdtemp(prefix="sage_swebench_"))
+
+        predictions = await self.generate_patches(
+            limit=limit, offset=offset, out_dir=out_dir,
+        )
         if not predictions:
             return BenchReport.from_results(
                 f"swebench_{self.dataset}", [],
@@ -1322,8 +1549,6 @@ class SWEBenchBench:
             )
 
         # Phase 2: Write predictions
-        import tempfile
-        out_dir = Path(tempfile.mkdtemp(prefix="sage_swebench_"))
         preds_path = self.write_predictions(predictions, out_dir / "predictions.jsonl")
 
         # Phase 3: Evaluate
@@ -1375,12 +1600,18 @@ class SWEBenchBench:
         Useful when Docker is not available or for deferred evaluation on Linux.
         Returns path to the predictions JSONL file.
         """
-        predictions = await self.generate_patches(limit=limit, offset=offset)
+        # Allocate the output directory before generation so SR-missing
+        # diagnostic sidecars (SAGE_PERSIST_SR_MISSING=1) can be dropped
+        # next to the predictions.jsonl written below.
+        import tempfile
+        out_dir = Path(tempfile.mkdtemp(prefix="sage_swebench_"))
+
+        predictions = await self.generate_patches(
+            limit=limit, offset=offset, out_dir=out_dir,
+        )
         if not predictions:
             raise RuntimeError("No predictions generated")
 
-        import tempfile
-        out_dir = Path(tempfile.mkdtemp(prefix="sage_swebench_"))
         preds_path = self.write_predictions(predictions, out_dir / "predictions.jsonl")
 
         # Also save the full predictions with metadata
