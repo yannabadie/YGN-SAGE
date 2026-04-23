@@ -43,15 +43,15 @@ format-specific.
   from jsonl directly.
 - **Prompt hygiene** — `search_exocortex` bullet reframed in both SWE-
   bench templates; SR template opening line + step 7 de-contradicted
-  (commit `<TBD>`). Hygiene only, no expected lift.
+  (commit `29987bc`). Hygiene only, no expected lift.
 - **F2 instrumentation** — `SAGE_PERSIST_SR_MISSING=1` env flag writes
   raw response + parsed blocks + per-block match attempts to
   `<out_dir>/sr_missing/<instance_id>.json` when extraction is
-  `search-replace-missing`. Default OFF.
+  `search-replace-missing`. Default OFF (commit `2793a74`).
 - **Gen-log-by-default for `--type swebench`** — the parity-smoke
   gen-phase log was not captured to disk (only the Docker-eval stdout).
   Fixed so the 14182-class post-hoc investigations are log-derivable
-  (commit `<TBD>`).
+  (commit `9ec3dfd`). Opt-out via `SAGE_BENCH_LOG_FILE=0`.
 
 ## Breadcrumbs for the next Track 3 cycle
 
