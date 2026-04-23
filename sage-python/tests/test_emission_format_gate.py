@@ -141,6 +141,12 @@ def test_prefix_before_patch_format_is_byte_identical():
     )
 
     seam = "## Patch Format"
+    assert SWEBENCH_SYSTEM_TEMPLATE.count(seam) == 1, (
+        "seam must appear exactly once in unified template"
+    )
+    assert SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE.count(seam) == 1, (
+        "seam must appear exactly once in search-replace template"
+    )
     pre_unified = SWEBENCH_SYSTEM_TEMPLATE[: SWEBENCH_SYSTEM_TEMPLATE.index(seam)]
     pre_search_replace = SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE[
         : SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE.index(seam)
