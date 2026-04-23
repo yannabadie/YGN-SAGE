@@ -12,6 +12,33 @@ Sandboxed code execution and security validation for YGN-SAGE agents. Since ADR-
 
 Since ADR-013 §5 (2026-04-22), `sandbox`, `cranelift`, `tool-executor`, and `cognitive` are **Cargo default features**. A default `cargo build` ships a safe-by-default binary. Use `--no-default-features` for leaner builds.
 
+### Build-time sandbox artifact gate
+
+`sage-core/build.rs` looks for a pre-compiled `rustpython.wasm` at
+`external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm`
+and embeds it into the library via `include_bytes!`. If it's missing
+the default behaviour is to emit an empty placeholder + a cargo warning
+so fresh clones still compile — the runtime short-circuits with
+`WasmPythonInitError::BytesMissing` on first call.
+
+Release and CI builds that need the sandbox to be present should set
+`SAGE_REQUIRE_WASM=1` in the build environment. With that flag set, a
+missing `rustpython.wasm` becomes a compile-time `panic!` so the build
+fails loudly before producing a placeholder-backed binary. This is the
+minimum-invasive realisation of the ALIRE audit's "assert non-empty
+sandbox artifact" recommendation — it doesn't break fresh-clone
+developer workflows, but it gives CI / release pipelines an explicit
+gate.
+
+### Wasm-python JIT cache
+
+`WasmPythonExecutor::new()` caches the compiled `Module` under
+`$SAGE_WASM_CACHE_DIR` (or `$HOME/.sage/wasm_python_cache/` by default)
+to avoid re-JITing the 37 MB wasm on every fresh process. Cache key
+binds `Engine::precompile_compatibility_hash` + a SHA-256 of the
+embedded wasm; stale / corrupt cache files self-heal on deserialize
+failure. Opt-out with `SAGE_WASM_CACHE_DISABLE=1`.
+
 ## Module Layout
 
 ### `mod.rs` -- Module Root
