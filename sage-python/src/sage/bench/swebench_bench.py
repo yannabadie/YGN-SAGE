@@ -76,6 +76,12 @@ _KEY_PREDICTION = "model_patch"
 # logs (2026-04-23 emission-format smoke finding #4). The harness tolerates
 # extra fields — it reads predictions.jsonl by key, not by schema.
 _KEY_EXTRACTION_METHOD = "_extraction_method"
+# Pre-emission diff-context verifier output (spec
+# docs/superpowers/specs/2026-04-23-diff-context-verifier-design.md).
+# Present only under SAGE_DIFF_VERIFIER_MODE in {observe, repair}. Under
+# ``off`` (the default) the key is absent so predictions.jsonl is
+# byte-identical to today's behaviour.
+_KEY_DIFF_VERIFIER_MISMATCHES = "_diff_verifier_mismatches"
 
 # Sentinel string returned by agent_loop when the LLM produces no content for
 # N consecutive steps. MUST stay in sync with phases/learn.py. We classify
@@ -359,6 +365,57 @@ def _get_emission_format() -> str:
         sorted(_VALID_EMISSION_FORMATS),
     )
     return "unified"
+
+
+# ---------------------------------------------------------------------------
+# Pre-emission diff-context verifier env gate.
+#
+# SAGE_DIFF_VERIFIER_MODE:
+#   ``off``     — default, verifier does not run, prediction dict
+#                 byte-identical to pre-verifier output.
+#   ``observe`` — verifier runs, populates _diff_verifier_mismatches
+#                 on every prediction (empty list on clean). No
+#                 behavioural change to the emitted patch.
+#   ``repair``  — NOT YET IMPLEMENTED (ships after observability pass
+#                 validates the mismatch bucket — see spec "Mismatch
+#                 handling"). Logs a WARNING and downgrades to observe.
+#
+# Unknown values also downgrade (to ``off``) with a WARN, consistent
+# with the ``_get_emission_format`` precedent in the same file.
+# ---------------------------------------------------------------------------
+_DIFF_VERIFIER_MODE_ENV = "SAGE_DIFF_VERIFIER_MODE"
+_VALID_DIFF_VERIFIER_MODES = frozenset({"off", "observe", "repair"})
+
+
+def _get_diff_verifier_mode() -> str:
+    """Return ``"off"`` (default) or ``"observe"``. ``"repair"`` in env
+    is downgraded to ``"observe"`` with a WARN (repair is NOT YET
+    IMPLEMENTED per the spec's "Mismatch handling" section — ship
+    observability first, flip after the bucket is validated).
+    Unknown values downgrade to ``"off"`` with a WARN."""
+    raw = os.environ.get(_DIFF_VERIFIER_MODE_ENV)
+    if raw is None:
+        return "off"
+    v = raw.strip().lower()
+    if v == "off" or v == "observe":
+        return v
+    if v == "repair":
+        log.warning(
+            "%s=%r: repair mode is NOT YET IMPLEMENTED; downgrading to "
+            "'observe' (annotate predictions only, no emission change). "
+            "See docs/superpowers/specs/2026-04-23-diff-context-verifier"
+            "-design.md section 'Mismatch handling'.",
+            _DIFF_VERIFIER_MODE_ENV,
+            raw,
+        )
+        return "observe"
+    log.warning(
+        "%s=%r is not a valid mode (allowed: %s); falling back to 'off'",
+        _DIFF_VERIFIER_MODE_ENV,
+        raw,
+        sorted(_VALID_DIFF_VERIFIER_MODES),
+    )
+    return "off"
 
 def _truncate_raw_response(raw: str, cap_bytes: int) -> tuple[str, bool]:
     """Truncate ``raw`` to at most ``cap_bytes`` UTF-8 bytes, preserving
@@ -1118,6 +1175,13 @@ class SWEBenchBench:
             # right bucket.
             extraction_method = "empty"
             repair_stage = ""
+            # Pre-emission diff-context verifier output. ``None`` when
+            # the verifier is ``off`` (the default) so the prediction
+            # dict stays byte-identical to today's output. A list (empty
+            # or not) under observe/repair modes. See the
+            # ``_get_diff_verifier_mode`` helper and the
+            # 2026-04-23-diff-context-verifier spec.
+            diff_verifier_mismatches: list[dict] | None = None
 
             # Clone repo at base_commit so agent tools (execute_bash) can read code
             repo_dir = None
@@ -1236,6 +1300,51 @@ class SWEBenchBench:
                 # See docs/benchmarks/2026-04-21-swebench-v15-eval-results.md
                 # and sage.bench.swebench_patch_repair.
                 if patch and repo_dir:
+                    # Pre-emission diff-context verifier (spec
+                    # docs/superpowers/specs/2026-04-23-diff-context-
+                    # verifier-design.md). Runs BEFORE try_repair_patch
+                    # so the repair LLM can see real-content mismatches
+                    # instead of the prefix-match noise ``git apply``
+                    # emits. Observe mode annotates predictions; off
+                    # mode is byte-identical to today.
+                    verifier_mode = _get_diff_verifier_mode()
+                    if verifier_mode == "observe":
+                        from sage.bench.swebench_diff_verifier import (
+                            verify_diff_context,
+                        )
+                        try:
+                            mismatches = verify_diff_context(
+                                patch, Path(repo_dir),
+                            )
+                        except Exception as verifier_exc:  # noqa: BLE001
+                            log.warning(
+                                "[%s] diff verifier crashed: %s",
+                                instance_id, verifier_exc,
+                            )
+                            mismatches = []
+                        if mismatches:
+                            log.info(
+                                "[%s] diff verifier: %d hunk mismatch(es) "
+                                "[kinds=%s]",
+                                instance_id, len(mismatches),
+                                sorted({m.kind for m in mismatches}),
+                            )
+                        # Deliberately NOT serialising expected/actual
+                        # arrays — they can be multi-KB per hunk and
+                        # bloat meta.json. Operators who want them can
+                        # re-run with a code change.
+                        diff_verifier_mismatches = [
+                            {
+                                "file": m.file,
+                                "hunk_index": m.hunk_index,
+                                "old_start": m.old_start,
+                                "old_count": m.old_count,
+                                "kind": m.kind,
+                                "match_ratio": m.match_ratio,
+                            }
+                            for m in mismatches
+                        ]
+
                     from sage.bench.swebench_patch_repair import try_repair_patch
                     llm_handle = getattr(
                         getattr(self.system, "agent_loop", None), "_llm", None,
@@ -1286,7 +1395,7 @@ class SWEBenchBench:
                 getattr(self.system, "agent_loop", None), "total_cost_usd", 0.0
             )
 
-            predictions.append({
+            prediction_entry: dict[str, Any] = {
                 _KEY_INSTANCE_ID: instance_id,
                 _KEY_MODEL: f"sage/{model_id}",
                 _KEY_PREDICTION: patch,
@@ -1303,7 +1412,13 @@ class SWEBenchBench:
                 "_repo": instance["repo"],
                 "_repair_stage": repair_stage,  # v16: "", unchanged, programmatic_counts, llm_repair, failed
                 "_extraction_method": extraction_method,  # T2.4: unified | search-replace-{exact,fuzzy,missing} | empty
-            })
+            }
+            # Pre-emission diff-context verifier (spec 2026-04-23). Only
+            # present when mode is observe/repair; absent in off mode so
+            # the JSONL stays byte-identical to pre-verifier output.
+            if diff_verifier_mismatches is not None:
+                prediction_entry[_KEY_DIFF_VERIFIER_MISMATCHES] = diff_verifier_mismatches
+            predictions.append(prediction_entry)
 
             self.manifest.add(TaskTrace(
                 task_id=instance_id,
@@ -1379,6 +1494,11 @@ class SWEBenchBench:
                 # record — absence stays absence.
                 if _KEY_EXTRACTION_METHOD in pred:
                     entry[_KEY_EXTRACTION_METHOD] = pred[_KEY_EXTRACTION_METHOD]
+                # Pre-emission diff-context verifier output. Present only
+                # under observe/repair modes (off produces no key). Same
+                # ``in``-guarded passthrough pattern as F3.
+                if _KEY_DIFF_VERIFIER_MISMATCHES in pred:
+                    entry[_KEY_DIFF_VERIFIER_MISMATCHES] = pred[_KEY_DIFF_VERIFIER_MISMATCHES]
                 f.write(json.dumps(entry) + "\n")
 
         log.info("Wrote %d predictions to %s", len(predictions), path)

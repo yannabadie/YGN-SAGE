@@ -645,3 +645,219 @@ async def test_sr_missing_sidecar_truncates_large_raw_response(
     assert ">>>>>>> REPLACE" in raw, (
         "marker-aware truncation must preserve REPLACE marker"
     )
+
+
+# ---------------------------------------------------------------------------
+# 9. Pre-emission diff-context verifier (spec
+#    docs/superpowers/specs/2026-04-23-diff-context-verifier-design.md).
+#    Observe mode annotates predictions; off mode is byte-identical to
+#    today's output; repair mode is NOT YET IMPLEMENTED — downgrades to
+#    observe with a warning.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_diff_verifier_off_produces_no_metadata_field(monkeypatch, tmp_path):
+    """``SAGE_DIFF_VERIFIER_MODE`` unset (or ``off``) → no
+    ``_diff_verifier_mismatches`` key on the prediction dict AND no
+    ``_diff_verifier_mismatches`` key in the written JSONL record.
+    Off mode is byte-identical to today's behaviour."""
+    import json
+
+    monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
+    monkeypatch.delenv("SAGE_DIFF_VERIFIER_MODE", raising=False)
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def foo():\n    return 1\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "```diff\n"
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def foo():\n"
+        "-    return 1\n"
+        "+    return 2\n"
+        "```\n"
+    )
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1)
+    assert "_diff_verifier_mismatches" not in preds[0], (
+        "off mode must NOT annotate the prediction dict"
+    )
+
+    out_path = tmp_path / "p.jsonl"
+    bench.write_predictions(preds, out_path)
+    entry = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
+    assert "_diff_verifier_mismatches" not in entry, (
+        "off mode must NOT persist the key into JSONL"
+    )
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_diff_verifier_observe_populates_field_when_present(
+    monkeypatch, tmp_path,
+):
+    """mode=observe + a patch whose context lines do not match file bytes
+    populates ``_diff_verifier_mismatches`` with a non-empty list."""
+    import json
+
+    monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
+    monkeypatch.setenv("SAGE_DIFF_VERIFIER_MODE", "observe")
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    # File contents disagree with what the diff's body claims.
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def foo():\n    return 99\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "```diff\n"
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def foo():\n"
+        "-    return 1\n"
+        "+    return 2\n"
+        "```\n"
+    )
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1)
+    assert "_diff_verifier_mismatches" in preds[0]
+    mismatches = preds[0]["_diff_verifier_mismatches"]
+    assert isinstance(mismatches, list)
+    assert len(mismatches) == 1, mismatches
+    m = mismatches[0]
+    assert m["file"] == "pkg/mod.py"
+    assert m["kind"] == "content_mismatch"
+    assert m["hunk_index"] == 0
+    assert m["old_start"] == 1
+    assert m["old_count"] == 2
+    # Deliberately NOT serialising expected/actual arrays — per spec,
+    # they can be multi-KB and bloat meta.json.
+    assert "expected" not in m
+    assert "actual" not in m
+    # match_ratio is serialised.
+    assert "match_ratio" in m
+
+    # And the JSONL round-trip preserves the list.
+    out_path = tmp_path / "p.jsonl"
+    bench.write_predictions(preds, out_path)
+    entry = json.loads(out_path.read_text(encoding="utf-8").splitlines()[0])
+    assert entry["_diff_verifier_mismatches"] == mismatches
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_diff_verifier_observe_empty_list_on_clean(monkeypatch, tmp_path):
+    """mode=observe + a patch whose hunks all match file bytes populates
+    ``_diff_verifier_mismatches`` with an empty list (key PRESENT,
+    value ``[]``). Distinguishing clean-observed from off by presence."""
+    monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
+    monkeypatch.setenv("SAGE_DIFF_VERIFIER_MODE", "observe")
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def foo():\n    return 1\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "```diff\n"
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def foo():\n"
+        "-    return 1\n"
+        "+    return 2\n"
+        "```\n"
+    )
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    preds = await bench.generate_patches(limit=1)
+    assert preds[0]["_diff_verifier_mismatches"] == []
+
+
+@pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
+@pytest.mark.asyncio
+async def test_diff_verifier_repair_warns_and_downgrades_to_observe(
+    monkeypatch, tmp_path, caplog,
+):
+    """mode=repair — repair is NOT YET IMPLEMENTED per the spec (ships
+    after observability validates the mismatch bucket). The wiring must
+    (a) record a WARNING via the logger, (b) behave like observe mode:
+    annotate the prediction dict with the mismatch list."""
+    import logging
+
+    monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
+    monkeypatch.setenv("SAGE_DIFF_VERIFIER_MODE", "repair")
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    (repo_dir / "pkg").mkdir()
+    (repo_dir / "pkg" / "mod.py").write_text(
+        "def foo():\n    return 99\n", encoding="utf-8"
+    )
+    _init_git_repo(repo_dir)
+
+    canned = (
+        "```diff\n"
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def foo():\n"
+        "-    return 1\n"
+        "+    return 2\n"
+        "```\n"
+    )
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
+
+    with caplog.at_level(logging.WARNING, logger=swebench_mod.__name__):
+        preds = await bench.generate_patches(limit=1)
+
+    # Behaviour matches observe: field present, mismatches recorded.
+    assert preds[0]["_diff_verifier_mismatches"], (
+        "repair mode must still annotate like observe"
+    )
+    # And a WARNING landed telling the operator the mode is downgraded.
+    downgrade_records = [
+        r for r in caplog.records
+        if r.levelno == logging.WARNING
+        and "repair" in r.getMessage().lower()
+        and "observe" in r.getMessage().lower()
+    ]
+    assert downgrade_records, (
+        f"expected a downgrade WARNING mentioning both 'repair' and "
+        f"'observe'; got records: "
+        f"{[r.getMessage() for r in caplog.records]}"
+    )
