@@ -1,0 +1,1451 @@
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+kNN: loaded 60 exemplars from C:\Code\worktrees\search-replace-emission\sage-python\config\routing_exemplars.npz
+kNN: Rust acceleration active (60 exemplars)
+Embedder: using sentence-transformers backend
+Boot: kNN router loaded (60 exemplars, sentence_transformers)
+AdaptiveRouter: Python heuristic fallback
+Boot: Rust SystemRouter active (19 models from C:\Code\worktrees\search-replace-emission\sage-core\config\cards.toml)
+Boot: Bandit wired into SystemRouter for integrated routing
+Boot: Bandit warm-started with 19 models x 4 templates (76 arms)
+Boot: Phase 6 active -- TopologyEngine + ContextualBandit ready
+Boot: Restored persisted state -- 14 bandit arms, 14 archive cells from C:\Users\yann.abadie\.sage
+Boot: atexit handler registered for engine state persistence
+S-MMU bootstrapped with 3 template topologies (3 chunks)
+Embedder: using sentence-transformers backend
+Embedder: using sentence-transformers backend
+ToolExecutor (Rust): tree-sitter validator + subprocess executor
+Online evolution enabled (Rust TopologyEngine available)
+ToolForge wired (GapDetector + BuildLoop for autonomous tool creation)
+EvolutionMemory wired (CORAL persistent skills at C:\Users\yann.abadie\.sage\evolution_memory.db)
+Core tools: 6 typed repo tools registered (read_file, search_repo, list_files, run_tests, apply_patch, git_diff)
+Core tools: execute_bash NOT registered (AgentConfig.dangerous_tools=False; using typed repo tools only)
+Core tools: lookup_library_docs registered (Context7 library docs)
+Sandbox: tree-sitter + subprocess (no Wasm component loaded). Load a .wasm module via ToolExecutor.load_component() for full isolation.
+Loaded model profiles from C:\Code\worktrees\search-replace-emission\sage-python\config\model_profiles.toml (5 entries)
+HTTP Request: GET https://api.deepseek.com/v1/models "HTTP/1.1 200 OK"
+Discovered 2 models from deepseek
+Using cached google model list (1 models)
+Discovered 1 models from google
+Using cached openai model list (2 models)
+Discovered 2 models from openai
+HTTP Request: GET https://api.x.ai/v1/models "HTTP/1.1 200 OK"
+Discovered 11 models from xai
+HTTP Request: GET https://api.moonshot.ai/v1/models "HTTP/1.1 200 OK"
+Discovered 14 models from kimi
+Discovered 1 models from minimax
+Discovered 1 models from openrouter
+New model discovered: deepseek-reasoner (deepseek) -- no TOML profile, using defaults
+New model discovered: gpt-5-mini (openai) -- no TOML profile, using defaults
+New model discovered: grok-3 (xai) -- no TOML profile, using defaults
+New model discovered: grok-3-mini (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-0709 (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-1-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4-fast-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-non-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-0309-reasoning (xai) -- no TOML profile, using defaults
+New model discovered: grok-4.20-multi-agent-0309 (xai) -- no TOML profile, using defaults
+New model discovered: grok-code-fast-1 (xai) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-auto (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0905-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking-turbo (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2.6 (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-0711-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-32k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-turbo-preview (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2-thinking (kimi) -- no TOML profile, using defaults
+New model discovered: kimi-k2.5 (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-8k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: moonshot-v1-128k-vision-preview (kimi) -- no TOML profile, using defaults
+New model discovered: minimax-m2.7 (minimax) -- no TOML profile, using defaults
+New model discovered: qwen/qwen3.5-plus-02-15 (openrouter) -- no TOML profile, using defaults
+ModelRegistry: 34 total profiles, 32 available
+Boot: discovered 34 models (32 available) -- deepseek: 2, google: 1, kimi: 14, minimax: 1, openai: 2, openrouter: 1, xai: 11
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+ProviderPool: 7 live providers -- ['deepseek', 'google', 'openai', 'xai', 'kimi', 'minimax', 'openrouter']
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.419729 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Retrying request to /chat/completions in 0.838325 seconds
+HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 429 Too Many Requests"
+Circuit OPEN for provider_openai after 3 failures (last: status_code: 429, model_name: gpt-5.4, body: {'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, read the docs: https://platform.openai.com/docs/guides/error-codes/api-errors.', 'type': 'insufficient_quota', 'param': None, 'code': 'insufficient_quota'}). Will probe in 60s.
+Health check DEAD for openai (quota exhausted): ModelHTTPError — circuit opened
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1776941788.137197   39628 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941788.241308    5776 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941789.081474   38400 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941789.349304   29220 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Circuit OPEN for provider_xai after 3 failures (last: status_code: 503, model_name: grok-4-1-fast-reasoning, body: failed to connect to all addresses; last error: UNKNOWN: ipv4:104.18.19.80:443: Tls handshake failed (TSI_PROTOCOL_FAILURE): SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain). Will probe in 60s.
+Health check DEAD for xai (unreachable): ModelHTTPError — circuit opened
+I0000 00:00:1776941790.920522   38400 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941790.936153   39700 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776941793.937046   12792 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941793.960220    5776 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+Health check OK for openrouter (API error on probe, but reachable: ValueError)
+Provider health check: 5/7 alive {'deepseek': True, 'google': True, 'openai': False, 'xai': False, 'kimi': True, 'minimax': True, 'openrouter': True}
+Dead providers excluded: ['openai', 'xai']
+CompositeWriteGate: using Rust acceleration
+CognitiveOrchestrationPipeline initialized
+QualityEstimator: no backend available — will abstain
+TopologyController initialized (Phase C)
+ToolForge initialized (autonomous tool synthesis)
+Memory backend: rust_smmu
+Capabilities: pipeline=True, quality=True, bandit=True, engine=True
+Core tools: sage_recurse registered (max depth 3, budget-gated=True)
+Loading princeton-nlp/SWE-bench_Lite (split=test) from HuggingFace...
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/revision/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2 "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2?recursive=false&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+Loaded 300 instances from princeton-nlp/SWE-bench_Lite
+[generate_patches] provider exclusion refreshed: still dead=['openai', 'xai']
+I0000 00:00:1776941797.942686   12792 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941798.262982   37784 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941803.628863   37784 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Repo cloned: astropy/astropy @ d16bfe05 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_g7xshywv\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776941804.675343   29220 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=3 gamma=0.67)
+topology.edges nodes=5 template=robust id=01KPWZRC edges=[(0, 1), (0, 1), (1, 4), (0, 2), (0, 2), (2, 4), (0, 3), (0, 3), (3, 4)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=robust id=01KPWZRC
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Retrying request to /chat/completions in 0.432563 seconds
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=2205
+tool.call name=list_files args_keys=['pattern'] output_len=29
+I0000 00:00:1776941813.979212   39628 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941815.328540    7164 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=10195
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+tool.call name=read_file args_keys=['path'] output_len=4949
+I0000 00:00:1776941832.152927   39628 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941833.641429   38400 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 50 chars, tool_calls=8
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+Retrying request to /chat/completions in 0.461765 seconds
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=68
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=2205
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=1989
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=9
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+Stage 4 multi-agent execution failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 2', 'type': 'invalid_request_error'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=10195
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=10195
+tool.call name=read_file args_keys=['path'] output_len=4949
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback also failed: Stage 4 fallback returned empty content — treating as failure rather than emitting empty patch
+memory.smmu.tier_transition from=stm to=arrow events=4 task_id=0
+Embedder: using sentence-transformers backend
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: C:\Users\yann.abadie\.cache\huggingface\hub\models--Snowflake--snowflake-arctic-embed-m\snapshots\fc74610d18462d218e312aa986ec5c8a75a98152
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|##########| 197/197 [00:00<00:00, 22307.72it/s]
+1 prompt is loaded, with the key: query
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00,  6.12it/s]Batches: 100%|##########| 1/1 [00:00<00:00,  6.11it/s]
+evolution.should_evolve.decision decision=true cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=14 cells_after=14
+evolution.mutation.applied op=rewire_edge parent_cell=14 child_hash=29d67d36 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=525a70f9 tier=unknown
+evolution.mutation.applied op=rewire_edge parent_cell=14 child_hash=4144249a tier=unknown
+evolution.mutation.applied op=rewire_edge parent_cell=14 child_hash=9d15568d tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=d4337bbf tier=unknown
+evolution.mutation.applied op=mutate_prompt parent_cell=14 child_hash=19ea72e4 tier=unknown
+evolution.mutation.applied op=merge_nodes parent_cell=14 child_hash=53ee42a8 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=03fdeb2c tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=51193217 tier=unknown
+evolution.mutation.applied op=add_node parent_cell=14 child_hash=bf699bce tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=ad4c2777 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=5ce34c71 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=2aadb2ff tier=unknown
+evolution.mutation.applied op=add_node parent_cell=14 child_hash=724feb2a tier=unknown
+evolution.mutation.applied op=add_node parent_cell=14 child_hash=92197dae tier=unknown
+  [1/10] astropy__astropy-12907: EMPTY (56485ms, 0 chars)
+I0000 00:00:1776941855.392168   39756 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776941857.692082   39756 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+Repo cloned: astropy/astropy @ a5917978 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_om34zowz\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=396 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=50027
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.1977}
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=4 gamma=0.50)
+topology.edges nodes=5 template=robust id=01KPWZT5 edges=[(0, 1), (0, 1), (1, 4), (0, 2), (0, 2), (2, 4), (0, 3), (0, 3), (3, 4)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=robust id=01KPWZT5
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=68
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=49
+tool.call name=search_repo args_keys=['path', 'query'] output_len=3193
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=441
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=59
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=1715
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+memory.write_gate.skipped reason=content_too_short content_len=59 has_tool_calls=true tier=fast
+tool.call name=create_python_tool args_keys=['code', 'name'] output_len=60
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=57
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=70
+[node-2-worker_1] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 50 chars, tool_calls=9
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+memory.write_gate.skipped reason=content_too_short content_len=54 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+Drift detected: score=0.480 action=SWITCH_MODEL details={'latency': 0.5647, 'errors': 0.0, 'cost': 0.0964}
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+I0000 00:00:1776941893.728286   29220 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+memory.write_gate.skipped reason=content_too_short content_len=76 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 50 chars, tool_calls=8
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776941904.058357   33120 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=49
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=49
+tool.call name=search_repo args_keys=['path', 'query'] output_len=2453
+tool.call name=list_files args_keys=['path', 'pattern'] output_len=1151
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=49
+tool.call name=search_repo args_keys=['path', 'query'] output_len=2453
+tool.call name=list_files args_keys=['path'] output_len=4717
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+Stage 4 multi-agent execution failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 2', 'type': 'invalid_request_error'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback also failed: Stage 4 fallback returned empty content — treating as failure rather than emitting empty patch
+memory.smmu.tier_transition from=stm to=arrow events=8 task_id=1
+Embedder: using sentence-transformers backend
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: C:\Users\yann.abadie\.cache\huggingface\hub\models--Snowflake--snowflake-arctic-embed-m\snapshots\fc74610d18462d218e312aa986ec5c8a75a98152
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|##########| 197/197 [00:00<00:00, 11350.28it/s]
+1 prompt is loaded, with the key: query
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 134.18it/s]
+evolution.should_evolve.decision decision=false cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+  [2/10] astropy__astropy-14182: EMPTY (56400ms, 0 chars)
+Repo cloned: astropy/astropy @ 7269fa3e -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_vqzrckz_\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=2541
+tool.call name=read_file args_keys=['path'] output_len=17876
+memory.write_gate.skipped reason=content_too_short content_len=2665 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+[node-1-worker_0] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 50 chars, tool_calls=11
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=2541
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+topology.edges nodes=3 template=sequential id=01KPWZVS edges=[(0, 1), (1, 2)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=sequential id=01KPWZVS
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=git_diff args_keys=[] output_len=12
+memory.write_gate.skipped reason=content_too_short content_len=313 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=5997
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=197 has_tool_calls=true tier=fast
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=283 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+tool.call name=read_file args_keys=['path'] output_len=11550
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=3222
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=81 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=20876
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+Drift detected: score=0.561 action=SWITCH_MODEL details={'latency': 0.6594, 'errors': 0.0, 'cost': 0.1619}
+tool.call name=run_tests args_keys=['path'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=50027
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=179 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=2541
+[node-1-worker_0] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 50 chars, tool_calls=13
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=9240
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=49
+[node-2-worker_1] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 50 chars, tool_calls=9
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+I0000 00:00:1776941959.605049    7164 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=9
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=3222
+I0000 00:00:1776941985.020616   33120 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=20876
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=402 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=9240
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.494 action=SWITCH_MODEL details={'latency': 0.5816, 'errors': 0.0, 'cost': 0.2648}
+memory.write_gate.skipped reason=content_too_short content_len=406 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=210
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=63
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=263 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=2026
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=44 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query', 'regex'] output_len=63
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=56 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=4026
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=372 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=41
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=42 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['diff'] output_len=10
+I0000 00:00:1776942051.493203   39604 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=99 has_tool_calls=true tier=fast
+tool.call name=git_diff args_keys=['path'] output_len=613
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=81 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=146 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=167 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=3026
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1133 has_tool_calls=false tier=fast
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 1133 chars, tool_calls=16
+Both GOOGLE_API_KEY and GEMINI_API_KEY are set. Using GOOGLE_API_KEY.
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=594 has_tool_calls=false tier=budget
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 594 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=12 task_id=2
+evolution.should_evolve.decision decision=false cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+[astropy__astropy-14365] patch validation failed: error: patch failed: astropy/io/ascii/qdp.py:68
+error: astropy/io/ascii/qdp.py: patch does not apply
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[astropy__astropy-14365] LLM repair still invalid: error: patch failed: astropy/io/ascii/qdp.py:68
+error: astropy/io/ascii/qdp.py: patch does not apply
+  [3/10] astropy__astropy-14365: PATCH (179988ms, 583 chars)
+Repo cloned: astropy/astropy @ b16c7d12 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_r5689wid\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=horizon_pipeline (5 nodes, omega=1 delta=6 gamma=0.33)
+topology.edges nodes=5 template=horizon_pipeline id=01KPX018 edges=[(0, 1), (0, 1), (1, 2), (1, 2), (2, 3), (2, 3), (3, 4), (3, 4)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=horizon_pipeline id=01KPX018
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=1000
+tool.call name=list_files args_keys=['pattern'] output_len=1097
+I0000 00:00:1776942110.187214   25176 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=29873
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=312
+tool.call name=read_file args_keys=['path'] output_len=32795
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=74
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+[TopologyRunner] node 0 (splitter) completed via agent_loop, output 50 chars, tool_calls=8
+topology.runner: dropped sentinel output from predecessor 0 (role=splitter)
+topology.runner: dropped sentinel output from predecessor 0 (role=splitter)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['pattern'] output_len=90
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=1553
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=15348
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=102 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=109
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=2292
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=79 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['pattern'] output_len=231
+I0000 00:00:1776942175.653971   36420 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=29873
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=593 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=37
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['pattern'] output_len=126
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+[node-1-stage_0] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 1 (stage_0) completed via agent_loop, output 50 chars, tool_calls=10
+topology.runner: dropped sentinel output from predecessor 1 (role=stage_0)
+topology.runner: dropped sentinel output from predecessor 1 (role=stage_0)
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=63
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=29873
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=121
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path'] output_len=5265
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.124}
+Circuit OPEN for provider_gemini-3.1-pro-preview after 3 failures (last: drift_reset_agent score=1.0). Will probe in 60s.
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_python_tool args_keys=['code', 'name'] output_len=60
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=41
+I0000 00:00:1776942234.632723   12792 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=git_diff args_keys=[] output_len=12
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=41
+[node-2-stage_1] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 2 (stage_1) completed via agent_loop, output 50 chars, tool_calls=9
+topology.runner: dropped sentinel output from predecessor 2 (role=stage_1)
+topology.runner: dropped sentinel output from predecessor 2 (role=stage_1)
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=193 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=1000
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+Circuit OPEN for provider_kimi after 3 failures (last: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 3', 'type': 'invalid_request_error'}). Will probe in 60s.
+Stage 4 multi-agent execution failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 3', 'type': 'invalid_request_error'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback also failed: Stage 4 fallback returned empty content — treating as failure rather than emitting empty patch
+memory.smmu.tier_transition from=stm to=arrow events=16 task_id=3
+Embedder: using sentence-transformers backend
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: C:\Users\yann.abadie\.cache\huggingface\hub\models--Snowflake--snowflake-arctic-embed-m\snapshots\fc74610d18462d218e312aa986ec5c8a75a98152
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|##########| 197/197 [00:00<00:00, 12956.75it/s]
+1 prompt is loaded, with the key: query
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 117.60it/s]
+evolution.should_evolve.decision decision=false cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+  [4/10] astropy__astropy-14995: EMPTY (177811ms, 0 chars)
+Repo cloned: astropy/astropy @ c76af9ed -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_ecf8bbbl\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=5 gamma=0.40)
+topology.edges nodes=3 template=sequential id=01KPX06P edges=[(0, 1), (1, 2)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=sequential id=01KPX06P
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+I0000 00:00:1776942280.988651   25176 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=91 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=86
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+tool.call name=search_repo args_keys=['path', 'query'] output_len=90
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=95 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=74 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=5026
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=11
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=215
+tool.call name=list_files args_keys=['max', 'pattern'] output_len=26
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=54055
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=114 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=90
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=85 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=98 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=96
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=103 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=920 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=75
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+I0000 00:00:1776942354.068570   29220 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=21213
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1201 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=86
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=90 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=150
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=83 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=73
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1667 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1033 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776942407.738249   39700 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+memory.write_gate.skipped reason=content_too_short content_len=27 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=171 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=86
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=98 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=23
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=4089 has_tool_calls=false tier=budget
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 4089 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=20 task_id=4
+evolution.should_evolve.decision decision=false cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+[astropy__astropy-6938] patch validation failed: error: patch failed: astropy/io/fits/fitsrec.py:683
+error: astropy/io/fits/fitsrec.py: patch does not apply
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[astropy__astropy-6938] LLM repair still invalid: error: patch failed: astropy/io/fits/fitsrec.py:682
+error: astropy/io/fits/fitsrec.py: patch does not apply
+  [5/10] astropy__astropy-6938: PATCH (161771ms, 658 chars)
+Repo cloned: astropy/astropy @ d5bd3f68 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_6xrlydjo\astropy
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.67)
+topology.edges nodes=3 template=sequential id=01KPX0BN edges=[(0, 1), (1, 2)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=sequential id=01KPX0BN
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=718
+tool.call name=search_repo args_keys=['path', 'query'] output_len=201
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.583 action=SWITCH_MODEL details={'latency': 0.6864, 'errors': 0.0, 'cost': 0.1362}
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=25027
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=15027
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=2275
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=1625
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=20027
+I0000 00:00:1776942475.428086   25176 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=12
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=1614
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=41
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=65563
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=120 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=110 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=149
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=201
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=105 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+I0000 00:00:1776942504.800788   27712 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=99 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=78 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=65563
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=124 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=68 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=40027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=560 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=316
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=647 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.0378}
+Circuit OPEN for provider_qwen/qwen3.5-plus-02-15 after 3 failures (last: drift_reset_agent score=1.0). Will probe in 60s.
+memory.write_gate.skipped reason=content_too_short content_len=350 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=94
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=34 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=48
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=133 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=48
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=129 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=48
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=24
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=5874 has_tool_calls=false tier=budget
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 5874 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=24 task_id=5
+evolution.should_evolve.decision decision=false cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+[astropy__astropy-7746] patch validation failed: error: patch failed: astropy/wcs/wcs.py:1262
+error: astropy/wcs/wcs.py: patch does not apply
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[astropy__astropy-7746] LLM repair still invalid: error: patch failed: astropy/wcs/wcs.py:1260
+error: astropy/wcs/wcs.py: patch does not apply
+  [6/10] astropy__astropy-7746: PATCH (151578ms, 674 chars)
+Repo cloned: django/django @ e7fd69d0 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_yky6u7jo\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=2 delta=4 gamma=0.50)
+topology.edges nodes=5 template=robust id=01KPX0GD edges=[(0, 1), (0, 1), (1, 4), (0, 2), (0, 2), (2, 4), (0, 3), (0, 3), (3, 4)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=robust id=01KPX0GD
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Circuit HALF_OPEN for provider_kimi — allowing probe call
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=2144
+I0000 00:00:1776942603.314557   29220 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=1648
+I0000 00:00:1776942606.736031   27712 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=22567
+tool.call name=read_file args_keys=['path'] output_len=14640
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+tool.call name=read_file args_keys=['path'] output_len=9559
+tool.call name=list_files args_keys=['pattern'] output_len=4183
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=8837
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query', 'regex'] output_len=2144
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 50 chars, tool_calls=10
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=2144
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=2144
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=2144
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=1648
+tool.call name=list_files args_keys=['max', 'pattern'] output_len=30
+HTTP Request: POST https://api.moonshot.ai/v1/chat/completions "HTTP/1.1 400 Bad Request"
+Circuit RE-OPENED for provider_kimi — half-open probe failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 2', 'type': 'invalid_request_error'}. Will retry in 60s.
+Stage 4 multi-agent execution failed: status_code: 400, model_name: kimi-k2.5, body: {'message': 'thinking is enabled but reasoning_content is missing in assistant tool call message at index 2', 'type': 'invalid_request_error'} — falling back to single-agent
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 4 fallback also failed: Stage 4 fallback returned empty content — treating as failure rather than emitting empty patch
+memory.smmu.tier_transition from=stm to=arrow events=28 task_id=6
+Embedder: using sentence-transformers backend
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: C:\Users\yann.abadie\.cache\huggingface\hub\models--Snowflake--snowflake-arctic-embed-m\snapshots\fc74610d18462d218e312aa986ec5c8a75a98152
+Loading weights:   0%|          | 0/197 [00:00<?, ?it/s]Loading weights: 100%|##########| 197/197 [00:00<00:00, 11199.06it/s]
+1 prompt is loaded, with the key: query
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 112.92it/s]
+evolution.should_evolve.decision decision=true cells=14 coverage=0.130 min_outcomes=5 cooldown=3
+evolution.evolve.called pop_size=5 generations=2 cells_before=14 cells_after=15
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=ea6f8586 tier=unknown
+evolution.mutation.applied op=add_node parent_cell=14 child_hash=589fb836 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=3369e788 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=f0477261 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=97302be9 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=c0748e51 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=7e81de59 tier=unknown
+evolution.mutation.applied op=swap_model parent_cell=14 child_hash=6c66d7c1 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=d5ff9605 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=4455a33d tier=unknown
+evolution.mutation.applied op=merge_nodes parent_cell=14 child_hash=fbb75b05 tier=unknown
+evolution.mutation.applied op=merge_nodes parent_cell=14 child_hash=b47c63d5 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=ba38792a tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=e8a9a3a2 tier=unknown
+evolution.mutation.applied op=split_node parent_cell=14 child_hash=86f05292 tier=unknown
+evolution.mutation.applied op=add_node parent_cell=14 child_hash=b5705a81 tier=unknown
+evolution.mutation.applied op=remove_node parent_cell=14 child_hash=55aa645c tier=unknown
+  [7/10] django__django-10914: EMPTY (64798ms, 0 chars)
+Repo cloned: django/django @ bceadd27 -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_pb6zp26z\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=66
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=22632
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=65551
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=9172
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=robust (5 nodes, omega=3 delta=3 gamma=0.40)
+topology.edges nodes=5 template=robust id=01KPX0JD edges=[(0, 1), (0, 1), (1, 4), (0, 2), (0, 2), (2, 4), (0, 3), (0, 3), (3, 4)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=robust id=01KPX0JD
+Assigned models to 5 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+Circuit OPEN for provider_kimi — skipping call
+Stage 3: kimi provider unavailable, node 3 reassigned kimi-k2.5 -> gemini-3.1-flash-lite-preview
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['path', 'pattern'] output_len=4331
+memory.write_gate.skipped reason=content_too_short content_len=158 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=14640
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query', 'regex'] output_len=2033
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=138 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=130
+tool.call name=list_files args_keys=['path', 'pattern'] output_len=176
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=13240
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=53 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=15027
+memory.write_gate.skipped reason=content_too_short content_len=834 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=66
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=92
+memory.write_gate.skipped reason=content_too_short content_len=156 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+tool.call name=search_repo args_keys=['path', 'query'] output_len=71
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=73 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=2033
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=3 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=32791
+[node-2-worker_1] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 50 chars, tool_calls=9
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=49 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=20027
+[TopologyRunner] node 0 (preprocessor) completed via agent_loop, output 50 chars, tool_calls=9
+memory.write_gate.skipped reason=content_too_short content_len=107 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=32795
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=939
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=search_repo args_keys=['query'] output_len=323
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=read_file args_keys=['path'] output_len=32795
+memory.write_gate.skipped reason=content_too_short content_len=180 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=13240
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=search_repo args_keys=['query'] output_len=323
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query'] output_len=323
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=151
+tool.call name=list_files args_keys=['max', 'pattern'] output_len=290
+memory.write_gate.skipped reason=content_too_short content_len=156 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=104
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=5026
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Drift detected: score=0.602 action=SWITCH_MODEL details={'latency': 0.7079, 'errors': 0.0, 'cost': 0.2667}
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=read_file args_keys=['path'] output_len=32795
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query'] output_len=323
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=search_repo args_keys=['query'] output_len=68
+memory.write_gate.skipped reason=content_too_short content_len=114 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=71
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+[node-1-worker_0] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 50 chars, tool_calls=20
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=4026
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=4026
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=32795
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=search_repo args_keys=['query'] output_len=68
+memory.write_gate.skipped reason=content_too_short content_len=49 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=run_tests args_keys=['path'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=budget
+tool.call name=search_repo args_keys=['query'] output_len=323
+[node-3-worker_2] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 3 (worker_2) completed via agent_loop, output 50 chars, tool_calls=9
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=5026
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776942710.374293   39700 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'query', 'regex'] output_len=323
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=6026
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query', 'regex'] output_len=323
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=8026
+[node-1-worker_0] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 1 (worker_0) completed via agent_loop, output 50 chars, tool_calls=14
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query', 'regex'] output_len=68
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['query', 'regex'] output_len=101
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+[node-2-worker_1] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=9/10)
+[TopologyRunner] node 2 (worker_1) completed via agent_loop, output 50 chars, tool_calls=9
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/sentence_bert_config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 11124.62it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/tokenizer_config.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2 "HTTP/1.1 200 OK"
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 46.46it/s]
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/sentence_bert_config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 11824.00it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/tokenizer_config.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2 "HTTP/1.1 200 OK"
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 118.41it/s]
+Use pytorch device_name: cuda:0
+Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config_sentence_transformers.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config_sentence_transformers.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/modules.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/modules.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/sentence_bert_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/sentence_bert_config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/adapter_config.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|##########| 103/103 [00:00<00:00, 14409.57it/s]
+[1mBertModel LOAD REPORT[0m from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  | 
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  | 
+
+Notes:
+- UNEXPECTED:	can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/config.json "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/tokenizer_config.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main/additional_chat_templates?recursive=false&expand=false "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2/tree/main?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/1_Pooling/config.json "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/models/sentence-transformers/all-MiniLM-L6-v2/c9745ed1d9f207416be6d2e6f8de32d1f16199bf/1_Pooling%2Fconfig.json "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/models/sentence-transformers/all-MiniLM-L6-v2 "HTTP/1.1 200 OK"
+Batches:   0%|          | 0/1 [00:00<?, ?it/s]Batches: 100%|##########| 1/1 [00:00<00:00, 120.96it/s]
+topology.runner: dropped sentinel output from predecessor 3 (role=worker_2)
+topology.runner: dropped sentinel output from predecessor 2 (role=worker_1)
+topology.runner: dropped sentinel output from predecessor 1 (role=worker_0)
+HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776942747.312657   12792 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+memory.write_gate.skipped reason=content_too_short content_len=192 has_tool_calls=false tier=reasoner
+[TopologyRunner] node 4 (verifier) completed via agent_loop, output 192 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=32 task_id=7
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+  [8/10] django__django-10924: EMPTY (113677ms, 0 chars)
+Repo cloned: django/django @ ef082ebb -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_ba7e3hz8\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=4 gamma=0.50)
+topology.edges nodes=3 template=sequential id=01KPX0NV edges=[(0, 1), (1, 2)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=sequential id=01KPX0NV
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=287
+tool.call name=search_repo args_keys=['path', 'query'] output_len=282
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=178 has_tool_calls=false tier=fast
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 178 chars, tool_calls=5
+topology.runner: injecting planner output (178 chars, role=planner) into node 1 system prompt
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=60
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=287
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=233
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=106 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=20027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=89 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=5026
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=100 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=69 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=553
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=57 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=60
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=99 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=456
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=98 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=193
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=64 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=9
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=164
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776942841.828417   27712 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['max', 'path', 'pattern'] output_len=9
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=916
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=15027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=56 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+tool.call name=search_repo args_keys=['max_results', 'path', 'query', 'regex'] output_len=11
+[node-1-coder] stall detected: 19 consecutive tool steps with no final content — breaking early (D8 soft cap, step=19/20)
+[TopologyRunner] node 1 (coder) completed via agent_loop, output 51 chars, tool_calls=26
+topology.runner: dropped sentinel output from predecessor 1 (role=coder)
+AFC is enabled with max remote calls: 10.
+I0000 00:00:1776942863.641284    7164 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=28255 has_tool_calls=false tier=budget
+[TopologyRunner] node 2 (synthesizer) completed via agent_loop, output 28255 chars, tool_calls=0
+memory.smmu.tier_transition from=stm to=arrow events=36 task_id=8
+evolution.should_evolve.decision decision=false cells=15 coverage=0.139 min_outcomes=5 cooldown=3
+[django__django-11001] patch validation failed: error: patch failed: django/db/models/sql/compiler.py:1008
+error: django/db/models/sql/compiler.py: patch does not apply
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+[django__django-11001] LLM repair still invalid: error: patch failed: django/db/models/sql/compiler.py:340
+error: django/db/models/sql/compiler.py: patch does not apply
+  [9/10] django__django-11001: PATCH (136524ms, 642 chars)
+Repo cloned: django/django @ 93e892bb -> C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swe_mhmd8q5v\django
+CompositeWriteGate: using Rust acceleration
+Stage 0: Rust routing \u2192 S3 model=deepseek-reasoner (conf=0.85, cost=0.0011)
+AFC is enabled with max remote calls: 10.
+HTTP Request: POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent "HTTP/1.1 200 OK"
+Stage 2: DAG-driven template=sequential (3 nodes, omega=1 delta=5 gamma=0.40)
+topology.edges nodes=3 template=sequential id=01KPX0T1 edges=[(0, 1), (1, 2)]
+topology.source source=dag_template confidence=n/a archive_hit=false template=sequential id=01KPX0T1
+Assigned models to 3 nodes (domain=code, budget=10.00, task_system=3, provider_hints=0)
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+S2 validation: missing reasoning, requesting CoT.
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['path'] output_len=32795
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.436 action=SWITCH_MODEL details={'latency': 0.5125, 'errors': 0.0, 'cost': 0.1845}
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=76
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=26744
+I0000 00:00:1776942961.212790   25176 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+I0000 00:00:1776942974.343996   39628 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query', 'regex'] output_len=11
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['path', 'query'] output_len=11
+HTTP Request: POST https://api.minimax.io/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=2 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=5026
+[node-0-planner] stall detected: 9 consecutive tool steps with no final content — breaking early (D8 soft cap, step=10/10)
+[TopologyRunner] node 0 (planner) completed via agent_loop, output 51 chars, tool_calls=12
+topology.runner: dropped sentinel output from predecessor 0 (role=planner)
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=175
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=130
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=38454
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=74 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=76
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=26744
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=146 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=26744
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=54
+I0000 00:00:1776943093.747061   39628 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=57 has_tool_calls=true tier=fast
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+I0000 00:00:1776943099.994078   38400 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=create_bash_tool args_keys=['description', 'name', 'script'] output_len=60
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=search_repo args_keys=['max_results', 'path', 'query'] output_len=11
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=0 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=16411
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=935 has_tool_calls=true tier=fast
+tool.call name=run_tests args_keys=['path', 'pytest_args'] output_len=5265
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=58 has_tool_calls=true tier=fast
+tool.call name=list_files args_keys=['path', 'pattern'] output_len=34
+tool.call name=list_files args_keys=['path', 'pattern'] output_len=34
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1115 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=4026
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+Drift detected: score=0.850 action=RESET_AGENT details={'latency': 1.0, 'errors': 0.0, 'cost': 0.0328}
+Circuit RE-OPENED for provider_qwen/qwen3.5-plus-02-15 — half-open probe failed: drift_reset_agent score=1.0. Will retry in 60s.
+memory.write_gate.skipped reason=content_too_short content_len=1280 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=48
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=893 has_tool_calls=true tier=fast
+tool.call name=read_file args_keys=['max_bytes', 'path'] output_len=10027
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1497 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=41
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=1100 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=258
+HTTP Request: POST https://openrouter.ai/api/v1/chat/completions "HTTP/1.1 200 OK"
+memory.write_gate.skipped reason=content_too_short content_len=43 has_tool_calls=true tier=fast
+tool.call name=apply_patch args_keys=['check_only', 'diff'] output_len=48
+[django__django-11019] Generation timed out
+I0000 00:00:1776943208.510519    5776 ssl_transport_security.cc:1884] Handshake failed with error SSL_ERROR_SSL: error:1000007d:SSL routines:OPENSSL_internal:CERTIFICATE_VERIFY_FAILED: self signed certificate in certificate chain
+  [10/10] django__django-11019: ERR:generation_timeout_300s (313457ms, 0 chars)
+Wrote 10 predictions to C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_e7h3zu5o\predictions.jsonl
+
+  Generation complete:
+    Total instances: 10
+    Real patches:    4
+    Sentinels:       0  (agent exited with no content)
+    Empty:           6  (generation failed)
+    Errors:          1
+
+  Predictions: C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_e7h3zu5o\predictions.jsonl
+  Metadata: C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_e7h3zu5o\predictions_meta.json
+
+  To evaluate (requires Docker with Linux containers):
+    python -m swebench.harness.run_evaluation \
+      --predictions_path C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_e7h3zu5o\predictions.jsonl \
+      --dataset_name princeton-nlp/SWE-bench_Lite \
+      --run_id sage-20260423-105633
+
+  Predictions saved to: C:\Users\YANN~1.ABA\AppData\Local\Temp\sage_swebench_e7h3zu5o\predictions.jsonl
+Shutdown: Saved engine state to C:\Users\yann.abadie\.sage
