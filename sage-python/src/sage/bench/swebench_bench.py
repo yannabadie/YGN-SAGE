@@ -294,6 +294,38 @@ _SR_SEPARATOR = "======="
 _SR_REPLACE_MARKER = ">>>>>>> REPLACE"
 _SR_FUZZY_THRESHOLD = 0.95
 
+# ---------------------------------------------------------------------------
+# Emission-format env-var gate (Track 2 task 2.3)
+# ---------------------------------------------------------------------------
+# The bench supports two patch-emission formats:
+#   - "unified"         — the legacy ```diff fenced unified-diff format.
+#   - "search-replace"  — the SEARCH/REPLACE block format plumbed by T2.1+T2.2.
+# ``SAGE_EMISSION_FORMAT`` is the operator-facing toggle. Default is
+# "unified" until the paired smoke in T2.5 validates the switch (per the
+# decision gate on docs/superpowers/plans/2026-04-21-semantic-quality-plan.md).
+_EMISSION_FORMAT_ENV = "SAGE_EMISSION_FORMAT"
+_VALID_EMISSION_FORMATS = frozenset({"unified", "search-replace"})
+
+
+def _get_emission_format() -> str:
+    """Read ``SAGE_EMISSION_FORMAT``. Returns ``"unified"`` (default) or
+    ``"search-replace"``. Unknown values log WARN and fall back to
+    ``"unified"``. The default MUST stay ``"unified"`` until the paired
+    smoke validates the switch — red-team plan §5-style decision gate."""
+    raw = os.environ.get(_EMISSION_FORMAT_ENV)
+    if raw is None:
+        return "unified"
+    v = raw.strip().lower()
+    if v in _VALID_EMISSION_FORMATS:
+        return v
+    log.warning(
+        "%s=%r is not a valid emission format (allowed: %s); falling back to 'unified'",
+        _EMISSION_FORMAT_ENV,
+        raw,
+        sorted(_VALID_EMISSION_FORMATS),
+    )
+    return "unified"
+
 # Defensive caps for the ``## File:``-less content-scan fallback. SWE-bench
 # repos (django, sympy, matplotlib, ...) ship multi-MB binary blobs, cached
 # wheels, PNG fixtures — slurping them whole into memory on every block is
