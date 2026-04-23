@@ -23,7 +23,7 @@ onnxruntime>=1.18            # For Rust ONNX embedder (if pkg-config available)
 
 # === Training (verl 0.7.1 on RunPod) ===
 torch>=2.4
-transformers>=4.45
+transformers>=5.6.1
 peft>=0.13
 datasets>=3.0
 accelerate>=1.0
