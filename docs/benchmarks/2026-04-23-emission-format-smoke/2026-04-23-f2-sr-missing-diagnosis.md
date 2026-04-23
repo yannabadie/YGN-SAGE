@@ -46,6 +46,18 @@ In that regime, the model has two stable behaviours:
 The fuzzy threshold at 0.95 doesn't rescue the long-mode fabrications because
 the divergence is not whitespace drift — it's different code.
 
+**Mechanism caveat (N=4, two candidates):** the correlation
+`both-predecessors-stall ↔ SR-missing` is solid. The causal story "long synth
+output = fabrication" is *one* mechanism; a simpler alternative is **working-
+memory starvation**: when both planner and coder stall, no real file bytes
+ever reach the synthesizer's context window, so output length is a
+coping-with-empty-context signal rather than the cause. In the SR-hit tasks
+the planner was not stalled, which means real file content likely passed
+through the planner's output into the sequential chain; the starvation
+alternative doesn't need a "fabrication" step. At N=4 we cannot discriminate
+the two. Do not cite "long output = fabrication" as the established
+mechanism motivating code changes without a wider sample.
+
 ## What the gold patches say
 
 Both misses correspond to real, localised edits in real files:
