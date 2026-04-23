@@ -1,0 +1,73 @@
+swebench CA patch: truststore injected (OS trust store active).
+swebench CA patch: pathlib.Path.write_text wrapped with LF-safe handler for .sh/.bash files (Windows CRLF fix for /eval.sh inside the Docker container).
+swebench CA patch: swebench.harness.run_evaluation.open wrapped to default text-mode writes to UTF-8 (Windows cp1252 fix for pytest Unicode output in test_output.txt).
+swebench CA patch: base Dockerfile template updated (module + dict).
+swebench CA patch: applied (bundle=C:\Code\certs\ca-bundle.pem).
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/revision/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2 "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2?recursive=false&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+Evaluating 3 instances
+
+  Evaluating pre-generated predictions: C:/Code/YGN-SAGE/docs/benchmarks/2026-04-22-swebench-parity-smoke/2026-04-22-parity-bash-predictions.jsonl
+
+  Building Docker images and evaluating 3 instances...
+  Run ID: sage-20260423-080111
+  Timeout per instance: 300s
+  Max workers: 1
+
+Base image sweb.base.py.x86_64:latest already exists, skipping build.
+Base images built successfully.
+No environment images need to be built.
+Running 3 instances...
+Evaluation:   0%|          | 0/3 [00:00<?, ?it/s, error=0, \u2713=0, \u2716=0]Evaluation:   0%|          | 0/3 [11:57<?, ?it/s, \u2713=0, \u2716=0, error=1]Evaluation:  33%|###3      | 1/3 [11:57<23:54, 717.43s/it, \u2713=0, \u2716=0, error=1]Evaluation:  33%|###3      | 1/3 [24:53<23:54, 717.43s/it, \u2713=0, \u2716=0, error=2]Evaluation:  67%|######6   | 2/3 [24:53<12:32, 752.08s/it, \u2713=0, \u2716=0, error=2]Evaluation:  67%|######6   | 2/3 [38:45<12:32, 752.08s/it, \u2713=0, \u2716=1, error=2]Evaluation: 100%|##########| 3/3 [38:45<00:00, 788.39s/it, \u2713=0, \u2716=1, error=2]Evaluation: 100%|##########| 3/3 [38:45<00:00, 775.12s/it, \u2713=0, \u2716=1, error=2]
+astropy__astropy-14182: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file astropy/io/ascii/rst.py
+Reversed (or previously applied) patch detected!  Assuming -R.
+Hunk #1 succeeded at 58 with fuzz 3.
+patch: **** malformed patch at line 54:  
+
+
+Check (logs\run_evaluation\sage-20260423-080111\sage__gemini-3.1-flash-lite-preview\astropy__astropy-14182\run_instance.log) for more information.
+astropy__astropy-6938: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file astropy/io/fits/fitsrec.py
+patch: **** malformed patch at line 13:              if format[i] == 'L':
+
+
+Check (logs\run_evaluation\sage-20260423-080111\sage__gemini-3.1-flash-lite-preview\astropy__astropy-6938\run_instance.log) for more information.
+All instances run.
+Cleaning cached images...
+Removed 0 images.
+Total instances: 10
+Instances submitted: 10
+Instances completed: 1
+Instances incomplete: 0
+Instances resolved: 0
+Instances unresolved: 1
+Instances with empty patches: 7
+Instances with errors: 2
+Unstopped containers: 0
+Unremoved images: 0
+Report written to sage__gemini-3.1-flash-lite-preview.sage-20260423-080111.json
+
+============================================================
+  SWE-Bench Evaluation Results
+============================================================
+  Resolved: 0/10 (0.0%)
+  Report: sage__gemini-3.1-flash-lite-preview.sage-20260423-080111.json
+

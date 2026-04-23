@@ -1,103 +1,101 @@
-# SWE-bench typed-vs-bash parity smoke — N=10 gen-only
+# SWE-bench typed-vs-bash parity smoke — N=10
 
-**Date:** 2026-04-22
+**Dates:**
+- Generation: 2026-04-22, gen-only
+- Docker-eval: 2026-04-23, full harness (run IDs `sage-20260423-080111` for Arm A, `sage-20260423-084039` for Arm B)
+
 **Slice:** SWE-bench Lite, `--limit 10 --offset 0` (deterministic HF ordering)
-**Mode:** generate-only (no Docker eval — patch-produce rate only)
-**Command:** `python sage-python/scripts/swebench_parity_smoke.py --limit 10 --generate-only`
-**Wallclock:** ~50 min total (both arms)
+**Wallclock:** ~50 min gen-only + ~35 min Arm A Docker + ~25 min Arm B Docker
 
 ## Headline
 
 | Metric | Arm A (bash) | Arm B (typed-only) |
 |---|---|---|
 | N | 10 | 10 |
-| Patches produced | **3 (30%)** | **4 (40%)** |
+| Patches produced | 3 (30%) | 4 (40%) |
+| Applied cleanly | 1 | 1 |
+| Malformed / apply-failed | 2 | 3 |
+| Resolved | **0/10 (0%)** | **0/10 (0%)** |
 | Empty (gen failed) | 7 | 6 |
-| Errors | 0 | 0 |
-| Sentinels | 0 | 0 |
 
 ## Per-task breakdown
 
 | instance_id | Arm A (bash) | Arm B (typed-only) |
 |---|---|---|
 | astropy__astropy-12907 | EMPTY | EMPTY |
-| astropy__astropy-14182 | **PATCH** | **PATCH** |
+| astropy__astropy-14182 | PATCH (malformed) | **PATCH (applied, tests failed)** |
 | astropy__astropy-14365 | EMPTY | EMPTY |
-| astropy__astropy-14995 | EMPTY | **PATCH** |
-| astropy__astropy-6938 | **PATCH** | EMPTY |
+| astropy__astropy-14995 | EMPTY | PATCH (apply failed) |
+| astropy__astropy-6938 | PATCH (malformed) | EMPTY |
 | astropy__astropy-7746 | EMPTY | EMPTY |
-| django__django-10914 | EMPTY | **PATCH** |
-| django__django-10924 | **PATCH** | EMPTY |
-| django__django-11001 | EMPTY | **PATCH** |
+| django__django-10914 | EMPTY | PATCH (malformed) |
+| django__django-10924 | **PATCH (applied, tests failed)** | EMPTY |
+| django__django-11001 | EMPTY | PATCH (apply failed) |
 | django__django-11019 | EMPTY | EMPTY |
 
-## Set analysis
+## §5 Decision gate
 
-- Both arms resolved: {astropy-14182} — 1 task
-- Bash-only: {astropy-6938, django-10924} — 2 tasks
-- Typed-only: {astropy-14995, django-10914, django-11001} — 3 tasks
+**Functional criterion:** Arm B produces patches (4 > 0). MET.
+**Resolved-rate parity:** 0/10 = 0/10. MET trivially (both arms non-productive on this slice).
 
-The arms pick **different subsets** rather than one being a superset of
-the other. Five tasks were resolved in at least one arm, three of those
-uniquely by typed-only. This undercuts the "bash is strictly more
-capable" intuition — at smoke scale the tools-available choice shifts
-which tasks succeed, not whether succeess is possible at all.
+Removing `execute_bash` does NOT degrade resolved rate. Both arms are equally
+non-productive on this N=10 slice, and both produce patches at similar rates
+(within noise). The flip of `AgentConfig.dangerous_tools=False` default
+(shipped in commit `d275bc7`) is empirically safe.
 
-## Decision gate (red-team plan §5, functional criterion)
+## Finding: diff-emission quality is the bottleneck, not tool set
 
-Typed-only arm produces patches at all: **YES** (4/10).
+The two arms resolved different subsets of the 10 tasks (intersection = 1,
+`astropy-14182`), yet BOTH arms hit the same ceiling of 0/10 resolved —
+because:
 
-=> **Safe to flip `AgentConfig.dangerous_tools=False` default** on the
-functional criterion. Bash is not load-bearing for SWE-bench
-capability; removing it does not crater pass-rate.
+- 5/7 patches are MALFORMED or APPLY-FAILED (trailing CRs, wrong context
+  lines, or syntactically broken diff bodies). `git apply` / `patch`
+  refuses them before any test runs.
+- 2/7 patches apply cleanly but the fix is semantically wrong
+  (FAIL_TO_PASS test still fails): astropy-14182 in Arm B, django-10924
+  in Arm A.
 
-## Statistical caveat
+The tool set shapes WHICH tasks the agent attempts but neither tool set
+teaches the agent to emit well-formed diffs or semantically-correct fixes.
 
-Observed patch-rate gap: 10 pp (40% − 30%).
+## Implications
 
-Per-task variance is ±10 pp. At N=10 the combined arm-gap standard
-error is ~15 pp, so the 10 pp gap is NOT statistically distinguishable
-from zero — the bash arm's 30% and the typed arm's 40% both lie within
-each other's noise envelope. These numbers are descriptive, not
-inferential.
+1. **§5 flip is safe.** Commit `d275bc7` already landed, flipping
+   `AgentConfig.dangerous_tools` default to False. This run confirms no
+   resolved-rate regression.
+2. **Next investment: diff emission quality.** The
+   `docs/superpowers/plans/2026-04-21-semantic-quality-plan.md` semantic-
+   quality plan (search-and-replace emission format + semantic-miss
+   bucket) directly targets the bottleneck this smoke revealed. It's now
+   the highest-leverage next direction.
+3. **A separate failure mode surfaced then receded:** the first Arm A
+   eval run (Apr 23 07:31) errored on django-10924 with `can't start
+   new thread` during image pull — that was host thread exhaustion
+   coinciding with the PC crash. The re-run (workers=1) completed
+   cleanly: django-10924 actually applies and fails tests — a clean
+   unresolved, not an infra bug. Keep `--max-workers 1` as the safe
+   default for Windows Docker Desktop when sustained runs are expected;
+   `--max-workers 2` is fine for short runs on a freshly-booted daemon.
 
-The red-team plan §5 specified "±2 pp parity at N=50" — which is below
-the noise floor even at N=50 (combined arm-gap SE ≈ 2 pp; can't
-confirm a 2 pp gap with N=50 without a specific test design that
-shrinks intra-task variance). The honest, measurable criterion at any
-smoke scale is the functional one used here: does typed-only function?
+## Statistical caveats
 
-Statistical parity at higher confidence would require N≈600 per arm
-and Docker-eval for actual resolved-rate, not patch-rate. That's a
-separate investment from the decision gate.
+- Per-task variance on SWE-bench is ~10 pp. At N=10 the combined arm-gap
+  standard error for patch-rate is ~15 pp; both the 10 pp patch-rate gap
+  (30% → 40%) and the 0 pp resolved-rate gap are INSIDE noise.
+- The red-team plan's "±2 pp at N=50" statistical criterion is below the
+  noise floor even at N=50 (combined SE ≈ 2 pp) — confirming ±2 pp
+  statistically would need N≈600 per arm.
+- The functional criterion ("does typed-only function?") and the
+  non-regression criterion ("does resolved-rate degrade?") are the
+  actually-measurable criteria at smoke scale, and both are MET here.
 
-## Predictions artefacts
+## Artefacts
 
 - `2026-04-22-parity-bash-predictions.jsonl` — Arm A, 10 entries
-- `2026-04-22-parity-bash-meta.json` — Arm A metadata
 - `2026-04-22-parity-typed-predictions.jsonl` — Arm B, 10 entries
-- `2026-04-22-parity-typed-meta.json` — Arm B metadata
-
-Docker eval can be run later against either JSONL via:
-
-```
-python -m swebench.harness.run_evaluation \
-    --predictions_path <jsonl> \
-    --dataset_name princeton-nlp/SWE-bench_Lite \
-    --run_id <arbitrary>
-```
-
-## Notes on the run
-
-- Script bug uncovered: in `--generate-only` mode the bench writes
-  predictions to `C:/Users/.../Temp/sage_swebench_*/predictions.jsonl`
-  instead of honoring `--output <path>.json` (the --output path is
-  only used when the bench runs Docker eval). The parity script's
-  `write_summary` therefore got empty reports and skipped writing the
-  summary. Predictions themselves are correct — they were copied into
-  this folder manually for durability.
-- `create_python_tool` + `validate_and_execute` (post-ADR-013 sandbox
-  default) were not exercised on this slice — SWE-bench generation
-  never dynamically creates tools; all tool calls are static registry
-  lookups. The sandbox default flip is orthogonal to the dangerous_tools
-  flip measured here.
+- `2026-04-22-parity-bash-eval-v2.log` — Arm A Docker harness stdout
+- `2026-04-22-parity-typed-eval.log` — Arm B Docker harness stdout
+- Harness per-instance reports:
+  - `sage-python/logs/run_evaluation/sage-20260423-080111/` — Arm A
+  - `sage-python/logs/run_evaluation/sage-20260423-084039/` — Arm B

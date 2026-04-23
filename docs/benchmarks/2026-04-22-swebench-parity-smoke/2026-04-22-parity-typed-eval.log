@@ -1,0 +1,83 @@
+swebench CA patch: truststore injected (OS trust store active).
+swebench CA patch: pathlib.Path.write_text wrapped with LF-safe handler for .sh/.bash files (Windows CRLF fix for /eval.sh inside the Docker container).
+swebench CA patch: swebench.harness.run_evaluation.open wrapped to default text-mode writes to UTF-8 (Windows cp1252 fix for pytest Unicode output in test_output.txt).
+swebench CA patch: base Dockerfile template updated (module + dict).
+swebench CA patch: applied (bundle=C:\Code\certs\ca-bundle.pem).
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/revision/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2 "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/data?recursive=true&expand=false "HTTP/1.1 200 OK"
+HTTP Request: GET https://huggingface.co/api/datasets/princeton-nlp/SWE-bench_Lite/tree/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2?recursive=false&expand=false "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/main/README.md "HTTP/1.1 307 Temporary Redirect"
+HTTP Request: HEAD https://huggingface.co/api/resolve-cache/datasets/princeton-nlp/SWE-bench_Lite/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/README.md "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://s3.amazonaws.com/datasets.huggingface.co/datasets/datasets/princeton-nlp/SWE-bench_Lite/princeton-nlp/SWE-bench_Lite.py "HTTP/1.1 404 Not Found"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/.huggingface.yaml "HTTP/1.1 404 Not Found"
+HTTP Request: GET https://datasets-server.huggingface.co/info?dataset=princeton-nlp/SWE-bench_Lite "HTTP/1.1 200 OK"
+HTTP Request: HEAD https://huggingface.co/datasets/princeton-nlp/SWE-bench_Lite/resolve/6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2/dataset_infos.json "HTTP/1.1 404 Not Found"
+Evaluating 4 instances
+
+  Evaluating pre-generated predictions: C:/Code/YGN-SAGE/docs/benchmarks/2026-04-22-swebench-parity-smoke/2026-04-22-parity-typed-predictions.jsonl
+
+  Building Docker images and evaluating 4 instances...
+  Run ID: sage-20260423-084039
+  Timeout per instance: 300s
+  Max workers: 2
+
+Base image sweb.base.py.x86_64:latest already exists, skipping build.
+Base images built successfully.
+No environment images need to be built.
+Running 4 instances...
+Evaluation:   0%|          | 0/4 [00:00<?, ?it/s, error=0, \u2713=0, \u2716=0]Evaluation:   0%|          | 0/4 [12:38<?, ?it/s, \u2713=0, \u2716=0, error=1]Evaluation:  25%|##5       | 1/4 [12:38<37:54, 758.01s/it, \u2713=0, \u2716=0, error=1]Evaluation:  25%|##5       | 1/4 [12:47<37:54, 758.01s/it, \u2713=0, \u2716=1, error=1]Evaluation:  50%|#####     | 2/4 [12:47<10:35, 317.69s/it, \u2713=0, \u2716=1, error=1]Evaluation:  50%|#####     | 2/4 [30:10<10:35, 317.69s/it, \u2713=0, \u2716=1, error=2]Evaluation:  75%|#######5  | 3/4 [30:10<10:49, 649.07s/it, \u2713=0, \u2716=1, error=2]Evaluation:  75%|#######5  | 3/4 [30:56<10:49, 649.07s/it, \u2713=0, \u2716=1, error=3]Evaluation: 100%|##########| 4/4 [30:56<00:00, 410.77s/it, \u2713=0, \u2716=1, error=3]Evaluation: 100%|##########| 4/4 [30:56<00:00, 464.08s/it, \u2713=0, \u2716=1, error=3]
+astropy__astropy-14995: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file astropy/nddata/nddata.py
+Hunk #1 FAILED at 455.
+1 out of 1 hunk FAILED -- saving rejects to file astropy/nddata/nddata.py.rej
+
+Check (logs\run_evaluation\sage-20260423-084039\sage__gemini-3.1-flash-lite-preview\astropy__astropy-14995\run_instance.log) for more information.
+django__django-10914: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file django/conf/global_settings.py
+(Stripping trailing CRs from patch; use --binary to disable.)
+patch: **** malformed patch at line 35: diff --git a/docs/ref/settings.txt b/docs/ref/settings.txt
+
+patching file docs/howto/deployment/checklist.txt
+
+Check (logs\run_evaluation\sage-20260423-084039\sage__gemini-3.1-flash-lite-preview\django__django-10914\run_instance.log) for more information.
+django__django-11001: >>>>> Patch Apply Failed:
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file django/db/models/sql/compiler.py
+Hunk #1 FAILED at 876.
+1 out of 1 hunk FAILED -- saving rejects to file django/db/models/sql/compiler.py.rej
+(Stripping trailing CRs from patch; use --binary to disable.)
+patching file tests/expressions/tests.py
+Hunk #1 succeeded at 1071 with fuzz 3.
+
+Check (logs\run_evaluation\sage-20260423-084039\sage__gemini-3.1-flash-lite-preview\django__django-11001\run_instance.log) for more information.
+All instances run.
+Cleaning cached images...
+Removed 0 images.
+Total instances: 10
+Instances submitted: 10
+Instances completed: 1
+Instances incomplete: 0
+Instances resolved: 0
+Instances unresolved: 1
+Instances with empty patches: 6
+Instances with errors: 3
+Unstopped containers: 0
+Unremoved images: 0
+Report written to sage__gemini-3.1-flash-lite-preview.sage-20260423-084039.json
+
+============================================================
+  SWE-Bench Evaluation Results
+============================================================
+  Resolved: 0/10 (0.0%)
+  Report: sage__gemini-3.1-flash-lite-preview.sage-20260423-084039.json
+
