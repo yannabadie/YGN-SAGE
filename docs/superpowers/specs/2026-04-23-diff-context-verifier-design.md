@@ -48,9 +48,30 @@ second check there would be duplicative.
 1. Each hunk's target file **exists** in the repo clone.
 2. Each hunk's context (` `) and removed (`-`) lines match the file
    content at the claimed hunk position (old-side start line + count).
-3. Match policy: exact first, then fuzzy via `difflib.SequenceMatcher`
-   at ≥0.95 (same threshold as the SR extractor — deliberately parallel
-   for symmetry, not because 0.95 is tuned).
+3. Match policy:
+   * **Exact** line-by-line equality → pass.
+   * **Whitespace-stripped equality** (each line `.strip()`-equal,
+     pairwise): pass; record the raw `SequenceMatcher.ratio()` for
+     telemetry and emit `kind="fuzzy_below_threshold"` when the raw
+     ratio falls below 0.95 so post-hoc analysis can see how much
+     whitespace drift the repo tolerates.
+   * **Otherwise → `kind="content_mismatch"`**, regardless of ratio.
+
+   **Implementation note (spec correction, 2026-04-23 c05eee0).** The
+   earlier draft said "exact or `SequenceMatcher.ratio() ≥ 0.95`",
+   deliberately parroting the SR extractor's number. Test 2 caught
+   that this literal policy fails the motivating case: the verbatim
+   `astropy-14182 Arm B` emitted patch has 1 hallucinated line in a
+   6-line body; the raw `SequenceMatcher.ratio()` is 0.956, above the
+   0.95 cut-off. A generic "close-enough" gate lets semantic
+   hallucinations through. The shipped policy narrows the fuzzy branch
+   to **whitespace divergence only**: stripped-line equality is the
+   gate, not raw similarity. 0.95 still appears on the `match_ratio`
+   field for observability but no longer as an accept/reject threshold
+   for anything other than *whitespace-drift reporting* (the
+   `fuzzy_below_threshold` kind). Open question #1 in this spec is now
+   resolved in favour of "not parallel to SR's number at all"; the
+   two verifiers check different things and the symmetry was cosmetic.
 
 **What is NOT verified:**
 
