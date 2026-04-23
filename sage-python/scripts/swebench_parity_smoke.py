@@ -52,13 +52,15 @@ def run_arm(
     limit: int,
     offset: int,
     out_json: Path,
+    predictions_dest: Path,
     generate_only: bool,
 ) -> int:
     """Run one arm of the parity smoke. Returns the bench process
-    exit code."""
+    exit code. In --generate-only mode the bench writes predictions
+    to a temp dir and ignores --output; we parse the stdout for the
+    temp path and copy the JSONL + meta into `predictions_dest`."""
     env = os.environ.copy()
     env["SAGE_DANGEROUS_TOOLS"] = dangerous_tools
-    # Unbuffered so the log file tails cleanly.
     env["PYTHONUNBUFFERED"] = "1"
 
     cmd = [
@@ -76,70 +78,102 @@ def run_arm(
     print(f"  Arm: {label}")
     print(f"  SAGE_DANGEROUS_TOOLS={dangerous_tools}")
     print(f"  Cmd: {' '.join(cmd)}")
-    print(f"  Output: {out_json}")
+    print(f"  Output (docker-eval mode): {out_json}")
+    print(f"  Predictions dest:          {predictions_dest}")
     print(f"{'=' * 60}\n", flush=True)
 
-    return subprocess.call(cmd, cwd=str(repo_root), env=env)
+    # Capture stdout so we can grep the "Predictions saved to:" line —
+    # in --generate-only mode that's the only record of where the JSONL
+    # actually landed, because --output is only honored in full-eval mode.
+    proc = subprocess.Popen(
+        cmd, cwd=str(repo_root), env=env,
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        bufsize=1, text=True,
+    )
+    captured: list[str] = []
+    assert proc.stdout is not None
+    for line in proc.stdout:
+        sys.stdout.write(line)
+        sys.stdout.flush()
+        captured.append(line)
+    rc = proc.wait()
+
+    if generate_only:
+        predictions_src = _extract_predictions_path(captured)
+        if predictions_src and predictions_src.exists():
+            predictions_dest.parent.mkdir(parents=True, exist_ok=True)
+            predictions_dest.write_bytes(predictions_src.read_bytes())
+            meta_src = predictions_src.with_name("predictions_meta.json")
+            if meta_src.exists():
+                meta_dest = predictions_dest.with_name(
+                    predictions_dest.stem + "-meta.json"
+                )
+                meta_dest.write_bytes(meta_src.read_bytes())
+            print(f"\n  Copied predictions to: {predictions_dest}")
+        else:
+            print(
+                "\n  WARN: could not locate predictions file from bench stdout — "
+                "summary will be empty.", file=sys.stderr,
+            )
+    return rc
 
 
-def load_report(path: Path) -> dict:
+def _extract_predictions_path(lines: list[str]) -> Path | None:
+    """Parse the bench's 'Predictions saved to: <path>' line out of
+    captured stdout. Returns the Path or None if absent."""
+    marker = "Predictions saved to:"
+    for line in reversed(lines):
+        if marker in line:
+            return Path(line.split(marker, 1)[1].strip())
+    return None
+
+
+def summarise_predictions_jsonl(path: Path) -> dict:
+    """Summarise a predictions.jsonl file (the generate-only output).
+    Each line is a dict with at least instance_id and model_patch."""
     if not path.exists():
-        return {"error": f"Report file not found: {path}"}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as e:
-        return {"error": f"JSON parse failed: {e}"}
-
-
-def summarise(report: dict) -> dict:
-    """Extract the headline numbers we care about for parity."""
-    results = report.get("results") or []
-    n = len(results)
-
-    def _count(key: str) -> int:
-        return sum(1 for r in results if r.get(key))
-
-    patches = _count("prediction")
-    resolved = sum(
-        1 for r in results
-        if r.get("eval") and r["eval"].get("resolved")
-    )
-    empty = sum(
-        1 for r in results
-        if not r.get("prediction")
-    )
-    errors = _count("error")
-
+        return {"error": f"Predictions file not found: {path}"}
+    lines = []
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            lines.append(json.loads(raw))
+        except json.JSONDecodeError:
+            continue
+    n = len(lines)
+    patches = sum(1 for r in lines if r.get("model_patch", "").strip())
+    per_task = [
+        (r["instance_id"], "PATCH" if r.get("model_patch", "").strip() else "EMPTY")
+        for r in lines
+    ]
     return {
         "n": n,
         "patches": patches,
         "patch_rate": patches / n if n else 0.0,
-        "resolved": resolved,
-        "resolved_rate": resolved / n if n else 0.0,
-        "empty": empty,
-        "errors": errors,
+        "empty": n - patches,
+        "per_task": per_task,
     }
 
 
 def write_summary(
     *,
     out_md: Path,
-    bash_report: dict,
-    typed_report: dict,
+    bash_predictions: Path,
+    typed_predictions: Path,
     limit: int,
     offset: int,
     generate_only: bool,
 ) -> None:
-    b = summarise(bash_report)
-    t = summarise(typed_report)
+    b = summarise_predictions_jsonl(bash_predictions)
+    t = summarise_predictions_jsonl(typed_predictions)
+    if "error" in b or "error" in t:
+        print(f"WARN: {b.get('error', '')} {t.get('error', '')}", file=sys.stderr)
+        return
 
-    # Functional criterion (the real decision gate at smoke scale):
     typed_functions = t["patches"] > 0
-
-    # Parity band (±2pp) — informational only; smoke N cannot confirm
-    # it statistically.
     patch_gap = abs(b["patch_rate"] - t["patch_rate"]) * 100.0
-    resolved_gap = abs(b["resolved_rate"] - t["resolved_rate"]) * 100.0
 
     lines = [
         "# SWE-bench typed-vs-bash parity smoke",
@@ -154,9 +188,19 @@ def write_summary(
         "|---|---|---|",
         f"| N | {b['n']} | {t['n']} |",
         f"| Patches produced | {b['patches']} ({b['patch_rate']:.0%}) | {t['patches']} ({t['patch_rate']:.0%}) |",
-        f"| Resolved (Docker) | {b['resolved']} ({b['resolved_rate']:.0%}) | {t['resolved']} ({t['resolved_rate']:.0%}) |",
         f"| Empty | {b['empty']} | {t['empty']} |",
-        f"| Errors | {b['errors']} | {t['errors']} |",
+        "",
+        "## Per-task breakdown",
+        "",
+        "| instance_id | Arm A | Arm B |",
+        "|---|---|---|",
+    ]
+    # Per-task is indexed by instance_id — join the two arms on that key.
+    b_map = dict(b["per_task"])
+    t_map = dict(t["per_task"])
+    for iid in sorted(set(b_map) | set(t_map)):
+        lines.append(f"| {iid} | {b_map.get(iid, '?')} | {t_map.get(iid, '?')} |")
+    lines += [
         "",
         "## Decision gate (functional criterion)",
         "",
@@ -165,30 +209,27 @@ def write_summary(
     ]
     if typed_functions:
         lines.append(
-            "=> **Safe to flip `AgentConfig.dangerous_tools=False` default** on "
-            "the functional-parity criterion. Scale to a larger N if a confidence "
-            "interval on the pass-rate gap matters for your decision."
+            "=> Safe to flip `AgentConfig.dangerous_tools=False` default on the "
+            "functional criterion. Scale to Docker eval at larger N if a "
+            "resolved-rate confidence interval matters."
         )
     else:
         lines.append(
-            "=> **DO NOT FLIP.** Typed-only arm produced zero patches; the template "
+            "=> DO NOT FLIP. Typed-only arm produced zero patches; the template "
             "or tool descriptions are blocking the model. Fix that before re-smoking."
         )
-    lines.extend([
+    lines += [
         "",
         "## Statistical caveat",
         "",
-        f"Observed patch-rate gap: {patch_gap:.1f} pp "
-        f"({'within' if patch_gap <= 2 else 'outside'} the ±2 pp parity band).",
-        f"Observed resolved-rate gap: {resolved_gap:.1f} pp.",
+        f"Observed patch-rate gap: {patch_gap:.1f} pp.",
         "",
-        "Per-task variance is ~10 pp. Combined arm-gap SE at this N is too wide "
-        "to confirm ±2 pp parity statistically. These gaps are descriptive, not "
-        "inferential. The functional criterion above is the actual decision gate "
-        "at smoke scale.",
+        "Per-task variance is ~10 pp. At N=10 the combined arm-gap standard error "
+        "is ~15 pp — a 10 pp gap is inside noise. The red-team plan's '±2 pp at "
+        "N=50' criterion is below the noise floor even at N=50 (combined SE ~2 pp); "
+        "confirming ±2 pp parity statistically would need N~600 per arm.",
         "",
-    ])
-
+    ]
     out_md.write_text("\n".join(lines), encoding="utf-8")
     print("\n" + "\n".join(lines))
 
@@ -211,9 +252,11 @@ def main() -> int:
     bench_dir = repo_root / "docs" / "benchmarks" / f"{today}-swebench-parity-smoke"
     bench_dir.mkdir(parents=True, exist_ok=True)
 
-    bash_json = bench_dir / f"{today}-swebench-parity-bash.json"
-    typed_json = bench_dir / f"{today}-swebench-parity-typed.json"
-    summary_md = bench_dir / f"{today}-swebench-parity-summary.md"
+    bash_json = bench_dir / f"{today}-parity-bash.json"
+    typed_json = bench_dir / f"{today}-parity-typed.json"
+    bash_predictions = bench_dir / f"{today}-parity-bash-predictions.jsonl"
+    typed_predictions = bench_dir / f"{today}-parity-typed-predictions.jsonl"
+    summary_md = bench_dir / f"{today}-parity-summary.md"
 
     if not args.skip_bash:
         rc = run_arm(
@@ -223,11 +266,11 @@ def main() -> int:
             limit=args.limit,
             offset=args.offset,
             out_json=bash_json,
+            predictions_dest=bash_predictions,
             generate_only=args.generate_only,
         )
         if rc != 0:
-            print(f"\nArm A (bash) exited with code {rc}. Continuing to Arm B.",
-                  file=sys.stderr)
+            print(f"\nArm A exited {rc}; continuing to Arm B.", file=sys.stderr)
 
     rc = run_arm(
         repo_root=repo_root,
@@ -236,18 +279,16 @@ def main() -> int:
         limit=args.limit,
         offset=args.offset,
         out_json=typed_json,
+        predictions_dest=typed_predictions,
         generate_only=args.generate_only,
     )
     if rc != 0:
-        print(f"\nArm B (typed-only) exited with code {rc}.", file=sys.stderr)
-
-    bash_report = load_report(bash_json)
-    typed_report = load_report(typed_json)
+        print(f"\nArm B exited {rc}.", file=sys.stderr)
 
     write_summary(
         out_md=summary_md,
-        bash_report=bash_report,
-        typed_report=typed_report,
+        bash_predictions=bash_predictions,
+        typed_predictions=typed_predictions,
         limit=args.limit,
         offset=args.offset,
         generate_only=args.generate_only,
