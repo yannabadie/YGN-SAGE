@@ -1163,6 +1163,27 @@ class CognitiveOrchestrationPipeline:
                 # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
                 # guardrails + memory. Replaces the raw provider.generate() loop.
 
+                # A0a (2026-04-23, ALIRE2 §4 "shared mutable state"):
+                # snapshot EVERY field we are about to mutate before touching
+                # any of them. The prior code snapshotted only `_llm` and
+                # `config.llm`, leaving 8 others (write_gate, gate_*, _on_drift,
+                # validation_level, max_steps, stall_after_tool_steps,
+                # _current_topology) dirty for the next caller after this
+                # bypass path returned. The `finally` block below restores
+                # every one of these; concurrency-safe restoration (per-run
+                # isolated context) is deferred to B9.
+                _orig_bypass_state = {
+                    "_skip_routing": getattr(self._agent_loop, "_skip_routing", False),
+                    "_current_topology": self._agent_loop._current_topology,
+                    "write_gate": getattr(self._agent_loop, "write_gate", None),
+                    "gate_current_task": getattr(self._agent_loop, "gate_current_task", None),
+                    "gate_source_tier": getattr(self._agent_loop, "gate_source_tier", None),
+                    "_on_drift": getattr(self._agent_loop, "_on_drift", None),
+                    "validation_level": self._agent_loop.config.validation_level,
+                    "max_steps": self._agent_loop.config.max_steps,
+                    "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
+                }
+
                 # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
                 self._agent_loop._skip_routing = True
                 # H4: Clear topology (pipeline owns topology, not agent_loop)
@@ -1290,8 +1311,21 @@ class CognitiveOrchestrationPipeline:
                     ctx.tool_turn_count = getattr(self._agent_loop, "tool_turn_count", 0)
                     ctx.executed_commands = list(getattr(self._agent_loop, "executed_commands", []))
                 finally:
-                    # Restore agent_loop state (safe for next run)
-                    self._agent_loop._skip_routing = False
+                    # A0a restoration — complete (10 fields, matches the
+                    # snapshot taken before the first mutation above).
+                    # Prior to 2026-04-23 this restored only 3 of the 10
+                    # mutated fields, leaving write_gate / _on_drift /
+                    # validation_level / max_steps / stall_after_tool_steps
+                    # / _current_topology dirty for the next caller.
+                    self._agent_loop._skip_routing = _orig_bypass_state["_skip_routing"]
+                    self._agent_loop._current_topology = _orig_bypass_state["_current_topology"]
+                    self._agent_loop.write_gate = _orig_bypass_state["write_gate"]
+                    self._agent_loop.gate_current_task = _orig_bypass_state["gate_current_task"]
+                    self._agent_loop.gate_source_tier = _orig_bypass_state["gate_source_tier"]
+                    self._agent_loop._on_drift = _orig_bypass_state["_on_drift"]
+                    self._agent_loop.config.validation_level = _orig_bypass_state["validation_level"]
+                    self._agent_loop.config.max_steps = _orig_bypass_state["max_steps"]
+                    self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]
                     self._agent_loop._llm = _original_llm
                     self._agent_loop.config.llm = _original_config
 
