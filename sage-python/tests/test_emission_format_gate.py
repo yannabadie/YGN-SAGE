@@ -123,6 +123,36 @@ def test_both_templates_keep_exploration_rule():
     assert "at least THREE distinct tool calls" in SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE
 
 
+def test_prefix_before_patch_format_is_byte_identical():
+    """T2.3 spec: "Keeps the whole Repository, Issue Description,
+    Mandatory Workflow sections IDENTICAL (line-for-line)."
+
+    This invariant is load-bearing for the T2.5 paired smoke — if the
+    unified and search-replace templates drift in wording above the
+    "## Patch Format" seam, any pass-rate delta between the two arms
+    is confounded with prompt drift rather than emission format.
+
+    Enforced byte-for-byte: hyphen-vs-em-dash, trailing whitespace,
+    backslash line-continuations all count.
+    """
+    from sage.input.swebench import (
+        SWEBENCH_SYSTEM_TEMPLATE,
+        SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE,
+    )
+
+    seam = "## Patch Format"
+    pre_unified = SWEBENCH_SYSTEM_TEMPLATE[: SWEBENCH_SYSTEM_TEMPLATE.index(seam)]
+    pre_search_replace = SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE[
+        : SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE.index(seam)
+    ]
+
+    assert pre_unified == pre_search_replace, (
+        "Prefix drift detected above the Patch Format seam. The spec "
+        "requires byte-identity so T2.5 can attribute smoke deltas to "
+        "the emission format alone."
+    )
+
+
 # ---------------------------------------------------------------------------
 # get_swebench_template — dispatcher
 # ---------------------------------------------------------------------------
