@@ -123,14 +123,21 @@ def test_both_templates_keep_exploration_rule():
     assert "at least THREE distinct tool calls" in SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE
 
 
-def test_prefix_before_patch_format_is_byte_identical():
-    """T2.3 spec: "Keeps the whole Repository, Issue Description,
-    Mandatory Workflow sections IDENTICAL (line-for-line)."
+def test_repository_and_issue_description_sections_are_byte_identical():
+    """The ``## Repository`` and ``## Issue Description`` sections MUST
+    be byte-identical between the two templates — those identify the
+    task and are the load-bearing discriminator for paired-smoke
+    attribution. If the two templates' descriptions of the task drift,
+    any pass-rate delta is confounded with prompt-phrasing drift
+    rather than emission format.
 
-    This invariant is load-bearing for the T2.5 paired smoke — if the
-    unified and search-replace templates drift in wording above the
-    "## Patch Format" seam, any pass-rate delta between the two arms
-    is confounded with prompt drift rather than emission format.
+    Narrower than the original T2.3 invariant (which locked the prefix
+    all the way through ``## Mandatory Workflow``). The 2026-04-23
+    prompt-hygiene pass found two byte-identity carryovers that made
+    no sense under SR emission: the opening line ("minimal unified
+    diff patch") and step 7 ("emit it directly in a ```diff fence").
+    Those are ALLOWED to differ now; the contract narrows to the
+    two sections that identify the task (the paired-smoke variable).
 
     Enforced byte-for-byte: hyphen-vs-em-dash, trailing whitespace,
     backslash line-continuations all count.
@@ -140,22 +147,27 @@ def test_prefix_before_patch_format_is_byte_identical():
         SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE,
     )
 
-    seam = "## Patch Format"
-    assert SWEBENCH_SYSTEM_TEMPLATE.count(seam) == 1, (
-        "seam must appear exactly once in unified template"
-    )
-    assert SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE.count(seam) == 1, (
-        "seam must appear exactly once in search-replace template"
-    )
-    pre_unified = SWEBENCH_SYSTEM_TEMPLATE[: SWEBENCH_SYSTEM_TEMPLATE.index(seam)]
-    pre_search_replace = SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE[
-        : SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE.index(seam)
-    ]
+    start_marker = "## Repository"
+    end_marker = "## Mandatory Workflow"
 
-    assert pre_unified == pre_search_replace, (
-        "Prefix drift detected above the Patch Format seam. The spec "
-        "requires byte-identity so T2.5 can attribute smoke deltas to "
-        "the emission format alone."
+    def _extract_task_id_block(template: str) -> str:
+        assert template.count(start_marker) == 1, (
+            f"{start_marker!r} must appear exactly once"
+        )
+        assert template.count(end_marker) == 1, (
+            f"{end_marker!r} must appear exactly once"
+        )
+        return template[
+            template.index(start_marker) : template.index(end_marker)
+        ]
+
+    unified_block = _extract_task_id_block(SWEBENCH_SYSTEM_TEMPLATE)
+    sr_block = _extract_task_id_block(SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE)
+
+    assert unified_block == sr_block, (
+        "Repository + Issue Description drift detected. These sections "
+        "identify the task and must stay byte-identical so paired-smoke "
+        "deltas attribute to the emission format, not prompt phrasing."
     )
 
 

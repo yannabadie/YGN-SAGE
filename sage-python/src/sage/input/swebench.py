@@ -63,11 +63,12 @@ when a typed tool does not cover the operation you need.
 examples for a third-party library from Context7 (requests, Django, \
 astropy, SQLAlchemy, Flask, etc.). Use this for API-contract \
 questions the checked-out source tree cannot answer on its own.
-- **search_exocortex** (optional) — query the local research corpus \
-for papers on formal verification, cognitive architectures, \
-evolutionary computation, or memory systems. Almost never the right \
-tool for day-to-day bug fixes; reach for it only when the issue is \
-genuinely research-shaped.
+- **search_exocortex** — query the local research corpus for passages \
+on a domain concept the repository source alone cannot settle \
+(serialization protocol, wire-format spec, standard-naming conventions, \
+formal verification patterns). Call it at most once or twice per task; \
+it complements `lookup_library_docs` for concepts that aren't \
+library-API-shaped.
 - Memory + knowledge tools registered at boot (if any).
 
 You MUST make at least THREE distinct tool calls *before* writing any \
@@ -123,25 +124,27 @@ verified this with execute_bash.
 
 # ---------------------------------------------------------------------------
 # Track 2 task 2.3 — SEARCH/REPLACE parallel template.
-# All sections above the "Patch Format — Strict" header are cloned verbatim
-# from ``SWEBENCH_SYSTEM_TEMPLATE``. Only the patch-format section differs:
-# the model is instructed to emit ``<<<<<<< SEARCH`` / ``=======`` /
-# ``>>>>>>> REPLACE`` blocks (preceded by ``## File:`` annotations) that
-# the bench converts to a unified diff via ``_blocks_to_unified_diff`` in
-# ``sage.bench.swebench_bench`` (T2.1+T2.2).
+# The ``## Repository`` / ``## Issue Description`` sections are cloned
+# verbatim from ``SWEBENCH_SYSTEM_TEMPLATE`` — those identify the task
+# and are the load-bearing discriminator for paired-smoke attribution.
+# The opening line, step 7 of the Mandatory Workflow, and the entire
+# ``## Patch Format`` section diverge so the SR template describes the
+# SR emission format end to end.
 #
-# Kept-identical rationale: anchoring both templates on the same repo /
-# issue / workflow wording isolates "Patch Format" as the single variable
-# in the T2.5 paired smoke, so any pass-rate delta is attributable to the
-# emission format itself rather than to incidental prompt wording drift.
-# Drawback: step 7 of the Mandatory Workflow still references a ```diff
-# fence and ``apply_patch(diff, check_only=True)``. Spec directive is
-# "keep the workflow line-for-line identical"; T2.4/T2.5 decides whether
-# to soften that wording after the smoke, so we leave it untouched here.
+# 2026-04-23 prompt-hygiene pass: the original T2.3 commit cloned both
+# templates byte-identically up to ``## Patch Format`` to isolate the
+# emission-format variable in the T2.5 smoke. That left carryovers
+# that made no sense under SR emission — the opening named "unified
+# diff patch" and step 7 told the model to "emit it directly in a
+# ``diff`` fence". The 2026-04-23 smoke (finding #5) showed those
+# carryovers were part of why the model still emitted diff fences
+# under the SR variant. This pass rewrites them to describe SR; the
+# narrower byte-identity invariant in ``test_emission_format_gate.py``
+# still locks the issue-description + repository sections so the two
+# templates can't drift on the parts that ARE load-bearing.
 SWEBENCH_SYSTEM_TEMPLATE_SEARCH_REPLACE = """\
 You are an expert software engineer working inside a checked-out repository \
-clone. Your job is to resolve a GitHub issue by producing a minimal unified \
-diff patch.
+clone. Your job is to resolve a GitHub issue by producing a minimal patch.
 
 ## Repository
 - **Repo:** {repo}
@@ -181,11 +184,12 @@ when a typed tool does not cover the operation you need.
 examples for a third-party library from Context7 (requests, Django, \
 astropy, SQLAlchemy, Flask, etc.). Use this for API-contract \
 questions the checked-out source tree cannot answer on its own.
-- **search_exocortex** (optional) — query the local research corpus \
-for papers on formal verification, cognitive architectures, \
-evolutionary computation, or memory systems. Almost never the right \
-tool for day-to-day bug fixes; reach for it only when the issue is \
-genuinely research-shaped.
+- **search_exocortex** — query the local research corpus for passages \
+on a domain concept the repository source alone cannot settle \
+(serialization protocol, wire-format spec, standard-naming conventions, \
+formal verification patterns). Call it at most once or twice per task; \
+it complements `lookup_library_docs` for concepts that aren't \
+library-API-shaped.
 - Memory + knowledge tools registered at boot (if any).
 
 You MUST make at least THREE distinct tool calls *before* writing any \
@@ -212,9 +216,9 @@ empty body"). One targeted lookup beats guessing at an API shape.
 5. **Verify** hunk line numbers immediately before emitting them.
    Example: `search_repo(query="^def function_name", regex=True)`.
 6. Reason about the minimal change. If unsure, read more. Never guess line numbers.
-7. Write the patch. You may emit it directly in a ```diff fence, or \
-call `apply_patch(diff, check_only=True)` first to validate the \
-patch shape against the repo before returning your final answer.
+7. Write your patch in the SEARCH/REPLACE block format specified in the \
+Patch Format section below. One block per localised edit; multiple \
+blocks are fine if the fix touches several files or several spots.
 
 ## Patch Format — Strict
 
