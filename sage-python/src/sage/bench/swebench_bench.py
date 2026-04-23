@@ -35,7 +35,7 @@ import time
 import types
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from sage.bench.runner import BenchReport, TaskResult
@@ -954,7 +954,6 @@ class SWEBenchBench:
                     and _get_emission_format() == "search-replace"
                     and repo_dir
                 ):
-                    from pathlib import PurePath
                     raw_blocks = _extract_search_replace_blocks(response, repo_dir)
                     # Normalise backslash paths (spec reviewer flag):
                     # LLMs on Windows sometimes emit ``pkg\mod.py`` even
@@ -965,6 +964,10 @@ class SWEBenchBench:
                         (str(PurePath(p)).replace("\\", "/"), s, r)
                         for p, s, r in raw_blocks
                     ]
+                    log.info(
+                        "[%s] SR fallback: %d raw blocks, %d after normalisation",
+                        instance_id, len(raw_blocks), len(normalised_blocks),
+                    )
                     if normalised_blocks:
                         sr_diff, sr_meta = _blocks_to_unified_diff(
                             normalised_blocks, repo_dir,
@@ -977,9 +980,16 @@ class SWEBenchBench:
                             # Precedence: any fuzzy wins, else all-exact
                             # counts as exact; any missing without a
                             # concrete exact/fuzzy alongside collapses to
-                            # missing (caller's diff is empty in that
-                            # branch, but we reach here only when sr_diff
-                            # is non-empty, so at least one block matched).
+                            # missing. Note the distinction vs `"empty"`:
+                            #   - ``"empty"`` = extractor returned ``[]``
+                            #     (no SR markers parsed from the response;
+                            #     the model emitted prose or a fence we
+                            #     did not recognise).
+                            #   - ``"search-replace-missing"`` = blocks
+                            #     parsed fine, but none of their
+                            #     ``search_text`` matched any repo file
+                            #     (exact or fuzzy). T2.5 per-bucket
+                            #     analysis keys off this split.
                             if "fuzzy" in kinds:
                                 extraction_method = "search-replace-fuzzy"
                             elif "exact" in kinds:
