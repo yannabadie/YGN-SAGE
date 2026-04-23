@@ -350,3 +350,67 @@ def test_blocks_to_unified_diff_missing_records_and_skips(tmp_path: Path) -> Non
     assert diff_text == ""
     assert metadata.get("per_block"), "metadata must include a per_block list"
     assert metadata["per_block"][0]["match_kind"] == "missing"
+
+
+# ---------------------------------------------------------------------------
+# Path-traversal guard (regression tests for review blocker B1)
+# ---------------------------------------------------------------------------
+
+
+def test_diff_rejects_parent_directory_escape(tmp_path: Path) -> None:
+    """The ``## File:`` marker is LLM-controlled; a malicious marker like
+    ``../../etc/passwd`` must not cause ``_blocks_to_unified_diff`` to
+    read a file outside ``repo_dir``. The block drops with
+    ``match_kind == 'missing'`` and no hunk is contributed.
+    """
+    # repo_dir is a child of tmp_path; the block tries to escape one level.
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    # Create a sibling "secret" file that the attack would try to read.
+    (tmp_path / "secret.txt").write_text("SECRET\n", encoding="utf-8")
+    # Also create a benign file inside repo_dir so the fixture is non-empty.
+    (repo_dir / "ok.py").write_text("ok = True\n", encoding="utf-8")
+
+    blocks = [
+        (
+            "../secret.txt",
+            "SECRET\n",
+            "owned\n",
+        )
+    ]
+
+    diff_text, metadata = _blocks_to_unified_diff(blocks, repo_dir)
+
+    assert diff_text == ""
+    assert metadata["per_block"][0]["file"] == "../secret.txt"
+    assert metadata["per_block"][0]["match_kind"] == "missing"
+
+
+def test_diff_rejects_absolute_path(tmp_path: Path) -> None:
+    """An absolute path in the ``## File:`` marker (e.g. the Windows
+    ``C:/Windows/...`` case that bypasses ``Path(repo) / absolute``
+    joining) must be rejected. Uses ``tmp_path`` itself — which is
+    outside the ``repo_dir`` child — as the stand-in absolute path, so
+    the test is platform-neutral.
+    """
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("private = 'data'\n", encoding="utf-8")
+
+    # Absolute POSIX-formatted path pointing outside repo_dir.
+    abs_path_str = str(outside).replace("\\", "/")
+
+    blocks = [
+        (
+            abs_path_str,
+            "private = 'data'\n",
+            "private = 'pwned'\n",
+        )
+    ]
+
+    diff_text, metadata = _blocks_to_unified_diff(blocks, repo_dir)
+
+    assert diff_text == ""
+    assert metadata["per_block"][0]["file"] == abs_path_str
+    assert metadata["per_block"][0]["match_kind"] == "missing"

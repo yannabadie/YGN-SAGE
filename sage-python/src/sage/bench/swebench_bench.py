@@ -294,6 +294,29 @@ _SR_SEPARATOR = "======="
 _SR_REPLACE_MARKER = ">>>>>>> REPLACE"
 _SR_FUZZY_THRESHOLD = 0.95
 
+# Defensive caps for the ``## File:``-less content-scan fallback. SWE-bench
+# repos (django, sympy, matplotlib, ...) ship multi-MB binary blobs, cached
+# wheels, PNG fixtures — slurping them whole into memory on every block is
+# wasteful and memory-risky. The suffix allow-list is intentionally
+# conservative: source-code / config / doc extensions only. The size cap
+# at 2 MB is comfortably above any real source file but well below any
+# data-file-shaped outlier we would want to decode UTF-8.
+_SR_MAX_SCAN_BYTES = 2_000_000
+_SR_SCAN_SUFFIXES = {
+    ".py",
+    ".pyi",
+    ".pyx",
+    ".rst",
+    ".md",
+    ".txt",
+    ".cfg",
+    ".toml",
+    ".ini",
+    ".yaml",
+    ".yml",
+    ".json",
+}
+
 
 def _extract_search_replace_blocks(
     response: str,
@@ -439,7 +462,16 @@ def _scan_repo_for_unique_match(repo_dir: Path, search_text: str) -> str | None:
     match, else ``None``.
 
     Used only as a fallback when the LLM omitted the ``## File:`` marker.
+
+    Defensive perf caps: suffix allow-list (``_SR_SCAN_SUFFIXES``) filters
+    to source / config / doc files before any read, and any file whose
+    size exceeds ``_SR_MAX_SCAN_BYTES`` is skipped. This avoids slurping
+    binary blobs or wheel caches on real SWE-bench repos. Defense in
+    depth: the returned path is also confirmed to resolve inside
+    ``repo_dir`` so that a malicious symlink can't redirect the scan
+    into ``/etc`` or similar.
     """
+    repo_root = repo_dir.resolve()
     matches: list[Path] = []
     for p in repo_dir.rglob("*"):
         if not p.is_file():
@@ -451,6 +483,15 @@ def _scan_repo_for_unique_match(repo_dir: Path, search_text: str) -> str | None:
                 continue
         except ValueError:
             continue
+        if p.suffix not in _SR_SCAN_SUFFIXES:
+            continue
+        try:
+            size = p.stat().st_size
+        except OSError:
+            # Broken symlink, permission error, race with rm: skip.
+            continue
+        if size > _SR_MAX_SCAN_BYTES:
+            continue
         try:
             contents = p.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
@@ -461,7 +502,20 @@ def _scan_repo_for_unique_match(repo_dir: Path, search_text: str) -> str | None:
                 return None
     if len(matches) != 1:
         return None
-    return matches[0].relative_to(repo_dir).as_posix()
+    # Symlink defense in depth: confirm the candidate's resolved location
+    # is still inside the repo. rglob() doesn't follow symlinks by
+    # default on Path, but a symlink whose target lives outside the tree
+    # would silently redirect future reads.
+    winner = matches[0]
+    try:
+        winner.resolve().relative_to(repo_root)
+    except ValueError:
+        log.warning(
+            "SEARCH/REPLACE scan: %s resolves outside repo_dir - dropping",
+            winner,
+        )
+        return None
+    return winner.relative_to(repo_dir).as_posix()
 
 
 def _blocks_to_unified_diff(
@@ -488,11 +542,31 @@ def _blocks_to_unified_diff(
     Caller treats an empty ``diff_text`` as "no patch".
     """
     repo_path = Path(repo_dir)
+    repo_root = repo_path.resolve()
     diff_parts: list[str] = []
     per_block: list[dict[str, str]] = []
 
     for path_str, search_text, replace_text in blocks:
-        file_path = repo_path / path_str
+        # Path-traversal guard. The ``## File:`` marker is LLM-controlled and
+        # could hold ``../../etc/passwd`` or an absolute Windows path
+        # (``C:/Windows/...``). On Windows, ``Path("/repo") / "C:/Windows"``
+        # silently resolves to ``C:/Windows`` (the absolute RHS wins). Join,
+        # resolve, then require the result to live under repo_root. ``strict=
+        # False`` (the default) so non-existent paths still resolve rather
+        # than raising — we want the match-kind=missing branch below to be
+        # the one that catches "unknown file", not this guard.
+        candidate = (repo_path / path_str).resolve()
+        try:
+            candidate.relative_to(repo_root)
+        except ValueError:
+            log.warning(
+                "SEARCH/REPLACE block: path %r resolves to %s, outside "
+                "repo_dir %s - marking missing",
+                path_str, candidate, repo_root,
+            )
+            per_block.append({"file": path_str, "match_kind": "missing"})
+            continue
+        file_path = candidate
         try:
             file_text = file_path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError) as exc:
@@ -562,9 +636,18 @@ def _build_hunk(
 
     All ``minus_lines`` and ``plus_lines`` MUST already end with ``\\n``
     except possibly the very last line if the original file/replacement
-    lacked a trailing newline. We tolerate a missing trailing newline on
-    the last line by emitting "\\ No newline at end of file" markers the
-    way git does.
+    lacked a trailing newline.
+
+    "No newline at end of file" semantics: we emit ``\\ No newline at
+    end of file`` ONLY when the hunk covers the file's final line and
+    that line lacks a terminating newline. In practice this invariant
+    holds because callers derive ``minus_lines`` via
+    ``splitlines(keepends=True)`` on the file bytes, which preserves
+    the trailing-newline signal — an absent final ``\\n`` on
+    ``minus_lines[-1]`` means the hunk really does reach EOF. If a
+    future caller feeds an arbitrary mid-file window whose last line
+    happens to lack ``\\n``, the marker would be emitted incorrectly;
+    don't do that.
     """
     # Detect missing trailing newlines on the last minus/plus line. If the
     # block includes the file's trailing "\n" (the common SWE-bench case)
