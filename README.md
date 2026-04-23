@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-1897%20collected-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-1999%20Py%20%2B%20496%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -205,14 +205,14 @@ Each topology node can use a different provider. The policy model can express `p
 | **HumanEval+ pipeline** | **84.1%** (138/164) | The "89.6%" figure previously cited here was an aspirational projection of 84.1% + 5.5pp; it was never actually measured. Saturated benchmark — prefer BCB for framework delta. |
 | **kNN routing GT** | **92%** (46/50) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601). Rust SystemRouter 88%. |
 | **sage-topo-bench** (our internal topology sweep, NOT the UCL TopologyBench 2024 optical-network dataset) | **94.0%** mean (9/9) | 4.3pp spread across topologies. Distinct from both the optical-network TopologyBench and the TopoBench (arXiv 2603.12133) LLM puzzle benchmark. |
-| **SWE-bench Lite** | 0% (0/5) diagnostic | 2026-04-08: 3 gaps — routing S2→S3, tool-use prompt, multi-turn loop. Remediation in progress. |
+| **SWE-bench Lite** | 10% (1/10) resolved, 40% (4/10) patch-generated | 2026-04-21 v15 Docker-graded smoke after 3-fix chain (Directive #3 gating, CRLF, UTF-8). Gen-rate prior to Docker grading was 70% (patch-produce rate), not pass-rate. |
 
 ### Tests
 
 | Suite | Result |
 |-------|--------|
-| Python | **1897 collected** (training-test deletion on 2026-04-15) |
-| Rust | **429 passed** with smt, tool-executor, onnx, cognitive features (2026-04-10) |
+| Python | **1999 passed** (2026-04-22 P0.4 B +41: 40 red-team attacks + 1 fixed regression; 11 pre-existing failures are API-key-dependent) |
+| Rust | **496 passed** with `smt` feature (2026-04-22 P0.4 B +16: 8 `wasm_python` + 8 structural sandbox tests). `sandbox`, `cranelift`, `tool-executor`, `cognitive` are now Cargo default features (ADR-013 §5 flip). |
 | Discovery | 95 tests |
 | CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
 
