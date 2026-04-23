@@ -226,7 +226,7 @@ graph LR
 | `RagCache` | `#[pyclass]` | Cache LRU pour RAG | - | Runtime | Tests (5 #[test]) | - |
 | `RustRelevanceGate` | `#[pyclass]` | Filtrage CRAG threshold | - | Runtime | Tests (8 #[test]) | - |
 | `RustEntityGraph` | `#[pyclass]` | Graphe d'entites | petgraph | Runtime | Tests (12 #[test]) | - |
-| `ToolExecutor` | `#[pyclass]` | Validation tree-sitter + execution Wasm/subprocess | wasmtime (opt), tree-sitter, process-wrap | Runtime (feature `tool-executor`) | Tests (8 #[test]) | Wasm WASI > subprocess fallback |
+| `ToolExecutor` | `#[pyclass]` | Validation tree-sitter + embedded RustPython Wasm (deny-by-default WASI-p1, ADR-013 §5 flip) | wasmtime 43, tree-sitter | Runtime (default features incl. `sandbox`+`cranelift`+`tool-executor`) | Tests (8 #[test] + 5 cache_tests) | `validate_and_execute` fails closed without Wasm; no subprocess fallback. `execute_raw` (gated by `SAGE_UNSAFE_RAW_EXEC=1`) keeps subprocess as audited escape hatch. |
 | `WasmSandbox` | `#[pyclass]` | Sandbox Wasm (wasmtime 36 LTS) | wasmtime | Experimental (feature `sandbox`) | Tests | cranelift exclu sur Windows |
 | `TopologyDensity` | `#[pyclass]` | S_complex (AgentConductor) : S_node, S_edge, S_depth | petgraph | Runtime | Tests (11 #[test]) | N_max par systeme (4/7/10) |
 | `TopologyReward` | `#[pyclass]` | Reward dense multi-signal (execution + structural + density + LTL) | HybridVerifier, TopologyDensity, LtlVerifier | Training | Tests (11 #[test]) | + resilience + cost_efficiency |

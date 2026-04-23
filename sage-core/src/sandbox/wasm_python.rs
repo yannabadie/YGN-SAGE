@@ -1,11 +1,19 @@
 //! Embedded RustPython interpreter compiled to wasm32-wasip1, loaded by
 //! wasmtime with deny-by-default WASI capabilities.
 //!
-//! This is the Wasm-based Python execution sandbox that backs the
-//! `execute_raw` path when `SAGE_UNSAFE_RAW_EXEC=1` AND this feature
-//! is compiled in. Unlike the subprocess fallback — which gives the
-//! code full host access and is only unlocked via a separate
-//! `SAGE_UNSAFE_UNSANDBOXED=1` gate — the Wasm path enforces:
+//! This is the Wasm-based Python execution sandbox that backs TWO call
+//! sites:
+//!
+//! * `validate_and_execute` — the default sandboxed path since ADR-013
+//!   §5 flip (2026-04-22). No env-var opt-in. If the embedded wasm
+//!   isn't bundled the call fails closed — the old
+//!   `SAGE_UNSAFE_UNSANDBOXED=1` subprocess fallback was removed.
+//! * `execute_raw` — gated by `SAGE_UNSAFE_RAW_EXEC=1`. Prefers the
+//!   Wasm path when bundled, but keeps a subprocess fall-through for
+//!   callers who explicitly opted into the bypass (AST validation is
+//!   also skipped on this path, which is why the gate is separate).
+//!
+//! The Wasm path enforces:
 //!
 //! * No filesystem: `WasiCtxBuilder` has NO `preopened_dir()`.
 //! * No network: WASI-preview1 doesn't expose sockets at all.
@@ -14,15 +22,17 @@
 //!   secrets in the host env (API keys, DB URLs) are invisible.
 //! * No clock leak: we don't call `inherit_stdio()` — stdout and
 //!   stderr are captured into `MemoryOutputPipe`s, not the host's.
-//! * Bounded runtime: wasmtime fuel caps CPU, our own deadline caps
-//!   wall-clock.
+//! * Bounded runtime: wasmtime epoch interruption caps wall-clock
+//!   per call; the memory limiter caps each call at 256 MiB.
 //!
 //! The RustPython binary itself is embedded via `include_bytes!` at
 //! a path written by `sage-core/build.rs`. When the sandbox feature
 //! is enabled but the runtime bytes weren't built / shipped,
-//! `WasmPythonExecutor::new()` returns an error and callers fall
-//! back through the normal deny-path (subprocess gate if the
-//! separate unsandboxed opt-in is set, else fail-closed).
+//! `WasmPythonExecutor::new()` returns `BytesMissing`. The caller
+//! behaviour depends on which entry point was used: `validate_and_execute`
+//! hard-fails with an operator-facing message; `execute_raw` falls
+//! through to the subprocess path (its explicit opt-in already
+//! authorised the bypass).
 //!
 //! Build recipe (local dev):
 //! ```text

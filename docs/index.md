@@ -15,7 +15,7 @@ The system is organized around **five cognitive pillars**:
 | **Topology** | Evolves multi-agent graph structures using MAP-Elites, CMA-ME, MCTS, and LLM synthesis |
 | **Strategy** | Routes tasks through S1/S2/S3 cognitive systems using kNN embeddings, contextual bandits, and BERT classifiers |
 | **Memory** | 4-tier memory hierarchy from Rust Arrow working memory to persistent ExoCortex RAG |
-| **Tools** | Wasm WASI sandboxed execution with tree-sitter AST validation and subprocess fallback |
+| **Tools** | Tree-sitter AST validation + embedded RustPython wasm32-wasip1 sandbox (deny-by-default WASI). `validate_and_execute` fails closed without Wasm since ADR-013 §5 (2026-04-22); `execute_raw` + `SAGE_UNSAFE_RAW_EXEC=1` is the audited escape hatch that still reaches subprocess. |
 | **Evolution** | Self-modifying agent topologies via SAMPO-directed mutations with formal verification |
 
 ## Key Differentiators

@@ -70,7 +70,7 @@ The performance-critical core, exposed to Python via PyO3 bindings. All hot-path
 | `topology/executor.rs` | Dual-mode scheduling (static toposort / dynamic gate-based) |
 | `verification/smt.rs` | OxiZ pure-Rust SMT solver (10 PyO3 methods, QF_LIA) |
 | `verification/ltl.rs` | Temporal property verification (reachability, safety, liveness) |
-| `sandbox/` | Wasm WASI sandbox + tree-sitter AST validation + subprocess fallback |
+| `sandbox/` | Embedded RustPython wasm32-wasip1 runtime (deny-by-default WASI) + tree-sitter AST validation. `validate_and_execute` fails closed without Wasm since ADR-013 §5 (2026-04-22); no silent subprocess fallback. `execute_raw` keeps subprocess as an audited escape hatch gated by `SAGE_UNSAFE_RAW_EXEC=1`. |
 
 ### sage-python (Python SDK)
 
@@ -155,7 +155,7 @@ flowchart LR
 
 The TopologyEngine generates a multi-agent graph (6-path strategy: S-MMU recall, archive lookup, LLM synthesis, mutation, MCTS, template fallback). The S-MMU injects relevant context from prior interactions as a SYSTEM message.
 
-**ACT** -- The TopologyExecutor runs the generated graph. For acyclic topologies, it uses Kahn's topological sort (static mode). For cyclic topologies with loops or conditional gates, it uses dynamic gate-based readiness scheduling. Code tasks go through sandboxed execution (Wasm WASI -> tree-sitter validation -> subprocess fallback).
+**ACT** -- The TopologyExecutor runs the generated graph. For acyclic topologies, it uses Kahn's topological sort (static mode). For cyclic topologies with loops or conditional gates, it uses dynamic gate-based readiness scheduling. Code tasks go through sandboxed execution (tree-sitter AST validation -> embedded RustPython Wasm with deny-by-default WASI). Since ADR-013 §5 (2026-04-22), `validate_and_execute` fails closed without Wasm — no silent subprocess fallback. The audited `execute_raw` + `SAGE_UNSAFE_RAW_EXEC=1` path remains for callers that explicitly need host-level execution.
 
 **LEARN** -- Output guardrails validate the result (cost, length, refusal detection). The MemoryAgent extracts entities for the semantic graph. The compressor writes to S-MMU with keywords, embeddings, and summaries. The outcome feeds back into the contextual bandit and MAP-Elites archive.
 

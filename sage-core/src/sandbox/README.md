@@ -1,14 +1,16 @@
 # sandbox/
 
-Sandboxed code execution and security validation for YGN-SAGE agents. Provides a multi-layer security pipeline: AST validation → Wasm WASI sandbox → subprocess fallback.
+Sandboxed code execution and security validation for YGN-SAGE agents. Since ADR-013 §5 (2026-04-22), the default pipeline for `validate_and_execute` is `tree-sitter AST validation → embedded RustPython wasm32-wasip1 sandbox (deny-by-default WASI-p1)`; there is NO subprocess fallback on this path. A subprocess fall-through still exists on `execute_raw`, which is a separately gated bypass (`SAGE_UNSAFE_RAW_EXEC=1`) that also skips AST validation.
 
 ## Feature Flags
 
 | Feature | Modules enabled |
 |---------|-----------------|
 | `tool-executor` | `validator.rs`, `subprocess.rs`, `tool_executor.rs` |
-| `sandbox` | `wasm.rs` (+ Wasm paths in `tool_executor.rs`) |
-| `cranelift` | JIT compilation in `wasm.rs` (Linux only) |
+| `sandbox` | `wasm.rs` + `wasm_python.rs` (embedded RustPython, opt-in via `cranelift`) (+ Wasm paths in `tool_executor.rs`) |
+| `cranelift` | JIT compilation for `wasm.rs` and `wasm_python.rs` (Linux default; Windows build supported since ADR-013) |
+
+Since ADR-013 §5 (2026-04-22), `sandbox`, `cranelift`, `tool-executor`, and `cognitive` are **Cargo default features**. A default `cargo build` ships a safe-by-default binary. Use `--no-default-features` for leaner builds.
 
 ## Module Layout
 
@@ -48,19 +50,19 @@ Combined validator + sandboxed executor. Primary entry point for dynamic tool cr
 
 - **`ToolExecutor`** (PyClass) -- `new(python_exe=None, timeout_secs=30)`
 - **`validate(code) -> ValidationResult`** -- tree-sitter validation only
-- **`validate_and_execute(py, code, args_json) -> ExecResult`** -- Validate, then execute via Wasm (if loaded) or subprocess. Releases GIL via `py.allow_threads()`
-- **`execute_raw(py, code, args_json) -> ExecResult`** -- Skip validation (for pre-validated code)
+- **`validate_and_execute(py, code, args_json) -> ExecResult`** -- Validate via tree-sitter, then execute via the sandbox chain below. Since ADR-013 §5 (2026-04-22), the chain **fails closed** without Wasm — no silent subprocess fallback. Releases GIL via `py.allow_threads()`.
+- **`execute_raw(py, code, args_json) -> ExecResult`** -- Gated by `SAGE_UNSAFE_RAW_EXEC=1`. Bypasses AST validation. Prefers embedded RustPython when bundled; falls through to subprocess otherwise (the explicit opt-in authorised the bypass).
 - **`load_precompiled_component(compiled_bytes, wasi=false)`** -- Load pre-compiled Wasm component (works without cranelift). Behind `sandbox` feature.
 - **`load_component(wasm_bytes, wasi=false)`** -- Compile and load Wasm component (requires `cranelift` feature).
-- **`has_wasm() -> bool`** -- Check if a Wasm component is loaded.
+- **`has_wasm() -> bool`** -- Check if an operator-loaded Wasm component is present (does NOT report on the embedded RustPython path — use `embedded_wasm_available()` at the crate root for that).
 - **`has_wasi() -> bool`** -- Check if the loaded component uses WASI.
 
-**Execution priority:**
-1. Wasm WASI sandbox (if `needs_wasi=true` and component loaded)
-2. Bare Wasm component (if component loaded without WASI)
-3. Subprocess fallback (always available)
+**Execution priority for `validate_and_execute` (post ADR-013 §5):**
+1. Operator-loaded Wasm Component-Model (if a component was registered via `load_component` / `load_precompiled_component`).
+2. Embedded RustPython wasm_python sandbox (default path, bundled under `sandbox + cranelift` with a non-empty `rustpython.wasm` at build time).
+3. **Hard fail** with an operator-facing `stderr`. No silent subprocess fallback — the old `SAGE_UNSAFE_UNSANDBOXED=1` gate was removed when the 40-attack red-team corpus validated the Wasm path.
 
-Bidirectional fallback: if WASI fails, tries bare; if bare fails, tries WASI; finally falls through to subprocess.
+`execute_raw` keeps its own ordering (embedded RustPython → subprocess), which is legal only because the `SAGE_UNSAFE_RAW_EXEC=1` gate already authorised the bypass.
 
 8 unit tests.
 
