@@ -175,31 +175,49 @@ CI (cacheable via `actions/cache`).
 **Why:** whatever A2 surfaces, fixing the 20% fast-abort rate has
 proportional payoff on every SWE-bench smoke.
 
-### B8. Finish or de-scope the Rust controller orchestration entry
+### B8. Finish or de-scope the Rust controller orchestration entry — ✅ CLOSED 2026-04-23 (de-scope)
 **Why:** ALIRE2 verification (A0a companion, 2026-04-23) confirmed
-`RustTopologyController::evaluate_and_decide` returns `None` (scaffold
-stub) in `sage-core/src/topology/controller.rs:189–197`. Per-path
-methods (`check_empty_error_reroute`, `check_quality_cascade`,
-`check_parallel_inconsistency`, etc.) ARE populated and ARE called
-from Python's `TopologyController`. So "Rust-primary since 2026-04-20"
-(ADR-012) is factually correct for each decision path, but misleading
-if read as "complete Rust control plane".
+`RustTopologyController::evaluate_and_decide` returned `None` (scaffold
+stub). Per-path methods (`check_empty_error_reroute`,
+`check_quality_cascade`, `check_parallel_inconsistency`,
+`check_importance_prune`, `is_in_gate_band`,
+`should_trigger_emergent_spawn`) ARE populated and ARE called from
+Python's `TopologyController`. "Rust-primary since 2026-04-20" (ADR-012)
+was accurate for each decision path, but misleading if read as
+"complete Rust control plane".
 
-Two options:
+**Decision (2026-04-23):** de-scope + delete. Advisor (built-in
+reviewer) and codex `gpt-5.4` at `model_reasoning_effort=high` both
+converged independently:
 
-1. **Populate** the orchestration body so Rust composes the per-path
-   methods itself — Python just consumes the `Option<Decision>`
-   return. Frees Python from the adapter layer.
-2. **De-scope** — remove or rename `evaluate_and_decide` to make the
-   scaffold obvious, and update ADR-012 to say "Rust per-path checks
-   with Python-side orchestration" instead of implying a single
-   Rust entry point.
+- The orchestration cascade depends on Python-resident subsystems
+  (embedder, SmtVerifier access, topology-graph `predecessors`, gate
+  management, upgrade-model resolution). A Rust top-level wrapper
+  would be a thin PyO3 shim back into Python — no measurable win.
+- No current or near-term scenario (2026 horizon) shows the
+  Python↔Rust crossing as a hot path. Benchmarks back this up.
+- Renaming the stub preserves a misleading artifact; deletion makes
+  the Rust/Python boundary explicit and matches current behaviour.
 
-Gated on: do we have a real concurrency use case where the per-path
-methods need top-level Rust orchestration? If not, de-scope is cheaper
-and more honest.
+**Action taken:**
 
-**Estimated effort:** 1-2 days if populate; 2-3 hours if de-scope.
+- **Deleted** `RustTopologyController::evaluate_and_decide` from
+  `sage-core/src/topology/controller.rs`.
+- **Updated** the module doc comment to state "Rust primitives that
+  back the Python `TopologyController` … Python orchestrates which
+  primitive to invoke".
+- **Updated** ADR-012 with an amendment replacing "Rust-primary
+  controller" with: `RustTopologyController` is Rust-primary for
+  adaptation state and per-path decision primitives; orchestration
+  remains Python-owned where decisions depend on Python-resident
+  subsystems (embedder, SMT feedback access, topology graph, gate
+  management, upgrade-model resolution).
+- **Test contract**: `test_rust_topology_controller_exposes_per_path_primitives`
+  (replacing `test_rust_topology_controller_evaluate_scaffold_returns_none`)
+  asserts per-path primitives exist AND `evaluate_and_decide` is
+  deliberately absent — regression guard against future resurrection.
+
+**Effort:** ~2h (estimate matched).
 
 ### B9. Per-run immutable execution context (AgentLoop refactor)
 **Why:** A0a (shipped `9067be5`) fixes incomplete restoration of the

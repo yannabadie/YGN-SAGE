@@ -35,7 +35,7 @@ the next cycle (populate vs de-scope is an open scoping question).
 | ID | Claim | Severity | Evidence | Status after this session | Remediation commit |
 |---|---|---|---|---|---|
 | **A** | Shared mutable `AgentLoop` state in `pipeline.py` bypass — 10 fields mutated, only 3 restored. | High | `pipeline.py:1167–1296` mutations; `finally` at 1292–1296 restores 3/10. No concurrency isolation. | ✅ **Fixed (targeted)** | `9067be5` (A0a). Full refactor to per-run immutable context = B9 in roadmap. |
-| **C** | `RustTopologyController.evaluate_and_decide` returns `None` — "scaffold stub". | High | `sage-core/src/topology/controller.rs:189–197` body is `let _ = (node_idx, result, task); None`. Per-path methods (check_empty_error_reroute, check_quality_cascade, etc.) at lines 246+ ARE populated and ARE called from Python. | ⚠️ Still live — scope of claim narrowed | B8 in roadmap: populate-or-de-scope. |
+| **C** | `RustTopologyController.evaluate_and_decide` returns `None` — "scaffold stub". | High | `sage-core/src/topology/controller.rs:189–197` body is `let _ = (node_idx, result, task); None`. Per-path methods (check_empty_error_reroute, check_quality_cascade, etc.) at lines 246+ ARE populated and ARE called from Python. | ✅ **De-scoped + deleted 2026-04-23 (B8 closure)** | Stub deleted; ADR-012 amended; regression guard test added. Advisor + codex gpt-5.4 high-reasoning converged on de-scope. |
 | **D** | Fail-open write gate + non-blocking verification (no strict mode). | High | `pipeline.py:172` ungated-on-init-failure log; `pipeline.py:1025–1058` SAT fail sets `ctx.verification_passed=False` then continues; `pipeline.py:1156` emits `EXECUTE_UNVERIFIED`. | ✅ **Fixed** | `2bd966c` (A0b — `SAGE_STRICT_GOVERNANCE=1`). |
 | **H** | `Tool.execute()` leaks full traceback to model-visible output. | Medium-High | `sage-python/src/sage/tools/base.py:24–33` returns `f"Error: {type(e).__name__}: {e}\n{traceback.format_exc()}"`. | ✅ **Fixed** | `684bb17` (A0c — `log.exception` + type:message only). |
 
@@ -70,9 +70,36 @@ Implementation items from ALIRE2 triage (this session):
 | A0b — SAGE_STRICT_GOVERNANCE fail-closed mode | A0b | ✅ shipped `2bd966c` |
 | A0c — Tool.execute() traceback redaction | A0c | ✅ shipped `684bb17` |
 | A0d — DistilBERT-ONNX-not-shipped docs sweep | A0d | ✅ shipped `bf220e0` |
-| B8 — RustTopologyController finish or de-scope | Horizon B | Pending; scoping question open |
+| B8 — RustTopologyController de-scope (delete stub + ADR-012 amendment) | Horizon B | ✅ closed 2026-04-23; advisor + codex gpt-5.4-high converged |
 | B9 — Per-run immutable context (AgentLoop refactor) | Horizon B | Pending; A0a is the targeted interim |
 | E/F/G cleanup (delete orphan sandbox/manager + isolated_executor) | Horizon B / tidy | Pending; usage search needed first |
+
+## Post-advisor blind-spot verifications (2026-04-23)
+
+Advisor flagged three things to verify before calling A0 done. Verdicts:
+
+1. **A0c completeness — NO additional leak sites.** Grepped
+   `traceback\.format_exc|format_exc\(` across `sage-python/src`. Two
+   hits: `eval_protocol.py:195` in `ErrorCapture.record` stores the
+   traceback in a dataclass field consumed by
+   `_log.warning`/`print` (operator paths, stdout); `swebench_bench.py:1381`
+   logs the traceback via `log.error` (operator path). Neither reaches
+   the model-visible `ToolResult.output`. A0c is complete.
+2. **A0a mutation test added.** The original `finally`-restoration
+   tests would have passed even if the bypass block accidentally
+   dropped all its mutations. New test
+   `test_bypass_path_actually_mutates_during_run` captures
+   agent_loop state from *inside* `agent_loop.run` via a `side_effect`
+   and asserts `max_steps`/`validation_level`/`stall_after_tool_steps`
+   /`_skip_routing`/`_current_topology`/`write_gate`/`gate_current_task`
+   take their bypass-path values during the run — not their pre-bypass
+   sentinels. Closes the "restore → no-op if mutation is gone" gap.
+3. **A0b emit-vs-raise ordering — sync, emit-before-raise.**
+   `Pipeline._emit` is a sync method that calls
+   `event_bus.emit(AgentEvent(...))` synchronously. The strict-mode
+   branch at `pipeline.py:1194-1201` calls `self._emit("EXECUTE_HALTED_UNVERIFIED", …)`
+   then `raise RuntimeError(...)`. The event is guaranteed to land
+   before the exception propagates. No async/await concern.
 
 ## Divergences with the original audits
 
