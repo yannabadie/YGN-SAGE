@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import dataclasses
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -33,6 +34,67 @@ def _load_env() -> None:
                 break
     except ImportError:
         pass
+
+
+def _setup_bench_file_log(args) -> Path | None:
+    """Attach a file handler that mirrors stderr for `--type swebench` runs.
+
+    The 2026-04-22 parity smoke + 2026-04-23 Track 3.1b investigation both
+    hit the same issue: SWE-bench gen-phase logs only went to stderr, so
+    post-hoc tracer work on semantic-miss tasks couldn't read the agent's
+    tool-call sequence once the session exited. Make the capture the
+    default — operators shouldn't have to remember a shell redirect.
+
+    Behaviour (swebench only — all other bench types return early):
+
+    - ``SAGE_BENCH_LOG_FILE`` unset → derive a sibling path next to
+      ``args.output`` (``<stem>-gen.log``). If ``args.output`` is also
+      unset, fall back to ``sage-python/logs/swebench-<UTC-ts>.log``.
+    - ``SAGE_BENCH_LOG_FILE=""`` or ``"0"`` → opt out, no file handler.
+    - ``SAGE_BENCH_LOG_FILE=<path>`` → use exactly that path.
+
+    The formatter mirrors basicConfig (``"%(message)s"``) so the file
+    carries the same lines operators already see on stderr. Idempotent:
+    a sentinel on the root logger prevents double-attachment if the
+    helper is called twice in one process.
+
+    Returns the resolved log path, or ``None`` when no handler was
+    attached.
+    """
+    if getattr(args, "type", None) != "swebench":
+        return None
+
+    env_override = os.environ.get("SAGE_BENCH_LOG_FILE")
+    if env_override in ("", "0"):
+        # Explicit opt-out. Keep stderr-only behaviour.
+        return None
+
+    root = logging.getLogger()
+    existing = getattr(root, "_sage_bench_file_handler", None)
+    if existing is not None:
+        # Idempotent: don't double-attach on a second entry into main().
+        return Path(existing.baseFilename)
+
+    if env_override:
+        log_path = Path(env_override)
+    else:
+        output = getattr(args, "output", None)
+        if output:
+            out = Path(output)
+            log_path = out.parent / f"{out.stem}-gen.log"
+        else:
+            ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            log_path = _repo_root() / "sage-python" / "logs" / f"swebench-{ts}.log"
+
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    handler = logging.FileHandler(log_path, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    # Match the stderr handler's level so the file sees the same lines.
+    handler.setLevel(root.level if root.level != logging.NOTSET else logging.INFO)
+    root.addHandler(handler)
+    root._sage_bench_file_handler = handler  # type: ignore[attr-defined]
+    return log_path
 
 
 def _save_report(report, bench, output: str | None, name: str) -> None:
@@ -452,12 +514,22 @@ def main() -> None:
     _load_env()
 
     # Configure logging so bench progress is visible
-    import logging
     logging.basicConfig(
         level=logging.INFO,
         format="%(message)s",
         stream=__import__("sys").stderr,
     )
+
+    # For --type swebench, also capture the gen-phase log to a file by
+    # default so post-hoc tracer work on semantic-miss tasks doesn't
+    # depend on an operator remembering a shell redirect. Other bench
+    # types are unaffected. Opt-out: SAGE_BENCH_LOG_FILE="" or "0".
+    # Override path: SAGE_BENCH_LOG_FILE=/explicit/path.log.
+    _bench_log_path = _setup_bench_file_log(args)
+    if _bench_log_path is not None:
+        logging.getLogger(__name__).info(
+            "  Gen-phase log: %s", _bench_log_path
+        )
 
     # Set boot tier for all benchmark runs
     global _BOOT_TIER
