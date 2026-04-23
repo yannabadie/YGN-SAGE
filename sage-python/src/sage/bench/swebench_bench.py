@@ -25,6 +25,7 @@ Platform notes:
 from __future__ import annotations
 
 import asyncio
+import difflib
 import json
 import logging
 import os
@@ -255,6 +256,347 @@ def _extract_patch(response: str) -> str:
     # Fallback: return the entire response (swebench will reject if not a valid diff)
     # Ensure trailing newline
     return response + "\n" if response and not response.endswith("\n") else response
+
+
+# ---------------------------------------------------------------------------
+# SEARCH/REPLACE emission helpers (Track 2 task 2.2)
+#
+# Implements the SEARCH/REPLACE patch emission format described in
+# docs/superpowers/plans/2026-04-21-semantic-quality-plan.md. This is an
+# alternative to raw unified-diff emission that sidesteps the line-counting
+# hallucination trap (LLMs are bad at computing hunk headers). The helpers
+# are wired into generate_patches by task 2.4; here they are pure functions
+# so the tests in tests/test_search_replace_extraction.py can drive them.
+#
+# Block syntax (Aider / OpenHands convention)::
+#
+#     ## File: path/to/module.py
+#     <<<<<<< SEARCH
+#     <exact existing text>
+#     =======
+#     <replacement text>
+#     >>>>>>> REPLACE
+#
+# Contract points enforced by the tests:
+# - search_text and replace_text include the trailing "\n" byte-for-byte.
+# - Missing ## File: -> scan repo_dir for a unique file containing
+#   search_text; drop the block on 0 or >=2 matches.
+# - Malformed block (missing ======= or >>>>>>> REPLACE) -> drop, keep
+#   parsing later blocks.
+# - Fuzzy match (difflib ratio >= 0.95) only when exact match fails; the
+#   hunk's minus side uses the ACTUAL file lines so ``git apply --check``
+#   accepts the patch.
+# ---------------------------------------------------------------------------
+
+_SR_FILE_MARKER = "## File:"
+_SR_SEARCH_MARKER = "<<<<<<< SEARCH"
+_SR_SEPARATOR = "======="
+_SR_REPLACE_MARKER = ">>>>>>> REPLACE"
+_SR_FUZZY_THRESHOLD = 0.95
+
+
+def _extract_search_replace_blocks(
+    response: str,
+    repo_dir: str | Path,
+) -> list[tuple[str, str, str]]:
+    """Parse SEARCH/REPLACE blocks from an LLM response.
+
+    Returns a list of ``(file_path, search_text, replace_text)`` tuples in
+    the order they appear in ``response``. ``search_text`` and
+    ``replace_text`` include the trailing newline of their last line.
+
+    Path resolution:
+    - Preferred: the nearest preceding ``## File: <path>`` line gives the
+      path verbatim (kept as written in the response).
+    - Fallback: if no marker precedes the block, the helper scans
+      ``repo_dir`` for files whose contents contain ``search_text``
+      verbatim. Exactly one match -> use that file (as a forward-slash
+      posix path relative to ``repo_dir``). Zero or >=2 matches -> drop
+      the block.
+
+    Malformed blocks (missing ``=======`` separator or ``>>>>>>> REPLACE``
+    terminator, or nested SEARCH markers) are dropped; parsing continues
+    for subsequent blocks. Empty or whitespace-only response -> ``[]``.
+    """
+    if not response or not response.strip():
+        return []
+
+    repo_path = Path(repo_dir)
+    blocks: list[tuple[str, str, str]] = []
+
+    # Line-oriented state machine. A regex-based implementation would
+    # span malformed/well-formed block pairs (test case e) and swallow
+    # the good block into a single fake match.
+    lines = response.splitlines(keepends=True)
+    # Ensure each captured line ends in "\n" so the tests' byte-for-byte
+    # assertions hold (splitlines(keepends=True) keeps whatever terminator
+    # was present; the final line may lack one if the response ended
+    # without a trailing newline — we normalise to "\n" on append).
+    state = "OUTSIDE"  # OUTSIDE | IN_SEARCH | IN_REPLACE
+    current_path: str | None = None  # from most-recent ## File: marker
+    pending_path: str | None = None  # path captured when SEARCH opened
+    search_buf: list[str] = []
+    replace_buf: list[str] = []
+
+    for raw_line in lines:
+        # Strip only the trailing newline so we can match markers by equality
+        # without a regex, but keep the original line available for buffer
+        # appends. Markers always occupy a full line in the conventional
+        # format, but we tolerate trailing whitespace (e.g. accidental " \n").
+        line_no_nl = raw_line.rstrip("\n").rstrip("\r")
+        stripped = line_no_nl.strip()
+
+        if state == "OUTSIDE":
+            if stripped.startswith(_SR_FILE_MARKER):
+                # Path is the rest of the line after ``## File:``.
+                current_path = stripped[len(_SR_FILE_MARKER):].strip()
+            elif stripped == _SR_SEARCH_MARKER:
+                # Enter IN_SEARCH; "consume" the current_path so that a
+                # bare block following immediately cannot reuse it.
+                state = "IN_SEARCH"
+                pending_path = current_path
+                current_path = None
+                search_buf = []
+                replace_buf = []
+            # Any other line outside a block is narrative prose - ignore.
+            continue
+
+        if state == "IN_SEARCH":
+            if stripped == _SR_SEPARATOR:
+                state = "IN_REPLACE"
+                continue
+            if stripped == _SR_SEARCH_MARKER or stripped == _SR_REPLACE_MARKER:
+                # Nested SEARCH or premature REPLACE -> malformed; drop.
+                state = "OUTSIDE"
+                pending_path = None
+                search_buf = []
+                replace_buf = []
+                # If this is actually a new SEARCH opening, re-enter.
+                if stripped == _SR_SEARCH_MARKER:
+                    state = "IN_SEARCH"
+                    pending_path = current_path
+                    current_path = None
+                continue
+            # Normal content line inside the SEARCH section.
+            search_buf.append(raw_line if raw_line.endswith("\n") else raw_line + "\n")
+            continue
+
+        if state == "IN_REPLACE":
+            if stripped == _SR_REPLACE_MARKER:
+                # Well-formed block: resolve path and emit.
+                path = pending_path
+                search_text = "".join(search_buf)
+                replace_text = "".join(replace_buf)
+                if path is None:
+                    # Content-scan fallback.
+                    path = _scan_repo_for_unique_match(repo_path, search_text)
+                if path is None:
+                    log.warning(
+                        "SEARCH/REPLACE block dropped: no ## File: marker "
+                        "and search_text did not uniquely match any file "
+                        "in %s",
+                        repo_path,
+                    )
+                else:
+                    blocks.append((path, search_text, replace_text))
+                state = "OUTSIDE"
+                pending_path = None
+                search_buf = []
+                replace_buf = []
+                continue
+            if stripped == _SR_SEARCH_MARKER or stripped == _SR_SEPARATOR:
+                # Nested SEARCH or double separator -> malformed; drop.
+                log.warning(
+                    "SEARCH/REPLACE block dropped: unexpected '%s' inside "
+                    "REPLACE section",
+                    stripped,
+                )
+                state = "OUTSIDE"
+                pending_path = None
+                search_buf = []
+                replace_buf = []
+                if stripped == _SR_SEARCH_MARKER:
+                    state = "IN_SEARCH"
+                    pending_path = current_path
+                    current_path = None
+                continue
+            replace_buf.append(raw_line if raw_line.endswith("\n") else raw_line + "\n")
+            continue
+
+    # If we ended mid-block (no closing >>>>>>> REPLACE), drop it - the
+    # loop exit already discards search_buf / replace_buf.
+    if state != "OUTSIDE":
+        log.warning(
+            "SEARCH/REPLACE block dropped: response ended before '>>>>>>> REPLACE'"
+        )
+
+    return blocks
+
+
+def _scan_repo_for_unique_match(repo_dir: Path, search_text: str) -> str | None:
+    """Scan ``repo_dir`` for files whose UTF-8 contents contain
+    ``search_text`` verbatim. Return the posix-relative path on a single
+    match, else ``None``.
+
+    Used only as a fallback when the LLM omitted the ``## File:`` marker.
+    """
+    matches: list[Path] = []
+    for p in repo_dir.rglob("*"):
+        if not p.is_file():
+            continue
+        # Skip anything under a .git directory to avoid matching pack files
+        # / hooks that happen to contain the search string.
+        try:
+            if ".git" in p.relative_to(repo_dir).parts:
+                continue
+        except ValueError:
+            continue
+        try:
+            contents = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        if search_text in contents:
+            matches.append(p)
+            if len(matches) > 1:
+                return None
+    if len(matches) != 1:
+        return None
+    return matches[0].relative_to(repo_dir).as_posix()
+
+
+def _blocks_to_unified_diff(
+    blocks: list[tuple[str, str, str]],
+    repo_dir: str | Path,
+) -> tuple[str, dict]:
+    """Convert SEARCH/REPLACE blocks to a well-formed unified diff.
+
+    For each block:
+    1. Read the target file with ``read_text(encoding="utf-8")`` so
+       universal-newlines normalises CRLF to LF (matching the LF-only
+       search_text that the LLM emitted).
+    2. Exact-match first (``find()``); record ``match_kind = "exact"``.
+    3. On exact-match failure, slide a window of ``len(search_lines)``
+       across the file and keep the window whose
+       ``SequenceMatcher.ratio()`` vs search_text is >= 0.95. The minus
+       side of the emitted hunk uses the ACTUAL file lines from that
+       window so ``git apply --check`` accepts the patch. Record
+       ``match_kind = "fuzzy"``.
+    4. If neither works, record ``match_kind = "missing"`` and contribute
+       no hunk.
+
+    Returns ``(diff_text, {"per_block": [{"file": ..., "match_kind": ...}, ...]})``.
+    Caller treats an empty ``diff_text`` as "no patch".
+    """
+    repo_path = Path(repo_dir)
+    diff_parts: list[str] = []
+    per_block: list[dict[str, str]] = []
+
+    for path_str, search_text, replace_text in blocks:
+        file_path = repo_path / path_str
+        try:
+            file_text = file_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            log.warning(
+                "SEARCH/REPLACE block: could not read %s (%s) - marking missing",
+                file_path, exc,
+            )
+            per_block.append({"file": path_str, "match_kind": "missing"})
+            continue
+
+        file_lines = file_text.splitlines(keepends=True)
+
+        hunk: str | None = None
+        match_kind: str
+
+        # --- 1. exact match -------------------------------------------------
+        idx = file_text.find(search_text)
+        if idx != -1:
+            start_line = file_text.count("\n", 0, idx) + 1
+            minus_lines = search_text.splitlines(keepends=True)
+            plus_lines = replace_text.splitlines(keepends=True)
+            hunk = _build_hunk(path_str, start_line, minus_lines, plus_lines)
+            match_kind = "exact"
+        else:
+            # --- 2. fuzzy fallback ------------------------------------------
+            search_lines = search_text.splitlines(keepends=True)
+            n = len(search_lines)
+            best_ratio = 0.0
+            best_start: int | None = None  # 0-based file-line index
+            if n > 0 and n <= len(file_lines):
+                for i in range(0, len(file_lines) - n + 1):
+                    window = "".join(file_lines[i:i + n])
+                    ratio = difflib.SequenceMatcher(
+                        None, window, search_text,
+                    ).ratio()
+                    if ratio > best_ratio:
+                        best_ratio = ratio
+                        best_start = i
+            if best_start is not None and best_ratio >= _SR_FUZZY_THRESHOLD:
+                minus_lines = file_lines[best_start:best_start + n]
+                plus_lines = replace_text.splitlines(keepends=True)
+                hunk = _build_hunk(path_str, best_start + 1, minus_lines, plus_lines)
+                match_kind = "fuzzy"
+            else:
+                match_kind = "missing"
+
+        per_block.append({"file": path_str, "match_kind": match_kind})
+        if hunk is not None:
+            diff_parts.append(hunk)
+
+    diff_text = "".join(diff_parts)
+    return diff_text, {"per_block": per_block}
+
+
+def _build_hunk(
+    path: str,
+    start_line: int,
+    minus_lines: list[str],
+    plus_lines: list[str],
+) -> str:
+    """Build a single-file unified-diff chunk with no context lines.
+
+    The chunk starts with ``diff --git a/<path> b/<path>`` and the pair
+    of ``---``/``+++`` header lines, followed by one hunk composed of all
+    minus lines then all plus lines. ``path`` is used verbatim; callers
+    pass a forward-slash posix path.
+
+    All ``minus_lines`` and ``plus_lines`` MUST already end with ``\\n``
+    except possibly the very last line if the original file/replacement
+    lacked a trailing newline. We tolerate a missing trailing newline on
+    the last line by emitting "\\ No newline at end of file" markers the
+    way git does.
+    """
+    # Detect missing trailing newlines on the last minus/plus line. If the
+    # block includes the file's trailing "\n" (the common SWE-bench case)
+    # this never fires.
+    minus_noeol = bool(minus_lines) and not minus_lines[-1].endswith("\n")
+    plus_noeol = bool(plus_lines) and not plus_lines[-1].endswith("\n")
+
+    header = (
+        f"diff --git a/{path} b/{path}\n"
+        f"--- a/{path}\n"
+        f"+++ b/{path}\n"
+    )
+    hunk_header = (
+        f"@@ -{start_line},{len(minus_lines)} "
+        f"+{start_line},{len(plus_lines)} @@\n"
+    )
+
+    body: list[str] = []
+    for i, ln in enumerate(minus_lines):
+        if i == len(minus_lines) - 1 and minus_noeol:
+            body.append("-" + ln + "\n")
+            body.append("\\ No newline at end of file\n")
+        else:
+            body.append("-" + ln)
+    for i, ln in enumerate(plus_lines):
+        if i == len(plus_lines) - 1 and plus_noeol:
+            body.append("+" + ln + "\n")
+            body.append("\\ No newline at end of file\n")
+        else:
+            body.append("+" + ln)
+
+    return header + hunk_header + "".join(body)
 
 
 # ---------------------------------------------------------------------------
