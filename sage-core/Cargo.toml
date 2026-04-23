@@ -52,6 +52,11 @@ rand = "0.9"
 # first-class for this crate.
 regex = "1.10"
 rusqlite = { version = "0.33", features = ["bundled"], optional = true }
+# SHA-256 for the wasm precompile cache key (sandbox/wasm_python). Already
+# transitively in the workspace via several upstream crates — hoisting it
+# to a direct dep so the cache module doesn't depend on implicit access.
+sha2 = "0.10"
+
 [features]
 # P3.4 (2026-04-22 audit remediation): `cognitive` moved into default so
 # persistent bandit state (load_state/save_state wired in
@@ -89,6 +94,9 @@ smt = ["dep:oxiz"]
 
 [dev-dependencies]
 pyo3 = { version = "0.25", features = ["auto-initialize"] }
+# Isolated cache directories for wasm_python JIT-cache tests. Already in
+# Cargo.lock via wasmtime's dev-deps, promoted to a first-class dev-dep.
+tempfile = "3"
 
 [lints]
 workspace = true
