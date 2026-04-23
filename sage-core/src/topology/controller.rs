@@ -1,13 +1,20 @@
-//! RustTopologyController — Rust port of topology_controller.py (Phase 2 of
-//! the 2026-04-20 Rust-First plan). Scaffold only in this commit;
-//! decision paths 1..6 are populated in commits 2.2–2.6.
+//! RustTopologyController — Rust primitives that back the Python
+//! `TopologyController` (Phase 2 of the 2026-04-20 Rust-First plan).
 //!
-//! Python-facing API parity. Call sites in Python continue to go through
-//! `TopologyController.evaluate_and_decide` which will delegate to the
-//! Rust struct once per-path methods are populated. Until then this
-//! controller is instantiated-but-dormant (imports cleanly, no behavior
-//! change), so that the import guard in `sage.topology_controller` works
-//! and downstream tests can start depending on its presence.
+//! This struct owns the runtime counters (`reroute_count`, `spawn_count`,
+//! `node_retries`, `node_qualities`, `gate_loops`, `abstain_count`) and
+//! exposes per-path decision primitives (`check_empty_error_reroute`,
+//! `check_quality_cascade`, `is_in_gate_band`, `check_parallel_inconsistency`,
+//! `check_low_importance_prune`, `should_trigger_emergent_spawn`). Python
+//! orchestrates which primitive to invoke per agent-loop step because the
+//! cascade depends on Python-resident subsystems (embedder, SmtVerifier,
+//! topology graph, gate management, upgrade-model resolution).
+//!
+//! The top-level `evaluate_and_decide` entry stayed on Python per
+//! 2026-04-23 B8 decision (advisor + gpt-5.4-high-reasoning converged):
+//! a Rust wrapper would be a thin PyO3 shim back into the Python
+//! subsystems with no measurable win, and the semantic-drift surface
+//! outweighs the "Rust-primary controller" branding. See ADR-012.
 //!
 //! Thresholds mirror Python `TopologyController.THETA_*` constants —
 //! calibrated initial values, subject to ablation per CLAUDE.md §2.
@@ -143,10 +150,10 @@ impl RustAdaptationDecision {
     }
 }
 
-/// Rust port of Python `TopologyController` runtime state.
-/// Scaffold-only for commit 2.1 — `evaluate_and_decide` stub returns None,
-/// signalling the Python legacy path to handle the decision. Per-path
-/// methods (`check_empty_error_reroute`, etc.) populated in 2.2–2.6.
+/// Rust-side state + per-path decision primitives for Python
+/// `TopologyController`. Python owns orchestration (which primitive to
+/// invoke per step), Rust owns state + threshold math. See module-level
+/// doc comment + ADR-012 for the split rationale.
 #[pyclass]
 pub struct RustTopologyController {
     reroute_count: u32,
@@ -181,19 +188,6 @@ impl RustTopologyController {
     #[new]
     fn new() -> Self {
         Self::new_inner()
-    }
-
-    /// Scaffold stub — returns None to signal Python fallback. Populated
-    /// path-by-path in 2.2..2.6 of the Rust-First plan.
-    #[pyo3(signature = (node_idx, result, task))]
-    fn evaluate_and_decide(
-        &mut self,
-        node_idx: usize,
-        result: String,
-        task: String,
-    ) -> Option<RustAdaptationDecision> {
-        let _ = (node_idx, result, task);
-        None
     }
 
     /// Plan 2.3 — port of Python path 2 (quality cascade) + the debate-gate

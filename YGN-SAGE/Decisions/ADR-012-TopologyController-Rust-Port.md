@@ -205,3 +205,54 @@ The scope divergences noted at decision time have been closed by
 - **Python `topology_controller.py` line count**: the "thin wrapper" target is now achieved — ~440 lines (was 770 at ADR-012 authorship).
 
 All deferred items from ADR-012 are closed. Directive #1 (Rust first) and Directive #2 (minimal heuristics) are both satisfied on the `TopologyController` surface.
+
+## Amendment — 2026-04-23 B8 closure (ALIRE2 §5 "Rust-first runtime overstated")
+
+The 2026-04-23 ALIRE2 audit flagged that
+`RustTopologyController::evaluate_and_decide` was still a scaffold
+returning `None`, despite ADR-012's "Rust-primary" branding. Advisor +
+codex gpt-5.4 (high reasoning) converged on **de-scope**: populating
+the top-level Rust entry would buy nothing in 2026 because the
+cascade depends on Python-resident subsystems (embedder, SmtVerifier
+access, topology-graph `predecessors` traversal, gate management,
+upgrade-model resolution). A Rust wrapper would be a thin PyO3 shim
+back into Python.
+
+**Action taken (this amendment commit):**
+
+- **Deleted** `RustTopologyController::evaluate_and_decide` stub from
+  `sage-core/src/topology/controller.rs` — clearer than renaming.
+- **Updated the module-level doc comment** to state the split
+  explicitly: "Rust primitives that back the Python TopologyController
+  … Python orchestrates which primitive to invoke per agent-loop step
+  because the cascade depends on Python-resident subsystems".
+- **Test contract updated**: `test_rust_topology_controller_exposes_per_path_primitives`
+  (replaces `test_rust_topology_controller_evaluate_scaffold_returns_none`)
+  asserts the per-path methods exist AND that `evaluate_and_decide` is
+  deliberately absent — regression guard against future resurrection.
+
+**Revised "Rust-primary" wording (replaces §Décision's implicit claim
+that the top-level orchestration lives in Rust):**
+
+> `RustTopologyController` is Rust-primary for **adaptation state**
+> (`reroute_count`, `spawn_count`, `node_retries`, `node_qualities`,
+> `gate_loops`, `abstain_count`) and **per-path decision primitives**
+> (`check_empty_error_reroute`, `check_quality_cascade`,
+> `check_parallel_inconsistency`, `check_importance_prune`,
+> `is_in_gate_band`, `should_trigger_emergent_spawn`). Orchestration
+> — which primitive to invoke per agent-loop step — remains
+> **Python-owned** in `TopologyController.evaluate_and_decide` because
+> the cascade depends on Python-resident subsystems (embedder,
+> SmtVerifier access, topology-graph traversal, gate management,
+> upgrade-model resolution). Directive #1 ("Rust first, Python
+> tolerant") is satisfied: thresholds + state machine live in Rust;
+> orchestration + Python-held scoring stay Python.
+
+This matches the structure diagram in §Décision, which already showed
+Python as the outer shell calling Rust primitives. The "Rust-primary
+controller" headline wording was the only inaccuracy.
+
+**References:**
+- `docs/audits/2026-04-23-alire-verification.md` — B8 evidence + verdict.
+- `roadmap.md` B8 — de-scope decision with advisor + codex citations.
+- ALIRE2.md §5 — original audit claim.

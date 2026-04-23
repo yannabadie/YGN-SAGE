@@ -1,10 +1,14 @@
 """Tests for the Rust TopologyController port (Phase 2 of the Rust-First plan).
 
-Plan 2.1 scaffold only — the Rust class exists, instantiates cleanly,
-Python delegate holds a reference to it, but all decision paths still
-run through the Python legacy `TopologyController.evaluate_and_decide`.
-Commits 2.2..2.6 populate per-path delegation with 20-sample Rust-vs-
-Python equivalence tests.
+Rust exposes state + per-path decision primitives
+(`check_empty_error_reroute`, `check_quality_cascade`,
+`check_parallel_inconsistency`, `check_low_importance_prune`,
+`is_in_gate_band`, `should_trigger_emergent_spawn`). Python's
+`TopologyController.evaluate_and_decide` orchestrates which primitive to
+invoke per agent-loop step — the cascade depends on Python-resident
+subsystems (embedder, SmtVerifier, topology graph, gate management,
+upgrade-model resolution) so there's no measurable win from a Rust
+wrapper. See 2026-04-23 B8 decision + ADR-012.
 
 These tests skip cleanly when `sage_core` is not compiled — expected in
 Python-only dev environments.
@@ -37,21 +41,26 @@ def test_rust_topology_controller_imports_successfully():
 
 
 @pytest.mark.skipif(not _HAS_SAGE_CORE, reason="sage_core (Rust) not compiled")
-def test_rust_topology_controller_evaluate_scaffold_returns_none():
-    """Plan 2.1 contract: scaffold `evaluate_and_decide` returns None,
-    signalling the Python delegate to fall through to the legacy path.
-    This keeps pre-2.2..2.6 behavior identical while the Rust class
-    exists alongside the Python logic."""
+def test_rust_topology_controller_exposes_per_path_primitives():
+    """B8 contract (2026-04-23): RustTopologyController exposes per-path
+    decision primitives and state, NOT a top-level `evaluate_and_decide`.
+    Python's `TopologyController.evaluate_and_decide` is the orchestration
+    entry (see ADR-012 + docs/audits/2026-04-23-alire-verification.md).
+
+    Regression guard: if someone resurrects the stub, this assertion
+    fires so the de-scope decision is preserved in code."""
     from sage_core import RustTopologyController
     ctrl = RustTopologyController()
-    decision = ctrl.evaluate_and_decide(
-        node_idx=0,
-        result="any output",
-        task="any task",
-    )
-    assert decision is None, (
-        "2.1 scaffold must return None — any Some(decision) here would "
-        "start routing Python paths through an empty Rust brain"
+    # Per-path primitives exist.
+    assert hasattr(ctrl, "check_empty_error_reroute")
+    assert hasattr(ctrl, "check_quality_cascade")
+    assert hasattr(ctrl, "check_parallel_inconsistency")
+    assert hasattr(ctrl, "check_importance_prune")
+    assert hasattr(ctrl, "is_in_gate_band")
+    # Top-level stub deliberately absent.
+    assert not hasattr(ctrl, "evaluate_and_decide"), (
+        "B8 (2026-04-23) de-scoped the top-level Rust entry — "
+        "orchestration stays Python-owned per ADR-012"
     )
 
 
@@ -553,4 +562,7 @@ def test_python_controller_attaches_rust_companion_when_available():
 
     tc = TopologyController()
     assert tc._rust_ctrl is not None
-    assert hasattr(tc._rust_ctrl, "evaluate_and_decide")
+    # B8 (2026-04-23): companion exposes per-path primitives, not the
+    # top-level stub that used to live here.
+    assert hasattr(tc._rust_ctrl, "check_empty_error_reroute")
+    assert hasattr(tc._rust_ctrl, "check_quality_cascade")
