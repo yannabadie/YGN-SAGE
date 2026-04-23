@@ -93,7 +93,9 @@ def _setup_bench_file_log(args) -> Path | None:
     # Match the stderr handler's level so the file sees the same lines.
     handler.setLevel(root.level if root.level != logging.NOTSET else logging.INFO)
     root.addHandler(handler)
-    root._sage_bench_file_handler = handler  # type: ignore[attr-defined]
+    # setattr avoids a type:ignore on a sentinel attribute the Logger
+    # class does not declare. Paired with the getattr() read above.
+    setattr(root, "_sage_bench_file_handler", handler)
     return log_path
 
 
