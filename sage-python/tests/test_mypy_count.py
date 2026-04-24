@@ -40,7 +40,13 @@ from pathlib import Path
 # monkey-patch, third-party or Rust bindings). No new ignores from the
 # 2026-04-23 bench/sandbox chain itself — the gen-log commit's one
 # ignore was retired in the same pass via setattr.
-_MAX_TYPE_IGNORES = 41
+# Raised from 41 to 42 (2026-04-24, AUDIT3 A19): +1 for
+# protocols/auth.py:172 starlette import guarded by try/except ImportError
+# as a lazy optional dependency (starlette is installed in test env but
+# marked optional in ygn-sage[all]); the `type: ignore[import-not-found]`
+# is correct — only used inside the `try` block, and mypy without the
+# test-env extras would otherwise flag the import.
+_MAX_TYPE_IGNORES = 42
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")
