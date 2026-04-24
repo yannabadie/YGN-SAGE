@@ -147,6 +147,62 @@ smoke should see astropy-14182 / astropy-7746 no longer fast-abort.
 A1's patch-rate gate becomes achievable since every task gets real
 tool-call attempts rather than HTTP 400s on turn 4.
 
+**Empirical verification (2026-04-24, N=6 gen-only smoke on the same
+task IDs as the pre-A7 smoke).** See
+`docs/benchmarks/2026-04-24-a7-verification/findings.md`.
+
+- **Zero kimi-k2.5 HTTP 400 occurrences** in the 82 KB gen log (vs 2
+  in yesterday's pre-A7 smoke).
+- **astropy-7746** (canonical fast-abort): `EMPTY 72 s` → `PATCH 634 chars` ✅
+- **astropy-12907**: `EMPTY 266 s` → `PATCH 4879 chars` ✅
+- **astropy-14995**: `EMPTY 174 s` → `PATCH 474 chars` ✅
+- **astropy-14182**: still 0 chars, but now `Generation timed out`,
+  not fast-abort. kimi-400 path closed; residual failure is a
+  different class (agent-loop convergence / gen-timeout). Separate
+  investigation — NOT an A7 regression.
+- **Patch rate: 4/6 = 67%** (vs 20% pre-A7 on the same N=10 superset).
+
+Secondary side effect (documented, not a regression): running the
+smoke in parallel with the rustpython wasm source build triggered
+`WinError 1455` (Windows paging file exhaustion) on astropy-7746's
+`git apply --check`. The patch was still written to predictions.jsonl
+(634 chars survived); only the repair-validator phase was
+short-circuited. Future large parallel runs should stagger wasm
+builds vs benches.
+
+### A8. Migrate kimi-k2.5 → kimi-k2.6 in cards.toml (NEW 2026-04-24)
+**Why:** user flagged that Moonshot's latest is **kimi-k2.6**, not
+k2.5. cards.toml's `kimi-k2.5` entry carries `supports_tools = false`
+from the F9 audit — the documented reason is Moonshot's
+`reasoning_content` API requirement on the 4th assistant tool-call
+turn with `thinking` enabled (the exact symptom that caused A7 to
+exist). If k2.6 resolved that contract, we could flip
+`supports_tools` back to `true` after migration and regain kimi as a
+tool-capable routing option. A7 stays load-bearing either way (it's a
+belt-and-suspenders capability hygiene fix) but the kimi-k2.6 move is
+a potential net win on routing diversity + cost.
+
+**Concrete action:**
+1. Context7 lookup: `/berriai/litellm` for kimi-k2.6 support + any
+   known quirks. Also check Moonshot's own API docs for the
+   `reasoning_content` contract change (if any).
+2. Update `sage-core/config/cards.toml` (+ `sage-python/config/cards.toml`
+   which symlinks) to replace the kimi-k2.5 block with kimi-k2.6.
+   Verify pricing / context window against the official docs. Cite
+   the source in the block's header comment (see Directive #6).
+3. If k2.6 honours standard tool-call message format →
+   `supports_tools = true`. If it still needs `reasoning_content` →
+   keep `supports_tools = false` and document WHY in the block
+   comment so A7 coverage remains clear.
+4. Test via `test_pydantic_ai_integration.py::test_kimi_k2_5_supports_tools_is_false`
+   (rename to k2_6 + update assertion appropriately).
+5. Run an observe-smoke against k2.6 to confirm it behaves as
+   advertised in our mesh.
+
+**Cost:** 30 min investigation + ~1 h implementation + ~15 min smoke.
+Strong dependency on Context7 / live Moonshot docs — no hardcoding
+from training data (CLAUDE.md Directive #6).
+
 ### A3. Repair-mode implementation (conditional on A1 data)
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier
 mismatch diagnostic to an LLM one-shot repair. The 2026-04-23 smoke
