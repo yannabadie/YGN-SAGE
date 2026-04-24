@@ -1,27 +1,100 @@
 """Base tool types and decorator."""
 from __future__ import annotations
 
+import json
 import logging
-from dataclasses import dataclass
-from typing import Any, Callable, Awaitable
+import os
+from dataclasses import dataclass, field
+from typing import Any, Callable, Awaitable, TYPE_CHECKING
 
 from sage.llm.base import ToolDef
 
+if TYPE_CHECKING:
+    from pydantic import BaseModel
+
 log = logging.getLogger(__name__)
+
+
+# AUDIT3 #17 / A14 — opt-in ToolResult v2 Pydantic output validator.
+# Default behaviour unchanged: output remains a free-form string and
+# no validation happens unless the caller attaches a schema via
+# `Tool(..., output_schema=MySchema)` AND either calls
+# `result.validate_output(MySchema)` or sets SAGE_TOOLRESULT_VALIDATE=1.
+#
+# Example:
+#     from pydantic import BaseModel
+#
+#     class FileReadResult(BaseModel):
+#         path: str
+#         size: int
+#         content: str
+#
+#     tool = Tool(spec=spec, handler=read_file, output_schema=FileReadResult)
+#     r = await tool.execute({"path": "x.txt"})
+#     parsed = r.validate_output(FileReadResult)   # None on failure
+#
+# `SAGE_TOOLRESULT_VALIDATE=1` only raises when a schema is attached
+# AND validation fails — default off preserves back-compat.
+
+
+def _env_validate_strict() -> bool:
+    return os.environ.get("SAGE_TOOLRESULT_VALIDATE", "0").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
 
 
 @dataclass
 class ToolResult:
     output: str
     is_error: bool = False
+    # When set, the tool's attached output_schema instance after
+    # `validate_output` succeeds. None until validated.
+    validated: Any | None = field(default=None, repr=False)
+
+    def validate_output(self, schema: type["BaseModel"]) -> "BaseModel | None":
+        """Parse `output` as JSON and validate against `schema`.
+
+        Returns the validated instance on success, None on JSON decode
+        failure. Raises `pydantic.ValidationError` on schema violation.
+        When env SAGE_TOOLRESULT_VALIDATE=1, JSON decode failure also
+        raises (promotes warn-silent to hard-fail for production).
+        """
+        try:
+            payload = json.loads(self.output)
+        except (json.JSONDecodeError, TypeError) as exc:
+            if _env_validate_strict():
+                raise ValueError(
+                    f"ToolResult.output is not valid JSON: {exc}. "
+                    f"Set SAGE_TOOLRESULT_VALIDATE=0 to downgrade."
+                ) from exc
+            return None
+
+        instance = schema.model_validate(payload)
+        self.validated = instance
+        return instance
 
 
 class Tool:
-    """A tool that an agent can use."""
+    """A tool that an agent can use.
 
-    def __init__(self, spec: ToolDef, handler: Callable[..., Awaitable[str]]):
+    `output_schema` (optional, AUDIT3 #17 / A14): when provided, callers
+    can invoke `result.validate_output(tool.output_schema)` to get a
+    typed Pydantic instance. Leaving it None preserves free-form output.
+    """
+
+    def __init__(
+        self,
+        spec: ToolDef,
+        handler: Callable[..., Awaitable[str]],
+        *,
+        output_schema: type["BaseModel"] | None = None,
+    ):
         self.spec = spec
         self._handler = handler
+        self.output_schema = output_schema
 
     async def execute(self, arguments: dict[str, Any]) -> ToolResult:
         """Execute the tool with given arguments.
