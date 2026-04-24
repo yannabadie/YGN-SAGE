@@ -33,6 +33,7 @@ EDGE_STATE = 2
 # failed, then they cascade the same sentinel. We drop such outputs from
 # predecessor context entirely (without fabricating a replacement prompt).
 _SENTINEL_PREFIX = "[sage: agent exited after"
+_BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
 
 # Roles recognized as "planner" for the optional planner-output injection
 # experiment. Kept in sync with topology/role_prompts.py _PLANNER aliases.
@@ -92,6 +93,7 @@ class TopologyRunner:
         approval_callback: Callable | None = None,
         harness_config: Any | None = None,
         agent_loop_factory: Any | None = None,
+        cost_tracker: Any | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -115,6 +117,8 @@ class TopologyRunner:
         # saw 0 whenever topology ran in multi-node mode. Aggregating here
         # matches the tool_call_count pattern above and feeds the pipeline ctx.
         self.total_cost_usd: float = 0.0
+        self._node_costs: dict[int, float] = {}
+        self._cost_tracker = cost_tracker
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -126,6 +130,27 @@ class TopologyRunner:
             harness_config.execution.max_debate_rounds
             if harness_config else 3
         )
+
+    def _is_over_budget(self) -> bool:
+        return bool(self._cost_tracker is not None and self._cost_tracker.is_over_budget)
+
+    def _record_spend_for_node(self, node_idx: int) -> None:
+        if self._cost_tracker is None:
+            return
+        node_cost = float(self._node_costs.pop(node_idx, 0.0) or 0.0)
+        self._cost_tracker.record(str(node_idx), node_cost)
+
+    @staticmethod
+    def _response_cost_usd(response: Any) -> float:
+        usage = getattr(response, "usage", None) or {}
+        if isinstance(usage, dict):
+            raw_cost = usage.get("cost_usd", 0.0)
+        else:
+            raw_cost = getattr(usage, "cost_usd", 0.0)
+        try:
+            return max(0.0, float(raw_cost or 0.0))
+        except (TypeError, ValueError):
+            return 0.0
 
     def _context_budget_per_predecessor(self, n_predecessors: int, node_idx: int = 0) -> int:
         """Compute per-predecessor character budget based on model context window.
@@ -566,7 +591,9 @@ class TopologyRunner:
         # when nodes did call tools.
         self.tool_call_count += int(getattr(loop, "tool_call_count", 0) or 0)
         self.tool_turn_count += int(getattr(loop, "tool_turn_count", 0) or 0)
-        self.total_cost_usd += float(getattr(loop, "total_cost_usd", 0.0) or 0.0)
+        node_cost = float(getattr(loop, "total_cost_usd", 0.0) or 0.0)
+        self.total_cost_usd += node_cost
+        self._node_costs[node_idx] = self._node_costs.get(node_idx, 0.0) + node_cost
         node_commands = list(getattr(loop, "executed_commands", []) or [])
         if node_commands:
             self.executed_commands.extend(f"[{role}] {c}" for c in node_commands)
@@ -859,20 +886,29 @@ class TopologyRunner:
         """
         token = sage_recurse_origin_node.set(node_idx)
         try:
+            if self._is_over_budget():
+                return _BUDGET_EXCEEDED_RESULT
+
             node = self.graph.get_node(node_idx)
 
             # HyEvo code node dispatch: deterministic sandbox execution
             node_type = getattr(node, "node_type", "llm")
             if node_type == "code":
-                return await self._execute_code_node(node_idx, task, context_override)
+                result = await self._execute_code_node(node_idx, task, context_override)
+                self._record_spend_for_node(node_idx)
+                return result
 
             # Formal solver node: parse equations from predecessor, solve via Rust
             if node_type == "solver" or getattr(node, "role", "") == "solver":
-                return await self._execute_solver_node(node_idx, task, context_override)
+                result = await self._execute_solver_node(node_idx, task, context_override)
+                self._record_spend_for_node(node_idx)
+                return result
 
             # Phase 2: LLM nodes use agent_loop when factory available
             if self._agent_loop_factory:
-                return await self._execute_node_via_agent_loop(node_idx, task, context_override)
+                result = await self._execute_node_via_agent_loop(node_idx, task, context_override)
+                self._record_spend_for_node(node_idx)
+                return result
 
             role = getattr(node, "role", f"node-{node_idx}")
             caps = getattr(node, "required_capabilities", [])
@@ -965,6 +1001,9 @@ class TopologyRunner:
                     timeout=60.0,  # 60s per node, not per topology
                 )
                 output = response.content or ""
+                node_cost = self._response_cost_usd(response)
+                self.total_cost_usd += node_cost
+                self._node_costs[node_idx] = self._node_costs.get(node_idx, 0.0) + node_cost
                 # Record success in circuit breaker
                 provider_name = getattr(config, "provider", "unknown")
                 if self._provider_pool and hasattr(self._provider_pool, "record_success"):
@@ -1004,6 +1043,9 @@ class TopologyRunner:
                                 config=self._config or LLMConfig(provider="default", model="default"),
                             )
                         output = response.content or ""
+                        node_cost = self._response_cost_usd(response)
+                        self.total_cost_usd += node_cost
+                        self._node_costs[node_idx] = self._node_costs.get(node_idx, 0.0) + node_cost
                         log.info(
                             "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
                             node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
@@ -1025,6 +1067,7 @@ class TopologyRunner:
                 role,
                 len(output),
             )
+            self._record_spend_for_node(node_idx)
             return output
         finally:
             sage_recurse_origin_node.reset(token)
@@ -1083,6 +1126,9 @@ class TopologyRunner:
         last_output = ""
 
         while not self.executor.is_done():
+            if self._is_over_budget():
+                return _BUDGET_EXCEEDED_RESULT
+
             ready = self.executor.next_ready(self.graph)
             if not ready:
                 break
@@ -1093,6 +1139,13 @@ class TopologyRunner:
                 _t0 = _time.monotonic()
                 result = await self._execute_node(node_idx, task)
                 _latency_ms = (_time.monotonic() - _t0) * 1000
+                if result == _BUDGET_EXCEEDED_RESULT:
+                    return result
+
+                if self._is_over_budget():
+                    self.executor.mark_completed(node_idx)
+                    self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
+                    return _BUDGET_EXCEEDED_RESULT
 
                 # Phase C: runtime adaptation (single-node path)
                 if self._controller:
@@ -1167,6 +1220,14 @@ class TopologyRunner:
                 _t0_par = _time.monotonic()
                 results = await asyncio.gather(*coros)
                 _par_latency_ms = (_time.monotonic() - _t0_par) * 1000
+                if _BUDGET_EXCEEDED_RESULT in results:
+                    return _BUDGET_EXCEEDED_RESULT
+
+                if self._is_over_budget():
+                    for idx in ready:
+                        self.executor.mark_completed(idx)
+                        self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
+                    return _BUDGET_EXCEEDED_RESULT
 
                 # Phase C: runtime adaptation (parallel path)
                 if self._controller:

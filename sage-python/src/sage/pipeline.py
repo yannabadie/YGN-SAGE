@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from sage.contracts.cost_tracker import CostTracker
+
 from sage.pipeline_stages import (
     _infer_domain,
     compute_dag_features,
@@ -25,10 +27,15 @@ try:
     _Z3_VERIFY_AVAILABLE = True
 except ImportError:
     _Z3_VERIFY_AVAILABLE = False
-    verify_provider_assignment = None  # type: ignore[assignment]
-    ProviderSpec = None  # type: ignore[assignment,misc]
+    verify_provider_assignment = None
+    ProviderSpec = None
 
 log = logging.getLogger(__name__)
+
+EXECUTE_UNVERIFIED = "EXECUTE_UNVERIFIED"
+EXECUTE_HALTED_UNVERIFIED = "EXECUTE_HALTED_UNVERIFIED"
+EXECUTE_BUDGET_EXCEEDED = "EXECUTE_BUDGET_EXCEEDED"
+BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
 
 
 def _is_strict_governance() -> bool:
@@ -43,6 +50,21 @@ def _is_strict_governance() -> bool:
     """
     v = os.environ.get("SAGE_STRICT_GOVERNANCE", "").strip().lower()
     return v in {"1", "true", "yes", "on"}
+
+
+def _resolve_task_budget_usd(budget_usd: float | None) -> float:
+    """Resolve task-level spend cap; 0 means unlimited."""
+    raw_budget = budget_usd
+    if raw_budget is None:
+        env_budget = os.environ.get("SAGE_TASK_BUDGET_USD")
+        if env_budget is None or not env_budget.strip():
+            return 0.0
+        raw_budget = env_budget
+    try:
+        return float(raw_budget)
+    except (TypeError, ValueError):
+        log.warning("Invalid SAGE_TASK_BUDGET_USD=%r; task budget disabled", raw_budget)
+        return 0.0
 
 
 @dataclass
@@ -69,6 +91,7 @@ class PipelineContext:
     tool_turn_count: int = 0
     executed_commands: list[str] = field(default_factory=list)
     executed_tools: list[str] = field(default_factory=list)
+    cost_tracker: Any = None
 
 
 class CognitiveOrchestrationPipeline:
@@ -117,6 +140,7 @@ class CognitiveOrchestrationPipeline:
         tool_registry: Any = None,
         harness_config: Any = None,
         agent_loop: Any = None,
+        budget_usd: float | None = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -149,6 +173,7 @@ class CognitiveOrchestrationPipeline:
                 log.debug("meta_harness module not available, skipping harness config")
         self._agent_loop = agent_loop
         self._task_count = 0
+        self.budget_usd = _resolve_task_budget_usd(budget_usd)
 
         # G-series audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
         # RustCompositeWriteGate was built, exported, but never called at
@@ -176,6 +201,16 @@ class CognitiveOrchestrationPipeline:
             w_relevance=0.30,
         )
         self.write_gate = self._build_write_gate()
+
+    def _emit_budget_exceeded(self, ctx: PipelineContext) -> None:
+        cost_tracker = getattr(ctx, "cost_tracker", None)
+        data: dict[str, Any] = {"reason": "task budget exceeded"}
+        if cost_tracker is not None and hasattr(cost_tracker, "stats"):
+            try:
+                data.update(cost_tracker.stats())
+            except Exception:  # noqa: BLE001 - telemetry must not mask abort
+                pass
+        self._emit(EXECUTE_BUDGET_EXCEEDED, data)
 
     def _build_write_gate(self) -> Any:
         """Construct a fresh CompositeWriteGate (Rust if available, Python fallback).
@@ -283,14 +318,15 @@ class CognitiveOrchestrationPipeline:
     async def run(
         self,
         task: str,
-        budget_usd: float = 10.0,
+        budget_usd: float | None = None,
         system_hint: int | None = None,
     ) -> str:
         """Execute the full 5-stage pipeline.
 
         Args:
             task: The user's task.
-            budget_usd: Soft budget cap for the run.
+            budget_usd: Task-level spend cap for the run. ``None`` uses the
+                constructor/env value; ``0`` means unlimited.
             system_hint: Optional override for Stage 0 routing (1, 2, or 3).
                 Benchmark adapters use this when they already know the task
                 complexity (e.g. SWE-bench tasks are always S3). When set,
@@ -299,7 +335,14 @@ class CognitiveOrchestrationPipeline:
                 to the hint afterwards.
         """
         t0 = time.monotonic()
-        ctx = PipelineContext(task=task, budget=budget_usd)
+        effective_budget_usd = (
+            self.budget_usd
+            if budget_usd is None
+            else _resolve_task_budget_usd(budget_usd)
+        )
+        ctx = PipelineContext(task=task, budget=effective_budget_usd)
+        if effective_budget_usd > 0:
+            ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
 
         # G-series (2026-04-19): rebuild write gate per task so entries from a
         # previous task don't persist as novelty penalties or exact-dedup hits
@@ -750,6 +793,8 @@ class CognitiveOrchestrationPipeline:
 
     def _check_topology_budget(self, ctx: PipelineContext) -> None:
         """Pre-validate budget feasibility — degrade to single-node if over budget."""
+        if ctx.budget <= 0:
+            return
         if ctx.topology and hasattr(ctx.topology, 'node_count'):
             total_node_cost = 0.0
             nc = ctx.topology.node_count()
@@ -1156,6 +1201,12 @@ class CognitiveOrchestrationPipeline:
 
     async def _stage_execute(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
+        cost_tracker = getattr(ctx, "cost_tracker", None)
+        if cost_tracker is not None and cost_tracker.is_over_budget:
+            self._emit_budget_exceeded(ctx)
+            ctx.result = BUDGET_EXCEEDED_RESULT
+            return ctx
+
         # Bandit: choose arm BEFORE execution to get decision_id
         # Pass task context features when available for contextual arm selection
         if self.bandit and hasattr(self.bandit, "select_with_context"):
@@ -1192,7 +1243,7 @@ class CognitiveOrchestrationPipeline:
                     "verification failed on provider assignment (SAT check)."
                 )
                 self._emit(
-                    "EXECUTE_HALTED_UNVERIFIED",
+                    EXECUTE_HALTED_UNVERIFIED,
                     {"reason": "SAT check failed in Stage 3"},
                 )
                 raise RuntimeError(
@@ -1200,7 +1251,7 @@ class CognitiveOrchestrationPipeline:
                     "assignment failed verification (SAT check)."
                 )
             log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
-            self._emit("EXECUTE_UNVERIFIED", {"reason": "SAT check failed in Stage 3"})
+            self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
 
         # Single-agent mode (no topology or single node)
         if ctx.topology is None or (
@@ -1394,7 +1445,7 @@ class CognitiveOrchestrationPipeline:
 
         # Multi-agent mode: use TopologyRunner with ProviderPool
         try:
-            from sage.topology.runner import TopologyRunner  # type: ignore[import-not-found]
+            from sage.topology.runner import TopologyRunner
 
             # Get executor
             try:
@@ -1436,6 +1487,7 @@ class CognitiveOrchestrationPipeline:
                 controller=self.controller,  # Phase C
                 axis_hint=ctx.axis_hint,
                 agent_loop_factory=_agent_loop_factory,
+                cost_tracker=getattr(ctx, "cost_tracker", None),
             )
             result = await runner.run(ctx.task)
             # Roll up tool-use telemetry from TopologyRunner → ctx. Without
@@ -1448,6 +1500,10 @@ class CognitiveOrchestrationPipeline:
             # from the single-loop bypass path, so multi-agent topology runs
             # reported _cost_usd=0 even when each node had metered cost.
             ctx.cost = float(getattr(runner, "total_cost_usd", 0.0) or 0.0)
+            if result == BUDGET_EXCEEDED_RESULT:
+                self._emit_budget_exceeded(ctx)
+                ctx.result = result
+                return ctx
             if result == "__REROUTE__" and self.engine:
                 log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
                 self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
@@ -1485,6 +1541,7 @@ class CognitiveOrchestrationPipeline:
                     provider_pool=self.provider_pool,
                     controller=None,  # no controller on retry to prevent loop
                     agent_loop_factory=_agent_loop_factory,
+                    cost_tracker=getattr(ctx, "cost_tracker", None),
                 )
                 result = await runner2.run(ctx.task)
                 # Prefer the post-reroute telemetry (it's the attempt that
@@ -1493,6 +1550,10 @@ class CognitiveOrchestrationPipeline:
                 ctx.tool_turn_count = getattr(runner2, "tool_turn_count", 0)
                 ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
                 ctx.cost = float(getattr(runner2, "total_cost_usd", 0.0) or 0.0)
+                if result == BUDGET_EXCEEDED_RESULT:
+                    self._emit_budget_exceeded(ctx)
+                    ctx.result = result
+                    return ctx
 
             # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
             if result and result != "__REROUTE__" and self.quality_estimator:
@@ -1560,6 +1621,7 @@ class CognitiveOrchestrationPipeline:
                             llm_provider=self.llm_provider, llm_config=self.llm_config,
                             provider_pool=self.provider_pool,
                             agent_loop_factory=_agent_loop_factory,
+                            cost_tracker=getattr(ctx, "cost_tracker", None),
                         )
                         retry_result = await runner3.run(ctx.task)
                         if retry_result:
@@ -1567,6 +1629,11 @@ class CognitiveOrchestrationPipeline:
                             log.info("Stage 4: FrugalGPT cascade succeeded on retry")
                     except (RuntimeError, TimeoutError) as exc:
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
+
+            if result == BUDGET_EXCEEDED_RESULT:
+                self._emit_budget_exceeded(ctx)
+                ctx.result = result
+                return ctx
 
             ctx.result = result
             # Prefer the runner's aggregated real cost (summed from per-node
