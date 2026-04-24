@@ -10,7 +10,9 @@ Research basis:
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
 
@@ -66,14 +68,62 @@ class MemoryConsolidator:
         self.causal = causal
         self.memory_agent = memory_agent
         self.batch_size = batch_size
+        self._single_flight_lock = asyncio.Lock()
+        self._in_flight = asyncio.Event()
+        self._in_flight_task: asyncio.Task[ConsolidationResult] | None = None
+        self.last_error: BaseException | None = None
+
+    @property
+    def is_running(self) -> bool:
+        """Whether a consolidation pass is currently in-flight."""
+        return self._in_flight.is_set()
 
     async def consolidate(self) -> ConsolidationResult:
         """Run one consolidation pass. Returns stats."""
+        task = self._in_flight_task
+        if task is None or task.done():
+            async with self._single_flight_lock:
+                task = self._in_flight_task
+                if task is None or task.done():
+                    self._in_flight.set()
+                    task = asyncio.create_task(self._run_consolidation_pass())
+                    self._in_flight_task = task
+
+        return await asyncio.shield(task)
+
+    async def shutdown(self, timeout: float = 30.0) -> None:
+        """Wait for the active consolidation pass, cancelling it on timeout."""
+        task = self._in_flight_task
+        if task is None or task.done():
+            return
+
+        try:
+            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)
+        except TimeoutError:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    async def _run_consolidation_pass(self) -> ConsolidationResult:
+        self.last_error = None
+        try:
+            return await self._consolidate_once()
+        except asyncio.CancelledError as e:
+            self.last_error = e
+            raise
+        except Exception as e:
+            self.last_error = e
+            raise
+        finally:
+            self._in_flight.clear()
+
+    async def _consolidate_once(self) -> ConsolidationResult:
         result = ConsolidationResult()
 
         try:
             entries = await self.episodic.list_all(limit=self.batch_size)
         except Exception as e:
+            self.last_error = e
             log.warning("Consolidation: failed to list episodic entries: %s", e)
             return result
 
@@ -99,6 +149,7 @@ class MemoryConsolidator:
             try:
                 extraction = await self.memory_agent.extract(content[:1000])
             except Exception as e:
+                self.last_error = e
                 log.debug("Consolidation: extraction failed for '%s': %s", entry.get("key"), e)
                 continue
 
@@ -117,6 +168,7 @@ class MemoryConsolidator:
                         self.causal.add_causal_edge(src, tgt, cause_type="enabled")
                         result.causal_edges_added += 1
                     except Exception as e:
+                        self.last_error = e
                         log.debug("Consolidation: causal edge failed: %s", e)
 
                 prev_entities = extraction.entities
@@ -130,6 +182,7 @@ class MemoryConsolidator:
                     metadata=existing_meta,
                 )
             except Exception as e:
+                self.last_error = e
                 log.debug("Consolidation: failed to mark '%s' as consolidated: %s", entry.get("key"), e)
 
             result.processed += 1
