@@ -269,6 +269,80 @@ any machine that has rg installed) doesn't hit this bug — it uses
 memory-mapped search and streams lines. The fix is specifically for
 the Python fallback.
 
+### A8 Phase 2. PydanticAI reasoning_content passthrough — ✅ SHIPPED 2026-04-24
+**Why:** A8 Phase 1 (commit `c17ffd68`) migrated kimi-k2.5 → kimi-k2.6
+but kept `supports_tools=false` because the underlying bug was
+unverified. User's correct intuition: "on utilise pydanticAI je suis
+surpris que l'on ait des problemes avec kimi." Deep-dive confirmed
+SAGE's PydanticAI wrapper was dropping `reasoning_content` on both
+sides of the translation — PydanticAI's MoonshotAIProvider had the
+right profile (`openai_chat_send_back_thinking_parts='field'`), but
+nothing to serialize because SAGE's `Message` dataclass had no
+`thinking` field and `_our_messages_to_pydantic` never emitted
+`ThinkingPart`.
+
+**Action taken (commit `df150a2a`):**
+- `sage/llm/base.py`: added `thinking: str = ""` to `Message` and
+  `LLMResponse` with contract doc pointing to this roadmap entry.
+- `sage/providers/pydantic_ai_provider.py`:
+  - `_pydantic_response_to_ours` captures incoming `ThinkingPart`
+    content into `LLMResponse.thinking` (previously explicitly
+    dropped with a TODO comment).
+  - `_our_messages_to_pydantic` prepends `ThinkingPart(msg.thinking)`
+    before `TextPart`/`ToolCallPart` on assistant messages.
+    Ordering is required by Moonshot's API spec —
+    `reasoning_content` precedes `content` in streaming.
+  - `_HAS_THINKING_PART` guard so older pydantic-ai versions
+    degrade gracefully (non-thinking models keep working).
+- `sage/phases/act.py` + `sage/agent.py`: four call sites now
+  propagate `response.thinking` onto the assistant `Message` before
+  appending to history — CGRS brake, no-tool-calls final, tool-calls
+  continuation in act.py, and the equivalents in agent.py.
+
+**Tests (2 new):**
+- `test_thinking_roundtrips_both_directions` — ThinkingPart →
+  LLMResponse.thinking AND Message.thinking → ThinkingPart, with
+  strict ordering assertion.
+- `test_thinking_empty_string_does_not_emit_thinking_part` —
+  non-thinking models don't emit spurious reasoning_content on
+  requests.
+
+**Validation:** 9/9 test_pydantic_ai_integration tests PASS.
+
+**NOT DONE (explicit — Directive #5):** kimi-k2.6 `supports_tools`
+stays **false** in cards.toml until a live smoke exercises
+kimi-k2.6 on a multi-turn tool-call path with zero HTTP 400s
+observed. Evidence before assertions — the code fix is necessary
+but not sufficient proof. A3 Phase 3 tracks this.
+
+**Phase 3 (ticketed below as A3 validation smoke):** run a kimi-
+forced smoke (e.g. bandit override pinning kimi-k2.6 to a coder
+node for N=5-10 SWE-bench tasks). Confirm zero 400s in the log.
+If green: flip `supports_tools=true` on kimi-k2.6 in cards.toml
+AND deepseek-v4-pro (same fix class). Deepseek-v4-pro is already
+provisionally `true` — the flip there is a no-op that just
+upgrades the confidence level.
+
+### A12. Paired N=50 observe vs repair smoke (NEW 2026-04-24, ticketed)
+**Why:** spec § "Validation plan" — measure A3 repair-mode impact.
+Same 50 lite tasks, two passes (observe-only vs observe+repair),
+compare Docker pass-rate + repair-stage distribution + per-bucket
+analysis.
+
+**Cost:** ~$25-30, ~4-8 hours wall-clock (gen + Docker grading for
+2 × 50 tasks). Not runnable in a single interactive session.
+
+**Prerequisite:** A3 validation smoke (below) confirms the
+repair-mode wiring produces non-empty `verifier_repair` stages in
+live traffic before committing to the paired-N=50 budget. Current
+status: N=20 repair-mode smoke launched 2026-04-24 to validate
+wiring end-to-end.
+
+**Concrete action when ready:** two sequential bench runs with
+identical `--limit 50 --dataset lite`, only `SAGE_DIFF_VERIFIER_MODE`
+differs. Script-templatable; could use `/schedule` to run during
+off-hours to avoid interactive-session overhead.
+
 ### A11. DeepSeek v4 migration — ✅ SHIPPED 2026-04-24 (Phase 1: cards + default_model)
 **Why:** https://api-docs.deepseek.com/ (fetched 2026-04-24) announces
 **deprecation of `deepseek-chat` and `deepseek-reasoner` on
