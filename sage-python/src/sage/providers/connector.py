@@ -67,7 +67,7 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "api_key_env": "DEEPSEEK_API_KEY",
         "base_url": "https://api.deepseek.com/v1",
         "sdk": "openai",
-        "default_model": "deepseek-chat",
+        "default_model": "deepseek-v4-flash",
     },
     {
         "provider": "google",

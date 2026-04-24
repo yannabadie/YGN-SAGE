@@ -94,6 +94,8 @@ _MATRIX: list[tuple[str, str, str]] = [
     ("google", "gemini-3.1-flash-lite-preview", "GOOGLE_API_KEY"),
     ("google", "gemini-3-flash-preview", "GOOGLE_API_KEY"),
     ("google", "gemini-2.5-flash", "GOOGLE_API_KEY"),
+    ("openai", "gpt-5.5", "OPENAI_API_KEY"),
+    ("openai", "gpt-5.5-pro", "OPENAI_API_KEY"),
     ("openai", "gpt-5.4", "OPENAI_API_KEY"),
     ("openai", "gpt-5.4-pro", "OPENAI_API_KEY"),
     ("openai", "gpt-5.2", "OPENAI_API_KEY"),
@@ -102,8 +104,10 @@ _MATRIX: list[tuple[str, str, str]] = [
     ("xai", "grok-4-1-fast-reasoning", "GROK_API_KEY"),
     ("xai", "grok-code-fast-1", "GROK_API_KEY"),
     ("xai", "grok-3", "GROK_API_KEY"),
-    ("deepseek", "deepseek-chat", "DEEPSEEK_API_KEY"),
-    ("deepseek", "deepseek-reasoner", "DEEPSEEK_API_KEY"),
+    ("deepseek", "deepseek-v4-flash", "DEEPSEEK_API_KEY"),
+    ("deepseek", "deepseek-v4-pro", "DEEPSEEK_API_KEY"),
+    ("deepseek", "deepseek-chat", "DEEPSEEK_API_KEY"),  # LEGACY sunsets 2026-07-24
+    ("deepseek", "deepseek-reasoner", "DEEPSEEK_API_KEY"),  # LEGACY sunsets 2026-07-24
     ("minimax", "minimax-m2.7", "MINIMAX_API_KEY"),
     ("minimax", "MiniMax-M2.5", "MINIMAX_API_KEY"),
     ("minimax", "MiniMax-M2.5-highspeed", "MINIMAX_API_KEY"),

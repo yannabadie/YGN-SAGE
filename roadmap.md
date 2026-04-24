@@ -269,30 +269,92 @@ any machine that has rg installed) doesn't hit this bug — it uses
 memory-mapped search and streams lines. The fix is specifically for
 the Python fallback.
 
-### A9. Investigate gpt-5.5 (NEW 2026-04-24)
+### A11. DeepSeek v4 migration — ✅ SHIPPED 2026-04-24 (Phase 1: cards + default_model)
+**Why:** https://api-docs.deepseek.com/ (fetched 2026-04-24) announces
+**deprecation of `deepseek-chat` and `deepseek-reasoner` on
+2026-07-24** (3 months from today). They become the non-thinking and
+thinking modes of `deepseek-v4-flash`. Also ships
+`deepseek-v4-pro` as the high-accuracy thinking variant.
+
+**Action taken:**
+- `sage-core/config/cards.toml` + `sage-python/config/cards.toml`
+  (sync'd manually — Windows symlink broken):
+  - **NEW** `deepseek-v4-flash`: non-thinking, 1M context, $0.14
+    cache-miss / $0.28 output per 1M. `supports_tools=true`.
+  - **NEW** `deepseek-v4-pro`: thinking-mode, 1M context, $1.74
+    cache-miss / $3.48 output per 1M. `supports_tools=true`
+    provisionally (thinking-mode reasoning_content quirk is the
+    same class as kimi-k2.5/k2.6; if a production smoke hits 400s,
+    flip to false like we did for kimi — same template filter
+    handles it via A7).
+  - **LEGACY** `deepseek-chat` + `deepseek-reasoner`: kept until
+    sunset (2026-07-24) so bandit history + pinned fixtures keep
+    working. Block comments mark them LEGACY.
+- `connector.py::default_model` for deepseek: `deepseek-chat` →
+  `deepseek-v4-flash`.
+- `test_live_multiprovider.py` matrix: added v4-flash + v4-pro
+  entries, kept legacy rows with LEGACY comment.
+- Pricing source: https://api-docs.deepseek.com/quick_start/pricing
+  (fetched 2026-04-24). Affinities seeded from the matching legacy
+  entry + research-backed bumps; ablation-subject.
+
+**Validation:** 30/30 provider + quirks + assigner tests PASS.
+cards load cleanly via PyO3 ModelRegistry.from_toml_file; 7 models
+spot-checked (cost + context + tools flags match live docs).
+
+**Phase 2 (pending, tracked here):**
+- **v4-pro thinking quirk first-run triage.** First production
+  smoke that assigns v4-pro to a tool-using node will reveal
+  whether PydanticAI's MoonshotAIProvider-style
+  `send_back_thinking_parts='field'` contract covers DeepSeek too,
+  or if we need the same plumbing we're ticketing for kimi
+  (A8 Phase 2). If 400s appear: flip `supports_tools=false` on
+  v4-pro, A7 filter excludes it from tool-using nodes, plumbing
+  work becomes the unblocker.
+- **Pre-sunset flip.** Before 2026-07-24, swap test fixtures that
+  pin `deepseek-chat` → `deepseek-v4-flash`, remove LEGACY blocks
+  from cards.toml, and kill the deepseek-chat / deepseek-reasoner
+  entries from live-provider matrix. Could schedule a /schedule
+  agent to open that cleanup PR around 2026-07-01.
+
+### A9. Investigate gpt-5.5 — ✅ SHIPPED 2026-04-24 (Phase 1: cards)
 **Why:** user flagged OpenAI released gpt-5.5 as a new model. Our
 cards.toml ships gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano,
 gpt-5.3-codex. If gpt-5.5 is a measurable improvement over 5.4 on
 reasoning/code, adding it (or replacing 5.4 as the default reasoner
 tier) could materially improve SWE-bench and BCB results.
 
-**Concrete action:**
-1. Context7 / WebFetch against https://platform.openai.com/docs/models
-   (or equivalent live OpenAI docs) to confirm gpt-5.5 exists AND
-   get its model id, context window, pricing, reasoning effort
-   settings, tool-call format, and any quirks.
-2. If confirmed: add to `sage-core/config/cards.toml` with
-   docs-cited affinity scores. Don't remove gpt-5.4 (bandit may
-   still prefer it on some tasks).
-3. Test: add a live-provider test case for gpt-5.5 analogous to
-   gpt-5.4. Run a routing-gt smoke to see where bandit places it.
-4. Ablation smoke (N=10) to confirm direction of improvement before
-   making it a default.
+**Action taken (Phase 1):**
+1. WebSearch-verified against live OpenAI sources (2026-04-24):
+   - https://openai.com/index/introducing-gpt-5-5/ (announcement)
+   - https://developers.openai.com/api/docs/models/gpt-5.5 (API ref)
+   - https://developers.openai.com/api/docs/pricing (pricing)
+   - Wikipedia gpt-5 page also lists 5.5 as a successor, confirming.
+2. Added to cards.toml (both sage-core + sage-python mirrors):
+   - **gpt-5.5**: $5/$30 per 1M tokens, 1M context, supports tools +
+     vision + json + responses API. Affinities +0.01 above gpt-5.4
+     on reasoning/code — conservative, ablation-subject.
+   - **gpt-5.5-pro**: $30/$180 per 1M, 1M context, pro-tier
+     affinities. S2 affinity lowered to 0.60 to prevent pro-rate
+     assignment on mid-tier tasks.
+   - gpt-5.4 + gpt-5.4-pro kept intact; bandit-managed over time.
+3. `test_live_multiprovider.py` matrix: gpt-5.5 + gpt-5.5-pro rows
+   added before gpt-5.4 entries.
 
-**Dependency:** OpenAI live docs only (Directive #6). Do NOT
-hardcode gpt-5.5 quirks from training data.
+**Validation:** Cards load cleanly via PyO3 ModelRegistry
+(cost_in=$5.0, ctx=1M for gpt-5.5; $30.0/1M for pro). 30/30 provider
++ quirks tests PASS.
 
-**Cost:** 30 min verification + ~45 min implementation + 15 min smoke.
+**Phase 2 (tracked here, not shipped):**
+- Live-call smoke against gpt-5.5 once OPENAI_API_KEY holder has
+  access (model availability at API level not verified in-session
+  — only via docs).
+- Ablation smoke (N=10) comparing gpt-5.5 vs gpt-5.4 on BigCodeBench
+  Hard / SWE-bench to validate affinity seed values.
+- Bandit calibration sweep (N=50 routing_gt) to confirm bandit
+  doesn't over-select 5.5 on tasks where 5.4 remains adequate.
+
+### A3. Repair-mode implementation — ✅ SHIPPED 2026-04-24
 
 ### A3. Repair-mode implementation — ✅ SHIPPED 2026-04-24
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier

@@ -194,6 +194,100 @@ creative = 0.74
 factual = 0.32
 
 [[models]]
+# A9 (2026-04-24): gpt-5.5 addition. Source (Directive #6):
+#   https://openai.com/index/introducing-gpt-5-5/ (announcement)
+#   https://developers.openai.com/api/docs/models/gpt-5.5 (API ref)
+#   https://developers.openai.com/api/docs/pricing (pricing)
+# Verified via WebSearch 2026-04-24: "$5 per 1M input tokens and $30
+# per 1M output tokens, with a 1M context window. Available in the
+# Responses and Chat Completions APIs. More intelligent and much
+# more token efficient than gpt-5.4." Batch/Flex at half standard
+# rate; Priority at 2.5x.
+#
+# Affinity scores: starts from gpt-5.4's baseline and bumps +0.01
+# on reasoning/code/tool_use reflecting the advertised improvement.
+# Ablation-subject — an N=50 routing_gt smoke + bandit-calibration
+# sweep will tune these over 2-3 sessions of real traffic. Kept
+# conservative so bandit doesn't prematurely over-select 5.5 on
+# everything.
+#
+# Not removing gpt-5.4: bandit-managed. The learned-quality layer
+# will upgrade tasks to 5.5 where the delta actually materialises,
+# and keep 5.4 where 5.4 is already good enough at a quarter of
+# the input cost (5.4: $2.50/$15; 5.5: $5.00/$30 per 1M tokens).
+id = "gpt-5.5"
+provider = "openai"
+family = "gpt-5.5"
+code_score = 0.87
+reasoning_score = 0.96
+tool_use_score = 0.93
+math_score = 0.86
+formal_z3_strength = 0.67
+cost_input_per_m = 5.00
+cost_output_per_m = 30.0
+latency_ttft_ms = 2500.0
+tokens_per_sec = 120.0
+s1_affinity = 0.08
+s2_affinity = 0.90
+s3_affinity = 0.93
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 1000000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.86
+code = 0.87
+reasoning = 0.96
+tool_use = 0.93
+formal = 0.67
+creative = 0.74
+factual = 0.36
+
+[[models]]
+# A9 (2026-04-24): gpt-5.5-pro addition. Same source set as
+# gpt-5.5 above. Pricing: $30/$180 per 1M (in/out) — the highest
+# cost in our mesh by a wide margin. Only the Rust assigner's
+# budget gate and the S3 affinity weighting prevent it from
+# running away on non-hard tasks. Bandit should learn this.
+#
+# Affinity scores: bumped above gpt-5.4-pro on code/reasoning
+# reflecting "higher accuracy" positioning per the announcement,
+# but kept conservative — real performance delta will come via
+# ablation. S2 affinity explicitly lowered vs 5.5 base (0.60 vs
+# 0.90) so the assigner doesn't burn pro rates on mid-tier tasks.
+id = "gpt-5.5-pro"
+provider = "openai"
+family = "gpt-5.5"
+code_score = 0.91
+reasoning_score = 0.98
+tool_use_score = 0.94
+math_score = 0.88
+formal_z3_strength = 0.69
+cost_input_per_m = 30.0
+cost_output_per_m = 180.0
+latency_ttft_ms = 8000.0
+tokens_per_sec = 50.0
+s1_affinity = 0.04
+s2_affinity = 0.60
+s3_affinity = 0.96
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = true
+context_window = 1000000
+safety_rating = 0.80
+[models.domain_scores]
+math = 0.88
+code = 0.91
+reasoning = 0.98
+tool_use = 0.94
+formal = 0.69
+creative = 0.75
+factual = 0.33
+
+[[models]]
 id = "gpt-5.2"
 provider = "openai"
 family = "gpt-5.2"
@@ -384,8 +478,109 @@ creative = 0.65
 factual = 0.30
 
 # --- DeepSeek models ---
+#
+# A11 (2026-04-24): DeepSeek deprecation notice — `deepseek-chat` and
+# `deepseek-reasoner` sunset 2026-07-24 per
+# https://api-docs.deepseek.com/ (Directive #6, fetched 2026-04-24).
+# They correspond to the non-thinking and thinking modes of
+# deepseek-v4-flash respectively. Cards for both legacy ids remain
+# here until the sunset date so bandit history + any fixtures that
+# pin those ids keep working; migration default_model should swap
+# to deepseek-v4-flash before 2026-07-24.
 
 [[models]]
+# A11 (2026-04-24): deepseek-v4-flash is the non-thinking successor
+# to deepseek-chat. Same OpenAI-compat endpoint (api.deepseek.com).
+# Context 1M tokens (up from 128k on v3.2). Pricing:
+#   input:  $0.028 cache-hit / $0.14 cache-miss per 1M
+#   output: $0.28 per 1M
+#   max output: 384k tokens
+# Source: https://api-docs.deepseek.com/quick_start/pricing (live
+# docs, fetched 2026-04-24). Affinities below are starting points
+# derived from deepseek-chat's measured behaviour; an N=50
+# routing_gt smoke + bandit calibration will tune them.
+id = "deepseek-v4-flash"
+provider = "deepseek"
+family = "deepseek-v4"
+code_score = 0.74
+reasoning_score = 0.77
+tool_use_score = 0.72
+math_score = 0.70
+formal_z3_strength = 0.54
+cost_input_per_m = 0.14
+cost_output_per_m = 0.28
+latency_ttft_ms = 1500.0
+tokens_per_sec = 150.0
+s1_affinity = 0.55
+s2_affinity = 0.85
+s3_affinity = 0.45
+recommended_topologies = ["avr", "self-moa"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 1000000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.70
+code = 0.74
+reasoning = 0.77
+tool_use = 0.72
+formal = 0.54
+creative = 0.63
+factual = 0.53
+
+[[models]]
+# A11 (2026-04-24): deepseek-v4-pro — thinking-mode high-accuracy
+# variant. Higher cost than flash: input $0.145 cache-hit / $1.74
+# cache-miss per 1M; output $3.48 per 1M. 1M context, 384k max
+# output.
+#
+# Thinking-mode quirk (same class as kimi-k2.5/k2.6): the API
+# expects reasoning_content / thinking fields to be preserved
+# across multi-turn tool-call messages. PydanticAI's openai model
+# profile handles this via `openai_chat_send_back_thinking_parts`
+# but SAGE's wrapper may still strip it (see the open A8 Phase 2
+# item). Until verified: supports_tools stays `true` for now since
+# v4-pro is new and we have no production reproducer yet — first
+# smoke that hits the 400 flips it to false like we did for kimi.
+#
+# Source: https://api-docs.deepseek.com/quick_start/pricing +
+# https://api-docs.deepseek.com/ (fetched 2026-04-24).
+id = "deepseek-v4-pro"
+provider = "deepseek"
+family = "deepseek-v4"
+code_score = 0.77
+reasoning_score = 0.92
+tool_use_score = 0.72
+math_score = 0.83
+formal_z3_strength = 0.65
+cost_input_per_m = 1.74
+cost_output_per_m = 3.48
+latency_ttft_ms = 3000.0
+tokens_per_sec = 80.0
+s1_affinity = 0.40
+s2_affinity = 0.86
+s3_affinity = 0.90
+recommended_topologies = ["avr", "loop"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 1000000
+safety_rating = 0.70
+[models.domain_scores]
+math = 0.83
+code = 0.77
+reasoning = 0.92
+tool_use = 0.72
+formal = 0.65
+creative = 0.70
+factual = 0.54
+
+[[models]]
+# LEGACY — deprecates 2026-07-24 per DeepSeek API docs. See A11.
+# Corresponds to non-thinking mode of deepseek-v4-flash. Keep until
+# sunset so bandit history stays valid and downstream fixtures
+# that pin this id continue working.
 id = "deepseek-chat"
 provider = "deepseek"
 family = "deepseek-v3.2"
@@ -417,6 +612,8 @@ creative = 0.63
 factual = 0.53
 
 [[models]]
+# LEGACY — deprecates 2026-07-24. See A11. Corresponds to thinking
+# mode of deepseek-v4-flash.
 id = "deepseek-reasoner"
 provider = "deepseek"
 family = "deepseek-v3.2"
