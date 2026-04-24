@@ -1,0 +1,161 @@
+{
+  "benchmark": "swebench_lite",
+  "total": 10,
+  "passed": 0,
+  "failed": 10,
+  "errors": 8,
+  "pass_rate": 0.0,
+  "avg_latency_ms": 166336.75,
+  "avg_cost_usd": 0.7803865,
+  "routing_breakdown": {
+    "S1": 0,
+    "S2": 0,
+    "S3": 10
+  },
+  "results": [
+    {
+      "task_id": "astropy__astropy-12907",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 266513.6,
+      "cost_usd": 0.760606,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "astropy__astropy-14182",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 57789.3,
+      "cost_usd": 0.760606,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "astropy__astropy-14365",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 180677.5,
+      "cost_usd": 0.544294,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    },
+    {
+      "task_id": "astropy__astropy-14995",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 173854.3,
+      "cost_usd": 1.066683,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "astropy__astropy-6938",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 154088.1,
+      "cost_usd": 0.838478,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    },
+    {
+      "task_id": "astropy__astropy-7746",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 71503.1,
+      "cost_usd": 0.838478,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "django__django-10914",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 323321.1,
+      "cost_usd": 0.867804,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "django__django-10924",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 87078.7,
+      "cost_usd": 0.867804,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "django__django-11001",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 193392.9,
+      "cost_usd": 0.629556,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    },
+    {
+      "task_id": "django__django-11019",
+      "passed": false,
+      "system_used": 3,
+      "latency_ms": 155148.9,
+      "cost_usd": 0.629556,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": "empty_patch"
+    }
+  ],
+  "model_config": {
+    "model": "gemini-3.1-flash-lite-preview"
+  },
+  "model": "gemini-3.1-flash-lite-preview",
+  "provider": "",
+  "git_sha": "3583c4003ca868de852fde7ad8041695d24ed766",
+  "feature_flags": [
+    "wasmsandbox",
+    "toolexecutor",
+    "qualitylabeler",
+    "topologyengine"
+  ],
+  "timestamp": "2026-04-24T07:26:38.785787+00:00",
+  "temperature": 0.0
+}

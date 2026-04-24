@@ -36,42 +36,82 @@ trail is explicit.
 | **A0d** Caveat the "DistilBERT ONNX QualityEstimator" claim in 6 docs — active backend is Z3 QualityLabeler + abstention; ONNX artefact NOT shipped. | `bf220e0` | README.md, pillars.md, results.md, methodology.md, Obsidian Papers/CascadeRouting.md + Architecture/Pipeline.md. |
 
 ### A1. Accumulate observe-mode data across opportunistic SWE-bench smokes
-**Why:** the 2026-04-23 observe smoke (N=10) gave us 2 flagged patches.
-Repair-mode flip needs ≥10 flagged + ≥10 clean observations to discriminate
-signal from false positives at a meaningful SE. Dedicated smokes cost
-$5-10 apiece; instead, **every** future SWE-bench run should opt into
-observe mode passively.
+**Why:** repair-mode flip needs ≥10 flagged + ≥10 clean observations to
+discriminate signal from false positives at a meaningful SE. Dedicated
+smokes cost $5-10 apiece; instead, **every** future SWE-bench run opts
+into observe mode passively.
+
+**Progress (2026-04-24, N=20 cumulative):**
+
+| Smoke | N | PATCH | EMPTY | Flagged | Verifier-missed fails |
+|---|---|---|---|---|---|
+| 2026-04-23 | 10 | 2 | 8 | 2/2 | 0 |
+| 2026-04-24 | 10 | 2 | 8 | 1/2 | 1 (malformed hunk header) |
+| **Total** | **20** | **4** | **16** | **3** | **1** |
+
+**New finding (2026-04-24):** astropy-6938 emitted a patch that Docker
+rejected with `malformed patch at line 15` because the hunk header's
+old/new line counts don't match the diff body. The current verifier
+walks context lines INSIDE well-formed hunks — it can't run the content
+check if `patch` aborts at header parse. Adding hunk-header arithmetic
+(old-line-count vs number of ` `/`-` lines; new-line-count vs ` `/`+`)
+as a pre-check would close this blind spot with ~20 LOC.
 
 **Concrete action:** update smoke invocations in docs + scripts (already
 done in `.claude/rules/development.md` + `CLAUDE.md`) so new runs include
-`SAGE_DIFF_VERIFIER_MODE=observe`. Wait for 3-4 smokes to accumulate the
-sample.
+`SAGE_DIFF_VERIFIER_MODE=observe`. Two more passive smokes → N=40 with
+~8 PATCHes. Consider verifier extension for the second failure class.
 
-**Done when:** 20+ observe-annotated tasks sit in `docs/benchmarks/`
-with at least 10 PATCH entries among them.
+**Done when:** ≥10 PATCH entries observed AND at least one Docker-clean
+PATCH exists in the sample. **Currently stuck at 0 clean PATCHes after
+N=20** — the coder-role model emits unapplicable diffs deterministically.
+This is an orthogonal concern to repair-mode coverage and may need its
+own sub-item (see A6 below).
 
 ### A2. Investigate the 20%+ fast-abort rate on SWE-bench generation
-**Why:** 2/10 tasks in the observe smoke aborted in < 60 s with 0 tool
-calls (astropy-14182, astropy-7746). Earlier smokes showed similar
-fast-abort patterns. If 20% of budget silently evaporates into early
-fails, the observe/repair data is small-N for everything else.
+**Why:** astropy-14182 (~58 s) and astropy-7746 (~72 s) both aborted
+with 0-ish tool calls in the 2026-04-23 AND 2026-04-24 smokes —
+**deterministic, not flaky** (N=2/2 for each). If 20% of budget silently
+evaporates into early fails on the same task IDs, observe/repair data
+is small-N for everything else, and bench comparisons across runs
+inherit that bias.
 
-**Concrete action:** pull the gen log for a fast-abort case. Is it
-provider circuit-breaker? SSL? Classification cold-start? Once root-
+**Concrete action:** pull the gen log for astropy-14182 (cheapest — 0
+tool calls confirmed). Is it provider circuit-breaker? SSL?
+Classification cold-start? Topology decomposition failure? Once root-
 caused, decide whether it needs a fix or is acceptable noise.
 
 **Cost:** ~2 h of log-reading + 1 targeted smoke. Essentially zero $.
 
 ### A3. Repair-mode implementation (conditional on A1 data)
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier
-mismatch diagnostic to an LLM one-shot repair. The observe smoke confirmed
-the mismatch signal is clean (zero false positives on two patches);
-waiting on more sample before flipping.
+mismatch diagnostic to an LLM one-shot repair. The 2026-04-23 smoke
+confirmed the mismatch signal is clean (zero false positives on two
+patches); 2026-04-24 surfaced a second failure class the verifier
+doesn't yet catch (malformed hunk header, see A6).
 
 **Concrete action when gate passes:** implement the
 `_repair_with_verifier_feedback` stub spec'd in the design doc; extend
 `test_swebench_emission_wiring.py` with a repair-mode wire test; run
-paired N=50 smoke (observe-only vs observe+repair).
+paired N=50 smoke (observe-only vs observe+repair). Consider whether
+repair-mode covers BOTH failure classes or only content_mismatch.
+
+### A6. Extend verifier to catch hunk-header arithmetic mismatches (new 2026-04-24)
+**Why:** astropy-6938 in the 2026-04-24 smoke emitted a patch with
+`@@ -1541,10 +1541,4 @@` whose body's context/removed line counts don't
+match the header. `patch` aborts with "malformed patch at line 15"
+before the content walk can run. The verifier never produces an
+annotation, so repair-mode never sees it.
+
+**Concrete action:** before the existing content-mismatch walk, for
+each hunk count `-`+` ` lines (should equal old-count) and `+`+` ` lines
+(should equal new-count). On mismatch emit a `malformed_hunk_header`
+kind annotation. ~20 LOC in the parser, 1 regression test with a
+hand-crafted bad header, 1 wire test that exercises it through the
+bench path.
+
+**Cost:** ~2 h. Unblocks A3 repair-mode for 50% more of the observed
+failure modes.
 
 ### A4. Public-claims reconciliation (README ↔ PyPI)
 **Why:** ALIRE flagged a three-way divergence (README/commits/PyPI) on
