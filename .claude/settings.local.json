@@ -28,7 +28,15 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_bt6zfawk/predictions.jsonl /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5f-predictions.jsonl)",
-      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_bt6zfawk/predictions_meta.json /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5f-meta.json)"
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_bt6zfawk/predictions_meta.json /c/Code/YGN-SAGE/docs/benchmarks/2026-04-18-swebench-lite-v5f-meta.json)",
+      "Bash(cp \"C:/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_e7h3zu5o/predictions.jsonl\" /c/Code/YGN-SAGE/docs/benchmarks/2026-04-23-emission-format-smoke/2026-04-23-arm-a-unified-predictions.jsonl)",
+      "Bash(cp \"C:/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_e7h3zu5o/predictions_meta.json\" /c/Code/YGN-SAGE/docs/benchmarks/2026-04-23-emission-format-smoke/2026-04-23-arm-a-unified-meta.json)",
+      "Bash(cp \"C:/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_vhdkgw3x/predictions.jsonl\" /c/Code/YGN-SAGE/docs/benchmarks/2026-04-23-emission-format-smoke/2026-04-23-arm-b-search-replace-predictions.jsonl)",
+      "Bash(cp \"C:/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_vhdkgw3x/predictions_meta.json\" /c/Code/YGN-SAGE/docs/benchmarks/2026-04-23-emission-format-smoke/2026-04-23-arm-b-search-replace-meta.json)",
+      "Bash(python -c ' *)",
+      "Bash(cp /c/Users/YANN~1.ABA/AppData/Local/Temp/sage_swebench_7fnqb1ob/predictions.jsonl /c/Code/YGN-SAGE/docs/benchmarks/2026-04-23-diff-verifier-observe-smoke/predictions.jsonl)",
+      "Bash(git -C /c/Code/YGN-SAGE add docs/benchmarks/2026-04-23-diff-verifier-observe-smoke/)",
+      "Bash(git -C /c/Code/YGN-SAGE commit -m ' *)"
     ]
   }
 }
