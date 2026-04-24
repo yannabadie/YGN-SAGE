@@ -1183,6 +1183,20 @@ mod tests {
     /// Kept narrow — these are tool-free by construction, and adding
     /// "tools" to them would exclude kimi from a perfectly legitimate
     /// text-only synthesis role.
+    ///
+    /// Residual risk (advisor review, 2026-04-24): AgentLoop still
+    /// provides the tool registry to sink nodes at runtime.
+    /// SINK_NODE_PROMPT asks for "Output ONLY the final answer — concise,
+    /// no explanation, no reasoning", but the LLM ultimately decides
+    /// whether to invoke a tool. If a sink bandit-assigned to kimi-k2.5
+    /// nevertheless emits 4+ tool-call turns, the Moonshot HTTP 400
+    /// ("reasoning_content missing") relapse is possible. Empirically
+    /// this hasn't triggered on current sinks (they are terminal
+    /// formatters the model treats as 1-turn), but the attack surface
+    /// is NARROWED, not closed. Proper close-out is B9 (AgentLoop
+    /// honours ``required_capabilities`` and serves a tool-free agent
+    /// variant for sinks). Until then, observe-mode logs will flag any
+    /// kimi-on-sink 4th-turn-400 relapse for triage.
     const TOOL_FREE_SINK_ROLES: &[&str] = &[
         "synthesizer",   // sequential, brainstorming
         "aggregator",    // parallel, horizon_pipeline, parallel_fanout
