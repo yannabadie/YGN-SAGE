@@ -12,7 +12,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
+from sage.security.redaction import RedactionFilter
+
 _log = logging.getLogger(__name__)
+_redaction_filter = RedactionFilter()
 
 
 class EpisodicMemory:
@@ -98,6 +101,9 @@ class EpisodicMemory:
         """Store (or overwrite) an episodic memory entry."""
         await self._ensure_initialized()
         meta = metadata or {}
+        if _redaction_filter.enabled:
+            content = _redaction_filter.redact_text(content)
+            meta = _redaction_filter.redact_dict(meta)
 
         if self._db_path is not None:
             now = datetime.now(timezone.utc).isoformat()
@@ -172,6 +178,12 @@ class EpisodicMemory:
     ) -> bool:
         """Update an existing entry.  Returns *False* if the key is not found."""
         await self._ensure_initialized()
+        if _redaction_filter.enabled:
+            if content is not None:
+                content = _redaction_filter.redact_text(content)
+            if metadata is not None:
+                metadata = _redaction_filter.redact_dict(metadata)
+
         if self._db_path is not None:
             return await self._sqlite_update(key, content, metadata)
 

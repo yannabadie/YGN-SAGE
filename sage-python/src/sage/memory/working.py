@@ -10,6 +10,8 @@ import os
 import sys
 from typing import Any
 
+from sage.security.redaction import RedactionFilter
+
 # Windows: ensure ONNX Runtime DLL is found before System32 fallback.
 # An old onnxruntime.dll in C:\Windows\System32 can shadow the correct one.
 if sys.platform == "win32":
@@ -29,6 +31,8 @@ try:
     _has_rust = hasattr(sage_core, "WorkingMemory")
 except ImportError:
     _has_rust = False
+
+_redaction_filter = RedactionFilter()
 
 
 def get_memory_backend() -> str:
@@ -160,6 +164,8 @@ class WorkingMemory:
 
     def add_event(self, event_type: str, content: str) -> str:
         """Add an event and return its ID."""
+        if _redaction_filter.enabled:
+            content = _redaction_filter.redact_text(content)
         return self._inner.add_event(event_type, content)
 
     def get_event(self, event_id: str) -> dict[str, Any] | None:
@@ -198,6 +204,8 @@ class WorkingMemory:
 
     def compress(self, keep_recent: int, summary: str) -> None:
         """Compress old events into a summary."""
+        if _redaction_filter.enabled:
+            summary = _redaction_filter.redact_text(summary)
         self._inner.compress_old_events(keep_recent, summary)
 
     def compact_to_arrow(self) -> int:
@@ -222,6 +230,10 @@ class WorkingMemory:
         Returns:
             The assigned chunk ID in the S-MMU.
         """
+        if _redaction_filter.enabled:
+            keywords = _redaction_filter.redact_value(keywords)
+            if summary is not None:
+                summary = _redaction_filter.redact_text(summary)
         return self._inner.compact_to_arrow_with_meta(
             keywords, embedding, parent_chunk_id, summary
         )

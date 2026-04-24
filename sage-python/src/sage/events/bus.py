@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable
 
 from sage.agent_loop import AgentEvent
+from sage.security.redaction import RedactionFilter
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +46,7 @@ class EventBus:
         self._lock = threading.Lock()
         self._subscribers: dict[str, Callable[[AgentEvent], Any]] = {}
         self._async_consumers: list[_AsyncConsumer] = []
+        self._redaction_filter = RedactionFilter()
 
     @staticmethod
     def _enqueue_async_event(q: asyncio.Queue[AgentEvent], event: AgentEvent) -> None:
@@ -62,6 +64,9 @@ class EventBus:
 
         Thread-safe. Subscriber exceptions are logged and swallowed.
         """
+        if self._redaction_filter.enabled:
+            event = self._redaction_filter.redact_event(event)
+
         with self._lock:
             self._buffer.append(event)
             subscribers = list(self._subscribers.values())
