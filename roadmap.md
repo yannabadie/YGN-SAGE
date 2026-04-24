@@ -101,32 +101,51 @@ deterministic (N=2/2). Investigation via gen-log dive:
 2026-04-23 and 2026-04-24 smokes' per-task signal was masked by this
 bug.
 
-### A7. Template capability hygiene (fix for A2) — NEW 2026-04-24
+### A7. Template capability hygiene (fix for A2) — ✅ SHIPPED 2026-04-24
 **Why:** A2's Option A. Prevent kimi-k2.5 from being assigned to
 tool-using nodes by declaring `"tools"` in every non-sink template
 role's `required_capabilities`.
 
-**Concrete action:** audit `sage-core/src/topology/templates.rs` —
-for each `TopologyNode::new(...)` call representing a role that the
-AgentLoop grants tools to (planner, coder, worker, dispatcher, hub,
-debater, actor, verifier, …), add `"tools"` to
-`required_capabilities`. Sink-only roles (synthesizer, output, mixer,
-aggregator when formatting) may stay tool-free IF the AgentLoop
-factory is extended at the same time — otherwise kimi still hits
-them with tools. Until the factory honours the capability, the
-simpler move is `"tools"` everywhere except documented sinks.
+**Action taken:**
+- Added `"tools"` to 23 nodes across all 12 templates in
+  `sage-core/src/topology/templates.rs`. Each edit carries an
+  inline comment pointing to A7's rationale and the model_assigner
+  filter site.
+- Sink-prompted roles (SINK_NODE_PROMPT) deliberately kept
+  tool-free:
+  - `synthesizer` (sequential, brainstorming)
+  - `aggregator` (parallel, horizon_pipeline, parallel_fanout)
+  - `mixer` (selfmoa)
+  - `judge` (debate)
+  - `verifier` in `robust` only (AVR's `verifier` gets `"tools"` —
+    it's not sink-prompted)
+  - `solver` (formal_solver — deterministic Rust, not LLM)
+- New regression test `test_a7_tool_capability_hygiene_all_templates`
+  in `templates.rs`. Iterates every template; asserts non-sink
+  nodes declare `"tools"` AND sink nodes do NOT. Fires with a
+  pointer to A7's rationale if a future template adds a role
+  without `"tools"` or regresses an existing one.
 
-Tests: `test_assigner_parity.py` has a `supports_tools=false`
-fixture; add a test that for each template, the assigner never
-picks kimi-k2.5 for tool-using nodes.
+**Validation:** Rust `cargo test --features smt --lib topology::templates`
+→ 20/20 PASS (+1 new A7 test). The Rust-level filter at
+`model_assigner.rs:289` (`needs_tools && !card.supports_tools`)
+now fires on every template-built non-sink node, excluding kimi-k2.5
+from the candidate pool. No Python-side change needed — the existing
+`cards.toml:610 supports_tools = false` on kimi is the other half
+of the contract.
 
 **Option B (correct long-term):** make AgentLoop honour the node's
 `required_capabilities` — tool-free roles get a tool-free agent
-variant. Matches F9's original intent. Wider refactor (agent_loop_
-factory + phases/act.py). Do at B9 (AgentLoop concurrency refactor).
+variant. Matches F9's original intent. Wider refactor
+(agent_loop_factory + phases/act.py). Do at B9 (AgentLoop
+concurrency refactor) — until then, declaring `"tools"` universally
+(except SINK_NODE_PROMPT roles) is the pragmatic close-out.
 
-**Cost:** ~1 h for Option A including the test. Zero $.
-**Dependency:** none. Independent of A6.
+**Expected impact:** closes A2's 20% silent-budget-leak on
+template-built multi-agent topologies. Next opportunistic observe
+smoke should see astropy-14182 / astropy-7746 no longer fast-abort.
+A1's patch-rate gate becomes achievable since every task gets real
+tool-call attempts rather than HTTP 400s on turn 4.
 
 ### A3. Repair-mode implementation (conditional on A1 data)
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier

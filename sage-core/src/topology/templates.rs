@@ -44,7 +44,13 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         "planner".into(),
         "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
         2,
-        vec!["text_processing".into(), "reasoning".into()],
+        // A7 (2026-04-24): "tools" declared because AgentLoop grants tools
+        // to this role at runtime. Without "tools", ModelAssigner's
+        // `needs_tools && !card.supports_tools` filter (model_assigner.rs:289)
+        // doesn't fire and kimi-k2.5 (supports_tools=false) can get
+        // assigned here → HTTP 400 on the 4th tool-call turn → fast-abort.
+        // See docs/benchmarks/2026-04-24-diff-verifier-observe-smoke/findings.md.
+        vec!["text_processing".into(), "reasoning".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -102,7 +108,8 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
         "source".into(),
         model_id.into(),
         1,
-        vec!["text_processing".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -115,7 +122,8 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
             format!("worker_{}", i),
             model_id.into(),
             2,
-            vec!["reasoning".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "tools".into()],
             0,
             1.0,
             120.0,
@@ -175,7 +183,10 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
         "verifier".into(),
         "".into(),  // ModelAssigner: S2 → fast model
         2,
-        vec!["code_review".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        // Note: AVR verifier is NOT sink-prompted (unlike robust's
+        // verifier), so AgentLoop gives it tools at runtime.
+        vec!["code_review".into(), "tools".into()],
         0,
         1.0,
         60.0,
@@ -184,7 +195,9 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
         "output".into(),
         "".into(),  // ModelAssigner: S1 → budget model
         1,
-        vec!["text_processing".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        // AVR's `output` has NO SINK_NODE_PROMPT so AgentLoop gives it tools.
+        vec!["text_processing".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -226,7 +239,8 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
         "dispatcher".into(),
         model_id.into(),
         1,
-        vec!["text_processing".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -239,7 +253,8 @@ pub fn self_moa(model_id: &str, agent_count: usize) -> TopologyGraph {
             format!("agent_{}", i),
             model_id.into(),
             2,
-            vec!["reasoning".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "tools".into()],
             0,
             1.0,
             120.0,
@@ -285,7 +300,8 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         "parent".into(),
         parent_model.into(),
         2,
-        vec!["planning".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["planning".into(), "tools".into()],
         1,
         1.5,
         120.0,
@@ -294,7 +310,8 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         "child_0".into(),
         child_model.into(),
         1,
-        vec!["reasoning".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["reasoning".into(), "tools".into()],
         1, // same label as parent (children inherit parent's security context)
         1.0,
         60.0,
@@ -303,7 +320,8 @@ pub fn hierarchical(parent_model: &str, child_model: &str) -> TopologyGraph {
         "child_1".into(),
         child_model.into(),
         1,
-        vec!["reasoning".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["reasoning".into(), "tools".into()],
         1, // same label as parent
         1.0,
         60.0,
@@ -339,7 +357,8 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
         "coordinator".into(),
         coordinator_model.into(),
         2,
-        vec!["planning".into(), "delegation".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["planning".into(), "delegation".into(), "tools".into()],
         1,
         1.0,
         120.0,
@@ -351,7 +370,8 @@ pub fn hub(coordinator_model: &str, spoke_model: &str, spoke_count: usize) -> To
             format!("spoke_{}", i),
             spoke_model.into(),
             1,
-            vec!["reasoning".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "tools".into()],
             1, // same label as coordinator (spokes inherit hub's security context)
             1.0,
             60.0,
@@ -393,7 +413,8 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         "topic_setter".into(),
         debater_model.into(),
         1,
-        vec!["text_processing".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -402,7 +423,8 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         "debater_a".into(),
         debater_model.into(),
         2,
-        vec!["reasoning".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["reasoning".into(), "tools".into()],
         0,
         1.0,
         120.0,
@@ -411,7 +433,8 @@ pub fn debate(debater_model: &str, judge_model: &str) -> TopologyGraph {
         "debater_b".into(),
         debater_model.into(),
         2,
-        vec!["reasoning".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["reasoning".into(), "tools".into()],
         0,
         1.0,
         120.0,
@@ -464,7 +487,8 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
         "prompt".into(),
         model_id.into(),
         1,
-        vec!["text_processing".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -477,7 +501,8 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
             format!("thinker_{}", i),
             model_id.into(),
             2,
-            vec!["reasoning".into(), "creativity".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "creativity".into(), "tools".into()],
             0,
             1.0,
             120.0,
@@ -526,7 +551,8 @@ pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
         "preprocessor".into(),
         "".into(),
         1,
-        vec!["text_processing".into(), "noise_filter".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "noise_filter".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -541,7 +567,8 @@ pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
             format!("worker_{}", i),
             "".into(),
             2,
-            vec!["reasoning".into(), "math".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "math".into(), "tools".into()],
             0,
             1.0,
             120.0,
@@ -602,7 +629,8 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
         "splitter".into(),
         "".into(),
         1,
-        vec!["text_processing".into(), "decomposition".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "decomposition".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -617,7 +645,8 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
             format!("stage_{}", i),
             "".into(),
             2,
-            vec!["reasoning".into(), "math".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "math".into(), "tools".into()],
             0,
             1.0,
             120.0,
@@ -685,7 +714,8 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
         "dispatcher".into(),
         "".into(),
         1,
-        vec!["text_processing".into(), "decomposition".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["text_processing".into(), "decomposition".into(), "tools".into()],
         0,
         0.5,
         60.0,
@@ -704,7 +734,8 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
             format!("worker_{}", i),
             "".into(),
             system,
-            vec!["reasoning".into()],
+            // A7 (2026-04-24): "tools" — see planner above for rationale.
+            vec!["reasoning".into(), "tools".into()],
             0,
             if system >= 2 { 1.0 } else { 0.5 },
             if system >= 2 { 120.0 } else { 60.0 },
@@ -773,7 +804,8 @@ pub fn formal_solver(model_id: &str) -> TopologyGraph {
         "formalizer".into(),
         "deepseek-chat".into(),
         2, // S2 reasoner — needs to understand the problem
-        vec!["reasoning".into(), "math".into()],
+        // A7 (2026-04-24): "tools" — see planner above for rationale.
+        vec!["reasoning".into(), "math".into(), "tools".into()],
         0,
         1.0,
         120.0,
@@ -1130,5 +1162,95 @@ mod tests {
         assert!(TemplateStore::create("horizon-pipeline", "").is_ok());
         assert!(TemplateStore::create("parallel_fanout", "").is_ok());
         assert!(TemplateStore::create("parallel-fanout", "").is_ok());
+    }
+
+    // ── A7 (2026-04-24): tool-capability hygiene ─────────────────────────
+    //
+    // Every template node whose role is NOT sink-prompted (i.e. doesn't
+    // carry ``SINK_NODE_PROMPT``) is executed by Python's ``AgentLoop``
+    // which unconditionally grants tools. ``ModelAssigner`` only
+    // filters ``kimi-k2.5`` (``supports_tools=false``) when the node
+    // declares ``"tools"`` in ``required_capabilities`` — without it
+    // kimi gets assigned and HTTP-400s on the 4th tool-call turn
+    // (F9 `cards.toml:598`, reproduced 2026-04-23 + 2026-04-24 smokes
+    // on astropy-14182 and astropy-7746 — 20% deterministic fast-abort).
+    //
+    // This test locks the contract: if someone adds a new template or
+    // adds a new role to an existing template without "tools", the test
+    // fires with a pointer to A7's rationale.
+
+    /// Roles whose prompt is ``SINK_NODE_PROMPT`` in our templates.
+    /// Kept narrow — these are tool-free by construction, and adding
+    /// "tools" to them would exclude kimi from a perfectly legitimate
+    /// text-only synthesis role.
+    const TOOL_FREE_SINK_ROLES: &[&str] = &[
+        "synthesizer",   // sequential, brainstorming
+        "aggregator",    // parallel, horizon_pipeline, parallel_fanout
+        "mixer",         // selfmoa
+        "judge",         // debate
+        "verifier",      // robust (ONLY — avr's verifier is not sink-prompted)
+        "solver",        // formal_solver (deterministic Rust, not LLM)
+    ];
+
+    fn is_tool_free_sink(template: &str, role: &str) -> bool {
+        // Special case: "verifier" is sink-prompted in `robust` but
+        // NOT in `avr`. Distinguish by template.
+        if role == "verifier" {
+            return template == "robust";
+        }
+        TOOL_FREE_SINK_ROLES.iter().any(|&r| r == role)
+    }
+
+    fn assert_tools_policy(template_name: &str, g: &TopologyGraph) {
+        for idx in 0..g.node_count() {
+            let node = g.try_get_node(idx).expect("node index in range");
+            let has_tools = node.required_capabilities.iter().any(|c| c == "tools");
+            if is_tool_free_sink(template_name, &node.role) {
+                // Sink-prompted roles stay tool-free — kimi-k2.5 is
+                // explicitly allowed here (F9 intent).
+                assert!(
+                    !has_tools,
+                    "Template `{}` node `{}` is a sink (SINK_NODE_PROMPT) \
+                     but declares \"tools\" in required_capabilities. Sinks \
+                     are 1-turn text-only roles; they don't need tool \
+                     capability and keeping them tool-free preserves \
+                     kimi-k2.5 as a routing option for text-only synthesis.",
+                    template_name, node.role
+                );
+            } else {
+                assert!(
+                    has_tools,
+                    "A7 (2026-04-24) violation: template `{}` node `{}` \
+                     (role does NOT have SINK_NODE_PROMPT, so AgentLoop \
+                     grants it tools at runtime) is missing \"tools\" in \
+                     required_capabilities. Without it, \
+                     ModelAssigner.supports_tools filter doesn't fire and \
+                     kimi-k2.5 (supports_tools=false) can be assigned here \
+                     → HTTP 400 on the 4th tool-call turn → fast-abort. \
+                     Add \"tools\" to this node's required_capabilities. \
+                     See docs/benchmarks/2026-04-24-diff-verifier-observe-\
+                     smoke/findings.md for the empirical trace.",
+                    template_name, node.role
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a7_tool_capability_hygiene_all_templates() {
+        // Every template must either declare "tools" on non-sink nodes
+        // or be explicitly excluded via TOOL_FREE_SINK_ROLES.
+        assert_tools_policy("sequential", &sequential("m"));
+        assert_tools_policy("parallel", &parallel("m", 3));
+        assert_tools_policy("avr", &avr("a", "b"));
+        assert_tools_policy("selfmoa", &self_moa("m", 3));
+        assert_tools_policy("hierarchical", &hierarchical("p", "c"));
+        assert_tools_policy("hub", &hub("c", "s", 3));
+        assert_tools_policy("debate", &debate("d", "j"));
+        assert_tools_policy("brainstorming", &brainstorming("m", 3));
+        assert_tools_policy("robust", &robust("m", 3));
+        assert_tools_policy("horizon_pipeline", &horizon_pipeline("m", 3));
+        assert_tools_policy("parallel_fanout", &parallel_fanout("m", 5));
+        assert_tools_policy("formal_solver", &formal_solver("m"));
     }
 }
