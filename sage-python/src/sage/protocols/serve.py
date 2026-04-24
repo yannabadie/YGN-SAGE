@@ -20,11 +20,24 @@ def main() -> None:
     parser.add_argument("--a2a", action="store_true", help="Start A2A agent server")
     parser.add_argument("--mcp-port", type=int, default=8001, help="MCP server port")
     parser.add_argument("--a2a-port", type=int, default=8002, help="A2A server port")
-    parser.add_argument("--host", default="127.0.0.1", help="Bind address")
+    parser.add_argument(
+        "--host",
+        default=None,
+        help=(
+            "Bind address. Default 127.0.0.1. Set SAGE_PROTOCOL_BIND_ALL=1 "
+            "to default to 0.0.0.0 (public). Explicit --host overrides env."
+        ),
+    )
     args = parser.parse_args()
 
     if not args.mcp and not args.a2a:
         parser.error("Specify at least one of --mcp or --a2a")
+
+    # AUDIT3 / A19: localhost-by-default + security warning when public
+    # bind lacks a bearer token. See sage.protocols.auth.
+    from sage.protocols.auth import resolve_bind_host, warn_insecure_bind
+    args.host = resolve_bind_host(args.host)
+    warn_insecure_bind(args.host)
 
     # Boot SAGE system
     from sage.boot import boot_agent_system
