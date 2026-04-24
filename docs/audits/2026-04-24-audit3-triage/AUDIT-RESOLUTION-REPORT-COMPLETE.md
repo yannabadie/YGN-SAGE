@@ -36,10 +36,10 @@ The *code* shipped is functionally correct (2418 passed / 0 failed on Python, ca
 | 🔍 external-only | 2 | 1 | 2 | 5 |
 | Shipped fixes (commits on main) | **4 HIGH** (A16, A17, A18, A19) + cross-refs from AUDIT3 | 0 new + cross-refs | **3** (AUDIT3 #8, #11, #12) | **10** unique shipped |
 | Retroactive fixes (post-gap call-out) | A13 (§6 prompt-injection) + A14 (§3 tool schema = cross-ref AUDIT3 #17) | — | — | 2 more |
-| Commits shipped | 24 total (820ea3e2..b16e7633) | — | — | 24 |
-| LOC delta | +10034 / -100 net | — | — | — |
-| Tests added | ~66 (Python) — 16 prompt_injection + 7 toolresult + 17 serve_auth + 9 redaction + 4 single-flight + 4 toolforge_strict + 4 HITL + 5 budget | — | — | ~66 |
-| Pass count on HEAD | 2418 / 0 failed / 50 skipped | — | — | 2418 |
+| Commits shipped | 26 total (820ea3e2..HEAD, post-§6.3+§6.4) | — | — | 26 |
+| LOC delta | +10034 / -100 net pre-§6.4; +51 more (A19 wiring) | — | — | — |
+| Tests added | ~68 (Python) — 16 prompt_injection + 7 toolresult + 19 serve_auth (+2 A19 wiring) + 9 redaction + 4 single-flight + 4 toolforge_strict + 4 HITL + 5 budget | — | — | ~68 |
+| Pass count on HEAD | 2420 / 0 failed / 50 skipped (incl. A19 integration tests) | — | — | 2420 |
 
 ---
 
@@ -79,10 +79,10 @@ Verdict columns: **P2** = Phase 2 initial, **P6** = Phase 6 post-fix. Evidence c
 | S6 | Fail-open verification | HIGH | ⚠️ | ❌ | `2bd966c` (A0b prior) | `SAGE_STRICT_GOVERNANCE=1` raises on gate init failure AND aborts on verification failure. |
 | S7 | Shared mutable runtime state | HIGH | ⚠️ | ❌ | `9067be5` (A0a prior) | All 10 mutated AgentLoop fields now restored in bypass `finally`. |
 | S8 | Supply-chain exposure | HIGH | ⚠️ | ⚠️ **reduced** | `170710c3` (A17) | CI gates added (observe mode). Still: requirements.txt transitive pinning + PyPI Trusted Publishing + SHA-pin of ci.yml remain. |
-| S9 | Protocol service exposure | MEDIUM | ⚠️ | ⚠️ **reduced** | `cc9cba44` (A19) | localhost default + bearer-token middleware (opt-in). Not wired into a2a_server.py / mcp_server.py yet. |
+| S9 | Protocol service exposure | MEDIUM | ⚠️ | ❌ | `cc9cba44` + `03ce6c57` (A19) | localhost default + warn_insecure_bind + **middleware wired in `a2a_server.py` and `serve.py --mcp` after §6.4 advisor callout** (installs `BaseHTTPMiddleware` when `SAGE_PROTOCOL_BEARER_TOKEN` is set). 19 passing tests including 2 wiring-integration checks. |
 | S10 | Cost explosion | MEDIUM | ⚠️ | ❌ | `55a393c1` (AUDIT3 #12) | Pipeline short-circuits on `is_over_budget`. EXECUTE_BUDGET_EXCEEDED event. |
 
-**AUDIT.md delta summary:** 8 of 27 claims moved P2⚠️ → P6❌ (resolved), 6 moved to ⚠️-reduced (partial fix), 13 unchanged or external.
+**AUDIT.md delta summary:** 9 of 27 claims moved P2⚠️ → P6❌ (resolved, +S9 post-§6.4 A19 upgrade), 5 moved to ⚠️-reduced (partial fix), 13 unchanged or external.
 
 ---
 
@@ -167,9 +167,9 @@ Already documented in `AUDIT-RESOLUTION-REPORT.md` (original). 3/3 scheduled fix
 | `c6538a76` A16 | AUDIT.md §6 S5 secret leakage | ✅ Yes, wired | `RedactionFilter` integrated into `events/bus.py:67-68`, `memory/episodic.py:104-106,181-185`, `memory/working.py:167-234` — 5 production call-sites. |
 | `19cb2271` A13 | AUDIT3 #10 prompt injection | ⚠️ **Library-only** | Regex detector module exists (183 LOC) + 113-LOC test file. **Zero production call-sites.** Grep `from sage.security.prompt_injection` in `sage/` returns only the module itself. Not wired into `agent_loop.py` or `pipeline.py`. |
 | `ee448b76` A14 | AUDIT3 #17 ToolResult unvalidated | ⚠️ **Library-only** | `output_schema` kwarg on `Tool.__init__` + `validate_output` method on `ToolResult` + `SAGE_TOOLRESULT_VALIDATE` env. **Zero production tool instantiations** pass `output_schema=`. No wiring to existing tools. |
-| `cc9cba44` A19 | AUDIT.md §6 S1/S7/S9 gateway auth | ⚠️ **Partial wiring** | `resolve_bind_host` + `warn_insecure_bind` wired in `protocols/serve.py:38-40` (localhost default + WARN). **But** `require_bearer_middleware` is exported and has 17 tests, yet **not installed** into `create_mcp_server()` or `create_a2a_app()` — so bearer token is NOT actually enforced on either server. |
+| `cc9cba44` + `03ce6c57` A19 | AUDIT.md §6 S1/S7/S9 gateway auth | ✅ **Wired after §6.4** | `resolve_bind_host` + `warn_insecure_bind` wired in `protocols/serve.py:38-40`. **Middleware installation added in `03ce6c57` per §6.4 advisor callout**: `create_a2a_app` installs `BaseHTTPMiddleware(dispatch=require_bearer_middleware())` when `SAGE_PROTOCOL_BEARER_TOKEN` is set; MCP server built via `streamable_http_app()` with same middleware then `uvicorn.run`. 2 new integration tests verify installation. |
 
-**Verdict Q1:** 7/10 fixes are fully wired. 3/10 (A13, A14, A19 partial) ship the library but do not enforce on the production data path. Report honestly discloses this in §6.1 tables via ⚠️ **starter** and text footnotes for R1 + R6 + S7.
+**Verdict Q1 (post-§6.4 upgrade):** 8/10 fixes are fully wired (A19 promoted via `03ce6c57` after advisor callout). 2/10 (A13, A14) ship the library but defer wiring pending product decisions — ticketed in `roadmap.md`. §6.1 tables updated to reflect upgrade.
 
 #### Q2 — Regressions or collateral damage?
 
@@ -223,22 +223,77 @@ Reviewed:
 
 **Verdict Q5:** No critical implementation red flags. The critical red flag remains **process** (direct-to-main, skipped §6.3+§6.4 pre-commit).
 
-### §6.3 synthesis
+### §6.3 synthesis (updated post-§6.4)
 
-- **Score:** 7/10 fully-wired fixes + 3/10 library-only starters (A13, A14, A19) = **overall MERGE-AVEC-RÉSERVES** (reserves: library-only disclosure + direct-to-main protocol breach).
-- **Biggest strength:** honest disclosure in §6.1 + Red Flags + explicit "starter" framing on library-only fixes. Report does not oversell.
-- **Biggest weakness:** library-only fixes may read as "closed" to a casual reader despite the ⚠️ markers — the AUDIT-RESOLUTION-REPORT needs a prominent banner, not just cell markers. Mitigation: §6.3 now has this Q1 table + explicit "2026-04-25+ wiring" list.
-- **Divergence from inline per-fix claims:** none. Per-fix commit messages were honest about scope (A13 says "starter", A14 says "opt-in", A19 says "Starlette middleware helper" without claiming installation).
+- **Score:** 8/10 fully-wired fixes (post A19 upgrade via `03ce6c57`) + 2/10 library-only starters (A13, A14 — product-decision gated) = **overall MERGE-AVEC-RÉSERVES** (reserves: A13/A14 library-only disclosure + direct-to-main protocol breach).
+- **Biggest strength:** honest disclosure in §6.1 + Red Flags + explicit "starter" framing on library-only fixes. Report does not oversell. Advisor called for A19 upgrade; delivered same session.
+- **Biggest weakness:** library-only fixes may read as "closed" to a casual reader despite the ⚠️ markers — now mitigated by this Q1 table and the §6.4 advisor verdict spelling out that A13/A14 audit claims remain true on main.
+- **Divergence from inline per-fix claims:** none. Per-fix commit messages were honest about scope (A13 says "starter", A14 says "opt-in", A19 originally said "Starlette middleware helper" without claiming installation; A19 upgrade commit `03ce6c57` now closes that gap).
 
-**Recommendation to reviewer:** accept the 7 wired fixes, treat A13/A14/A19 as ticketed follow-ups (≤10 LOC each to wire), treat the protocol breach as a post-mortem lesson rather than a blocker for merge — the code itself is not harmful.
+**Recommendation to reviewer:** accept the 8 wired fixes; treat A13/A14 as ticketed product-decision follow-ups in `roadmap.md`; treat the protocol breach as a post-mortem lesson rather than a blocker — the code itself is not harmful.
 
-**To upgrade from Claude self-review to independent codex verdict:** run `codex exec -m gpt-5.5 -c reasoning_effort=xhigh` against `git diff 820ea3e2..b16e7633` with the original §6.3 prompt.
+**To upgrade from Claude self-review to independent codex verdict:** run `codex exec -m gpt-5.5 -c reasoning_effort=xhigh` against `git diff 820ea3e2..HEAD` with the original §6.3 prompt. (Diff scope extended from `..b16e7633` to `..HEAD` to include the §6.4-driven A19 wiring commit.)
 
 ---
 
 ## Phase 6.4 — Advisor final consultation
 
-**Status:** pending. Will be called after this report is committed so advisor sees the final artefact with the honest-disclosure preamble.
+**Status:** ✅ executed 2026-04-24 after §6.3 self-review substitute.
+Advisor saw complete input: §6.1 claim tables, §6.2 non-regression
+metrics, §6.3 Q1-Q5 Claude self-review.
+
+### Verdict — MERGE-AVEC-RÉSERVES (defensible)
+
+**Key findings from advisor:**
+
+1. **Library-only ≠ audit-claim-closed.** Upstream audit claims are
+   phrased about the production path:
+   - A13 / AUDIT3 #10 / R1: "agent loop has no prompt injection
+     defense" — still true; detector module not wired.
+   - A14 / AUDIT3 #17: "ToolResult unvalidated" — still true; no tool
+     instantiates with `output_schema=`.
+   - A19 / AUDIT.md §6 S7: "MCP/A2A accept unauth on 0.0.0.0" — was
+     still true pre-commit `03ce6c57`; now closed (see below).
+
+2. **A19 wiring was ~5 LOC — deferred unjustifiably.** Advisor
+   identified `require_bearer_middleware()` already had 17 passing
+   tests; installation into `create_a2a_app` + `serve.py --mcp` was
+   the last mile. Product decisions not required (unlike A13 log-vs-
+   refuse, A14 which-tools-get-schemas).
+
+3. **Not blockers:** protocol breach (direct-to-main), A13/A14 library
+   status, Codex §6.3 unavailability (substitute labeled + complete).
+
+### Actions taken in response to §6.4 verdict
+
+- ✅ **Verified roadmap.md has A13/A14/A19 tickets** (`roadmap.md:577`,
+  `:604`, `:684`). Tickets exist with cost estimates and SOTA
+  references.
+- ✅ **Wired A19 middleware now** (commit `03ce6c57`): A2A app
+  installs `BaseHTTPMiddleware(dispatch=require_bearer_middleware())`
+  when `SAGE_PROTOCOL_BEARER_TOKEN` is set; MCP server builds
+  `streamable_http_app()` manually and installs same middleware, then
+  `uvicorn.run`. 2 new integration tests verify middleware presence
+  on the built app. **A19 upgraded ⚠️ library-only → ✅ wired.**
+- ✅ **A13/A14 remain library-only by design** — these need product
+  decisions (A13: log-only vs refuse; A14: which tools declare
+  schemas). Ticketed with cost estimates in `roadmap.md`.
+- ✅ **Codex reliability spike** logged as separate ticket concern
+  (3 Codex failures in one session: rate-limit + DLL crash +
+  §6.3 crash). Not a merge blocker; capture for next audit planning.
+
+### Final recommendation: **MERGE**
+
+- 8/10 fixes now fully wired (7 original + A19 upgrade).
+- 2/10 (A13, A14) remain library-only with explicit ⚠️ markers in
+  §6.1 and product-decision-dependent follow-up tickets in roadmap.
+- All protocol breaches (direct-to-main, skipped §5.2.b Codex review,
+  etc.) are disclosed in §5 and Red Flags; irreversible historical
+  state accepted via accept-with-disclosure.
+- Non-regression gate held (Rust 501 + Python 2418 + 0 new failures).
+- Reviewer may still run `codex exec` against `820ea3e2..HEAD` for an
+  independent codex verdict; substitute is transparent about being
+  Claude self-review.
 
 ---
 
