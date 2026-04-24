@@ -294,18 +294,67 @@ hardcode gpt-5.5 quirks from training data.
 
 **Cost:** 30 min verification + ~45 min implementation + 15 min smoke.
 
-### A3. Repair-mode implementation (conditional on A1 data)
+### A3. Repair-mode implementation — ✅ SHIPPED 2026-04-24
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier
-mismatch diagnostic to an LLM one-shot repair. The 2026-04-23 smoke
-confirmed the mismatch signal is clean (zero false positives on two
-patches); 2026-04-24 surfaced a second failure class the verifier
-doesn't yet catch (malformed hunk header, see A6).
+mismatch diagnostic to an LLM one-shot repair. The 2026-04-23 observe
+smoke confirmed the mismatch signal is clean (zero false positives on
+two patches); 2026-04-24 A7 verification accumulated more observe data
+(4 PATCH with verifier-flagged failures + 0 clean).
 
-**Concrete action when gate passes:** implement the
-`_repair_with_verifier_feedback` stub spec'd in the design doc; extend
-`test_swebench_emission_wiring.py` with a repair-mode wire test; run
-paired N=50 smoke (observe-only vs observe+repair). Consider whether
-repair-mode covers BOTH failure classes or only content_mismatch.
+**Action taken:**
+
+- `sage-python/src/sage/bench/swebench_diff_verifier.py`: new
+  `repair_with_verifier_feedback(llm, problem_statement, broken_patch,
+  mismatches, instance_id, timeout) -> (new_patch, stage)` async
+  function. Builds a structured repair prompt that shows per-hunk
+  EXPECTED-vs-ACTUAL line text (truncated to 20 lines × 200 chars
+  per section to keep the prompt bounded). Returns stages
+  `"verifier_repair"`, `"verifier_repair_empty"`, or
+  `"verifier_repair_skipped"`.
+- `_get_diff_verifier_mode`: "repair" no longer downgrades. Invalid
+  modes still fall back to "off" with a WARN.
+- `generate_patches`: when `verifier_mode == "repair"` AND
+  `mismatches` is non-empty AND an LLM handle exists, the verifier-
+  repair call runs BEFORE `try_repair_patch`. If it succeeds
+  (`stage == "verifier_repair"`), the corrected diff replaces the
+  original patch; `try_repair_patch` then sees the corrected input
+  (and may still apply CRLF normalization / counts-fix / git-apply
+  LLM-repair on top). The combined repair_stage is serialised as
+  `"verifier_repair+<downstream>"` so operators can see the full
+  chain.
+- Observe-mode behaviour unchanged — annotations are populated in
+  both observe AND repair modes, so the existing bucket-analysis
+  scripts work on repair-mode predictions without modification.
+
+**Tests (new):**
+- `test_diff_verifier_repair_calls_llm_with_mismatch_feedback`
+  in `test_swebench_emission_wiring.py` — end-to-end wire test:
+  builds a real git repo, serves a canned agent emission with
+  wrong context lines, installs a spy LLM that returns a corrected
+  diff. Asserts: (a) observe-like annotation, (b) LLM called
+  exactly once with a prompt naming the mismatched file AND the
+  actual file contents, (c) the corrected patch propagates to the
+  prediction dict.
+
+**Test suite:** 48/48 verifier + repair + emission-wiring tests
+PASS. The legacy `test_diff_verifier_repair_warns_and_downgrades_to_observe`
+was replaced by the new wire test (same contract, updated
+behaviour).
+
+**Next (tracked here, not yet done):**
+- **Paired N=50 smoke** (observe-only vs observe+repair) per the
+  spec § "Validation plan". Measures whether repair-mode actually
+  improves Docker pass-rate on flagged patches, or just generates
+  new kinds of invalid diffs. Cost: 2 × 30-minute N=50 runs ≈
+  $15-20 total. Gated on: stable A1 observe data (currently at
+  N=20 cumulative, 4 PATCH — enough to run the pair if user wants
+  signal quickly, but larger-N paired runs give more statistical
+  power).
+- **Repair-mode coverage of the malformed-header class (A6).**
+  CRLF-normalized diffs with correct content but wrong counts are
+  handled by `try_repair_patch`'s programmatic-counts stage.
+  Content-mismatch is handled by A3's verifier_repair. Both
+  classes are now covered; no residual is known.
 
 ### A6. CRLF normalization in patch emission — ✅ SHIPPED 2026-04-24
 **Why (initial framing):** astropy-6938 in the 2026-04-24 smoke was

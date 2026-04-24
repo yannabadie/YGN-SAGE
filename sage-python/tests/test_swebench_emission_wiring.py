@@ -832,18 +832,24 @@ async def test_diff_verifier_observe_empty_list_on_clean(monkeypatch, tmp_path):
 
 @pytest.mark.skipif(not _GIT_AVAILABLE, reason="git not on PATH")
 @pytest.mark.asyncio
-async def test_diff_verifier_repair_warns_and_downgrades_to_observe(
-    monkeypatch, tmp_path, caplog,
+async def test_diff_verifier_repair_calls_llm_with_mismatch_feedback(
+    monkeypatch, tmp_path,
 ):
-    """mode=repair — repair is NOT YET IMPLEMENTED per the spec (ships
-    after observability validates the mismatch bucket). The wiring must
-    (a) record a WARNING via the logger, (b) behave like observe mode:
-    annotate the prediction dict with the mismatch list."""
-    import logging
-
+    """A3 (2026-04-24): mode=repair triggers an LLM one-shot correction
+    pass with the structured mismatch diagnostic as feedback, BEFORE
+    try_repair_patch runs. The wiring must (a) annotate like observe,
+    (b) call the LLM handle exactly once with a prompt that names the
+    mismatched file, (c) propagate the returned diff into the patch
+    that downstream try_repair_patch sees.
+    """
     monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
     monkeypatch.setenv("SAGE_DIFF_VERIFIER_MODE", "repair")
     _stub_dataset(monkeypatch)
+
+    # Don't stub away try_repair_patch — it's still in the pipeline —
+    # but neutralize its LLM path by making the programmatic stage
+    # pass (patch already valid). Achieved by serving a fresh-built
+    # repo where the corrected patch applies cleanly.
     _stub_no_repair(monkeypatch)
 
     repo_dir = tmp_path / "repo"
@@ -854,6 +860,10 @@ async def test_diff_verifier_repair_warns_and_downgrades_to_observe(
     )
     _init_git_repo(repo_dir)
 
+    # The canned emission has WRONG context (says "return 1" but file
+    # has "return 99"). Verifier will flag 1 content_mismatch. Our
+    # stub LLM then emits a CORRECTED diff aligned with the real
+    # contents.
     canned = (
         "```diff\n"
         "diff --git a/pkg/mod.py b/pkg/mod.py\n"
@@ -865,25 +875,60 @@ async def test_diff_verifier_repair_warns_and_downgrades_to_observe(
         "+    return 2\n"
         "```\n"
     )
+    corrected = (
+        "```diff\n"
+        "diff --git a/pkg/mod.py b/pkg/mod.py\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def foo():\n"
+        "-    return 99\n"
+        "+    return 2\n"
+        "```\n"
+    )
+
+    # Build a spy LLM handle. Attached to the system.agent_loop._llm
+    # path that the bench uses.
+    class _SpyLLM:
+        def __init__(self):
+            self.calls: list[list] = []
+
+        async def generate(self, messages, **_kw):
+            self.calls.append(messages)
+            class _Resp:
+                content = corrected
+            return _Resp()
+
+    spy_llm = _SpyLLM()
     bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+    # Wire the spy onto agent_loop._llm where swebench_bench looks it up.
+    class _FakeLoop:
+        _llm = spy_llm
+
+    bench.system.agent_loop = _FakeLoop()  # type: ignore[attr-defined]
     monkeypatch.setattr(bench, "_setup_repo", lambda _inst: str(repo_dir))
 
-    with caplog.at_level(logging.WARNING, logger=swebench_mod.__name__):
-        preds = await bench.generate_patches(limit=1)
+    preds = await bench.generate_patches(limit=1)
 
-    # Behaviour matches observe: field present, mismatches recorded.
+    # (a) observe-like annotation present
     assert preds[0]["_diff_verifier_mismatches"], (
-        "repair mode must still annotate like observe"
+        "repair must still annotate the prediction dict"
     )
-    # And a WARNING landed telling the operator the mode is downgraded.
-    downgrade_records = [
-        r for r in caplog.records
-        if r.levelno == logging.WARNING
-        and "repair" in r.getMessage().lower()
-        and "observe" in r.getMessage().lower()
-    ]
-    assert downgrade_records, (
-        f"expected a downgrade WARNING mentioning both 'repair' and "
-        f"'observe'; got records: "
-        f"{[r.getMessage() for r in caplog.records]}"
+
+    # (b) spy_llm was called exactly once with a prompt mentioning the
+    # mismatched file
+    assert len(spy_llm.calls) == 1, (
+        f"verifier-repair must call LLM exactly once; saw {len(spy_llm.calls)}"
+    )
+    prompt_text = spy_llm.calls[0][0].content
+    assert "pkg/mod.py" in prompt_text
+    assert "content_mismatch" in prompt_text.lower() or "EXPECTED" in prompt_text
+    assert "return 99" in prompt_text, (
+        "prompt must include the ACTUAL file contents so the LLM can "
+        "realign context lines"
+    )
+
+    # (c) the corrected patch became the emission
+    assert "return 99" in preds[0]["model_patch"], (
+        "verifier-repair corrected diff must replace the broken emission"
     )

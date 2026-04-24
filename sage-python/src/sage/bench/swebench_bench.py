@@ -388,27 +388,24 @@ _VALID_DIFF_VERIFIER_MODES = frozenset({"off", "observe", "repair"})
 
 
 def _get_diff_verifier_mode() -> str:
-    """Return ``"off"`` (default) or ``"observe"``. ``"repair"`` in env
-    is downgraded to ``"observe"`` with a WARN (repair is NOT YET
-    IMPLEMENTED per the spec's "Mismatch handling" section — ship
-    observability first, flip after the bucket is validated).
-    Unknown values downgrade to ``"off"`` with a WARN."""
+    """Return ``"off"`` (default), ``"observe"``, or ``"repair"``.
+
+    A3 (2026-04-24): ``"repair"`` is now live. It adds a single LLM
+    one-shot correction pass fed the structured mismatch diagnostic
+    BEFORE the existing ``try_repair_patch`` git-apply path runs.
+    Wrong values still downgrade to ``"off"`` with a WARN.
+
+    Predictions metadata (``_diff_verifier_mismatches``) is present
+    under both ``observe`` and ``repair`` modes — same schema — so
+    the post-hoc bucket analysis scripts don't need a mode-aware
+    branch.
+    """
     raw = os.environ.get(_DIFF_VERIFIER_MODE_ENV)
     if raw is None:
         return "off"
     v = raw.strip().lower()
-    if v == "off" or v == "observe":
+    if v in _VALID_DIFF_VERIFIER_MODES:
         return v
-    if v == "repair":
-        log.warning(
-            "%s=%r: repair mode is NOT YET IMPLEMENTED; downgrading to "
-            "'observe' (annotate predictions only, no emission change). "
-            "See docs/superpowers/specs/2026-04-23-diff-context-verifier"
-            "-design.md section 'Mismatch handling'.",
-            _DIFF_VERIFIER_MODE_ENV,
-            raw,
-        )
-        return "observe"
     log.warning(
         "%s=%r is not a valid mode (allowed: %s); falling back to 'off'",
         _DIFF_VERIFIER_MODE_ENV,
@@ -1308,7 +1305,7 @@ class SWEBenchBench:
                     # emits. Observe mode annotates predictions; off
                     # mode is byte-identical to today.
                     verifier_mode = _get_diff_verifier_mode()
-                    if verifier_mode == "observe":
+                    if verifier_mode in {"observe", "repair"}:
                         from sage.bench.swebench_diff_verifier import (
                             verify_diff_context,
                         )
@@ -1345,10 +1342,60 @@ class SWEBenchBench:
                             for m in mismatches
                         ]
 
-                    from sage.bench.swebench_patch_repair import try_repair_patch
+                    # A3 (2026-04-24): repair mode runs one LLM
+                    # correction pass BEFORE try_repair_patch, fed the
+                    # structured mismatch diagnostic. Rationale (spec
+                    # §Mismatch-handling): the counts-repair path uses
+                    # `git apply --check` stderr which only sees
+                    # prefix-match noise — it can't expose that "the
+                    # context line you wrote says `Table.__init__` but
+                    # the file actually contains `FixedWidth.__init__`".
+                    # The verifier has that diagnostic; feeding it to an
+                    # LLM one-shot is exactly what repair mode unlocks.
+                    # Always runs on a non-empty mismatch list; on
+                    # success, `patch` is replaced and the downstream
+                    # try_repair_patch sees the repaired diff (which
+                    # may still need CRLF normalisation or counts fix).
                     llm_handle = getattr(
                         getattr(self.system, "agent_loop", None), "_llm", None,
                     )
+                    verifier_repair_stage = ""
+                    if (
+                        verifier_mode == "repair"
+                        and mismatches
+                        and llm_handle is not None
+                    ):
+                        from sage.bench.swebench_diff_verifier import (
+                            repair_with_verifier_feedback,
+                        )
+                        try:
+                            new_patch, verifier_repair_stage = await (
+                                repair_with_verifier_feedback(
+                                    llm=llm_handle,
+                                    problem_statement=instance.get(
+                                        "problem_statement", ""
+                                    ),
+                                    broken_patch=patch,
+                                    mismatches=mismatches,
+                                    instance_id=instance_id,
+                                    timeout=60.0,
+                                )
+                            )
+                            if verifier_repair_stage == "verifier_repair":
+                                log.info(
+                                    "[%s] verifier-repair LLM produced a "
+                                    "corrected diff; handing off to "
+                                    "try_repair_patch for apply-check",
+                                    instance_id,
+                                )
+                                patch = new_patch
+                        except Exception as repair_exc:  # noqa: BLE001
+                            log.warning(
+                                "[%s] verifier-repair crashed: %s",
+                                instance_id, repair_exc,
+                            )
+
+                    from sage.bench.swebench_patch_repair import try_repair_patch
                     patch, repair_stage = await try_repair_patch(
                         patch=patch,
                         repo_dir=repo_dir,
@@ -1357,6 +1404,15 @@ class SWEBenchBench:
                         instance_id=instance_id,
                         llm_timeout=60.0,
                     )
+                    # Prepend verifier-repair stage when it fired, so
+                    # the prediction dict records the full chain
+                    # (e.g. "verifier_repair+crlf_normalized").
+                    if verifier_repair_stage:
+                        repair_stage = (
+                            f"{verifier_repair_stage}+{repair_stage}"
+                            if repair_stage
+                            else verifier_repair_stage
+                        )
 
                 pipeline_ctx = getattr(getattr(self.system, "pipeline", None), "last_context", None)
                 execution_path = getattr(self.system, "_last_execution_path", "")

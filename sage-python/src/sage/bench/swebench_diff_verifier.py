@@ -3,6 +3,19 @@
 Spec:
     docs/superpowers/specs/2026-04-23-diff-context-verifier-design.md
 
+Contains two concerns:
+
+1. `verify_diff_context()` — the pure-Python verifier that compares a
+   unified diff against a local repo tree and returns one
+   `HunkMismatch` per problematic hunk. Always-runnable, no I/O
+   besides reading files named in the diff's own headers.
+2. `repair_with_verifier_feedback()` — A3 (2026-04-24) one-shot LLM
+   repair fed the structured mismatch diagnostic (rather than
+   `git apply --check` stderr, which only sees prefix-match noise —
+   the exact reason the context verifier exists). Uses the same
+   direct-generate pattern as `repair_patch_via_llm` in
+   `swebench_patch_repair`; returns a LF-normalized, extracted diff.
+
 Purpose
 -------
 Check that each hunk in a unified diff accurately describes the bytes
@@ -63,7 +76,7 @@ import difflib
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 
 _FUZZY_THRESHOLD = 0.95
@@ -344,3 +357,168 @@ def _parse_hunks(
 
     _flush()
     return hunks
+
+
+# ---------------------------------------------------------------------------
+# A3 (2026-04-24) — LLM one-shot repair with verifier-mismatch feedback
+# ---------------------------------------------------------------------------
+
+
+_VERIFIER_REPAIR_PROMPT = """\
+The unified-diff patch below had hunks whose context/removed lines \
+don't match the actual file contents at the claimed positions. \
+Realign the patch so every context line matches the real bytes in \
+the repository. Preserve the semantic change the patch was trying \
+to make.
+
+## Original issue
+
+{problem_statement}
+
+## Patch that has content mismatches
+
+```diff
+{broken_patch}
+```
+
+## Per-hunk mismatch diagnostic
+
+The verifier read the repo file at each hunk's claimed `old_start` \
+position and compared the context+removed lines. Lines below labelled \
+EXPECTED are what the patch claims is in the file; ACTUAL is what is \
+really there. Fix the patch so the two match.
+
+{mismatch_report}
+
+Output ONLY a corrected unified diff inside a single ```diff fenced \
+block. Use the real file contents you were just shown. No prose, no \
+explanation — just the diff.\
+"""
+
+
+def _format_mismatch_report(mismatches: list[HunkMismatch]) -> str:
+    """Render ``list[HunkMismatch]`` into the diagnostic block for the
+    repair prompt. Caps each line at 200 chars and each section at 20
+    lines so a pathological multi-hundred-line hunk doesn't blow the
+    LLM's context budget; 20 lines comfortably covers every real-world
+    SWE-bench hunk we've seen through N=20 observe smokes."""
+    _MAX_LINES_PER_SECTION = 20
+    _MAX_LINE_CHARS = 200
+
+    def _trim(lines: list[str]) -> list[str]:
+        out = [ln[:_MAX_LINE_CHARS] for ln in lines[:_MAX_LINES_PER_SECTION]]
+        if len(lines) > _MAX_LINES_PER_SECTION:
+            out.append(f"  ... ({len(lines) - _MAX_LINES_PER_SECTION} more lines omitted)")
+        return out
+
+    sections: list[str] = []
+    for m in mismatches:
+        header = (
+            f"### Hunk {m.hunk_index} — {m.file} "
+            f"@@ -{m.old_start},{m.old_count} (kind={m.kind}, "
+            f"ratio={m.match_ratio:.2f})"
+        )
+        if m.kind == "file_missing":
+            sections.append(
+                header
+                + "\n  File does not exist at the claimed path. "
+                "Either the path is wrong, or the repository layout "
+                "differs from what the agent assumed."
+            )
+            continue
+
+        exp_block = "\n".join(f"    {ln}" for ln in _trim(m.expected))
+        act_block = "\n".join(f"    {ln}" for ln in _trim(m.actual))
+        sections.append(
+            f"{header}\n"
+            f"  EXPECTED (from the patch):\n{exp_block}\n"
+            f"  ACTUAL (from the repo):\n{act_block}"
+        )
+
+    return "\n\n".join(sections) if sections else "(no mismatches)"
+
+
+async def repair_with_verifier_feedback(
+    llm: Any,
+    problem_statement: str,
+    broken_patch: str,
+    mismatches: list[HunkMismatch],
+    instance_id: str = "",
+    timeout: float = 60.0,
+) -> tuple[str, str]:
+    """One-shot LLM repair using mismatch diagnostic as feedback.
+
+    Returns ``(new_patch, stage)`` where ``stage`` is one of:
+
+    * ``"verifier_repair"`` — LLM returned a non-empty corrected diff.
+      Downstream validator (``try_repair_patch`` / Docker) decides
+      whether it applies.
+    * ``"verifier_repair_empty"`` — LLM returned nothing extractable.
+      Caller should keep the original patch unchanged.
+    * ``"verifier_repair_skipped"`` — No mismatches passed in or the
+      llm handle was ``None``; fast-path bailout.
+
+    Parallels ``swebench_patch_repair.repair_patch_via_llm`` in shape
+    and pattern: direct ``LLMProvider.generate`` call, no tools, no
+    agent-loop state. The feedback is semantically richer though —
+    it tells the model *what the file really contains* at the claimed
+    position, instead of the prefix-match noise ``git apply``'s
+    stderr emits (the whole motivation for having a context verifier
+    separate from the counts-repair path).
+
+    CRLF normalization is delegated to ``swebench_patch_repair.
+    _normalize_line_endings`` in the caller's downstream
+    ``try_repair_patch`` invocation (A6, 2026-04-24); no duplication
+    here.
+    """
+    if not mismatches or llm is None:
+        return broken_patch, "verifier_repair_skipped"
+
+    # Extract-patch helper lives in swebench_bench (same function used
+    # by the counts-repair stage). Late import mirrors
+    # `repair_patch_via_llm` to avoid a startup cycle when the bench
+    # module isn't the active entry point.
+    try:
+        from sage.bench.swebench_bench import _extract_patch
+    except ImportError:
+        def _extract_patch(s: str) -> str:  # type: ignore[misc]
+            return s
+
+    from sage.llm.base import Message, Role
+
+    prompt = _VERIFIER_REPAIR_PROMPT.format(
+        problem_statement=(problem_statement or "")[:2000],
+        broken_patch=broken_patch,
+        mismatch_report=_format_mismatch_report(mismatches),
+    )
+
+    # Logging import mirrors rest of the module's minimalism — we lazy-
+    # import logging so the hot verify path stays allocation-free.
+    import asyncio
+    import logging
+
+    _log = logging.getLogger(__name__)
+
+    try:
+        response = await asyncio.wait_for(
+            llm.generate(messages=[Message(role=Role.USER, content=prompt)]),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError:
+        _log.warning(
+            "[%s] verifier-repair LLM timed out after %.0fs",
+            instance_id or "?", timeout,
+        )
+        return broken_patch, "verifier_repair_empty"
+    except Exception as exc:  # noqa: BLE001 — any provider fault becomes empty
+        _log.warning(
+            "[%s] verifier-repair LLM call failed: %s",
+            instance_id or "?", exc,
+        )
+        return broken_patch, "verifier_repair_empty"
+
+    extracted = _extract_patch(getattr(response, "content", None) or "")
+    if not extracted.strip():
+        return broken_patch, "verifier_repair_empty"
+
+    return extracted, "verifier_repair"
