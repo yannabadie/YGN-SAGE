@@ -174,3 +174,33 @@ async def test_middleware_uses_env_token_when_param_none(
     call_next = AsyncMock(return_value="ok")
     mw = require_bearer_middleware()
     assert await mw(_make_request("Bearer envtok"), call_next) == "ok"
+
+
+# -------- A19 wiring: verify middleware INSTALLED on A2A app --------
+
+
+def _a2a_has_bearer_middleware(app) -> bool:
+    """Inspect Starlette's user_middleware stack for BaseHTTPMiddleware."""
+    from starlette.middleware.base import BaseHTTPMiddleware
+    return any(mw.cls is BaseHTTPMiddleware for mw in app.user_middleware)
+
+
+def test_a2a_app_installs_middleware_when_token_set(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SAGE_PROTOCOL_BEARER_TOKEN", "tok")
+    pytest.importorskip("a2a")
+    from sage.protocols.a2a_server import create_a2a_app
+    app = create_a2a_app()
+    assert _a2a_has_bearer_middleware(app), (
+        "A19 regression: A2A app built without bearer-token middleware despite "
+        "SAGE_PROTOCOL_BEARER_TOKEN being set"
+    )
+
+
+def test_a2a_app_no_middleware_when_token_unset(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("SAGE_PROTOCOL_BEARER_TOKEN", raising=False)
+    pytest.importorskip("a2a")
+    from sage.protocols.a2a_server import create_a2a_app
+    app = create_a2a_app()
+    assert not _a2a_has_bearer_middleware(app), (
+        "A2A app should not install auth middleware when no token configured"
+    )

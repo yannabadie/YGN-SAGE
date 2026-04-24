@@ -54,8 +54,18 @@ def main() -> None:
             agent_loop=system.agent_loop,
             event_bus=system.event_bus,
         )
+        # A19 / AUDIT.md §6 S7 — build the streamable HTTP app manually
+        # so we can install bearer-token middleware before serving.
+        # FastMCP.run() would build + serve atomically, leaving no hook.
+        import uvicorn
+        from sage.protocols.auth import bearer_token_from_env, require_bearer_middleware
+        from starlette.middleware.base import BaseHTTPMiddleware
+        mcp_app = server.streamable_http_app()
+        if bearer_token_from_env() is not None:
+            mcp_app.add_middleware(BaseHTTPMiddleware, dispatch=require_bearer_middleware())
+            _log.info("MCP bearer-token middleware installed (SAGE_PROTOCOL_BEARER_TOKEN set)")
         print(f"MCP server starting on {args.host}:{args.mcp_port}")
-        server.run(transport="streamable-http", host=args.host, port=args.mcp_port)
+        uvicorn.run(mcp_app, host=args.host, port=args.mcp_port)
 
     if args.a2a:
         from sage.protocols import HAS_A2A

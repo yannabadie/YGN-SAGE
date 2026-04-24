@@ -267,5 +267,15 @@ def create_a2a_app(
     )
     app_builder = A2AFastAPIApplication(agent_card, handler)
     app = app_builder.build()
+
+    # A19 / AUDIT.md §6 S7 — install bearer-token middleware when
+    # SAGE_PROTOCOL_BEARER_TOKEN is set; no-op otherwise (per-request
+    # short-circuit). Combine with warn_insecure_bind in serve.py.
+    from sage.protocols.auth import bearer_token_from_env, require_bearer_middleware
+    from starlette.middleware.base import BaseHTTPMiddleware
+    if bearer_token_from_env() is not None:
+        app.add_middleware(BaseHTTPMiddleware, dispatch=require_bearer_middleware())
+        _log.info("A2A bearer-token middleware installed (SAGE_PROTOCOL_BEARER_TOKEN set)")
+
     _log.info("A2A server created: %s at %s (streaming=%s)", name, url, True)
     return app
