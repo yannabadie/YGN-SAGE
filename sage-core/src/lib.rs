@@ -85,9 +85,9 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         m.add_class::<memory::embedder::RustEmbedder>()?;
     }
-    // LTL model checking (always available)
+    // Graph property checking (always available)
     m.add_class::<verification::ltl::LtlResult>()?;
-    m.add_class::<verification::ltl::LtlVerifier>()?;
+    m.add_class::<verification::ltl::GraphPropertyChecker>()?;
 
     #[cfg(feature = "smt")]
     {

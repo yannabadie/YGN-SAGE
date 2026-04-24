@@ -7,7 +7,7 @@
 //! - **execution**: binary ground truth from sandbox (pass@1)
 //! - **structural**: HybridVerifier formal checks (0.0-1.0)
 //! - **density**: S_complex mathematical function (0.0-1.0)
-//! - **temporal**: LTL model checking (0.0-1.0, optional)
+//! - **temporal**: GraphPropertyChecker property score (0.0-1.0, optional)
 //!
 //! Combination: equal weighting across available signals. Each signal
 //! is formally grounded, so no learned or tuned weights are needed.
@@ -35,7 +35,7 @@ pub struct RewardScore {
     /// S_complex score (0.0-1.0).
     #[pyo3(get)]
     pub density: f32,
-    /// LTL temporal score (0.0-1.0, 0.0 if not provided).
+    /// Graph property score (0.0-1.0, 0.0 if not provided).
     #[pyo3(get)]
     pub temporal: f32,
     /// Number of signals that contributed.
@@ -90,7 +90,7 @@ impl TopologyReward {
     /// - `execution_passed`: whether the task passed (bool)
     /// - `structural_score`: HybridVerifier score (0.0-1.0, from Python)
     /// - `density_score`: S_complex score (from TopologyDensity.compute())
-    /// - `temporal_score`: LtlVerifier score (0.0-1.0, from Python, optional)
+    /// - `temporal_score`: GraphPropertyChecker score (0.0-1.0, from Python, optional)
     ///
     /// Returns RewardScore with full breakdown.
     #[instrument(skip(self))]
@@ -115,7 +115,7 @@ impl TopologyReward {
         // - execution: binary ground truth from sandbox
         // - structural: HybridVerifier formal checks
         // - density: S_complex mathematical function
-        // - temporal: LTL model checking
+        // - temporal: graph property checking
         let total = (execution + structural_score + density_score + temporal) / n_signals as f32;
 
         RewardScore {

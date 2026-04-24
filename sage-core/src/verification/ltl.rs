@@ -1,6 +1,6 @@
-//! LTL (Linear Temporal Logic) model checking for TopologyGraph.
+//! Graph-structural property checking for TopologyGraph.
 //!
-//! Verifies temporal properties on multi-agent topologies:
+//! Verifies structural properties on multi-agent topologies:
 //! - **Reachability**: can agent A reach agent B?
 //! - **Safety**: no high-to-low security label information flow
 //! - **Liveness**: every entry node can reach at least one exit node
@@ -18,7 +18,7 @@ use std::collections::HashSet;
 // LtlResult
 // ---------------------------------------------------------------------------
 
-/// Result of an LTL verification check.
+/// Result of a graph property check.
 #[pyclass]
 #[derive(Debug, Clone)]
 pub struct LtlResult {
@@ -61,19 +61,22 @@ impl LtlResult {
 }
 
 // ---------------------------------------------------------------------------
-// LtlVerifier
+// GraphPropertyChecker
 // ---------------------------------------------------------------------------
 
-/// LTL model checker for TopologyGraph instances.
+/// Graph property checker for TopologyGraph instances.
 ///
-/// Checks temporal properties (reachability, safety, liveness, bounded liveness)
+/// Checks structural properties (reachability, safety, liveness, bounded liveness)
 /// using graph algorithms on the underlying petgraph DiGraph.
 #[pyclass]
 #[derive(Default)]
-pub struct LtlVerifier;
+pub struct GraphPropertyChecker;
+
+#[deprecated(note = "Use GraphPropertyChecker; ADR-014")]
+pub type LtlVerifier = GraphPropertyChecker;
 
 #[pymethods]
-impl LtlVerifier {
+impl GraphPropertyChecker {
     #[new]
     pub fn new() -> Self {
         Self
@@ -128,7 +131,7 @@ impl LtlVerifier {
     }
 
     fn __repr__(&self) -> String {
-        "LtlVerifier()".to_string()
+        "GraphPropertyChecker()".to_string()
     }
 }
 
@@ -136,7 +139,7 @@ impl LtlVerifier {
 // Pure Rust implementation (no Python dependency)
 // ---------------------------------------------------------------------------
 
-impl LtlVerifier {
+impl GraphPropertyChecker {
     /// BFS reachability: can we reach `to_idx` starting from `from_idx`?
     ///
     /// Traverses all edge types (control, message, state).
@@ -323,17 +326,24 @@ mod tests {
         templates::parallel("m", 3)
     }
 
+    #[test]
+    fn test_graph_property_checker_public_api() {
+        let g = make_sequential();
+        assert!(GraphPropertyChecker::check_reachability(&g, 0, 2));
+        assert!(GraphPropertyChecker::check_safety(&g).passed);
+    }
+
     // -- Reachability tests --
 
     #[test]
     fn test_reachability_sequential() {
         let g = make_sequential();
         // A(0) -> B(1) -> C(2): A reaches C
-        assert!(LtlVerifier::check_reachability(&g, 0, 2));
+        assert!(GraphPropertyChecker::check_reachability(&g, 0, 2));
         // C(2) does NOT reach A(0) in a DAG
-        assert!(!LtlVerifier::check_reachability(&g, 2, 0));
+        assert!(!GraphPropertyChecker::check_reachability(&g, 2, 0));
         // A reaches itself (BFS includes start node)
-        assert!(LtlVerifier::check_reachability(&g, 0, 0));
+        assert!(GraphPropertyChecker::check_reachability(&g, 0, 0));
     }
 
     #[test]
@@ -341,13 +351,13 @@ mod tests {
         let g = make_parallel();
         // source(0), w0(1), w1(2), w2(3), aggregator(4)
         // Workers don't reach each other (no w0->w1 path)
-        assert!(!LtlVerifier::check_reachability(&g, 1, 2));
-        assert!(!LtlVerifier::check_reachability(&g, 2, 1));
-        assert!(!LtlVerifier::check_reachability(&g, 1, 3));
+        assert!(!GraphPropertyChecker::check_reachability(&g, 1, 2));
+        assert!(!GraphPropertyChecker::check_reachability(&g, 2, 1));
+        assert!(!GraphPropertyChecker::check_reachability(&g, 1, 3));
         // Source reaches aggregator via workers
-        assert!(LtlVerifier::check_reachability(&g, 0, 4));
+        assert!(GraphPropertyChecker::check_reachability(&g, 0, 4));
         // Aggregator doesn't reach source
-        assert!(!LtlVerifier::check_reachability(&g, 4, 0));
+        assert!(!GraphPropertyChecker::check_reachability(&g, 4, 0));
     }
 
     // -- Safety tests --
@@ -362,7 +372,7 @@ mod tests {
         let li = g.add_node(low);
         g.try_add_edge(hi, li, TopologyEdge::control()).unwrap();
 
-        let result = LtlVerifier::check_safety(&g);
+        let result = GraphPropertyChecker::check_safety(&g);
         assert!(!result.passed);
         assert_eq!(result.violations.len(), 1);
         assert!(result.violations[0].contains("Safety violation"));
@@ -380,7 +390,7 @@ mod tests {
         let bi = g.add_node(b);
         g.try_add_edge(ai, bi, TopologyEdge::control()).unwrap();
 
-        let result = LtlVerifier::check_safety(&g);
+        let result = GraphPropertyChecker::check_safety(&g);
         assert!(result.passed);
         assert!(result.violations.is_empty());
     }
@@ -395,7 +405,7 @@ mod tests {
         let hi = g.add_node(high);
         g.try_add_edge(li, hi, TopologyEdge::control()).unwrap();
 
-        let result = LtlVerifier::check_safety(&g);
+        let result = GraphPropertyChecker::check_safety(&g);
         assert!(result.passed);
         assert!(result.violations.is_empty());
     }
@@ -405,14 +415,14 @@ mod tests {
     #[test]
     fn test_liveness_sequential() {
         let g = make_sequential();
-        let result = LtlVerifier::check_liveness(&g);
+        let result = GraphPropertyChecker::check_liveness(&g);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
     #[test]
     fn test_liveness_parallel() {
         let g = make_parallel();
-        let result = LtlVerifier::check_liveness(&g);
+        let result = GraphPropertyChecker::check_liveness(&g);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
@@ -430,14 +440,14 @@ mod tests {
 
         // "island" is both entry (no incoming) and exit (no outgoing), so it reaches itself.
         // "entry" can reach "exit". All entries reach at least one exit.
-        let result = LtlVerifier::check_liveness(&g);
+        let result = GraphPropertyChecker::check_liveness(&g);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
     #[test]
     fn test_liveness_empty_graph() {
         let g = TopologyGraph::try_new("sequential").unwrap();
-        let result = LtlVerifier::check_liveness(&g);
+        let result = GraphPropertyChecker::check_liveness(&g);
         assert!(result.passed);
     }
 
@@ -447,7 +457,7 @@ mod tests {
     fn test_bounded_liveness_ok() {
         // Sequential: A->B->C has path length 2, limit 5 should pass
         let g = make_sequential();
-        let result = LtlVerifier::check_bounded_liveness(&g, 5);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 5);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
@@ -455,7 +465,7 @@ mod tests {
     fn test_bounded_liveness_exact() {
         // Sequential: A->B->C has path length 2, limit 2 should pass
         let g = make_sequential();
-        let result = LtlVerifier::check_bounded_liveness(&g, 2);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 2);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
@@ -463,7 +473,7 @@ mod tests {
     fn test_bounded_liveness_exceeded() {
         // Sequential: A->B->C has path length 2, limit 1 should fail
         let g = make_sequential();
-        let result = LtlVerifier::check_bounded_liveness(&g, 1);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 1);
         assert!(!result.passed);
         assert!(!result.violations.is_empty());
         assert!(result.violations[0].contains("Bounded liveness violation"));
@@ -475,7 +485,7 @@ mod tests {
     fn test_bounded_liveness_parallel_ok() {
         // Parallel: source -> workers -> aggregator, depth 2, limit 5
         let g = make_parallel();
-        let result = LtlVerifier::check_bounded_liveness(&g, 5);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 5);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
@@ -483,7 +493,7 @@ mod tests {
     fn test_bounded_liveness_parallel_tight() {
         // Parallel: source -> worker -> aggregator is depth 2
         let g = make_parallel();
-        let result = LtlVerifier::check_bounded_liveness(&g, 2);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 2);
         assert!(result.passed, "violations: {:?}", result.violations);
     }
 
@@ -491,7 +501,7 @@ mod tests {
     fn test_bounded_liveness_parallel_exceeded() {
         // Parallel: source -> worker -> aggregator is depth 2, limit 1 should fail
         let g = make_parallel();
-        let result = LtlVerifier::check_bounded_liveness(&g, 1);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 1);
         assert!(!result.passed);
         assert!(!result.violations.is_empty());
     }
@@ -499,11 +509,11 @@ mod tests {
     #[test]
     fn test_bounded_liveness_empty_graph() {
         let g = TopologyGraph::try_new("sequential").unwrap();
-        let result = LtlVerifier::check_bounded_liveness(&g, 0);
+        let result = GraphPropertyChecker::check_bounded_liveness(&g, 0);
         assert!(result.passed);
     }
 
-    // -- Integration: templates pass all LTL checks --
+    // -- Integration: templates pass all graph property checks --
 
     #[test]
     fn test_all_templates_safe() {
@@ -517,7 +527,7 @@ mod tests {
             "brainstorming",
         ] {
             let g = crate::topology::templates::TemplateStore::create(name, "m").unwrap();
-            let result = LtlVerifier::check_safety(&g);
+            let result = GraphPropertyChecker::check_safety(&g);
             assert!(
                 result.passed,
                 "Template '{}' safety failed: {:?}",
@@ -526,8 +536,8 @@ mod tests {
         }
         // hierarchical and hub use label=1 for all nodes, still safe (same level)
         let g = crate::topology::templates::TemplateStore::create("hierarchical", "m").unwrap();
-        assert!(LtlVerifier::check_safety(&g).passed);
+        assert!(GraphPropertyChecker::check_safety(&g).passed);
         let g = crate::topology::templates::TemplateStore::create("hub", "m").unwrap();
-        assert!(LtlVerifier::check_safety(&g).passed);
+        assert!(GraphPropertyChecker::check_safety(&g).passed);
     }
 }

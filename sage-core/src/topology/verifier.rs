@@ -5,7 +5,7 @@
 
 use super::topology_graph::*;
 use crate::topology::mutations::role_index;
-use crate::verification::ltl::LtlVerifier;
+use crate::verification::ltl::GraphPropertyChecker;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::{Bfs, EdgeRef};
 use pyo3::prelude::*;
@@ -154,8 +154,8 @@ impl HybridVerifier {
         result.add_errors(errs);
         result.add_warnings(warns);
 
-        // LTL temporal property checks
-        let (errs, warns) = Self::check_ltl_properties(graph);
+        // Graph property checks
+        let (errs, warns) = Self::check_graph_properties(graph);
         result.add_errors(errs);
         result.add_warnings(warns);
 
@@ -163,23 +163,23 @@ impl HybridVerifier {
     }
 
     // -----------------------------------------------------------------------
-    // LTL temporal property checks (delegated to LtlVerifier)
+    // Graph property checks (delegated to GraphPropertyChecker)
     // -----------------------------------------------------------------------
 
-    /// Run LTL safety and liveness checks.
+    /// Run graph safety and liveness checks.
     /// Safety violations are errors; liveness violations are warnings.
-    fn check_ltl_properties(graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
+    fn check_graph_properties(graph: &TopologyGraph) -> (Vec<String>, Vec<String>) {
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
         // Safety: no HIGH -> LOW info flow (errors)
-        let safety = LtlVerifier::check_safety(graph);
+        let safety = GraphPropertyChecker::check_safety(graph);
         if !safety.passed {
             errors.extend(safety.violations);
         }
 
         // Liveness: every entry reaches an exit (warnings)
-        let liveness = LtlVerifier::check_liveness(graph);
+        let liveness = GraphPropertyChecker::check_liveness(graph);
         if !liveness.passed {
             warnings.extend(liveness.violations);
         }

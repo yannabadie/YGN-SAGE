@@ -71,7 +71,7 @@ Unified topology IR, templates, verification, and evolutionary search:
 
 - **`topology_graph.rs`** -- `TopologyGraph` (PyClass): petgraph::DiGraph with typed `TopologyNode` (roles, capabilities, budgets) and three-flow `TopologyEdge` (Control, Message, State). Methods: `add_node`, `add_edge`, `node_count`, `edge_count`, `get_node`, `to_json`.
 - **`templates.rs`** -- `PyTemplateStore` (PyClass): 8 topology templates (Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming). `instantiate(name, model_ids) -> TopologyGraph`.
-- **`verifier.rs`** -- `HybridVerifier` (PyClass): 6 structural + 4 semantic checks + LTL integration. `verify(graph) -> VerificationReport`.
+- **`verifier.rs`** -- `HybridVerifier` (PyClass): 6 structural + 4 semantic checks + graph property integration. `verify(graph) -> VerificationReport`.
 - **`map_elites.rs`** -- `MapElitesArchive` (PyClass): quality-diversity archive with 4-dim BehaviorDescriptor (108 cells), Pareto dominance. SQLite persistence behind `cognitive` feature.
 - **`cma_me.rs`** -- `CmaEmitter`: CMA-ME for directional topology parameter optimization. Diagonal covariance, elite-weighted updates.
 - **`mcts.rs`** -- `MctsSearcher`: Monte Carlo Tree Search with UCB1 selection, random mutation expansion, HybridVerifier rollout. Budget: 50 simulations or 100ms.
@@ -82,7 +82,7 @@ Unified topology IR, templates, verification, and evolutionary search:
 
 ### `verification/` -- Formal Verification
 
-SMT verification and temporal property checking:
+SMT verification and graph property checking:
 
 - **`smt.rs`** -- `SmtVerifier` (PyClass, behind `smt` feature): OxiZ pure-Rust SMT (QF_LIA). 10 PyO3 methods: `prove_memory_safety`, `check_loop_bound`, `verify_arithmetic`, `verify_arithmetic_expr`, `verify_invariant`, `verify_invariant_with_feedback`, `synthesize_invariant`, `verify_array_bounds`, `validate_mutation`, `verify_provider_assignment`. Expression parser, CEGAR loop (max 5 rounds), clause-level diagnostics.
-- **`ltl.rs`** -- `LtlVerifier` (PyClass, always compiled): temporal property verification on TopologyGraph. `check_reachability` (BFS), `check_safety` (no HIGH→LOW paths), `check_liveness` (entries→exits), `check_bounded_liveness` (depth ≤ K).
+- **`ltl.rs`** -- `GraphPropertyChecker` (PyClass, always compiled): graph-structural property checks on TopologyGraph. `check_reachability` (BFS), `check_safety` (no HIGH→LOW paths), `check_liveness` (entries→exits), `check_bounded_liveness` (depth ≤ K). `LtlVerifier` remains as a deprecated Rust alias for one release.

@@ -71,7 +71,7 @@ cargo clippy --no-default-features                        # Lint
 | `simd_sort.rs` | SIMD-accelerated sorting functions for topology planning |
 | `lib.rs` | PyModule entry point, registers all PyClasses and PyFunctions |
 | `topology/` | DynamicTopologyEngine: 6-path topology generation (S-MMU → archive → LLM → mutation → MCTS → template), MAP-Elites + CMA-ME evolution, TopologyExecutor (dual-mode scheduling), TopologyGraph IR, HybridVerifier, TopologySynthesizer |
-| `verification/` | SmtVerifier (OxiZ QF_LIA, 10 PyO3 methods), LtlVerifier (temporal properties on TopologyGraph: reachability, safety, liveness, bounded liveness) |
+| `verification/` | SmtVerifier (OxiZ QF_LIA, 10 PyO3 methods), GraphPropertyChecker (graph-structural checks on TopologyGraph: reachability, safety, liveness, bounded liveness; `LtlVerifier` deprecated alias) |
 
 ## Key Dependencies
 
