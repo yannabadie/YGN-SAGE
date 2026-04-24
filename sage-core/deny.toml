@@ -1,0 +1,56 @@
+# cargo-deny configuration — AUDIT-annex A17 (supply-chain gates).
+#
+# Scope: minimum viable license allow-list + advisory surface + ban
+# policy for duplicate crates and unknown registries. Tightening happens
+# per the timeline in `docs/security/supply-chain.md`; this file is the
+# "start fail-open, observe, then close" baseline.
+#
+# Schema reference: https://embarkstudios.github.io/cargo-deny/checks/cfg.html
+
+[advisories]
+# Quarantine list for known-but-accepted advisories. Each entry MUST
+# have a dated rationale and owner before landing. Empty to start.
+ignore = []
+
+[licenses]
+# Minimum-viable permissive allow-list per A17 spec. All six SPDX ids
+# below appear in the current sage-core transitive tree (BSD / ISC /
+# MIT / Apache-2.0 variants via `arrow`, `wasmtime`, `chrono`;
+# Unicode-DFS-2016 via `unicode-ident` downstream of
+# `syn` / `proc-macro2`). Additions (Unicode-3.0, LLVM-exception, Zlib,
+# CC0-1.0, MPL-2.0) are DELIBERATELY omitted at first landing — any
+# new license surfaces as a cargo-deny hit we review by hand, which is
+# the observe-phase signal we want. See docs/security/supply-chain.md.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+]
+# Require every crate in the graph to resolve to one of the allowed
+# SPDX expressions. Confidence threshold guards against false matches
+# when a crate embeds its license text inline.
+confidence-threshold = 0.8
+
+[bans]
+# Duplicate versions are a yellow flag (audit surface + binary bloat)
+# but not yet a red gate — the sage-core tree has multiple legitimate
+# duplicates through transitive deps today. Revisit when we deduplicate.
+multiple-versions = "warn"
+# Wildcards in version specs short-circuit supply-chain controls.
+wildcards = "deny"
+# Empty to start; add explicit deny/skip entries for known-bad crates
+# as findings accumulate.
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+# Reject pulls from unknown git hosts or alternate registries. crates.io
+# is the only allowed registry by default.
+unknown-registry = "warn"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

@@ -8,6 +8,11 @@ on:
   schedule:
     - cron: '0 6 * * 1'  # Weekly Monday 6am UTC
 
+# Third-party actions are pinned to full commit SHAs per supply-chain
+# hardening (ALIRE2 / AUDIT-annex A17). The trailing `# <tag>` comment
+# records which upstream release each SHA corresponds to so that
+# upgrades stay traceable. See docs/security/supply-chain.md.
+
 jobs:
   codeql:
     runs-on: ubuntu-latest
@@ -17,17 +22,20 @@ jobs:
       matrix:
         language: [python]
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # NOTE: github/codeql-action v4 is the currently-pinned major for
+      # this repo; v3 is upstream-stable. Track via:
+      #   gh api repos/github/codeql-action/git/refs/tags/v4 --jq .object.sha
+      - uses: github/codeql-action/init@b25d0ebf40e5b63ee81e1bd6e5d2a12b7c2aeb61 # v4
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@v4
+      - uses: github/codeql-action/analyze@b25d0ebf40e5b63ee81e1bd6e5d2a12b7c2aeb61 # v4
 
   sbom:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
       - run: pip install cyclonedx-bom
@@ -35,7 +43,84 @@ jobs:
           cd sage-python
           pip install -e ".[all]"
           cyclonedx-py environment -o ../sbom.json --output-format json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sbom
           path: sbom.json
+
+  # --- AUDIT-annex A17: minimum-viable supply-chain gates ---
+  # All three audit jobs start with `continue-on-error: true` for the
+  # first landing week so the team can observe severity distributions
+  # before the gates start failing PRs. Flip to `false` per the timeline
+  # in docs/security/supply-chain.md once baseline is established.
+
+  pip-audit:
+    name: pip-audit (Python deps)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: '3.12'
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Audit sage-python (pyproject.toml)
+        run: |
+          cd sage-python
+          # --disable-pip forces pip-audit to resolve directly from the
+          # pyproject metadata without invoking `pip install`, which
+          # avoids triggering optional C-extension builds during audit.
+          pip-audit --strict --vulnerability-service osv \
+            --disable-pip \
+            --requirement <(python -c 'import tomllib,sys; d=tomllib.load(open("pyproject.toml","rb")); [print(r) for r in d.get("project",{}).get("dependencies",[])]') \
+            || true
+          # Primary run: real install + audit (exits non-zero on any finding).
+          pip install -e "."
+          pip-audit --strict
+      - name: Audit sage-discover (pyproject.toml)
+        run: |
+          cd sage-discover
+          pip install -e "."
+          pip-audit --strict
+      # Also run the pypa action so the output lands in the GitHub
+      # Security tab when a SARIF-capable step is wired later.
+      - name: Reference pypa/gh-action-pip-audit
+        uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
+        with:
+          inputs: sage-python/pyproject.toml
+
+  cargo-audit:
+    name: cargo-audit (Rust deps)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: sage-core
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      # TODO(A17): dtolnay/rust-toolchain publishes only floating branch
+      # refs (`stable`, `nightly`) — no versioned tags. Track upstream
+      # for an SHA-pinnable release or mirror to a fork.
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run rustsec/audit-check
+        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  cargo-deny:
+    name: cargo-deny (license + advisories + bans)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    defaults:
+      run:
+        working-directory: sage-core
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Run cargo-deny
+        uses: EmbarkStudios/cargo-deny-action@5bb39ff5d5a0e94dc9e2dc94eced0c6129743a57 # v2
+        with:
+          manifest-path: sage-core/Cargo.toml
+          command: check
+          arguments: --all-features
