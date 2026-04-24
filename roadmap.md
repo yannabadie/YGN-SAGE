@@ -625,6 +625,78 @@ existing tools keep free-form output until contract added.
 **Prerequisite:** none.
 **Cost:** 1-2 weeks.
 
+### A16. Centralized redaction layer for logs/events/memory (NEW 2026-04-24, AUDIT/AUDIT2 §6)
+
+**Why:** AUDIT.md + AUDIT2.md independently flag secret leakage into
+event bus payloads + episodic memory content. No redaction layer
+exists. Severity **HIGH**: blast = system-wide logs/traces;
+exploit = any API key, user prompt, or tool output passing through
+the bus; frequency = every event.
+
+**SOTA:** centralized secret-scanner (regex for API keys + JWTs +
+AWS/GCP keys) at trace emission boundary; encrypted memory tier for
+sensitive context; opt-in logging for user data.
+
+**Action when ready:** (a) spec redaction policy, (b) integrate into
+`events/bus.py` + `memory/episodic.py` + `memory/working.py` emit
+paths, (c) add regression tests with known secret patterns.
+
+**Cost:** ~1 week (design + impl + tests).
+
+### A17. Supply-chain security CI gates (NEW 2026-04-24, AUDIT/AUDIT2 §6)
+
+**Why:** AUDIT.md + AUDIT2.md both flag missing dependency audit
+infrastructure. Python `requirements.txt` not fully pinned; no
+`pip-audit`, `cargo-audit`, `cargo-deny`, Semgrep, Dependabot;
+GitHub Actions are version-tag pinned (not SHA-pinned); PyPI not
+using Trusted Publishing. Severity **HIGH**: blast = RCE via
+compromised upstream; exploit = any public-registry attacker;
+frequency = every build.
+
+**SOTA:** `cargo-audit` + `cargo-deny` in CI workflow; `pip-audit`
++ `safety` for Python; SHA-pinned Actions; Dependabot weekly
+updates; PyPI Trusted Publishing.
+
+**Action when ready:** incrementally add each gate with failure-is-
+informational first week, enforce in week 2.
+
+**Cost:** ~3-5 days.
+
+### A18. Dynamic tool validation fail-closed (NEW 2026-04-24, AUDIT2 §6)
+
+**Why:** AUDIT2 §6 identifies `forge.py:352-354` falls back to
+`ast.parse()` alone when Rust validator errors — **fails open**, not
+fail-closed. Severity **HIGH**: blast = unsafe tool registered;
+exploit = Rust validator DLL-unavailable; frequency = cold-start or
+build-pipeline mismatch.
+
+**SOTA:** fail-closed pattern mirrors `SAGE_STRICT_GOVERNANCE` from
+A0b — on Rust validator error, raise instead of downgrading. Add env
+`SAGE_TOOLFORGE_STRICT=1` (default on in production) to flip the
+behaviour.
+
+**Action when ready:** change `_validate_python_code` to
+re-raise on Rust error when env flag set; default flag to `1` after
+empirical testing.
+
+**Cost:** ~1 day.
+
+### A19. MCP/A2A gateway authentication (NEW 2026-04-24, AUDIT.md §6)
+
+**Why:** AUDIT.md §6 flags `sage-discover/mcp_gateway.py` +
+`sage-python/src/sage/protocols/serve.py` may expose tools/resources
+without authenticated HTTP transports. Severity **MEDIUM**: impact
+depends on whether user actually exposes gateway publicly.
+
+**SOTA:** MCP 2025-11-25 spec mandates authorization for HTTP
+transports (not stdio). OAuth2 bearer tokens + capability-scoped
+resources.
+
+**Action when ready:** (a) localhost-only default, (b) require bearer
+token for remote, (c) audit log every resource/tool access.
+
+**Cost:** ~1 week.
+
 ### A15. Single-flight consolidation + graceful shutdown (NEW 2026-04-24, AUDIT3 #23)
 
 **Why:** AUDIT3 §4 claim #23 (⚠️ partial, post-Phase-3-inspection):
