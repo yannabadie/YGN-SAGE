@@ -17,5 +17,5 @@ fallback = "deepseek-chat"                   # DeepSeek — no rate limits, reli
 #   Google:      gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview, gemini-3-flash-preview
 #   xAI:         grok-4-1-fast-reasoning, grok-3-mini, grok-3
 #   MiniMax:     MiniMax-M2.7, MiniMax-M2.5
-#   Kimi:        kimi-k2.5
+#   Kimi:        kimi-k2.6
 #   OpenRouter:  qwen/qwen3.5-plus-02-15

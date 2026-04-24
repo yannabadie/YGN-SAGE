@@ -138,7 +138,7 @@ async def test_cost_lookup() -> None:
         ("deepseek", "deepseek-chat"),
         ("openai", "gpt-5.4"),
         ("google", "gemini-3.1-flash-lite-preview"),
-        ("kimi", "kimi-k2.5"),
+        ("kimi", "kimi-k2.6"),
         ("nonexistent", "no-such-model"),
     ]:
         in_cost, out_cost = _lookup_cost_per_token(provider, model)

@@ -578,13 +578,65 @@ factual = 0.55
 # --- Kimi models ---
 
 [[models]]
-id = "kimi-k2.5"
+# A8 migration (2026-04-24): `kimi-k2.5` → `kimi-k2.6`.
+# Source (per Directive #6, verified against live docs 2026-04-24):
+#   https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart
+#   "Kimi's latest and most intelligent model". 256K context.
+#   Blog: https://www.kimi.com/blog/kimi-k2-6
+#
+# IMPORTANT — reasoning_content contract CARRIES OVER from k2.5:
+# The kimi-k2.6 quickstart explicitly states:
+#   "During multi-step tool calling, you must keep the
+#    `reasoning_content` from the assistant message in the current
+#    turn's tool call within the context, otherwise an error will be
+#    thrown."
+# This is the same constraint that made k2.5 HTTP-400 on the 4th
+# tool-call turn in SAGE (F9, 2026-04-19). Pydantic AI's message
+# serializer still strips `reasoning_content` between turns, so
+# multi-turn tool-calling against k2.6 with thinking enabled will
+# exhibit the same failure. Reproduced 2/2 deterministically on
+# astropy-14182 + astropy-7746 in the 2026-04-23 and 2026-04-24
+# observe smokes.
+#
+# Path forward to unlock tools on kimi (ticketed as follow-up):
+#   1. plumb `thinking: {type: "disabled"}` through the Pydantic AI
+#      provider for kimi-k2.6 whenever the request carries tools.
+#      k2.6 supports the disable toggle per its quickstart, which
+#      drops the reasoning_content requirement and uses standard
+#      OpenAI-compat tool protocol. Caveats: with thinking disabled,
+#      k2.6 may lose reasoning quality (it's a thinking-by-default
+#      model). Needs an ablation smoke.
+#   2. OR fix the Pydantic AI serializer to preserve reasoning_content
+#      across turns. More invasive, but keeps thinking's reasoning
+#      benefit. Needs upstream PR or local wrapper.
+#
+# Until one of those ships: supports_tools stays `false` so the Rust
+# ModelAssigner (model_assigner.rs:289) excludes k2.6 from
+# template-built tool-using nodes. A7 (2026-04-24, commit c20aefd8)
+# ensures every non-sink template role declares `"tools"` in its
+# required_capabilities so the filter actually fires. kimi remains
+# routable for pure-text sink roles (synthesizer-style) where the
+# LLM emits 1 turn with no tool-call chain — no 400 possible.
+#
+# Other k2.6 quirks (from the live quickstart):
+#   - With thinking enabled, `tool_choice` must be "auto" or "none"
+#     (no forced-tool).
+#   - `$web_search` builtin is "temporarily incompatible with
+#     Kimi K2.6/K2.5 thinking mode".
+#   - `temperature` and `top_p` are fixed when thinking enabled —
+#     custom values cause errors.
+#   - Default max_tokens 32768; no explicit minimum (k2.5 required
+#     16000 minimum, k2.6 relaxed that).
+#
+# Context window bump 128000 → 262144 (256K) per the live quickstart;
+# the earlier 128k was a stale pre-k2.5 carryover.
+id = "kimi-k2.6"
 provider = "kimi"
-family = "kimi-k2.5"
-code_score = 0.78
-reasoning_score = 0.88
-tool_use_score = 0.80
-math_score = 0.79
+family = "kimi-k2"
+code_score = 0.80  # +0.02 vs k2.5 — k2.6 is "most intelligent" per docs
+reasoning_score = 0.90  # +0.02 vs k2.5
+tool_use_score = 0.82  # +0.02 vs k2.5; still gated by supports_tools=false until thinking-disable lands
+math_score = 0.81
 formal_z3_strength = 0.62
 cost_input_per_m = 0.60
 cost_output_per_m = 2.50
@@ -594,29 +646,16 @@ s1_affinity = 0.10
 s2_affinity = 0.88
 s3_affinity = 0.88
 recommended_topologies = ["avr", "loop"]
-# F9 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
-# kimi-k2.5 is a thinking-mode model. The Moonshot API requires every
-# prior assistant-with-tool-calls message in the conversation history
-# to include a `reasoning_content` field. Pydantic AI's message
-# serialization strips internal reasoning between turns, so multi-turn
-# tool-calling against kimi-k2.5 returns HTTP 400:
-#   "thinking is enabled but reasoning_content is missing in assistant
-#    tool call message at index N"
-# Observed 10× in v8 15-task smoke — caused 4/15 tasks to fall through
-# to single-agent and emit 0 chars. Mark tool-incompatible until the
-# provider layer preserves reasoning_content (or Moonshot ships a
-# non-thinking k2.5 variant). kimi stays S2/S3-eligible for pure-text
-# roles (synthesizer-style) where no tools are used.
 supports_tools = false
 supports_json_mode = true
 supports_vision = false
-context_window = 128000
+context_window = 262144
 safety_rating = 0.70
 [models.domain_scores]
-math = 0.79
-code = 0.78
-reasoning = 0.88
-tool_use = 0.80
+math = 0.81
+code = 0.80
+reasoning = 0.90
+tool_use = 0.82
 formal = 0.62
 creative = 0.69
 factual = 0.32

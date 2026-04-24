@@ -95,7 +95,7 @@ PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "api_key_env": "KIMI_API_KEY",
         "base_url": "https://api.moonshot.ai/v1",
         "sdk": "openai",
-        "default_model": "kimi-k2.5",
+        "default_model": "kimi-k2.6",
     },
     {
         "provider": "minimax",

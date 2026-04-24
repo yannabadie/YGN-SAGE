@@ -162,9 +162,22 @@ class OpenAICompatProvider:
             if "reasoner" in model and "temperature" in params:
                 del params["temperature"]
         elif self.provider_name == "kimi":
-            # K2.5 has a fixed temperature; sending custom values returns 400.
-            if "k2.5" in model or "k2-5" in model:
+            # Thinking-mode Kimi variants (k2.5, k2.6, k2-thinking,
+            # k2-thinking-turbo) have fixed temperature + top_p;
+            # sending custom values returns 400.
+            # Source (Directive #6, fetched 2026-04-24):
+            #   https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart
+            #   "Temperature and top_p are fixed when thinking enabled —
+            #    custom values cause errors."
+            # k2-turbo-preview (non-thinking) and moonshot-v1-* accept
+            # standard temperature/top_p — clamp to 1.0 max.
+            if (
+                "k2.5" in model or "k2-5" in model
+                or "k2.6" in model or "k2-6" in model
+                or "k2-thinking" in model
+            ):
                 params.pop("temperature", None)
+                params.pop("top_p", None)
             elif "temperature" in params:
                 params["temperature"] = min(params["temperature"], 1.0)
         elif self.provider_name == "qwen":

@@ -170,7 +170,7 @@ smoke in parallel with the rustpython wasm source build triggered
 short-circuited. Future large parallel runs should stagger wasm
 builds vs benches.
 
-### A8. Migrate kimi-k2.5 → kimi-k2.6 in cards.toml (NEW 2026-04-24)
+### A8. Migrate kimi-k2.5 → kimi-k2.6 in cards.toml — ✅ SHIPPED 2026-04-24 (Phase 1: model id + specs)
 **Why:** user flagged that Moonshot's latest is **kimi-k2.6**, not
 k2.5. cards.toml's `kimi-k2.5` entry carries `supports_tools = false`
 from the F9 audit — the documented reason is Moonshot's
@@ -182,26 +182,89 @@ tool-capable routing option. A7 stays load-bearing either way (it's a
 belt-and-suspenders capability hygiene fix) but the kimi-k2.6 move is
 a potential net win on routing diversity + cost.
 
-**Concrete action:**
-1. Context7 lookup: `/berriai/litellm` for kimi-k2.6 support + any
-   known quirks. Also check Moonshot's own API docs for the
-   `reasoning_content` contract change (if any).
-2. Update `sage-core/config/cards.toml` (+ `sage-python/config/cards.toml`
-   which symlinks) to replace the kimi-k2.5 block with kimi-k2.6.
-   Verify pricing / context window against the official docs. Cite
-   the source in the block's header comment (see Directive #6).
-3. If k2.6 honours standard tool-call message format →
-   `supports_tools = true`. If it still needs `reasoning_content` →
-   keep `supports_tools = false` and document WHY in the block
-   comment so A7 coverage remains clear.
-4. Test via `test_pydantic_ai_integration.py::test_kimi_k2_5_supports_tools_is_false`
-   (rename to k2_6 + update assertion appropriately).
-5. Run an observe-smoke against k2.6 to confirm it behaves as
-   advertised in our mesh.
+**Action taken (Phase 1):**
 
-**Cost:** 30 min investigation + ~1 h implementation + ~15 min smoke.
-Strong dependency on Context7 / live Moonshot docs — no hardcoding
-from training data (CLAUDE.md Directive #6).
+1. Fetched https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart
+   (Directive #6 — live docs, not training data).
+2. Verified via same doc: k2.6 inherits k2.5's `reasoning_content`
+   requirement on multi-turn tool calls when thinking is enabled
+   (which is the default). Same HTTP 400 class as before.
+3. Updated `sage-core/config/cards.toml` + mirror in
+   `sage-python/config/cards.toml` (no longer a symlink on Windows —
+   must sync manually):
+   - id: `kimi-k2.5` → `kimi-k2.6`
+   - family: `kimi-k2.5` → `kimi-k2`
+   - context_window: `128000` → `262144` (256K per docs; old was
+     stale pre-k2.5 carryover)
+   - affinity scores bumped +0.02 (code/reasoning/tools/math)
+     reflecting "Kimi's latest and most intelligent" positioning —
+     subject to ablation
+4. `supports_tools = false` STAYS until the reasoning_content
+   plumbing is fixed. Path forward (still open, ticketed below):
+   - (a) plumb `thinking: {type: "disabled"}` in our PydanticAI
+     wrapper whenever the request carries tools. k2.6 supports the
+     disable toggle per its quickstart.
+   - (b) OR fix our wrapper to preserve reasoning_content across
+     turns. PydanticAI has a `MoonshotAIProvider` class
+     (https://pydantic.dev/docs/ai/api/pydantic-ai/providers/) but
+     the docs don't confirm reasoning_content passthrough — needs
+     a direct code inspection.
+5. Updated substring quirks in `openai_compat.py`: temperature+top_p
+   hard-strip now matches `k2.6` / `k2-6` / `k2-thinking` variants
+   alongside existing k2.5 patterns (same quirk, documented by the
+   k2.6 quickstart "temperature and top_p fixed when thinking
+   enabled").
+6. Updated 6 call-sites with hardcoded `kimi-k2.5`: connector.py
+   default_model, 2 test fixtures, test_provider_quirks cases
+   (renamed `test_kimi_k25_strips_temperature` →
+   `test_kimi_k26_strips_temperature_and_top_p` + kept a
+   back-compat test for callers pinning legacy id), models.toml
+   comment, test_pydantic_ai_integration
+   (`test_kimi_k2_5_supports_tools_is_false` →
+   `test_kimi_k2_6_supports_tools_is_false`).
+
+**Validation:** 30/30 Python quirks + provider-integration tests
+PASS; 20/20 Rust template tests PASS.
+
+**Phase 2 (pending, tracked as sub-items):**
+- Investigate PydanticAI's `MoonshotAIProvider` source to determine
+  if reasoning_content is preserved across turns. If yes, SAGE's
+  wrapper is the bug; swap wrapper → flip `supports_tools = true`.
+- If no, plumb `thinking: {type: "disabled"}` in our provider layer
+  for kimi-k2.6 whenever tools are present. Ablation smoke required
+  to confirm disabling thinking doesn't regress reasoning quality.
+
+**Note on user's concern ("PydanticAI should handle this"):**
+The user's intuition is sound — PydanticAI has a dedicated Moonshot
+provider. The observed failure was through our SAGE `PydanticAIProvider`
+wrapper. The A8 Phase 1 change is compatible with either future
+resolution (wrapper fix OR thinking-disable plumbing); the cards.toml
+flag gates tool use until Phase 2 lands.
+
+### A9. Investigate gpt-5.5 (NEW 2026-04-24)
+**Why:** user flagged OpenAI released gpt-5.5 as a new model. Our
+cards.toml ships gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano,
+gpt-5.3-codex. If gpt-5.5 is a measurable improvement over 5.4 on
+reasoning/code, adding it (or replacing 5.4 as the default reasoner
+tier) could materially improve SWE-bench and BCB results.
+
+**Concrete action:**
+1. Context7 / WebFetch against https://platform.openai.com/docs/models
+   (or equivalent live OpenAI docs) to confirm gpt-5.5 exists AND
+   get its model id, context window, pricing, reasoning effort
+   settings, tool-call format, and any quirks.
+2. If confirmed: add to `sage-core/config/cards.toml` with
+   docs-cited affinity scores. Don't remove gpt-5.4 (bandit may
+   still prefer it on some tasks).
+3. Test: add a live-provider test case for gpt-5.5 analogous to
+   gpt-5.4. Run a routing-gt smoke to see where bandit places it.
+4. Ablation smoke (N=10) to confirm direction of improvement before
+   making it a default.
+
+**Dependency:** OpenAI live docs only (Directive #6). Do NOT
+hardcode gpt-5.5 quirks from training data.
+
+**Cost:** 30 min verification + ~45 min implementation + 15 min smoke.
 
 ### A3. Repair-mode implementation (conditional on A1 data)
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier

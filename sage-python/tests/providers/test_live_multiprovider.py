@@ -79,11 +79,13 @@ pytestmark = [
 # `grep '^id =' sage-core/config/cards.toml` on 2026-04-18).
 #
 # Pydantic AI model-id alignment notes:
-#   - kimi-k2.5 → Pydantic AI's moonshotai provider knows
-#     `kimi-k2-0711-preview` / `kimi-k2-turbo-preview`. Our id doesn't
-#     map cleanly; the test will 404/error until we either alias or
-#     update cards.toml. Keep the live test so the breakage is
-#     visible in Phase 3 summary rather than silently skipped.
+#   - kimi-k2.6 (A8 migration 2026-04-24) → Pydantic AI's MoonshotAI
+#     provider accepts kimi-k2.6 directly per the Moonshot OpenAI-
+#     compat endpoint. Live call will succeed if KIMI_API_KEY is set
+#     AND the current PydanticAI build recognises the model id. If
+#     PydanticAI's moonshot provider still hard-codes a pre-k2.6
+#     allowlist, the test will 404 — keeping this visible in Phase 3
+#     surfaces the breakage rather than silently skipping.
 #   - qwen/qwen3.5-plus-02-15 routes via openrouter/ prefix in
 #     Pydantic AI — already handled by OpenRouterModel.
 _MATRIX: list[tuple[str, str, str]] = [
@@ -106,7 +108,7 @@ _MATRIX: list[tuple[str, str, str]] = [
     ("minimax", "MiniMax-M2.5", "MINIMAX_API_KEY"),
     ("minimax", "MiniMax-M2.5-highspeed", "MINIMAX_API_KEY"),
     ("openrouter", "qwen/qwen3.5-plus-02-15", "OPEN_ROUTER_API_KEY"),
-    ("kimi", "kimi-k2.5", "KIMI_API_KEY"),
+    ("kimi", "kimi-k2.6", "KIMI_API_KEY"),
 ]
 
 

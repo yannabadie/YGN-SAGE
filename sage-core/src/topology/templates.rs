@@ -47,7 +47,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
         // A7 (2026-04-24): "tools" declared because AgentLoop grants tools
         // to this role at runtime. Without "tools", ModelAssigner's
         // `needs_tools && !card.supports_tools` filter (model_assigner.rs:289)
-        // doesn't fire and kimi-k2.5 (supports_tools=false) can get
+        // doesn't fire and kimi-k2.6 (supports_tools=false) can get
         // assigned here → HTTP 400 on the 4th tool-call turn → fast-abort.
         // See docs/benchmarks/2026-04-24-diff-verifier-observe-smoke/findings.md.
         vec!["text_processing".into(), "reasoning".into(), "tools".into()],
@@ -1169,7 +1169,7 @@ mod tests {
     // Every template node whose role is NOT sink-prompted (i.e. doesn't
     // carry ``SINK_NODE_PROMPT``) is executed by Python's ``AgentLoop``
     // which unconditionally grants tools. ``ModelAssigner`` only
-    // filters ``kimi-k2.5`` (``supports_tools=false``) when the node
+    // filters ``kimi-k2.6`` (``supports_tools=false``) when the node
     // declares ``"tools"`` in ``required_capabilities`` — without it
     // kimi gets assigned and HTTP-400s on the 4th tool-call turn
     // (F9 `cards.toml:598`, reproduced 2026-04-23 + 2026-04-24 smokes
@@ -1188,7 +1188,7 @@ mod tests {
     /// provides the tool registry to sink nodes at runtime.
     /// SINK_NODE_PROMPT asks for "Output ONLY the final answer — concise,
     /// no explanation, no reasoning", but the LLM ultimately decides
-    /// whether to invoke a tool. If a sink bandit-assigned to kimi-k2.5
+    /// whether to invoke a tool. If a sink bandit-assigned to kimi-k2.6
     /// nevertheless emits 4+ tool-call turns, the Moonshot HTTP 400
     /// ("reasoning_content missing") relapse is possible. Empirically
     /// this hasn't triggered on current sinks (they are terminal
@@ -1220,7 +1220,7 @@ mod tests {
             let node = g.try_get_node(idx).expect("node index in range");
             let has_tools = node.required_capabilities.iter().any(|c| c == "tools");
             if is_tool_free_sink(template_name, &node.role) {
-                // Sink-prompted roles stay tool-free — kimi-k2.5 is
+                // Sink-prompted roles stay tool-free — kimi-k2.6 is
                 // explicitly allowed here (F9 intent).
                 assert!(
                     !has_tools,
@@ -1228,7 +1228,7 @@ mod tests {
                      but declares \"tools\" in required_capabilities. Sinks \
                      are 1-turn text-only roles; they don't need tool \
                      capability and keeping them tool-free preserves \
-                     kimi-k2.5 as a routing option for text-only synthesis.",
+                     kimi-k2.6 as a routing option for text-only synthesis.",
                     template_name, node.role
                 );
             } else {
@@ -1239,7 +1239,7 @@ mod tests {
                      grants it tools at runtime) is missing \"tools\" in \
                      required_capabilities. Without it, \
                      ModelAssigner.supports_tools filter doesn't fire and \
-                     kimi-k2.5 (supports_tools=false) can be assigned here \
+                     kimi-k2.6 (supports_tools=false) can be assigned here \
                      → HTTP 400 on the 4th tool-call turn → fast-abort. \
                      Add \"tools\" to this node's required_capabilities. \
                      See docs/benchmarks/2026-04-24-diff-verifier-observe-\

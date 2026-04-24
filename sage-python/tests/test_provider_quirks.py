@@ -39,14 +39,28 @@ class TestApplyQuirks:
         params = p._apply_quirks({"model": "deepseek-chat", "temperature": 0.7, "max_tokens": 4096})
         assert params["temperature"] == 0.7
 
-    def test_kimi_k25_strips_temperature(self):
-        """K2.5 has fixed temperature — API rejects any custom value."""
+    def test_kimi_k26_strips_temperature_and_top_p(self):
+        """K2.6 (thinking mode) has fixed temperature + top_p per
+        https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart
+        (Directive #6 — cite live docs, not training data).
+        Sending custom values returns 400. Same contract on k2.5
+        and k2-thinking variants."""
+        p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-k2.6")
+        params = p._apply_quirks({"model": "kimi-k2.6", "temperature": 1.5, "top_p": 0.8, "max_tokens": 4096})
+        assert "temperature" not in params
+        assert "top_p" not in params
+
+    def test_kimi_k25_still_strips_temperature(self):
+        """Backcompat: k2.5 was the pre-migration model; the quirk
+        still matches for any caller pinning the legacy id."""
         p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-k2.5")
         params = p._apply_quirks({"model": "kimi-k2.5", "temperature": 1.5, "max_tokens": 4096})
         assert "temperature" not in params
 
-    def test_kimi_non_k25_clamps_temperature(self):
-        """Non-K2.5 Kimi models clamp temperature to 1.0."""
+    def test_kimi_non_thinking_clamps_temperature(self):
+        """Non-thinking Kimi variants (kimi-chat, k2-turbo-preview,
+        moonshot-v1-*) clamp temperature to 1.0 — the thinking-mode
+        hard-strip rule does NOT apply."""
         p = OpenAICompatProvider(api_key="k", provider_name="kimi", model_id="kimi-chat")
         params = p._apply_quirks({"model": "kimi-chat", "temperature": 1.5, "max_tokens": 4096})
         assert params["temperature"] <= 1.0

@@ -543,13 +543,27 @@ factual = 0.56
 # --- Kimi models ---
 
 [[models]]
-id = "kimi-k2.5"
+# A8 migration (2026-04-24): kimi-k2.5 → kimi-k2.6. Full rationale +
+# reasoning_content investigation summary live in the matching entry
+# in sage-core/config/cards.toml. Key points:
+#   - Source: https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart
+#     (fetched 2026-04-24, Directive #6).
+#   - k2.6 keeps k2.5's `reasoning_content` requirement on multi-turn
+#     tool calls when thinking is enabled (default).
+#   - Path to re-enable tools: plumb `thinking: {type: "disabled"}`
+#     in our PydanticAI wrapper for kimi, OR verify that PydanticAI's
+#     native MoonshotAIProvider preserves reasoning_content across
+#     turns (doc doesn't confirm) and switch our wrapper to it.
+#   - Until then: `supports_tools = false` — A7 template capability
+#     filter ensures kimi is excluded from multi-agent tool-using
+#     nodes while still eligible for pure-text sinks.
+id = "kimi-k2.6"
 provider = "kimi"
-family = "kimi-k2.5"
-code_score = 0.78
-reasoning_score = 0.88
-tool_use_score = 0.80
-math_score = 0.79
+family = "kimi-k2"
+code_score = 0.80
+reasoning_score = 0.90
+tool_use_score = 0.82
+math_score = 0.81
 formal_z3_strength = 0.62
 cost_input_per_m = 0.60
 cost_output_per_m = 2.50
@@ -559,19 +573,16 @@ s1_affinity = 0.10
 s2_affinity = 0.88
 s3_affinity = 0.88
 recommended_topologies = ["avr", "loop"]
-# F9 audit fix (2026-04-19): Pydantic AI doesn't preserve kimi-k2.5's
-# required `reasoning_content` across tool-call turns → HTTP 400. See
-# matching entry in sage-core/config/cards.toml for full context.
 supports_tools = false
 supports_json_mode = true
 supports_vision = false
-context_window = 128000
+context_window = 262144
 safety_rating = 0.70
 [models.domain_scores]
-math = 0.79
-code = 0.78
-reasoning = 0.88
-tool_use = 0.80
+math = 0.81
+code = 0.80
+reasoning = 0.90
+tool_use = 0.82
 formal = 0.62
 creative = 0.69
 factual = 0.32

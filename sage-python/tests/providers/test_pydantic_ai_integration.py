@@ -250,19 +250,20 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
     assert recorded[0][0] == "deepseek"
 
 
-def test_kimi_k2_5_supports_tools_is_false() -> None:
-    """F9 audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
-    kimi-k2.5 is a thinking-mode model. The Moonshot API requires every
-    prior assistant-with-tool-calls message in conversation history to
-    include a `reasoning_content` field. Pydantic AI does not preserve
-    that across turns → HTTP 400 "thinking is enabled but reasoning_
-    content is missing in assistant tool call message at index N".
+def test_kimi_k2_6_supports_tools_is_false() -> None:
+    """A8 migration (2026-04-24): kimi-k2.5 → kimi-k2.6. Originally
+    F9 (2026-04-19): kimi-k2.5 is a thinking-mode model requiring
+    `reasoning_content` passthrough across tool-call turns; Pydantic
+    AI doesn't preserve it → HTTP 400. kimi-k2.6 (verified 2026-04-24
+    via https://platform.kimi.ai/docs/guide/kimi-k2-6-quickstart) keeps
+    the same contract.
 
-    Observed 10× in v8 15-task smoke, caused 4/15 EMPTY results.
-    Workaround until the provider layer handles reasoning_content:
-    mark kimi-k2.5 as tool-incompatible so ModelAssigner never routes
+    Workaround until the provider layer handles reasoning_content (or
+    until we plumb `thinking: {type: "disabled"}` for tool calls):
+    mark kimi-k2.6 as tool-incompatible so ModelAssigner never routes
     a tool-needing node to it. This test locks that flag — if someone
-    flips it back without fixing the provider, this test fails.
+    flips it back without fixing the provider plumbing, this test
+    fails with a pointer to the open follow-up.
     """
     from pathlib import Path
 
@@ -279,12 +280,15 @@ def test_kimi_k2_5_supports_tools_is_false() -> None:
         pytest.skip("cards.toml not on disk")
 
     reg = sage_core.ModelRegistry.from_toml_file(str(toml))
-    kimi = reg.get("kimi-k2.5")
+    kimi = reg.get("kimi-k2.6")
     if kimi is None:
-        pytest.skip("kimi-k2.5 not in cards.toml")
+        pytest.skip("kimi-k2.6 not in cards.toml")
 
     assert kimi.supports_tools is False, (
-        "kimi-k2.5 must have supports_tools=false until the Pydantic AI "
-        "moonshot provider preserves reasoning_content across tool-call "
-        "turns. See F9 audit entry in sage-core/config/cards.toml."
+        "kimi-k2.6 must have supports_tools=false until either "
+        "(a) Pydantic AI's MoonshotAIProvider preserves reasoning_content "
+        "across tool-call turns, or (b) our wrapper plumbs "
+        "`thinking: {type: \"disabled\"}` when tools are present. See "
+        "A8 entry in sage-core/config/cards.toml for the migration audit "
+        "trail and path forward."
     )
