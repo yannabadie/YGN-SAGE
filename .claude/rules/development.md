@@ -36,8 +36,12 @@ python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 
 # SWE-bench Lite (gen-only or gen+Docker)
-# RECOMMENDED: opt in to verifier observe-mode so we accumulate
-# `_diff_verifier_mismatches` data passively (default is off, zero-cost).
+# roadmap-A1 (2026-04-24): observe-mode is the **default** for every
+# SWE-bench smoke from now until ≥10 flagged + ≥10 clean samples
+# accumulate (needed to flip repair-mode as default). Zero cost on
+# clean patches; `_diff_verifier_mismatches` metadata added to
+# predictions.jsonl for post-hoc bucket analysis. Opt out only if
+# you have a specific reason (e.g. reproducing a pre-verifier run).
 SAGE_DIFF_VERIFIER_MODE=observe \
   python -m sage.bench --type swebench --dataset lite --limit 10 \
     --output docs/benchmarks/$(date +%F)-observe.json
@@ -51,7 +55,7 @@ SAGE_DIFF_VERIFIER_MODE=observe \
 | `SAGE_UNSAFE_RAW_EXEC` | unset | Allow `ToolExecutor.execute_raw` (bypasses AST + Wasm sandbox). Audited escape hatch. |
 | `SAGE_EMISSION_FORMAT` | `unified` | `search-replace` enables SR-block emission for SWE-bench templates. |
 | `SAGE_PERSIST_SR_MISSING` | `0` | When `1`, write raw LLM response + parsed SR blocks to `<out_dir>/sr_missing/<instance_id>.json` on SR extraction failure. Unlocks post-hoc F2-class diagnosis. |
-| `SAGE_DIFF_VERIFIER_MODE` | `off` | `observe` annotates predictions.jsonl with `_diff_verifier_mismatches`. `repair` downgrades to observe with a warning (repair mode is spec'd but not shipped). |
+| `SAGE_DIFF_VERIFIER_MODE` | `off` (code default) / `observe` (**recommended default for all SWE-bench smokes**, roadmap-A1) | `observe` annotates predictions.jsonl with `_diff_verifier_mismatches` (zero cost on clean patches). `repair` now live. We need ≥10 flagged + ≥10 clean before flipping the code default. |
 | `SAGE_BENCH_LOG_FILE` | derive | Where to write the SWE-bench gen log. Unset → `<args.output.stem>-gen.log`. `0` or empty → skip file logging. Absolute path → use verbatim. |
 | `SAGE_WASM_CACHE_DIR` | `$HOME/.sage/wasm_python_cache/` | Where the precompiled `.cwasm` artefact lands. |
 | `SAGE_WASM_CACHE_DISABLE` | `0` | When `1`, skip the cache entirely (always recompile, never write). |

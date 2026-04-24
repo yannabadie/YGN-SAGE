@@ -53,9 +53,12 @@ python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 
 python -m sage.bench --type routing_gt
 python -m sage.bench --type ablation --limit 50
 
-# SWE-bench with the pre-emission diff-context verifier in observe mode —
-# annotates predictions.jsonl with _diff_verifier_mismatches for post-hoc
-# analysis. Safe to run alongside every SWE-bench smoke (default off).
+# SWE-bench — ALWAYS run with the pre-emission diff-context verifier
+# in observe mode (roadmap-A1 2026-04-24: observe is the new default
+# for every SWE-bench smoke; only opt out if you have a specific
+# reason). Annotates predictions.jsonl with _diff_verifier_mismatches
+# for post-hoc analysis (zero cost on clean patches). We need ≥10
+# flagged + ≥10 clean before flipping repair-mode as default.
 # Gen log goes to <output-stem>-gen.log by default (SAGE_BENCH_LOG_FILE=0 to opt out).
 SAGE_DIFF_VERIFIER_MODE=observe \
   python -m sage.bench --type swebench --dataset lite --limit 10 \
