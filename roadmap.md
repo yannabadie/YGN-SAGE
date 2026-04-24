@@ -574,6 +574,78 @@ the task ID survives.
 
 **Cost:** trivial, mostly a workflow hygiene task.
 
+### A13. Prompt-injection filter design + implementation (NEW 2026-04-24, AUDIT3 #10)
+
+**Why:** AUDIT3 §3 claim #10 confirmed (✅): no explicit prompt-injection
+filtering exists. Blast radius HIGH — every LLM call reaches
+classifier, model, tool args. Severity HIGH per
+`docs/audits/2026-04-24-audit3-triage/phase3-severity-sota.md`.
+
+**Deferred from Phase-5 fix batch:** security-architectural, not a
+200-LOC patch. PROMPT.md principle #1 ("le code non modifié est plus
+sûr que modifié") — a weak regex filter would give false security
+while breaking legitimate prompts.
+
+**SOTA landscape 2026:**
+1. Classifier-based (PromptGuard-2 Meta 2024, Lakera Guard, Azure
+   Prompt Shields GA Nov 2024)
+2. Instruction-hierarchy training (GPT-4o priv-separation, OpenAI
+   research Nov 2024)
+3. Structured-output / spotlighting (Microsoft arXiv 2403.14720,
+   constitutional filtering)
+
+**Concrete action when ready:** research spike (1 week) → design doc
+(which inputs, which method, which action) → impl spike (1-2 weeks)
+→ red-team against OWASP LLM01 corpus. Total ~2-3 weeks.
+
+**Prerequisite:** none.
+**Cost:** multi-week.
+
+### A14. Tool-output Pydantic contracts (ToolResult v2) (NEW 2026-04-24, AUDIT3 #17)
+
+**Why:** AUDIT3 §3 claim #17 (⚠️ partial): `ToolDef.parameters` JSON
+schema exists on input side; `ToolResult.output` is a free-form string
+on output side. Downstream LLM input can be corrupted by malformed
+tool output. Severity MEDIUM.
+
+**Deferred from Phase-5 fix batch:** scope touches `ToolResult`
+contract — a core data structure across `sage.tools`, `sage.agent_loop`,
+`sage.topology.runner`, and every tool implementation (18+ tools).
+Not a ≤ 10-file, ≤ 200-LOC fix.
+
+**SOTA pattern:** MCP (Model Context Protocol) spec 2025 uses JSON
+Schema for both input AND output. LangChain
+`StructuredTool.return_schema`. Our input side matches MCP; output
+side doesn't.
+
+**Concrete action when ready:** (a) design per-tool output contracts,
+(b) Pydantic validator at agent-loop boundary, (c) gradual rollout —
+existing tools keep free-form output until contract added.
+
+**Prerequisite:** none.
+**Cost:** 1-2 weeks.
+
+### A15. Single-flight consolidation + graceful shutdown (NEW 2026-04-24, AUDIT3 #23)
+
+**Why:** AUDIT3 §4 claim #23 (⚠️ partial, post-Phase-3-inspection):
+`agent_loop.py:313-330` `_maybe_run_consolidation` awaits
+`consolidator.consolidate()` — blocks the agent loop for one batch
+pass every 10 steps. Not fire-and-forget. Severity LOW (bounded
+impact, non-default multi-producer only).
+
+**Deferred from Phase-5 fix batch:** naïve
+`asyncio.create_task(...)` tempting but risky:
+- concurrent consolidation passes could race on SQLite writes
+- agent-loop termination could orphan an in-flight task
+- "consolidated" metadata marker needs atomic-by-key semantics to
+  avoid double-processing
+
+**Concrete action when ready:** single-flight queue + graceful
+shutdown hook + idempotent `consolidated=True` marker.
+
+**Prerequisite:** none.
+**Cost:** 2-3 days.
+
 ---
 
 ## Horizon B — medium-term (next 1-2 months)
