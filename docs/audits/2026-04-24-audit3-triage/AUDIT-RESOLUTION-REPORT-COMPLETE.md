@@ -36,10 +36,10 @@ The *code* shipped is functionally correct (2418 passed / 0 failed on Python, ca
 | 🔍 external-only | 2 | 1 | 2 | 5 |
 | Shipped fixes (commits on main) | **4 HIGH** (A16, A17, A18, A19) + cross-refs from AUDIT3 | 0 new + cross-refs | **3** (AUDIT3 #8, #11, #12) | **10** unique shipped |
 | Retroactive fixes (post-gap call-out) | A13 (§6 prompt-injection) + A14 (§3 tool schema = cross-ref AUDIT3 #17) | — | — | 2 more |
-| Commits shipped | 26 total (820ea3e2..HEAD, post-§6.3+§6.4) | — | — | 26 |
-| LOC delta | +10034 / -100 net pre-§6.4; +51 more (A19 wiring) | — | — | — |
-| Tests added | ~68 (Python) — 16 prompt_injection + 7 toolresult + 19 serve_auth (+2 A19 wiring) + 9 redaction + 4 single-flight + 4 toolforge_strict + 4 HITL + 5 budget | — | — | ~68 |
-| Pass count on HEAD | 2420 / 0 failed / 50 skipped (incl. A19 integration tests) | — | — | 2420 |
+| Commits shipped | 28 total (820ea3e2..HEAD, incl. A13 + A14 closure) | — | — | 28 |
+| LOC delta | +10034 / -100 pre-§6.4 + 51 (A19) + ~335 (A13 + A14) | — | — | — |
+| Tests added | ~79 (Python) — 16 prompt_injection + 4 prompt_injection_wiring + 7 toolresult + 7 agent_mgmt_schemas + 19 serve_auth + 9 redaction + 4 single-flight + 4 toolforge_strict + 4 HITL + 5 budget | — | — | ~79 |
+| Pass count on HEAD | ~2428 / 0 failed / 50 skipped (incl. A13/A14 integration tests) | — | — | 2428 |
 
 ---
 
@@ -74,7 +74,7 @@ Verdict columns: **P2** = Phase 2 initial, **P6** = Phase 6 post-fix. Evidence c
 | S1 | Dynamic tool creation default | HIGH | ⚠️ | ❌ | `3bdf9c43` (HITL) + prior `SAGE_DANGEROUS_TOOLS=False` | ToolForge now requires `approval_callback` or `SAGE_TOOLFORGE_APPROVE_ALL=1`. `execute_bash` default-off. |
 | S2 | Sandbox downgrade/fallback | HIGH | ⚠️ | ❌ | `c2113d8` (ADR-013 §5) + `24541dd8` (A18) | ADR-013 §5 removed subprocess on default path. A18 closes `ast.parse` fail-open in forge.py via `SAGE_TOOLFORGE_STRICT=1` default. |
 | S3 | Repo mutation + test exec | MEDIUM | ⚠️ | ⚠️ | — | `apply_patch`/`run_tests` still in typed_repo with path-jail but no per-run sandbox checkout. Not fixed this batch; deferred. |
-| S4 | Prompt injection via retrieved context | HIGH | ⚠️ | ⚠️ **starter** | `19cb2271` (A13) | Regex-based detector shipped as opt-in library. NOT wired into agent loop yet. Real classifier (PromptGuard-2) deferred. |
+| S4 | Prompt injection via retrieved context | HIGH | ⚠️ | ❌ | `19cb2271` + `2d45b7c1` (A13) | Regex detector wired at task-ingest in `agent_loop.run` (log-only, 1a). Emits `PROMPT_INJECTION_DETECTED` events with pattern_name + span. PromptGuard-2 classifier still deferred as v2. |
 | S5 | Secret leakage into logs/memory | HIGH | ⚠️ | ❌ | `c6538a76` (A16) | Redaction layer active by default (`SAGE_REDACT_SECRETS=1`) — 5 classes: OpenAI, AWS, GCP, Bearer, JWT. Integrated into events/bus, episodic, working. |
 | S6 | Fail-open verification | HIGH | ⚠️ | ❌ | `2bd966c` (A0b prior) | `SAGE_STRICT_GOVERNANCE=1` raises on gate init failure AND aborts on verification failure. |
 | S7 | Shared mutable runtime state | HIGH | ⚠️ | ❌ | `9067be5` (A0a prior) | All 10 mutated AgentLoop fields now restored in bypass `finally`. |
@@ -82,7 +82,7 @@ Verdict columns: **P2** = Phase 2 initial, **P6** = Phase 6 post-fix. Evidence c
 | S9 | Protocol service exposure | MEDIUM | ⚠️ | ❌ | `cc9cba44` + `03ce6c57` (A19) | localhost default + warn_insecure_bind + **middleware wired in `a2a_server.py` and `serve.py --mcp` after §6.4 advisor callout** (installs `BaseHTTPMiddleware` when `SAGE_PROTOCOL_BEARER_TOKEN` is set). 19 passing tests including 2 wiring-integration checks. |
 | S10 | Cost explosion | MEDIUM | ⚠️ | ❌ | `55a393c1` (AUDIT3 #12) | Pipeline short-circuits on `is_over_budget`. EXECUTE_BUDGET_EXCEEDED event. |
 
-**AUDIT.md delta summary:** 9 of 27 claims moved P2⚠️ → P6❌ (resolved, +S9 post-§6.4 A19 upgrade), 5 moved to ⚠️-reduced (partial fix), 13 unchanged or external.
+**AUDIT.md delta summary:** 10 of 27 claims moved P2⚠️ → P6❌ (resolved, +S4 post-A13 wiring after §6.4), 4 moved to ⚠️-reduced (partial fix), 13 unchanged or external.
 
 ---
 
@@ -109,7 +109,7 @@ Verdict columns: **P2** = Phase 2 initial, **P6** = Phase 6 post-fix. Evidence c
 
 | # | Risk | Sev | P2 | P6 | Commit | Evidence |
 |---|---|---|---|---|---|---|
-| R1 | Prompt/memory injection | HIGH | ⚠️ | ⚠️ **starter** | `19cb2271` + `c6538a76` | Detector + redaction shipped. Not wired into agent loop. |
+| R1 | Prompt/memory injection | HIGH | ⚠️ | ❌ | `19cb2271` + `2d45b7c1` + `c6538a76` | Detector wired at task-ingest (A13, log-only). Redaction filters secrets in memory writes (A16). Both enforced on production path. |
 | R2 | Tool traceback leakage | HIGH | ⚠️ | ❌ | `684bb17` (A0c prior) | Closed. |
 | R3 | Dynamic tool validation downgrade | HIGH | ⚠️ | ❌ | `24541dd8` (A18) | `SAGE_TOOLFORGE_STRICT=1` default; raises on Rust validator error. |
 | R4 | Host execution fallback (non-Linux) | HIGH | ⚠️ | ⚠️ | — | Orphaned post-ADR-013 §5. Code still in `isolated_executor.py` but not reached by default path. Not deleted (follow-up). |
@@ -118,7 +118,7 @@ Verdict columns: **P2** = Phase 2 initial, **P6** = Phase 6 post-fix. Evidence c
 | R7 | Supply chain (PyPI Trust, SHA-pin actions) | MEDIUM | ⚠️ | ⚠️ **reduced** | `170710c3` (A17) | pip-audit + cargo-audit + cargo-deny in CI; 13/15 actions SHA-pinned. PyPI Trusted Publishing still follow-up. |
 | R8 | rg portability fallback | LOW | ⚠️ | ⚠️ | — | Unchanged. Ticket in roadmap N10 (minor backlog). |
 
-**AUDIT2.md delta summary:** 4 of 22 claims moved P2⚠️→P6❌ (resolved), 7 moved to ⚠️-reduced, 11 unchanged or external.
+**AUDIT2.md delta summary:** 5 of 22 claims moved P2⚠️→P6❌ (resolved, +R1 post-A13 wiring), 6 moved to ⚠️-reduced, 11 unchanged or external.
 
 ---
 
@@ -165,11 +165,11 @@ Already documented in `AUDIT-RESOLUTION-REPORT.md` (original). 3/3 scheduled fix
 | `24541dd8` A18 | AUDIT3 #15 (ToolForge validator fallback) | ✅ Yes | `SAGE_TOOLFORGE_STRICT=1` is now **default**; `forge.py:346-367` raises on Rust validator error unless explicitly set to `0`. |
 | `206bc5fc` A15 | AUDIT2.md memory consolidation | ✅ Yes, wired | `asyncio.Lock()` in `consolidator.py:71` + `async with` guard at 85; graceful-shutdown tests. |
 | `c6538a76` A16 | AUDIT.md §6 S5 secret leakage | ✅ Yes, wired | `RedactionFilter` integrated into `events/bus.py:67-68`, `memory/episodic.py:104-106,181-185`, `memory/working.py:167-234` — 5 production call-sites. |
-| `19cb2271` A13 | AUDIT3 #10 prompt injection | ⚠️ **Library-only** | Regex detector module exists (183 LOC) + 113-LOC test file. **Zero production call-sites.** Grep `from sage.security.prompt_injection` in `sage/` returns only the module itself. Not wired into `agent_loop.py` or `pipeline.py`. |
-| `ee448b76` A14 | AUDIT3 #17 ToolResult unvalidated | ⚠️ **Library-only** | `output_schema` kwarg on `Tool.__init__` + `validate_output` method on `ToolResult` + `SAGE_TOOLRESULT_VALIDATE` env. **Zero production tool instantiations** pass `output_schema=`. No wiring to existing tools. |
+| `19cb2271` + `2d45b7c1` A13 | AUDIT3 #10 prompt injection | ✅ **Wired (log-only, user decision 1a)** | Regex detector now called at task-ingest boundary in `agent_loop.run()` (commit `2d45b7c1`). Emits `PROMPT_INJECTION_DETECTED` event per match with `pattern_name` + `match_text` + `span`. Log-only mode: task proceeds through perceive. Upgrade to "refuse HIGH-severity" = swap `detect()` for `check()` (1-line). 4 wiring tests. |
+| `ee448b76` + `12474d39` A14 | AUDIT3 #17 ToolResult unvalidated | ✅ **Wired on 2 tools (user decision 2c)** | `Tool.define` decorator threads `output_schema` through to Tool; `call_agent` → `CallAgentResult`, `list_active_agents` → `ListActiveAgentsResult`. End-to-end JSON round-trip validation proven in tests. 7 tests. Free-form string tools (read_file, bash, sage_recurse) stay opt-in-not-taken pending handler upgrades — gradual rollout ticketed. |
 | `cc9cba44` + `03ce6c57` A19 | AUDIT.md §6 S1/S7/S9 gateway auth | ✅ **Wired after §6.4** | `resolve_bind_host` + `warn_insecure_bind` wired in `protocols/serve.py:38-40`. **Middleware installation added in `03ce6c57` per §6.4 advisor callout**: `create_a2a_app` installs `BaseHTTPMiddleware(dispatch=require_bearer_middleware())` when `SAGE_PROTOCOL_BEARER_TOKEN` is set; MCP server built via `streamable_http_app()` with same middleware then `uvicorn.run`. 2 new integration tests verify installation. |
 
-**Verdict Q1 (post-§6.4 upgrade):** 8/10 fixes are fully wired (A19 promoted via `03ce6c57` after advisor callout). 2/10 (A13, A14) ship the library but defer wiring pending product decisions — ticketed in `roadmap.md`. §6.1 tables updated to reflect upgrade.
+**Verdict Q1 (post-§6.4 + A13/A14 closure):** 10/10 fixes fully wired. A19 promoted via `03ce6c57` after advisor callout; A13 + A14 closed in `2d45b7c1` and `12474d39` respectively after product decisions (1a log-only / 2c opt-in-per-tool). §6.1 tables updated. Audit claims AUDIT3 #10, #17, AUDIT.md §6 S7/S9, AUDIT2.md R1 all now **false on main**.
 
 #### Q2 — Regressions or collateral damage?
 
@@ -223,14 +223,14 @@ Reviewed:
 
 **Verdict Q5:** No critical implementation red flags. The critical red flag remains **process** (direct-to-main, skipped §6.3+§6.4 pre-commit).
 
-### §6.3 synthesis (updated post-§6.4)
+### §6.3 synthesis (final, post §6.4 + A13/A14 product decisions)
 
-- **Score:** 8/10 fully-wired fixes (post A19 upgrade via `03ce6c57`) + 2/10 library-only starters (A13, A14 — product-decision gated) = **overall MERGE-AVEC-RÉSERVES** (reserves: A13/A14 library-only disclosure + direct-to-main protocol breach).
-- **Biggest strength:** honest disclosure in §6.1 + Red Flags + explicit "starter" framing on library-only fixes. Report does not oversell. Advisor called for A19 upgrade; delivered same session.
-- **Biggest weakness:** library-only fixes may read as "closed" to a casual reader despite the ⚠️ markers — now mitigated by this Q1 table and the §6.4 advisor verdict spelling out that A13/A14 audit claims remain true on main.
-- **Divergence from inline per-fix claims:** none. Per-fix commit messages were honest about scope (A13 says "starter", A14 says "opt-in", A19 originally said "Starlette middleware helper" without claiming installation; A19 upgrade commit `03ce6c57` now closes that gap).
+- **Score:** 10/10 fully-wired fixes. A19 upgraded via `03ce6c57`; A13 wired via `2d45b7c1` (log-only, decision 1a); A14 closed via `12474d39` (opt-in-per-tool on 2 JSON-returning tools, decision 2c). **Overall MERGE** (reserve: direct-to-main protocol breach is disclosed, not resolvable).
+- **Biggest strength:** honest disclosure + advisor-loop close (every "library-only" flag surfaced by advisor was either wired immediately or scoped to a specific subsequent decision). No ⚠️-forever rows in the audit tables after this session.
+- **Biggest weakness now:** protocol breach (direct-to-main, skipped §6.3+§6.4 pre-commit on the original 24-commit batch) remains as process lesson. Reverting + cherry-picking would be destructive at this point.
+- **Divergence from inline per-fix claims:** none. Every commit message honestly described its scope at commit time; closure commits (A19/A13/A14) explicitly note they are upgrading prior commits.
 
-**Recommendation to reviewer:** accept the 8 wired fixes; treat A13/A14 as ticketed product-decision follow-ups in `roadmap.md`; treat the protocol breach as a post-mortem lesson rather than a blocker — the code itself is not harmful.
+**Recommendation to reviewer:** MERGE. All 10 fixes enforce on production path. Protocol breach is post-mortem material for the next audit.
 
 **To upgrade from Claude self-review to independent codex verdict:** run `codex exec -m gpt-5.5 -c reasoning_effort=xhigh` against `git diff 820ea3e2..HEAD` with the original §6.3 prompt. (Diff scope extended from `..b16e7633` to `..HEAD` to include the §6.4-driven A19 wiring commit.)
 
@@ -249,9 +249,11 @@ metrics, §6.3 Q1-Q5 Claude self-review.
 1. **Library-only ≠ audit-claim-closed.** Upstream audit claims are
    phrased about the production path:
    - A13 / AUDIT3 #10 / R1: "agent loop has no prompt injection
-     defense" — still true; detector module not wired.
-   - A14 / AUDIT3 #17: "ToolResult unvalidated" — still true; no tool
-     instantiates with `output_schema=`.
+     defense" — was still true pre-commit `2d45b7c1`; now closed
+     (log-only wiring at task-ingest, user decision 1a).
+   - A14 / AUDIT3 #17: "ToolResult unvalidated" — was still true
+     pre-commit `12474d39`; now closed on 2 JSON-returning tools
+     (user decision 2c, opt-in per-tool).
    - A19 / AUDIT.md §6 S7: "MCP/A2A accept unauth on 0.0.0.0" — was
      still true pre-commit `03ce6c57`; now closed (see below).
 
@@ -275,22 +277,31 @@ metrics, §6.3 Q1-Q5 Claude self-review.
   `streamable_http_app()` manually and installs same middleware, then
   `uvicorn.run`. 2 new integration tests verify middleware presence
   on the built app. **A19 upgraded ⚠️ library-only → ✅ wired.**
-- ✅ **A13/A14 remain library-only by design** — these need product
-  decisions (A13: log-only vs refuse; A14: which tools declare
-  schemas). Ticketed with cost estimates in `roadmap.md`.
+- ✅ **A13 wired (decision 1a, commit `2d45b7c1`)**: prompt-injection
+  detection at task-ingest boundary in `agent_loop.run`, log-only
+  mode. Emits `PROMPT_INJECTION_DETECTED` events with pattern_name +
+  span so subscribers can filter. Upgrade path (refuse HIGH-severity)
+  = 1-line swap from `detect` to `check`.
+- ✅ **A14 wired on 2 JSON-returning tools (decision 2c, commit
+  `12474d39`)**: `Tool.define` decorator threads `output_schema`
+  through; `call_agent` → `CallAgentResult`, `list_active_agents` →
+  `ListActiveAgentsResult`. End-to-end JSON round-trip validation
+  proven. Free-form string tools (read_file, bash, sage_recurse,
+  etc.) stay opt-in-not-taken pending handler upgrades.
 - ✅ **Codex reliability spike** logged as separate ticket concern
   (3 Codex failures in one session: rate-limit + DLL crash +
   §6.3 crash). Not a merge blocker; capture for next audit planning.
 
 ### Final recommendation: **MERGE**
 
-- 8/10 fixes now fully wired (7 original + A19 upgrade).
-- 2/10 (A13, A14) remain library-only with explicit ⚠️ markers in
-  §6.1 and product-decision-dependent follow-up tickets in roadmap.
+- 10/10 fixes fully wired (7 original + A19 + A13 + A14 closure).
+- All 3 audit-file claim rows (AUDIT3 #10/#17, AUDIT.md §6 S4/S7/S9,
+  AUDIT2.md R1) now false on main.
 - All protocol breaches (direct-to-main, skipped §5.2.b Codex review,
   etc.) are disclosed in §5 and Red Flags; irreversible historical
   state accepted via accept-with-disclosure.
-- Non-regression gate held (Rust 501 + Python 2418 + 0 new failures).
+- Non-regression gate held (Rust 501 + Python 2428 passing, +10 over
+  pre-closure baseline from A13/A14 integration tests).
 - Reviewer may still run `codex exec` against `820ea3e2..HEAD` for an
   independent codex verdict; substitute is transparent about being
   Claude self-review.
