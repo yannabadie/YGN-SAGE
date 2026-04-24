@@ -112,9 +112,23 @@ class ToolRegistry:
         """Get usage stats for a tool. Returns default dict if unknown."""
         return self._usage.get(name, {"usage_count": 0, "success_count": 0, "source": "builtin"})
 
-    def mark_source(self, name: str, source: str) -> None:
+    def mark_source(
+        self,
+        name: str,
+        source: str,
+        approved_by: str | None = None,
+    ) -> None:
         """Mark the origin of a tool (builtin, forged, user)."""
         if name not in self._usage:
-            self._usage[name] = {"usage_count": 0, "success_count": 0, "source": source}
+            self._usage[name] = {
+                "usage_count": 0,
+                "success_count": 0,
+                "source": source,
+            }
         else:
             self._usage[name]["source"] = source
+
+        if source == "forged":
+            self._usage[name]["approved_by"] = approved_by
+        else:
+            self._usage[name].pop("approved_by", None)

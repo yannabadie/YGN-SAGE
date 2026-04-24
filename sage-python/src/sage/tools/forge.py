@@ -12,11 +12,11 @@ Research basis:
 from __future__ import annotations
 
 import ast
-import json
 import logging
+import os
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 from sage.tools.gap_detector import CreationTicket, GapDetector
 
@@ -26,6 +26,7 @@ log = logging.getLogger(__name__)
 MAX_CREATIONS_PER_RUN = 2
 # Maximum build loop rounds per ticket
 MAX_BUILD_ROUNDS = 3
+_APPROVE_ALL_WARNED = False
 
 _TOOL_GEN_PROMPT = """\
 You are a tool engineer. Create a Python tool that fills the following capability gap.
@@ -98,6 +99,9 @@ class ToolForge:
         Config for LLM calls.
     event_bus : EventBus, optional
         For emitting TOOL_FORGED events.
+    approval_callback : Callable[[str, str], bool], optional
+        HITL approval callback receiving ``(ticket_name, tool_spec_text)``.
+        ToolForge is unsafe without approval; set approval_callback in production.
     """
 
     def __init__(
@@ -106,11 +110,13 @@ class ToolForge:
         llm_provider: Any,
         llm_config: Any = None,
         event_bus: Any = None,
+        approval_callback: Callable[[str, str], bool] | None = None,
     ) -> None:
         self._registry = registry
         self._llm = llm_provider
         self._config = llm_config
         self._event_bus = event_bus
+        self._approval_callback = approval_callback
         self.gap_detector = GapDetector()
         self._creations_this_run = 0
 
@@ -136,11 +142,25 @@ class ToolForge:
                     MAX_CREATIONS_PER_RUN, len(tickets) - len(created),
                 )
                 break
-            name = await self._build_tool(ticket)
+            name = await self.process_ticket(ticket)
             if name:
                 created.append(name)
                 self._creations_this_run += 1
         return created
+
+    async def process_ticket(self, ticket: CreationTicket) -> str | None:
+        """Process one creation ticket through the build loop."""
+        if (
+            os.environ.get("SAGE_TOOLFORGE_REQUIRE_APPROVAL", "").strip() == "1"
+            and self._approval_callback is None
+            and os.environ.get("SAGE_TOOLFORGE_APPROVE_ALL", "").strip() != "1"
+        ):
+            raise RuntimeError(
+                "ToolForge approval required by "
+                "SAGE_TOOLFORGE_REQUIRE_APPROVAL=1; set the approval_callback "
+                "parameter on ToolForge/BuildLoop construction."
+            )
+        return await self._build_tool(ticket)
 
     async def _build_tool(self, ticket: CreationTicket) -> str | None:
         """Build loop: generate code+tests, validate, iterate (max 3 rounds).
@@ -204,7 +224,11 @@ class ToolForge:
 
             # Both gates passed — register the tool
             tool_name = self._extract_tool_name(code, ticket.tool_name_hint)
-            description = ticket.gap_description
+            tool_spec_text = self._format_tool_spec_text(code, tests)
+
+            approved, approved_by = self._approve_tool(ticket, tool_name, tool_spec_text)
+            if not approved:
+                return None
 
             try:
                 from sage.tools.meta import create_python_tool
@@ -218,7 +242,11 @@ class ToolForge:
 
                 # Track source in registry
                 if hasattr(self._registry, "mark_source"):
-                    self._registry.mark_source(tool_name, "forged")
+                    self._registry.mark_source(
+                        tool_name,
+                        "forged",
+                        approved_by=approved_by,
+                    )
 
                 self._emit("TOOL_FORGED", {
                     "name": tool_name,
@@ -240,6 +268,44 @@ class ToolForge:
             ticket.tool_name_hint, MAX_BUILD_ROUNDS,
         )
         return None
+
+    def _approve_tool(
+        self,
+        ticket: CreationTicket,
+        tool_name: str,
+        tool_spec_text: str,
+    ) -> tuple[bool, str | None]:
+        """Run the HITL approval gate for a validated generated tool."""
+        if os.environ.get("SAGE_TOOLFORGE_APPROVE_ALL", "").strip() == "1":
+            global _APPROVE_ALL_WARNED
+            if not _APPROVE_ALL_WARNED:
+                log.warning(
+                    "SAGE_TOOLFORGE_APPROVE_ALL=1; ToolForge HITL approval "
+                    "is bypassed for this process."
+                )
+                _APPROVE_ALL_WARNED = True
+            return True, "env:approve_all"
+
+        if self._approval_callback is None:
+            return True, None
+
+        ticket_name = getattr(ticket, "name", None) or ticket.tool_name_hint or tool_name
+        approved_by = getattr(self._approval_callback, "__name__", "callback")
+        allowed = self._approval_callback(ticket_name, tool_spec_text)
+        if not allowed:
+            log.info(
+                "ToolForge: approval denied for tool '%s' from ticket '%s'",
+                tool_name,
+                ticket_name,
+            )
+            return False, approved_by
+        return True, approved_by
+
+    @staticmethod
+    def _format_tool_spec_text(code: str, tests: str) -> str:
+        if not tests:
+            return code
+        return f"{code}\n\n# === Tests ===\n{tests}"
 
     @staticmethod
     def _sanitize_name(name: str) -> str:
