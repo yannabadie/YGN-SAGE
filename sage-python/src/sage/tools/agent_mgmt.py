@@ -4,10 +4,41 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel
+
 from sage.tools.base import Tool
 
 if TYPE_CHECKING:
     from sage.agent import Agent
+
+
+# A14 / AUDIT3 #17 — output schemas for JSON-returning tools. Opt-in
+# per-tool (user decision 2c, 2026-04-24). Callers validate via
+# ``result.validate_output(tool.output_schema)``; errors/non-JSON
+# strings fall through to `validate_output → None` (warn-silent) or
+# raise when SAGE_TOOLRESULT_VALIDATE=1.
+
+
+class CallAgentResult(BaseModel):
+    """Schema for ``call_agent`` JSON output on the success path."""
+
+    agent: str
+    status: str
+    result: str
+
+
+class AgentInfo(BaseModel):
+    """One entry inside ``list_active_agents`` output."""
+
+    name: str
+    tools: str | list[str]
+    steps_taken: int
+
+
+class ListActiveAgentsResult(BaseModel):
+    """Schema for ``list_active_agents`` JSON output."""
+
+    active_agents: list[AgentInfo]
 
 # Dynamic sub-agent creation and delegation
 @Tool.define(
@@ -76,7 +107,8 @@ async def create_agent(agent_name: str, role: str, instruction: str, tools: list
             "task_message": {"type": "string", "description": "The specific task or prompt for the sub-agent to execute."}
         },
         "required": ["agent_name", "task_message"]
-    }
+    },
+    output_schema=CallAgentResult,
 )
 async def call_agent(agent_name: str, task_message: str, agent_pool: dict = None) -> str:
     if agent_pool is None:
@@ -107,7 +139,8 @@ async def call_agent(agent_name: str, task_message: str, agent_pool: dict = None
     parameters={
         "type": "object",
         "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
-    }
+    },
+    output_schema=ListActiveAgentsResult,
 )
 async def list_active_agents(agent_pool: dict = None) -> str:
     if agent_pool is None:

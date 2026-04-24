@@ -128,11 +128,20 @@ class Tool:
         name: str,
         description: str,
         parameters: dict[str, Any],
+        output_schema: type["BaseModel"] | None = None,
     ) -> Callable[[Callable[..., Awaitable[str]]], Tool]:
-        """Decorator to define a tool from an async function."""
+        """Decorator to define a tool from an async function.
+
+        ``output_schema`` (AUDIT3 #17 / A14) threads through to the
+        resulting Tool so callers can invoke
+        ``result.validate_output(tool.output_schema)`` to get a typed
+        Pydantic instance. Only meaningful for tools whose handler
+        emits valid JSON — free-form string handlers should leave it
+        at None (opt-in per-tool policy, 2026-04-24).
+        """
 
         def decorator(func: Callable[..., Awaitable[str]]) -> Tool:
             spec = ToolDef(name=name, description=description, parameters=parameters)
-            return Tool(spec=spec, handler=func)
+            return Tool(spec=spec, handler=func, output_schema=output_schema)
 
         return decorator
