@@ -250,6 +250,140 @@ async def test_circuit_breaker_fires_on_pydantic_ai_rate_limit() -> None:
     assert recorded[0][0] == "deepseek"
 
 
+# ---------------------------------------------------------------------------
+# A8 Phase 2 (2026-04-24) — reasoning_content / ThinkingPart roundtrip
+# ---------------------------------------------------------------------------
+
+
+def test_thinking_roundtrips_both_directions() -> None:
+    """Message.thinking survives the PydanticAI translation both ways:
+
+    1. LLMResponse.thinking gets populated from ThinkingPart on incoming
+       ModelResponse.
+    2. On outgoing ModelRequest, Message.thinking is re-emitted as a
+       ThinkingPart so PydanticAI's MoonshotAIProvider /
+       DeepSeek-thinking profile serializes it back as
+       `reasoning_content`.
+
+    This closes the 4th-turn HTTP 400 class on kimi-k2.5/k2.6 and
+    (provisionally) deepseek-v4-pro. The provider profile ships the
+    `openai_chat_send_back_thinking_parts='field'` flag; the only thing
+    previously missing was SAGE's translation layer emitting
+    ThinkingPart at all.
+    """
+    from sage.llm.base import LLMResponse, Message, Role, ToolCall
+    from sage.providers.pydantic_ai_provider import (
+        _our_messages_to_pydantic,
+        _pydantic_response_to_ours,
+    )
+    try:
+        from pydantic_ai.messages import (
+            ModelResponse,
+            TextPart,
+            ThinkingPart,
+            ToolCallPart,
+        )
+    except ImportError:
+        pytest.skip("ThinkingPart not available in this pydantic-ai version")
+
+    # ── Direction 1: ModelResponse → LLMResponse ─────────────────────
+    pa_response = ModelResponse(
+        parts=[
+            ThinkingPart(content="Let me break this down step by step..."),
+            TextPart(content="The answer is 42."),
+            ToolCallPart(
+                tool_name="calculate",
+                args={"x": 1},
+                tool_call_id="call_0",
+            ),
+        ]
+    )
+    ours = _pydantic_response_to_ours(
+        pa_response,
+        model_name="kimi-k2.6",
+        provider_name="kimi",
+        model_id="kimi-k2.6",
+    )
+    assert ours.thinking == "Let me break this down step by step...", (
+        "ThinkingPart.content must be captured into LLMResponse.thinking"
+    )
+    assert ours.content == "The answer is 42."
+    assert len(ours.tool_calls) == 1
+
+    # ── Direction 2: Message → ModelRequest/Response ────────────────
+    # Build a conversation where the assistant's prior turn contained
+    # reasoning_content. The outgoing translation must re-emit that as
+    # a ThinkingPart in the ModelResponse.
+    messages = [
+        Message(role=Role.USER, content="Solve this"),
+        Message(
+            role=Role.ASSISTANT,
+            content="",
+            tool_calls=[ToolCall(id="call_0", name="calculate", arguments={"x": 1})],
+            thinking="Let me break this down step by step...",
+        ),
+        Message(
+            role=Role.TOOL,
+            content="1",
+            tool_call_id="call_0",
+            name="calculate",
+        ),
+        Message(role=Role.USER, content="Good, continue"),
+    ]
+    pa_messages = _our_messages_to_pydantic(messages)
+
+    # Locate the ModelResponse we emitted for the assistant turn.
+    assistant_responses = [m for m in pa_messages if type(m).__name__ == "ModelResponse"]
+    assert len(assistant_responses) == 1, (
+        f"expected exactly one ModelResponse for the assistant turn; "
+        f"got {len(assistant_responses)}"
+    )
+    parts = assistant_responses[0].parts
+    part_types = [type(p).__name__ for p in parts]
+    assert "ThinkingPart" in part_types, (
+        "A8 Phase 2: ThinkingPart MUST appear in the outgoing "
+        "ModelResponse when Message.thinking is set. Without it, "
+        "PydanticAI's openai_chat_send_back_thinking_parts='field' "
+        "has nothing to serialize into reasoning_content and "
+        "Moonshot/DeepSeek reject the 4th tool-call turn."
+    )
+    # Ordering: ThinkingPart must precede TextPart + ToolCallPart so
+    # the OpenAI-compat serializer puts reasoning_content before
+    # content, matching Moonshot's documented streaming convention.
+    thinking_idx = part_types.index("ThinkingPart")
+    for later_kind in ("TextPart", "ToolCallPart"):
+        if later_kind in part_types:
+            assert part_types.index(later_kind) > thinking_idx, (
+                f"ThinkingPart must precede {later_kind} in the "
+                f"ModelResponse parts list; got order {part_types}"
+            )
+    thinking_part = parts[thinking_idx]
+    assert getattr(thinking_part, "content", "") == (
+        "Let me break this down step by step..."
+    )
+
+
+def test_thinking_empty_string_does_not_emit_thinking_part() -> None:
+    """Non-thinking models produce ``thinking=""``; in that case the
+    outgoing translation must NOT emit a spurious empty ThinkingPart.
+    Prevents adding junk ``reasoning_content`` to requests against
+    non-thinking providers (gpt-5.x, gemini, deepseek-v4-flash, etc.)."""
+    from sage.llm.base import Message, Role
+    from sage.providers.pydantic_ai_provider import _our_messages_to_pydantic
+
+    messages = [
+        Message(role=Role.USER, content="Hi"),
+        Message(role=Role.ASSISTANT, content="Hello", thinking=""),
+    ]
+    pa_messages = _our_messages_to_pydantic(messages)
+    responses = [m for m in pa_messages if type(m).__name__ == "ModelResponse"]
+    part_types = [type(p).__name__ for p in responses[0].parts]
+    assert "ThinkingPart" not in part_types, (
+        "empty thinking must NOT emit a ThinkingPart (non-thinking "
+        "providers would receive spurious reasoning_content)"
+    )
+
+
 def test_kimi_k2_6_supports_tools_is_false() -> None:
     """A8 migration (2026-04-24): kimi-k2.5 → kimi-k2.6. Originally
     F9 (2026-04-19): kimi-k2.5 is a thinking-mode model requiring

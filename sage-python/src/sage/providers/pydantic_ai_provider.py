@@ -201,6 +201,17 @@ def _our_messages_to_pydantic(messages: list[Message]) -> list[Any]:
         ToolReturnPart,
         UserPromptPart,
     )
+    # A8 Phase 2 (2026-04-24): ThinkingPart may not exist on older
+    # pydantic-ai versions — degrade gracefully. When absent, the
+    # `msg.thinking` field simply can't round-trip, which reproduces
+    # the pre-fix behaviour (thinking-mode models still 400 on
+    # multi-turn tool calls, but non-thinking models keep working).
+    try:
+        from pydantic_ai.messages import ThinkingPart  # type: ignore[attr-defined]
+        _HAS_THINKING_PART = True
+    except ImportError:
+        ThinkingPart = None  # type: ignore[assignment,misc]
+        _HAS_THINKING_PART = False
 
     out: list[Any] = []
     # We bucket consecutive user/tool parts into a single ModelRequest,
@@ -236,6 +247,19 @@ def _our_messages_to_pydantic(messages: list[Message]) -> list[Any]:
         if msg.role == Role.ASSISTANT:
             _flush_request()
             response_parts: list[Any] = []
+            # A8 Phase 2 (2026-04-24): ThinkingPart MUST be emitted
+            # before TextPart/ToolCallPart so PydanticAI's openai
+            # model profile (which sets
+            # `openai_chat_send_back_thinking_parts='field'` for
+            # Moonshot/DeepSeek-thinking) serializes it back as
+            # `reasoning_content` on the assistant message. Order is
+            # required by Moonshot's API spec — reasoning_content
+            # precedes content in streamed deltas, and reconstructed
+            # non-streamed messages follow the same convention.
+            # Without this, kimi-k2.5/k2.6 + deepseek-v4-pro reject
+            # the 4th+ multi-turn tool call with HTTP 400.
+            if msg.thinking and _HAS_THINKING_PART:
+                response_parts.append(ThinkingPart(content=msg.thinking))
             if msg.content:
                 response_parts.append(TextPart(content=msg.content))
             for tc in msg.tool_calls or []:
@@ -267,6 +291,7 @@ def _pydantic_response_to_ours(
     """Translate Pydantic AI ModelResponse → our LLMResponse."""
     content_parts: list[str] = []
     tool_calls: list[ToolCall] = []
+    thinking_parts: list[str] = []
 
     for part in getattr(response, "parts", []) or []:
         part_type = type(part).__name__
@@ -287,7 +312,12 @@ def _pydantic_response_to_ours(
                     arguments=dict(args or {}),
                 )
             )
-        # ThinkingPart is dropped — our LLMResponse has no thinking field
+        elif part_type == "ThinkingPart":
+            # A8 Phase 2 (2026-04-24): preserve reasoning_content /
+            # ThinkingPart so the next turn can re-emit it. Required
+            # for Moonshot kimi-k2.5/k2.6 + DeepSeek v4-pro multi-turn
+            # tool calling. See Message.thinking contract.
+            thinking_parts.append(getattr(part, "content", "") or "")
 
     usage: dict[str, int | float] = {}
     req_usage = getattr(response, "usage", None)
@@ -308,6 +338,7 @@ def _pydantic_response_to_ours(
         usage=usage or None,  # type: ignore[arg-type]
         model=model_name,
         stop_reason=getattr(response, "finish_reason", None),
+        thinking="".join(thinking_parts),
     )
 
 

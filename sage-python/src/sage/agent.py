@@ -150,16 +150,24 @@ class Agent:
                 if not response.tool_calls:
                     self.result = response.content
                     self._messages.append(
-                        Message(role=Role.ASSISTANT, content=response.content)
+                        Message(
+                            role=Role.ASSISTANT,
+                            content=response.content,
+                            thinking=getattr(response, "thinking", "") or "",
+                        )
                     )
                     break
 
-                # Add assistant message with tool calls
+                # Add assistant message with tool calls.
+                # A8 Phase 2 (2026-04-24): thinking passthrough for
+                # Moonshot/DeepSeek multi-turn tool-call compatibility.
+                # See Message.thinking contract in sage/llm/base.py.
                 self._messages.append(
                     Message(
                         role=Role.ASSISTANT,
                         content=response.content,
                         tool_calls=response.tool_calls or None,
+                        thinking=getattr(response, "thinking", "") or "",
                     )
                 )
 

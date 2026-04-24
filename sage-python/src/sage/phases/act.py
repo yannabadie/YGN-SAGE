@@ -198,7 +198,14 @@ async def act(
     if brake:
         log.info("CGRS self-brake triggered -- stopping reasoning loop.")
         loop.working_memory.add_event("ASSISTANT", content)
-        messages.append(Message(role=Role.ASSISTANT, content=content))
+        # A8 Phase 2 (2026-04-24): propagate thinking onto the Message.
+        messages.append(
+            Message(
+                role=Role.ASSISTANT,
+                content=content,
+                thinking=getattr(response, "thinking", "") or "",
+            )
+        )
         return _ActResult(content=content, result_text=content, loop_action="break")
 
     loop.working_memory.add_event("ASSISTANT", content)
@@ -336,16 +343,35 @@ async def act(
 
     # No tool calls -> final answer
     if not response.tool_calls:
-        messages.append(Message(role=Role.ASSISTANT, content=content))
+        # A8 Phase 2 (2026-04-24): propagate thinking even on the
+        # final turn — downstream consumers (tests, bench telemetry)
+        # may still inspect it. Cheap (empty string on non-thinking).
+        messages.append(
+            Message(
+                role=Role.ASSISTANT,
+                content=content,
+                thinking=getattr(response, "thinking", "") or "",
+            )
+        )
         return _ActResult(content=content, result_text=content,
                           loop_action="break", has_tool_calls=False)
 
     # === Execute tools ===
+    # A8 Phase 2 (2026-04-24): propagate reasoning_content /
+    # ThinkingPart onto the assistant Message so the next turn's
+    # outgoing ModelRequest carries it back to the provider.
+    # Moonshot (kimi-k2.5/k2.6) and DeepSeek (v4-pro) require every
+    # prior assistant-with-tool-calls message in history to include
+    # reasoning_content, or they reject the 4th+ tool-call turn with
+    # HTTP 400. The PydanticAI wrapper in providers/pydantic_ai_provider
+    # translates this Message.thinking → ThinkingPart → reasoning_content
+    # automatically once the field is populated here.
     messages.append(
         Message(
             role=Role.ASSISTANT,
             content=content,
             tool_calls=response.tool_calls or None,
+            thinking=getattr(response, "thinking", "") or "",
         )
     )
     # Telemetry — counters previously declared on loop but never incremented.

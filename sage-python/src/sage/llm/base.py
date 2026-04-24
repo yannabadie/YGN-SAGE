@@ -21,6 +21,17 @@ class Message:
     tool_call_id: str | None = None
     name: str | None = None
     tool_calls: list[ToolCall] | None = None
+    # A8 Phase 2 (2026-04-24): thinking-mode reasoning text. Set on
+    # assistant messages when the underlying provider returns a
+    # `reasoning_content` / ThinkingPart (kimi-k2.5/k2.6,
+    # deepseek-v4-pro, any future thinking-enabled model). The
+    # assistant's subsequent turn MUST re-serialize this back to the
+    # provider or Moonshot/DeepSeek will reject the request with
+    # HTTP 400 "thinking is enabled but reasoning_content is missing
+    # in assistant tool call message at index N". Empty string means
+    # either the model wasn't a thinking model OR thinking was
+    # explicitly disabled; both are benign.
+    thinking: str = ""
 
 
 @dataclass
@@ -44,6 +55,13 @@ class LLMResponse:
     usage: dict[str, int] | None = None
     model: str | None = None
     stop_reason: str | None = None
+    # A8 Phase 2 (2026-04-24): thinking-mode reasoning text from the
+    # provider's response (Moonshot `reasoning_content`, PydanticAI
+    # ThinkingPart, DeepSeek v4-pro thinking-mode). Callers that
+    # construct an assistant `Message` from this response MUST copy
+    # `thinking` onto the Message so it round-trips on the next turn.
+    # See Message.thinking for the full contract.
+    thinking: str = ""
 
 
 @dataclass
