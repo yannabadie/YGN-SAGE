@@ -21,6 +21,7 @@ class CostTracker:
 
     budget_usd: float = 0.0
     _spent: dict[str, float] = field(default_factory=dict, repr=False)
+    _spend_seq: int = field(default=0, init=False, repr=False)
 
     # ------------------------------------------------------------------
     # Recording
@@ -34,6 +35,12 @@ class CostTracker:
         """
         cost_usd = max(0.0, cost_usd)
         self._spent[node_id] = self._spent.get(node_id, 0.0) + cost_usd
+
+    def record_spend(self, cost_usd: float) -> None:
+        """Record an unkeyed spend event."""
+        node_id = f"spend-{self._spend_seq}"
+        self._spend_seq += 1
+        self.record(node_id, cost_usd)
 
     # ------------------------------------------------------------------
     # Queries

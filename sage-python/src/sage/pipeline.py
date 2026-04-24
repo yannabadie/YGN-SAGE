@@ -13,6 +13,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from sage.contracts.cost_tracker import CostTracker
+from sage.events import (
+    EXECUTE_BUDGET_EXCEEDED,
+    EXECUTE_HALTED_UNVERIFIED,
+    EXECUTE_UNVERIFIED,
+)
 
 from sage.pipeline_stages import (
     _infer_domain,
@@ -32,9 +37,6 @@ except ImportError:
 
 log = logging.getLogger(__name__)
 
-EXECUTE_UNVERIFIED = "EXECUTE_UNVERIFIED"
-EXECUTE_HALTED_UNVERIFIED = "EXECUTE_HALTED_UNVERIFIED"
-EXECUTE_BUDGET_EXCEEDED = "EXECUTE_BUDGET_EXCEEDED"
 BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
 
 

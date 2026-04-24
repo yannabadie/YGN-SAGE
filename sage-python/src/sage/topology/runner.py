@@ -138,7 +138,7 @@ class TopologyRunner:
         if self._cost_tracker is None:
             return
         node_cost = float(self._node_costs.pop(node_idx, 0.0) or 0.0)
-        self._cost_tracker.record(str(node_idx), node_cost)
+        self._cost_tracker.record_spend(node_cost)
 
     @staticmethod
     def _response_cost_usd(response: Any) -> float:
