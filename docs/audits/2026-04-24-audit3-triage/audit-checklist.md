@@ -25,15 +25,15 @@ Verdict legend: ✅ confirmed · ⚠️ partial · ❌ infirmed · 🔍 not veri
 | 12 | "Cost explosion: no cost caps or budget-aware routing documented" | secu | §6 | §6 | ⚠️ **partial — budget threading exists, hard caps don't** | `sage-core/src/routing/model_assigner.rs:176` threads `budget_usd` + skips models over remaining budget (BUDGET_EPSILON). `sage-python/src/sage/contracts/cost_tracker.py` tracks cumulative spend with `is_over_budget`. BUT: default `budget_usd=0` means unlimited; no pipeline-level abort on exceeded budget. Runtime check exists but the enforcement loop isn't wired to short-circuit task execution. |
 | 13 | "Memory poisoning: adversarial inputs flood S-MMU, degrading retrieval" | secu | §6 | §6 | ⚠️ **partial** | 5-signal composite write gate exists (`CompositeWriteGate`, Rust) with multi-signal scoring. No anomaly-detection layer for adversarial-pattern detection on top. Claim is conceptual — no demonstrated attack path. |
 | 14 | "Provider failover cascade: circuit breaker triggers mass fallback, latency spike" | secu | §6 | §6 | ⚠️ **partial** | TTL'd exclusion (300s re-probe, commit `3148667`) + `FrugalGPT` quality cascade. No explicit backpressure / request queuing. Under sustained high-failure rate, could cascade. |
-| 15 | "Missing invariants: DAG acyclicity at runtime" | archi | §7 | §7 | 🔍 **not verifiable in-session** | Needs inspection of `TopologyGraph::try_add_edge` — does it reject cycles or defer to post-hoc check? |
-| 16 | "Missing: context window bounds per node" | archi | §7 | §7 | 🔍 **not verifiable in-session** | Need to check `TopologyNode.max_context_tokens` or equivalent. |
+| 15 | "Missing invariants: DAG acyclicity at runtime" | archi | §7 | §7 | ✅ **confirmed-enforced (post-inspection)** | `try_add_edge` at `topology_graph.rs:631` doesn't individually reject cycles, BUT `HybridVerifier::verify` is invoked after every mutation/generation (`engine.rs:490,821,886`) and rejects cycles via `is_cyclic_directed` (`verifier.rs:216`). `is_acyclic()` + `has_cycles()` + `try_topological_sort()` exist as runtime checks. Cycles can be added transiently; cyclic topologies never pass the verifier and never execute. |
+| 16 | "Missing: context window bounds per node" | archi | §7 | §7 | ✅ **confirmed-enforced (post-inspection)** | `runner.py:130-158` `_context_budget_per_predecessor` reads `context_window` from the node's model card (ModelCard field, `model_card.rs:139`), reserves 30% for system+task, divides 70%*context_window*4chars across predecessors. `runner.py:929-958` gates input size against `context_window * 0.85` with truncation fallback. Bounds derive from ModelCard per-model, not overridable per-node — good enough for current models (128K–1M). |
 | 17 | "Missing: tool I/O schema compliance" | secu | §7 | §7 | ⚠️ **partial** | Tools have schema (`ToolDef.parameters` JSON schema). LLM response-side validation is looser. |
-| 18 | "Missing: controller decision monotonicity (prevent upgrade↔prune oscillation)" | archi | §7 | §7 | 🔍 **not verifiable in-session** | Rust `RustTopologyController` has state machine; need to inspect for cycle detection. |
+| 18 | "Missing: controller decision monotonicity (prevent upgrade↔prune oscillation)" | archi | §7 | §7 | ✅ **confirmed-enforced (post-inspection)** | `RustTopologyController` (`controller.rs:158-184`) uses increment-only counters (`node_retries`, `reroute_count`, `spawn_count`, `gate_loops`) with hard caps (`MAX_RETRIES=2`, `MAX_REROUTES=1`, `MAX_SPAWNS=3`, `MAX_GATE_TURNS=2`). No decrement paths in any per-path primitive. Upgrade→prune on same node is structurally impossible — pruned nodes are removed from the graph. No explicit history-based oscillation detector, but increment+cap semantics make oscillation bounded. |
 | 19 | "No OpenTelemetry or structured distributed tracing" | observability | §4 | §4 | ✅ **confirmed** | Grep: zero hits for `opentelemetry\|OpenTelemetry\|otel` in `sage-python/src/` or `sage-core/src/`. EventBus is in-process. Ticketed as B1 in roadmap. |
 | 20 | "No deterministic replay / trace serialization" | observability | §4 | §4 | ✅ **confirmed** | No `replay_trace()` CLI or trace file format. Ticketed as B2 in roadmap. |
 | 21 | "Heuristic thresholds (quality>0.7, <0.3) without calibration intervals" | archi | `TopologyController` | §4 | ⚠️ **partial** | Per CLAUDE.md Directive #2: thresholds documented as "calibrated initial values, subject to ablation". Labels acknowledge the issue; ablation sweep ticketed. Not "banned" per directive. |
 | 22 | "Dynamic tool synthesis (ToolForge) without permission boundaries or HITL" | secu | `sage-python/src/sage/tools/forge.py` | §4 | ✅ **confirmed** | Same as claim #11. No HITL approval gate on `BuildLoop`. |
-| 23 | "Memory consolidation every 10 steps — blocking? async? SQLite lock contention?" | perf | §4 | §4 | 🔍 **not verifiable in-session** | Need inspection of consolidation call path + lock-wait metrics. |
+| 23 | "Memory consolidation every 10 steps — blocking? async? SQLite lock contention?" | perf | §4 | §4 | ⚠️ **partial (post-inspection) — blocking but bounded** | `agent_loop.py:313-330` `_maybe_run_consolidation` **awaits** `consolidator.consolidate()` — blocks the agent loop for the duration of one batch pass. Not fire-and-forget. Batch size capped at `CONSOLIDATION_BATCH_SIZE` (constants.py). Triggered every 10 steps via `_consolidation_steps_total % 10 == 0`. Exceptions caught → logged at `.debug`, non-fatal. SQLite lock contention only emerges under multi-producer scenarios (not current default single-agent-loop path); aiosqlite surfaces locks as async exceptions, not deadlocks. Performance concern valid; correctness OK. |
 | 24 | "PyO3 boundary fragility: GIL contention, error translation, lifecycle" | perf | §4 | §4 | 🔍 **partial** | Ticketed as B9 (per-run immutable context refactor) in roadmap. Concrete call-path tests would verify. |
 | 25 | "Rename LtlVerifier → GraphPropertyChecker" (top-10 #3) | doc | §10 | §10 | = claim #8 |
 | 26 | "Hard cost caps + budget-aware routing" (top-10 #2) | secu | §10 | §10 | = claim #12 |
@@ -48,12 +48,19 @@ Verdict legend: ✅ confirmed · ⚠️ partial · ❌ infirmed · 🔍 not veri
 ## Deduplication summary
 
 31 distinct assertions after removing duplicates across §3/§6/§7/§10.
-- **✅ confirmed:** 8 (claims 1, 3, 4, 8, 10, 11, 19, 20)
-- **⚠️ partial:** 8 (claims 5, 6, 9, 12, 13, 14, 17, 21, 30, 33)
-- **🔍 not verifiable:** 5 (claims 2, 7, 15, 16, 18, 23)
+
+**Initial (Phase 1-2, in-session only):**
+- ✅ confirmed: 8 · ⚠️ partial: 8 · 🔍 not verifiable: 6 · ❌ infirmed: 0 · 🚩 false-positive: 0
+
+**Post-Phase-3 follow-up inspection (2026-04-24, 4 🔍 items re-triaged):**
+- **✅ confirmed:** 11 (claims 1, 3, 4, 8, 10, 11, 15, 16, 18, 19, 20) — **+3 flipped from 🔍: 15 DAG acyclicity, 16 context bounds, 18 monotonicity**
+- **⚠️ partial:** 9 (claims 5, 6, 9, 12, 13, 14, 17, 21, 23, 30, 33) — **+1 flipped from 🔍: 23 consolidation (blocking but bounded)**
+- **🔍 not verifiable:** 2 (claims 2, 7) — both external-reproducibility (benchmark publication + external paper ablation)
 - **❌ infirmed:** 0
 - **🚩 false-positive:** 0
-- (Some rows above are cross-refs, not new verdicts; actual unique-verdict count = 24)
+- (Some rows above are cross-refs, not new verdicts; actual unique-verdict count = 22)
+
+**Net:** 3 🔍 items confirmed-enforced via targeted code inspection (15/16/18 — audit §7 "missing invariants" is superseded by post-inspection evidence that the Rust side already enforces these). Only claim 23 retains a residual concern (blocking consolidation pass), and only 2 items remain genuinely unreproducible from this repo alone (external-benchmark claims).
 
 ## What's actionable in the short term (≤ 2 weeks per AUDIT3 §9)
 
@@ -100,10 +107,16 @@ don't need new actions from this triage.
 
 - Claims 2, 7 (benchmark reproducibility) — require external dataset
   publication; ticketed, not actionable without multi-day effort.
-- Claims 15, 16, 18, 23 (🔍 items) — need targeted code inspection
-  that exceeds the 60-min Phase 1-2 budget; defer to a follow-up
-  triage.
 - Claim 14 (provider failover cascade) — conceptual risk with no
   demonstrated attack path; low priority vs claims 10/11/12.
+
+## Phase-3 follow-up inspection (previously 🔍, now re-triaged)
+
+- Claim 15 (DAG acyclicity): ✅ enforced via `HybridVerifier` post-generation.
+- Claim 16 (context-window bounds): ✅ enforced via `_context_budget_per_predecessor` + `runner.py:929` gate.
+- Claim 18 (monotonicity): ✅ enforced via Rust controller's increment-only counters + hard caps.
+- Claim 23 (consolidation): ⚠️ partial — blocking but bounded. Performance watch-item, not a correctness bug.
+
+No new action tickets needed from the 4 Phase-3 inspections. The "missing invariants" framing in AUDIT3 §7 for 15/16/18 is superseded — the invariants are enforced, the audit just couldn't locate the enforcement mechanism from static reading.
 
 ## Phase 3 deliverable: see `plan.md` (to be written next)
