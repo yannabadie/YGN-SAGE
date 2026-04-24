@@ -27,6 +27,13 @@ MAX_CREATIONS_PER_RUN = 2
 # Maximum build loop rounds per ticket
 MAX_BUILD_ROUNDS = 3
 _APPROVE_ALL_WARNED = False
+_AST_FALLBACK_WARNED = False
+
+
+def _is_toolforge_strict() -> bool:
+    """Return whether ToolForge must fail closed on Rust validator errors."""
+    value = os.environ.get("SAGE_TOOLFORGE_STRICT", "1").strip().lower()
+    return value not in {"0", "false", "no", "off"}
 
 _TOOL_GEN_PROMPT = """\
 You are a tool engineer. Create a Python tool that fills the following capability gap.
@@ -336,7 +343,7 @@ class ToolForge:
         """Gate 1: Validate Python code syntax and security.
 
         Tries Rust ToolExecutor first (tree-sitter + blocklist),
-        falls back to ast.parse().
+        falls back to ast.parse() only when SAGE_TOOLFORGE_STRICT=0.
         """
         # Try Rust validator first
         try:
@@ -346,15 +353,26 @@ class ToolForge:
             if not result.valid:
                 return False, "; ".join(result.errors)
             return True, ""
-        except (ImportError, Exception):
-            pass
+        except Exception as exc:
+            if _is_toolforge_strict():
+                raise RuntimeError(
+                    "Rust validator failed and SAGE_TOOLFORGE_STRICT=1 is set; "
+                    "refusing to downgrade to ast.parse-only validation. Set "
+                    "SAGE_TOOLFORGE_STRICT=0 to allow fallback (UNSAFE)."
+                ) from exc
+
+            global _AST_FALLBACK_WARNED
+            if not _AST_FALLBACK_WARNED:
+                log.warning(
+                    "Rust validator failed and SAGE_TOOLFORGE_STRICT=0; "
+                    "falling back to ast.parse-only validation (UNSAFE): %s",
+                    exc,
+                )
+                _AST_FALLBACK_WARNED = True
 
         # Fallback: Python ast.parse
-        try:
-            ast.parse(code, mode="exec")
-            return True, ""
-        except SyntaxError as exc:
-            return False, f"SyntaxError: {exc.msg} (line {exc.lineno})"
+        ast.parse(code, mode="exec")
+        return True, ""
 
     @staticmethod
     async def _run_tests(code: str, tests: str) -> tuple[bool, str]:
