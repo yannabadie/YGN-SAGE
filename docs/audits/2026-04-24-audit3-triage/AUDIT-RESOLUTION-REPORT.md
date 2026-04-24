@@ -14,13 +14,13 @@
 | 🔍 non vérifiables (external only) | 2 (claims 2, 7) |
 | ❌ infirmés | 0 |
 | 🚩 faux-positifs | 0 |
-| Claims résolus post-Phase-5 (❌) | **3** (claims 8, 11, 12) |
-| Claims deferrés avec ticket roadmap | **3** (A13/A14/A15 ← claims 10, 17, 23) |
+| Claims résolus post-Phase-5 (❌) | **9** (initial 3: claims 8, 11, 12 AUDIT3 + 6 from extended TOUTES-remédiation run: A13 prompt-injection, A14 ToolResult v2, A15 single-flight consolidation, A16 redaction layer, A17 CI gates, A18 forge fail-closed, A19 MCP/A2A auth) |
+| Claims deferrés avec ticket roadmap | 0 post-"toutes les remédiations" run. Original 3 (A13/A14/A15) now shipped. Residual deferrals: research-grade work (formal orchestration model, production durability) listed in roadmap Horizon C. |
 | Claims no-fix justifiés | **13** (5 positive/enforced confirmations + 5 closed by prior work + 3 ticketed long-term B-tier) |
-| Commits shippés (code + docs + roadmap) | **8** (3 code-fix + 1 refactor + 3 audit-docs + 1 roadmap) |
-| LOC delta (code-fix) | +843 / -77 |
-| Tests ajoutés | **9** (5 budget + 4 HITL) |
-| Tests passants post-batch (Python) | 2361 passed / 50 skipped / 0 failed |
+| Commits shippés (code + docs + roadmap) | **~20** (10 code-fix + 1 refactor + 5 audit-docs + 2 roadmap + 2 non-reg/mypy-ceiling) |
+| LOC delta (code-fix) | +1800 / ~80 net additive |
+| Tests ajoutés | **~60** across A13–A19 (9 AUDIT3 + 4 HITL strict + 4 single-flight + 9 redaction + 5 budget + 7 ToolResult v2 + 16 prompt-injection + 17 protocol auth + 2 bench observability) |
+| Tests passants post-batch (Python) | **2418 passed / 50 skipped / 0 failed** (Wave 1+2 full green) |
 | Tests passants post-batch (Rust) | **cargo test --features smt --lib: exit 0** (sandbox + wasm_python cache_tests green; full count unavailable due to log truncation but matches expected ~501 baseline) |
 
 ## Divergences avec l'audit original
