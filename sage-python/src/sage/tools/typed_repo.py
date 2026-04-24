@@ -340,6 +340,17 @@ def _build_search_repo_tool() -> Tool:
             pattern = re.compile(query if regex else re.escape(query))
         except re.error as exc:
             return f"[ERROR] invalid regex: {exc}"
+        # A10 (2026-04-24): skip files >1 MiB and catch MemoryError so
+        # one pathological file doesn't abort the whole scan. Observed
+        # on astropy-14182 in the 2026-04-24 A7 verification smoke:
+        # `p.read_text(...)` exhausted memory on a big data file and
+        # raised MemoryError, which propagated up as a tool error →
+        # agent retried → D8 stall → gen-timeout. Size cap avoids the
+        # allocation entirely; per-file exception guard handles any
+        # remaining pathology. Source files for modern code are
+        # comfortably under 1 MiB; anything larger is almost certainly
+        # not what `search_repo` wants to grep through.
+        _MAX_FILE_BYTES = 1_048_576  # 1 MiB
         hits: list[str] = []
         for p in resolved.rglob("*"):
             if len(hits) >= cap:
@@ -347,8 +358,10 @@ def _build_search_repo_tool() -> Tool:
             if not p.is_file():
                 continue
             try:
+                if p.stat().st_size > _MAX_FILE_BYTES:
+                    continue
                 text = p.read_text(encoding="utf-8", errors="ignore")
-            except OSError:
+            except (OSError, MemoryError):
                 continue
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if len(hits) >= cap:

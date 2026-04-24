@@ -262,6 +262,42 @@ async def test_search_repo_invalid_regex(tools_by_name, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_repo_skips_large_files(tools_by_name, sandbox, monkeypatch):
+    """A10 (2026-04-24): files larger than ~1 MiB are skipped in the
+    Python fallback to avoid MemoryError on pathological repos
+    (observed on astropy-14182 during the 2026-04-24 A7 verification
+    smoke). Match hits inside smaller files are still returned; the
+    large file is simply invisible to the scan.
+    """
+    import shutil
+
+    real_which = shutil.which
+    monkeypatch.setattr(
+        "sage.tools.typed_repo.shutil.which",
+        lambda name: None if name == "rg" else real_which(name),
+    )
+    # 1.5 MiB of content containing the target string. Should be skipped.
+    big = sandbox / "huge.bin"
+    big.write_bytes(b"needle_in_a_giant_file\n" * 70_000)
+    # A small file that also matches. Should be found.
+    small = sandbox / "src" / "small_match.py"
+    small.write_text("needle_in_a_giant_file found here\n", encoding="utf-8")
+
+    result = await tools_by_name["search_repo"].execute(
+        {"query": "needle_in_a_giant_file"}
+    )
+    # Path separator differs between Windows (\) and Unix (/); compare
+    # normalized form to avoid platform-dependent brittleness.
+    normalized = result.output.replace("\\", "/")
+    assert "src/small_match.py" in normalized, (
+        "small matching file should be returned"
+    )
+    assert "huge.bin" not in normalized, (
+        "A10: large files (>1 MiB) must be skipped to avoid MemoryError"
+    )
+
+
+@pytest.mark.asyncio
 async def test_search_repo_caps_results(tools_by_name, sandbox, monkeypatch):
     """Force the Python fallback (rg might find the pattern too fast)
     and seed many hits to trigger the cap."""

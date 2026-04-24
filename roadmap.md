@@ -241,6 +241,34 @@ wrapper. The A8 Phase 1 change is compatible with either future
 resolution (wrapper fix OR thinking-disable plumbing); the cards.toml
 flag gates tool use until Phase 2 lands.
 
+### A10. search_repo size-cap against MemoryError — ✅ SHIPPED 2026-04-24
+**Why:** astropy-14182's post-A7 `Generation timed out` failure
+(investigated 2026-04-24) was caused by `search_repo`'s Python
+fallback calling `p.read_text(encoding="utf-8", errors="ignore")` on
+every file in the repo — including a big data file that exhausted
+process memory with `MemoryError`. The exception propagated up to
+the agent loop as a tool error; the agent retried; D8 stall cap
+fired; task timed out with 0 chars. Orthogonal to A7 (kimi fast-
+abort) — this is a large-file-in-repo class.
+
+**Action taken:**
+- `sage-python/src/sage/tools/typed_repo.py:_build_search_repo_tool`
+  Python fallback path now: (1) `_MAX_FILE_BYTES = 1 MiB` size gate
+  via `p.stat().st_size` before reading, (2) `MemoryError` added to
+  the per-file `except` clause so a single pathological file can't
+  abort the whole scan.
+- Regression test `test_search_repo_skips_large_files` — creates a
+  1.5 MiB file containing the search term + a small file containing
+  the same term, asserts small file IS found AND large file is
+  skipped.
+
+**Validation:** 53/53 typed_repo tool tests PASS.
+
+**Not touched:** the ripgrep fast-path (the primary happy path for
+any machine that has rg installed) doesn't hit this bug — it uses
+memory-mapped search and streams lines. The fix is specifically for
+the Python fallback.
+
 ### A9. Investigate gpt-5.5 (NEW 2026-04-24)
 **Why:** user flagged OpenAI released gpt-5.5 as a new model. Our
 cards.toml ships gpt-5.4, gpt-5.4-pro, gpt-5.4-mini, gpt-5.4-nano,
