@@ -402,6 +402,33 @@ class AgentLoop:
         # CreationTicket) know what task they were asked to support.
         self._current_task = task
 
+        # A13 / AUDIT3 #10 / R1 — prompt-injection detection at task-ingest
+        # boundary (log-only mode by default; SAGE_PROMPT_INJECTION_STRICT=1
+        # raises instead via `check()`). Emits PROMPT_INJECTION_DETECTED
+        # events with pattern_name + match_text so downstream callers can
+        # upgrade to "refuse HIGH-severity" at this call site with a one-line
+        # change (swap `detect` for `check`).
+        from sage.events import PROMPT_INJECTION_DETECTED
+        from sage.security.prompt_injection import detect as _pi_detect
+        _pi_matches = _pi_detect(task)
+        if _pi_matches:
+            for _m in _pi_matches:
+                _evt = AgentEvent(
+                    type=PROMPT_INJECTION_DETECTED,
+                    step=self.step_count,
+                    timestamp=time.time(),
+                    meta={
+                        "pattern_name": _m.pattern_name,
+                        "match_text": _m.match_text[:200],
+                        "span": (_m.start, _m.end),
+                    },
+                )
+                self._on_event(_evt)
+            log.warning(
+                "prompt-injection patterns matched at task-ingest: %s",
+                [m.pattern_name for m in _pi_matches],
+            )
+
         # Reset ToolForge per-run counters so each run gets its own
         # MAX_CREATIONS budget (default: 2).
         if getattr(self, "toolforge", None) is not None:
