@@ -433,6 +433,32 @@ def test_write_predictions_persists_extraction_method(tmp_path):
     assert entry["_extraction_method"] == "search-replace-exact"
 
 
+def test_write_predictions_writes_lf_only_line_endings(tmp_path):
+    """A6 (2026-04-24): predictions.jsonl must be LF-only so the
+    SWE-bench harness doesn't propagate CRLF into the per-instance
+    ``patch.diff`` written inside the Docker context. GNU ``patch``
+    rejects CRLF as ``corrupt patch at line N`` (astropy-6938 precedent
+    in the 2026-04-24 observe smoke). This is specifically a Windows
+    fix — Python's default text-mode ``open`` translates every ``\\n``
+    into ``\\r\\n`` on emission."""
+    bench = SWEBenchBench(system=_FakeSystem(""), dataset="lite")
+    predictions = [
+        {
+            "instance_id": "demo__repo-1",
+            "model_name_or_path": "sage/fake-model",
+            "model_patch": "diff --git a/x b/x\n",
+        }
+    ]
+    out_path = tmp_path / "p.jsonl"
+    bench.write_predictions(predictions, out_path)
+
+    raw = out_path.read_bytes()
+    assert b"\r" not in raw, (
+        "predictions.jsonl must be LF-only; CRLF propagates through the "
+        f"harness and breaks Docker patch apply. Got: {raw!r}"
+    )
+
+
 def test_write_predictions_omits_extraction_method_when_absent(tmp_path):
     """Negative case — an older/legacy caller that doesn't annotate the
     prediction dict must still produce a valid 3-key record. No

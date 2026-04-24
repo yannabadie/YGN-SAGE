@@ -228,6 +228,31 @@ async def repair_patch_via_llm(
     return _extract_patch(response.content or "")
 
 
+def _normalize_line_endings(patch: str) -> str:
+    """Convert any ``\\r\\n`` / ``\\r`` → ``\\n`` so ``git apply`` and
+    GNU ``patch`` don't reject the diff as "corrupt patch at line N".
+
+    Motivation (2026-04-24 A6): astropy-6938 in the 2026-04-24 observe
+    smoke emitted a valid-looking diff that Docker's ``patch`` rejected
+    with ``corrupt patch at line 18``. Byte inspection showed ``\\r\\n``
+    line endings — the emission path normalizes CRLF → LF on the agent
+    response (``swebench_bench._extract_patch_from_response:216``), but
+    the predictions get re-serialised by Python text-mode ``open()`` on
+    Windows, which CRLF-translates on the way back out. The SWE-bench
+    harness then writes the ``patch.diff`` inside the Docker context
+    via the same text-mode open, propagating the CRLF inside the
+    container where GNU ``patch`` chokes.
+
+    Normalizing here is belt-and-suspenders: even if the upstream write
+    path introduces CRLF, the repair pipeline starts from LF-only bytes
+    and every downstream validation (``git apply --check``, LLM repair
+    feedback) sees clean input. Idempotent on LF-only input.
+    """
+    if "\r" not in patch:
+        return patch
+    return patch.replace("\r\n", "\n").replace("\r", "\n")
+
+
 async def try_repair_patch(
     patch: str,
     repo_dir: str | None,
@@ -239,20 +264,36 @@ async def try_repair_patch(
     """Validate + repair pipeline. Returns ``(final_patch, repair_stage)``.
 
     ``repair_stage`` ∈ ``{"", "unchanged", "programmatic_counts",
-    "llm_repair", "failed"}``:
+    "llm_repair", "crlf_normalized", "failed"}``:
       - ``""``: validation was skipped (empty patch or no repo_dir).
       - ``"unchanged"``: original patch validated, no repair needed.
-      - ``"programmatic_counts"``: ``_fix_hunk_header_counts`` fixed it.
+      - ``"crlf_normalized"``: pure CRLF → LF fix alone resolved the
+        patch. Common on Windows (A6, 2026-04-24).
+      - ``"programmatic_counts"``: ``_fix_hunk_header_counts`` fixed it
+        (possibly after CRLF normalization).
       - ``"llm_repair"``: LLM one-shot fixed it.
-      - ``"failed"``: neither stage produced a valid patch — original
+      - ``"failed"``: no stage produced a valid patch — original
         returned unchanged so the downstream swebench evaluator can
         still classify as apply-error (same behavior as pre-fix).
     """
     if not patch or not repo_dir:
         return patch, ""
 
+    # Stage 0 (A6, 2026-04-24): LF normalization. CRLF bytes in the
+    # patch are a Windows-emission artefact that both ``git apply`` and
+    # GNU ``patch`` reject as "corrupt patch". Belt-and-suspenders even
+    # if the upstream write path already handled it.
+    normalized = _normalize_line_endings(patch)
+    crlf_was_fixed = normalized != patch
+    patch = normalized
+
     ok, err = validate_patch_apply(patch, repo_dir)
     if ok:
+        if crlf_was_fixed:
+            log.info(
+                "[%s] CRLF normalization resolved patch", instance_id or "?",
+            )
+            return patch, "crlf_normalized"
         return patch, "unchanged"
 
     log.info(

@@ -1476,11 +1476,20 @@ class SWEBenchBench:
         """Write predictions in swebench JSONL format.
 
         Format per line: {instance_id, model_name_or_path, model_patch}
+
+        Uses ``newline=""`` so that ``f.write(... + "\\n")`` emits a bare
+        LF on every platform. On Windows, default text-mode writes
+        transform every ``\\n`` into ``\\r\\n``; the JSON-escaped patch
+        content inside the line stays ``\\\\n`` but the line-terminator
+        CRLF then survives the round-trip and the SWE-bench harness
+        re-writes ``patch.diff`` inside the Docker container with the
+        same CRLF, breaking GNU ``patch`` with "corrupt patch at line N"
+        (A6 finding, 2026-04-24 astropy-6938 observe smoke).
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(path, "w", encoding="utf-8") as f:
+        with open(path, "w", encoding="utf-8", newline="") as f:
             for pred in predictions:
                 entry = {
                     _KEY_INSTANCE_ID: pred[_KEY_INSTANCE_ID],

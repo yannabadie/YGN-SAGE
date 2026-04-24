@@ -28,6 +28,7 @@ if sys.platform != "linux" and "resource" not in sys.modules:
 
 from sage.bench.swebench_patch_repair import (  # noqa: E402
     _fix_hunk_header_counts,
+    _normalize_line_endings,
     validate_patch_apply,
     repair_patch_via_llm,
     try_repair_patch,
@@ -193,6 +194,58 @@ def test_validate_rejects_bogus_counts(git_repo):
 # ---------------------------------------------------------------------------
 # try_repair_patch integration
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# _normalize_line_endings (A6, 2026-04-24)
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_crlf_to_lf():
+    """CRLF line endings (Windows emission) must become LF."""
+    patch = "--- a/x\r\n+++ b/x\r\n@@ -1 +1 @@\r\n-old\r\n+new\r\n"
+    out = _normalize_line_endings(patch)
+    assert "\r" not in out
+    assert out == "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n"
+
+
+def test_normalize_bare_cr_to_lf():
+    """Classic-Mac bare ``\\r`` also gets normalized to LF."""
+    patch = "--- a/x\r+++ b/x\r@@ -1 +1 @@\r-old\r+new\r"
+    out = _normalize_line_endings(patch)
+    assert "\r" not in out
+    assert out.count("\n") == 5
+
+
+def test_normalize_noop_on_lf_only():
+    """LF-only input returns unchanged (idempotent)."""
+    patch = "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n"
+    out = _normalize_line_endings(patch)
+    assert out is patch  # identity — no allocation on the happy path
+
+
+@pytest.mark.asyncio
+async def test_repair_crlf_normalization_resolves(git_repo):
+    """astropy-6938 pattern (A6, 2026-04-24) — a patch whose only issue
+    is CRLF line endings validates cleanly after LF normalization.
+    ``try_repair_patch`` reports the ``crlf_normalized`` stage so the
+    bench bucket analysis can distinguish platform-emission fixes from
+    header-count or context-repair fixes."""
+    crlf_patch = (
+        "--- a/src/foo.py\r\n"
+        "+++ b/src/foo.py\r\n"
+        "@@ -1,3 +1,3 @@\r\n"
+        " def add(a, b):\r\n"
+        "-    # simple sum\r\n"
+        "+    # corrected sum\r\n"
+        "     return a + b\r\n"
+    )
+    out, stage = await try_repair_patch(
+        patch=crlf_patch, repo_dir=str(git_repo), llm=None,
+        problem_statement="fix comment", instance_id="t-a6",
+    )
+    assert stage == "crlf_normalized", f"unexpected stage: {stage}"
+    assert "\r" not in out, "CRLF must be fully stripped from the output"
 
 
 @pytest.mark.asyncio

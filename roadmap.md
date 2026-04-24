@@ -68,20 +68,65 @@ N=20** — the coder-role model emits unapplicable diffs deterministically.
 This is an orthogonal concern to repair-mode coverage and may need its
 own sub-item (see A6 below).
 
-### A2. Investigate the 20%+ fast-abort rate on SWE-bench generation
+### A2. Fast-abort root cause — ✅ DIAGNOSED 2026-04-24 (Kimi k2.5 tool-call)
 **Why:** astropy-14182 (~58 s) and astropy-7746 (~72 s) both aborted
 with 0-ish tool calls in the 2026-04-23 AND 2026-04-24 smokes —
-**deterministic, not flaky** (N=2/2 for each). If 20% of budget silently
-evaporates into early fails on the same task IDs, observe/repair data
-is small-N for everything else, and bench comparisons across runs
-inherit that bias.
+deterministic (N=2/2). Investigation via gen-log dive:
 
-**Concrete action:** pull the gen log for astropy-14182 (cheapest — 0
-tool calls confirmed). Is it provider circuit-breaker? SSL?
-Classification cold-start? Topology decomposition failure? Once root-
-caused, decide whether it needs a fix or is acceptable noise.
+**Root cause chain (both tasks, identical signature):**
+1. Rust `ModelAssigner` filters `needs_tools && !card.supports_tools`
+   (`model_assigner.rs:289`). `needs_tools` comes from
+   `node.required_capabilities.contains("tools")`.
+2. In `sage-core/src/topology/templates.rs`, only the `coder` node
+   declares `"tools"`; `planner`, `worker_N`, `synthesizer`, `source`,
+   `mixer`, `dispatcher` etc. use `["text_processing"]` or
+   `["reasoning"]` without `"tools"`.
+3. Rust assigner picks kimi-k2.5 for a non-coder node (scoring +
+   diversity penalty + affinity).
+4. Python `AgentLoop` factory grants tools to EVERY node regardless
+   of declared capabilities at execution time.
+5. Kimi's Moonshot API rejects the 4th+ assistant message carrying
+   tool_calls with `HTTP 400 "thinking is enabled but
+   reasoning_content is missing in assistant tool call message at
+   index 3"`. `cards.toml:598-609` already documents this (F9 audit
+   fix marked `supports_tools=false`) — but the filter only fires
+   when `needs_tools=true` from the node caps.
+6. Stage 4 multi-agent fails → single-agent fallback to
+   gemini-3.1-flash-lite-preview returns empty content → task
+   aborts as EMPTY.
 
-**Cost:** ~2 h of log-reading + 1 targeted smoke. Essentially zero $.
+**Fix ticketed as A7** (next entry); the diagnosis itself is done.
+
+**Impact:** closes the 20% silent-budget-leak once A7 lands. All
+2026-04-23 and 2026-04-24 smokes' per-task signal was masked by this
+bug.
+
+### A7. Template capability hygiene (fix for A2) — NEW 2026-04-24
+**Why:** A2's Option A. Prevent kimi-k2.5 from being assigned to
+tool-using nodes by declaring `"tools"` in every non-sink template
+role's `required_capabilities`.
+
+**Concrete action:** audit `sage-core/src/topology/templates.rs` —
+for each `TopologyNode::new(...)` call representing a role that the
+AgentLoop grants tools to (planner, coder, worker, dispatcher, hub,
+debater, actor, verifier, …), add `"tools"` to
+`required_capabilities`. Sink-only roles (synthesizer, output, mixer,
+aggregator when formatting) may stay tool-free IF the AgentLoop
+factory is extended at the same time — otherwise kimi still hits
+them with tools. Until the factory honours the capability, the
+simpler move is `"tools"` everywhere except documented sinks.
+
+Tests: `test_assigner_parity.py` has a `supports_tools=false`
+fixture; add a test that for each template, the assigner never
+picks kimi-k2.5 for tool-using nodes.
+
+**Option B (correct long-term):** make AgentLoop honour the node's
+`required_capabilities` — tool-free roles get a tool-free agent
+variant. Matches F9's original intent. Wider refactor (agent_loop_
+factory + phases/act.py). Do at B9 (AgentLoop concurrency refactor).
+
+**Cost:** ~1 h for Option A including the test. Zero $.
+**Dependency:** none. Independent of A6.
 
 ### A3. Repair-mode implementation (conditional on A1 data)
 **Why:** spec § "Validation plan" — repair mode feeds the diff-verifier
@@ -96,22 +141,67 @@ doesn't yet catch (malformed hunk header, see A6).
 paired N=50 smoke (observe-only vs observe+repair). Consider whether
 repair-mode covers BOTH failure classes or only content_mismatch.
 
-### A6. Extend verifier to catch hunk-header arithmetic mismatches (new 2026-04-24)
-**Why:** astropy-6938 in the 2026-04-24 smoke emitted a patch with
-`@@ -1541,10 +1541,4 @@` whose body's context/removed line counts don't
-match the header. `patch` aborts with "malformed patch at line 15"
-before the content walk can run. The verifier never produces an
-annotation, so repair-mode never sees it.
+### A6. CRLF normalization in patch emission — ✅ SHIPPED 2026-04-24
+**Why (initial framing):** astropy-6938 in the 2026-04-24 smoke was
+rejected by Docker `patch` at line 18. Surface reading suggested a
+malformed hunk header (`@@ -1541,10 +1541,4 @@`) where the header
+counts didn't match the body.
 
-**Concrete action:** before the existing content-mismatch walk, for
-each hunk count `-`+` ` lines (should equal old-count) and `+`+` ` lines
-(should equal new-count). On mismatch emit a `malformed_hunk_header`
-kind annotation. ~20 LOC in the parser, 1 regression test with a
-hand-crafted bad header, 1 wire test that exercises it through the
-bench path.
+**Actual root cause (byte-level inspection):** the patch file had
+`\r\n` line endings throughout. `git apply` and GNU `patch` both
+reject `\r` bytes in diff bodies as "corrupt patch". The repair
+pipeline (`swebench_patch_repair.try_repair_patch`) DID run on this
+patch — both stages failed with the same CRLF-corruption error. The
+existing `_fix_hunk_header_counts` works on whole lines and preserves
+the embedded `\r`, and the LLM repair stage also returned a CRLF
+patch (the prompt carried the CRLF in the example body). So the
+two-stage repair was insufficient to fix a CRLF-only bug.
 
-**Cost:** ~2 h. Unblocks A3 repair-mode for 50% more of the observed
-failure modes.
+Source of the CRLF: Windows `open(path, "w")` text-mode translates
+every emitted `\n` into `\r\n`. The chain is:
+1. Agent emits LF patch → `_extract_patch_from_response` normalizes
+   CRLF → LF at line 216 ✓
+2. `write_predictions` writes with default `open(...,"w")` → CRLF
+   line terminator between JSON records, inside each record the
+   patch stays JSON-escaped as `\\n` ✗ (the fault)
+3. SWE-bench harness reads predictions.jsonl, extracts
+   `model_patch` string (LF only in memory)
+4. Harness writes `patch.diff` inside Docker context via text-mode
+   open → CRLF again ✗
+5. Docker invokes `patch` which aborts
+
+**Shipped fix:**
+- `swebench_patch_repair.py`: new `_normalize_line_endings()` helper;
+  `try_repair_patch` gains a Stage 0 CRLF normalization before
+  validation. New `"crlf_normalized"` stage value for telemetry.
+  Belt-and-suspenders — even if upstream writes CRLF, the repair
+  pipeline now starts from LF-only bytes.
+- `swebench_bench.write_predictions`: now uses
+  `open(path, "w", encoding="utf-8", newline="")` so line terminators
+  are bare LF on all platforms. JSON-escaped patch body stays LF by
+  construction.
+
+**Tests (4 new, all passing):**
+- `test_normalize_crlf_to_lf`
+- `test_normalize_bare_cr_to_lf`
+- `test_normalize_noop_on_lf_only`
+- `test_repair_crlf_normalization_resolves` (end-to-end through
+  `try_repair_patch` with a real git repo)
+- `test_write_predictions_writes_lf_only_line_endings` (byte-level
+  assertion on emitted JSONL)
+
+**Impact:** closes the astropy-6938 failure class. Future observe
+smokes should see repair-stage breakdown including
+`crlf_normalized` for Windows-emitted patches. A3 repair-mode
+implementation no longer needs a separate malformed-header class
+— the existing `content_mismatch` covers all true hallucination
+cases once CRLF noise is stripped.
+
+**NB:** the original A6 framing ("extend the verifier to detect
+malformed hunk headers") was wrong. The verifier's docstring
+explicitly defers structural issues to `swebench_patch_repair`;
+that deferral was correct. The real gap was upstream — a platform-
+emission hygiene bug, not a verifier coverage gap.
 
 ### A4. Public-claims reconciliation (README ↔ PyPI)
 **Why:** ALIRE flagged a three-way divergence (README/commits/PyPI) on
