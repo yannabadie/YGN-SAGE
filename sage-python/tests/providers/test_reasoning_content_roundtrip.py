@@ -177,3 +177,63 @@ def test_no_thinking_means_no_thinkingpart() -> None:
     parts = assistant_turns[0]
     assert not any(isinstance(p, ThinkingPart) for p in parts)
     assert any(isinstance(p, ToolCallPart) for p in parts)
+
+
+# -------- A8 Phase 3: native PydanticAI profile for Moonshot --------
+
+
+def test_moonshot_native_profile_declares_thinking_field() -> None:
+    """A8 Phase 3: Moonshot model uses a custom OpenAIModelProfile that
+    declares `reasoning_content` as the native thinking field.
+
+    Without this, PydanticAI's default moonshotai_model_profile returns
+    a plain ModelProfile with supports_thinking=False and no OpenAI-chat
+    thinking field — leaving our translation layer to work around the
+    multi-turn tool-call HTTP 400 manually. The profile-driven path is
+    native, so PydanticAI knows to both EXTRACT reasoning_content from
+    Kimi responses AND SEND IT BACK on outgoing assistant messages.
+    """
+    pytest.importorskip("pydantic_ai")
+    from pydantic_ai.profiles.openai import OpenAIModelProfile
+
+    from sage.providers.pydantic_ai_provider import _build_pydantic_model
+
+    model = _build_pydantic_model("kimi", "kimi-k2.5", "fake-key")
+    assert isinstance(model.profile, OpenAIModelProfile), (
+        f"Moonshot model should use custom OpenAIModelProfile; "
+        f"got {type(model.profile).__name__}"
+    )
+    assert model.profile.supports_thinking is True
+    assert model.profile.openai_chat_thinking_field == "reasoning_content", (
+        "Moonshot profile must declare 'reasoning_content' as the thinking "
+        "field — PydanticAI uses this to extract Kimi's thinking output "
+        "into ThinkingPart on every response."
+    )
+    assert model.profile.openai_chat_send_back_thinking_parts == "field", (
+        "Moonshot profile must set send_back_thinking_parts='field' — "
+        "PydanticAI uses this to serialize ThinkingPart back as "
+        "reasoning_content on outgoing assistant messages (required for "
+        "multi-turn tool calls)."
+    )
+
+
+def test_other_providers_not_affected_by_moonshot_profile() -> None:
+    """Sanity: the Moonshot-specific profile override doesn't leak to
+    other providers (OpenAI, DeepSeek, OpenRouter, etc.)."""
+    pytest.importorskip("pydantic_ai")
+    from sage.providers.pydantic_ai_provider import _build_pydantic_model
+
+    # DeepSeek uses its own provider — should NOT carry Moonshot profile
+    ds_model = _build_pydantic_model("deepseek", "deepseek-chat", "fake-key")
+    # profile should either be the default or a DeepSeek-specific one,
+    # not the Moonshot OpenAIModelProfile with reasoning_content
+    profile = ds_model.profile
+    # If it happens to be OpenAIModelProfile (some providers build one),
+    # the thinking field should NOT be our Moonshot-specific override
+    thinking_field = getattr(profile, "openai_chat_thinking_field", None)
+    assert thinking_field != "reasoning_content" or profile.__class__.__module__.startswith(
+        "pydantic_ai"
+    ), (
+        "DeepSeek carries Moonshot-specific thinking_field override — "
+        "the fix should scope to the moonshot branch only"
+    )

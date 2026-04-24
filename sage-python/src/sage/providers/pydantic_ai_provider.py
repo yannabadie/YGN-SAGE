@@ -102,9 +102,38 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
 
     if kind == "moonshot":
         from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.profiles.openai import OpenAIModelProfile
         from pydantic_ai.providers.moonshotai import MoonshotAIProvider
+
+        # A8 Phase 3 (2026-04-24): PydanticAI's default moonshotai_model_profile
+        # returns a plain ModelProfile with supports_thinking=False and no
+        # OpenAI-chat thinking field set. That leaves reasoning_content
+        # handling to our translation layer (A8 Phase 2 `df150a2a`) which
+        # only partially closes the multi-turn tool-call HTTP 400 gap.
+        #
+        # The native path: declare a custom OpenAIModelProfile with
+        # `openai_chat_thinking_field='reasoning_content'` (extracts the
+        # field from Kimi's response into a ThinkingPart) and
+        # `openai_chat_send_back_thinking_parts='field'` (serializes the
+        # ThinkingPart back as `reasoning_content` on outgoing assistant
+        # messages — required for multi-turn tool calls under Kimi's
+        # thinking mode).
+        #
+        # Context7 `/pydantic/pydantic-ai` 2026-04-24 docs (`docs/thinking.md`,
+        # OpenAI section): "openai_chat_thinking_field … openai_chat_send_back
+        # _thinking_parts allows sending back custom fields unchanged for
+        # caching or interleaved thinking benefits." Moonshot/Kimi multi-turn
+        # tool-call message format: reasoning_content precedes content in
+        # every assistant tool-call turn. See roadmap-A2 diagnosis (2026-04-24).
+        kimi_profile = OpenAIModelProfile(
+            supports_thinking=True,
+            openai_chat_thinking_field="reasoning_content",
+            openai_chat_send_back_thinking_parts="field",
+        )
         return OpenAIChatModel(
-            model_id, provider=MoonshotAIProvider(api_key=api_key or "")
+            model_id,
+            provider=MoonshotAIProvider(api_key=api_key or ""),
+            profile=kimi_profile,
         )
 
     if kind == "native_openrouter":
