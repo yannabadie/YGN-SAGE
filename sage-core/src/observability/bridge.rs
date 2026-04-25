@@ -12,6 +12,37 @@
 //! - an `EnteredSpan` (RAII guard for the tracing span)
 //! - a `ContextGuard` (RAII guard for the OTel context attach)
 //! Both drop in reverse-construction order on close.
+//!
+//! ### Belt-and-suspenders parent linkage
+//! `bridge_python_span` does both `parent_cx.attach()` AND
+//! `span.set_parent(Context::current())`. This is intentional, not
+//! redundant:
+//! - `attach()` ensures non-tracing OTel API calls inside the bridged
+//!   scope see the right parent (e.g. outbound HTTP propagation that
+//!   reads `Context::current()` directly).
+//! - `set_parent()` ensures the tracing span's `parent_cx` is the
+//!   bridged context even if a stray tracing span is somehow current
+//!   (otherwise tracing's contextual parent lookup would beat us).
+//! Removing either is a regression hazard. Keep both.
+//!
+//! ### Static span name + dynamic field
+//! Every bridged span emits as `rust_bridged_span` with `bridge_name`
+//! as a field attribute. Plan said "use dynamic name" but
+//! `tracing::info_span!` requires a static primary name; the
+//! `Span::new()` workaround is more code than the field carries
+//! weight. Tools that group by span name see one bucket — filter by
+//! `bridge_name` for per-stage breakdown. The user-visible Rust spans
+//! (`system_router.route`, `bandit.select`, etc.) are children of the
+//! bridge and have meaningful names of their own.
+//!
+//! ### No-parent fallback
+//! If `parse_traceparent` rejects the input, the bridge still creates
+//! a Rust span — but with no parent (`Context::new()`). Result: a
+//! "phantom root" Rust trace that's decoupled from any Python parent.
+//! Trade-off: visibility-via-trace + fail-open. WARN log fires per
+//! parse failure. If operators get confused by orphan Rust trees,
+//! consider tagging `error.type = "traceparent_parse_failure"` or
+//! returning a no-op handle instead.
 
 use pyo3::prelude::*;
 
