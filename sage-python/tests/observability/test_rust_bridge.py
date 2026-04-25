@@ -58,19 +58,39 @@ def test_rust_init_skipped_when_exporter_none(monkeypatch: pytest.MonkeyPatch, c
     ), f"unexpected sage_core mention: {caplog.records}"
 
 
-def test_rust_init_skipped_when_feature_off(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:
-    """Acceptance criterion 11.C: feature off -> INFO log, no crash.
+def test_rust_init_skipped_when_feature_off(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Acceptance criterion 11.C: when sage_core.init_otel returns False
+    (stub or already-initialized), we INFO-log and don't crash.
 
-    This test passes regardless of how sage_core is actually built.
-    When otel feature is OFF, the stub returns False and we log INFO.
-    When otel feature is ON, init_otel returns True (or False if
-    already initialized in-process). Both paths are non-crashing.
+    Stronger than the prior tautology — mocks sage_core to force the
+    feature-off return path so the assertion has teeth. Also catches the
+    silent-bypass regression class (init_otel called but result ignored).
     """
+    import sys
+    import types
+
     monkeypatch.setenv("SAGE_OTEL_EXPORTER", "console")
+    fake_sage_core = types.SimpleNamespace(
+        init_otel=lambda kind, ep: False,
+        bridge_python_span=lambda traceparent, name: types.SimpleNamespace(
+            close=lambda: None
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "sage_core", fake_sage_core)
     caplog.set_level(logging.INFO, logger="sage.observability")
+
     _init_tracer()
-    # No exception raised. Either an INFO line about feature-off, or
-    # silent success. Both acceptable.
+
+    # Must have logged the False-return INFO line — proves the bypass
+    # branch was reached AND the return value was honored.
+    assert any(
+        "init_otel returned False" in r.message for r in caplog.records
+    ), (
+        f"expected INFO log about init_otel returning False, "
+        f"got: {[r.message for r in caplog.records]}"
+    )
 
 
 def test_sage_span_bridges_to_rust_when_active(monkeypatch: pytest.MonkeyPatch) -> None:
