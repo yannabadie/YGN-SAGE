@@ -64,6 +64,11 @@ SAGE_DIFF_VERIFIER_MODE=observe \
   python -m sage.bench --type swebench --dataset lite --limit 10 \
     --output docs/benchmarks/{date}-observe.json
 
+# Same smoke with OTel spans piped to stdout (B1, opt-in)
+SAGE_OTEL_EXPORTER=console SAGE_DIFF_VERIFIER_MODE=observe \
+  python -m sage.bench --type swebench --dataset lite --limit 10 \
+    --output docs/benchmarks/{date}-observe.json
+
 # Training — PARKED on main since 2026-04-15 (commit b2f59ee, -4.3GB)
 # verl/, scripts/, data/, models/ and training tests live on a dedicated training branch.
 # Trained checkpoints still on HF: yannabadie/sage-topology-policy-local (Phase C, 40% MASBENCH).

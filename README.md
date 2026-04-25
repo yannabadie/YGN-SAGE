@@ -352,6 +352,13 @@ YGN-SAGE/
 | Agent stability | [arXiv 2601.04170](https://arxiv.org/abs/2601.04170) | ICLR 2026 |
 | Competitor | [The Conductor](https://arxiv.org/abs/2512.04388) | ICLR 2026 |
 
+## Observability
+
+YGN-SAGE emits OpenTelemetry GenAI spans on the orchestration path.
+Default off; opt in with `SAGE_OTEL_EXPORTER=console` for stdout
+debug or `otlp_http` to ship to a collector. Full doc:
+`docs/observability/otel-genai-spans.md`.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

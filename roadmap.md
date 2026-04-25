@@ -722,24 +722,17 @@ shutdown hook + idempotent `consolidated=True` marker.
 
 ## Horizon B — medium-term (next 1-2 months)
 
-### B1. OpenTelemetry GenAI span integration
-**Why:** EventBus is in-process and lossy under backpressure (ALIRE
-finding). OpenTelemetry published a GenAI semantic-conventions spec
-(Development stability as of 2026-Q1) covering LLM request/response
-attributes (`gen_ai.provider.name`, `gen_ai.operation.name`,
-`gen_ai.request.model`, `gen_ai.usage.{input,output}_tokens`,
-`gen_ai.response.finish_reasons`). That's the standard contract we'd
-emit.
+### B1. OpenTelemetry GenAI spans — Closed (2026-04-25)
 
-**Concrete action:** pick an OTel Python SDK (opentelemetry-sdk +
-opentelemetry-exporter-otlp). Wire provider-side emission in
-`sage.providers.pydantic_ai_provider` (and deprecated openai_compat
-while it lives). Initial target: every LLM call emits a span with the
-minimum-required attributes above. Deferred: tool-call spans, MCP
-conventions. Docker harness span path is separate.
+Spec: `docs/superpowers/specs/2026-04-25-otel-genai-spans-design.md`
+Plan: `docs/superpowers/plans/2026-04-25-otel-genai-spans.md`
+Implementation commits: b92836a7 → 3ca4c5cb (10 tasks via subagent-driven-development)
 
-**Dependencies:** none blocking. Would benefit from B2 (durable store)
-to land first, but they can proceed in parallel.
+Sub-items (open, can land in any order after B1):
+- **B1.b** — sage-core Rust spans via `tracing-opentelemetry` bridge. 1–2 days.
+- **B1.c** — sage-discover MCP server retrieval spans. 0.5–1 day.
+- **B1.d** — ui/FastAPI auto-instrumentation. 0.5 day.
+- **B1.e** — sampler tuning once production volume data lands. TBD.
 
 ### B2. Durable trace + deterministic replay harness
 **Why:** ALIRE high-severity item, and it's the prerequisite for any
