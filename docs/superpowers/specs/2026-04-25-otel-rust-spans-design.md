@@ -87,10 +87,12 @@ collapses to span-tree inspection (~5 minutes).
 2. After Python TracerProvider is set, if `SAGE_OTEL_EXPORTER ∈ {console, otlp_http}`,
    call `sage_core.init_otel(exporter, endpoint)` (new). Rust mirrors the same
    exporter setup with its own TracerProvider. **Idempotent** — second call no-ops.
-3. For `SAGE_OTEL_EXPORTER=logfire`: Rust uses `otlp_http` against logfire's
-   OTLP endpoint if `LOGFIRE_TOKEN` + endpoint are resolvable. If not resolvable,
-   log a single WARN and skip Rust init (Python-only spans still flow). This
-   limitation is documented in §10.
+3. For `SAGE_OTEL_EXPORTER=logfire`: **Rust spans are NOT exported in MVP**.
+   Python continues to use the logfire SDK; Rust init is skipped with a
+   one-time WARN (`"logfire mode active; Rust spans will not be exported until
+   B1.b.7 lands"`). Reasoning: logfire's auth header + endpoint contract is
+   underspecified in the public docs, and the Python path already covers the
+   primary user-facing observability surface. Tracking as B1.b.7 in §9.
 4. For `SAGE_OTEL_EXPORTER=none`: `init_otel` is never called. Rust tracing
    remains a no-op (no subscriber installed).
 5. When `sage-core` is built **without** the `otel` feature, the PyO3 module
@@ -124,14 +126,32 @@ def sage_span(name: str, op: str, *, record_exception: bool = True, **attrs):
 `_maybe_bridge_to_rust` extracts the Python span's `SpanContext`, formats as
 W3C traceparent (`{version:02x}-{trace_id:032x}-{span_id:016x}-{flags:02x}`),
 and calls `sage_core.bridge_python_span(traceparent, name)`. Rust returns
-an opaque `RustSpanHandle` that PyO3-wraps a `tracing::Span`. The handle's
-`Drop` closes the Rust span.
+an opaque `RustSpanHandle` that PyO3-wraps a `tracing::span::EnteredSpan`
+(returned by `Span::entered()`, **not** a bare `Span`). The handle's `Drop`
+runs the guard's `Drop`, exiting the span and restoring the previous current
+span on the calling thread. This is critical: a bare `Span` registers a span
+metadata entry but does NOT make it the thread-local current span — without
+the entered guard, existing `info_span!` calls inside Rust would attach to
+no parent (orphan-rooted), defeating the bridge.
+
+**Thread-pinning note:** `EnteredSpan` is `!Send`. PyO3 callbacks hold the
+GIL, which already pins the calling thread, so this is fine in practice.
+Implementation MUST NOT spawn the handle into a thread pool or `tokio::spawn`.
 
 **Why a handle, not a thread-local?** Rust async work spawned inside one Python
 span needs the parent bound at span creation, not at thread-of-execution time.
 A handle gives the caller explicit ownership — close-when-drop semantics match
 both sync and async PyO3 calls. Thread-locals also break across PyO3 → tokio
 work-stealing.
+
+**Sync-only confirmation (audit-time):** the §4.1 audit verified that `sage-core`
+has exactly 1 `async fn` (`sandbox/subprocess.rs:62 execute_async`) and it does
+NOT contain any `info_span!` or `#[instrument]`. All 27 audited span call sites
+are inside synchronous functions. The `.entered()` guard pattern is therefore
+safe — no `.await` points break the parent-inheritance chain. If a future call
+site introduces an async-spanned function, it must use `#[instrument]` or
+`.instrument(future)` instead of `.entered()` to preserve cross-await parent
+linkage.
 
 ### 3.4 Existing `info_span!` calls (no change required)
 
@@ -374,6 +394,8 @@ on the routing path; broader coverage is a manual sanity check.
 | B1.b.4 | Auto-injection of W3C traceparent into outgoing Rust HTTP calls (provider clients) | Provider HTTP is in Python today; revisit when Rust-side HTTP appears |
 | B1.b.5 | Sampler tuning | Same as B1.e — gated on production data |
 | B1.b.6 | Rust → Python span propagation | No call paths today |
+| B1.b.7 | Logfire-mode Rust export (`SAGE_OTEL_EXPORTER=logfire` + Rust→logfire OTLP) | Auth/endpoint contract underspecified; Python logfire path already covers primary use case. WARN once on use of logfire+Rust feature combo. |
+| B1.b.8 | CI matrix coverage for `--features otel` | New code is opt-in, default `cargo test --lib` won't exercise it. Add a CI job (`features otel`) **OR** explicitly accept that the otel path is dev-machine-tested only until first production user. Decided in plan, not spec. |
 
 ---
 
