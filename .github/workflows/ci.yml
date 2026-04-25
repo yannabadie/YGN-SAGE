@@ -28,6 +28,43 @@ jobs:
       - name: ONNX feature tests
         run: cargo test --no-default-features --features onnx --lib
 
+  otel-bridge:
+    # Dedicated job for the B1.b OTel Rust bridge (added 2026-04-25).
+    # Runs in parallel with rust-features so otel coverage is not blocked
+    # by unrelated feature-combination failures (e.g. sandbox+cranelift
+    # E0432 in wasm_python.rs that has been red since pre-B1.b).
+    name: OTel bridge (B1.b — tracing-opentelemetry pair)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sage-core
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install maturin
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Lib tests under --features otel
+        # Catches version drift between tracing-opentelemetry 0.28 and
+        # opentelemetry 0.27 on every PR.
+        run: 'cargo test --no-default-features --features otel --lib observability::'
+      - name: End-to-end otel_smoke (InMemoryExporter, --ignored)
+        # Asserts parent_span_id linkage from W3C traceparent.
+        run: cargo test --no-default-features --features otel --test otel_smoke -- --ignored --test-threads=1
+
+  otel-bridge-windows:
+    # Windows MSVC compile-check — catches reqwest/rustls/opentelemetry-otlp
+    # transitive issues that Linux misses. Compile-only.
+    name: OTel bridge (B1.b — Windows MSVC compile-check)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo check --features otel
+        working-directory: sage-core
+        run: cargo check --no-default-features --features otel
+
   rust-features:
     name: Rust (sandbox + ONNX + SMT + tool-executor)
     runs-on: ubuntu-latest
