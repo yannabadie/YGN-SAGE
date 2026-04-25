@@ -11,6 +11,7 @@ pub mod sort_utils;
 pub mod topology;
 pub mod types;
 pub mod verification;
+pub mod observability;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -37,6 +38,10 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<sandbox::subprocess::ExecResult>()?;
         m.add_class::<sandbox::tool_executor::ToolExecutor>()?;
     }
+    // B1.b OTel bridge — always exposed (stub when otel feature off).
+    m.add_function(pyo3::wrap_pyfunction!(observability::init_otel, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(observability::bridge_python_span, m)?)?;
+    m.add_class::<observability::RustSpanHandle>()?;
     // Embedded-RustPython availability probe. Red-team harness uses
     // this to skip tests when sage-core was built without the wasm
     // bytes bundled. `has_wasm()` on ToolExecutor only answers for
