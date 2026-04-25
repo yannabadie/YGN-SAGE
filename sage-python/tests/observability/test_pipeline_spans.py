@@ -162,3 +162,77 @@ async def test_node_spans_nest_under_execute_under_pipeline_run(in_memory_export
 
     # pipeline.run has no parent (it's the root)
     assert top.parent is None
+
+
+@pytest.mark.asyncio
+async def test_chat_span_carries_provider_model_usage(in_memory_exporter) -> None:
+    """sage.chat span carries gen_ai.provider.name + gen_ai.request.model + usage tokens."""
+    from sage.observability.spans import sage_span, otel_provider_name
+    with sage_span(
+        "sage.chat",
+        op="chat",
+        **{
+            "gen_ai.provider.name": otel_provider_name("kimi"),
+            "gen_ai.request.model": "kimi-k2.5",
+            "gen_ai.usage.input_tokens": 100,
+            "gen_ai.usage.output_tokens": 50,
+        },
+    ):
+        pass
+    spans = in_memory_exporter.get_finished_spans()
+    chat = next((s for s in spans if s.name == "sage.chat"), None)
+    assert chat is not None
+    assert chat.attributes["gen_ai.operation.name"] == "chat"
+    assert chat.attributes["gen_ai.provider.name"] == "moonshot.ai"
+    assert chat.attributes["gen_ai.request.model"] == "kimi-k2.5"
+    assert chat.attributes["gen_ai.usage.input_tokens"] == 100
+    assert chat.attributes["gen_ai.usage.output_tokens"] == 50
+
+
+@pytest.mark.asyncio
+async def test_chat_span_record_exception_false_emits_redacted_event(
+    in_memory_exporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """record_exception=False: exception event is emitted with A16-redacted message+stacktrace.
+
+    This test exercises the S-3 mitigation: provider.generate() may raise with
+    API-key material in the traceback.  The span must record a redacted event
+    instead of letting OTel auto-record the raw exception.
+    """
+    monkeypatch.setenv("SAGE_REDACT_SECRETS", "1")
+    from sage.observability.spans import sage_span, _reset_warn_flag_for_tests
+    _reset_warn_flag_for_tests()
+
+    SECRET = "sk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"  # noqa: S105 — test fixture
+    raised = False
+    try:
+        with sage_span("sage.chat", op="chat", record_exception=False) as span:
+            raise ValueError(f"HTTP 400: Authorization header=Bearer {SECRET}")
+    except ValueError:
+        raised = True
+
+    assert raised, "exception must propagate through sage_span"
+
+    spans = in_memory_exporter.get_finished_spans()
+    chat = next((s for s in spans if s.name == "sage.chat"), None)
+    assert chat is not None, "sage.chat span must be finished"
+
+    # Span status must be ERROR
+    from opentelemetry.trace import StatusCode
+    assert chat.status.status_code == StatusCode.ERROR
+
+    # Exception event must exist
+    exc_events = [e for e in chat.events if e.name == "exception"]
+    assert exc_events, "expected an 'exception' event on the span"
+    evt = exc_events[0]
+
+    # Secret must NOT appear in any event attribute
+    msg = evt.attributes.get("exception.message", "")
+    tb = evt.attributes.get("exception.stacktrace", "")
+    assert SECRET not in msg, f"secret leaked in exception.message: {msg!r}"
+    assert SECRET not in tb, f"secret leaked in exception.stacktrace: {tb!r}"
+
+    # Redaction marker must be present (proves A16 ran, not just truncation)
+    assert "REDACTED" in msg or "REDACTED" in tb, (
+        "A16 redaction must replace the secret with REDACTED"
+    )

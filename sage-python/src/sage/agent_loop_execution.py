@@ -231,10 +231,29 @@ async def cegar_repair(
     ]
 
     try:
-        response = await llm_provider.generate(
-            messages=messages,
-            config=llm_config,
-        )
+        from sage.observability.spans import sage_span, otel_provider_name
+        _provider_id = getattr(llm_config, "provider", "")
+        _model_id = getattr(llm_config, "model", "")
+        with sage_span(
+            "sage.chat",
+            op="chat",
+            record_exception=False,
+            **{
+                "gen_ai.provider.name": otel_provider_name(_provider_id),
+                "gen_ai.request.model": _model_id,
+                "sage.chat.purpose": "cegar_repair",
+            },
+        ) as _chat_span:
+            response = await llm_provider.generate(
+                messages=messages,
+                config=llm_config,
+            )
+            if _chat_span is not None and getattr(response, "usage", None):
+                usage = response.usage
+                in_tok = int(usage.get("input_tokens", 0)) if isinstance(usage, dict) else int(getattr(usage, "input_tokens", 0))
+                out_tok = int(usage.get("output_tokens", 0)) if isinstance(usage, dict) else int(getattr(usage, "output_tokens", 0))
+                _chat_span.set_attribute("gen_ai.usage.input_tokens", in_tok)
+                _chat_span.set_attribute("gen_ai.usage.output_tokens", out_tok)
         repaired = response.content or ""
         if not repaired:
             return None

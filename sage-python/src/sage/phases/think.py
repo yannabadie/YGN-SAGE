@@ -97,11 +97,34 @@ async def think(
     # ExoCortex: passive grounding removed per Sprint 3 evidence.
     # Use active tool (search_exocortex) instead — agent invokes when needed.
 
-    response = await loop._llm.generate(
-        messages=messages,
-        tools=tool_defs if tool_defs else None,
-        config=loop.config.llm,
-    )
+    from sage.observability.spans import sage_span, otel_provider_name
+    _provider_id = getattr(loop.config.llm, "provider", "")
+    _model_id = getattr(loop.config.llm, "model", "")
+    with sage_span(
+        "sage.chat",
+        op="chat",
+        record_exception=False,
+        **{
+            "gen_ai.provider.name": otel_provider_name(_provider_id),
+            "gen_ai.request.model": _model_id,
+        },
+    ) as _chat_span:
+        response = await loop._llm.generate(
+            messages=messages,
+            tools=tool_defs if tool_defs else None,
+            config=loop.config.llm,
+        )
+        if _chat_span is not None and getattr(response, "usage", None):
+            usage = response.usage
+            in_tok = int(usage.get("input_tokens", 0)) if isinstance(usage, dict) else int(getattr(usage, "input_tokens", 0))
+            out_tok = int(usage.get("output_tokens", 0)) if isinstance(usage, dict) else int(getattr(usage, "output_tokens", 0))
+            _chat_span.set_attribute("gen_ai.usage.input_tokens", in_tok)
+            _chat_span.set_attribute("gen_ai.usage.output_tokens", out_tok)
+        if _chat_span is not None and getattr(response, "stop_reason", None):
+            _chat_span.set_attribute(
+                "gen_ai.response.finish_reasons",
+                [str(response.stop_reason)],
+            )
     inference_ms = (time.perf_counter() - t0) * 1000
     loop.total_inference_time += inference_ms / 1000
 

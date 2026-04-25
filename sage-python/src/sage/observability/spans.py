@@ -103,21 +103,60 @@ def _otel_enabled() -> bool:
 
 
 @contextmanager
-def sage_span(name: str, op: str, **attrs: Any) -> Iterator[Any]:
+def sage_span(
+    name: str,
+    op: str,
+    *,
+    record_exception: bool = True,
+    **attrs: Any,
+) -> Iterator[Any]:
     """Emit an OTel span if a tracer is configured; no-op otherwise.
 
     `op` populates `gen_ai.operation.name`. Other kwargs are attached
     verbatim — caller is responsible for using `_safe_str` on any
     payload-bearing values before passing them in.
+
+    When ``record_exception=False`` (recommended for LLM provider call sites),
+    OTel's auto-recording of exception stacktraces is suppressed and replaced
+    with a manually-emitted redacted exception event.  This prevents A16-bypass:
+    HTTP 400 tracebacks from providers can carry API-key material in headers
+    that auto-record would emit verbatim to the span exporter.
     """
     if not _otel_enabled():
         yield None
         return
     _maybe_warn_secrets_disabled()
     tracer = _get_tracer()
-    with tracer.start_as_current_span(name) as span:
+    with tracer.start_as_current_span(
+        name,
+        record_exception=record_exception,
+        set_status_on_exception=record_exception,
+    ) as span:
         span.set_attribute("gen_ai.operation.name", op)
         for k, v in attrs.items():
             if v is not None:
                 span.set_attribute(k, v)
-        yield span
+        try:
+            yield span
+        except BaseException as exc:
+            if not record_exception:
+                import traceback as _traceback
+
+                from opentelemetry.trace import Status, StatusCode
+
+                msg = _REDACTOR.redact_text(str(exc)) if _REDACTOR.enabled else str(exc)
+                tb = (
+                    _REDACTOR.redact_text(_traceback.format_exc())
+                    if _REDACTOR.enabled
+                    else _traceback.format_exc()
+                )
+                span.add_event(
+                    "exception",
+                    {
+                        "exception.type": type(exc).__name__,
+                        "exception.message": msg,
+                        "exception.stacktrace": tb,
+                    },
+                )
+                span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            raise
