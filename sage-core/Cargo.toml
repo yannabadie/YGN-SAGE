@@ -114,6 +114,11 @@ pyo3 = { version = "0.25", features = ["auto-initialize"] }
 # Isolated cache directories for wasm_python JIT-cache tests. Already in
 # Cargo.lock via wasmtime's dev-deps, promoted to a first-class dev-dep.
 tempfile = "3"
+# B1.b Task 5: InMemorySpanExporter for the Rust OTel end-to-end smoke
+# (tests/otel_smoke.rs). The `testing` feature pulls rt-tokio +
+# rt-async-std + tokio/rt-multi-thread, which we deliberately keep out
+# of the production `otel` feature surface — dev-only.
+opentelemetry_sdk = { version = "0.27", features = ["testing"] }
 
 [lints]
 workspace = true
