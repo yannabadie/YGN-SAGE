@@ -41,7 +41,14 @@ def _safe_str(value: Any, max_bytes: int = 4096) -> str:
 
     Reads SAGE_OTEL_RAW_PAYLOADS at call time (env can be flipped in
     tests via monkeypatch). When raw, skip both passes. When redacting,
-    delegate to A16 RedactionFilter; truncate to max_bytes UTF-8.
+    delegate to A16 RedactionFilter which traverses lists/tuples/dicts
+    recursively. Truncate to max_bytes UTF-8.
+
+    Note on the truncation suffix: the slice is `encoded[: max_bytes - 16]`
+    leaving 16 bytes of head room for the `…[truncated]` suffix (14 UTF-8
+    bytes). When the truncated text has no spaces, `rsplit(" ", 1)[0]`
+    is a no-op, so the final length is at most max_bytes - 2 — still
+    under the cap. This is intentional and contract-preserving.
     """
     raw_payloads = os.environ.get("SAGE_OTEL_RAW_PAYLOADS", "0").strip().lower() in {
         "1",
@@ -50,16 +57,19 @@ def _safe_str(value: Any, max_bytes: int = 4096) -> str:
     }
     if raw_payloads:
         s = value if isinstance(value, str) else str(value)
+    elif isinstance(value, str):
+        s = _REDACTOR.redact_text(value) if _REDACTOR.enabled else value
     else:
-        if isinstance(value, dict):
-            redacted = (
-                _REDACTOR.redact_dict(value) if _REDACTOR.enabled else value
-            )
-            s = json.dumps(redacted, ensure_ascii=False)
-        elif isinstance(value, str):
-            s = _REDACTOR.redact_text(value) if _REDACTOR.enabled else value
-        else:
-            s = str(value)
+        # Lists, tuples, dicts, and any other JSON-serializable payload
+        # all flow through redact_value() which traverses recursively.
+        # Required to prevent secret leakage on `gen_ai.input.messages`
+        # (list of dicts), `gen_ai.tool.call.arguments` (dict), and
+        # `gen_ai.tool.call.result` (could be either).
+        redacted = _REDACTOR.redact_value(value) if _REDACTOR.enabled else value
+        try:
+            s = json.dumps(redacted, ensure_ascii=False, default=str)
+        except (TypeError, ValueError):
+            s = str(redacted)
     encoded = s.encode("utf-8")
     if len(encoded) > max_bytes:
         truncated = encoded[: max_bytes - 16].decode("utf-8", errors="ignore")

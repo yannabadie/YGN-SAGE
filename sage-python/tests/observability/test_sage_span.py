@@ -131,3 +131,41 @@ def test_provider_name_map_covers_all_seven() -> None:
 def test_provider_name_map_unknown_returns_input() -> None:
     from sage.observability.spans import otel_provider_name
     assert otel_provider_name("alien-provider") == "alien-provider"
+
+
+def test_safe_str_redacts_inside_list_of_dicts(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Critical regression: lists/tuples must be redacted recursively.
+
+    Pre-fix bug: `gen_ai.input.messages = [{"content": "sk-AAA..."}]`
+    fell into the str(value) else-branch and leaked the API key
+    verbatim into the span attribute.
+    """
+    monkeypatch.delenv("SAGE_OTEL_RAW_PAYLOADS", raising=False)
+    monkeypatch.setenv("SAGE_REDACT_SECRETS", "1")
+    from sage.observability.spans import _safe_str
+    leaky = [
+        {"role": "user", "content": "sk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},
+        {"role": "assistant", "content": "ok"},
+    ]
+    out = _safe_str(leaky)
+    assert "sk-AAAA" not in out
+    assert "REDACTED" in out
+
+
+def test_safe_str_redacts_dict_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Coverage gap: the dict branch had no explicit test pre-fix."""
+    monkeypatch.delenv("SAGE_OTEL_RAW_PAYLOADS", raising=False)
+    monkeypatch.setenv("SAGE_REDACT_SECRETS", "1")
+    from sage.observability.spans import _safe_str
+    out = _safe_str({"prompt": "sk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+    assert "sk-AAAA" not in out
+    assert "REDACTED" in out
+
+
+def test_safe_str_redacts_tuple_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tuples must follow the same recursive redaction path as lists."""
+    monkeypatch.delenv("SAGE_OTEL_RAW_PAYLOADS", raising=False)
+    monkeypatch.setenv("SAGE_REDACT_SECRETS", "1")
+    from sage.observability.spans import _safe_str
+    out = _safe_str(("safe-prefix", "sk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"))
+    assert "sk-AAAA" not in out
