@@ -99,9 +99,7 @@ fn build_otlp_provider(endpoint: Option<&str>) -> Option<SdkTracerProvider> {
     let exporter = match exporter_builder.build() {
         Ok(e) => e,
         Err(err) => {
-            eprintln!(
-                "[sage-core] OTel init: OTLP exporter build failed: {err}"
-            );
+            eprintln!("[sage-core] OTel init: OTLP exporter build failed: {err}");
             return None;
         }
     };

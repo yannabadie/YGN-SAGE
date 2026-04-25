@@ -103,21 +103,22 @@ impl WasmSandbox {
         compiled_bytes.hash(&mut hasher);
         let cache_key = format!("{}_{:x}", name, hasher.finish());
 
-        let component_result = self.component_cache.entry(cache_key).or_try_insert_with(
-            || -> PyResult<Component> {
-                // SAFETY: compiled_bytes must come from Component::serialize()
-                // produced by the same version of wasmtime with the same Engine config.
-                #[allow(unsafe_code)]
-                unsafe {
-                    Component::deserialize(&self.engine, &compiled_bytes).map_err(|e| {
-                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                            "Failed to deserialize Wasm component: {}",
-                            e
-                        ))
-                    })
-                }
-            },
-        );
+        let component_result =
+            self.component_cache
+                .entry(cache_key)
+                .or_try_insert_with(|| -> PyResult<Component> {
+                    // SAFETY: compiled_bytes must come from Component::serialize()
+                    // produced by the same version of wasmtime with the same Engine config.
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        Component::deserialize(&self.engine, &compiled_bytes).map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                                "Failed to deserialize Wasm component: {}",
+                                e
+                            ))
+                        })
+                    }
+                });
 
         let component = match component_result {
             Ok(entry) => entry.value().clone(),
@@ -145,21 +146,22 @@ impl WasmSandbox {
         compiled_bytes.hash(&mut hasher);
         let cache_key = format!("{}_{:x}", name, hasher.finish());
 
-        let component_result = self.component_cache.entry(cache_key).or_try_insert_with(
-            || -> PyResult<Component> {
-                // SAFETY: compiled_bytes must come from Component::serialize()
-                // produced by the same version of wasmtime with the same Engine config.
-                #[allow(unsafe_code)]
-                unsafe {
-                    Component::deserialize(&self.engine, &compiled_bytes).map_err(|e| {
-                        PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
-                            "Failed to deserialize WASI component: {}",
-                            e
-                        ))
-                    })
-                }
-            },
-        );
+        let component_result =
+            self.component_cache
+                .entry(cache_key)
+                .or_try_insert_with(|| -> PyResult<Component> {
+                    // SAFETY: compiled_bytes must come from Component::serialize()
+                    // produced by the same version of wasmtime with the same Engine config.
+                    #[allow(unsafe_code)]
+                    unsafe {
+                        Component::deserialize(&self.engine, &compiled_bytes).map_err(|e| {
+                            PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(format!(
+                                "Failed to deserialize WASI component: {}",
+                                e
+                            ))
+                        })
+                    }
+                });
 
         let component = match component_result {
             Ok(entry) => entry.value().clone(),

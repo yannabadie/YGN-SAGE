@@ -173,7 +173,9 @@ impl RustEmbedder {
     pub fn new(py: Python<'_>, model_path: String, tokenizer_path: String) -> PyResult<Self> {
         // Return existing singleton if already loaded (zero-cost for subsequent calls)
         if let Some(shared) = SHARED_SESSION.get() {
-            return Ok(Self { shared: Arc::clone(shared) });
+            return Ok(Self {
+                shared: Arc::clone(shared),
+            });
         }
 
         // First call: resolve ORT dylib path and load model
@@ -185,7 +187,9 @@ impl RustEmbedder {
         if let Some(path) = resolve_ort_dylib_once(&model_path, sys_prefix.as_deref()) {
             if std::env::var("ORT_DYLIB_PATH").is_err() {
                 #[allow(unsafe_code)]
-                unsafe { std::env::set_var("ORT_DYLIB_PATH", path); }
+                unsafe {
+                    std::env::set_var("ORT_DYLIB_PATH", path);
+                }
             }
         }
 
@@ -282,9 +286,7 @@ impl RustEmbedder {
         let session_inputs = if has_token_type {
             let token_type_ids = vec![0i64; batch_size * max_len];
             let type_tensor = Tensor::from_array((shape, token_type_ids)).map_err(|e| {
-                pyo3::exceptions::PyRuntimeError::new_err(format!(
-                    "Tensor error (type_ids): {e}"
-                ))
+                pyo3::exceptions::PyRuntimeError::new_err(format!("Tensor error (type_ids): {e}"))
             })?;
             inputs![
                 "input_ids" => id_tensor,
@@ -369,12 +371,16 @@ impl RustEmbedder {
     /// Compute pairwise cosine similarity for a batch of texts.
     /// Returns flattened upper-triangle: [(0,1), (0,2), (1,2), ...].
     #[pyo3(name = "batch_cosine_similarity")]
-    pub fn py_batch_cosine_similarity(&mut self, py: Python<'_>, texts: Vec<String>) -> PyResult<Vec<f32>> {
+    pub fn py_batch_cosine_similarity(
+        &mut self,
+        py: Python<'_>,
+        texts: Vec<String>,
+    ) -> PyResult<Vec<f32>> {
         let embeddings = self.embed_batch(py, texts)?;
         let n = embeddings.len();
         let mut sims = Vec::with_capacity(n * (n - 1) / 2);
         for i in 0..n {
-            for j in (i+1)..n {
+            for j in (i + 1)..n {
                 sims.push(cosine_sim(&embeddings[i], &embeddings[j]));
             }
         }
@@ -400,7 +406,9 @@ fn cosine_sim(a: &[f32], b: &[f32]) -> f32 {
     let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm_a < 1e-8 || norm_b < 1e-8 { return 0.0; }
+    if norm_a < 1e-8 || norm_b < 1e-8 {
+        return 0.0;
+    }
     dot / (norm_a * norm_b)
 }
 

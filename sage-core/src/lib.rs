@@ -3,6 +3,7 @@ use pyo3::prelude::*;
 pub mod agent;
 pub mod hardware;
 pub mod memory;
+pub mod observability;
 pub mod pool;
 pub mod routing;
 #[cfg(any(feature = "sandbox", feature = "tool-executor"))]
@@ -11,7 +12,6 @@ pub mod sort_utils;
 pub mod topology;
 pub mod types;
 pub mod verification;
-pub mod observability;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -40,7 +40,10 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     }
     // B1.b OTel bridge — always exposed (stub when otel feature off).
     m.add_function(pyo3::wrap_pyfunction!(observability::init_otel, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(observability::bridge_python_span, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        observability::bridge_python_span,
+        m
+    )?)?;
     m.add_class::<observability::RustSpanHandle>()?;
     // Embedded-RustPython availability probe. Red-team harness uses
     // this to skip tests when sage-core was built without the wasm
@@ -67,8 +70,14 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<topology::TopologyGraph>()?;
     // Standalone functions for TopologyGraph (workaround for PyO3 inventory
     // issue on Windows where new #[pymethods] don't register properly)
-    m.add_function(pyo3::wrap_pyfunction!(topology::topology_graph::graph_get_predecessors, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(topology::topology_graph::graph_get_edges, m)?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        topology::topology_graph::graph_get_predecessors,
+        m
+    )?)?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        topology::topology_graph::graph_get_edges,
+        m
+    )?)?;
     m.add_class::<topology::TopologyNode>()?;
     m.add_class::<topology::TopologyEdge>()?;
     m.add_class::<topology::templates::PyTemplateStore>()?;
@@ -105,7 +114,6 @@ fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.add_class::<verification::quality_labeler::QualityLabeler>()?;
         m.add_class::<verification::quality_labeler::QualityLabel>()?;
     }
-
 
     // Add sort utility functions
     m.add_function(wrap_pyfunction!(sort_utils::vectorized_partition_h96, m)?)?;

@@ -10,11 +10,11 @@ use tracing::instrument;
 /// Stop words to exclude from tokenization (mirrors the Python frozenset).
 const STOP_WORDS: &[&str] = &[
     "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
-    "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "shall",
-    "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through",
-    "during", "before", "after", "above", "below", "between", "and", "but", "or", "not", "no",
-    "nor", "this", "that", "these", "those", "it", "its", "i", "you", "he", "she", "we",
-    "they", "me", "him", "her", "us", "them",
+    "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "shall", "to",
+    "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during",
+    "before", "after", "above", "below", "between", "and", "but", "or", "not", "no", "nor", "this",
+    "that", "these", "those", "it", "its", "i", "you", "he", "she", "we", "they", "me", "him",
+    "her", "us", "them",
 ];
 
 /// CRAG-style keyword overlap gate: scores context vs task by keyword overlap.
@@ -139,8 +139,14 @@ mod tests {
         // task tokens: {implement, sorting, algorithm}
         // ctx tokens:  {sorting, algorithm, implementation}
         // overlap: {sorting, algorithm} → 2/3 ≈ 0.667 > 0.3
-        let relevant = gate.is_relevant("implement sorting algorithm", "sorting algorithm implementation");
-        assert!(relevant, "overlapping text should be relevant at threshold 0.3");
+        let relevant = gate.is_relevant(
+            "implement sorting algorithm",
+            "sorting algorithm implementation",
+        );
+        assert!(
+            relevant,
+            "overlapping text should be relevant at threshold 0.3"
+        );
     }
 
     #[test]

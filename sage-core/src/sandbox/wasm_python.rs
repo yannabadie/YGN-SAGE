@@ -404,15 +404,14 @@ impl WasmPythonExecutor {
             Err(trap) => {
                 // wasmtime maps Python's sys.exit(N) to an I32Exit
                 // trap — surface the actual exit code.
-                let (exit_code, timed_out) = if let Some(I32Exit(code)) =
-                    trap.downcast_ref::<I32Exit>()
-                {
-                    (*code, false)
-                } else if start.elapsed() >= deadline {
-                    (-1, true)
-                } else {
-                    (-1, false)
-                };
+                let (exit_code, timed_out) =
+                    if let Some(I32Exit(code)) = trap.downcast_ref::<I32Exit>() {
+                        (*code, false)
+                    } else if start.elapsed() >= deadline {
+                        (-1, true)
+                    } else {
+                        (-1, false)
+                    };
                 let err_msg = if timed_out {
                     format!("[WASM TIMEOUT after {}s]\n{}", timeout_secs, stderr_text)
                 } else {
@@ -499,7 +498,9 @@ fn cache_key(engine: &Engine) -> String {
     // cache is silently rebuilt. We just need the *same rustc build*
     // of sage-core to produce a stable key, which DefaultHasher does.
     let mut engine_hasher = std::collections::hash_map::DefaultHasher::new();
-    engine.precompile_compatibility_hash().hash(&mut engine_hasher);
+    engine
+        .precompile_compatibility_hash()
+        .hash(&mut engine_hasher);
     let engine_digest = engine_hasher.finish();
 
     let mut sha = Sha256::new();
@@ -612,7 +613,11 @@ mod tests {
         // length (fresh build). Anything else is a build-pipeline
         // bug.
         let len = RUSTPYTHON_WASM.len();
-        assert!(len == 0 || len > 1_000_000, "unexpected runtime size: {}", len);
+        assert!(
+            len == 0 || len > 1_000_000,
+            "unexpected runtime size: {}",
+            len
+        );
     }
 
     #[test]
@@ -640,8 +645,16 @@ mod tests {
             return;
         };
         let r = exec.execute("while True: pass", "", 2);
-        assert!(r.timed_out, "expected timeout; got exit_code={}", r.exit_code);
-        assert!(r.duration_ms >= 1500, "timed out too early: {}ms", r.duration_ms);
+        assert!(
+            r.timed_out,
+            "expected timeout; got exit_code={}",
+            r.exit_code
+        );
+        assert!(
+            r.duration_ms >= 1500,
+            "timed out too early: {}ms",
+            r.duration_ms
+        );
     }
 
     #[test]
@@ -675,7 +688,11 @@ except Exception as e:
             "",
             5,
         );
-        assert!(!r.stdout.contains("LEAK:"), "filesystem read LEAKED: {}", r.stdout);
+        assert!(
+            !r.stdout.contains("LEAK:"),
+            "filesystem read LEAKED: {}",
+            r.stdout
+        );
         assert!(
             r.stdout.contains("DENIED:") || r.exit_code != 0,
             "expected OSError / PermissionError; got: {}",
@@ -771,8 +788,7 @@ mod cache_tests {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: false,
         };
-        let _exec = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("cold new should succeed");
+        let _exec = WasmPythonExecutor::new_with_overrides(&opts).expect("cold new should succeed");
         assert!(
             !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
             "cold miss should NOT load from cache"
@@ -802,16 +818,14 @@ mod cache_tests {
         };
 
         // Cold — populate the cache.
-        let _a = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("cold new should succeed");
+        let _a = WasmPythonExecutor::new_with_overrides(&opts).expect("cold new should succeed");
         assert!(
             !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
             "first call should be a cold miss"
         );
 
         // Warm — deserialize path.
-        let _b = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("warm new should succeed");
+        let _b = WasmPythonExecutor::new_with_overrides(&opts).expect("warm new should succeed");
         assert!(
             LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
             "second call should load the cached .cwasm"
@@ -882,8 +896,8 @@ mod cache_tests {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: true,
         };
-        let _a = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("disabled new should succeed");
+        let _a =
+            WasmPythonExecutor::new_with_overrides(&opts).expect("disabled new should succeed");
         let _b = WasmPythonExecutor::new_with_overrides(&opts)
             .expect("second disabled new should succeed");
         assert!(
@@ -910,11 +924,9 @@ mod cache_tests {
         };
 
         // Cold → populate.
-        let _ = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("cold new should succeed");
+        let _ = WasmPythonExecutor::new_with_overrides(&opts).expect("cold new should succeed");
         // Warm → deserialize.
-        let exec = WasmPythonExecutor::new_with_overrides(&opts)
-            .expect("warm new should succeed");
+        let exec = WasmPythonExecutor::new_with_overrides(&opts).expect("warm new should succeed");
         assert!(
             LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
             "expected this call to be served from cache"

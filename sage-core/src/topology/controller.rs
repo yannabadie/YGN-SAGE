@@ -228,7 +228,7 @@ impl RustTopologyController {
                     action: "upgrade_model".into(),
                     target_node: Some(node_idx),
                     reason: format!("quality={:.2} < {}", quality, THETA_CRITICAL),
-                    new_model_id: None,       // filled by Python _resolve_upgrade_model
+                    new_model_id: None, // filled by Python _resolve_upgrade_model
                     invariant_feedback: None, // filled by Python _get_invariant_feedback
                     gate_source: None,
                     gate_target: None,
@@ -276,10 +276,7 @@ impl RustTopologyController {
         Some(RustAdaptationDecision {
             action: "reroute_topology".into(),
             target_node: Some(node_idx),
-            reason: format!(
-                "consistency={:.2} < {}",
-                consistency, THETA_CONSISTENCY
-            ),
+            reason: format!("consistency={:.2} < {}", consistency, THETA_CONSISTENCY),
             new_model_id: None,
             invariant_feedback: None,
             gate_source: None,
@@ -619,11 +616,11 @@ mod tests {
     #[test]
     fn is_in_gate_band_detects_critical_range() {
         let c = RustTopologyController::new();
-        assert!(c.is_in_gate_band(0.3));  // lower inclusive
+        assert!(c.is_in_gate_band(0.3)); // lower inclusive
         assert!(c.is_in_gate_band(0.5));
         assert!(c.is_in_gate_band(0.699));
-        assert!(!c.is_in_gate_band(0.7));   // upper exclusive
-        assert!(!c.is_in_gate_band(0.29));  // below
+        assert!(!c.is_in_gate_band(0.7)); // upper exclusive
+        assert!(!c.is_in_gate_band(0.29)); // below
         assert!(!c.is_in_gate_band(0.9));
     }
 
@@ -651,9 +648,7 @@ mod tests {
     fn parallel_inconsistency_debate_topology_skips_reroute() {
         let mut c = RustTopologyController::new();
         // Would normally reroute, but debate topology suppresses
-        assert!(c
-            .check_parallel_inconsistency(1, 0.1, true)
-            .is_none());
+        assert!(c.check_parallel_inconsistency(1, 0.1, true).is_none());
         assert_eq!(c.reroute_count, 0);
     }
 
@@ -679,7 +674,9 @@ mod tests {
     #[test]
     fn importance_prune_above_threshold_is_none() {
         let c = RustTopologyController::new();
-        assert!(c.check_importance_prune(2, THETA_PRUNE, false, true).is_none());
+        assert!(c
+            .check_importance_prune(2, THETA_PRUNE, false, true)
+            .is_none());
         assert!(c.check_importance_prune(2, 0.8, false, true).is_none());
     }
 
@@ -795,13 +792,8 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         let mut c = RustTopologyController::new_inner();
         pyo3::Python::with_gil(|_py| {
-            c.seed_state_for_legacy_tests(
-                1,
-                2,
-                vec![(0, 2), (3, 1)],
-                4,
-            )
-            .expect("seed ok");
+            c.seed_state_for_legacy_tests(1, 2, vec![(0, 2), (3, 1)], 4)
+                .expect("seed ok");
         });
         assert_eq!(c.reroute_count, 1);
         assert_eq!(c.spawn_count, 2);
@@ -815,10 +807,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
         let mut c = RustTopologyController::new_inner();
         pyo3::Python::with_gil(|_py| {
-            let result = c.seed_state_for_legacy_tests(
-                MAX_REROUTES + 20,
-                0, vec![], 0,
-            );
+            let result = c.seed_state_for_legacy_tests(MAX_REROUTES + 20, 0, vec![], 0);
             assert!(result.is_err());
         });
     }

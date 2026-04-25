@@ -115,7 +115,8 @@ pub(crate) fn extract_array_bounds(code: &str) -> Vec<(i64, i64)> {
     let mut bounds = Vec::new();
 
     // Find list literal lengths: `arr = [1, 2, 3]` → length 3
-    let mut known_lengths: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    let mut known_lengths: std::collections::HashMap<String, i64> =
+        std::collections::HashMap::new();
 
     for line in code.lines() {
         let trimmed = line.trim();
@@ -123,11 +124,7 @@ pub(crate) fn extract_array_bounds(code: &str) -> Vec<(i64, i64)> {
         if let Some(eq_pos) = trimmed.find(" = [") {
             let name = trimmed[..eq_pos].trim();
             // Only simple identifiers
-            if name
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
-                && !name.is_empty()
-            {
+            if name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') && !name.is_empty() {
                 let bracket_content = &trimmed[eq_pos + 3..];
                 if let Some(close) = bracket_content.find(']') {
                     let inner = &bracket_content[..close];
@@ -257,8 +254,13 @@ pub(crate) fn extract_final_number(text: &str) -> Option<i64> {
     // 2. Number after known keywords (no regex — string search + char iteration)
     let lower = text.to_lowercase();
     for keyword in &[
-        "answer is", "answer:", "result is", "result:",
-        "total is", "total:", "equals",
+        "answer is",
+        "answer:",
+        "result is",
+        "result:",
+        "total is",
+        "total:",
+        "equals",
     ] {
         if let Some(pos) = lower.rfind(keyword) {
             let after = &text[pos + keyword.len()..];
@@ -391,7 +393,10 @@ impl QualityLabeler {
                 checks_total += 1;
                 if self.verifier.verify_arithmetic_expr(expr, *expected, 0) {
                     checks_passed += 1;
-                    details.push(format!("{}: arithmetic '{}=={}' PROVED", block_label, expr, expected));
+                    details.push(format!(
+                        "{}: arithmetic '{}=={}' PROVED",
+                        block_label, expr, expected
+                    ));
                 } else {
                     details.push(format!(
                         "{}: arithmetic '{}=={}' UNPROVED",
@@ -826,7 +831,10 @@ y = x * 2
     fn test_label_no_code_returns_none_for_prose() {
         let labeler = QualityLabeler::new();
         // Pure text with no code, no equations, no final number
-        let label = labeler.label("Explain gravity", "Gravity is a force of attraction between objects.");
+        let label = labeler.label(
+            "Explain gravity",
+            "Gravity is a force of attraction between objects.",
+        );
         assert!(label.is_none(), "Pure prose should still abstain");
     }
 

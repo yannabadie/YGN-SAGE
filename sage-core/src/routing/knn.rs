@@ -227,7 +227,10 @@ mod tests {
         let result = router.route(query).expect("should route");
         // Both label=1 exemplars are closest → winner must be 1
         assert_eq!(result.0, 1);
-        assert!(result.1 > 0.5, "confidence should be >0.5 for majority label");
+        assert!(
+            result.1 > 0.5,
+            "confidence should be >0.5 for majority label"
+        );
     }
 
     #[test]
@@ -235,9 +238,7 @@ mod tests {
         let e1 = make_unit(&[1.0_f32, 0.0, 0.0]);
 
         let mut router = RustKnnRouter::new(1, 0.9); // high threshold
-        router
-            .load_exemplars(e1, vec![1i32], 3)
-            .expect("load ok");
+        router.load_exemplars(e1, vec![1i32], 3).expect("load ok");
 
         // Query is roughly orthogonal to the exemplar → low similarity
         let query = make_unit(&[0.0_f32, 1.0, 0.0]);
@@ -278,9 +279,7 @@ mod tests {
         let e1 = make_unit(&[1.0_f32, 0.0, 0.0]);
 
         let mut router = RustKnnRouter::new(1, 0.0);
-        router
-            .load_exemplars(e1, vec![1i32], 3)
-            .expect("load ok");
+        router.load_exemplars(e1, vec![1i32], 3).expect("load ok");
 
         // Query has wrong dimension (2 instead of 3)
         let query = vec![1.0_f32, 0.0];

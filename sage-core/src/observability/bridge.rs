@@ -137,8 +137,7 @@ fn parse_traceparent(s: &str) -> Result<Context, &'static str> {
         return Err("flags must be 2 hex chars");
     }
 
-    let trace_id =
-        u128::from_str_radix(parts[1], 16).map_err(|_| "trace_id is not valid hex")?;
+    let trace_id = u128::from_str_radix(parts[1], 16).map_err(|_| "trace_id is not valid hex")?;
     let span_id = u64::from_str_radix(parts[2], 16).map_err(|_| "span_id is not valid hex")?;
     let flags = u8::from_str_radix(parts[3], 16).map_err(|_| "flags is not valid hex")?;
 

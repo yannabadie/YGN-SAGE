@@ -1375,8 +1375,8 @@ mod tests {
         // P0 bug: a = b where b is another variable, not a constant
         let eqs = vec![
             ("price".into(), "10".into()),
-            ("bread_rye".into(), "price".into()),       // alias
-            ("total".into(), "bread_rye + 5".into()),    // uses alias
+            ("bread_rye".into(), "price".into()),     // alias
+            ("total".into(), "bread_rye + 5".into()), // uses alias
         ];
         let result = solve_equation_system(eqs);
         assert_eq!(result["price"], 10);
@@ -1420,7 +1420,7 @@ mod tests {
         let eqs = vec![
             ("zoo_a_pelican".into(), "12".into()),
             ("zoo_a_eagle".into(), "zoo_a_pelican + 3".into()),
-            ("zoo_b_pelican".into(), "zoo_a_pelican".into()),  // alias!
+            ("zoo_b_pelican".into(), "zoo_a_pelican".into()), // alias!
             ("zoo_b_eagle".into(), "zoo_b_pelican * 2".into()),
             ("total".into(), "zoo_a_eagle + zoo_b_eagle".into()),
         ];

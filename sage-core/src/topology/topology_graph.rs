@@ -105,12 +105,8 @@ impl TopologyTemplate {
             "horizon_pipeline" | "horizon-pipeline" | "horizonpipeline" => {
                 Some(Self::HorizonPipeline)
             }
-            "parallel_fanout" | "parallel-fanout" | "parallelfanout" => {
-                Some(Self::ParallelFanout)
-            }
-            "formal_solver" | "formal-solver" | "formalsolver" => {
-                Some(Self::FormalSolver)
-            }
+            "parallel_fanout" | "parallel-fanout" | "parallelfanout" => Some(Self::ParallelFanout),
+            "formal_solver" | "formal-solver" | "formalsolver" => Some(Self::FormalSolver),
             _ => None,
         }
     }
@@ -228,8 +224,11 @@ impl std::fmt::Display for TopologyNode {
             self.security_label,
             self.max_cost_usd,
             self.max_wall_time_s,
-            if self.fallback_tier.is_empty() { String::new() }
-            else { format!(", fallback='{}'", self.fallback_tier) }
+            if self.fallback_tier.is_empty() {
+                String::new()
+            } else {
+                format!(", fallback='{}'", self.fallback_tier)
+            }
         )
     }
 }
@@ -519,9 +518,10 @@ impl TopologyGraph {
                 node.model_id = model_id.to_string();
                 Ok(())
             }
-            None => Err(pyo3::exceptions::PyIndexError::new_err(
-                format!("Node index {} out of range", idx)
-            )),
+            None => Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "Node index {} out of range",
+                idx
+            ))),
         }
     }
 
@@ -539,9 +539,10 @@ impl TopologyGraph {
     pub fn py_get_predecessors(&self, node_idx: usize) -> PyResult<Vec<usize>> {
         let idx = NodeIndex::new(node_idx);
         if self.graph.node_weight(idx).is_none() {
-            return Err(pyo3::exceptions::PyIndexError::new_err(
-                format!("Node index {} out of range", node_idx),
-            ));
+            return Err(pyo3::exceptions::PyIndexError::new_err(format!(
+                "Node index {} out of range",
+                node_idx
+            )));
         }
         Ok(self
             .graph

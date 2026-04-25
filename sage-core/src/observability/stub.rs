@@ -49,6 +49,6 @@ mod tests {
     #[test]
     fn stub_bridge_returns_handle() {
         let mut h = bridge_python_span("00-1-2-01", "test");
-        h.close();  // does not panic
+        h.close(); // does not panic
     }
 }

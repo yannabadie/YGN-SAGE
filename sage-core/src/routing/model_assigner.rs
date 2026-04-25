@@ -38,8 +38,15 @@ const COST_ESTIMATE_TOKENS: (u32, u32) = (1000, 500);
 ///                MUST stay sink or F7 will replace free Rust math with
 ///                a $0.10 LLM call on math/formal tasks)
 const SINK_ROLES: &[&str] = &[
-    "synthesizer", "aggregator", "mixer", "judge", "verifier", "solver",
-    "formatter", "output", "sink",
+    "synthesizer",
+    "aggregator",
+    "mixer",
+    "judge",
+    "verifier",
+    "solver",
+    "formatter",
+    "output",
+    "sink",
 ];
 
 /// Classify a role string as a "sink" (output-only forwarder) vs a
@@ -484,9 +491,7 @@ impl ModelAssigner {
             Some(h) => h.as_slice(),
             None => &[],
         };
-        Ok(self.assign_models_with_hints_inner(
-            graph, task_domain, budget_usd, hints, task_sys,
-        ))
+        Ok(self.assign_models_with_hints_inner(graph, task_domain, budget_usd, hints, task_sys))
     }
 
     /// Exclude dead providers from all future assignments.
@@ -516,8 +521,12 @@ impl ModelAssigner {
             _ => None,
         });
         self.assign_single_node_inner(
-            graph, node_idx, task_domain, budget_usd,
-            exclude_model_ids.as_deref(), task_sys,
+            graph,
+            node_idx,
+            task_domain,
+            budget_usd,
+            exclude_model_ids.as_deref(),
+            task_sys,
         )
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
     }
@@ -595,15 +604,7 @@ mod tests {
             5.0,
             60.0,
         );
-        let n1 = TopologyNode::new(
-            "reviewer".into(),
-            "".into(),
-            3,
-            vec![],
-            0,
-            5.0,
-            60.0,
-        );
+        let n1 = TopologyNode::new("reviewer".into(), "".into(), 3, vec![], 0, 5.0, 60.0);
         let edge = TopologyEdge::control();
         g.add_node(n0);
         g.add_node(n1);
@@ -619,15 +620,9 @@ mod tests {
         let n = assigner.assign_models_inner(&mut graph, "code", 10.0);
         assert_eq!(n, 2);
         // Coder (S2, needs tools) -> expensive-smart (only one with tools)
-        assert_eq!(
-            graph.try_get_node(0).unwrap().model_id,
-            "expensive-smart"
-        );
+        assert_eq!(graph.try_get_node(0).unwrap().model_id, "expensive-smart");
         // Reviewer (S3, no special caps) -> expensive-smart (highest S3 affinity)
-        assert_eq!(
-            graph.try_get_node(1).unwrap().model_id,
-            "expensive-smart"
-        );
+        assert_eq!(graph.try_get_node(1).unwrap().model_id, "expensive-smart");
     }
 
     #[test]
@@ -736,18 +731,29 @@ mod tests {
         let assigned_no_hint = graph.try_get_node(0).unwrap().model_id.clone();
 
         // With hint for the OTHER provider: the hint should flip the result
-        let other_provider = if assigned_no_hint == "model-a" { "provider-b" } else { "provider-a" };
-        let expected_with_hint = if other_provider == "provider-a" { "model-a" } else { "model-b" };
+        let other_provider = if assigned_no_hint == "model-a" {
+            "provider-b"
+        } else {
+            "provider-a"
+        };
+        let expected_with_hint = if other_provider == "provider-a" {
+            "model-a"
+        } else {
+            "model-b"
+        };
         let mut graph2 = TopologyGraph::try_new("sequential").unwrap();
         let n0b = TopologyNode::new("coder".into(), "".into(), 2, vec![], 0, 5.0, 60.0);
         graph2.add_node(n0b);
         let hints = vec![(0, other_provider.to_string())];
-        let n_with_hint = assigner.assign_models_with_hints_inner(&mut graph2, "code", 10.0, &hints, None);
+        let n_with_hint =
+            assigner.assign_models_with_hints_inner(&mut graph2, "code", 10.0, &hints, None);
         assert_eq!(n_with_hint, 1);
         let assigned_with_hint = graph2.try_get_node(0).unwrap().model_id.clone();
-        assert_eq!(assigned_with_hint, expected_with_hint,
+        assert_eq!(
+            assigned_with_hint, expected_with_hint,
             "Provider hint for {} should flip selection from {} to {}",
-            other_provider, assigned_no_hint, expected_with_hint);
+            other_provider, assigned_no_hint, expected_with_hint
+        );
     }
 
     #[test]
@@ -757,10 +763,7 @@ mod tests {
         let mut graph = two_node_graph();
         let model_id = assigner.assign_single_node_inner(&mut graph, 1, "math", 10.0, None, None);
         assert!(model_id.is_some());
-        assert_eq!(
-            graph.try_get_node(1).unwrap().model_id,
-            model_id.unwrap()
-        );
+        assert_eq!(graph.try_get_node(1).unwrap().model_id, model_id.unwrap());
     }
 
     #[test]
@@ -776,7 +779,12 @@ mod tests {
         // Now assign with that model excluded — should pick a different one
         let mut graph2 = two_node_graph();
         let model_id2 = assigner.assign_single_node_inner(
-            &mut graph2, 1, "math", 10.0, Some(&[first_model.clone()]), None,
+            &mut graph2,
+            1,
+            "math",
+            10.0,
+            Some(&[first_model.clone()]),
+            None,
         );
         if let Some(ref m) = model_id2 {
             assert_ne!(m, &first_model, "Excluded model should not be reassigned");
@@ -795,7 +803,8 @@ mod tests {
         g.add_node(n);
         assigner.assign_models_inner(&mut g, "code", 10.0);
         assert_eq!(
-            g.try_get_node(0).unwrap().model_id, "cheap-fast",
+            g.try_get_node(0).unwrap().model_id,
+            "cheap-fast",
             "cost-heavy weights should prefer cheap-fast"
         );
     }
@@ -810,7 +819,8 @@ mod tests {
         g.add_node(n);
         assigner.assign_models_inner(&mut g, "code", 10.0);
         assert_eq!(
-            g.try_get_node(0).unwrap().model_id, "expensive-smart",
+            g.try_get_node(0).unwrap().model_id,
+            "expensive-smart",
             "affinity-heavy weights for S3 should prefer expensive-smart"
         );
     }
@@ -846,7 +856,11 @@ mod tests {
         // caller that didn't know about task-level routing still gets the
         // per-node tier it always got.
         for role in ["planner", "coder", "synthesizer", "worker"] {
-            for local in [CognitiveSystem::S1, CognitiveSystem::S2, CognitiveSystem::S3] {
+            for local in [
+                CognitiveSystem::S1,
+                CognitiveSystem::S2,
+                CognitiveSystem::S3,
+            ] {
                 assert_eq!(effective_system(role, local, None, "code"), local);
             }
         }
@@ -859,19 +873,39 @@ mod tests {
         // producer nodes (planner, coder, worker) floor at S2; the
         // synthesizer stays S1.
         assert_eq!(
-            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
+            effective_system(
+                "planner",
+                CognitiveSystem::S1,
+                Some(CognitiveSystem::S3),
+                "code"
+            ),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("coder", CognitiveSystem::S2, Some(CognitiveSystem::S3), "code"),
+            effective_system(
+                "coder",
+                CognitiveSystem::S2,
+                Some(CognitiveSystem::S3),
+                "code"
+            ),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("worker_0", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
+            effective_system(
+                "worker_0",
+                CognitiveSystem::S1,
+                Some(CognitiveSystem::S3),
+                "code"
+            ),
             CognitiveSystem::S2
         );
         assert_eq!(
-            effective_system("synthesizer", CognitiveSystem::S1, Some(CognitiveSystem::S3), "code"),
+            effective_system(
+                "synthesizer",
+                CognitiveSystem::S1,
+                Some(CognitiveSystem::S3),
+                "code"
+            ),
             CognitiveSystem::S1
         );
     }
@@ -882,7 +916,12 @@ mod tests {
         // no promotion happens. Templates that deliberately use cheap
         // planners on S2 tasks keep that choice.
         assert_eq!(
-            effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S2), "code"),
+            effective_system(
+                "planner",
+                CognitiveSystem::S1,
+                Some(CognitiveSystem::S2),
+                "code"
+            ),
             CognitiveSystem::S1
         );
     }
@@ -892,11 +931,18 @@ mod tests {
         // Synthesizer / aggregator / formatter / output_* are terminal
         // forwarders (SINK_NODE_PROMPT). Cheap is correct — the domain
         // floor must NOT override the sink classification.
-        for sink in ["synthesizer", "aggregator", "output_formatter", "formatter", "output_writer"] {
+        for sink in [
+            "synthesizer",
+            "aggregator",
+            "output_formatter",
+            "formatter",
+            "output_writer",
+        ] {
             assert_eq!(
                 effective_system(sink, CognitiveSystem::S1, Some(CognitiveSystem::S3), "math"),
                 CognitiveSystem::S1,
-                "sink role `{}` must stay on local tier even on math/S3", sink
+                "sink role `{}` must stay on local tier even on math/S3",
+                sink
             );
         }
     }
@@ -906,11 +952,21 @@ mod tests {
         // If the template explicitly picked S3 for a node, we never
         // downgrade, even if the task tier is lower.
         assert_eq!(
-            effective_system("verifier", CognitiveSystem::S3, Some(CognitiveSystem::S1), "code"),
+            effective_system(
+                "verifier",
+                CognitiveSystem::S3,
+                Some(CognitiveSystem::S1),
+                "code"
+            ),
             CognitiveSystem::S3
         );
         assert_eq!(
-            effective_system("coder", CognitiveSystem::S3, Some(CognitiveSystem::S2), "code"),
+            effective_system(
+                "coder",
+                CognitiveSystem::S3,
+                Some(CognitiveSystem::S2),
+                "code"
+            ),
             CognitiveSystem::S3
         );
     }
@@ -931,9 +987,15 @@ mod tests {
         // Math S3 task: producer planner gets full S3, not S2.
         for domain in ["math", "Math", "MATH"] {
             assert_eq!(
-                effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                effective_system(
+                    "planner",
+                    CognitiveSystem::S1,
+                    Some(CognitiveSystem::S3),
+                    domain
+                ),
                 CognitiveSystem::S3,
-                "math/S3 must floor producer at S3 (not S2), got domain={}", domain
+                "math/S3 must floor producer at S3 (not S2), got domain={}",
+                domain
             );
         }
     }
@@ -944,9 +1006,15 @@ mod tests {
         // Both bare "formal" and "formal_verification" must classify.
         for domain in ["formal", "formal_verification", "Formal", "formal_proofs"] {
             assert_eq!(
-                effective_system("coder", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                effective_system(
+                    "coder",
+                    CognitiveSystem::S1,
+                    Some(CognitiveSystem::S3),
+                    domain
+                ),
                 CognitiveSystem::S3,
-                "formal/S3 must floor producer at S3, got domain={}", domain
+                "formal/S3 must floor producer at S3, got domain={}",
+                domain
             );
         }
     }
@@ -958,9 +1026,15 @@ mod tests {
         // every SWE-bench task — exactly the opposite of what we want.
         for domain in ["code", "general", "", "swe_bench", "agent"] {
             assert_eq!(
-                effective_system("planner", CognitiveSystem::S1, Some(CognitiveSystem::S3), domain),
+                effective_system(
+                    "planner",
+                    CognitiveSystem::S1,
+                    Some(CognitiveSystem::S3),
+                    domain
+                ),
                 CognitiveSystem::S2,
-                "non-rigour S3 must keep the S2 floor, got domain={}", domain
+                "non-rigour S3 must keep the S2 floor, got domain={}",
+                domain
             );
         }
     }
@@ -969,15 +1043,36 @@ mod tests {
     fn test_is_sink_role_classification() {
         // Positive: every role that templates.rs assigns SINK_NODE_PROMPT to.
         // Audit cmd: `grep -B 1 SINK_NODE_PROMPT sage-core/src/topology/templates.rs`
-        for r in ["synthesizer", "Synthesizer", "aggregator",
-                  "mixer", "judge", "verifier", "solver",
-                  "output_formatter", "formatter", "sink", "output"] {
+        for r in [
+            "synthesizer",
+            "Synthesizer",
+            "aggregator",
+            "mixer",
+            "judge",
+            "verifier",
+            "solver",
+            "output_formatter",
+            "formatter",
+            "sink",
+            "output",
+        ] {
             assert!(is_sink_role(r), "`{}` should classify as sink", r);
         }
         // Negative: producer / tool-using / reasoning roles.
-        for r in ["planner", "coder", "worker_0", "source",
-                  "thinker", "brainstormer", "actor", "critic",
-                  "formalizer", "preprocessor", "splitter", "dispatcher"] {
+        for r in [
+            "planner",
+            "coder",
+            "worker_0",
+            "source",
+            "thinker",
+            "brainstormer",
+            "actor",
+            "critic",
+            "formalizer",
+            "preprocessor",
+            "splitter",
+            "dispatcher",
+        ] {
             assert!(!is_sink_role(r), "`{}` should NOT classify as sink", r);
         }
     }
@@ -1061,7 +1156,10 @@ mod tests {
         let providers: Vec<String> = (0..3)
             .map(|i| {
                 let model_id = &graph.try_get_node(i).unwrap().model_id;
-                registry.get(model_id).map(|c| c.provider.clone()).unwrap_or_default()
+                registry
+                    .get(model_id)
+                    .map(|c| c.provider.clone())
+                    .unwrap_or_default()
             })
             .collect();
         let distinct: std::collections::HashSet<_> = providers.iter().collect();
@@ -1079,9 +1177,8 @@ mod tests {
     #[test]
     fn test_sink_drift_templates_match_classifier() {
         use crate::topology::templates::{
-            self_moa, sequential, parallel, avr, hierarchical, hub,
-            debate, brainstorming, robust, horizon_pipeline,
-            parallel_fanout, formal_solver, SINK_NODE_PROMPT,
+            avr, brainstorming, debate, formal_solver, hierarchical, horizon_pipeline, hub,
+            parallel, parallel_fanout, robust, self_moa, sequential, SINK_NODE_PROMPT,
         };
 
         let templates: Vec<(&str, TopologyGraph)> = vec![
@@ -1115,7 +1212,10 @@ mod tests {
         }
         // Sanity: ensure the test actually found sinks (would silently
         // pass if the SINK_NODE_PROMPT marker drifted to a different name).
-        assert!(sink_count >= 6, "expected >=6 sink nodes across 12 templates, found {sink_count}");
+        assert!(
+            sink_count >= 6,
+            "expected >=6 sink nodes across 12 templates, found {sink_count}"
+        );
     }
 
     /// Roles whose F6 prompt explicitly mandates "AT LEAST 3 distinct
@@ -1141,9 +1241,8 @@ mod tests {
     #[test]
     fn test_no_strict_mandate_role_at_s1_in_any_template() {
         use crate::topology::templates::{
-            self_moa, sequential, parallel, avr, hierarchical, hub,
-            debate, brainstorming, robust, horizon_pipeline,
-            parallel_fanout, formal_solver,
+            avr, brainstorming, debate, formal_solver, hierarchical, horizon_pipeline, hub,
+            parallel, parallel_fanout, robust, self_moa, sequential,
         };
 
         let templates: Vec<(&str, TopologyGraph)> = vec![
@@ -1191,7 +1290,12 @@ mod tests {
         // computation with a $0.10 LLM call. The sink classification
         // must take precedence over the domain-aware floor.
         assert_eq!(
-            effective_system("solver", CognitiveSystem::S1, Some(CognitiveSystem::S3), "math"),
+            effective_system(
+                "solver",
+                CognitiveSystem::S1,
+                Some(CognitiveSystem::S3),
+                "math"
+            ),
             CognitiveSystem::S1,
             "formal_solver's solver MUST stay S1 — it's pure Rust compute"
         );
@@ -1218,37 +1322,69 @@ mod tests {
 
         let mut g_no_hint = TopologyGraph::try_new("sequential").unwrap();
         g_no_hint.add_node(TopologyNode::new(
-            "planner".into(), "".into(), 1, vec![], 0, 5.0, 60.0,
+            "planner".into(),
+            "".into(),
+            1,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
         assigner.assign_models_with_hints_inner(&mut g_no_hint, "code", 10.0, &[], None);
         let baseline = g_no_hint.try_get_node(0).unwrap().model_id.clone();
 
         let mut g_with_hint = TopologyGraph::try_new("sequential").unwrap();
         g_with_hint.add_node(TopologyNode::new(
-            "planner".into(), "".into(), 1, vec![], 0, 5.0, 60.0,
+            "planner".into(),
+            "".into(),
+            1,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
         assigner.assign_models_with_hints_inner(
-            &mut g_with_hint, "code", 10.0, &[], Some(CognitiveSystem::S3),
+            &mut g_with_hint,
+            "code",
+            10.0,
+            &[],
+            Some(CognitiveSystem::S3),
         );
         let promoted = g_with_hint.try_get_node(0).unwrap().model_id.clone();
 
-        assert_eq!(baseline, "cheap-fast",
-            "baseline planner@S1 should pick the S1-heavy cheap-fast");
-        assert_eq!(promoted, "expensive-smart",
-            "task_system=S3 should promote planner to S2 and pick expensive-smart");
+        assert_eq!(
+            baseline, "cheap-fast",
+            "baseline planner@S1 should pick the S1-heavy cheap-fast"
+        );
+        assert_eq!(
+            promoted, "expensive-smart",
+            "task_system=S3 should promote planner to S2 and pick expensive-smart"
+        );
     }
 
     #[test]
     fn test_is_high_rigour_domain_classification() {
         // Positive: substring match, case-insensitive — handles every
         // sensible variant the pipeline might emit.
-        for d in ["math", "Math", "MATH", "formal", "Formal_Verification",
-                  "formal_proofs", "discrete_math", "applied_math"] {
+        for d in [
+            "math",
+            "Math",
+            "MATH",
+            "formal",
+            "Formal_Verification",
+            "formal_proofs",
+            "discrete_math",
+            "applied_math",
+        ] {
             assert!(is_high_rigour_domain(d), "`{}` should be high-rigour", d);
         }
         // Negative: explicit non-rigour domains and the unset case.
         for d in ["code", "general", "", "swe_bench", "agent", "tools"] {
-            assert!(!is_high_rigour_domain(d), "`{}` should NOT be high-rigour", d);
+            assert!(
+                !is_high_rigour_domain(d),
+                "`{}` should NOT be high-rigour",
+                d
+            );
         }
     }
 }

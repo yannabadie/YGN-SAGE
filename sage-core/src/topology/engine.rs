@@ -123,9 +123,9 @@ impl TopologyEngine {
                 3,
                 0.3,
                 vec![
-                    DimensionBounds::new(0.001, 5.0),   // max_cost_usd
-                    DimensionBounds::new(1.0, 300.0),    // max_wall_time_s
-                    DimensionBounds::new(0.1, 5.0),      // edge_weight
+                    DimensionBounds::new(0.001, 5.0), // max_cost_usd
+                    DimensionBounds::new(1.0, 300.0), // max_wall_time_s
+                    DimensionBounds::new(0.1, 5.0),   // edge_weight
                 ],
                 0.99, // sigma decay — subject to ablation
             ),
@@ -279,7 +279,8 @@ impl TopologyEngine {
 
         // Path 1: S-MMU hit — retrieve similar past task (skip if exploring)
         let result = if !skip_retrieval {
-            if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone()) {
+            if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone())
+            {
                 info!(
                     source = "smmu_hit",
                     confidence = result.confidence,
@@ -298,7 +299,11 @@ impl TopologyEngine {
         let result = result.or_else(|| {
             if !skip_retrieval {
                 if let Some(r) = self.try_archive_hit(system, task_description) {
-                    info!(source = "archive_hit", confidence = r.confidence, "topology_generated");
+                    info!(
+                        source = "archive_hit",
+                        confidence = r.confidence,
+                        "topology_generated"
+                    );
                     return Some(r);
                 }
             } else {
@@ -311,7 +316,11 @@ impl TopologyEngine {
         // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
         let result = result.or_else(|| {
             if let Some(r) = self.try_mutation() {
-                info!(source = "mutation", confidence = r.confidence, "topology_generated");
+                info!(
+                    source = "mutation",
+                    confidence = r.confidence,
+                    "topology_generated"
+                );
                 return Some(r);
             }
             None
@@ -320,7 +329,11 @@ impl TopologyEngine {
         // Path 5: MCTS search (if archive has enough diversity)
         let result = result.or_else(|| {
             if let Some(r) = self.try_mcts_search() {
-                info!(source = "mcts_search", confidence = r.confidence, "topology_generated");
+                info!(
+                    source = "mcts_search",
+                    confidence = r.confidence,
+                    "topology_generated"
+                );
                 return Some(r);
             }
             None
@@ -347,7 +360,8 @@ impl TopologyEngine {
         // choose() was already called BEFORE the cascade (above), so we
         // do NOT call it again here — just register the observed arm.
         let source_str = result.source.as_str();
-        self.bandit.add_arm(source_str, &result.topology.template_type);
+        self.bandit
+            .add_arm(source_str, &result.topology.template_type);
 
         result
     }
@@ -489,7 +503,10 @@ impl TopologyEngine {
             MutationResult::Success(mutated) => {
                 let vr = self.verifier.verify(&mutated);
                 if vr.valid {
-                    self.mutation_stats.lock().unwrap().record(op_idx as usize, true);
+                    self.mutation_stats
+                        .lock()
+                        .unwrap()
+                        .record(op_idx as usize, true);
                     info!(
                         parent_quality = best.quality,
                         operator = super::mutations::OPERATOR_NAMES[op_idx as usize],
@@ -502,13 +519,19 @@ impl TopologyEngine {
                         confidence: best.quality * 0.8,
                     })
                 } else {
-                    self.mutation_stats.lock().unwrap().record(op_idx as usize, false);
+                    self.mutation_stats
+                        .lock()
+                        .unwrap()
+                        .record(op_idx as usize, false);
                     debug!(errors = ?vr.errors, "mutation_failed_verification");
                     None
                 }
             }
             MutationResult::Invalid(reason) => {
-                self.mutation_stats.lock().unwrap().record(op_idx as usize, false);
+                self.mutation_stats
+                    .lock()
+                    .unwrap()
+                    .record(op_idx as usize, false);
                 debug!(reason = %reason, "mutation_invalid");
                 None
             }
@@ -636,8 +659,7 @@ impl TopologyEngine {
         self.bridge.record_outcome(smmu, outcome);
 
         // 2. Feed MAP-Elites archive (reuses pre-computed descriptor)
-        if let (Some(descriptor), Some(graph)) =
-            (descriptor, self.topology_cache.get(topology_id))
+        if let (Some(descriptor), Some(graph)) = (descriptor, self.topology_cache.get(topology_id))
         {
             let inserted =
                 self.archive
@@ -653,7 +675,10 @@ impl TopologyEngine {
 
         // 3. Feed bandit — use record_outcome() with last decision_id to update posteriors
         if let Some(ref decision_id) = self.last_decision_id {
-            if let Err(e) = self.bandit.record_outcome(decision_id, quality, cost, latency_ms) {
+            if let Err(e) = self
+                .bandit
+                .record_outcome(decision_id, quality, cost, latency_ms)
+            {
                 debug!(error = %e, "bandit_record_failed_fallback_to_add_arm");
                 self.bandit.add_arm("observed", &template);
             }
@@ -932,8 +957,7 @@ impl TopologyEngine {
     /// Existing files are overwritten (WAL mode, UPSERT semantics).
     pub fn save_state(&self, dir: &str) -> Result<(), String> {
         let dir_path = std::path::Path::new(dir);
-        std::fs::create_dir_all(dir_path)
-            .map_err(|e| format!("create dir {}: {}", dir, e))?;
+        std::fs::create_dir_all(dir_path).map_err(|e| format!("create dir {}: {}", dir, e))?;
 
         let bandit_path = dir_path.join("bandit_state.db");
         let archive_path = dir_path.join("archive_state.db");
@@ -943,9 +967,8 @@ impl TopologyEngine {
             bandit_path.to_str().ok_or("invalid bandit path")?,
         )?;
 
-        self.archive.save_to_sqlite(
-            archive_path.to_str().ok_or("invalid archive path")?,
-        )?;
+        self.archive
+            .save_to_sqlite(archive_path.to_str().ok_or("invalid archive path")?)?;
 
         info!(
             dir = dir,

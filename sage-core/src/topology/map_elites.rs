@@ -66,13 +66,26 @@ impl BehaviorDescriptor {
     /// and model diversity (fraction of unique models) from the graph structure.
     pub fn from_topology(graph: &TopologyGraph, total_cost: f32) -> Self {
         let raw = RawBehaviorFeatures::from_topology(graph, total_cost);
-        Self::from_raw(raw.agent_count, raw.max_depth, total_cost, raw.model_diversity)
+        Self::from_raw(
+            raw.agent_count,
+            raw.max_depth,
+            total_cost,
+            raw.model_diversity,
+        )
     }
 
     /// Extract both bucketed descriptor and raw continuous features in one pass.
-    pub fn from_topology_with_raw(graph: &TopologyGraph, total_cost: f32) -> (Self, RawBehaviorFeatures) {
+    pub fn from_topology_with_raw(
+        graph: &TopologyGraph,
+        total_cost: f32,
+    ) -> (Self, RawBehaviorFeatures) {
         let raw = RawBehaviorFeatures::from_topology(graph, total_cost);
-        let desc = Self::from_raw(raw.agent_count, raw.max_depth, total_cost, raw.model_diversity);
+        let desc = Self::from_raw(
+            raw.agent_count,
+            raw.max_depth,
+            total_cost,
+            raw.model_diversity,
+        );
         (desc, raw)
     }
 
@@ -250,12 +263,7 @@ pub fn compute_provider_count(graph: &TopologyGraph) -> u32 {
 
     let unique_providers: std::collections::HashSet<&str> = inner
         .node_weights()
-        .map(|n| {
-            n.model_id
-                .split('/')
-                .next()
-                .unwrap_or(n.model_id.as_str())
-        })
+        .map(|n| n.model_id.split('/').next().unwrap_or(n.model_id.as_str()))
         .collect();
 
     unique_providers.len() as u32
@@ -1106,13 +1114,31 @@ mod tests {
     fn test_provider_count_with_slashes() {
         let mut g = TopologyGraph::try_new("sequential").unwrap();
         g.add_node(TopologyNode::new(
-            "coder".into(), "google/gemini-flash".into(), 1, vec![], 0, 1.0, 60.0,
+            "coder".into(),
+            "google/gemini-flash".into(),
+            1,
+            vec![],
+            0,
+            1.0,
+            60.0,
         ));
         g.add_node(TopologyNode::new(
-            "reviewer".into(), "google/gemini-pro".into(), 2, vec![], 0, 1.0, 60.0,
+            "reviewer".into(),
+            "google/gemini-pro".into(),
+            2,
+            vec![],
+            0,
+            1.0,
+            60.0,
         ));
         g.add_node(TopologyNode::new(
-            "formatter".into(), "openai/gpt-5".into(), 1, vec![], 0, 1.0, 60.0,
+            "formatter".into(),
+            "openai/gpt-5".into(),
+            1,
+            vec![],
+            0,
+            1.0,
+            60.0,
         ));
         g.try_add_edge(0, 1, TopologyEdge::control()).unwrap();
         g.try_add_edge(1, 2, TopologyEdge::control()).unwrap();

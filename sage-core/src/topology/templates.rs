@@ -42,7 +42,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     // stays S1 (sink formatting).
     let n0 = TopologyNode::new(
         "planner".into(),
-        "".into(),  // ModelAssigner will assign based on system=2 (reasoner)
+        "".into(), // ModelAssigner will assign based on system=2 (reasoner)
         2,
         // A7 (2026-04-24): "tools" declared because AgentLoop grants tools
         // to this role at runtime. Without "tools", ModelAssigner's
@@ -65,7 +65,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     // coder's tier with the task-outer tier (SWE-bench classifies as S3).
     let n1 = TopologyNode::new(
         "coder".into(),
-        "".into(),  // ModelAssigner will assign based on system=3 (top reasoner)
+        "".into(), // ModelAssigner will assign based on system=3 (top reasoner)
         3,
         vec!["reasoning".into(), "tools".into(), "code_generation".into()],
         0,
@@ -74,7 +74,7 @@ pub fn sequential(model_id: &str) -> TopologyGraph {
     );
     let mut n2 = TopologyNode::new(
         "synthesizer".into(),
-        "".into(),  // ModelAssigner will assign based on system=1 (fast)
+        "".into(), // ModelAssigner will assign based on system=1 (fast)
         1,
         vec!["text_processing".into()],
         0,
@@ -172,7 +172,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     // Actor (S3 reasoner) and verifier (S2 fast) get different models/providers
     let actor = TopologyNode::new(
         "actor".into(),
-        "".into(),  // ModelAssigner: S3 → reasoner model
+        "".into(), // ModelAssigner: S3 → reasoner model
         3,
         vec!["code_generation".into(), "tools".into()],
         0,
@@ -181,7 +181,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     );
     let verifier = TopologyNode::new(
         "verifier".into(),
-        "".into(),  // ModelAssigner: S2 → fast model
+        "".into(), // ModelAssigner: S2 → fast model
         2,
         // A7 (2026-04-24): "tools" — see planner above for rationale.
         // Note: AVR verifier is NOT sink-prompted (unlike robust's
@@ -193,7 +193,7 @@ pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
     );
     let output = TopologyNode::new(
         "output".into(),
-        "".into(),  // ModelAssigner: S1 → budget model
+        "".into(), // ModelAssigner: S1 → budget model
         1,
         // A7 (2026-04-24): "tools" — see planner above for rationale.
         // AVR's `output` has NO SINK_NODE_PROMPT so AgentLoop gives it tools.
@@ -552,7 +552,11 @@ pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
         "".into(),
         1,
         // A7 (2026-04-24): "tools" — see planner above for rationale.
-        vec!["text_processing".into(), "noise_filter".into(), "tools".into()],
+        vec![
+            "text_processing".into(),
+            "noise_filter".into(),
+            "tools".into(),
+        ],
         0,
         0.5,
         60.0,
@@ -630,7 +634,11 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
         "".into(),
         1,
         // A7 (2026-04-24): "tools" — see planner above for rationale.
-        vec!["text_processing".into(), "decomposition".into(), "tools".into()],
+        vec![
+            "text_processing".into(),
+            "decomposition".into(),
+            "tools".into(),
+        ],
         0,
         0.5,
         60.0,
@@ -715,7 +723,11 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
         "".into(),
         1,
         // A7 (2026-04-24): "tools" — see planner above for rationale.
-        vec!["text_processing".into(), "decomposition".into(), "tools".into()],
+        vec![
+            "text_processing".into(),
+            "decomposition".into(),
+            "tools".into(),
+        ],
         0,
         0.5,
         60.0,
@@ -833,7 +845,8 @@ pub fn formal_solver(model_id: &str) -> TopologyGraph {
         "factory_b_gear = factory_b_widget * 3\n",
         "total = factory_b_gear + factory_b_widget\n",
         "ANSWER = total",
-    ).to_string();
+    )
+    .to_string();
 
     // Solver (deterministic): evaluates equations via Rust
     let mut solver = TopologyNode::new(
@@ -1198,12 +1211,12 @@ mod tests {
     /// variant for sinks). Until then, observe-mode logs will flag any
     /// kimi-on-sink 4th-turn-400 relapse for triage.
     const TOOL_FREE_SINK_ROLES: &[&str] = &[
-        "synthesizer",   // sequential, brainstorming
-        "aggregator",    // parallel, horizon_pipeline, parallel_fanout
-        "mixer",         // selfmoa
-        "judge",         // debate
-        "verifier",      // robust (ONLY — avr's verifier is not sink-prompted)
-        "solver",        // formal_solver (deterministic Rust, not LLM)
+        "synthesizer", // sequential, brainstorming
+        "aggregator",  // parallel, horizon_pipeline, parallel_fanout
+        "mixer",       // selfmoa
+        "judge",       // debate
+        "verifier",    // robust (ONLY — avr's verifier is not sink-prompted)
+        "solver",      // formal_solver (deterministic Rust, not LLM)
     ];
 
     fn is_tool_free_sink(template: &str, role: &str) -> bool {

@@ -15,9 +15,9 @@ use tracing::warn;
 use std::sync::Arc;
 
 #[cfg(all(feature = "sandbox", feature = "cranelift"))]
-use std::sync::OnceLock;
-#[cfg(all(feature = "sandbox", feature = "cranelift"))]
 use super::wasm_python::WasmPythonExecutor;
+#[cfg(all(feature = "sandbox", feature = "cranelift"))]
+use std::sync::OnceLock;
 
 /// Combined validator + executor for dynamic tool creation.
 ///
@@ -246,23 +246,22 @@ impl ToolExecutor {
         //    timeout.
         #[cfg(all(feature = "sandbox", feature = "cranelift"))]
         {
-            let wasm = self.wasm_python.get_or_init(|| {
-                match WasmPythonExecutor::new() {
+            let wasm = self
+                .wasm_python
+                .get_or_init(|| match WasmPythonExecutor::new() {
                     Ok(e) => Some(Arc::new(e)),
                     Err(err) => {
                         warn!(error = %err, "embedded RustPython unavailable");
                         None
                     }
-                }
-            });
+                });
             if let Some(wp) = wasm {
                 let wp = Arc::clone(wp);
                 let code_owned = code.to_string();
                 let args_owned = args_json.to_string();
                 let timeout = self.timeout_secs;
-                let result = py.allow_threads(move || {
-                    wp.execute(&code_owned, &args_owned, timeout)
-                });
+                let result =
+                    py.allow_threads(move || wp.execute(&code_owned, &args_owned, timeout));
                 return Ok(result);
             }
         }
@@ -492,7 +491,6 @@ mod tests {
         );
     }
 
-
     #[test]
     fn test_validate_rejects_blocked_code() {
         init_python();
@@ -515,9 +513,8 @@ mod tests {
 
         // Part 1: denied when env var is not set.
         std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
-        let r_denied = Python::with_gil(|py| {
-            executor.execute_raw(py, r#"print("should not run")"#, "{}")
-        });
+        let r_denied =
+            Python::with_gil(|py| executor.execute_raw(py, r#"print("should not run")"#, "{}"));
         assert_ne!(r_denied.exit_code, 0, "execute_raw must deny by default");
         assert!(
             r_denied.stderr.contains("SAGE_UNSAFE_RAW_EXEC"),
@@ -528,9 +525,8 @@ mod tests {
 
         // Part 2: bypass works when explicitly opted in.
         std::env::set_var("SAGE_UNSAFE_RAW_EXEC", "1");
-        let r_allowed = Python::with_gil(|py| {
-            executor.execute_raw(py, r#"print("raw exec")"#, "{}")
-        });
+        let r_allowed =
+            Python::with_gil(|py| executor.execute_raw(py, r#"print("raw exec")"#, "{}"));
         std::env::remove_var("SAGE_UNSAFE_RAW_EXEC");
         assert_eq!(
             r_allowed.exit_code, 0,

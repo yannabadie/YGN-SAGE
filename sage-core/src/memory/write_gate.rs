@@ -13,9 +13,9 @@ use tracing::instrument;
 
 /// Stop words for relevance scoring (same set as RustRelevanceGate).
 const STOP_WORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do",
-    "does", "did", "will", "would", "to", "of", "in", "for", "on", "with", "at", "by", "from",
-    "and", "but", "or", "not", "this", "that", "it", "its",
+    "the", "a", "an", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does",
+    "did", "will", "would", "to", "of", "in", "for", "on", "with", "at", "by", "from", "and",
+    "but", "or", "not", "this", "that", "it", "its",
 ];
 
 /// Default reliability scores per source tier.
@@ -58,7 +58,7 @@ pub struct RustCompositeWriteGate {
     recency_halflife_s: f32,
     max_seen: usize,
     seen_embeddings: VecDeque<Vec<f32>>,
-    seen_content: HashSet<u64>,  // FNV hash of content for exact dedup
+    seen_content: HashSet<u64>, // FNV hash of content for exact dedup
     write_count: u64,
     abstention_count: u64,
     task_start: Instant,
@@ -331,7 +331,8 @@ mod tests {
 
     #[test]
     fn test_empty_content_blocked() {
-        let mut gate = RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let mut gate =
+            RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
         let d = gate.evaluate("", 0.9, "", "unknown", None);
         assert!(!d.allowed);
         assert!(d.reason.contains("empty"));
@@ -339,7 +340,8 @@ mod tests {
 
     #[test]
     fn test_duplicate_blocked() {
-        let mut gate = RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let mut gate =
+            RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
         let d1 = gate.evaluate("hello world", 0.9, "", "unknown", None);
         assert!(d1.allowed);
         let d2 = gate.evaluate("hello world", 0.9, "", "unknown", None);
@@ -349,15 +351,23 @@ mod tests {
 
     #[test]
     fn test_high_confidence_passes() {
-        let mut gate = RustCompositeWriteGate::new(0.3, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
-        let d = gate.evaluate("novel content about algorithms", 0.9, "implement algorithms", "codex", None);
+        let mut gate =
+            RustCompositeWriteGate::new(0.3, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let d = gate.evaluate(
+            "novel content about algorithms",
+            0.9,
+            "implement algorithms",
+            "codex",
+            None,
+        );
         assert!(d.allowed);
         assert!(d.salience_score > 0.3);
     }
 
     #[test]
     fn test_novelty_blocks_similar_embeddings() {
-        let mut gate = RustCompositeWriteGate::new(0.5, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let mut gate =
+            RustCompositeWriteGate::new(0.5, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
         let emb1 = vec![1.0, 0.0, 0.0];
         let emb2 = vec![0.99, 0.01, 0.0]; // Very similar
 
@@ -368,7 +378,8 @@ mod tests {
 
     #[test]
     fn test_novelty_high_for_orthogonal() {
-        let mut gate = RustCompositeWriteGate::new(0.1, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let mut gate =
+            RustCompositeWriteGate::new(0.1, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
         let emb1 = vec![1.0, 0.0, 0.0];
         let emb2 = vec![0.0, 1.0, 0.0];
 
@@ -386,14 +397,19 @@ mod tests {
 
     #[test]
     fn test_keyword_overlap() {
-        let gate = RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
-        let score = gate.keyword_overlap("implement quicksort algorithm", "quicksort implementation done");
+        let gate =
+            RustCompositeWriteGate::new(0.35, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let score = gate.keyword_overlap(
+            "implement quicksort algorithm",
+            "quicksort implementation done",
+        );
         assert!(score > 0.3);
     }
 
     #[test]
     fn test_stats() {
-        let mut gate = RustCompositeWriteGate::new(0.01, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
+        let mut gate =
+            RustCompositeWriteGate::new(0.01, 0.25, 0.30, 0.20, 0.10, 0.15, 0.90, 300.0, 200);
         gate.evaluate("a", 0.9, "", "unknown", None);
         gate.evaluate("b", 0.9, "", "unknown", None);
         let s = gate.stats();

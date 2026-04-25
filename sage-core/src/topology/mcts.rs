@@ -192,7 +192,10 @@ impl MctsSearcher {
     /// EXPAND + ROLLOUT: navigate to the node at `path`, apply a random mutation
     /// to create a new child, score it with the rollout heuristic.
     fn expand_and_rollout<R: Rng>(
-        &self, tree: &mut MctsNode, path: &[usize], rng: &mut R,
+        &self,
+        tree: &mut MctsNode,
+        path: &[usize],
+        rng: &mut R,
         mutation_stats: &MutationStats,
     ) -> f64 {
         // Navigate to the leaf node.

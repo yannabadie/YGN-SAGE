@@ -5,9 +5,9 @@
 
 // Graph property checking — always available (uses petgraph, no OxiZ dependency)
 pub mod ltl;
-pub use ltl::{GraphPropertyChecker, LtlResult};
 #[allow(deprecated)]
 pub use ltl::LtlVerifier;
+pub use ltl::{GraphPropertyChecker, LtlResult};
 
 // OxiZ SMT verification — behind `smt` feature flag
 #[cfg(feature = "smt")]

@@ -110,8 +110,11 @@ impl RustEntityGraph {
             Some(&idx) => idx,
             None => return false,
         };
-        self.graph
-            .add_edge(from_idx, to_idx, EdgeKind::Semantic(relation_type.to_string()));
+        self.graph.add_edge(
+            from_idx,
+            to_idx,
+            EdgeKind::Semantic(relation_type.to_string()),
+        );
         true
     }
 
@@ -169,9 +172,7 @@ impl RustEntityGraph {
             if name_lower.len() < 3 {
                 continue;
             }
-            let matches = task_words
-                .iter()
-                .any(|w| name_lower.contains(*w))
+            let matches = task_words.iter().any(|w| name_lower.contains(*w))
                 || task_lower.contains(&name_lower);
             if matches {
                 seeds.push(idx);
@@ -374,7 +375,10 @@ mod tests {
         g.add_relation("Python", "Rust", "transpiles_to");
 
         let ctx = g.get_context_for("I want to learn Python programming", 2);
-        assert!(!ctx.is_empty(), "expected non-empty context for matching task");
+        assert!(
+            !ctx.is_empty(),
+            "expected non-empty context for matching task"
+        );
         assert!(
             ctx.contains("Python"),
             "context should mention Python: {ctx}"

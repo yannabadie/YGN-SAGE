@@ -74,15 +74,13 @@ impl MutationStats {
             let alpha = self.alphas[i];
             let beta = self.betas[i];
             let mean = alpha / (alpha + beta);
-            let variance = (alpha * beta)
-                / ((alpha + beta).powi(2) * (alpha + beta + 1.0));
+            let variance = (alpha * beta) / ((alpha + beta).powi(2) * (alpha + beta + 1.0));
             let std = variance.sqrt();
 
             // Box-Muller transform for Gaussian approximation of Beta
             let u1: f64 = rng.random::<f64>().max(1e-15);
             let u2: f64 = rng.random::<f64>();
-            let z = (-2.0 * u1.ln()).sqrt()
-                * (2.0 * std::f64::consts::PI * u2).cos();
+            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos();
             let sample = (mean + std * z).clamp(0.0, 1.0);
 
             if sample > best_sample {
@@ -120,13 +118,21 @@ impl MutationStats {
     /// Raw alpha (Beta posterior successes + 1) for an operator. Returns `1.0`
     /// for out-of-range indices to mirror the uninformed Beta(1,1) prior.
     pub fn alpha(&self, operator_idx: usize) -> f64 {
-        if operator_idx >= 7 { 1.0 } else { self.alphas[operator_idx] }
+        if operator_idx >= 7 {
+            1.0
+        } else {
+            self.alphas[operator_idx]
+        }
     }
 
     /// Raw beta (Beta posterior failures + 1) for an operator. Returns `1.0`
     /// for out-of-range indices to mirror the uninformed Beta(1,1) prior.
     pub fn beta(&self, operator_idx: usize) -> f64 {
-        if operator_idx >= 7 { 1.0 } else { self.betas[operator_idx] }
+        if operator_idx >= 7 {
+            1.0
+        } else {
+            self.betas[operator_idx]
+        }
     }
 
     /// Attempts = alpha + beta - 2 (drop the Beta(1,1) prior mass).
@@ -152,13 +158,7 @@ impl MutationStats {
         OPERATOR_NAMES
             .iter()
             .enumerate()
-            .map(|(i, name)| {
-                format!(
-                    "{}={:.0}%",
-                    name,
-                    self.success_rate(i) * 100.0,
-                )
-            })
+            .map(|(i, name)| format!("{}={:.0}%", name, self.success_rate(i) * 100.0,))
             .collect::<Vec<_>>()
             .join(", ")
     }
@@ -779,8 +779,8 @@ pub(crate) fn role_tier(role: &str) -> u8 {
         // Tier 0: Input/decomposition
         "planner" | "preprocessor" | "splitter" | "dispatcher" | "topic" | "source" | "input" => 0,
         // Tier 1: Processing/working (most roles)
-        "analyst" | "coder" | "actor" | "worker" | "debater" | "thinker" | "stage"
-        | "spoke" | "child" | "agent" | "reasoner" => 1,
+        "analyst" | "coder" | "actor" | "worker" | "debater" | "thinker" | "stage" | "spoke"
+        | "child" | "agent" | "reasoner" => 1,
         // Tier 2: Evaluation/verification
         "reviewer" | "verifier" | "judge" | "output" => 2,
         // Tier 3: Final synthesis/formatting
@@ -801,15 +801,27 @@ const ROLES_TIER1: &[&str] = &["analyst", "coder", "worker", "reasoner"];
 const ROLES_TIER2: &[&str] = &["reviewer", "verifier", "judge"];
 const ROLES_TIER3: &[&str] = &["synthesizer", "aggregator", "formatter", "mixer"];
 const ALL_ROLES: &[&str] = &[
-    "planner", "preprocessor", "splitter", "dispatcher",
-    "analyst", "coder", "worker", "reasoner",
-    "reviewer", "verifier", "judge",
-    "synthesizer", "aggregator", "formatter", "mixer",
+    "planner",
+    "preprocessor",
+    "splitter",
+    "dispatcher",
+    "analyst",
+    "coder",
+    "worker",
+    "reasoner",
+    "reviewer",
+    "verifier",
+    "judge",
+    "synthesizer",
+    "aggregator",
+    "formatter",
+    "mixer",
 ];
 
 /// Pick a role from tier >= min_tier.
 fn pick_role_from_tier<R: Rng>(rng: &mut R, min_tier: u8) -> &'static str {
-    let candidates: Vec<&str> = ALL_ROLES.iter()
+    let candidates: Vec<&str> = ALL_ROLES
+        .iter()
         .copied()
         .filter(|r| role_tier(r) >= min_tier)
         .collect();
@@ -822,7 +834,8 @@ fn pick_role_from_tier<R: Rng>(rng: &mut R, min_tier: u8) -> &'static str {
 
 /// Pick a role from tier <= max_tier.
 fn pick_role_up_to_tier<R: Rng>(rng: &mut R, max_tier: u8) -> &'static str {
-    let candidates: Vec<&str> = ALL_ROLES.iter()
+    let candidates: Vec<&str> = ALL_ROLES
+        .iter()
         .copied()
         .filter(|r| role_tier(r) <= max_tier)
         .collect();
@@ -890,9 +903,9 @@ fn apply_mutation_with_stats<R: Rng>(
             };
             // Pick a role from tier >= exit node's tier (respects ordering)
             let min_tier = if let Some(hint) = exit_hint {
-                let exit_node = graph.inner_graph().node_weight(
-                    petgraph::graph::NodeIndex::new(exit_nodes[hint])
-                );
+                let exit_node = graph
+                    .inner_graph()
+                    .node_weight(petgraph::graph::NodeIndex::new(exit_nodes[hint]));
                 exit_node.map(|n| role_tier(&n.role)).unwrap_or(0)
             } else {
                 0
@@ -905,20 +918,33 @@ fn apply_mutation_with_stats<R: Rng>(
         1 => {
             // remove_node
             let idx = rng.random_range(0..node_count);
-            debug!(mutation = "remove_node", node_index = idx, "apply_random_mutation");
+            debug!(
+                mutation = "remove_node",
+                node_index = idx,
+                "apply_random_mutation"
+            );
             remove_node(graph, idx)
         }
         2 => {
             // swap_model — use empty model_id, ModelAssigner picks at Stage 3
             let idx = rng.random_range(0..node_count);
-            debug!(mutation = "swap_model", node_index = idx, "apply_random_mutation");
+            debug!(
+                mutation = "swap_model",
+                node_index = idx,
+                "apply_random_mutation"
+            );
             swap_model(graph, idx, "")
         }
         3 => {
             // rewire_edge — only if respects role ordering
             let from = rng.random_range(0..node_count);
             let to = rng.random_range(0..node_count);
-            debug!(mutation = "rewire_edge", from = from, to = to, "apply_random_mutation");
+            debug!(
+                mutation = "rewire_edge",
+                from = from,
+                to = to,
+                "apply_random_mutation"
+            );
             rewire_edge(graph, from, to)
         }
         4 => {
@@ -927,14 +953,19 @@ fn apply_mutation_with_stats<R: Rng>(
             let orig_tier = {
                 let inner = graph.inner_graph();
                 let target = petgraph::graph::NodeIndex::new(idx);
-                inner.node_weight(target)
+                inner
+                    .node_weight(target)
                     .map(|n| role_tier(&n.role))
                     .unwrap_or(1)
             };
             // role_a: same or earlier tier, role_b: same or later tier
             let role_a = pick_role_up_to_tier(rng, orig_tier);
             let role_b = pick_role_from_tier(rng, orig_tier);
-            debug!(mutation = "split_node", node_index = idx, "apply_random_mutation");
+            debug!(
+                mutation = "split_node",
+                node_index = idx,
+                "apply_random_mutation"
+            );
             split_node(graph, idx, role_a, "", role_b, "")
         }
         5 => {
@@ -950,18 +981,25 @@ fn apply_mutation_with_stats<R: Rng>(
             // Merged role: pick from the later tier of the two (preserves ordering)
             let tier_a = {
                 let inner = graph.inner_graph();
-                inner.node_weight(petgraph::graph::NodeIndex::new(a))
+                inner
+                    .node_weight(petgraph::graph::NodeIndex::new(a))
                     .map(|n| role_tier(&n.role))
                     .unwrap_or(1)
             };
             let tier_b = {
                 let inner = graph.inner_graph();
-                inner.node_weight(petgraph::graph::NodeIndex::new(b))
+                inner
+                    .node_weight(petgraph::graph::NodeIndex::new(b))
                     .map(|n| role_tier(&n.role))
                     .unwrap_or(1)
             };
             let merged_role = pick_role_from_tier(rng, tier_a.max(tier_b));
-            debug!(mutation = "merge_nodes", node_a = a, node_b = b, "apply_random_mutation");
+            debug!(
+                mutation = "merge_nodes",
+                node_a = a,
+                node_b = b,
+                "apply_random_mutation"
+            );
             merge_nodes(graph, a, b, merged_role, "")
         }
         6 => {
@@ -969,12 +1007,18 @@ fn apply_mutation_with_stats<R: Rng>(
             let idx = rng.random_range(0..node_count);
             let current_tier = {
                 let inner = graph.inner_graph();
-                inner.node_weight(petgraph::graph::NodeIndex::new(idx))
+                inner
+                    .node_weight(petgraph::graph::NodeIndex::new(idx))
                     .map(|n| role_tier(&n.role))
                     .unwrap_or(1)
             };
             let role = pick_role_from_tier(rng, current_tier);
-            debug!(mutation = "mutate_prompt", node_index = idx, new_role = role, "apply_random_mutation");
+            debug!(
+                mutation = "mutate_prompt",
+                node_index = idx,
+                new_role = role,
+                "apply_random_mutation"
+            );
             mutate_prompt(graph, idx, role)
         }
         _ => unreachable!(),

@@ -131,7 +131,13 @@ impl ModelRegistry {
 
     /// Record telemetry with latency (full version, exposed to Python).
     #[pyo3(name = "record_telemetry_full")]
-    pub fn py_record_telemetry_full(&mut self, model_id: &str, quality: f32, cost: f32, latency_ms: f32) {
+    pub fn py_record_telemetry_full(
+        &mut self,
+        model_id: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) {
         self.record_telemetry_full(model_id, quality, cost, latency_ms);
     }
 
@@ -182,7 +188,13 @@ impl ModelRegistry {
     }
 
     /// Record telemetry with latency (full version).
-    pub fn record_telemetry_full(&mut self, model_id: &str, quality: f32, cost: f32, latency_ms: f32) {
+    pub fn record_telemetry_full(
+        &mut self,
+        model_id: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) {
         let record = self.telemetry.entry(model_id.to_string()).or_default();
         record.quality_sum += quality as f64;
         record.cost_sum += cost as f64;
@@ -199,7 +211,10 @@ impl ModelRegistry {
 
     /// Get observed P95 latency for a model (0.0 if no observations).
     pub fn observed_latency_p95(&self, model_id: &str) -> f32 {
-        self.telemetry.get(model_id).map(|r| r.latency_p95()).unwrap_or(0.0)
+        self.telemetry
+            .get(model_id)
+            .map(|r| r.latency_p95())
+            .unwrap_or(0.0)
     }
 
     /// Infer CognitiveSystem from a domain name.
@@ -224,7 +239,9 @@ impl ModelRegistry {
     /// Scoring: domain_score * 0.6 + calibrated_system_affinity * 0.3 + (1 - cost_norm) * 0.1
     /// System inferred from domain: math/formal → S3, code/reasoning → S2, else → S1.
     pub fn select_best_for_domain(&self, domain: &str, max_cost_usd: f32) -> Option<ModelCard> {
-        let mut candidates: Vec<_> = self.cards.values()
+        let mut candidates: Vec<_> = self
+            .cards
+            .values()
             .filter(|c| max_cost_usd <= 0.0 || c.estimate_cost(1000, 500) <= max_cost_usd)
             .cloned()
             .collect();
@@ -233,14 +250,17 @@ impl ModelRegistry {
             return None;
         }
 
-        let max_cost = candidates.iter()
+        let max_cost = candidates
+            .iter()
             .map(|c| c.estimate_cost(1000, 500))
             .fold(0.001_f32, f32::max);
 
         candidates.sort_by(|a, b| {
             let score_a = self.domain_routing_score(a, domain, max_cost);
             let score_b = self.domain_routing_score(b, domain, max_cost);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         candidates.into_iter().next()
@@ -366,7 +386,11 @@ mod tests {
         }
         // 20 samples: 100..290, P95 idx = floor(19*0.95) = 18 → sorted[18] = 280
         let latency = reg.observed_latency_p95("fast-model");
-        assert!(latency > 200.0, "P95 of 100..290 should be > 200, got {}", latency);
+        assert!(
+            latency > 200.0,
+            "P95 of 100..290 should be > 200, got {}",
+            latency
+        );
     }
 
     #[test]

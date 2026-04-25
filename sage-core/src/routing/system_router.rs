@@ -416,7 +416,11 @@ impl SystemRouter {
                             "bandit_model_not_in_candidates_falling_back"
                         );
                         let best = &candidates[0]; // candidates guaranteed non-empty (checked above)
-                        (best.id.clone(), best.estimate_cost(1000, 2000), bd.decision_id.clone())
+                        (
+                            best.id.clone(),
+                            best.estimate_cost(1000, 2000),
+                            bd.decision_id.clone(),
+                        )
                     }
                 }
                 Err(_) => {
@@ -466,7 +470,8 @@ impl SystemRouter {
                 self.decision_models.remove(&old_id);
             }
         }
-        self.decision_models.insert(decision.decision_id.clone(), decision.model_id.clone());
+        self.decision_models
+            .insert(decision.decision_id.clone(), decision.model_id.clone());
         self.decision_order.push_back(decision.decision_id.clone());
 
         info!(
@@ -507,7 +512,8 @@ impl SystemRouter {
 
         // Record telemetry on registry using stored decision→model mapping
         if let Some(model_id) = self.decision_models.get(decision_id).cloned() {
-            self.registry.record_telemetry_full(&model_id, quality, cost, latency_ms);
+            self.registry
+                .record_telemetry_full(&model_id, quality, cost, latency_ms);
         } else {
             info!(decision_id = decision_id, "no_model_mapping_for_telemetry");
         }
@@ -740,7 +746,8 @@ mod tests {
     fn route_constrained_has_empty_topology_id() {
         let registry = test_registry();
         let router = SystemRouter::new(registry);
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router.route_constrained("Write a function", &constraints);
         assert!(decision.topology_id.is_empty());
     }
@@ -749,7 +756,8 @@ mod tests {
     fn route_integrated_without_bandit() {
         let registry = test_registry();
         let mut router = SystemRouter::new(registry);
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("hello world", &constraints, "topo-123")
             .unwrap();
@@ -767,7 +775,8 @@ mod tests {
         bandit.add_arm("smart-model", "avr");
         router.bandit = Some(bandit);
 
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("explain quantum computing", &constraints, "topo-456")
             .unwrap();
@@ -798,7 +807,8 @@ mod tests {
         router.bandit = Some(bandit);
 
         // Make a decision first via bandit
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("hello", &constraints, "t1")
             .unwrap();
@@ -873,7 +883,13 @@ mod tests {
 
         // With math domain hint — should prefer math-model
         let math_hint = RoutingConstraints::new(
-            0.0, 0.0, 0.0, vec![], String::new(), 0.0, "math".to_string(),
+            0.0,
+            0.0,
+            0.0,
+            vec![],
+            String::new(),
+            0.0,
+            "math".to_string(),
         );
         let d = router
             .route_integrated("solve this equation", &math_hint, "")
@@ -885,14 +901,17 @@ mod tests {
     fn record_outcome_updates_registry_telemetry() {
         let registry = test_registry();
         let mut router = SystemRouter::new(registry);
-        let constraints = RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
         let decision = router
             .route_integrated("test task", &constraints, "")
             .unwrap();
         let decision_id = decision.decision_id.clone();
         let model_id = decision.model_id.clone();
 
-        router.record_outcome(&decision_id, 0.9, 0.05, 150.0).unwrap();
+        router
+            .record_outcome(&decision_id, 0.9, 0.05, 150.0)
+            .unwrap();
 
         let p95 = router.registry.observed_latency_p95(&model_id);
         assert!((p95 - 150.0).abs() < 0.001);
@@ -901,7 +920,13 @@ mod tests {
     #[test]
     fn domain_hint_repr_included() {
         let c = RoutingConstraints::new(
-            0.0, 0.0, 0.0, vec![], String::new(), 0.0, "code".to_string(),
+            0.0,
+            0.0,
+            0.0,
+            vec![],
+            String::new(),
+            0.0,
+            "code".to_string(),
         );
         assert!(c.__repr__().contains("domain='code'"));
     }

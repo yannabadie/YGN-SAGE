@@ -97,9 +97,7 @@ impl RustQualityEstimator {
 
         // ── Signal 3: code task + code presence ──────────────────────────────
         let task_lower = task.to_lowercase();
-        let task_wants_code = TASK_CODE_KEYWORDS
-            .iter()
-            .any(|kw| task_lower.contains(kw));
+        let task_wants_code = TASK_CODE_KEYWORDS.iter().any(|kw| task_lower.contains(kw));
         let result_has_code = RESULT_CODE_MARKERS
             .iter()
             .any(|marker| result.contains(marker));
@@ -192,8 +190,7 @@ mod tests {
     fn test_error_in_result_reduces_score() {
         // A result starting with "Error:" should not receive Signal 4.
         let no_error_score = est().estimate("explain X", "X is a concept.", 0.0, false, 0);
-        let error_score =
-            est().estimate("explain X", "Error: cannot parse input.", 0.0, false, 0);
+        let error_score = est().estimate("explain X", "Error: cannot parse input.", 0.0, false, 0);
         assert!(
             error_score < no_error_score,
             "error result should score lower, got error={error_score} vs clean={no_error_score}"
@@ -235,9 +232,6 @@ mod tests {
             false,
             1,
         );
-        assert!(
-            score <= 1.0,
-            "score must not exceed 1.0, got {score}"
-        );
+        assert!(score <= 1.0, "score must not exceed 1.0, got {score}");
     }
 }

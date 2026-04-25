@@ -146,7 +146,12 @@ impl TopologyReward {
         resilience: f32,
         cost_efficiency: f32,
     ) -> RewardScore {
-        let base = self.compute(execution_passed, structural_score, density_score, temporal_score);
+        let base = self.compute(
+            execution_passed,
+            structural_score,
+            density_score,
+            temporal_score,
+        );
         // Return with resilience and cost_efficiency filled in.
         // The Python reward.py handles the final weighted combination.
         RewardScore {
@@ -284,7 +289,10 @@ mod tests {
         let score = reward.compute(true, 1.0, 1.0, Some(1.0));
 
         assert_eq!(score.n_signals, 4);
-        assert!((score.total - 1.0).abs() < 1e-6, "perfect score should be 1.0");
+        assert!(
+            (score.total - 1.0).abs() < 1e-6,
+            "perfect score should be 1.0"
+        );
     }
 
     #[test]
@@ -292,7 +300,10 @@ mod tests {
         let reward = TopologyReward::new();
         let score = reward.compute(true, 0.8, 0.6, None);
         let repr = score.__repr__();
-        assert!(repr.starts_with("RewardScore("), "repr should start with class name");
+        assert!(
+            repr.starts_with("RewardScore("),
+            "repr should start with class name"
+        );
         assert!(repr.contains("n_signals=3"), "repr should show n_signals");
     }
 

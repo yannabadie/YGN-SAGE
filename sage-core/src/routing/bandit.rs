@@ -422,7 +422,8 @@ impl ContextualBandit {
         // Evict oldest pending entries if unbounded growth detected
         if self.pending.len() > 10_000 {
             let drain_count = self.pending.len() - 5_000;
-            let keys_to_remove: Vec<String> = self.pending.keys().take(drain_count).cloned().collect();
+            let keys_to_remove: Vec<String> =
+                self.pending.keys().take(drain_count).cloned().collect();
             for key in keys_to_remove {
                 self.pending.remove(&key);
             }
@@ -516,9 +517,9 @@ impl ContextualBandit {
                 let sampled_quality = arm.quality.sample(&mut rng);
 
                 // Compute context bonus
-                let similarity = arm.context_mean().map_or(0.0, |mean| {
-                    cosine_similarity_f64(context, &mean).max(0.0)
-                });
+                let similarity = arm
+                    .context_mean()
+                    .map_or(0.0, |mean| cosine_similarity_f64(context, &mean).max(0.0));
 
                 // Multiplicative bonus: quality * (1 + similarity)
                 // similarity in [0, 1] → boost factor in [1.0, 2.0]
@@ -610,9 +611,12 @@ impl ContextualBandit {
         let decay = self.decay_factor;
         let arm = match self.arms.get_mut(&arm_key) {
             Some(a) => a,
-            None => return Err(BanditError::UnknownDecision(
-                format!("arm {:?} removed between choose() and record()", arm_key),
-            )),
+            None => {
+                return Err(BanditError::UnknownDecision(format!(
+                    "arm {:?} removed between choose() and record()",
+                    arm_key
+                )))
+            }
         };
 
         arm.update(quality as f64, cost as f64, latency_ms as f64, decay);
@@ -1104,7 +1108,11 @@ mod tests {
         let a = &[1.0_f32, 2.0, 3.0];
         let b = &[1.0_f64, 2.0, 3.0];
         let sim = cosine_similarity_f64(a, b);
-        assert!((sim - 1.0).abs() < 1e-10, "identical vectors should have sim=1.0, got {}", sim);
+        assert!(
+            (sim - 1.0).abs() < 1e-10,
+            "identical vectors should have sim=1.0, got {}",
+            sim
+        );
     }
 
     #[test]
@@ -1112,7 +1120,11 @@ mod tests {
         let a = &[1.0_f32, 0.0];
         let b = &[0.0_f64, 1.0];
         let sim = cosine_similarity_f64(a, b);
-        assert!(sim.abs() < 1e-10, "orthogonal vectors should have sim=0.0, got {}", sim);
+        assert!(
+            sim.abs() < 1e-10,
+            "orthogonal vectors should have sim=0.0, got {}",
+            sim
+        );
     }
 
     #[test]
@@ -1120,7 +1132,11 @@ mod tests {
         let a = &[1.0_f32, 2.0];
         let b = &[-1.0_f64, -2.0];
         let sim = cosine_similarity_f64(a, b);
-        assert!((sim - (-1.0)).abs() < 1e-10, "opposite vectors should have sim=-1.0, got {}", sim);
+        assert!(
+            (sim - (-1.0)).abs() < 1e-10,
+            "opposite vectors should have sim=-1.0, got {}",
+            sim
+        );
     }
 
     #[test]
@@ -1148,7 +1164,10 @@ mod tests {
 
     #[test]
     fn arm_context_starts_empty() {
-        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let key = ArmKey {
+            model_id: "m".into(),
+            template: "t".into(),
+        };
         let arm = ArmPosterior::new(key);
         assert_eq!(arm.context_count, 0);
         assert!(arm.context_sum.is_empty());
@@ -1157,7 +1176,10 @@ mod tests {
 
     #[test]
     fn arm_context_update_accumulates() {
-        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let key = ArmKey {
+            model_id: "m".into(),
+            template: "t".into(),
+        };
         let mut arm = ArmPosterior::new(key);
         arm.update_context(&[2.0, 4.0, 6.0]);
         arm.update_context(&[4.0, 6.0, 8.0]);
@@ -1170,7 +1192,10 @@ mod tests {
 
     #[test]
     fn arm_context_empty_input_is_noop() {
-        let key = ArmKey { model_id: "m".into(), template: "t".into() };
+        let key = ArmKey {
+            model_id: "m".into(),
+            template: "t".into(),
+        };
         let mut arm = ArmPosterior::new(key);
         arm.update_context(&[]);
         assert_eq!(arm.context_count, 0);
@@ -1213,9 +1238,14 @@ mod tests {
 
         let ctx = vec![2.0_f32, 50.0, 3.0];
         let decision = bandit.choose_contextual(0.0, &ctx).unwrap();
-        bandit.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0).unwrap();
+        bandit
+            .record_outcome(&decision.decision_id, 0.9, 0.01, 100.0)
+            .unwrap();
 
-        let key = ArmKey { model_id: "model-a".into(), template: "seq".into() };
+        let key = ArmKey {
+            model_id: "model-a".into(),
+            template: "seq".into(),
+        };
         let arm = &bandit.arms_map()[&key];
         assert_eq!(arm.context_count, 1);
         let mean = arm.context_mean().unwrap();
@@ -1230,9 +1260,14 @@ mod tests {
         bandit.add_arm("model-a", "seq");
 
         let decision = bandit.choose(0.0).unwrap();
-        bandit.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0).unwrap();
+        bandit
+            .record_outcome(&decision.decision_id, 0.9, 0.01, 100.0)
+            .unwrap();
 
-        let key = ArmKey { model_id: "model-a".into(), template: "seq".into() };
+        let key = ArmKey {
+            model_id: "model-a".into(),
+            template: "seq".into(),
+        };
         let arm = &bandit.arms_map()[&key];
         assert_eq!(arm.context_count, 0);
         assert!(arm.context_mean().is_none());
@@ -1251,13 +1286,17 @@ mod tests {
         for _ in 0..30 {
             let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
             let q = if d.model_id == "arm-s1" { 0.95 } else { 0.6 };
-            bandit.record_outcome(&d.decision_id, q, 0.01, 100.0).unwrap();
+            bandit
+                .record_outcome(&d.decision_id, q, 0.01, 100.0)
+                .unwrap();
         }
         // Train arm-s3 with high quality on S3-like context
         for _ in 0..30 {
             let d = bandit.choose_contextual(1.0, &[3.0, 0.0]).unwrap();
             let q = if d.model_id == "arm-s3" { 0.95 } else { 0.6 };
-            bandit.record_outcome(&d.decision_id, q, 0.01, 100.0).unwrap();
+            bandit
+                .record_outcome(&d.decision_id, q, 0.01, 100.0)
+                .unwrap();
         }
 
         // Now test: with S1-like context, arm-s1 should be preferred
@@ -1267,7 +1306,9 @@ mod tests {
             if d.model_id == "arm-s1" {
                 s1_count += 1;
             }
-            bandit.record_outcome(&d.decision_id, 0.8, 0.01, 100.0).unwrap();
+            bandit
+                .record_outcome(&d.decision_id, 0.8, 0.01, 100.0)
+                .unwrap();
         }
 
         // With context bias, arm-s1 should be picked more often for S1-like context

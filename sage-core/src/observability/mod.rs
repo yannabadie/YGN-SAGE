@@ -2,9 +2,9 @@
 //! `stub` (no-op) based on the `otel` feature flag.
 
 #[cfg(feature = "otel")]
-mod init;
-#[cfg(feature = "otel")]
 mod bridge;
+#[cfg(feature = "otel")]
+mod init;
 #[cfg(feature = "otel")]
 pub use init::*;
 

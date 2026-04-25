@@ -394,10 +394,7 @@ impl MultiViewMMU {
             .collect();
 
         // Sort by utility ascending (lowest utility first = evict first)
-        scored.sort_by(|a, b| {
-            a.1.partial_cmp(&b.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        scored.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let to_evict: HashSet<String> = scored.into_iter().take(count).map(|(id, _)| id).collect();
         let evict_count = to_evict.len();

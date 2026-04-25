@@ -284,13 +284,15 @@ impl PyTopologyEngine {
         self.inner
             .mutation_stats_snapshot()
             .into_iter()
-            .map(|(op_name, attempts, successes, alpha, beta)| PyMutationStats {
-                op_name,
-                attempts,
-                successes,
-                alpha,
-                beta,
-            })
+            .map(
+                |(op_name, attempts, successes, alpha, beta)| PyMutationStats {
+                    op_name,
+                    attempts,
+                    successes,
+                    alpha,
+                    beta,
+                },
+            )
             .collect()
     }
 

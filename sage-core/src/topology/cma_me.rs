@@ -71,10 +71,7 @@ impl CmaEmitter {
     ) -> Self {
         assert_eq!(bounds.len(), dim, "bounds length must match dim");
         // Initialize mean at the center of each dimension's range.
-        let mean: Vec<f64> = bounds
-            .iter()
-            .map(|b| (b.min + b.max) / 2.0)
-            .collect();
+        let mean: Vec<f64> = bounds.iter().map(|b| (b.min + b.max) / 2.0).collect();
         Self {
             dim,
             mean,
@@ -299,13 +296,20 @@ mod tests {
         let samples = e.ask(4);
         let fitnesses = vec![0.1, 0.5, 0.9, 0.3];
         e.tell(&samples, &fitnesses);
-        assert!((e.sigma() - 0.95).abs() < 1e-10, "sigma should decay by 0.95");
+        assert!(
+            (e.sigma() - 0.95).abs() < 1e-10,
+            "sigma should decay by 0.95"
+        );
         // After 10 generations
         for _ in 0..9 {
             let s = e.ask(4);
             e.tell(&s, &fitnesses);
         }
-        assert!(e.sigma() < 0.65, "sigma should have decayed after 10 gens: {}", e.sigma());
+        assert!(
+            e.sigma() < 0.65,
+            "sigma should have decayed after 10 gens: {}",
+            e.sigma()
+        );
     }
 
     #[test]
@@ -329,7 +333,10 @@ mod tests {
         e.warm_start(&[100.0, -50.0, 3.0]); // extreme values should be clamped
         assert!((e.mean()[0] - 5.0).abs() < 1e-10, "should clamp to max");
         assert!((e.mean()[1] - 1.0).abs() < 1e-10, "should clamp to min");
-        assert!((e.mean()[2] - 3.0).abs() < 1e-10, "within bounds, unchanged");
+        assert!(
+            (e.mean()[2] - 3.0).abs() < 1e-10,
+            "within bounds, unchanged"
+        );
     }
 
     #[test]
