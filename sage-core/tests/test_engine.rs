@@ -409,7 +409,9 @@ mod persistence_tests {
 
         // Save state
         let dir = temp_state_dir();
-        engine.save_state(dir.to_str().unwrap()).expect("save should succeed");
+        engine
+            .save_state(dir.to_str().unwrap())
+            .expect("save should succeed");
 
         // Verify files were created
         assert!(dir.join("bandit_state.db").exists());
@@ -499,7 +501,9 @@ mod persistence_tests {
         // Directory should not exist yet
         assert!(!dir.exists());
 
-        engine.save_state(dir.to_str().unwrap()).expect("save should create dir");
+        engine
+            .save_state(dir.to_str().unwrap())
+            .expect("save should create dir");
 
         // Directory and files should now exist
         assert!(dir.exists());

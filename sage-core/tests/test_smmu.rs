@@ -89,9 +89,30 @@ fn test_multi_path_causal_accumulation() {
 
     // Use distinct keywords to avoid entity cross-links.
     let a = smmu.register_chunk(0, 1, "root", vec!["root".into()], None, None);
-    let b = smmu.register_chunk(10, 11, "branch-b", vec!["bonly".into()], None, Some(a.clone()));
-    let _c = smmu.register_chunk(20, 21, "branch-c", vec!["conly".into()], None, Some(a.clone()));
-    let d_via_b = smmu.register_chunk(30, 31, "leaf-d", vec!["donly".into()], None, Some(b.clone()));
+    let b = smmu.register_chunk(
+        10,
+        11,
+        "branch-b",
+        vec!["bonly".into()],
+        None,
+        Some(a.clone()),
+    );
+    let _c = smmu.register_chunk(
+        20,
+        21,
+        "branch-c",
+        vec!["conly".into()],
+        None,
+        Some(a.clone()),
+    );
+    let d_via_b = smmu.register_chunk(
+        30,
+        31,
+        "leaf-d",
+        vec!["donly".into()],
+        None,
+        Some(b.clone()),
+    );
 
     // Also add a causal edge from C to D by registering another chunk that
     // shares D's identity. But since register_chunk always creates a NEW node,
@@ -204,7 +225,10 @@ fn test_causal_linking() {
     let parent_cid = mem
         .compact_to_arrow_with_meta(vec!["planning".to_string()], None, None, None)
         .expect("compact parent chunk");
-    assert!(!parent_cid.is_empty(), "parent_cid should be non-empty ULID");
+    assert!(
+        !parent_cid.is_empty(),
+        "parent_cid should be non-empty ULID"
+    );
 
     // Create a child chunk that causally links to the parent chunk.
     for i in 0..3 {

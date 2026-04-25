@@ -418,7 +418,11 @@ fn test_contextual_trained_arms_selection() {
     // Train fast-model on simple tasks (context = [1.0, 10.0])
     for _ in 0..30 {
         let d = bandit.choose_contextual(1.0, &[1.0, 10.0]).unwrap();
-        let q = if d.model_id == "fast-model" { 0.95 } else { 0.5 };
+        let q = if d.model_id == "fast-model" {
+            0.95
+        } else {
+            0.5
+        };
         bandit
             .record_outcome(&d.decision_id, q, 0.01, 50.0)
             .unwrap();
@@ -427,7 +431,11 @@ fn test_contextual_trained_arms_selection() {
     // Train deep-model on complex tasks (context = [3.0, 500.0])
     for _ in 0..30 {
         let d = bandit.choose_contextual(1.0, &[3.0, 500.0]).unwrap();
-        let q = if d.model_id == "deep-model" { 0.95 } else { 0.5 };
+        let q = if d.model_id == "deep-model" {
+            0.95
+        } else {
+            0.5
+        };
         bandit
             .record_outcome(&d.decision_id, q, 0.05, 200.0)
             .unwrap();
@@ -549,7 +557,10 @@ mod persistence_tests {
         // Should have all 3 arms (INSERT OR REPLACE keeps old + adds new)
         // Actually, persistence uses INSERT OR REPLACE by primary key (model_id, template),
         // so different keys accumulate. Let's just verify the new arms are present.
-        assert!(loaded.arm_count() >= 2, "should have at least the 2 new arms");
+        assert!(
+            loaded.arm_count() >= 2,
+            "should have at least the 2 new arms"
+        );
 
         // Cleanup
         let _ = std::fs::remove_file(&tmp);
