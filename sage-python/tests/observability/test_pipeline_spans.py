@@ -115,3 +115,50 @@ async def test_pipeline_run_emits_six_stage_spans(in_memory_exporter) -> None:
         assert op_for[stage] == stage, (
             f"{stage} should have op={stage}, got {op_for.get(stage)!r}"
         )
+
+
+@pytest.mark.asyncio
+async def test_topology_runner_emits_per_node_invoke_agent_spans(in_memory_exporter) -> None:
+    """Each TopologyNode AgentLoop emits sage.node.<name> with op=invoke_agent."""
+    from sage.observability.spans import sage_span
+    with sage_span("sage.node.preprocessor", op="invoke_agent",
+                   **{"sage.node.name": "preprocessor"}):
+        pass
+    with sage_span("sage.node.worker_0", op="invoke_agent",
+                   **{"sage.node.name": "worker_0"}):
+        pass
+
+    spans = in_memory_exporter.get_finished_spans()
+    node_spans = [s for s in spans if s.name.startswith("sage.node.")]
+    assert len(node_spans) == 2
+    for s in node_spans:
+        assert s.attributes["gen_ai.operation.name"] == "invoke_agent"
+
+
+@pytest.mark.asyncio
+async def test_node_spans_nest_under_execute_under_pipeline_run(in_memory_exporter) -> None:
+    """Span hierarchy: sage.node.<n> child of sage.execute, child of sage.pipeline.run."""
+    from sage.observability.spans import sage_span
+    # Synthetic nested call structure mirroring runner+pipeline emission order
+    with sage_span("sage.pipeline.run", op="invoke_agent"):
+        with sage_span("sage.execute", op="sage.execute"):
+            with sage_span("sage.node.synthetic", op="invoke_agent",
+                           **{"sage.node.name": "synthetic"}):
+                pass
+
+    spans = in_memory_exporter.get_finished_spans()
+    by_id = {s.context.span_id: s for s in spans}  # noqa: F841 — kept for future walk assertions
+    node = next(s for s in spans if s.name == "sage.node.synthetic")
+    execute = next(s for s in spans if s.name == "sage.execute")
+    top = next(s for s in spans if s.name == "sage.pipeline.run")
+
+    # node parent is execute
+    assert node.parent is not None
+    assert node.parent.span_id == execute.context.span_id
+
+    # execute parent is pipeline.run
+    assert execute.parent is not None
+    assert execute.parent.span_id == top.context.span_id
+
+    # pipeline.run has no parent (it's the root)
+    assert top.parent is None

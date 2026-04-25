@@ -570,8 +570,19 @@ class TopologyRunner:
         # `_provider_pool` — this block mirrors it for AgentLoop. P1.2
         # of the 2026-04-18 mega-plan.
         provider_name = getattr(config, "provider", "unknown")
+        from sage.observability.spans import sage_span
+        _node_name = (
+            getattr(node, "name", None)
+            or getattr(node, "role", None)
+            or f"node_{node_idx}"
+        )
         try:
-            result = await loop.run(full_task)
+            with sage_span(
+                f"sage.node.{_node_name}",
+                op="invoke_agent",
+                **{"sage.node.name": _node_name, "sage.node.index": node_idx},
+            ):
+                result = await loop.run(full_task)
         except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
             if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
                 try:
