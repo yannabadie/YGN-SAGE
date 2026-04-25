@@ -12,7 +12,15 @@ pub mod wasm;
 pub mod wasm_python;
 // z3_validator: implemented in Python (sage.sandbox.z3_validator) using z3-solver package.
 // Rust implementation removed — z3 crate was never added to Cargo.toml dependencies.
-#[cfg(feature = "tool-executor")]
+//
+// `subprocess` is needed by both `tool_executor` (PyO3-exposed surface) AND
+// `wasm_python` (re-uses the `ExecResult` shape for fallthrough on the
+// `execute_raw` path when the embedded Wasm bytes are missing). Without
+// the second leg of the gate, `cargo test --features sandbox,cranelift`
+// alone (without tool-executor) hits E0432 on `wasm_python.rs:75`.
+// PyO3 class registration in lib.rs:38 stays gated on `tool-executor`
+// only — widening here doesn't expose new ABI to Python.
+#[cfg(any(feature = "tool-executor", all(feature = "sandbox", feature = "cranelift")))]
 pub mod subprocess;
 #[cfg(feature = "tool-executor")]
 pub mod tool_executor;
