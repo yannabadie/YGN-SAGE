@@ -132,12 +132,14 @@ class Sandbox:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
+            # Rename to *_bytes to keep mypy from inferring `str` from the
+            # earlier BWRAP_AVAILABLE branch (which calls execute_isolated()).
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=self.config.timeout
             )
             return SandboxResult(
-                stdout=stdout.decode("utf-8", errors="replace"),
-                stderr=stderr.decode("utf-8", errors="replace"),
+                stdout=stdout_bytes.decode("utf-8", errors="replace"),
+                stderr=stderr_bytes.decode("utf-8", errors="replace"),
                 exit_code=proc.returncode or 0,
             )
         except asyncio.TimeoutError:
@@ -153,12 +155,14 @@ class Sandbox:
             stderr=asyncio.subprocess.PIPE,
         )
         try:
-            stdout, stderr = await asyncio.wait_for(
+            # Rename to *_bytes to keep mypy from inferring `str` from the
+            # earlier BWRAP_AVAILABLE branch (which calls execute_isolated()).
+            stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 proc.communicate(), timeout=self.config.timeout
             )
             return SandboxResult(
-                stdout=stdout.decode("utf-8", errors="replace"),
-                stderr=stderr.decode("utf-8", errors="replace"),
+                stdout=stdout_bytes.decode("utf-8", errors="replace"),
+                stderr=stderr_bytes.decode("utf-8", errors="replace"),
                 exit_code=proc.returncode or 0,
             )
         except asyncio.TimeoutError:

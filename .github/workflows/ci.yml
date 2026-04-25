@@ -108,18 +108,34 @@ jobs:
   python-sage:
     name: Python SDK (sage-python)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sage-python
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install -e ".[all,dev]"
-      - run: ruff check src/
-      - run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary
-      - run: python -m pytest tests/ -v --tb=short --cov=sage --cov-report=term-missing:skip-covered
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Python SDK
+        working-directory: sage-python
+        run: pip install -e ".[all,dev]"
+      # `sage_core` is required at runtime per the architecture rule
+      # (TopologyController.__init__ raises ImportError if absent). CI
+      # was missing this build step, so every test that touched
+      # `from sage_core import ...` failed with the architecture-rule
+      # ImportError. Build matches CLAUDE.md `Quick Commands`.
+      - name: Build sage_core (required for pytest)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin develop --features smt,onnx
+      - name: ruff
+        working-directory: sage-python
+        run: ruff check src/
+      - name: mypy
+        working-directory: sage-python
+        run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary
+      - name: pytest
+        working-directory: sage-python
+        run: python -m pytest tests/ -v --tb=short --cov=sage --cov-report=term-missing:skip-covered
 
   python-discover:
     name: Python Discovery (sage-discover)
@@ -150,6 +166,17 @@ jobs:
       - name: Install Python SDK
         working-directory: sage-python
         run: pip install -e ".[all,dev]"
+      # `sage_core` is required at runtime per the architecture rule
+      # (TopologyController.__init__ raises ImportError if absent). Without
+      # this build step every test that imports `from sage_core import ...`
+      # ERRORs at collection. Same step + features as the python-sage
+      # Linux job. Sandbox+cranelift are Cargo defaults; explicit
+      # smt+onnx for parity with CLAUDE.md `Quick Commands`.
+      - name: Build sage_core (required for pytest)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin develop --features smt,onnx
       - name: Run Python tests
         working-directory: sage-python
         run: python -m pytest tests/ -v --tb=short
