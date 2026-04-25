@@ -728,11 +728,27 @@ Spec: `docs/superpowers/specs/2026-04-25-otel-genai-spans-design.md`
 Plan: `docs/superpowers/plans/2026-04-25-otel-genai-spans.md`
 Implementation commits: b92836a7 → 3ca4c5cb (10 tasks via subagent-driven-development)
 
-Sub-items (open, can land in any order after B1):
-- **B1.b** — sage-core Rust spans via `tracing-opentelemetry` bridge. 1–2 days.
+Sub-items:
+- **B1.b** ✅ CLOSED 2026-04-25 — sage-core Rust spans via `tracing-opentelemetry`
+  bridge. Approach A (independent Rust OTel SDK + W3C traceparent across
+  PyO3, no PyO3 0.27 upgrade). 27 span call sites audited (counts/IDs only,
+  zero raw payloads). 9 unit tests + 1 E2E smoke + 5 Python integration
+  tests, all green. CI gates added (`rust-features` + `windows` jobs).
+  Spec: `docs/superpowers/specs/2026-04-25-otel-rust-spans-design.md`.
+  Plan: `docs/superpowers/plans/2026-04-25-otel-rust-spans.md`.
+  Implementation: c2d4969b → 3c4e812d (~13 commits via subagent-driven-development).
 - **B1.c** — sage-discover MCP server retrieval spans. 0.5–1 day.
 - **B1.d** — ui/FastAPI auto-instrumentation. 0.5 day.
 - **B1.e** — sampler tuning once production volume data lands. TBD.
+
+B1.b deferred follow-ups (lower priority; days-scope each):
+- **B1.b.1** — rename Rust span names to `sage.<crate>.<op>` form (cosmetic alignment).
+- **B1.b.7** — logfire-mode Rust export (auth header + endpoint contract underspecified
+  in public docs; Python logfire path covers the primary surface today).
+- **B1.b.8** ✅ closed inline (CI gates landed in 3c4e812d).
+- **B1.b.9** — OTLP batch exporter with explicit tokio runtime ownership (MVP
+  ships with `with_simple_exporter` to avoid the "no live tokio runtime at PyO3
+  boundary" panic class).
 
 ### B2. Durable trace + deterministic replay harness
 **Why:** ALIRE high-severity item, and it's the prerequisite for any

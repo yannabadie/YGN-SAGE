@@ -31,7 +31,12 @@ sage-discover/ — Knowledge Pipeline (arXiv → ExoCortex)
 # the embedded RustPython wasm sandbox (~37 MB) for validate_and_execute.
 # Add `--features smt,onnx` when you need the formal QualityLabeler /
 # ONNX embedder / tokeniser paths.
+# Add `--features otel` (B1.b, 2026-04-25) when you want Rust hot-path
+# spans bridged to OpenTelemetry alongside Python — see
+# docs/observability/otel-genai-spans.md "Rust spans" section.
 cd sage-core && maturin develop --features smt,onnx
+# With Rust OTel:
+cd sage-core && maturin develop --features otel,smt,onnx
 cd sage-python && pip install -e ".[all,dev]"
 
 # Build recipe for the embedded RustPython wasm (one-time, cached):
