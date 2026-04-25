@@ -2,7 +2,7 @@
 //! `otel` feature is on.
 
 use pyo3::prelude::*;
-use std::sync::OnceLock;
+use std::sync::Mutex;
 
 use opentelemetry::global;
 use opentelemetry::trace::TracerProvider as _;
@@ -11,7 +11,7 @@ use opentelemetry_sdk::trace::TracerProvider as SdkTracerProvider;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 
-static INIT: OnceLock<bool> = OnceLock::new();
+static INIT: Mutex<bool> = Mutex::new(false);
 
 /// Initialize Rust OTel TracerProvider + tracing-opentelemetry Layer.
 ///
@@ -24,7 +24,8 @@ static INIT: OnceLock<bool> = OnceLock::new();
 #[pyfunction]
 #[pyo3(signature = (exporter, endpoint=None))]
 pub fn init_otel(exporter: &str, endpoint: Option<&str>) -> bool {
-    if INIT.get().is_some() {
+    let mut init_guard = INIT.lock().unwrap_or_else(|e| e.into_inner());
+    if *init_guard {
         return false; // already initialized
     }
 
@@ -65,18 +66,21 @@ pub fn init_otel(exporter: &str, endpoint: Option<&str>) -> bool {
     global::set_tracer_provider(provider);
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    INIT.set(true).ok();
+    *init_guard = true;
     true
 }
 
 fn build_console_provider() -> Option<SdkTracerProvider> {
-    // For B1.b MVP: console mode for Rust just installs a tracing-subscriber
-    // Layer that emits OTel spans to stderr via the Layer's debug formatting.
-    // Python-side console exporter handles the user-facing console output.
-    // Returning an empty TracerProvider here means Rust spans will reach the
-    // tracing-opentelemetry layer but the SDK's exporter chain is empty —
-    // spans flow to the Layer's debug fmt only, no SimpleSpanProcessor.
-    Some(SdkTracerProvider::builder().build())
+    // For B1.b MVP: console mode wires opentelemetry-stdout's SpanExporter
+    // so Rust spans reach stderr directly. Python-side console exporter
+    // handles its own spans separately. Both surfaces use the same
+    // user-visible "console" exporter kind.
+    let exporter = opentelemetry_stdout::SpanExporter::default();
+    Some(
+        SdkTracerProvider::builder()
+            .with_simple_exporter(exporter)
+            .build(),
+    )
 }
 
 fn build_otlp_provider(endpoint: Option<&str>) -> Option<SdkTracerProvider> {
@@ -102,9 +106,13 @@ fn build_otlp_provider(endpoint: Option<&str>) -> Option<SdkTracerProvider> {
         }
     };
 
+    // MVP: simple (synchronous) exporter — avoids requiring a live tokio
+    // runtime at PyO3 boundary. Trade-off: spans flush per-emission rather
+    // than batched. Production volume profile may want a batch path later
+    // (tracked as B1.b.9 follow-up — needs explicit runtime ownership).
     Some(
         SdkTracerProvider::builder()
-            .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
+            .with_simple_exporter(exporter)
             .build(),
     )
 }
@@ -133,5 +141,17 @@ mod tests {
         let _guard = SERIAL.lock().unwrap();
         let result = init_otel("frobinator-9000", None);
         assert!(!result, "unknown exporter should return false, got true");
+    }
+
+    #[test]
+    fn init_otel_is_idempotent() {
+        // Calling init_otel("console", None) twice in the same process
+        // must not double-install the subscriber. First call returns true
+        // OR false depending on prior tests' execution order; second call
+        // MUST return false. The Mutex<bool> guard ensures atomicity.
+        let _guard = SERIAL.lock().unwrap();
+        let _first = init_otel("console", None);
+        let second = init_otel("console", None);
+        assert!(!second, "second init_otel call must be a no-op");
     }
 }

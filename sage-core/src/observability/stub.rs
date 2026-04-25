@@ -25,7 +25,7 @@ pub fn bridge_python_span(traceparent: &str, name: &str) -> RustSpanHandle {
 
 /// Opaque handle exported to Python. Stub variant carries no state.
 /// On the real path, this owns a `tracing::span::EnteredSpan`.
-#[pyclass]
+#[pyclass(unsendable)]
 pub struct RustSpanHandle {
     pub(crate) _private: (),
 }

@@ -48,10 +48,11 @@ tracing = "0.1"
 # feature — opt-in for now, may move into default features once
 # downstream stability is proven (see roadmap-B1.b.8).
 opentelemetry = { version = "0.27", optional = true }
-opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry_sdk = { version = "0.27", optional = true }
 opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "http-json", "reqwest-client", "trace"], optional = true }
 tracing-opentelemetry = { version = "0.28", optional = true }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"], optional = true }
+opentelemetry-stdout = { version = "0.27", optional = true }
 toml = "0.8"
 rand = "0.9"
 # Plan 2.2 (2026-04-20): regex for TopologyController port (path 1
@@ -105,6 +106,7 @@ otel = [
     "dep:opentelemetry-otlp",
     "dep:tracing-opentelemetry",
     "dep:tracing-subscriber",
+    "dep:opentelemetry-stdout",
 ]
 
 [dev-dependencies]

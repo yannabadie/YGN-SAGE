@@ -10,7 +10,7 @@ pub fn bridge_python_span(traceparent: &str, name: &str) -> RustSpanHandle {
     RustSpanHandle {}
 }
 
-#[pyclass]
+#[pyclass(unsendable)]
 pub struct RustSpanHandle {}
 
 #[pymethods]
