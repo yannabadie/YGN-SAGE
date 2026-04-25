@@ -52,7 +52,6 @@ from sage.agent import AgentConfig  # noqa: E402
 from sage.agent_loop import AgentLoop  # noqa: E402
 from sage.input.types import TaskInput  # noqa: E402
 from sage.agent_pool import AgentPool  # noqa: E402
-from sage.llm.base import LLMConfig  # noqa: E402
 from sage.strategy.adaptive_router import AdaptiveRouter  # noqa: E402
 from sage.topology.evo_topology import TopologyEvolver, TopologyPopulation  # noqa: E402
 from sage.tools.registry import ToolRegistry  # noqa: E402
@@ -483,7 +482,9 @@ def boot_agent_system(
         PATH/HOME/PWD/USER/locale-level vars pass through. No API
         keys, no CONTEXT7, no SAGE_EXOCORTEX_STORE, no DB URLs.
         """
-        import asyncio, subprocess, shutil
+        import asyncio
+        import subprocess
+        import shutil
         safe_env = _safe_subprocess_env()
         # Use bash for Unix commands (git bash on Windows, /bin/bash on Linux)
         bash = shutil.which("bash") or shutil.which("sh")

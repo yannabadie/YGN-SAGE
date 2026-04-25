@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, TYPE_CHECKING
 
 from sage.llm.base import Message, Role, ToolDef
@@ -77,7 +77,7 @@ async def think(
     loop_action is "continue" if the step should be retried (S3 retry/degrade),
     "break" if topology result was used, or "proceed" to continue to ACT/LEARN.
     """
-    from sage.agent_loop import LoopPhase, _estimate_tokens, _text_entropy, _COST_PER_1K
+    from sage.agent_loop import LoopPhase, _text_entropy
 
     # Topology-aware execution: delegate to TopologyRunner for multi-node
     if loop.step_count == 1:

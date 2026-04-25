@@ -319,7 +319,6 @@ def main() -> None:
     import argparse
     import dataclasses
     import json
-    from datetime import datetime, timezone
 
     parser = argparse.ArgumentParser(description="Memory coherence benchmark")
     parser.add_argument("--limit", type=int, default=None,

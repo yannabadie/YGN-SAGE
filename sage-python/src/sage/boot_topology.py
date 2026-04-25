@@ -92,7 +92,6 @@ def init_topology(
         dict with keys: rust_router, rust_registry, py_model_registry,
         topology_engine, bandit, cards_toml.
     """
-    from sage.constants import EXPLORATION_BUDGET_LOW
 
     cards_toml = _find_cards_toml()
     rust_router, rust_reg = _init_rust_router(cards_toml)
@@ -185,7 +184,7 @@ def init_topology(
                 rust_topology_engine.record_outcome(
                     _result.topology.id,
                     f"bootstrap_s{_sys}",
-                    [f"bootstrap", f"s{_sys}"],
+                    ["bootstrap", f"s{_sys}"],
                     None,
                     0.5,  # neutral quality
                     0.0,

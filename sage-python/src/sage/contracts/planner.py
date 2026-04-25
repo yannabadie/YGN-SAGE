@@ -120,7 +120,7 @@ class TaskPlanner:
         Hard-cap: MAX_DECOMPOSITION_STEPS = 6. Truncates beyond that.
         Falls back to single-node DAG on any failure.
         """
-        from sage.llm.base import Message, Role, LLMConfig
+        from sage.llm.base import Message, Role
 
         log = logging.getLogger(__name__)
 

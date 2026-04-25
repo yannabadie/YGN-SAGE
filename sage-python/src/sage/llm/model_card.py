@@ -11,7 +11,6 @@ from __future__ import annotations
 import enum
 import tomllib
 from dataclasses import dataclass, field
-from pathlib import Path
 
 
 class CognitiveSystem(enum.IntEnum):

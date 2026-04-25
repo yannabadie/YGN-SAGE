@@ -46,7 +46,15 @@ from pathlib import Path
 # marked optional in ygn-sage[all]); the `type: ignore[import-not-found]`
 # is correct — only used inside the `try` block, and mypy without the
 # test-env extras would otherwise flag the import.
-_MAX_TYPE_IGNORES = 42
+# Raised from 42 to 44 (2026-04-25, roadmap-B1 OTel GenAI spans):
+# +2 for sage_core import guards in observability/__init__.py:36 and
+# observability/spans.py:111. These are correct — sage_core is the
+# optional Rust extension (PyO3) and the bridge mirrors Python OTel
+# state into Rust only when sage-core was built with `--features otel`;
+# absent that, the import gracefully falls through. Same shape as the
+# pre-existing pipeline.py sage_core import-not-found pattern (skip
+# category).
+_MAX_TYPE_IGNORES = 44
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")

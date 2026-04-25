@@ -29,6 +29,9 @@ from typing import Any
 
 import yaml
 
+# Re-use SandboxResult from existing infra
+from sage.tools.sandbox_executor import SandboxResult
+
 log = logging.getLogger("grpo_v2")
 
 CONCURRENCY = int(os.environ.get("SAGE_GRPO_CONCURRENCY", "8"))
@@ -45,9 +48,6 @@ try:
     _RUST_AVAILABLE = True
 except ImportError:
     _RUST_AVAILABLE = False
-
-# Re-use SandboxResult from existing infra
-from sage.tools.sandbox_executor import SandboxResult
 
 # Lazy-loaded agent provider (Gemini Flash — fast+cheap for node execution)
 _AGENT_PROVIDER = None
@@ -277,9 +277,9 @@ def _load_test_cases() -> dict[str, str]:
         bcb = get_bigcodebench()
         for tid, item in bcb.items():
             test = item.get("test", "")
-            entry_point = item.get("entry_point", "")
             if tid and test:
-                # BigCodeBench tests use unittest — wrap with entry_point call
+                # BigCodeBench tests use unittest — entry_point hook is read
+                # at evaluation time inside the test source, no wrap needed here.
                 _TEST_CASES[tid] = test
         log.info("Loaded %d BigCodeBench test cases", len(_TEST_CASES))
     except Exception as exc:

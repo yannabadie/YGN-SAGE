@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -280,7 +279,6 @@ class CognitiveOrchestrationPipeline:
         # Tier 1: Episodic memory (persistent SQLite)
         if self.episodic_memory:
             try:
-                import asyncio
                 entry = {
                     "task": ctx.task[:200],
                     "system": ctx.system,
@@ -746,7 +744,7 @@ class CognitiveOrchestrationPipeline:
             elif hasattr(topology, "edge_count"):
                 ec = topology.edge_count()
                 total_edges = ec() if callable(ec) else int(ec)
-                edges_render = f"<count-only>"
+                edges_render = "<count-only>"
         except Exception:
             edges_render = "<unreadable>"
 

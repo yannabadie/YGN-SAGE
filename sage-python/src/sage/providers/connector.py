@@ -5,18 +5,18 @@ Failures are isolated per-provider -- one provider going down never crashes boot
 """
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 import shutil
+import time as _time
 from dataclasses import dataclass, field
+from pathlib import Path as _Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # ── Discovery cache (24h TTL, ~/.sage/discovery_cache/) ──────────────────────
-import json as _json
-import time as _time
-from pathlib import Path as _Path
 
 _CACHE_DIR = _Path.home() / ".sage" / "discovery_cache"
 _CACHE_TTL_SECONDS = 24 * 3600  # 24 hours

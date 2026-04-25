@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 # ── StructuralFeatures: Python implementation (Phase 1 rationalization) ───────
 # Rust features.rs still compiled as internal dep of router.rs, but Python callers
 # use the Python implementation directly.
-from sage.strategy.structural_features import StructuralFeatures  # noqa: F401
+from sage.strategy.structural_features import StructuralFeatures  # noqa: E402,F401
 
 # ── Rust AdaptiveRouter backend ───────────────────────────────────────────────
 # Try Rust backend

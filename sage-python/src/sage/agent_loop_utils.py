@@ -10,7 +10,6 @@ import ast
 import math
 import re
 import shlex
-from typing import Any
 
 from sage.constants import STAGNATION_WINDOW
 

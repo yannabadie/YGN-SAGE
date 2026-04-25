@@ -287,13 +287,20 @@ class ProviderPool:
             if pname:
                 return pname
         mid = model_id.lower()
-        if mid.startswith("gemini"): return "google"
-        if mid.startswith("gpt-"): return "openai"
-        if mid.startswith("grok"): return "xai"
-        if mid.startswith("deepseek"): return "deepseek"
-        if "minimax" in mid: return "minimax"
-        if mid.startswith("kimi"): return "kimi"
-        if "qwen" in mid: return "openrouter"
+        if mid.startswith("gemini"):
+            return "google"
+        if mid.startswith("gpt-"):
+            return "openai"
+        if mid.startswith("grok"):
+            return "xai"
+        if mid.startswith("deepseek"):
+            return "deepseek"
+        if "minimax" in mid:
+            return "minimax"
+        if mid.startswith("kimi"):
+            return "kimi"
+        if "qwen" in mid:
+            return "openrouter"
         return ""
 
     def is_model_available(self, model_id: str) -> bool:

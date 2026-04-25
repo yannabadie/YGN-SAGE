@@ -150,7 +150,20 @@ def test_rust_routing_span_visible_in_otel_export(monkeypatch: pytest.MonkeyPatc
     # span counts (would require InMemoryExporter wiring on Rust side
     # which Task 5 covered separately). This test just exercises the
     # codepath end-to-end without crashing.
-    router = sage_core.SystemRouter()
+    #
+    # SystemRouter.__new__ takes a ModelRegistry; resolve cards.toml from
+    # the repo root so the test works regardless of cwd.
+    if not hasattr(sage_core, "ModelRegistry"):
+        pytest.skip("sage_core.ModelRegistry not exposed in this build")
+    import os
+    repo_root = os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    )
+    cards_path = os.path.join(repo_root, "sage-core", "config", "cards.toml")
+    if not os.path.exists(cards_path):
+        pytest.skip(f"cards.toml not found at {cards_path}")
+    registry = sage_core.ModelRegistry.from_toml_file(cards_path)
+    router = sage_core.SystemRouter(registry)
     with sage_span("sage.assign", op="assign_models"):
         try:
             _ = router.route("compute fibonacci", 1.0)

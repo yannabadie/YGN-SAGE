@@ -34,7 +34,7 @@ import re
 import sys
 import time
 import types
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePath
 from typing import Any
@@ -173,7 +173,7 @@ def load_swebench_dataset(
 #    at least three exploration steps before any patch is written, and forces
 #    line-number verification before emitting hunk headers.
 
-from sage.input.swebench import normalize_swebench, render_swebench_prompt
+from sage.input.swebench import normalize_swebench, render_swebench_prompt  # noqa: E402
 
 
 def _build_task_prompt(instance: dict[str, Any]) -> str:
@@ -1034,7 +1034,8 @@ class SWEBenchBench:
         Returns the path to the repo root, or None if clone fails.
         The caller must chdir into it and clean up after.
         """
-        import subprocess, tempfile
+        import subprocess
+        import tempfile
 
         repo = instance.get("repo", "")  # e.g. "astropy/astropy"
         base_commit = instance.get("base_commit", "")
@@ -1738,7 +1739,7 @@ class SWEBenchBench:
 
         # Phase 3: Evaluate
         print(f"\n  Predictions saved to: {preds_path}")
-        print(f"  Starting Docker evaluation...")
+        print("  Starting Docker evaluation...")
 
         eval_results = self.evaluate_with_harness(preds_path)
 
@@ -1746,8 +1747,8 @@ class SWEBenchBench:
             log.error("Docker evaluation failed: %s", eval_results["error"])
             print(f"\n  Docker evaluation failed: {eval_results['error']}")
             print(f"  Predictions are saved at: {preds_path}")
-            print(f"  You can evaluate manually with:")
-            print(f"    python -m swebench.harness.run_evaluation \\")
+            print("  You can evaluate manually with:")
+            print("    python -m swebench.harness.run_evaluation \\")
             print(f"      --predictions_path {preds_path} \\")
             print(f"      --dataset_name {_DATASET_MAP[self.dataset]} \\")
             print(f"      --run_id {self.run_id}")
@@ -1816,7 +1817,7 @@ class SWEBenchBench:
         empty_count = sum(1 for p in predictions if _classify_prediction(p) == "empty")
         errors_count = sum(1 for p in predictions if p.get("_error"))
 
-        print(f"\n  Generation complete:")
+        print("\n  Generation complete:")
         print(f"    Total instances: {len(predictions)}")
         print(f"    Real patches:    {real_count}")
         print(f"    Sentinels:       {sentinel_count}  (agent exited with no content)")
@@ -1824,8 +1825,8 @@ class SWEBenchBench:
         print(f"    Errors:          {errors_count}")
         print(f"\n  Predictions: {preds_path}")
         print(f"  Metadata: {meta_path}")
-        print(f"\n  To evaluate (requires Docker with Linux containers):")
-        print(f"    python -m swebench.harness.run_evaluation \\")
+        print("\n  To evaluate (requires Docker with Linux containers):")
+        print("    python -m swebench.harness.run_evaluation \\")
         print(f"      --predictions_path {preds_path} \\")
         print(f"      --dataset_name {_DATASET_MAP[self.dataset]} \\")
         print(f"      --run_id {self.run_id}")

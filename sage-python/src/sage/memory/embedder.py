@@ -174,7 +174,6 @@ class _SentenceTransformerEmbedder:
 
     def _load_model(self) -> None:
         from sentence_transformers import SentenceTransformer  # type: ignore[import-untyped]
-        import os
         from pathlib import Path
 
         # Try local cache path first (avoids SSL retries on corporate proxy)

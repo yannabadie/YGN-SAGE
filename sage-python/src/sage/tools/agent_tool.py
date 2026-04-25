@@ -15,11 +15,10 @@ Usage::
 """
 from __future__ import annotations
 
-import json
 from typing import Any, Protocol, runtime_checkable
 
 from sage.llm.base import ToolDef
-from sage.tools.base import Tool, ToolResult
+from sage.tools.base import Tool
 
 
 @runtime_checkable

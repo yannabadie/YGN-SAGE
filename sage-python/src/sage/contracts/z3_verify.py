@@ -16,6 +16,8 @@ import types
 from dataclasses import dataclass, field
 from typing import Any
 
+from sage.contracts.dag import TaskDAG
+
 # Try Rust OxiZ backend first
 try:
     from sage_core import SmtVerifier as _RustSmtVerifier
@@ -30,8 +32,6 @@ try:
     _z3 = _z3_imported
 except ImportError:
     _z3 = None
-
-from sage.contracts.dag import TaskDAG
 
 
 @dataclass

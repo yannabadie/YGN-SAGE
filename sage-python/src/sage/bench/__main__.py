@@ -199,7 +199,7 @@ async def _run_evalplus(
 
     if official:
         results = await bench.run_official(limit=limit)
-        print(f"\n  Official EvalPlus Results:")
+        print("\n  Official EvalPlus Results:")
         print(f"    Base pass@1: {results.get('base', 0):.1%}")
         print(f"    Plus pass@1: {results.get('plus', 0):.1%}")
     else:
@@ -309,7 +309,7 @@ async def _run_swebench(args) -> None:
         print(f"  Repositories: {info['repo_count']}")
         if info.get("difficulties"):
             print(f"  Difficulties: {info['difficulties']}")
-        print(f"\n  Top repos:")
+        print("\n  Top repos:")
         for repo, count in list(info['repos'].items())[:15]:
             print(f"    {repo}: {count}")
         print()
@@ -325,7 +325,7 @@ async def _run_swebench(args) -> None:
             max_workers=args.max_workers,
         )
         print(f"\n{'=' * 60}")
-        print(f"  SWE-Bench Evaluation Results")
+        print("  SWE-Bench Evaluation Results")
         print(f"{'=' * 60}")
         print(f"  Resolved: {results.get('resolved', 0)}/{results.get('total', 0)} "
               f"({results.get('resolved_rate', 0):.1%})")

@@ -8,7 +8,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import asyncio
 import logging
 
 _log = logging.getLogger(__name__)

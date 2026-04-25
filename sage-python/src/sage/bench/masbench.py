@@ -17,11 +17,10 @@ Usage:
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from sage.bench.runner import BenchReport, TaskResult
@@ -297,5 +296,5 @@ class MASBenchAblation:
             elif delta < 0:
                 print(f"  >>> SAGE HURTS on {self.axis} tasks")
             else:
-                print(f"  >>> No difference")
+                print("  >>> No difference")
         print()
