@@ -236,3 +236,31 @@ async def test_chat_span_record_exception_false_emits_redacted_event(
     assert "REDACTED" in msg or "REDACTED" in tb, (
         "A16 redaction must replace the secret with REDACTED"
     )
+
+
+@pytest.mark.asyncio
+async def test_tool_span_redacts_sensitive_arguments(
+    in_memory_exporter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """sage.tool span emits gen_ai.tool.call.{name,arguments,result} with A16 redaction."""
+    monkeypatch.setenv("SAGE_REDACT_SECRETS", "1")
+    monkeypatch.delenv("SAGE_OTEL_RAW_PAYLOADS", raising=False)
+    from sage.tools.base import Tool
+    from sage.llm.base import ToolDef
+
+    async def _handler(secret: str = "") -> str:
+        return f"used {secret[:4]}..."
+
+    spec = ToolDef(name="test_tool", description="t", parameters={"type": "object"})
+    tool = Tool(spec=spec, handler=_handler)
+    await tool.execute({"secret": "sk-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"})
+
+    spans = in_memory_exporter.get_finished_spans()
+    tool_span = next((s for s in spans if s.name == "sage.tool"), None)
+    assert tool_span is not None
+    assert tool_span.attributes["gen_ai.operation.name"] == "execute_tool"
+    assert tool_span.attributes["gen_ai.tool.name"] == "test_tool"
+    args = tool_span.attributes["gen_ai.tool.call.arguments"]
+    assert "sk-AAAA" not in args
+    assert "REDACTED" in args

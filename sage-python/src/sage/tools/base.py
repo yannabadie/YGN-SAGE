@@ -108,15 +108,31 @@ class Tool:
         because the model often steers on them (e.g. FileNotFoundError
         → "create it first" vs PermissionError → "request approval").
         """
-        try:
-            output = await self._handler(**arguments)
-            return ToolResult(output=output, is_error=False)
-        except Exception as e:
-            log.exception("Tool %s raised %s", self.spec.name, type(e).__name__)
-            return ToolResult(
-                output=f"Error: {type(e).__name__}: {e}",
-                is_error=True,
-            )
+        from sage.observability.spans import sage_span, _safe_str
+        with sage_span(
+            "sage.tool",
+            op="execute_tool",
+            record_exception=False,  # We handle exceptions inside; redact before re-raise
+            **{
+                "gen_ai.tool.name": self.spec.name,
+                "gen_ai.tool.call.arguments": _safe_str(arguments),
+            },
+        ) as _tool_span:
+            try:
+                output = await self._handler(**arguments)
+                if _tool_span is not None:
+                    _tool_span.set_attribute(
+                        "gen_ai.tool.call.result", _safe_str(output)
+                    )
+                return ToolResult(output=output, is_error=False)
+            except Exception as e:
+                log.exception("Tool %s raised %s", self.spec.name, type(e).__name__)
+                if _tool_span is not None:
+                    _tool_span.set_attribute("error.type", type(e).__name__)
+                return ToolResult(
+                    output=f"Error: {type(e).__name__}: {e}",
+                    is_error=True,
+                )
 
     async def run(self, arguments: dict[str, Any]) -> str:
         """Execute and return raw output string."""
