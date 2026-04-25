@@ -4,6 +4,8 @@
 #[cfg(feature = "otel")]
 mod init;
 #[cfg(feature = "otel")]
+mod bridge;
+#[cfg(feature = "otel")]
 pub use init::*;
 
 #[cfg(not(feature = "otel"))]
