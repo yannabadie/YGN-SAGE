@@ -51,6 +51,17 @@ jobs:
         run: cargo test --no-default-features --features cognitive --lib
       - name: ONNX feature tests
         run: cargo test --no-default-features --features onnx --lib
+      - name: OTel bridge tests (B1.b — tracing-opentelemetry pair)
+        # Catches version drift between tracing-opentelemetry 0.28 and
+        # opentelemetry 0.27 on every PR — the most likely failure mode
+        # when these two crates publish independently.
+        run: cargo test --no-default-features --features otel --lib observability::
+      - name: OTel bridge end-to-end smoke (B1.b)
+        # InMemoryExporter + bridge + info_span! → asserts parent_span_id
+        # matches the W3C traceparent's span_id. #[ignore] on the test
+        # because tracing-subscriber init is process-wide; --ignored
+        # --test-threads=1 isolates it.
+        run: cargo test --no-default-features --features otel --test otel_smoke -- --ignored --test-threads=1
       - name: Integration tests (baseline)
         run: cargo test --no-default-features --test '*'
       - name: Integration tests (with Python)
@@ -113,6 +124,12 @@ jobs:
       - name: Rust check (ONNX feature)
         working-directory: sage-core
         run: cargo check --no-default-features --features onnx
+      - name: Rust check (OTel feature, B1.b — Windows MSVC)
+        # Windows MSVC catches reqwest+rustls or opentelemetry-otlp
+        # transitive issues that Linux misses. Compile-only — full
+        # otel test suite runs on Linux job.
+        working-directory: sage-core
+        run: cargo check --no-default-features --features otel
 
   integration-smoke:
     name: Integration Smoke (real API, main only)
