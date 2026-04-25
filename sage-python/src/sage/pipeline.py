@@ -336,95 +336,98 @@ class CognitiveOrchestrationPipeline:
                 assignment + bandit posteriors), but `ctx.system` is forced
                 to the hint afterwards.
         """
-        t0 = time.monotonic()
-        effective_budget_usd = (
-            self.budget_usd
-            if budget_usd is None
-            else _resolve_task_budget_usd(budget_usd)
-        )
-        ctx = PipelineContext(task=task, budget=effective_budget_usd)
-        if effective_budget_usd > 0:
-            ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
-
-        # G-series (2026-04-19): rebuild write gate per task so entries from a
-        # previous task don't persist as novelty penalties or exact-dedup hits
-        # on content in THIS task. Rust gate has no in-place reset yet.
-        self.write_gate = self._build_write_gate()
-
-        # Stage 0: CLASSIFY
-        ctx = self._stage_classify(ctx)
-        if system_hint in (1, 2, 3) and ctx.system != system_hint:
-            log.info(
-                "Stage 0: system_hint=S%d overrides router S%d",
-                system_hint, ctx.system,
+        from sage.observability.spans import sage_span
+        with sage_span("sage.pipeline.run", op="invoke_agent",
+                       **{"gen_ai.request.model": ""}):
+            t0 = time.monotonic()
+            effective_budget_usd = (
+                self.budget_usd
+                if budget_usd is None
+                else _resolve_task_budget_usd(budget_usd)
             )
-            ctx.system = system_hint
-        self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
+            ctx = PipelineContext(task=task, budget=effective_budget_usd)
+            if effective_budget_usd > 0:
+                ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
 
-        # Stage 1: DECOMPOSE (S2/S3 only)
-        ctx = await self._stage_decompose(ctx)
-        dag_node_count = 0
-        if ctx.task_dag is not None:
-            if hasattr(ctx.task_dag, "node_count"):
-                dag_node_count = ctx.task_dag.node_count
-            elif hasattr(ctx.task_dag, "node_ids"):
-                dag_node_count = len(list(ctx.task_dag.node_ids))
-        self._emit(
-            "DECOMPOSE",
-            {
-                "dag_nodes": dag_node_count,
-                "features": (
-                    {
-                        "omega": ctx.dag_features.omega,
-                        "delta": ctx.dag_features.delta,
-                        "gamma": ctx.dag_features.gamma,
-                    }
-                    if ctx.dag_features
-                    else {}
-                ),
-            },
-        )
+            # G-series (2026-04-19): rebuild write gate per task so entries from a
+            # previous task don't persist as novelty penalties or exact-dedup hits
+            # on content in THIS task. Rust gate has no in-place reset yet.
+            self.write_gate = self._build_write_gate()
 
-        # Stage 2: SELECT TOPOLOGY
-        ctx = self._stage_select_topology(ctx)
-        topo_nodes = (
-            ctx.topology.node_count()
-            if ctx.topology and hasattr(ctx.topology, "node_count")
-            else 0
-        )
-        self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
+            # Stage 0: CLASSIFY
+            ctx = self._stage_classify(ctx)
+            if system_hint in (1, 2, 3) and ctx.system != system_hint:
+                log.info(
+                    "Stage 0: system_hint=S%d overrides router S%d",
+                    system_hint, ctx.system,
+                )
+                ctx.system = system_hint
+            self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
-        # Stage 3: ASSIGN MODELS
-        ctx = self._stage_assign_models(ctx)
-        self._emit(
-            "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
-        )
+            # Stage 1: DECOMPOSE (S2/S3 only)
+            ctx = await self._stage_decompose(ctx)
+            dag_node_count = 0
+            if ctx.task_dag is not None:
+                if hasattr(ctx.task_dag, "node_count"):
+                    dag_node_count = ctx.task_dag.node_count
+                elif hasattr(ctx.task_dag, "node_ids"):
+                    dag_node_count = len(list(ctx.task_dag.node_ids))
+            self._emit(
+                "DECOMPOSE",
+                {
+                    "dag_nodes": dag_node_count,
+                    "features": (
+                        {
+                            "omega": ctx.dag_features.omega,
+                            "delta": ctx.dag_features.delta,
+                            "gamma": ctx.dag_features.gamma,
+                        }
+                        if ctx.dag_features
+                        else {}
+                    ),
+                },
+            )
 
-        # Stage 4: EXECUTE
-        ctx = await self._stage_execute(ctx)
-        ctx.latency_ms = (time.monotonic() - t0) * 1000
+            # Stage 2: SELECT TOPOLOGY
+            ctx = self._stage_select_topology(ctx)
+            topo_nodes = (
+                ctx.topology.node_count()
+                if ctx.topology and hasattr(ctx.topology, "node_count")
+                else 0
+            )
+            self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
 
-        # Write execution trace to memory (Tier 0 + Tier 1)
-        self._record_to_memory(ctx)
+            # Stage 3: ASSIGN MODELS
+            ctx = self._stage_assign_models(ctx)
+            self._emit(
+                "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
+            )
 
-        # Stage 5: LEARN
-        await self._stage_learn(ctx)
-        self._emit("LEARN", {"latency_ms": ctx.latency_ms})
+            # Stage 4: EXECUTE
+            ctx = await self._stage_execute(ctx)
+            ctx.latency_ms = (time.monotonic() - t0) * 1000
 
-        # Expose full context for observability (bench, tracing, debugging)
-        self.last_context = ctx
+            # Write execution trace to memory (Tier 0 + Tier 1)
+            self._record_to_memory(ctx)
 
-        # Sync the per-task cost back onto the top-level agent_loop so
-        # bench adapters that read `system.agent_loop.total_cost_usd`
-        # (evalplus, humaneval, legacy reporters) observe the value
-        # regardless of whether this task went through bypass or topology.
-        # The bypass path already wrote ctx.cost from its own loop; the
-        # multi-agent path wrote it from runner aggregation. Writing it
-        # back keeps the observable surface consistent.
-        if self._agent_loop is not None and ctx.cost:
-            self._agent_loop.total_cost_usd = float(ctx.cost)
+            # Stage 5: LEARN
+            await self._stage_learn(ctx)
+            self._emit("LEARN", {"latency_ms": ctx.latency_ms})
 
-        return ctx.result
+            # Expose full context for observability (bench, tracing, debugging)
+            self.last_context = ctx
+
+            # Sync the per-task cost back onto the top-level agent_loop so
+            # bench adapters that read `system.agent_loop.total_cost_usd`
+            # (evalplus, humaneval, legacy reporters) observe the value
+            # regardless of whether this task went through bypass or topology.
+            # The bypass path already wrote ctx.cost from its own loop; the
+            # multi-agent path wrote it from runner aggregation. Writing it
+            # back keeps the observable surface consistent.
+            if self._agent_loop is not None and ctx.cost:
+                self._agent_loop.total_cost_usd = float(ctx.cost)
+
+            return ctx.result
 
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
