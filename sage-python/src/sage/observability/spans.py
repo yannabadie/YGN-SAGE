@@ -102,6 +102,28 @@ def _otel_enabled() -> bool:
     return _get_tracer() is not None
 
 
+def _maybe_bridge_to_rust(name: str, span: Any) -> Any | None:
+    """If sage_core.bridge_python_span exists, call it with the W3C
+    traceparent of the current span. Returns the Rust handle (caller
+    closes on scope exit) or None when bridging not available.
+    """
+    try:
+        import sage_core  # type: ignore[import-not-found]
+    except ImportError:
+        return None
+    try:
+        sc = span.get_span_context()
+        if not sc.is_valid:
+            return None
+        traceparent = (
+            f"00-{sc.trace_id:032x}-{sc.span_id:016x}-{int(sc.trace_flags):02x}"
+        )
+        return sage_core.bridge_python_span(traceparent, name)
+    except Exception:  # pylint: disable=broad-except
+        log.exception("bridge_python_span raised; continuing without Rust span")
+        return None
+
+
 @contextmanager
 def sage_span(
     name: str,
@@ -136,6 +158,7 @@ def sage_span(
         for k, v in attrs.items():
             if v is not None:
                 span.set_attribute(k, v)
+        rust_handle = _maybe_bridge_to_rust(name, span)
         try:
             yield span
         except BaseException as exc:
@@ -160,3 +183,9 @@ def sage_span(
                 )
                 span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
             raise
+        finally:
+            if rust_handle is not None:
+                try:
+                    rust_handle.close()
+                except Exception:  # pylint: disable=broad-except
+                    log.exception("rust_handle.close() raised; continuing")
