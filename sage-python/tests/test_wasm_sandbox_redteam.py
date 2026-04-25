@@ -27,12 +27,23 @@ import os
 
 import pytest
 
-import sage_core
-
+# Resilient skip gate: this test file is collected on every CI job, but
+# the embedded wasm runtime + the `embedded_wasm_available` symbol only
+# exist when sage-core is built with `--features sandbox,cranelift`.
+# Older Windows wheels (built --no-default-features) ship sage_core
+# without the symbol — calling it would AttributeError at collection,
+# halting every other test. Use `importorskip` for the module + getattr
+# for the symbol so missing builds skip cleanly.
+sage_core = pytest.importorskip(
+    "sage_core",
+    reason="sage_core not installed in this environment.",
+)
+_embedded_wasm_available = getattr(sage_core, "embedded_wasm_available", None)
 pytestmark = pytest.mark.skipif(
-    not sage_core.embedded_wasm_available(),
-    reason="Embedded RustPython wasm bytes not bundled (built without sandbox+cranelift, "
-    "or build.rs did not find a compiled rustpython.wasm).",
+    _embedded_wasm_available is None or not _embedded_wasm_available(),
+    reason="Embedded RustPython wasm bytes not bundled (built without "
+    "sandbox+cranelift, or build.rs did not find a compiled rustpython.wasm, "
+    "or this sage_core build predates the embedded_wasm_available probe).",
 )
 
 SENTINEL = "sk-sentinel-do-not-leak-2026-04-22"
