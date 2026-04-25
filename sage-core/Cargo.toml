@@ -44,6 +44,14 @@ tree-sitter-python = { version = "0.25", optional = true }
 process-wrap = { version = "9", optional = true, features = ["tokio1"] }
 oxiz = { version = "0.2", optional = true }
 tracing = "0.1"
+# B1.b OTel Rust bridge (2026-04-25). All gated behind the `otel`
+# feature — opt-in for now, may move into default features once
+# downstream stability is proven (see roadmap-B1.b.8).
+opentelemetry = { version = "0.27", optional = true }
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.27", features = ["http-proto", "http-json", "reqwest-client"], optional = true }
+tracing-opentelemetry = { version = "0.28", optional = true }
+tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"], optional = true }
 toml = "0.8"
 rand = "0.9"
 # Plan 2.2 (2026-04-20): regex for TopologyController port (path 1
@@ -91,6 +99,13 @@ onnx = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 tool-executor = ["dep:tree-sitter", "dep:tree-sitter-python", "dep:process-wrap"]
 cognitive = ["dep:rusqlite"]
 smt = ["dep:oxiz"]
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+    "dep:tracing-subscriber",
+]
 
 [dev-dependencies]
 pyo3 = { version = "0.25", features = ["auto-initialize"] }
