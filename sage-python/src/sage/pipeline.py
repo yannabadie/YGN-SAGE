@@ -1221,7 +1221,7 @@ class CognitiveOrchestrationPipeline:
                 self._emit_budget_exceeded(ctx)
                 ctx.result = BUDGET_EXCEEDED_RESULT
                 return ctx
-    
+
             # Bandit: choose arm BEFORE execution to get decision_id
             # Pass task context features when available for contextual arm selection
             if self.bandit and hasattr(self.bandit, "select_with_context"):
@@ -1245,7 +1245,7 @@ class CognitiveOrchestrationPipeline:
                     ctx.bandit_decision_id = decision.decision_id
                 except (ImportError, RuntimeError):
                     pass
-    
+
             if not ctx.verification_passed:
                 # A0b (2026-04-23, ALIRE2 §6): strict mode aborts here instead
                 # of falling through to EXECUTE_UNVERIFIED. The default keeps
@@ -1267,7 +1267,7 @@ class CognitiveOrchestrationPipeline:
                     )
                 log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
                 self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
-    
+
             # Single-agent mode (no topology or single node)
             if ctx.topology is None or (
                 hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
@@ -1275,7 +1275,7 @@ class CognitiveOrchestrationPipeline:
                 if self._agent_loop:
                     # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
                     # guardrails + memory. Replaces the raw provider.generate() loop.
-    
+
                     # A0a (2026-04-23, ALIRE2 §4 "shared mutable state"):
                     # snapshot EVERY field we are about to mutate before touching
                     # any of them. The prior code snapshotted only `_llm` and
@@ -1296,12 +1296,12 @@ class CognitiveOrchestrationPipeline:
                         "max_steps": self._agent_loop.config.max_steps,
                         "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
                     }
-    
+
                     # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
                     self._agent_loop._skip_routing = True
                     # H4: Clear topology (pipeline owns topology, not agent_loop)
                     self._agent_loop._current_topology = None
-    
+
                     # H5 audit fix (2026-04-19): wire the pipeline-scoped write gate
                     # onto the shared AgentLoop for the single-agent bypass path.
                     # The G-series fix (commit c905d06) only wired the gate through
@@ -1322,7 +1322,7 @@ class CognitiveOrchestrationPipeline:
                         self._agent_loop.gate_source_tier = infer_source_tier(model_id)
                     except (ImportError, AttributeError):
                         self._agent_loop.gate_source_tier = "unknown"
-    
+
                     # H6 audit fix (2026-04-19): wire the drift callback on the
                     # bypass path. The multi-node path sets `_on_drift` via the
                     # factory (topology/runner.py:502-521) so SWITCH_MODEL /
@@ -1339,7 +1339,7 @@ class CognitiveOrchestrationPipeline:
                             getattr(self._agent_loop.config, "llm", None),
                             "model", "",
                         ) or "default"
-    
+
                         def _on_drift_bypass(
                             provider_hint: str,
                             action: str,
@@ -1360,9 +1360,9 @@ class CognitiveOrchestrationPipeline:
                                 )
                             except Exception:  # noqa: BLE001
                                 pass
-    
+
                         self._agent_loop._on_drift = _on_drift_bypass
-    
+
                     # Set validation level from system classification
                     if ctx.system >= 3:
                         self._agent_loop.config.validation_level = 3
@@ -1370,7 +1370,7 @@ class CognitiveOrchestrationPipeline:
                         self._agent_loop.config.validation_level = 2
                     else:
                         self._agent_loop.config.validation_level = 1
-    
+
                     # Plan item 1.1 (2026-04-20): scale singleton max_steps by
                     # ctx.system — close the H5-class bypass extending the
                     # singleton-vs-factory asymmetry. boot.py:279 built the
@@ -1381,7 +1381,7 @@ class CognitiveOrchestrationPipeline:
                     # agent_loop.py:424 reads self.config.max_steps directly in
                     # the step loop — mutation takes effect on the next .run().
                     self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
-    
+
                     # Plan item 1.2 (2026-04-20): scale singleton D8 stall cap
                     # to match the factory (agent_loop_factory.py:151-154).
                     # AgentConfig.stall_after_tool_steps defaults to 0 (D8
@@ -1395,7 +1395,7 @@ class CognitiveOrchestrationPipeline:
                     self._agent_loop.config.stall_after_tool_steps = (
                         _new_max - 1 if _new_max > 5 else 0
                     )
-    
+
                     # Resolve model from Rust routing decision (preserve model selection)
                     routing_decision = getattr(self, '_last_routing_decision', None)
                     _original_llm = self._agent_loop._llm
@@ -1414,7 +1414,7 @@ class CognitiveOrchestrationPipeline:
                                 )
                         except Exception:
                             pass  # Keep default provider
-    
+
                     try:
                         ctx.result = await self._agent_loop.run(ctx.task)
                         ctx.cost = self._agent_loop.total_cost_usd
@@ -1441,12 +1441,12 @@ class CognitiveOrchestrationPipeline:
                         self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]
                         self._agent_loop._llm = _original_llm
                         self._agent_loop.config.llm = _original_config
-    
+
                 elif self.llm_provider:
                     # Simple fallback: single provider.generate() call (no tool loop).
                     # Used only when pipeline is created without agent_loop (e.g., tests).
                     from sage.llm.base import Message, Role
-    
+
                     messages = [Message(role=Role.USER, content=ctx.task)]
                     try:
                         response = await self.llm_provider.generate(
@@ -1457,27 +1457,27 @@ class CognitiveOrchestrationPipeline:
                         log.error("Stage 4 fallback failed: %s", exc)
                         ctx.result = f"Error: {exc}"
                 return ctx
-    
+
             # Multi-agent mode: use TopologyRunner with ProviderPool
             try:
                 from sage.topology.runner import TopologyRunner
-    
+
                 # Get executor
                 try:
                     from sage_core import TopologyExecutor  # type: ignore[import-not-found]
-    
+
                     executor = TopologyExecutor(ctx.topology)
                 except ImportError:
                     log.warning("sage_core TopologyExecutor unavailable, falling back")
                     ctx.result = "Error: TopologyExecutor unavailable"
                     return ctx
-    
+
                 # Phase 2: create agent_loop factory for per-node execution
                 _agent_loop_factory = None
                 if self._agent_loop and self.tool_registry:
                     from sage.agent_loop_factory import create_node_agent_loop
                     from functools import partial
-    
+
                     _agent_loop_factory = partial(
                         create_node_agent_loop,
                         tool_registry=self.tool_registry,
@@ -1492,7 +1492,7 @@ class CognitiveOrchestrationPipeline:
                         write_gate=self.write_gate,
                         task_text=ctx.task,
                     )
-    
+
                 runner = TopologyRunner(
                     graph=ctx.topology,
                     executor=executor,
@@ -1569,7 +1569,7 @@ class CognitiveOrchestrationPipeline:
                         self._emit_budget_exceeded(ctx)
                         ctx.result = result
                         return ctx
-    
+
                 # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
                 if result and result != "__REROUTE__" and self.quality_estimator:
                     quality = self.quality_estimator.estimate(ctx.task, result)
@@ -1644,12 +1644,12 @@ class CognitiveOrchestrationPipeline:
                                 log.info("Stage 4: FrugalGPT cascade succeeded on retry")
                         except (RuntimeError, TimeoutError) as exc:
                             log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
-    
+
                 if result == BUDGET_EXCEEDED_RESULT:
                     self._emit_budget_exceeded(ctx)
                     ctx.result = result
                     return ctx
-    
+
                 ctx.result = result
                 # Prefer the runner's aggregated real cost (summed from per-node
                 # AgentLoop.total_cost_usd, which now prefers provider-reported
@@ -1700,9 +1700,9 @@ class CognitiveOrchestrationPipeline:
                 else:
                     log.error("Stage 4 fallback: no healthy provider available")
                     ctx.result = ""
-    
+
             return ctx
-    
+
     # ── Stage 5: Learn ──────────────────────────────────────────────────────
 
     async def _stage_learn(self, ctx: PipelineContext) -> None:
@@ -1723,9 +1723,9 @@ class CognitiveOrchestrationPipeline:
         from sage.observability.spans import sage_span
         with sage_span("sage.learn", op="sage.learn"):
             import re
-    
+
             quality: float | None = None
-    
+
             # Empty result => total failure, bandit must learn from it
             if not ctx.result or not ctx.result.strip():
                 quality = 0.0
@@ -1736,7 +1736,7 @@ class CognitiveOrchestrationPipeline:
                     )
                 except (ImportError, RuntimeError):
                     quality = None  # cannot assess — abstain
-    
+
             # PRM lightweight scoring (Phase C) — 6th formal signal
             # Guard: only call PRM on structured content (<think>, assert, code)
             # Only blend when quality is known (not None)
@@ -1749,7 +1749,7 @@ class CognitiveOrchestrationPipeline:
                         log.debug("PRM blended quality: %.2f (estimator + PRM)", quality)
                 except (RuntimeError, ValueError) as exc:
                     log.warning("PRM scoring failed in LEARN: %s", exc)
-    
+
             # Only record to bandit when quality is known — never guess
             if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
                 if ctx.bandit_decision_id:
@@ -1758,7 +1758,7 @@ class CognitiveOrchestrationPipeline:
                         log.debug("Bandit outcome recorded (in-memory, not persisted across restarts)")
                     except (ImportError, RuntimeError):
                         pass
-    
+
             # Evolution feedback: record outcome in TopologyEngine archive
             # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
             if self.engine and quality is not None and ctx.topology is not None:
@@ -1777,7 +1777,7 @@ class CognitiveOrchestrationPipeline:
                                 task_embedding = _embedder.embed(ctx.task[:500])
                         except (ImportError, RuntimeError):
                             pass  # Embedding unavailable, degrade gracefully
-    
+
                         # In-run observability: read archive cell count before +
                         # after record_outcome so we can attribute MAP-Elites growth
                         # to a specific topology_id. The H4 incident (dc51976)
@@ -1826,7 +1826,7 @@ class CognitiveOrchestrationPipeline:
                         )
                 except (ImportError, RuntimeError) as exc:
                     log.debug("Evolution feedback failed: %s", exc)
-    
+
             # H1 audit fix (2026-04-19): Online evolution gate.
             #
             # Architecture/architecture.md and evolution/README.md both claim
@@ -1943,10 +1943,10 @@ class CognitiveOrchestrationPipeline:
                 except (ImportError, RuntimeError, AttributeError) as exc:
                     # Engine without these methods (e.g. test stub) → silent skip.
                     log.debug("Online evolution gate skipped: %s", exc)
-    
+
             # ── Periodic maintenance ───────────────────────────────────────────
             self._task_count += 1
-    
+
             # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
             from sage.constants import CONSOLIDATION_INTERVAL_STEPS
             if (self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
@@ -1968,7 +1968,7 @@ class CognitiveOrchestrationPipeline:
                     )
                 except (RuntimeError, IOError):
                     pass  # Best-effort, never blocks pipeline
-    
+
             # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
             from sage.constants import BANDIT_FLUSH_INTERVAL
             if (self._task_count % BANDIT_FLUSH_INTERVAL == 0
