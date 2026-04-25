@@ -192,18 +192,21 @@ fn test_build_graph_node_count() {
             model: "model-a".into(),
             system: 2,
             capabilities: vec!["planning".into()],
+            prompt: String::new(),
         },
         RoleAssignment {
             name: "executor".into(),
             model: "model-b".into(),
             system: 1,
             capabilities: vec!["execution".into()],
+            prompt: String::new(),
         },
         RoleAssignment {
             name: "reporter".into(),
             model: "model-a".into(),
             system: 1,
             capabilities: vec!["reporting".into()],
+            prompt: String::new(),
         },
     ];
     let structure = StructureDesign {
@@ -238,18 +241,21 @@ fn test_build_graph_edge_count_from_adjacency() {
             model: "m".into(),
             system: 1,
             capabilities: vec![],
+            prompt: String::new(),
         },
         RoleAssignment {
             name: "b".into(),
             model: "m".into(),
             system: 1,
             capabilities: vec![],
+            prompt: String::new(),
         },
         RoleAssignment {
             name: "c".into(),
             model: "m".into(),
             system: 1,
             capabilities: vec![],
+            prompt: String::new(),
         },
     ];
     let structure = StructureDesign {

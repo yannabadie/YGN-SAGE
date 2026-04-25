@@ -400,13 +400,15 @@ fn test_loop_termination_no_timeout() {
 }
 
 // ---------------------------------------------------------------------------
-// 12. TemplateStore::available() returns 8 items
+// 12. TemplateStore::available() returns 12 items (8 original + robust,
+//     horizon_pipeline, parallel_fanout, formal_solver added since)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn test_template_store_all_names() {
     let names = TemplateStore::available();
-    assert_eq!(names.len(), 8);
+    assert_eq!(names.len(), 12);
+    // Original 8
     assert!(names.contains(&"sequential"));
     assert!(names.contains(&"parallel"));
     assert!(names.contains(&"avr"));
@@ -415,6 +417,11 @@ fn test_template_store_all_names() {
     assert!(names.contains(&"hub"));
     assert!(names.contains(&"debate"));
     assert!(names.contains(&"brainstorming"));
+    // Added since
+    assert!(names.contains(&"robust"));
+    assert!(names.contains(&"horizon_pipeline"));
+    assert!(names.contains(&"parallel_fanout"));
+    assert!(names.contains(&"formal_solver"));
 }
 
 // ---------------------------------------------------------------------------

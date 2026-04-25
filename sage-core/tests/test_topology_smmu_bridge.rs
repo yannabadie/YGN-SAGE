@@ -101,11 +101,11 @@ fn test_multiple_records() {
 
 #[test]
 fn test_retrieve_on_empty_bridge() {
-    let smmu = MultiViewMMU::new();
+    let mut smmu = MultiViewMMU::new();
     let bridge = TopologySmmuBridge::new();
 
     // Use an empty string query_id for an empty bridge — no results expected
-    let results = bridge.retrieve_similar(&smmu, "", 5);
+    let results = bridge.retrieve_similar(&mut smmu, "", 5);
     assert!(results.is_empty());
 }
 
@@ -132,7 +132,7 @@ fn test_retrieve_with_similar_embeddings() {
     let query_id =
         smmu.register_chunk(0, 0, "Sort an array", vec!["sort".into()], Some(emb2), None);
 
-    let results = bridge.retrieve_similar(&smmu, &query_id, 5);
+    let results = bridge.retrieve_similar(&mut smmu, &query_id, 5);
     assert!(!results.is_empty(), "Should find the similar task");
 
     let first = &results[0];
@@ -289,7 +289,7 @@ fn test_end_to_end_flow() {
         None,
     );
 
-    let suggestions = bridge.retrieve_similar(&smmu, &query_id, 5);
+    let suggestions = bridge.retrieve_similar(&mut smmu, &query_id, 5);
     assert!(!suggestions.is_empty(), "Should find similar task");
 
     // Verify suggestion fields

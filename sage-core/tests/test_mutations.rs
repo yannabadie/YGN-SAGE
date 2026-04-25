@@ -1,13 +1,50 @@
 use sage_core::topology::mutations::*;
-use sage_core::topology::templates;
 use sage_core::topology::topology_graph::*;
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
+// Mutation tests need a 3-node graph with explicit model_id values they
+// can read back and modify. `templates::sequential()` would seem ideal,
+// but post-2026-04-18 (F6 audit fix) those nodes ship with `model_id=""`
+// — ModelAssigner fills them in at runtime. Build the graph locally
+// to keep the contract under test independent of template internals.
 fn make_sequential() -> TopologyGraph {
-    templates::sequential("gemini-2.5-flash")
+    let mut g = TopologyGraph::try_new("sequential").unwrap();
+    let n0 = TopologyNode::new(
+        "planner".into(),
+        "gemini-2.5-flash".into(),
+        2,
+        vec!["text_processing".into(), "reasoning".into()],
+        0,
+        0.5,
+        60.0,
+    );
+    let n1 = TopologyNode::new(
+        "coder".into(),
+        "gemini-2.5-flash".into(),
+        2,
+        vec!["text_processing".into(), "tools".into()],
+        0,
+        1.0,
+        60.0,
+    );
+    let n2 = TopologyNode::new(
+        "synthesizer".into(),
+        "gemini-2.5-flash".into(),
+        1,
+        vec!["text_processing".into()],
+        0,
+        1.0,
+        60.0,
+    );
+    let i0 = g.add_node(n0);
+    let i1 = g.add_node(n1);
+    let i2 = g.add_node(n2);
+    g.try_add_edge(i0, i1, TopologyEdge::control()).unwrap();
+    g.try_add_edge(i1, i2, TopologyEdge::control()).unwrap();
+    g
 }
 
 fn make_two_node_graph() -> TopologyGraph {
@@ -60,7 +97,12 @@ fn test_add_node_increases_count() {
     let graph = make_sequential(); // 3 nodes
     assert_eq!(graph.node_count(), 3);
 
-    let result = add_node(graph, "analyst", "gemini-2.5-flash", 1);
+    // Role must have precedence >= synthesizer (tier 3, idx 30) since
+    // add_node connects from an exit node and the role-ordering verifier
+    // (verifier.rs:455) rejects edges that decrease precedence. "aggregator"
+    // is also tier 3, satisfying the constraint while still exercising the
+    // count-grew assertion.
+    let result = add_node(graph, "aggregator", "gemini-2.5-flash", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
     let new_graph = result.unwrap();
     assert_eq!(new_graph.node_count(), 4);
@@ -214,7 +256,9 @@ fn test_merge_nodes_decreases_count_by_one() {
 fn test_mutate_prompt_changes_role() {
     let graph = make_sequential();
     let original = graph.try_get_node(0).unwrap();
-    assert_eq!(original.role, "input_processor");
+    // make_sequential() local fixture uses "planner" as node 0
+    // (matches templates::sequential() but with explicit model_id).
+    assert_eq!(original.role, "planner");
 
     let result = mutate_prompt(graph, 0, "super_coder");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);

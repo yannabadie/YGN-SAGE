@@ -776,15 +776,20 @@ pub(crate) fn role_tier(role: &str) -> u8 {
     // Strip numeric suffixes (worker_0, stage_1, etc.)
     let base = role.split('_').next().unwrap_or(role);
     match base {
-        // Tier 0: Input/decomposition
-        "planner" | "preprocessor" | "splitter" | "dispatcher" | "topic" | "source" | "input" => 0,
+        // Tier 0: Input/decomposition. "parent" / "coordinator" delegate
+        // out-going work in `hierarchical` and `hub` templates respectively
+        // — semantically the entry point, not a sink. Classifying them as
+        // tier 3 (sink) makes the role-ordering verifier reject every
+        // parent/coordinator -> child/spoke control edge.
+        "planner" | "preprocessor" | "splitter" | "dispatcher" | "topic" | "source" | "input"
+        | "parent" | "coordinator" => 0,
         // Tier 1: Processing/working (most roles)
         "analyst" | "coder" | "actor" | "worker" | "debater" | "thinker" | "stage" | "spoke"
         | "child" | "agent" | "reasoner" => 1,
         // Tier 2: Evaluation/verification
         "reviewer" | "verifier" | "judge" | "output" => 2,
         // Tier 3: Final synthesis/formatting
-        "synthesizer" | "aggregator" | "formatter" | "mixer" | "parent" | "coordinator" => 3,
+        "synthesizer" | "aggregator" | "formatter" | "mixer" => 3,
         // Unknown roles: tier 1 (permissive — middle of pipeline)
         _ => 1,
     }
