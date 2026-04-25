@@ -24,7 +24,7 @@ pub(crate) const SINK_NODE_PROMPT: &str = "You are the final synthesizer. Review
 // ---------------------------------------------------------------------------
 
 /// Build a sequential pipeline: input_processor -> worker -> output_formatter.
-pub fn sequential(model_id: &str) -> TopologyGraph {
+pub fn sequential(_model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("sequential").unwrap();
 
     // Each node has a different system tier so ModelAssigner picks different
@@ -166,7 +166,7 @@ pub fn parallel(model_id: &str, worker_count: usize) -> TopologyGraph {
 /// Forward path: actor -> verifier -> output (control edges).
 /// Back-edge: verifier -> actor (control, gate=Closed) for repair.
 /// Message edge: actor -> verifier with {"code" -> "review_input"}.
-pub fn avr(actor_model: &str, reviewer_model: &str) -> TopologyGraph {
+pub fn avr(_actor_model: &str, _reviewer_model: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("avr").unwrap();
 
     // Actor (S3 reasoner) and verifier (S2 fast) get different models/providers
@@ -543,7 +543,7 @@ pub fn brainstorming(model_id: &str, thinker_count: usize) -> TopologyGraph {
 /// A preprocessor strips noise, then `worker_count` workers solve independently,
 /// and a verifier performs majority voting. Based on MALT (arXiv 2412.01928)
 /// and ResMAS (arXiv 2601.04694).
-pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
+pub fn robust(_model_id: &str, worker_count: usize) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("robust").unwrap();
 
     // Preprocessor (S1 fast): strips noise/distractors from input
@@ -625,7 +625,7 @@ pub fn robust(model_id: &str, worker_count: usize) -> TopologyGraph {
 /// A splitter decomposes the task, then `stage_count` stages solve sub-problems
 /// sequentially (each receiving prior stage output as context), and an aggregator
 /// combines all results. Based on Task-Decoupled Planning (arXiv 2601.07577).
-pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
+pub fn horizon_pipeline(_model_id: &str, stage_count: usize) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("horizon_pipeline").unwrap();
 
     // Splitter (S1 fast): parses <<horizon>> delimiters, dispatches sub-problems
@@ -680,7 +680,7 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
     // Chain: splitter -> stage_0 -> stage_1 -> ... -> stage_{N-1} -> aggregator
     // Each hop has control + message edges
     let mut prev = si;
-    for (i, &stage_idx) in stage_indices.iter().enumerate() {
+    for &stage_idx in stage_indices.iter() {
         g.try_add_edge(prev, stage_idx, TopologyEdge::control())
             .unwrap();
 
@@ -714,7 +714,7 @@ pub fn horizon_pipeline(model_id: &str, stage_count: usize) -> TopologyGraph {
 ///
 /// Workers cycle through S1/S2/S3 system tiers so ModelAssigner routes them to
 /// different providers/models for output diversity. Based on SC-MAS (arXiv 2601.09434).
-pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
+pub fn parallel_fanout(_model_id: &str, worker_count: usize) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("parallel_fanout").unwrap();
 
     // Dispatcher (S1 fast): decomposes and fans out
@@ -806,7 +806,7 @@ pub fn parallel_fanout(model_id: &str, worker_count: usize) -> TopologyGraph {
 /// Based on SatLM (NeurIPS 2023): separating formalization (LLM's strength)
 /// from solving (deterministic computation) gives +23% on hard math.
 /// Generic — works for any math problem, not just iGSM.
-pub fn formal_solver(model_id: &str) -> TopologyGraph {
+pub fn formal_solver(_model_id: &str) -> TopologyGraph {
     let mut g = TopologyGraph::try_new("formal_solver").unwrap();
 
     // Formalizer (LLM): translates NL to equations.

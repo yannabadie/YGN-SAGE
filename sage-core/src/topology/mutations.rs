@@ -801,9 +801,21 @@ pub(crate) fn role_index(role: &str) -> usize {
 }
 
 /// Roles available for mutation, grouped by tier.
+///
+/// These per-tier slices document the role taxonomy that `role_tier()` (~L775)
+/// matches against. The mutation machinery itself uses `ALL_ROLES` directly
+/// (sampled from in `add_node` and `mutate_role`), but keeping the per-tier
+/// view alongside is load-bearing for future ablation work — when we vet the
+/// `role_tier` match arms, this is the canonical "what's in tier N" reference.
+/// `#[allow(dead_code)]` because cargo `--no-default-features` clippy doesn't
+/// see the consumers (e.g. cognitive feature) and would deny on -D warnings.
+#[allow(dead_code)]
 const ROLES_TIER0: &[&str] = &["planner", "preprocessor", "splitter", "dispatcher"];
+#[allow(dead_code)]
 const ROLES_TIER1: &[&str] = &["analyst", "coder", "worker", "reasoner"];
+#[allow(dead_code)]
 const ROLES_TIER2: &[&str] = &["reviewer", "verifier", "judge"];
+#[allow(dead_code)]
 const ROLES_TIER3: &[&str] = &["synthesizer", "aggregator", "formatter", "mixer"];
 const ALL_ROLES: &[&str] = &[
     "planner",

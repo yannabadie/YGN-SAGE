@@ -630,22 +630,12 @@ impl SystemRouter {
                 // Capability filter
                 for cap in &constraints.required_capabilities {
                     match cap.as_str() {
-                        "tools" => {
-                            if !card.supports_tools {
-                                return false;
-                            }
-                        }
-                        "json_mode" | "json" => {
-                            if !card.supports_json_mode {
-                                return false;
-                            }
-                        }
-                        "vision" => {
-                            if !card.supports_vision {
-                                return false;
-                            }
-                        }
-                        _ => {} // Unknown capabilities ignored (forward-compat)
+                        "tools" if !card.supports_tools => return false,
+                        "json_mode" | "json" if !card.supports_json_mode => return false,
+                        "vision" if !card.supports_vision => return false,
+                        // Other capability strings (or matches that already passed
+                        // the support check) are forward-compatible no-ops.
+                        _ => {}
                     }
                 }
 

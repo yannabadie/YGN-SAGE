@@ -161,6 +161,13 @@ pub struct RustTopologyController {
     node_retries: HashMap<usize, u32>,
     abstain_count: u32,
     node_qualities: HashMap<usize, f32>,
+    /// Per-gate loop count tracking (debate cycles, etc.). Initialised
+    /// here for future use — read by the test_default_state regression
+    /// (asserts initial empty state) but not yet wired into a Python
+    /// API surface. Field is intentional state per ADR-012; clippy
+    /// dead-code lint without `--features cognitive` doesn't see the
+    /// future writers, so allow the lint here.
+    #[allow(dead_code)]
     gate_loops: HashMap<usize, u32>,
 }
 
