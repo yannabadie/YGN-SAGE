@@ -17,6 +17,49 @@ _INITIALIZED = False
 _TRACER = None
 
 
+def _mirror_to_rust(exporter_kind: str) -> None:
+    """Mirror Python OTel exporter config into Rust via sage_core.
+
+    Idempotent. Returns silently when the Rust `otel` feature is off
+    (sage_core.init_otel returns False) or when sage_core is missing
+    entirely. Logfire mode is treated as no-op for Rust spans (B1.b.7).
+    """
+    if exporter_kind == "logfire":
+        log.info(
+            "Logfire exporter active for Python spans; "
+            "Rust spans not mirrored (roadmap-B1.b.7)"
+        )
+        return
+    if exporter_kind not in {"console", "otlp_http"}:
+        return
+    try:
+        import sage_core  # type: ignore[import-not-found]
+    except ImportError:
+        log.warning(
+            "OTel exporter %r requested but sage_core not importable; "
+            "Rust spans will not be exported",
+            exporter_kind,
+        )
+        return
+
+    endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
+    try:
+        ok = sage_core.init_otel(exporter_kind, endpoint)
+    except Exception:  # pylint: disable=broad-except
+        log.exception(
+            "sage_core.init_otel raised; Rust spans will not be exported"
+        )
+        return
+
+    if not ok:
+        log.info(
+            "sage_core.init_otel returned False for exporter=%r "
+            "(feature off, already-initialized, or unsupported); "
+            "Rust spans will not be exported in this run",
+            exporter_kind,
+        )
+
+
 def _init_tracer() -> None:
     """Idempotent. Reads SAGE_OTEL_EXPORTER and configures a tracer."""
     global _INITIALIZED, _TRACER
@@ -59,6 +102,7 @@ def _init_tracer() -> None:
         # Resolve a tracer but do NOT call set_tracer_provider — that
         # would clobber logfire's setup.
         _TRACER = trace.get_tracer("sage", version)
+        _mirror_to_rust("logfire")
         return
     else:
         log.warning(
@@ -68,6 +112,7 @@ def _init_tracer() -> None:
 
     trace.set_tracer_provider(provider)
     _TRACER = trace.get_tracer("sage", version)
+    _mirror_to_rust(exporter_kind)
 
 
 def _get_tracer():
