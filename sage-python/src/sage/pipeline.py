@@ -448,74 +448,78 @@ class CognitiveOrchestrationPipeline:
         Returns: system (S1/S2/S3), domain, and stores RoutingDecision for
         model selection in Stage 3 (ModelAssigner) and Stage 5 (Learn).
         """
-        # Priority 1: Rust SystemRouter (full integrated routing)
-        if self._rust_router:
-            try:
-                decision = self._rust_router.route(ctx.task, ctx.budget)
-                ctx.system = int(decision.system)
-                ctx.domain = _infer_domain(ctx.task)
-                # Store decision for model selection + telemetry
-                self._last_routing_decision = decision
-                log.info(
-                    "Stage 0: Rust routing → S%d model=%s (conf=%.2f, cost=%.4f)",
-                    ctx.system, decision.model_id, decision.confidence, decision.estimated_cost,
-                )
-                return ctx
-            except Exception as exc:
-                log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
-
-        # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
-        if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
-            try:
-                knn_result = self.router._knn.route(ctx.task)
-                if knn_result is not None:
-                    ctx.system = knn_result.system
-                    log.info("Stage 0: kNN routing → S%d (conf=%.2f, %s)",
-                             knn_result.system, knn_result.confidence, knn_result.method)
+        from sage.observability.spans import sage_span
+        with sage_span("sage.classify", op="sage.classify"):
+            # Priority 1: Rust SystemRouter (full integrated routing)
+            if self._rust_router:
+                try:
+                    decision = self._rust_router.route(ctx.task, ctx.budget)
+                    ctx.system = int(decision.system)
                     ctx.domain = _infer_domain(ctx.task)
+                    # Store decision for model selection + telemetry
+                    self._last_routing_decision = decision
+                    log.info(
+                        "Stage 0: Rust routing → S%d model=%s (conf=%.2f, cost=%.4f)",
+                        ctx.system, decision.model_id, decision.confidence, decision.estimated_cost,
+                    )
                     return ctx
-            except (ImportError, RuntimeError) as exc:
-                log.debug("Stage 0: kNN failed (%s), falling back", exc)
+                except Exception as exc:
+                    log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
 
-        # Priority 3: AdaptiveRouter heuristic
-        if self.router:
-            try:
-                profile = self.router.assess_complexity(ctx.task)
-                decision = self.router.route(profile)
-                ctx.system = getattr(decision, "system", 2)
-            except (ImportError, RuntimeError) as exc:
-                log.warning("Stage 0 classify failed: %s, defaulting to S2", exc)
+            # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
+            if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
+                try:
+                    knn_result = self.router._knn.route(ctx.task)
+                    if knn_result is not None:
+                        ctx.system = knn_result.system
+                        log.info("Stage 0: kNN routing → S%d (conf=%.2f, %s)",
+                                 knn_result.system, knn_result.confidence, knn_result.method)
+                        ctx.domain = _infer_domain(ctx.task)
+                        return ctx
+                except (ImportError, RuntimeError) as exc:
+                    log.debug("Stage 0: kNN failed (%s), falling back", exc)
+
+            # Priority 3: AdaptiveRouter heuristic
+            if self.router:
+                try:
+                    profile = self.router.assess_complexity(ctx.task)
+                    decision = self.router.route(profile)
+                    ctx.system = getattr(decision, "system", 2)
+                except (ImportError, RuntimeError) as exc:
+                    log.warning("Stage 0 classify failed: %s, defaulting to S2", exc)
+                    ctx.system = 2
+            else:
                 ctx.system = 2
-        else:
-            ctx.system = 2
 
-        ctx.domain = _infer_domain(ctx.task)
-        return ctx
+            ctx.domain = _infer_domain(ctx.task)
+            return ctx
 
     # ── Stage 1: Decompose ──────────────────────────────────────────────────
 
     async def _stage_decompose(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 1: Decompose task into sub-tasks (S2/S3 only)."""
-        if ctx.system == 1:
-            ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-            return ctx
-
-        # Try LLM decomposition via TaskPlanner if available
-        try:
-            from sage.contracts.planner import TaskPlanner
-
-            planner = TaskPlanner()
-            if self.llm_provider and hasattr(planner, "plan_auto"):
-                result = await planner.plan_auto(ctx.task, self.llm_provider)
-                ctx.task_dag = result.dag
-                ctx.dag_features = compute_dag_features(result.dag)
-            else:
+        from sage.observability.spans import sage_span
+        with sage_span("sage.decompose", op="sage.decompose"):
+            if ctx.system == 1:
                 ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-        except (RuntimeError, TimeoutError) as exc:
-            log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
-            ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
+                return ctx
 
-        return ctx
+            # Try LLM decomposition via TaskPlanner if available
+            try:
+                from sage.contracts.planner import TaskPlanner
+
+                planner = TaskPlanner()
+                if self.llm_provider and hasattr(planner, "plan_auto"):
+                    result = await planner.plan_auto(ctx.task, self.llm_provider)
+                    ctx.task_dag = result.dag
+                    ctx.dag_features = compute_dag_features(result.dag)
+                else:
+                    ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
+            except (RuntimeError, TimeoutError) as exc:
+                log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
+                ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
+
+            return ctx
 
     # ── Structure-driven topology selection ──────────────────────────────
 
@@ -541,148 +545,150 @@ class CognitiveOrchestrationPipeline:
         is faster AND equally effective (confirmed by MASBENCH: topology helps
         only when base accuracy < 60%, per AdaptOrch arXiv 2602.16873).
         """
-        # Sprint 5 ablation: force bypass to measure framework delta.
-        if os.environ.get("SAGE_ABLATION_NO_TOPOLOGY") == "1":
-            ctx.topology = None
-            log.info("Stage 2: topology disabled by SAGE_ABLATION_NO_TOPOLOGY=1 (ablation)")
-            return ctx
+        from sage.observability.spans import sage_span
+        with sage_span("sage.topology_select", op="sage.topology_select"):
+            # Sprint 5 ablation: force bypass to measure framework delta.
+            if os.environ.get("SAGE_ABLATION_NO_TOPOLOGY") == "1":
+                ctx.topology = None
+                log.info("Stage 2: topology disabled by SAGE_ABLATION_NO_TOPOLOGY=1 (ablation)")
+                return ctx
 
-        # S1 fast path: skip topology for non-math tasks.
-        # Math tasks use formal_solver (SatLM NeurIPS 2023): LLM formalizes,
-        # Rust solves exactly. Falls back to single-agent if solver fails.
-        if ctx.system == 1:
-            if ctx.domain == "math":
-                topo = self._build_topology_from_hint("formal_solver")
+            # S1 fast path: skip topology for non-math tasks.
+            # Math tasks use formal_solver (SatLM NeurIPS 2023): LLM formalizes,
+            # Rust solves exactly. Falls back to single-agent if solver fails.
+            if ctx.system == 1:
+                if ctx.domain == "math":
+                    topo = self._build_topology_from_hint("formal_solver")
+                    if topo:
+                        ctx.topology = topo
+                        log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
+                        self._log_topology_structure(topo, source="dag_template", confidence=None)
+                        self._apply_topology_budget_and_cache(ctx)
+                        return ctx
+                ctx.topology = None
+                log.debug("S1 task: skipping topology (direct single-agent)")
+                return ctx
+
+            # Structure-driven template selection from DAG decomposition
+            # Uses omega (parallelism), delta (depth), gamma (coupling) —
+            # no regex heuristics, purely structural signals from Stage 1.
+            hint = "sequential"
+            if ctx.dag_features:
+                hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
+
+            # S2+sequential: use the sequential topology template instead of bypass.
+            # Research (AdaptOrch 2602.16873, MASS 2502.02533) shows sequential
+            # planner→coder→synthesizer pipeline beats single-agent by 12-23%.
+            # The old bypass (SAGE_BYPASS_S2_SEQUENTIAL=1) is available for A/B testing.
+            if ctx.system == 2 and hint == "sequential":
+                # `os` is imported at module level; a redundant local `import os`
+                # here would shadow it and break the earlier SAGE_ABLATION_NO_TOPOLOGY
+                # check (UnboundLocalError when Python treats `os` as local).
+                if os.environ.get("SAGE_BYPASS_S2_SEQUENTIAL") == "1":
+                    ctx.topology = None
+                    log.info("Stage 2: BYPASS topology (SAGE_BYPASS_S2_SEQUENTIAL=1)")
+                    return ctx
+
+            # Build topology from template hint. All DAG-selected templates go
+            # through TemplateStore which creates multi-node topologies.
+            if hint in ("sequential", "avr", "parallel", "robust", "horizon_pipeline", "parallel_fanout"):
+                topo = self._build_topology_from_hint(hint)
                 if topo:
                     ctx.topology = topo
-                    log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
+                    log.info(
+                        "Stage 2: DAG-driven template=%s (%d nodes, omega=%s delta=%s gamma=%s)",
+                        hint, topo.node_count(),
+                        ctx.dag_features.omega if ctx.dag_features else "?",
+                        ctx.dag_features.delta if ctx.dag_features else "?",
+                        f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
+                    )
+                    # Gap 1+2 (2026-04-21): emit structure log alongside template
+                    # name so post-run analysis can attribute pass-rate by DAG
+                    # shape (edges) and 6-path source, not just template name.
                     self._log_topology_structure(topo, source="dag_template", confidence=None)
                     self._apply_topology_budget_and_cache(ctx)
                     return ctx
-            ctx.topology = None
-            log.debug("S1 task: skipping topology (direct single-agent)")
-            return ctx
 
-        # Structure-driven template selection from DAG decomposition
-        # Uses omega (parallelism), delta (depth), gamma (coupling) —
-        # no regex heuristics, purely structural signals from Stage 1.
-        hint = "sequential"
-        if ctx.dag_features:
-            hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
-
-        # S2+sequential: use the sequential topology template instead of bypass.
-        # Research (AdaptOrch 2602.16873, MASS 2502.02533) shows sequential
-        # planner→coder→synthesizer pipeline beats single-agent by 12-23%.
-        # The old bypass (SAGE_BYPASS_S2_SEQUENTIAL=1) is available for A/B testing.
-        if ctx.system == 2 and hint == "sequential":
-            # `os` is imported at module level; a redundant local `import os`
-            # here would shadow it and break the earlier SAGE_ABLATION_NO_TOPOLOGY
-            # check (UnboundLocalError when Python treats `os` as local).
-            if os.environ.get("SAGE_BYPASS_S2_SEQUENTIAL") == "1":
-                ctx.topology = None
-                log.info("Stage 2: BYPASS topology (SAGE_BYPASS_S2_SEQUENTIAL=1)")
-                return ctx
-
-        # Build topology from template hint. All DAG-selected templates go
-        # through TemplateStore which creates multi-node topologies.
-        if hint in ("sequential", "avr", "parallel", "robust", "horizon_pipeline", "parallel_fanout"):
-            topo = self._build_topology_from_hint(hint)
-            if topo:
-                ctx.topology = topo
-                log.info(
-                    "Stage 2: DAG-driven template=%s (%d nodes, omega=%s delta=%s gamma=%s)",
-                    hint, topo.node_count(),
-                    ctx.dag_features.omega if ctx.dag_features else "?",
-                    ctx.dag_features.delta if ctx.dag_features else "?",
-                    f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
-                )
-                # Gap 1+2 (2026-04-21): emit structure log alongside template
-                # name so post-run analysis can attribute pass-rate by DAG
-                # shape (edges) and 6-path source, not just template name.
-                self._log_topology_structure(topo, source="dag_template", confidence=None)
-                self._apply_topology_budget_and_cache(ctx)
-                return ctx
-
-        # Try DynamicTopologyEngine
-        if self.engine:
-            try:
-                # Compute real embedding for S-MMU semantic retrieval
-                task_embedding = None
+            # Try DynamicTopologyEngine
+            if self.engine:
                 try:
-                    from sage.memory.embedder import Embedder
-                    _emb = Embedder()
-                    if _emb.is_semantic:
-                        task_embedding = _emb.embed(ctx.task[:500])
-                except (ImportError, RuntimeError, OSError):
-                    # OSError: model weights not on disk / HF_HUB_OFFLINE=1 without cache
-                    pass
-                result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
-                if result and hasattr(result, "topology"):
-                    ctx.topology = result.topology
-                    # Plan item 1.4a (2026-04-20): always use ctx.topology.id
-                    # (full ULID) — the engine's topology_cache / archive lookup
-                    # is keyed by this ULID. result.topology_id() returns a
-                    # descriptor-keyed semantic ID (e.g. "avr:n3:01KPN3XZ")
-                    # which is NOT cache-compatible; using it caused record_outcome
-                    # cache misses → archive never grew on the engine branch.
-                    ctx.topology_id = getattr(ctx.topology, "id", "")
-                elif result:
-                    ctx.topology = result
+                    # Compute real embedding for S-MMU semantic retrieval
+                    task_embedding = None
+                    try:
+                        from sage.memory.embedder import Embedder
+                        _emb = Embedder()
+                        if _emb.is_semantic:
+                            task_embedding = _emb.embed(ctx.task[:500])
+                    except (ImportError, RuntimeError, OSError):
+                        # OSError: model weights not on disk / HF_HUB_OFFLINE=1 without cache
+                        pass
+                    result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
+                    if result and hasattr(result, "topology"):
+                        ctx.topology = result.topology
+                        # Plan item 1.4a (2026-04-20): always use ctx.topology.id
+                        # (full ULID) — the engine's topology_cache / archive lookup
+                        # is keyed by this ULID. result.topology_id() returns a
+                        # descriptor-keyed semantic ID (e.g. "avr:n3:01KPN3XZ")
+                        # which is NOT cache-compatible; using it caused record_outcome
+                        # cache misses → archive never grew on the engine branch.
+                        ctx.topology_id = getattr(ctx.topology, "id", "")
+                    elif result:
+                        ctx.topology = result
 
-                # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
-                # (smmu_hit / archive_hit / llm_synthesis / mutation /
-                # mcts_search / template_fallback) with confidence. The
-                # source is exposed by PyGenerateResult.source() per
-                # sage-core/src/topology/pyo3_wrappers.rs.
-                _src = None
-                _conf = None
-                if result is not None:
-                    _src_attr = getattr(result, "source", None)
-                    if callable(_src_attr):
-                        try:
-                            _src = _src_attr()
-                        except Exception:
-                            _src = None
-                    else:
-                        _src = _src_attr
-                    _conf_attr = getattr(result, "confidence", None)
-                    if callable(_conf_attr):
-                        try:
-                            _conf = _conf_attr()
-                        except Exception:
-                            _conf = None
-                    else:
-                        _conf = _conf_attr
+                    # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
+                    # (smmu_hit / archive_hit / llm_synthesis / mutation /
+                    # mcts_search / template_fallback) with confidence. The
+                    # source is exposed by PyGenerateResult.source() per
+                    # sage-core/src/topology/pyo3_wrappers.rs.
+                    _src = None
+                    _conf = None
+                    if result is not None:
+                        _src_attr = getattr(result, "source", None)
+                        if callable(_src_attr):
+                            try:
+                                _src = _src_attr()
+                            except Exception:
+                                _src = None
+                        else:
+                            _src = _src_attr
+                        _conf_attr = getattr(result, "confidence", None)
+                        if callable(_conf_attr):
+                            try:
+                                _conf = _conf_attr()
+                            except Exception:
+                                _conf = None
+                        else:
+                            _conf = _conf_attr
+                    self._log_topology_structure(
+                        ctx.topology, source=_src or "engine_unknown", confidence=_conf,
+                    )
+                    self._apply_topology_budget_and_cache(ctx)
+                    return ctx
+                except (ImportError, RuntimeError) as exc:
+                    log.warning(
+                        "Stage 2 topology engine failed: %s, using template", exc
+                    )
+
+            # Fallback: create topology from template
+            try:
+                from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+
+                topo = TopologyGraph(hint)
+                node = TopologyNode(role="agent", model_id="", system=ctx.system)
+                topo.add_node(node)
+                ctx.topology = topo
+                log.debug("Stage 2 fallback to template: %s", hint)
+            except ImportError:
+                log.debug("sage_core unavailable, topology=None (single-agent mode)")
+                ctx.topology = None
+
+            # Gap 1+2 (2026-04-21): log structure for the fallback path too.
+            if ctx.topology is not None:
                 self._log_topology_structure(
-                    ctx.topology, source=_src or "engine_unknown", confidence=_conf,
+                    ctx.topology, source="template_fallback", confidence=None,
                 )
-                self._apply_topology_budget_and_cache(ctx)
-                return ctx
-            except (ImportError, RuntimeError) as exc:
-                log.warning(
-                    "Stage 2 topology engine failed: %s, using template", exc
-                )
-
-        # Fallback: create topology from template
-        try:
-            from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
-
-            topo = TopologyGraph(hint)
-            node = TopologyNode(role="agent", model_id="", system=ctx.system)
-            topo.add_node(node)
-            ctx.topology = topo
-            log.debug("Stage 2 fallback to template: %s", hint)
-        except ImportError:
-            log.debug("sage_core unavailable, topology=None (single-agent mode)")
-            ctx.topology = None
-
-        # Gap 1+2 (2026-04-21): log structure for the fallback path too.
-        if ctx.topology is not None:
-            self._log_topology_structure(
-                ctx.topology, source="template_fallback", confidence=None,
-            )
-        self._apply_topology_budget_and_cache(ctx)
-        return ctx
+            self._apply_topology_budget_and_cache(ctx)
+            return ctx
 
     def _log_topology_structure(
         self,
@@ -916,84 +922,86 @@ class CognitiveOrchestrationPipeline:
 
     def _stage_assign_models(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 3: Assign model_id to each topology node."""
-        if ctx.topology is None or self.assigner is None:
-            return ctx
+        from sage.observability.spans import sage_span
+        with sage_span("sage.assign_models", op="sage.assign_models"):
+            if ctx.topology is None or self.assigner is None:
+                return ctx
 
-        try:
-            # Pass provider hints from Path 6 policy output (multi-provider dimension).
-            hints_list = (
-                list(ctx.provider_hints.items()) if ctx.provider_hints else None
-            )
-            # F7: forward the OVERALL task tier so the Rust ModelAssigner can
-            # promote producer-role nodes (planner, coder, worker, verifier)
-            # that the template hardcoded at a low system tier. Without this,
-            # an S3 SWE-bench task's planner (template system=1) was matched
-            # against S1 affinity and picked a flash-lite model — see
-            # docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
-            task_system = ctx.system if ctx.system in (1, 2, 3) else None
-            n_assigned = self.assigner.assign_models(
-                ctx.topology,
-                ctx.domain,
-                ctx.budget,
-                hints_list,
-                task_system,
-            )
-            log.info(
-                "Assigned models to %d nodes (domain=%s, budget=%.2f, task_system=%s, provider_hints=%d)",
-                n_assigned,
-                ctx.domain,
-                ctx.budget,
-                task_system,
-                len(ctx.provider_hints),
-            )
-
-            # Record assignments for observability
-            node_count = (
-                ctx.topology.node_count()
-                if hasattr(ctx.topology, "node_count")
-                else 0
-            )
-            for i in range(node_count):
-                node = (
-                    ctx.topology.get_node(i)
-                    if hasattr(ctx.topology, "get_node")
-                    else None
+            try:
+                # Pass provider hints from Path 6 policy output (multi-provider dimension).
+                hints_list = (
+                    list(ctx.provider_hints.items()) if ctx.provider_hints else None
                 )
-                if node:
-                    ctx.assignments[i] = getattr(node, "model_id", "")
-        except (ImportError, RuntimeError) as exc:
-            log.warning("Stage 3 assign failed: %s", exc)
+                # F7: forward the OVERALL task tier so the Rust ModelAssigner can
+                # promote producer-role nodes (planner, coder, worker, verifier)
+                # that the template hardcoded at a low system tier. Without this,
+                # an S3 SWE-bench task's planner (template system=1) was matched
+                # against S1 affinity and picked a flash-lite model — see
+                # docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
+                task_system = ctx.system if ctx.system in (1, 2, 3) else None
+                n_assigned = self.assigner.assign_models(
+                    ctx.topology,
+                    ctx.domain,
+                    ctx.budget,
+                    hints_list,
+                    task_system,
+                )
+                log.info(
+                    "Assigned models to %d nodes (domain=%s, budget=%.2f, task_system=%s, provider_hints=%d)",
+                    n_assigned,
+                    ctx.domain,
+                    ctx.budget,
+                    task_system,
+                    len(ctx.provider_hints),
+                )
 
-        # Bandit feedback: Thompson sampling already handles exploration/exploitation
-        # via the Beta posterior. No pre-execution budget reduction — it creates a
-        # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
-        # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
+                # Record assignments for observability
+                node_count = (
+                    ctx.topology.node_count()
+                    if hasattr(ctx.topology, "node_count")
+                    else 0
+                )
+                for i in range(node_count):
+                    node = (
+                        ctx.topology.get_node(i)
+                        if hasattr(ctx.topology, "get_node")
+                        else None
+                    )
+                    if node:
+                        ctx.assignments[i] = getattr(node, "model_id", "")
+            except (ImportError, RuntimeError) as exc:
+                log.warning("Stage 3 assign failed: %s", exc)
 
-        # Filter out models whose provider is dead (health check or circuit breaker)
-        if self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
-            for node_idx, model_id in list(ctx.assignments.items()):
-                if not model_id:
-                    continue
-                if not self.provider_pool.is_model_available(model_id):
-                    provider_name = self.provider_pool.infer_provider(model_id)
-                    default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
-                    if default_model:
-                        log.info(
-                            "Stage 3: %s provider unavailable, "
-                            "node %d reassigned %s -> %s",
-                            provider_name, node_idx, model_id, default_model,
-                        )
-                        ctx.assignments[node_idx] = default_model
-                        if hasattr(ctx.topology, 'set_node_model_id'):
-                            ctx.topology.set_node_model_id(node_idx, default_model)
+            # Bandit feedback: Thompson sampling already handles exploration/exploitation
+            # via the Beta posterior. No pre-execution budget reduction — it creates a
+            # self-degrading loop (Audit2 + Audit3 confirmed). The bandit learns post-
+            # execution in Stage 5 (LEARN) and naturally deprioritizes bad arms.
 
-        # Formal verification (non-blocking): prove every node has a valid provider
-        try:
-            self._verify_assignment_formal(ctx)
-        except (ImportError, RuntimeError) as exc:
-            log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
+            # Filter out models whose provider is dead (health check or circuit breaker)
+            if self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
+                for node_idx, model_id in list(ctx.assignments.items()):
+                    if not model_id:
+                        continue
+                    if not self.provider_pool.is_model_available(model_id):
+                        provider_name = self.provider_pool.infer_provider(model_id)
+                        default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
+                        if default_model:
+                            log.info(
+                                "Stage 3: %s provider unavailable, "
+                                "node %d reassigned %s -> %s",
+                                provider_name, node_idx, model_id, default_model,
+                            )
+                            ctx.assignments[node_idx] = default_model
+                            if hasattr(ctx.topology, 'set_node_model_id'):
+                                ctx.topology.set_node_model_id(node_idx, default_model)
 
-        return ctx
+            # Formal verification (non-blocking): prove every node has a valid provider
+            try:
+                self._verify_assignment_formal(ctx)
+            except (ImportError, RuntimeError) as exc:
+                log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
+
+            return ctx
 
     def _verify_assignment_formal(self, ctx: PipelineContext) -> None:
         """Formally verify provider assignment via OxiZ / Z3 (NON-BLOCKING).
@@ -1206,493 +1214,495 @@ class CognitiveOrchestrationPipeline:
 
     async def _stage_execute(self, ctx: PipelineContext) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
-        cost_tracker = getattr(ctx, "cost_tracker", None)
-        if cost_tracker is not None and cost_tracker.is_over_budget:
-            self._emit_budget_exceeded(ctx)
-            ctx.result = BUDGET_EXCEEDED_RESULT
-            return ctx
-
-        # Bandit: choose arm BEFORE execution to get decision_id
-        # Pass task context features when available for contextual arm selection
-        if self.bandit and hasattr(self.bandit, "select_with_context"):
-            try:
-                task_context = [
-                    float(ctx.system),  # cognitive system tier (1, 2, or 3)
-                    float(len(ctx.task)),  # task length as complexity proxy
-                    float(
-                        ctx.topology.node_count()
-                        if ctx.topology and hasattr(ctx.topology, "node_count")
-                        else 0
-                    ),  # topology complexity
-                ]
-                decision = self.bandit.select_with_context(0.1, task_context)
-                ctx.bandit_decision_id = decision.decision_id
-            except (ImportError, RuntimeError):
-                pass
-        elif self.bandit and hasattr(self.bandit, "select"):
-            try:
-                decision = self.bandit.select(0.1)  # 10% exploration
-                ctx.bandit_decision_id = decision.decision_id
-            except (ImportError, RuntimeError):
-                pass
-
-        if not ctx.verification_passed:
-            # A0b (2026-04-23, ALIRE2 §6): strict mode aborts here instead
-            # of falling through to EXECUTE_UNVERIFIED. The default keeps
-            # the historical "log and continue" behaviour so dev smokes
-            # don't break on a Z3 unsat that would normally be a soft
-            # signal. Production / audit runs set SAGE_STRICT_GOVERNANCE=1.
-            if _is_strict_governance():
-                log.error(
-                    "Stage 4: aborting under SAGE_STRICT_GOVERNANCE=1 — "
-                    "verification failed on provider assignment (SAT check)."
-                )
-                self._emit(
-                    EXECUTE_HALTED_UNVERIFIED,
-                    {"reason": "SAT check failed in Stage 3"},
-                )
-                raise RuntimeError(
-                    "SAGE_STRICT_GOVERNANCE: pipeline aborted — provider "
-                    "assignment failed verification (SAT check)."
-                )
-            log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
-            self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
-
-        # Single-agent mode (no topology or single node)
-        if ctx.topology is None or (
-            hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
-        ):
-            if self._agent_loop:
-                # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
-                # guardrails + memory. Replaces the raw provider.generate() loop.
-
-                # A0a (2026-04-23, ALIRE2 §4 "shared mutable state"):
-                # snapshot EVERY field we are about to mutate before touching
-                # any of them. The prior code snapshotted only `_llm` and
-                # `config.llm`, leaving 8 others (write_gate, gate_*, _on_drift,
-                # validation_level, max_steps, stall_after_tool_steps,
-                # _current_topology) dirty for the next caller after this
-                # bypass path returned. The `finally` block below restores
-                # every one of these; concurrency-safe restoration (per-run
-                # isolated context) is deferred to B9.
-                _orig_bypass_state = {
-                    "_skip_routing": getattr(self._agent_loop, "_skip_routing", False),
-                    "_current_topology": self._agent_loop._current_topology,
-                    "write_gate": getattr(self._agent_loop, "write_gate", None),
-                    "gate_current_task": getattr(self._agent_loop, "gate_current_task", None),
-                    "gate_source_tier": getattr(self._agent_loop, "gate_source_tier", None),
-                    "_on_drift": getattr(self._agent_loop, "_on_drift", None),
-                    "validation_level": self._agent_loop.config.validation_level,
-                    "max_steps": self._agent_loop.config.max_steps,
-                    "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
-                }
-
-                # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
-                self._agent_loop._skip_routing = True
-                # H4: Clear topology (pipeline owns topology, not agent_loop)
-                self._agent_loop._current_topology = None
-
-                # H5 audit fix (2026-04-19): wire the pipeline-scoped write gate
-                # onto the shared AgentLoop for the single-agent bypass path.
-                # The G-series fix (commit c905d06) only wired the gate through
-                # `agent_loop_factory.create_node_agent_loop` for multi-node
-                # topology traversal. This code path reuses a pre-existing
-                # `self._agent_loop` singleton built at boot — it never saw the
-                # factory wiring, so `loop.write_gate is None` and phases/act.py
-                # fell through to ungated writes. Same silent-bypass class as
-                # H4 (cache_topology) — fix perfectly wired, never fires.
-                self._agent_loop.write_gate = self.write_gate
-                self._agent_loop.gate_current_task = ctx.task
-                try:
-                    from sage.memory.write_gate import infer_source_tier
-                    model_id = getattr(
-                        getattr(self._agent_loop.config, "llm", None),
-                        "model", None,
-                    )
-                    self._agent_loop.gate_source_tier = infer_source_tier(model_id)
-                except (ImportError, AttributeError):
-                    self._agent_loop.gate_source_tier = "unknown"
-
-                # H6 audit fix (2026-04-19): wire the drift callback on the
-                # bypass path. The multi-node path sets `_on_drift` via the
-                # factory (topology/runner.py:502-521) so SWITCH_MODEL /
-                # RESET_AGENT classifications forward to
-                # `ProviderPool.record_failure` — tripping the provider's
-                # circuit breaker so subsequent resolve() picks a different
-                # provider. On the bypass path this was never wired; drift
-                # events on S1 tasks logged but had zero effect on routing.
-                # Same silent-bypass class as H5 (write_gate).
-                if (self.provider_pool is not None
-                        and hasattr(self.provider_pool, "record_failure")):
-                    _pool_ref = self.provider_pool
-                    _bypass_model_id = getattr(
-                        getattr(self._agent_loop.config, "llm", None),
-                        "model", "",
-                    ) or "default"
-
-                    def _on_drift_bypass(
-                        provider_hint: str,
-                        action: str,
-                        details: dict[str, Any],
-                        _pool: Any = _pool_ref,
-                        _model: str = _bypass_model_id,
-                    ) -> None:
-                        if action not in ("SWITCH_MODEL", "RESET_AGENT"):
-                            return
-                        _key = (provider_hint or _model or "unknown")
-                        try:
-                            _pool.record_failure(
-                                _key,
-                                RuntimeError(
-                                    f"drift_{action.lower()} "
-                                    f"latency={details.get('latency', '?')}"
-                                ),
-                            )
-                        except Exception:  # noqa: BLE001
-                            pass
-
-                    self._agent_loop._on_drift = _on_drift_bypass
-
-                # Set validation level from system classification
-                if ctx.system >= 3:
-                    self._agent_loop.config.validation_level = 3
-                elif ctx.system >= 2 and self._agent_loop.sandbox_manager:
-                    self._agent_loop.config.validation_level = 2
-                else:
-                    self._agent_loop.config.validation_level = 1
-
-                # Plan item 1.1 (2026-04-20): scale singleton max_steps by
-                # ctx.system — close the H5-class bypass extending the
-                # singleton-vs-factory asymmetry. boot.py:279 built the
-                # singleton with max_steps=MAX_AGENT_STEPS=20; the factory
-                # (agent_loop_factory.py:132-137) scales 5/10/20 per system
-                # tier for per-node AgentLoops. Without this line, S1 tasks
-                # on the bypass path run at 4x the factory-intended budget.
-                # agent_loop.py:424 reads self.config.max_steps directly in
-                # the step loop — mutation takes effect on the next .run().
-                self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
-
-                # Plan item 1.2 (2026-04-20): scale singleton D8 stall cap
-                # to match the factory (agent_loop_factory.py:151-154).
-                # AgentConfig.stall_after_tool_steps defaults to 0 (D8
-                # disabled), so the singleton never broke out of a tool-step
-                # thrash on S2/S3 bypass. Factory formula:
-                #   stall_cap = (max_steps - 1) if max_steps > 5 else 0
-                # (S1 budget too tight for any window — D8 off; S2→9, S3→19.)
-                # agent_loop.py:511 live-reads config.stall_after_tool_steps
-                # each step → mutation takes effect on next .run().
-                _new_max = self._agent_loop.config.max_steps
-                self._agent_loop.config.stall_after_tool_steps = (
-                    _new_max - 1 if _new_max > 5 else 0
-                )
-
-                # Resolve model from Rust routing decision (preserve model selection)
-                routing_decision = getattr(self, '_last_routing_decision', None)
-                _original_llm = self._agent_loop._llm
-                _original_config = self._agent_loop.config.llm
-                if routing_decision and routing_decision.model_id and self.provider_pool:
-                    try:
-                        if self.provider_pool.is_model_available(routing_decision.model_id):
-                            resolved_provider, resolved_config = self.provider_pool.resolve(
-                                routing_decision.model_id
-                            )
-                            self._agent_loop._llm = resolved_provider
-                            self._agent_loop.config.llm = resolved_config
-                            log.info(
-                                "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
-                                routing_decision.model_id, ctx.system,
-                            )
-                    except Exception:
-                        pass  # Keep default provider
-
-                try:
-                    ctx.result = await self._agent_loop.run(ctx.task)
-                    ctx.cost = self._agent_loop.total_cost_usd
-                    # Forward tool-use telemetry from the agent loop so bench
-                    # manifests reflect actual usage, not dead zeros.
-                    ctx.tool_call_count = getattr(self._agent_loop, "tool_call_count", 0)
-                    ctx.tool_turn_count = getattr(self._agent_loop, "tool_turn_count", 0)
-                    ctx.executed_commands = list(getattr(self._agent_loop, "executed_commands", []))
-                finally:
-                    # A0a restoration — complete (10 fields, matches the
-                    # snapshot taken before the first mutation above).
-                    # Prior to 2026-04-23 this restored only 3 of the 10
-                    # mutated fields, leaving write_gate / _on_drift /
-                    # validation_level / max_steps / stall_after_tool_steps
-                    # / _current_topology dirty for the next caller.
-                    self._agent_loop._skip_routing = _orig_bypass_state["_skip_routing"]
-                    self._agent_loop._current_topology = _orig_bypass_state["_current_topology"]
-                    self._agent_loop.write_gate = _orig_bypass_state["write_gate"]
-                    self._agent_loop.gate_current_task = _orig_bypass_state["gate_current_task"]
-                    self._agent_loop.gate_source_tier = _orig_bypass_state["gate_source_tier"]
-                    self._agent_loop._on_drift = _orig_bypass_state["_on_drift"]
-                    self._agent_loop.config.validation_level = _orig_bypass_state["validation_level"]
-                    self._agent_loop.config.max_steps = _orig_bypass_state["max_steps"]
-                    self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]
-                    self._agent_loop._llm = _original_llm
-                    self._agent_loop.config.llm = _original_config
-
-            elif self.llm_provider:
-                # Simple fallback: single provider.generate() call (no tool loop).
-                # Used only when pipeline is created without agent_loop (e.g., tests).
-                from sage.llm.base import Message, Role
-
-                messages = [Message(role=Role.USER, content=ctx.task)]
-                try:
-                    response = await self.llm_provider.generate(
-                        messages=messages, config=self.llm_config,
-                    )
-                    ctx.result = response.content or ""
-                except (RuntimeError, TimeoutError) as exc:
-                    log.error("Stage 4 fallback failed: %s", exc)
-                    ctx.result = f"Error: {exc}"
-            return ctx
-
-        # Multi-agent mode: use TopologyRunner with ProviderPool
-        try:
-            from sage.topology.runner import TopologyRunner
-
-            # Get executor
-            try:
-                from sage_core import TopologyExecutor  # type: ignore[import-not-found]
-
-                executor = TopologyExecutor(ctx.topology)
-            except ImportError:
-                log.warning("sage_core TopologyExecutor unavailable, falling back")
-                ctx.result = "Error: TopologyExecutor unavailable"
-                return ctx
-
-            # Phase 2: create agent_loop factory for per-node execution
-            _agent_loop_factory = None
-            if self._agent_loop and self.tool_registry:
-                from sage.agent_loop_factory import create_node_agent_loop
-                from functools import partial
-
-                _agent_loop_factory = partial(
-                    create_node_agent_loop,
-                    tool_registry=self.tool_registry,
-                    system_level=ctx.system,
-                    task_domain=ctx.domain or "",  # F7-symmetric domain gate for PRM
-                    on_event=(
-                        self.event_bus.emit
-                        if self.event_bus and hasattr(self.event_bus, "emit")
-                        else None
-                    ),
-                    # G-series: pipeline-scoped gate + task text for relevance
-                    write_gate=self.write_gate,
-                    task_text=ctx.task,
-                )
-
-            runner = TopologyRunner(
-                graph=ctx.topology,
-                executor=executor,
-                llm_provider=self.llm_provider,
-                llm_config=self.llm_config,
-                provider_pool=self.provider_pool,
-                controller=self.controller,  # Phase C
-                axis_hint=ctx.axis_hint,
-                agent_loop_factory=_agent_loop_factory,
-                cost_tracker=getattr(ctx, "cost_tracker", None),
-            )
-            result = await runner.run(ctx.task)
-            # Roll up tool-use telemetry from TopologyRunner → ctx. Without
-            # this the bench manifest sees zero even on multi-agent paths
-            # (Codex 2026-04-18 review flagged this gap at pipeline.py:963).
-            ctx.tool_call_count = getattr(runner, "tool_call_count", 0)
-            ctx.tool_turn_count = getattr(runner, "tool_turn_count", 0)
-            ctx.executed_commands = list(getattr(runner, "executed_commands", []))
-            # Same roll-up for cost. Before Apr 18 2026 ctx.cost came only
-            # from the single-loop bypass path, so multi-agent topology runs
-            # reported _cost_usd=0 even when each node had metered cost.
-            ctx.cost = float(getattr(runner, "total_cost_usd", 0.0) or 0.0)
-            if result == BUDGET_EXCEEDED_RESULT:
+        from sage.observability.spans import sage_span
+        with sage_span("sage.execute", op="sage.execute"):
+            cost_tracker = getattr(ctx, "cost_tracker", None)
+            if cost_tracker is not None and cost_tracker.is_over_budget:
                 self._emit_budget_exceeded(ctx)
-                ctx.result = result
+                ctx.result = BUDGET_EXCEEDED_RESULT
                 return ctx
-            if result == "__REROUTE__" and self.engine:
-                log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
-                self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
-                ctx = self._stage_select_topology(ctx)  # new topology
-                ctx = self._stage_assign_models(ctx)    # re-assign models
-                # Refresh bandit decision for the new topology
-                if self.bandit and hasattr(self.bandit, "select_with_context"):
+    
+            # Bandit: choose arm BEFORE execution to get decision_id
+            # Pass task context features when available for contextual arm selection
+            if self.bandit and hasattr(self.bandit, "select_with_context"):
+                try:
+                    task_context = [
+                        float(ctx.system),  # cognitive system tier (1, 2, or 3)
+                        float(len(ctx.task)),  # task length as complexity proxy
+                        float(
+                            ctx.topology.node_count()
+                            if ctx.topology and hasattr(ctx.topology, "node_count")
+                            else 0
+                        ),  # topology complexity
+                    ]
+                    decision = self.bandit.select_with_context(0.1, task_context)
+                    ctx.bandit_decision_id = decision.decision_id
+                except (ImportError, RuntimeError):
+                    pass
+            elif self.bandit and hasattr(self.bandit, "select"):
+                try:
+                    decision = self.bandit.select(0.1)  # 10% exploration
+                    ctx.bandit_decision_id = decision.decision_id
+                except (ImportError, RuntimeError):
+                    pass
+    
+            if not ctx.verification_passed:
+                # A0b (2026-04-23, ALIRE2 §6): strict mode aborts here instead
+                # of falling through to EXECUTE_UNVERIFIED. The default keeps
+                # the historical "log and continue" behaviour so dev smokes
+                # don't break on a Z3 unsat that would normally be a soft
+                # signal. Production / audit runs set SAGE_STRICT_GOVERNANCE=1.
+                if _is_strict_governance():
+                    log.error(
+                        "Stage 4: aborting under SAGE_STRICT_GOVERNANCE=1 — "
+                        "verification failed on provider assignment (SAT check)."
+                    )
+                    self._emit(
+                        EXECUTE_HALTED_UNVERIFIED,
+                        {"reason": "SAT check failed in Stage 3"},
+                    )
+                    raise RuntimeError(
+                        "SAGE_STRICT_GOVERNANCE: pipeline aborted — provider "
+                        "assignment failed verification (SAT check)."
+                    )
+                log.warning("Stage 4: executing with unverified provider assignment (SAT check failed)")
+                self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
+    
+            # Single-agent mode (no topology or single node)
+            if ctx.topology is None or (
+                hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
+            ):
+                if self._agent_loop:
+                    # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
+                    # guardrails + memory. Replaces the raw provider.generate() loop.
+    
+                    # A0a (2026-04-23, ALIRE2 §4 "shared mutable state"):
+                    # snapshot EVERY field we are about to mutate before touching
+                    # any of them. The prior code snapshotted only `_llm` and
+                    # `config.llm`, leaving 8 others (write_gate, gate_*, _on_drift,
+                    # validation_level, max_steps, stall_after_tool_steps,
+                    # _current_topology) dirty for the next caller after this
+                    # bypass path returned. The `finally` block below restores
+                    # every one of these; concurrency-safe restoration (per-run
+                    # isolated context) is deferred to B9.
+                    _orig_bypass_state = {
+                        "_skip_routing": getattr(self._agent_loop, "_skip_routing", False),
+                        "_current_topology": self._agent_loop._current_topology,
+                        "write_gate": getattr(self._agent_loop, "write_gate", None),
+                        "gate_current_task": getattr(self._agent_loop, "gate_current_task", None),
+                        "gate_source_tier": getattr(self._agent_loop, "gate_source_tier", None),
+                        "_on_drift": getattr(self._agent_loop, "_on_drift", None),
+                        "validation_level": self._agent_loop.config.validation_level,
+                        "max_steps": self._agent_loop.config.max_steps,
+                        "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
+                    }
+    
+                    # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
+                    self._agent_loop._skip_routing = True
+                    # H4: Clear topology (pipeline owns topology, not agent_loop)
+                    self._agent_loop._current_topology = None
+    
+                    # H5 audit fix (2026-04-19): wire the pipeline-scoped write gate
+                    # onto the shared AgentLoop for the single-agent bypass path.
+                    # The G-series fix (commit c905d06) only wired the gate through
+                    # `agent_loop_factory.create_node_agent_loop` for multi-node
+                    # topology traversal. This code path reuses a pre-existing
+                    # `self._agent_loop` singleton built at boot — it never saw the
+                    # factory wiring, so `loop.write_gate is None` and phases/act.py
+                    # fell through to ungated writes. Same silent-bypass class as
+                    # H4 (cache_topology) — fix perfectly wired, never fires.
+                    self._agent_loop.write_gate = self.write_gate
+                    self._agent_loop.gate_current_task = ctx.task
                     try:
-                        task_context = [
-                            float(ctx.system),
-                            float(len(ctx.task)),
-                            float(
-                                ctx.topology.node_count()
-                                if ctx.topology and hasattr(ctx.topology, "node_count")
-                                else 0
-                            ),
-                        ]
-                        new_decision = self.bandit.select_with_context(0.1, task_context)
-                        ctx.bandit_decision_id = new_decision.decision_id
-                    except (ImportError, RuntimeError):
-                        pass
-                elif self.bandit and hasattr(self.bandit, "select"):
+                        from sage.memory.write_gate import infer_source_tier
+                        model_id = getattr(
+                            getattr(self._agent_loop.config, "llm", None),
+                            "model", None,
+                        )
+                        self._agent_loop.gate_source_tier = infer_source_tier(model_id)
+                    except (ImportError, AttributeError):
+                        self._agent_loop.gate_source_tier = "unknown"
+    
+                    # H6 audit fix (2026-04-19): wire the drift callback on the
+                    # bypass path. The multi-node path sets `_on_drift` via the
+                    # factory (topology/runner.py:502-521) so SWITCH_MODEL /
+                    # RESET_AGENT classifications forward to
+                    # `ProviderPool.record_failure` — tripping the provider's
+                    # circuit breaker so subsequent resolve() picks a different
+                    # provider. On the bypass path this was never wired; drift
+                    # events on S1 tasks logged but had zero effect on routing.
+                    # Same silent-bypass class as H5 (write_gate).
+                    if (self.provider_pool is not None
+                            and hasattr(self.provider_pool, "record_failure")):
+                        _pool_ref = self.provider_pool
+                        _bypass_model_id = getattr(
+                            getattr(self._agent_loop.config, "llm", None),
+                            "model", "",
+                        ) or "default"
+    
+                        def _on_drift_bypass(
+                            provider_hint: str,
+                            action: str,
+                            details: dict[str, Any],
+                            _pool: Any = _pool_ref,
+                            _model: str = _bypass_model_id,
+                        ) -> None:
+                            if action not in ("SWITCH_MODEL", "RESET_AGENT"):
+                                return
+                            _key = (provider_hint or _model or "unknown")
+                            try:
+                                _pool.record_failure(
+                                    _key,
+                                    RuntimeError(
+                                        f"drift_{action.lower()} "
+                                        f"latency={details.get('latency', '?')}"
+                                    ),
+                                )
+                            except Exception:  # noqa: BLE001
+                                pass
+    
+                        self._agent_loop._on_drift = _on_drift_bypass
+    
+                    # Set validation level from system classification
+                    if ctx.system >= 3:
+                        self._agent_loop.config.validation_level = 3
+                    elif ctx.system >= 2 and self._agent_loop.sandbox_manager:
+                        self._agent_loop.config.validation_level = 2
+                    else:
+                        self._agent_loop.config.validation_level = 1
+    
+                    # Plan item 1.1 (2026-04-20): scale singleton max_steps by
+                    # ctx.system — close the H5-class bypass extending the
+                    # singleton-vs-factory asymmetry. boot.py:279 built the
+                    # singleton with max_steps=MAX_AGENT_STEPS=20; the factory
+                    # (agent_loop_factory.py:132-137) scales 5/10/20 per system
+                    # tier for per-node AgentLoops. Without this line, S1 tasks
+                    # on the bypass path run at 4x the factory-intended budget.
+                    # agent_loop.py:424 reads self.config.max_steps directly in
+                    # the step loop — mutation takes effect on the next .run().
+                    self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
+    
+                    # Plan item 1.2 (2026-04-20): scale singleton D8 stall cap
+                    # to match the factory (agent_loop_factory.py:151-154).
+                    # AgentConfig.stall_after_tool_steps defaults to 0 (D8
+                    # disabled), so the singleton never broke out of a tool-step
+                    # thrash on S2/S3 bypass. Factory formula:
+                    #   stall_cap = (max_steps - 1) if max_steps > 5 else 0
+                    # (S1 budget too tight for any window — D8 off; S2→9, S3→19.)
+                    # agent_loop.py:511 live-reads config.stall_after_tool_steps
+                    # each step → mutation takes effect on next .run().
+                    _new_max = self._agent_loop.config.max_steps
+                    self._agent_loop.config.stall_after_tool_steps = (
+                        _new_max - 1 if _new_max > 5 else 0
+                    )
+    
+                    # Resolve model from Rust routing decision (preserve model selection)
+                    routing_decision = getattr(self, '_last_routing_decision', None)
+                    _original_llm = self._agent_loop._llm
+                    _original_config = self._agent_loop.config.llm
+                    if routing_decision and routing_decision.model_id and self.provider_pool:
+                        try:
+                            if self.provider_pool.is_model_available(routing_decision.model_id):
+                                resolved_provider, resolved_config = self.provider_pool.resolve(
+                                    routing_decision.model_id
+                                )
+                                self._agent_loop._llm = resolved_provider
+                                self._agent_loop.config.llm = resolved_config
+                                log.info(
+                                    "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
+                                    routing_decision.model_id, ctx.system,
+                                )
+                        except Exception:
+                            pass  # Keep default provider
+    
                     try:
-                        new_decision = self.bandit.select(0.1)
-                        ctx.bandit_decision_id = new_decision.decision_id
-                    except (ImportError, RuntimeError):
-                        pass
-                # Fresh executor for the regenerated topology (old one is stale)
-                from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
-                executor_rerouted = _TE(ctx.topology)
-                # Re-execute with new topology (no controller to avoid infinite loop)
-                runner2 = TopologyRunner(
-                    graph=ctx.topology, executor=executor_rerouted,
-                    llm_provider=self.llm_provider, llm_config=self.llm_config,
+                        ctx.result = await self._agent_loop.run(ctx.task)
+                        ctx.cost = self._agent_loop.total_cost_usd
+                        # Forward tool-use telemetry from the agent loop so bench
+                        # manifests reflect actual usage, not dead zeros.
+                        ctx.tool_call_count = getattr(self._agent_loop, "tool_call_count", 0)
+                        ctx.tool_turn_count = getattr(self._agent_loop, "tool_turn_count", 0)
+                        ctx.executed_commands = list(getattr(self._agent_loop, "executed_commands", []))
+                    finally:
+                        # A0a restoration — complete (10 fields, matches the
+                        # snapshot taken before the first mutation above).
+                        # Prior to 2026-04-23 this restored only 3 of the 10
+                        # mutated fields, leaving write_gate / _on_drift /
+                        # validation_level / max_steps / stall_after_tool_steps
+                        # / _current_topology dirty for the next caller.
+                        self._agent_loop._skip_routing = _orig_bypass_state["_skip_routing"]
+                        self._agent_loop._current_topology = _orig_bypass_state["_current_topology"]
+                        self._agent_loop.write_gate = _orig_bypass_state["write_gate"]
+                        self._agent_loop.gate_current_task = _orig_bypass_state["gate_current_task"]
+                        self._agent_loop.gate_source_tier = _orig_bypass_state["gate_source_tier"]
+                        self._agent_loop._on_drift = _orig_bypass_state["_on_drift"]
+                        self._agent_loop.config.validation_level = _orig_bypass_state["validation_level"]
+                        self._agent_loop.config.max_steps = _orig_bypass_state["max_steps"]
+                        self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]
+                        self._agent_loop._llm = _original_llm
+                        self._agent_loop.config.llm = _original_config
+    
+                elif self.llm_provider:
+                    # Simple fallback: single provider.generate() call (no tool loop).
+                    # Used only when pipeline is created without agent_loop (e.g., tests).
+                    from sage.llm.base import Message, Role
+    
+                    messages = [Message(role=Role.USER, content=ctx.task)]
+                    try:
+                        response = await self.llm_provider.generate(
+                            messages=messages, config=self.llm_config,
+                        )
+                        ctx.result = response.content or ""
+                    except (RuntimeError, TimeoutError) as exc:
+                        log.error("Stage 4 fallback failed: %s", exc)
+                        ctx.result = f"Error: {exc}"
+                return ctx
+    
+            # Multi-agent mode: use TopologyRunner with ProviderPool
+            try:
+                from sage.topology.runner import TopologyRunner
+    
+                # Get executor
+                try:
+                    from sage_core import TopologyExecutor  # type: ignore[import-not-found]
+    
+                    executor = TopologyExecutor(ctx.topology)
+                except ImportError:
+                    log.warning("sage_core TopologyExecutor unavailable, falling back")
+                    ctx.result = "Error: TopologyExecutor unavailable"
+                    return ctx
+    
+                # Phase 2: create agent_loop factory for per-node execution
+                _agent_loop_factory = None
+                if self._agent_loop and self.tool_registry:
+                    from sage.agent_loop_factory import create_node_agent_loop
+                    from functools import partial
+    
+                    _agent_loop_factory = partial(
+                        create_node_agent_loop,
+                        tool_registry=self.tool_registry,
+                        system_level=ctx.system,
+                        task_domain=ctx.domain or "",  # F7-symmetric domain gate for PRM
+                        on_event=(
+                            self.event_bus.emit
+                            if self.event_bus and hasattr(self.event_bus, "emit")
+                            else None
+                        ),
+                        # G-series: pipeline-scoped gate + task text for relevance
+                        write_gate=self.write_gate,
+                        task_text=ctx.task,
+                    )
+    
+                runner = TopologyRunner(
+                    graph=ctx.topology,
+                    executor=executor,
+                    llm_provider=self.llm_provider,
+                    llm_config=self.llm_config,
                     provider_pool=self.provider_pool,
-                    controller=None,  # no controller on retry to prevent loop
+                    controller=self.controller,  # Phase C
+                    axis_hint=ctx.axis_hint,
                     agent_loop_factory=_agent_loop_factory,
                     cost_tracker=getattr(ctx, "cost_tracker", None),
                 )
-                result = await runner2.run(ctx.task)
-                # Prefer the post-reroute telemetry (it's the attempt that
-                # actually produced the final output).
-                ctx.tool_call_count = getattr(runner2, "tool_call_count", 0)
-                ctx.tool_turn_count = getattr(runner2, "tool_turn_count", 0)
-                ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
-                ctx.cost = float(getattr(runner2, "total_cost_usd", 0.0) or 0.0)
+                result = await runner.run(ctx.task)
+                # Roll up tool-use telemetry from TopologyRunner → ctx. Without
+                # this the bench manifest sees zero even on multi-agent paths
+                # (Codex 2026-04-18 review flagged this gap at pipeline.py:963).
+                ctx.tool_call_count = getattr(runner, "tool_call_count", 0)
+                ctx.tool_turn_count = getattr(runner, "tool_turn_count", 0)
+                ctx.executed_commands = list(getattr(runner, "executed_commands", []))
+                # Same roll-up for cost. Before Apr 18 2026 ctx.cost came only
+                # from the single-loop bypass path, so multi-agent topology runs
+                # reported _cost_usd=0 even when each node had metered cost.
+                ctx.cost = float(getattr(runner, "total_cost_usd", 0.0) or 0.0)
                 if result == BUDGET_EXCEEDED_RESULT:
                     self._emit_budget_exceeded(ctx)
                     ctx.result = result
                     return ctx
-
-            # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
-            if result and result != "__REROUTE__" and self.quality_estimator:
-                quality = self.quality_estimator.estimate(ctx.task, result)
-                if quality is not None and quality < 0.3 and self.assigner:
-                    log.info("Stage 4: quality=%.2f < 0.3, triggering FrugalGPT cascade retry", quality)
-                    # Reassign with upgraded models (exclude current + budget escalation)
-                    try:
-                        if hasattr(ctx.topology, 'node_count'):
-                            for i in range(ctx.topology.node_count()):
-                                if self.assigner and hasattr(self.assigner, 'assign_single_node'):
-                                    current_model = ctx.assignments.get(i, "")
-                                    # F7 wiring (2026-04-17): forward task_system so the
-                                    # Rust ModelAssigner promotes producer nodes correctly
-                                    # during the cascade upgrade (otherwise the upgrade picks
-                                    # the next best per-node-tier model, ignoring the overall
-                                    # task complexity).
-                                    #
-                                    # Interaction note (advisor 2026-04-17): the cascade
-                                    # stays at the F7-effective tier (S2 floor for non-rigour
-                                    # S3 tasks). It does NOT escalate beyond what F7 already
-                                    # set — exhausting S2 candidates before touching S3.
-                                    # That's intentional: cascade is "swap to a different
-                                    # model in the same tier", not "tier-escalate". If a
-                                    # task genuinely needs an S3 model on a node F7 floored
-                                    # at S2, that's a separate routing decision (not yet
-                                    # implemented; would need a TierEscalator).
-                                    cascade_task_system = (
-                                        ctx.system if isinstance(getattr(ctx, "system", None), int)
-                                        and ctx.system in (1, 2, 3) else None
-                                    )
-                                    try:
-                                        self.assigner.assign_single_node(
-                                            ctx.topology, i, ctx.domain,
-                                            ctx.budget * 1.5,
-                                            exclude_model_ids=[current_model] if current_model else None,
-                                            task_system=cascade_task_system,
+                if result == "__REROUTE__" and self.engine:
+                    log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
+                    self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
+                    ctx = self._stage_select_topology(ctx)  # new topology
+                    ctx = self._stage_assign_models(ctx)    # re-assign models
+                    # Refresh bandit decision for the new topology
+                    if self.bandit and hasattr(self.bandit, "select_with_context"):
+                        try:
+                            task_context = [
+                                float(ctx.system),
+                                float(len(ctx.task)),
+                                float(
+                                    ctx.topology.node_count()
+                                    if ctx.topology and hasattr(ctx.topology, "node_count")
+                                    else 0
+                                ),
+                            ]
+                            new_decision = self.bandit.select_with_context(0.1, task_context)
+                            ctx.bandit_decision_id = new_decision.decision_id
+                        except (ImportError, RuntimeError):
+                            pass
+                    elif self.bandit and hasattr(self.bandit, "select"):
+                        try:
+                            new_decision = self.bandit.select(0.1)
+                            ctx.bandit_decision_id = new_decision.decision_id
+                        except (ImportError, RuntimeError):
+                            pass
+                    # Fresh executor for the regenerated topology (old one is stale)
+                    from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
+                    executor_rerouted = _TE(ctx.topology)
+                    # Re-execute with new topology (no controller to avoid infinite loop)
+                    runner2 = TopologyRunner(
+                        graph=ctx.topology, executor=executor_rerouted,
+                        llm_provider=self.llm_provider, llm_config=self.llm_config,
+                        provider_pool=self.provider_pool,
+                        controller=None,  # no controller on retry to prevent loop
+                        agent_loop_factory=_agent_loop_factory,
+                        cost_tracker=getattr(ctx, "cost_tracker", None),
+                    )
+                    result = await runner2.run(ctx.task)
+                    # Prefer the post-reroute telemetry (it's the attempt that
+                    # actually produced the final output).
+                    ctx.tool_call_count = getattr(runner2, "tool_call_count", 0)
+                    ctx.tool_turn_count = getattr(runner2, "tool_turn_count", 0)
+                    ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
+                    ctx.cost = float(getattr(runner2, "total_cost_usd", 0.0) or 0.0)
+                    if result == BUDGET_EXCEEDED_RESULT:
+                        self._emit_budget_exceeded(ctx)
+                        ctx.result = result
+                        return ctx
+    
+                # FrugalGPT quality-gated cascade: if result quality is low, retry with upgraded models
+                if result and result != "__REROUTE__" and self.quality_estimator:
+                    quality = self.quality_estimator.estimate(ctx.task, result)
+                    if quality is not None and quality < 0.3 and self.assigner:
+                        log.info("Stage 4: quality=%.2f < 0.3, triggering FrugalGPT cascade retry", quality)
+                        # Reassign with upgraded models (exclude current + budget escalation)
+                        try:
+                            if hasattr(ctx.topology, 'node_count'):
+                                for i in range(ctx.topology.node_count()):
+                                    if self.assigner and hasattr(self.assigner, 'assign_single_node'):
+                                        current_model = ctx.assignments.get(i, "")
+                                        # F7 wiring (2026-04-17): forward task_system so the
+                                        # Rust ModelAssigner promotes producer nodes correctly
+                                        # during the cascade upgrade (otherwise the upgrade picks
+                                        # the next best per-node-tier model, ignoring the overall
+                                        # task complexity).
+                                        #
+                                        # Interaction note (advisor 2026-04-17): the cascade
+                                        # stays at the F7-effective tier (S2 floor for non-rigour
+                                        # S3 tasks). It does NOT escalate beyond what F7 already
+                                        # set — exhausting S2 candidates before touching S3.
+                                        # That's intentional: cascade is "swap to a different
+                                        # model in the same tier", not "tier-escalate". If a
+                                        # task genuinely needs an S3 model on a node F7 floored
+                                        # at S2, that's a separate routing decision (not yet
+                                        # implemented; would need a TierEscalator).
+                                        cascade_task_system = (
+                                            ctx.system if isinstance(getattr(ctx, "system", None), int)
+                                            and ctx.system in (1, 2, 3) else None
                                         )
-                                    except TypeError:
-                                        # Older binding without task_system kwarg.
                                         try:
                                             self.assigner.assign_single_node(
                                                 ctx.topology, i, ctx.domain,
                                                 ctx.budget * 1.5,
                                                 exclude_model_ids=[current_model] if current_model else None,
+                                                task_system=cascade_task_system,
                                             )
+                                        except TypeError:
+                                            # Older binding without task_system kwarg.
+                                            try:
+                                                self.assigner.assign_single_node(
+                                                    ctx.topology, i, ctx.domain,
+                                                    ctx.budget * 1.5,
+                                                    exclude_model_ids=[current_model] if current_model else None,
+                                                )
+                                            except (ValueError, RuntimeError):
+                                                pass
                                         except (ValueError, RuntimeError):
                                             pass
-                                    except (ValueError, RuntimeError):
-                                        pass
-                                # Verify upgraded model has an available provider
-                                node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
-                                new_model = getattr(node, 'model_id', '') if node else ''
-                                if new_model and self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
-                                    if not self.provider_pool.is_model_available(new_model):
-                                        default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
-                                        if default_model and hasattr(ctx.topology, 'set_node_model_id'):
-                                            ctx.topology.set_node_model_id(i, default_model)
-                                            log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
-                        # Re-execute with upgraded models
-                        from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
-                        executor2 = _TE(ctx.topology)
-                        runner3 = TopologyRunner(
-                            graph=ctx.topology, executor=executor2,
-                            llm_provider=self.llm_provider, llm_config=self.llm_config,
-                            provider_pool=self.provider_pool,
-                            agent_loop_factory=_agent_loop_factory,
-                            cost_tracker=getattr(ctx, "cost_tracker", None),
-                        )
-                        retry_result = await runner3.run(ctx.task)
-                        if retry_result:
-                            result = retry_result
-                            log.info("Stage 4: FrugalGPT cascade succeeded on retry")
-                    except (RuntimeError, TimeoutError) as exc:
-                        log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
-
-            if result == BUDGET_EXCEEDED_RESULT:
-                self._emit_budget_exceeded(ctx)
+                                    # Verify upgraded model has an available provider
+                                    node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
+                                    new_model = getattr(node, 'model_id', '') if node else ''
+                                    if new_model and self.provider_pool and hasattr(self.provider_pool, 'is_model_available'):
+                                        if not self.provider_pool.is_model_available(new_model):
+                                            default_model = getattr(self.llm_config, 'model', '') if self.llm_config else ''
+                                            if default_model and hasattr(ctx.topology, 'set_node_model_id'):
+                                                ctx.topology.set_node_model_id(i, default_model)
+                                                log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
+                            # Re-execute with upgraded models
+                            from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
+                            executor2 = _TE(ctx.topology)
+                            runner3 = TopologyRunner(
+                                graph=ctx.topology, executor=executor2,
+                                llm_provider=self.llm_provider, llm_config=self.llm_config,
+                                provider_pool=self.provider_pool,
+                                agent_loop_factory=_agent_loop_factory,
+                                cost_tracker=getattr(ctx, "cost_tracker", None),
+                            )
+                            retry_result = await runner3.run(ctx.task)
+                            if retry_result:
+                                result = retry_result
+                                log.info("Stage 4: FrugalGPT cascade succeeded on retry")
+                        except (RuntimeError, TimeoutError) as exc:
+                            log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
+    
+                if result == BUDGET_EXCEEDED_RESULT:
+                    self._emit_budget_exceeded(ctx)
+                    ctx.result = result
+                    return ctx
+    
                 ctx.result = result
-                return ctx
-
-            ctx.result = result
-            # Prefer the runner's aggregated real cost (summed from per-node
-            # AgentLoop.total_cost_usd, which now prefers provider-reported
-            # cost_usd). Fall back to the 500-in/300-out per-node estimate
-            # only when no node reported a real cost (e.g. fully-mocked
-            # tests). Before Apr 18 2026 this was always the estimate, so
-            # benches never saw real provider metering even when LiteLLM
-            # populated it correctly.
-            if not ctx.cost:
-                ctx.cost = self._estimate_topology_cost(ctx)
-        except (ImportError, RuntimeError, TimeoutError) as exc:
-            log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
-            # Fallback: run task directly on a healthy provider.
-            #
-            # 2026-04-21 v17 fix: previously used self.llm_provider
-            # unconditionally, which is typically the boot-default — often
-            # the same provider the multi-agent stage just failed on (e.g.
-            # minimax 529 storm). Result: fallback hits the same 529
-            # immediately, or returns "" as "success" and SAGE emits an
-            # EMPTY patch (5/10 tasks on 2026-04-21 v13 smoke). Now we
-            # prefer a healthy provider from the pool — if the default is
-            # dead we try the first alive one instead. If the provider
-            # returns empty content, we RAISE (not silently emit "") so
-            # the bench classifier records an honest error.
-            fallback_provider, fallback_config = self._pick_fallback_provider()
-            if fallback_provider is not None:
-                try:
-                    from sage.llm.base import Message, Role
-                    response = await fallback_provider.generate(
-                        messages=[Message(role=Role.USER, content=ctx.task)],
-                        config=fallback_config or self.llm_config,
-                    )
-                    content = (response.content or "").strip()
-                    if not content:
-                        raise RuntimeError(
-                            "Stage 4 fallback returned empty content — "
-                            "treating as failure rather than emitting empty patch"
+                # Prefer the runner's aggregated real cost (summed from per-node
+                # AgentLoop.total_cost_usd, which now prefers provider-reported
+                # cost_usd). Fall back to the 500-in/300-out per-node estimate
+                # only when no node reported a real cost (e.g. fully-mocked
+                # tests). Before Apr 18 2026 this was always the estimate, so
+                # benches never saw real provider metering even when LiteLLM
+                # populated it correctly.
+                if not ctx.cost:
+                    ctx.cost = self._estimate_topology_cost(ctx)
+            except (ImportError, RuntimeError, TimeoutError) as exc:
+                log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
+                # Fallback: run task directly on a healthy provider.
+                #
+                # 2026-04-21 v17 fix: previously used self.llm_provider
+                # unconditionally, which is typically the boot-default — often
+                # the same provider the multi-agent stage just failed on (e.g.
+                # minimax 529 storm). Result: fallback hits the same 529
+                # immediately, or returns "" as "success" and SAGE emits an
+                # EMPTY patch (5/10 tasks on 2026-04-21 v13 smoke). Now we
+                # prefer a healthy provider from the pool — if the default is
+                # dead we try the first alive one instead. If the provider
+                # returns empty content, we RAISE (not silently emit "") so
+                # the bench classifier records an honest error.
+                fallback_provider, fallback_config = self._pick_fallback_provider()
+                if fallback_provider is not None:
+                    try:
+                        from sage.llm.base import Message, Role
+                        response = await fallback_provider.generate(
+                            messages=[Message(role=Role.USER, content=ctx.task)],
+                            config=fallback_config or self.llm_config,
                         )
-                    ctx.result = response.content or ""
-                    log.info(
-                        "Stage 4 fallback single-agent succeeded (%d chars, provider=%s)",
-                        len(ctx.result),
-                        getattr(fallback_provider, "name", type(fallback_provider).__name__),
-                    )
-                except (RuntimeError, TimeoutError) as fallback_exc:
-                    log.error("Stage 4 fallback also failed: %s", fallback_exc)
+                        content = (response.content or "").strip()
+                        if not content:
+                            raise RuntimeError(
+                                "Stage 4 fallback returned empty content — "
+                                "treating as failure rather than emitting empty patch"
+                            )
+                        ctx.result = response.content or ""
+                        log.info(
+                            "Stage 4 fallback single-agent succeeded (%d chars, provider=%s)",
+                            len(ctx.result),
+                            getattr(fallback_provider, "name", type(fallback_provider).__name__),
+                        )
+                    except (RuntimeError, TimeoutError) as fallback_exc:
+                        log.error("Stage 4 fallback also failed: %s", fallback_exc)
+                        ctx.result = ""
+                else:
+                    log.error("Stage 4 fallback: no healthy provider available")
                     ctx.result = ""
-            else:
-                log.error("Stage 4 fallback: no healthy provider available")
-                ctx.result = ""
-
-        return ctx
-
+    
+            return ctx
+    
     # ── Stage 5: Learn ──────────────────────────────────────────────────────
 
     async def _stage_learn(self, ctx: PipelineContext) -> None:
@@ -1710,261 +1720,263 @@ class CognitiveOrchestrationPipeline:
         - QualityEstimator returns None: abstain — bandit does NOT record
         - No estimator: abstain — bandit does NOT record
         """
-        import re
-
-        quality: float | None = None
-
-        # Empty result => total failure, bandit must learn from it
-        if not ctx.result or not ctx.result.strip():
-            quality = 0.0
-        elif self.quality_estimator:
-            try:
-                quality = self.quality_estimator.estimate(
-                    ctx.task, ctx.result, ctx.latency_ms
-                )
-            except (ImportError, RuntimeError):
-                quality = None  # cannot assess — abstain
-
-        # PRM lightweight scoring (Phase C) — 6th formal signal
-        # Guard: only call PRM on structured content (<think>, assert, code)
-        # Only blend when quality is known (not None)
-        _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
-        if self.prm and quality is not None and ctx.result and _STRUCTURED.search(ctx.result):
-            try:
-                r_path, _ = self.prm.calculate_r_path(ctx.result)
-                if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
-                    quality = 0.8 * quality + 0.2 * r_path
-                    log.debug("PRM blended quality: %.2f (estimator + PRM)", quality)
-            except (RuntimeError, ValueError) as exc:
-                log.warning("PRM scoring failed in LEARN: %s", exc)
-
-        # Only record to bandit when quality is known — never guess
-        if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
-            if ctx.bandit_decision_id:
+        from sage.observability.spans import sage_span
+        with sage_span("sage.learn", op="sage.learn"):
+            import re
+    
+            quality: float | None = None
+    
+            # Empty result => total failure, bandit must learn from it
+            if not ctx.result or not ctx.result.strip():
+                quality = 0.0
+            elif self.quality_estimator:
                 try:
-                    self.bandit.record_outcome(ctx.bandit_decision_id, quality, ctx.cost, ctx.latency_ms)
-                    log.debug("Bandit outcome recorded (in-memory, not persisted across restarts)")
+                    quality = self.quality_estimator.estimate(
+                        ctx.task, ctx.result, ctx.latency_ms
+                    )
                 except (ImportError, RuntimeError):
-                    pass
-
-        # Evolution feedback: record outcome in TopologyEngine archive
-        # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
-        if self.engine and quality is not None and ctx.topology is not None:
-            try:
-                topology_id = ctx.topology_id or getattr(ctx.topology, 'id', '')
-                if topology_id and hasattr(self.engine, 'record_outcome'):
-                    keywords = list(set(
-                        w.lower() for w in re.findall(r'\b\w{4,}\b', ctx.task)
-                    ))[:10]
-                    # Compute real task embedding for S-MMU retrieval
-                    task_embedding = None
+                    quality = None  # cannot assess — abstain
+    
+            # PRM lightweight scoring (Phase C) — 6th formal signal
+            # Guard: only call PRM on structured content (<think>, assert, code)
+            # Only blend when quality is known (not None)
+            _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
+            if self.prm and quality is not None and ctx.result and _STRUCTURED.search(ctx.result):
+                try:
+                    r_path, _ = self.prm.calculate_r_path(ctx.result)
+                    if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
+                        quality = 0.8 * quality + 0.2 * r_path
+                        log.debug("PRM blended quality: %.2f (estimator + PRM)", quality)
+                except (RuntimeError, ValueError) as exc:
+                    log.warning("PRM scoring failed in LEARN: %s", exc)
+    
+            # Only record to bandit when quality is known — never guess
+            if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
+                if ctx.bandit_decision_id:
                     try:
-                        from sage.memory.embedder import Embedder
-                        _embedder = Embedder()
-                        if _embedder.is_semantic:
-                            task_embedding = _embedder.embed(ctx.task[:500])
+                        self.bandit.record_outcome(ctx.bandit_decision_id, quality, ctx.cost, ctx.latency_ms)
+                        log.debug("Bandit outcome recorded (in-memory, not persisted across restarts)")
                     except (ImportError, RuntimeError):
-                        pass  # Embedding unavailable, degrade gracefully
-
-                    # In-run observability: read archive cell count before +
-                    # after record_outcome so we can attribute MAP-Elites growth
-                    # to a specific topology_id. The H4 incident (dc51976)
-                    # proved this delta is frequently 0 even when record_outcome
-                    # returns cleanly — the log would have caught that bypass
-                    # immediately, so we keep it structured going forward.
-                    cells_before = 0
-                    if hasattr(self.engine, 'archive_cell_count'):
+                        pass
+    
+            # Evolution feedback: record outcome in TopologyEngine archive
+            # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection
+            if self.engine and quality is not None and ctx.topology is not None:
+                try:
+                    topology_id = ctx.topology_id or getattr(ctx.topology, 'id', '')
+                    if topology_id and hasattr(self.engine, 'record_outcome'):
+                        keywords = list(set(
+                            w.lower() for w in re.findall(r'\b\w{4,}\b', ctx.task)
+                        ))[:10]
+                        # Compute real task embedding for S-MMU retrieval
+                        task_embedding = None
                         try:
-                            cells_before = int(self.engine.archive_cell_count())
-                        except (RuntimeError, TypeError):
-                            cells_before = 0
-                    self.engine.record_outcome(
-                        topology_id,
-                        ctx.task[:200],
-                        keywords,
-                        task_embedding,  # real embedding instead of None
-                        quality,
-                        ctx.cost,
-                        ctx.latency_ms,
-                    )
-                    cells_after = cells_before
-                    if hasattr(self.engine, 'archive_cell_count'):
-                        try:
-                            cells_after = int(self.engine.archive_cell_count())
-                        except (RuntimeError, TypeError):
-                            cells_after = cells_before
-                    if cells_after > cells_before:
-                        # Get descriptor shape for the new cell when available
-                        coverage = 0.0
-                        if hasattr(self.engine, 'archive_coverage'):
+                            from sage.memory.embedder import Embedder
+                            _embedder = Embedder()
+                            if _embedder.is_semantic:
+                                task_embedding = _embedder.embed(ctx.task[:500])
+                        except (ImportError, RuntimeError):
+                            pass  # Embedding unavailable, degrade gracefully
+    
+                        # In-run observability: read archive cell count before +
+                        # after record_outcome so we can attribute MAP-Elites growth
+                        # to a specific topology_id. The H4 incident (dc51976)
+                        # proved this delta is frequently 0 even when record_outcome
+                        # returns cleanly — the log would have caught that bypass
+                        # immediately, so we keep it structured going forward.
+                        cells_before = 0
+                        if hasattr(self.engine, 'archive_cell_count'):
                             try:
-                                coverage = float(self.engine.archive_coverage())
+                                cells_before = int(self.engine.archive_cell_count())
                             except (RuntimeError, TypeError):
-                                coverage = 0.0
-                        log.info(
-                            "memory.archive.grow cells=%d delta=%d "
-                            "coverage=%.3f topology=%s quality=%.2f",
-                            cells_after, cells_after - cells_before,
-                            coverage, topology_id[:8] if topology_id else "unknown",
+                                cells_before = 0
+                        self.engine.record_outcome(
+                            topology_id,
+                            ctx.task[:200],
+                            keywords,
+                            task_embedding,  # real embedding instead of None
                             quality,
+                            ctx.cost,
+                            ctx.latency_ms,
                         )
-                    log.debug(
-                        "Evolution: recorded outcome for topology %s (quality=%.2f)",
-                        topology_id[:8], quality,
+                        cells_after = cells_before
+                        if hasattr(self.engine, 'archive_cell_count'):
+                            try:
+                                cells_after = int(self.engine.archive_cell_count())
+                            except (RuntimeError, TypeError):
+                                cells_after = cells_before
+                        if cells_after > cells_before:
+                            # Get descriptor shape for the new cell when available
+                            coverage = 0.0
+                            if hasattr(self.engine, 'archive_coverage'):
+                                try:
+                                    coverage = float(self.engine.archive_coverage())
+                                except (RuntimeError, TypeError):
+                                    coverage = 0.0
+                            log.info(
+                                "memory.archive.grow cells=%d delta=%d "
+                                "coverage=%.3f topology=%s quality=%.2f",
+                                cells_after, cells_after - cells_before,
+                                coverage, topology_id[:8] if topology_id else "unknown",
+                                quality,
+                            )
+                        log.debug(
+                            "Evolution: recorded outcome for topology %s (quality=%.2f)",
+                            topology_id[:8], quality,
+                        )
+                except (ImportError, RuntimeError) as exc:
+                    log.debug("Evolution feedback failed: %s", exc)
+    
+            # H1 audit fix (2026-04-19): Online evolution gate.
+            #
+            # Architecture/architecture.md and evolution/README.md both claim
+            # "Online evolution: Rust should_evolve() gates evolve() in agent
+            # loop (SA-3 complete)". The Rust impl exists at
+            # `sage-core/src/topology/engine.rs:644 (should_evolve)` and
+            # `:668 (evolve)`, both exposed via PyO3, but no Python call site
+            # invoked them — same class of bypass as the G-series write-gate
+            # (built, tested in isolation, never wired). `_auto_evolve=True`
+            # is set on AgentLoop in boot.py:332 but no code reads that flag.
+            #
+            # Wiring at the end of LEARN is the correct hook: by here we've
+            # just appended an outcome to the archive, so should_evolve()
+            # has fresh data. Constants come from sage.constants — single
+            # source of truth, already covered by test_online_evolution.py.
+            if self.engine and hasattr(self.engine, "should_evolve"):
+                try:
+                    from sage.constants import (
+                        EVOLUTION_MIN_OUTCOMES,
+                        EVOLUTION_COOLDOWN_OUTCOMES,
+                        EVOLUTION_ONLINE_POP_SIZE,
+                        EVOLUTION_ONLINE_GENERATIONS,
                     )
-            except (ImportError, RuntimeError) as exc:
-                log.debug("Evolution feedback failed: %s", exc)
-
-        # H1 audit fix (2026-04-19): Online evolution gate.
-        #
-        # Architecture/architecture.md and evolution/README.md both claim
-        # "Online evolution: Rust should_evolve() gates evolve() in agent
-        # loop (SA-3 complete)". The Rust impl exists at
-        # `sage-core/src/topology/engine.rs:644 (should_evolve)` and
-        # `:668 (evolve)`, both exposed via PyO3, but no Python call site
-        # invoked them — same class of bypass as the G-series write-gate
-        # (built, tested in isolation, never wired). `_auto_evolve=True`
-        # is set on AgentLoop in boot.py:332 but no code reads that flag.
-        #
-        # Wiring at the end of LEARN is the correct hook: by here we've
-        # just appended an outcome to the archive, so should_evolve()
-        # has fresh data. Constants come from sage.constants — single
-        # source of truth, already covered by test_online_evolution.py.
-        if self.engine and hasattr(self.engine, "should_evolve"):
-            try:
-                from sage.constants import (
-                    EVOLUTION_MIN_OUTCOMES,
-                    EVOLUTION_COOLDOWN_OUTCOMES,
-                    EVOLUTION_ONLINE_POP_SIZE,
-                    EVOLUTION_ONLINE_GENERATIONS,
-                )
-                decision = self.engine.should_evolve(
-                    EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
-                )
-                # In-run observability: log every should_evolve() call, not
-                # just the True branch. Without this, False branches are
-                # invisible -- we can't tell if the gate was even evaluated
-                # on a given task, which is exactly the class of silent-bypass
-                # that H1 (2cd840e) and H4 (dc51976) were. Archive context
-                # travels with the log so post-run analysis can correlate.
-                cells = 0
-                coverage = 0.0
-                if hasattr(self.engine, "archive_cell_count"):
-                    try:
-                        cells = int(self.engine.archive_cell_count())
-                    except (RuntimeError, TypeError):
-                        cells = 0
-                if hasattr(self.engine, "archive_coverage"):
-                    try:
-                        coverage = float(self.engine.archive_coverage())
-                    except (RuntimeError, TypeError):
-                        coverage = 0.0
-                log.info(
-                    "evolution.should_evolve.decision decision=%s cells=%d "
-                    "coverage=%.3f min_outcomes=%d cooldown=%d",
-                    "true" if decision else "false", cells, coverage,
-                    EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
-                )
-                if decision:
-                    # Read cells before evolve to show the effect of the call
-                    cells_pre_evolve = cells
-                    self.engine.evolve(
-                        pop_size=EVOLUTION_ONLINE_POP_SIZE,
-                        generations=EVOLUTION_ONLINE_GENERATIONS,
+                    decision = self.engine.should_evolve(
+                        EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
                     )
-                    cells_post_evolve = cells_pre_evolve
+                    # In-run observability: log every should_evolve() call, not
+                    # just the True branch. Without this, False branches are
+                    # invisible -- we can't tell if the gate was even evaluated
+                    # on a given task, which is exactly the class of silent-bypass
+                    # that H1 (2cd840e) and H4 (dc51976) were. Archive context
+                    # travels with the log so post-run analysis can correlate.
+                    cells = 0
+                    coverage = 0.0
                     if hasattr(self.engine, "archive_cell_count"):
                         try:
-                            cells_post_evolve = int(self.engine.archive_cell_count())
+                            cells = int(self.engine.archive_cell_count())
                         except (RuntimeError, TypeError):
-                            cells_post_evolve = cells_pre_evolve
-                    log.info(
-                        "evolution.evolve.called pop_size=%d generations=%d "
-                        "cells_before=%d cells_after=%d",
-                        EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS,
-                        cells_pre_evolve, cells_post_evolve,
-                    )
-                    # Per-child operator logs. Rust's TopologyEngine tracks
-                    # the Thompson-sampled operator name for every mutation
-                    # attempt inside evolve() (see pyo3_wrappers.rs
-                    # PyTopologyEngine.drain_last_applied_ops). We drain the
-                    # buffer here and emit one `evolution.mutation.applied`
-                    # line per attempt. Closes gap #3 from the 0bcb92b
-                    # pillar-logging pass (per-mutation-operator observability).
-                    #
-                    # tier: best-effort — the pipeline's most recent routing
-                    # decision. evolve() mutations aren't bound to a specific
-                    # routing tier (they operate on cached topologies), so we
-                    # emit the current-task tier purely for correlation in
-                    # post-run analysis.
-                    if hasattr(self.engine, "drain_last_applied_ops"):
+                            cells = 0
+                    if hasattr(self.engine, "archive_coverage"):
                         try:
-                            applied_ops = list(self.engine.drain_last_applied_ops())
+                            coverage = float(self.engine.archive_coverage())
                         except (RuntimeError, TypeError):
-                            applied_ops = []
-                        if applied_ops:
-                            import hashlib as _hashlib
-                            tier = ""
-                            rd = getattr(self, "_last_routing_decision", None)
-                            if rd is not None:
-                                tier = getattr(rd, "llm_tier", "") or ""
-                            topo_id = ctx.topology_id or getattr(
-                                ctx.topology, "id", "",
-                            )
-                            parent_cell = cells_pre_evolve
-                            for child_idx, op_name in enumerate(applied_ops):
-                                # child_hash: stable short hash mixing the
-                                # topology id, child index, and op name.
-                                # Opaque but reproducible per-run identifier.
-                                h_src = f"{topo_id}:{child_idx}:{op_name}".encode(
-                                    "utf-8",
+                            coverage = 0.0
+                    log.info(
+                        "evolution.should_evolve.decision decision=%s cells=%d "
+                        "coverage=%.3f min_outcomes=%d cooldown=%d",
+                        "true" if decision else "false", cells, coverage,
+                        EVOLUTION_MIN_OUTCOMES, EVOLUTION_COOLDOWN_OUTCOMES,
+                    )
+                    if decision:
+                        # Read cells before evolve to show the effect of the call
+                        cells_pre_evolve = cells
+                        self.engine.evolve(
+                            pop_size=EVOLUTION_ONLINE_POP_SIZE,
+                            generations=EVOLUTION_ONLINE_GENERATIONS,
+                        )
+                        cells_post_evolve = cells_pre_evolve
+                        if hasattr(self.engine, "archive_cell_count"):
+                            try:
+                                cells_post_evolve = int(self.engine.archive_cell_count())
+                            except (RuntimeError, TypeError):
+                                cells_post_evolve = cells_pre_evolve
+                        log.info(
+                            "evolution.evolve.called pop_size=%d generations=%d "
+                            "cells_before=%d cells_after=%d",
+                            EVOLUTION_ONLINE_POP_SIZE, EVOLUTION_ONLINE_GENERATIONS,
+                            cells_pre_evolve, cells_post_evolve,
+                        )
+                        # Per-child operator logs. Rust's TopologyEngine tracks
+                        # the Thompson-sampled operator name for every mutation
+                        # attempt inside evolve() (see pyo3_wrappers.rs
+                        # PyTopologyEngine.drain_last_applied_ops). We drain the
+                        # buffer here and emit one `evolution.mutation.applied`
+                        # line per attempt. Closes gap #3 from the 0bcb92b
+                        # pillar-logging pass (per-mutation-operator observability).
+                        #
+                        # tier: best-effort — the pipeline's most recent routing
+                        # decision. evolve() mutations aren't bound to a specific
+                        # routing tier (they operate on cached topologies), so we
+                        # emit the current-task tier purely for correlation in
+                        # post-run analysis.
+                        if hasattr(self.engine, "drain_last_applied_ops"):
+                            try:
+                                applied_ops = list(self.engine.drain_last_applied_ops())
+                            except (RuntimeError, TypeError):
+                                applied_ops = []
+                            if applied_ops:
+                                import hashlib as _hashlib
+                                tier = ""
+                                rd = getattr(self, "_last_routing_decision", None)
+                                if rd is not None:
+                                    tier = getattr(rd, "llm_tier", "") or ""
+                                topo_id = ctx.topology_id or getattr(
+                                    ctx.topology, "id", "",
                                 )
-                                child_hash = _hashlib.blake2b(
-                                    h_src, digest_size=4,
-                                ).hexdigest()
-                                log.info(
-                                    "evolution.mutation.applied op=%s "
-                                    "parent_cell=%d child_hash=%s tier=%s",
-                                    op_name, parent_cell, child_hash,
-                                    tier or "unknown",
-                                )
-            except (ImportError, RuntimeError, AttributeError) as exc:
-                # Engine without these methods (e.g. test stub) → silent skip.
-                log.debug("Online evolution gate skipped: %s", exc)
-
-        # ── Periodic maintenance ───────────────────────────────────────────
-        self._task_count += 1
-
-        # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
-        from sage.constants import CONSOLIDATION_INTERVAL_STEPS
-        if (self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
-                and self.consolidator is not None):
-            try:
-                consolidation_result = await self.consolidator.consolidate()
-                # In-run observability: emit a structured log regardless of
-                # whether any entries were processed, so smoke runs can see
-                # consolidation ran on the scheduled interval. The old DEBUG
-                # log was silent for zero-processed passes — now every firing
-                # is accounted for.
-                processed = getattr(consolidation_result, 'processed', 0)
-                entities = getattr(consolidation_result, 'entities_added', 0)
-                edges = getattr(consolidation_result, 'causal_edges_added', 0)
-                log.info(
-                    "memory.consolidation.fired processed=%d entities=%d "
-                    "causal_edges=%d task_id=%d",
-                    processed, entities, edges, self._task_count,
-                )
-            except (RuntimeError, IOError):
-                pass  # Best-effort, never blocks pipeline
-
-        # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
-        from sage.constants import BANDIT_FLUSH_INTERVAL
-        if (self._task_count % BANDIT_FLUSH_INTERVAL == 0
-                and self.engine and hasattr(self.engine, 'save_state')):
-            try:
-                from pathlib import Path
-                state_dir = str(Path.home() / ".sage")
-                self.engine.save_state(state_dir)
-                log.debug("Periodic state flush (%d tasks)", self._task_count)
-            except (RuntimeError, IOError):
-                pass  # Best-effort, never blocks pipeline
+                                parent_cell = cells_pre_evolve
+                                for child_idx, op_name in enumerate(applied_ops):
+                                    # child_hash: stable short hash mixing the
+                                    # topology id, child index, and op name.
+                                    # Opaque but reproducible per-run identifier.
+                                    h_src = f"{topo_id}:{child_idx}:{op_name}".encode(
+                                        "utf-8",
+                                    )
+                                    child_hash = _hashlib.blake2b(
+                                        h_src, digest_size=4,
+                                    ).hexdigest()
+                                    log.info(
+                                        "evolution.mutation.applied op=%s "
+                                        "parent_cell=%d child_hash=%s tier=%s",
+                                        op_name, parent_cell, child_hash,
+                                        tier or "unknown",
+                                    )
+                except (ImportError, RuntimeError, AttributeError) as exc:
+                    # Engine without these methods (e.g. test stub) → silent skip.
+                    log.debug("Online evolution gate skipped: %s", exc)
+    
+            # ── Periodic maintenance ───────────────────────────────────────────
+            self._task_count += 1
+    
+            # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
+            from sage.constants import CONSOLIDATION_INTERVAL_STEPS
+            if (self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
+                    and self.consolidator is not None):
+                try:
+                    consolidation_result = await self.consolidator.consolidate()
+                    # In-run observability: emit a structured log regardless of
+                    # whether any entries were processed, so smoke runs can see
+                    # consolidation ran on the scheduled interval. The old DEBUG
+                    # log was silent for zero-processed passes — now every firing
+                    # is accounted for.
+                    processed = getattr(consolidation_result, 'processed', 0)
+                    entities = getattr(consolidation_result, 'entities_added', 0)
+                    edges = getattr(consolidation_result, 'causal_edges_added', 0)
+                    log.info(
+                        "memory.consolidation.fired processed=%d entities=%d "
+                        "causal_edges=%d task_id=%d",
+                        processed, entities, edges, self._task_count,
+                    )
+                except (RuntimeError, IOError):
+                    pass  # Best-effort, never blocks pipeline
+    
+            # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
+            from sage.constants import BANDIT_FLUSH_INTERVAL
+            if (self._task_count % BANDIT_FLUSH_INTERVAL == 0
+                    and self.engine and hasattr(self.engine, 'save_state')):
+                try:
+                    from pathlib import Path
+                    state_dir = str(Path.home() / ".sage")
+                    self.engine.save_state(state_dir)
+                    log.debug("Periodic state flush (%d tasks)", self._task_count)
+                except (RuntimeError, IOError):
+                    pass  # Best-effort, never blocks pipeline
