@@ -20,7 +20,10 @@ pub mod wasm_python;
 // alone (without tool-executor) hits E0432 on `wasm_python.rs:75`.
 // PyO3 class registration in lib.rs:38 stays gated on `tool-executor`
 // only — widening here doesn't expose new ABI to Python.
-#[cfg(any(feature = "tool-executor", all(feature = "sandbox", feature = "cranelift")))]
+#[cfg(any(
+    feature = "tool-executor",
+    all(feature = "sandbox", feature = "cranelift")
+))]
 pub mod subprocess;
 #[cfg(feature = "tool-executor")]
 pub mod tool_executor;
