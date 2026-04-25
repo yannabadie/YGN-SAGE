@@ -49,7 +49,7 @@ tracing = "0.1"
 # downstream stability is proven (see roadmap-B1.b.8).
 opentelemetry = { version = "0.27", optional = true }
 opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"], optional = true }
-opentelemetry-otlp = { version = "0.27", features = ["http-proto", "http-json", "reqwest-client"], optional = true }
+opentelemetry-otlp = { version = "0.27", default-features = false, features = ["http-proto", "http-json", "reqwest-client", "trace"], optional = true }
 tracing-opentelemetry = { version = "0.28", optional = true }
 tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"], optional = true }
 toml = "0.8"
