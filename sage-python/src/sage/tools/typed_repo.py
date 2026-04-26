@@ -106,7 +106,17 @@ def _resolve_within_cwd(user_path: str | os.PathLike[str]) -> Path:
         raise PathJailError(
             f"path contains an embedded null byte (got {user_path!r})"
         )
-    # Leading `/` or `\` signals the caller intends an absolute path.
+    # Defense-in-depth: normalize backslash separators to forward slashes
+    # before any further check. On POSIX, `..\..\etc\passwd` is a single
+    # filename containing literal backslashes (no traversal), so the
+    # cross-platform attack surface only sees Windows-flavored escapes
+    # if we don't normalize. After this rewrite, `..\..\etc\passwd`
+    # parses as `../../etc/passwd` and gets caught by the relative_to
+    # check below.
+    path_str = path_str.replace("\\", "/")
+    user_path = path_str
+    # Leading `/` signals the caller intends an absolute path. (After
+    # the backslash-normalize above, `\\` -> `//` also lands here.)
     # On POSIX this is caught by Path.is_absolute(); on Windows it is
     # NOT (Windows needs a drive letter), which would otherwise leave
     # `/etc/passwd` silently rebound to `cwd\etc\passwd`. Reject both.

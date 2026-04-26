@@ -415,8 +415,11 @@ fn test_contextual_trained_arms_selection() {
     bandit.add_arm("fast-model", "sequential");
     bandit.add_arm("deep-model", "avr");
 
-    // Train fast-model on simple tasks (context = [1.0, 10.0])
-    for _ in 0..30 {
+    // Train fast-model on simple tasks (context = [1.0, 10.0]). 60 rounds
+    // with epsilon=1.0 (full exploration) gives ~30 samples per arm so the
+    // posterior mean for fast-model on simple-context settles near 0.95;
+    // 30 rounds had high variance and CI flaked at 11/30 vs threshold 12.
+    for _ in 0..60 {
         let d = bandit.choose_contextual(1.0, &[1.0, 10.0]).unwrap();
         let q = if d.model_id == "fast-model" {
             0.95
@@ -429,7 +432,7 @@ fn test_contextual_trained_arms_selection() {
     }
 
     // Train deep-model on complex tasks (context = [3.0, 500.0])
-    for _ in 0..30 {
+    for _ in 0..60 {
         let d = bandit.choose_contextual(1.0, &[3.0, 500.0]).unwrap();
         let q = if d.model_id == "deep-model" {
             0.95
@@ -441,9 +444,12 @@ fn test_contextual_trained_arms_selection() {
             .unwrap();
     }
 
-    // Exploit with simple-task context: should prefer fast-model
+    // Exploit with simple-task context: should prefer fast-model. 50 trials
+    // + threshold 25 = 50% gives ~3-sigma headroom over the random 50/50
+    // baseline (Thompson sampling shouldn't drift below that with the
+    // doubled training budget).
     let mut fast_count = 0;
-    for _ in 0..30 {
+    for _ in 0..50 {
         let d = bandit.choose_contextual(0.0, &[1.0, 10.0]).unwrap();
         if d.model_id == "fast-model" {
             fast_count += 1;
@@ -454,8 +460,8 @@ fn test_contextual_trained_arms_selection() {
     }
 
     assert!(
-        fast_count >= 12,
-        "fast-model should be preferred for simple tasks: got {}/30",
+        fast_count >= 25,
+        "fast-model should be preferred for simple tasks: got {}/50",
         fast_count,
     );
 }
