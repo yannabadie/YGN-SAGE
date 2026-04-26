@@ -91,6 +91,30 @@ uv sync
 uv run python meta_harness.py --iterations 10 --fresh
 ```
 
+## External AI consultation — `cgpro` and `codex` (when stuck or before declaring done)
+
+Two complementary tools. Use deliberately, not reflexively. Different verbs.
+
+### `cgpro` — ChatGPT 5.5 Pro (analytic, slow, second opinion)
+
+- **Invoke**: skill `cgpro:ask` or `cgpro ask --json --no-stream --timeout 600 "<prompt>"` (long prompts via stdin to avoid shell quoting). Web search always on (policy).
+- **Pass the GitHub repo URL** in the prompt — cgpro will pull live source. Verified 2026-04-26: caught a real prod bug in `bandit::restore_arm` not persisting `context_sum`/`context_count` that I missed by reading only locally-changed files.
+- **Use for**: holistic review of a substantial cycle (5+ commits), strategy critique before committing to an approach, finding non-obvious bugs across files, second opinion on stochastic test design, methodology audit.
+- **Don't use for**: quick syntax lookups (Context7), one-line refactors, well-known API explanations.
+- **Prompt hygiene**: lead with repo URL + commit SHA, structured "what shipped / what's stuck / what I'm about to do" summary, then 2-3 specific questions split into "verdict on what I did" / "what should I do next" / "what trap am I missing".
+
+### `codex` — GPT-5.5 xhigh (action-oriented, second implementation)
+
+- **Invoke**: skill `codex:rescue` or agent `subagent_type=codex:codex-rescue`. The rescue agent is described as "use proactively when stuck, want a second implementation, deeper root-cause investigation, or hand a substantial coding task to Codex through the shared runtime".
+- **Use for**: when stuck implementing a specific change, want a second implementation pass on a tricky function, deep root-cause investigation that needs to read many files, hand off a substantial coding task while you work on something else.
+- **Don't use for**: holistic review (cgpro is better), strategic decisions (`advisor` is better).
+
+### Pattern: external review after substantial cycles (2026-04-26 evidence)
+
+Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub repo URL + branch, (2) summary of what shipped + what's stuck, (3) ask "what trap am I missing?". The 2026-04-26 closeout review caught **1 real prod bug** (bandit context persistence) **+ 5 structural improvements** (RNG seam, sort arm_keys, three-layer test split, bandit Pareto contract mismatch, lockfile) — all now tracked as roadmap-A8..A13. Without the review, all 6 would have shipped silently.
+
+`advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
+
 ## Current State (April 26, 2026)
 
 - **Tests**: Python **2501 passing (excluding API-key-dependent files)**, 63 skipped, 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` (pre-existing, all API-key-gated). Rust **501+ passed** with `--features smt,cognitive,sandbox,cranelift` (CI plein vert on commit `50fb8e4f`).
