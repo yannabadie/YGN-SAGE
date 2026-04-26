@@ -7,6 +7,83 @@ on:
     branches: [main, master]
 
 jobs:
+  build-wasm-sandbox:
+    name: Build RustPython wasm sandbox
+    runs-on: ubuntu-latest
+
+    outputs:
+      rustpython-sha: ${{ steps.rustpython-ref.outputs.sha }}
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install wasm32-wasip1 target
+        run: rustup target add wasm32-wasip1
+
+      - name: Resolve pinned RustPython revision
+        id: rustpython-ref
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(tr -d '[:space:]' < sage-core/rustpython-wasm.sha)"
+          test -n "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Using RustPython $sha"
+
+      - name: Restore RustPython wasm build cache
+        id: rustpython-wasm-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            external/rustpython-wasm-target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rustpython-wasm-${{ runner.os }}-stable-wasm32-wasip1-${{ hashFiles('sage-core/rustpython-wasm.sha') }}
+
+      - name: Build rustpython.wasm
+        if: steps.rustpython-wasm-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p external
+
+          git init external/rustpython
+          git -C external/rustpython remote add origin https://github.com/RustPython/RustPython.git
+          git -C external/rustpython fetch --depth 1 origin "${{ steps.rustpython-ref.outputs.sha }}"
+          git -C external/rustpython checkout --detach FETCH_HEAD
+
+          cd external/rustpython
+          CARGO_TARGET_DIR=../rustpython-wasm-target \
+            cargo build --release --target wasm32-wasip1 --features freeze-stdlib
+
+      - name: Stage rustpython.wasm artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          src="external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm"
+          test -s "$src"
+          bytes="$(wc -c < "$src")"
+          test "$bytes" -gt 1000000
+
+          mkdir -p target/rustpython-wasm-artifact
+          cp "$src" target/rustpython-wasm-artifact/rustpython.wasm
+
+          cd target/rustpython-wasm-artifact
+          sha256sum rustpython.wasm > rustpython.wasm.sha256
+          cat rustpython.wasm.sha256
+
+      - name: Upload rustpython.wasm
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustpython-wasm-${{ steps.rustpython-ref.outputs.sha }}
+          path: |
+            target/rustpython-wasm-artifact/rustpython.wasm
+            target/rustpython-wasm-artifact/rustpython.wasm.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   rust:
     name: Rust (cargo test + clippy)
     runs-on: ubuntu-latest
@@ -14,7 +91,7 @@ jobs:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
@@ -29,216 +106,344 @@ jobs:
         run: cargo test --no-default-features --features onnx --lib
 
   otel-bridge:
-    # Dedicated job for the B1.b OTel Rust bridge (added 2026-04-25).
-    # Runs in parallel with rust-features so otel coverage is not blocked
-    # by unrelated feature-combination failures (e.g. sandbox+cranelift
-    # E0432 in wasm_python.rs that has been red since pre-B1.b).
-    name: OTel bridge (B1.b — tracing-opentelemetry pair)
+    name: OTel bridge (B1.b tracing-opentelemetry pair)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: sage-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install maturin
       - uses: dtolnay/rust-toolchain@stable
       - name: Lib tests under --features otel
-        # Catches version drift between tracing-opentelemetry 0.28 and
-        # opentelemetry 0.27 on every PR.
         run: 'cargo test --no-default-features --features otel --lib observability::'
       - name: End-to-end otel_smoke (InMemoryExporter, --ignored)
-        # Asserts parent_span_id linkage from W3C traceparent.
         run: cargo test --no-default-features --features otel --test otel_smoke -- --ignored --test-threads=1
 
   otel-bridge-windows:
-    # Windows MSVC compile-check — catches reqwest/rustls/opentelemetry-otlp
-    # transitive issues that Linux misses. Compile-only.
-    name: OTel bridge (B1.b — Windows MSVC compile-check)
+    name: OTel bridge (B1.b Windows MSVC compile-check)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
       - name: cargo check --features otel
         working-directory: sage-core
         run: cargo check --no-default-features --features otel
 
   rust-features:
+    needs: build-wasm-sandbox
     name: Rust (sandbox + ONNX + SMT + tool-executor)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sage-core
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - run: pip install maturin
+
       - uses: dtolnay/rust-toolchain@stable
-      - name: Sandbox lib tests (cranelift JIT)
-        run: cargo test --no-default-features --features sandbox,cranelift --lib
-      - name: SMT verification tests
-        run: cargo test --no-default-features --features smt --lib
-      - name: Tool executor tests (tree-sitter validator)
-        run: cargo test --no-default-features --features tool-executor --lib -- sandbox::validator
-      - name: Cognitive persistence tests
-        run: cargo test --no-default-features --features cognitive --lib
+
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v4
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+
+      - name: Verify downloaded rustpython.wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
+
+      - name: Rust feature tests
+        working-directory: sage-core
+        env:
+          SAGE_REQUIRE_WASM: "1"
+        run: cargo test --features smt,cognitive,sandbox,cranelift,tool-executor --lib
+
       - name: ONNX feature tests
+        working-directory: sage-core
         run: cargo test --no-default-features --features onnx --lib
-      - name: OTel bridge tests (B1.b — tracing-opentelemetry pair)
-        # Catches version drift between tracing-opentelemetry 0.28 and
-        # opentelemetry 0.27 on every PR — the most likely failure mode
-        # when these two crates publish independently.
-        # Single-quoted because the trailing `::` confuses the YAML scanner.
+
+      - name: OTel bridge tests (B1.b tracing-opentelemetry pair)
+        working-directory: sage-core
         run: 'cargo test --no-default-features --features otel --lib observability::'
+
       - name: OTel bridge end-to-end smoke (B1.b)
-        # InMemoryExporter + bridge + info_span! → asserts parent_span_id
-        # matches the W3C traceparent's span_id. #[ignore] on the test
-        # because tracing-subscriber init is process-wide; --ignored
-        # --test-threads=1 isolates it.
+        working-directory: sage-core
         run: cargo test --no-default-features --features otel --test otel_smoke -- --ignored --test-threads=1
+
       - name: Integration tests (baseline)
+        working-directory: sage-core
         run: cargo test --no-default-features --test '*'
+
       - name: Integration tests (with Python)
+        working-directory: sage-core
+        env:
+          SAGE_REQUIRE_WASM: "1"
         run: cargo test --no-default-features --features sandbox,cranelift --test '*'
 
   python-sage:
+    needs: build-wasm-sandbox
     name: Python SDK (sage-python)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+
       - uses: dtolnay/rust-toolchain@stable
-      # `sage_core` is required at runtime per the architecture rule
-      # (TopologyController.__init__ raises ImportError if absent). CI
-      # was missing this build step, so every test that touched
-      # `from sage_core import ...` failed with the architecture-rule
-      # ImportError. We build a wheel and `pip install` it because
-      # `maturin develop` requires an active virtualenv that GitHub's
-      # setup-python@v6 doesn't create by default.
-      - name: Build sage_core wheel + install (required for pytest)
+
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v4
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+
+      - name: Verify downloaded rustpython.wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
+
+      - name: Build sage_core wheel + install
         working-directory: sage-core
+        env:
+          SAGE_REQUIRE_WASM: "1"
         run: |
           pip install maturin
-          maturin build --release --features smt,onnx --out target/wheels
+          maturin build --release --features smt,onnx,sandbox,cranelift,tool-executor --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+
       - name: Install Python SDK
         working-directory: sage-python
         run: pip install -e ".[all,dev]"
+
+      - name: Assert embedded wasm sandbox is available
+        working-directory: sage-python
+        run: python -c "import sys, sage_core; print(sys.version); assert sage_core.embedded_wasm_available(), 'wasm artefact missing'"
+
+      - name: Run wasm CI contract test
+        working-directory: sage-python
+        env:
+          SAGE_CI_REQUIRE_WASM: "1"
+        run: python -m pytest tests/test_wasm_sandbox_ci_contract.py -v
+
+      - name: Run sandbox-dependent tests
+        working-directory: sage-python
+        env:
+          SAGE_CI_REQUIRE_WASM: "1"
+        run: python -m pytest tests/test_meta_security.py tests/integration/test_tool_creation.py tests/test_swebench_ca_patch.py -v -rs
+
       - name: ruff
         working-directory: sage-python
         run: ruff check src/
+
       - name: mypy
         working-directory: sage-python
         run: python -m mypy src/sage/ --ignore-missing-imports --no-error-summary
+
       - name: pytest
         working-directory: sage-python
         run: python -m pytest tests/ -v --tb=short --cov=sage --cov-report=term-missing:skip-covered
 
   python-discover:
+    needs: build-wasm-sandbox
     name: Python Discovery (sage-discover)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: sage-discover
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build sage_core wheel + install (required for Python SDK)
+
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v4
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+
+      - name: Verify downloaded rustpython.wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
+
+      - name: Build sage_core wheel + install
         working-directory: sage-core
+        env:
+          SAGE_REQUIRE_WASM: "1"
         run: |
           pip install maturin
-          maturin build --release --features smt,onnx --out target/wheels
+          maturin build --release --features smt,onnx,sandbox,cranelift,tool-executor --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
-      - run: pip install -e "../sage-python[all,dev]"
-      - run: pip install -e "."
-      - run: python -m pytest tests/ -v --tb=short
 
-  windows:
+      - name: Install Python SDK
+        working-directory: sage-discover
+        run: pip install -e "../sage-python[all,dev]"
+
+      - name: Assert embedded wasm sandbox is available
+        working-directory: sage-discover
+        run: python -c "import sage_core; assert sage_core.embedded_wasm_available(), 'wasm artefact missing'"
+
+      - name: Install Discovery SDK
+        working-directory: sage-discover
+        run: pip install -e "."
+
+      - name: Run Discovery tests
+        working-directory: sage-discover
+        run: python -m pytest tests/ -v --tb=short
+
+  windows-pytest:
+    needs: build-wasm-sandbox
     name: Windows (Python SDK + Rust check)
     runs-on: windows-latest
     env:
       HF_HUB_OFFLINE: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13"]
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
+
       - uses: dtolnay/rust-toolchain@stable
-      # `sage_core` is required at runtime per the architecture rule
-      # (TopologyController.__init__ raises ImportError if absent). Without
-      # this build step every test that imports `from sage_core import ...`
-      # ERRORs at collection. Same recipe as python-sage Linux job:
-      # `maturin build` (wheel) + `pip install` because `maturin develop`
-      # requires an active virtualenv that setup-python@v6 doesn't create.
-      - name: Build sage_core wheel + install (required for pytest)
-        working-directory: sage-core
+
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v4
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+
+      - name: Verify downloaded rustpython.wasm
         shell: bash
         run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
+
+      - name: Build sage_core wheel + install
+        working-directory: sage-core
+        shell: bash
+        env:
+          SAGE_REQUIRE_WASM: "1"
+        run: |
           pip install maturin
-          maturin build --release --features smt,onnx --out target/wheels
+          maturin build --release --features smt,onnx,sandbox,cranelift,tool-executor --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+
       - name: Install Python SDK
         working-directory: sage-python
         run: pip install -e ".[all,dev]"
+
+      - name: Assert embedded wasm sandbox is available
+        working-directory: sage-python
+        run: python -c "import sys, sage_core; print(sys.version); assert sage_core.embedded_wasm_available(), 'wasm artefact missing'"
+
+      - name: Run wasm CI contract test
+        working-directory: sage-python
+        env:
+          SAGE_CI_REQUIRE_WASM: "1"
+        run: python -m pytest tests/test_wasm_sandbox_ci_contract.py -v
+
       - name: Run Python tests
         working-directory: sage-python
         run: python -m pytest tests/ -v --tb=short
+
       - name: Rust check (no-default-features)
         working-directory: sage-core
         run: cargo check --no-default-features
+
       - name: Rust unit tests
         working-directory: sage-core
         run: cargo test --no-default-features --lib
+
       - name: Rust check (ONNX feature)
         working-directory: sage-core
         run: cargo check --no-default-features --features onnx
-      - name: Rust check (OTel feature, B1.b — Windows MSVC)
-        # Windows MSVC catches reqwest+rustls or opentelemetry-otlp
-        # transitive issues that Linux misses. Compile-only — full
-        # otel test suite runs on Linux job.
+
+      - name: Rust check (OTel feature, B1.b Windows MSVC)
         working-directory: sage-core
         run: cargo check --no-default-features --features otel
 
   integration-smoke:
+    needs: [build-wasm-sandbox, python-sage]
     name: Integration Smoke (real API, main only)
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [python-sage]
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.12'
+          python-version: "3.12"
+
       - uses: dtolnay/rust-toolchain@stable
-      - name: Build sage_core wheel + install (required for Python SDK)
+
+      - name: Download rustpython.wasm
+        uses: actions/download-artifact@v4
+        with:
+          name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
+          path: external/rustpython-wasm-target/wasm32-wasip1/release
+
+      - name: Verify downloaded rustpython.wasm
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd external/rustpython-wasm-target/wasm32-wasip1/release
+          test -s rustpython.wasm
+          sha256sum -c rustpython.wasm.sha256
+
+      - name: Build sage_core wheel + install
         working-directory: sage-core
+        env:
+          SAGE_REQUIRE_WASM: "1"
         run: |
           pip install maturin
-          maturin build --release --features smt,onnx --out target/wheels
+          maturin build --release --features smt,onnx,sandbox,cranelift,tool-executor --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
-      - run: pip install -e ".[all,dev]"
+
+      - name: Install Python SDK
         working-directory: sage-python
-      # Skip cleanly if the secret is unset — never run with an empty key
-      # because the smoke tests then fail on auth and obscure real
-      # regressions. `-m e2e` runs the 2 real-API tests in
-      # tests/test_e2e_real.py; the prior `--limit 5` flag was unrecognized
-      # by pytest (no plugin registers it) and is removed.
+        run: pip install -e ".[all,dev]"
+
+      - name: Assert embedded wasm sandbox is available
+        working-directory: sage-python
+        run: python -c "import sage_core; assert sage_core.embedded_wasm_available(), 'wasm artefact missing'"
+
       - name: Run e2e smoke
         if: env.GOOGLE_API_KEY != ''
         working-directory: sage-python
         run: python -m pytest -m e2e -x -v
         timeout-minutes: 10
+
       - name: Skipped (no GOOGLE_API_KEY secret)
         if: env.GOOGLE_API_KEY == ''
-        run: echo "GOOGLE_API_KEY not set — integration smoke skipped"
+        run: echo "GOOGLE_API_KEY not set - integration smoke skipped"
