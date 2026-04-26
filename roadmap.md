@@ -730,6 +730,140 @@ token for remote, (c) audit log every resource/tool access.
 
 **Cost:** ~1 week.
 
+### A20. Bandit causality test — Python pipeline off-policy (cgpro 2026-04-26)
+
+**Aka `cg-A14` in MEMORY.md cross-references.** Source: cgpro 2026-04-26 post-closeout review (conversation `cgpro_2026_04_26_review`).
+
+**Why (REAL PROD BUG, verified):** `pipeline.py:461` (Stage 0 classify) calls `self._rust_router.route(ctx.task, ctx.budget)` — the **legacy API** at `system_router.rs:199-200` (`pub fn route()` doc-comment "legacy API"). Bandit not consulted there. `pipeline.py:1232-1244` (Stage 4 execute) calls `self.bandit.select_with_context(0.1, task_context)` separately, returns `BanditDecision { decision_id, model_id, template, ... }`, **but only `decision.decision_id` is stored** as `ctx.bandit_decision_id`. Lines 1244, 1250, 1545, 1551 all drop `decision.model_id` and `decision.template`. Stage 5 `pipeline.py:1762` records outcome against the orphan decision_id. **The bandit posteriors update for an arm whose model never executed.** Off-policy learning silently corrupting all bandit data in production.
+
+Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persists `context_sum`/`context_count`), the bandit was simultaneously:
+1. Learning the wrong attribution forever (this item)
+2. Losing context bias on every restart (fixed today)
+
+**Decision needed before fixing:**
+- (a) keep accumulated posteriors and fix only forward attribution
+- (b) reset SQLite bandit state (lose history, clean restart)
+- (c) audit posteriors first — sample N decisions, check if `(model_id, template)` selected by `select_with_context()` correlates with the executed model. If random: reset is the only honest path.
+
+**cgpro proposal:** before `record_outcome()` fires, assert `decision.model_id` is what executed. Likely shape: replace pipeline.py:461 `route()` with `route_integrated()` (which DOES use the bandit) so Stage 0's decision IS the bandit's selection. Then drop the duplicate `bandit.select_with_context()` at pipeline.py:1232-1252 — Stage 0 already did the work. Or alternative: store full `BanditDecision` (not just decision_id) at Stage 4 and re-score `_last_routing_decision.model_id` against `ctx.bandit_decision.model_id` before allowing record_outcome.
+
+**Acceptance test (TDD):** new test at `sage-python/tests/test_bandit_causality.py` — force two distinguishable arms (different model_ids), run one pipeline task, assert (a) the executed model matches the bandit-selected arm AND (b) record_outcome is called with quality of THAT model's execution. Green only after the fix.
+
+**Cost:** 1-2 days (decision + impl + tests + audit if option-c).
+
+### A21. Packaging fail-closed — `pip install ygn-sage` doesn't get sage_core (cgpro 2026-04-26)
+
+**Aka `cg-A15` in MEMORY.md cross-references.**
+
+**Why (verified):** `sage-python/pyproject.toml:18-31` lists deps httpx/pydantic/rich/anyio/aiosqlite/numpy/truststore/pydantic-ai. **No `sage_core` dependency.** README announces `pip install ygn-sage`. `.claude/rules/architecture.md` says "sage_core is required at runtime — ImportError raised at TopologyController.__init__ if absent." CI compensates with separate `maturin build` + `pip install --force-reinstall --no-deps` recipe; PyPI users get nothing matching that. When `sage_core.ToolExecutor` is missing, `create_python_tool()` falls back to Python subprocess sandbox (timeout-only, no seccomp/namespaces/cgroups/FS/network isolation — opposite of ADR-013 contract).
+
+**cgpro proposal:** two coordinated fixes
+1. Declare `sage_core` as a dep in `sage-python/pyproject.toml` (or document the wheel ships sage_core as binary extension; currently neither is true).
+2. When Rust ToolExecutor unavailable, **fail closed** — refuse to register dynamic tools instead of silently falling through to Python subprocess sandbox. Add explicit env-var opt-in (e.g. `SAGE_UNSAFE_SUBPROCESS=1`) for the legacy fallback.
+
+**Pairs with A18** (toolforge fail-closed on Rust validator error). Reconcile in design — same failure mode, different layer.
+
+**Cost:** 2-3 days (packaging story + fail-closed wiring + smoke test).
+
+### A22. Diff-context verifier reason codes (cgpro 2026-04-26)
+
+**Aka `cg-A3a` in MEMORY.md cross-references.**
+
+**Why:** verifier currently collapses malformed-input / header-drift / missing-files / creation+deletion all to `[] = "no opinion"`. A1 already records a real missed failure (astropy-6938 malformed hunk header arithmetic, Docker rejected before content verifier could help). Zero-flag observations could mean "patch is clean" OR "verifier had no opinion" — currently indistinguishable.
+
+**cgpro proposal:** emit reason codes per hunk + a top-level outcome:
+- `clean`
+- `content_mismatch`
+- `file_missing`
+- `malformed_hunk_header` (closes A1's astropy-6938 class)
+- `hunk_body_count_mismatch`
+- `file_creation_or_deletion`
+- `not_unified_diff`
+- `unsupported_no_opinion`
+
+Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` alongside existing `_diff_verifier_mismatches`. Bucket-analysis script aggregates reasons across runs.
+
+**Cost:** ~1 day. **No API budget needed** — local code change exercised by existing test fixtures.
+
+### A23. Build rustpython.wasm in CI + Python 3.13 + Windows sandbox matrix (cgpro 2026-04-26 + Trap E)
+
+**Aka `cg-A8` in MEMORY.md cross-references** (renamed from earlier "roadmap-A8" wasm-ci entry at top of this file). Bundles **Trap E** (CI matrix gaps) and **Trap F** (`tool_executor.rs` stale subprocess-fallback doc) since they're all "CI matrix coherence + sandbox truthfulness" class.
+
+**Why:** sandbox-dependent tests skip via `embedded_wasm_available()` so the sandbox has 0 CI regression coverage today. Verified gaps:
+- `.github/workflows/ci.yml` uses Python 3.12 at every site; pyproject advertises 3.13 but it's never tested (Trap E).
+- `windows-pytest` job builds Rust wheel `--features smt,onnx` only — NOT `sandbox,cranelift`. Embedded wasm sandbox never exercised on Windows in CI (Trap E).
+- `tool_executor.rs:1-7` module doc claims subprocess fallback "always available" — `validate_and_execute()` hard-fails when wasm absent post ADR-013 (Trap F).
+
+**cgpro proposal:**
+1. New `build-wasm-sandbox` job: clone `external/rustpython` (submodule), `cargo build --release --target wasm32-wasip1 --features freeze-stdlib`, upload as artefact. Cache key = submodule SHA + wasm32-wasip1 toolchain version.
+2. Downstream sage-core builds with `SAGE_REQUIRE_WASM=1` + `--features smt,onnx,sandbox,cranelift,tool-executor`. Missing wasm = build fail.
+3. Add Python 3.13 to linux-pytest matrix.
+4. Add `sandbox,cranelift` features to windows-pytest wheel build.
+5. New CI assertion: `python -c "import sage_core; assert sage_core.embedded_wasm_available()"` runs in linux-pytest, integration-smoke, AND windows-pytest.
+
+**Cost:** ~½ day (mostly CI YAML; cache wiring is the time sink).
+
+### A24. Bandit Pareto contract docs vs code reconciliation (cgpro 2026-04-26)
+
+**Aka `cg-A12` in MEMORY.md cross-references.**
+
+**Why:** `sage-core/src/routing/bandit.rs:1-7` module-doc claims "Builds a global Pareto front at decision time and selects based on runtime constraints." Actual `choose()` (lines 377-461) and `choose_contextual()` (lines 474+): pure Thompson sample on `arm.quality.sample()` (with cosine bonus for contextual). Cost/latency are sampled for telemetry on the returned `BanditDecision`, **not** used for selection. Docs lie about behavior.
+
+**Two paths:**
+- **Path A — fix docs (~30 min):** rewrite module-doc to describe what code does today; annotate the future Pareto-multi-objective fix path. **Bundles with Trap F (`tool_executor.rs:1-7`)** — same docs/code mismatch class. Pilot run for the cgpro-driven trap protocol (`docs/superpowers/plans/2026-04-26-cgpro-driven-trap-resolution.md`).
+- **Path B — fix code (multi-day):** real Pareto multi-objective routing. Decision needed: define posterior semantics first (Trap C below — `GammaPosterior::update(value)` increments `rate` by observed value, so `mean = shape/rate` decreases with larger observed cost/latency — counterintuitive if cost/latency are minimands).
+
+**Decision:** start with Path A (this cycle, pilot run). Path B becomes a separate item when prioritized.
+
+### A25. RNG seam + sort `arm_keys` for stochastic determinism (cgpro 2026-04-26)
+
+**Aka `cg-A9 + cg-A10` in MEMORY.md cross-references.** Paired — A9 alone is insufficient because `HashMap` iteration order is undefined (Rust stdlib documents this).
+
+**Why:** `CmaEmitter::ask()` and `ContextualBandit::choose()/choose_contextual()` use `rand::rng()` with no seed parameter (verified `bandit.rs:389`). Tests can't pin behavior. The 5-test stochastic flake spree of the 2026-04-26 closeout was budget-bumped (sigma 0.5→1.0, budget 32×20) — works but not the structural fix.
+
+**cgpro proposal:**
+1. Add `&mut impl Rng` overloads to `choose()` / `choose_contextual()` / `CmaEmitter::ask()`. New PyO3 wrappers `*_with_rng` for tests.
+2. Use `ChaCha8Rng::seed_from_u64(seed)` in tests (NOT `SmallRng`/`StdRng` — those don't promise portable output across platforms per rand docs).
+3. Sort `arm_keys` by `(model_id, template)` before Thompson sampling: `let mut arm_keys: Vec<_> = self.arms.keys().collect(); arm_keys.sort_by(|a, b| (a.model_id.as_str(), a.template.as_str()).cmp(&(b.model_id.as_str(), b.template.as_str())));`. Pairs with #1 — seeded RNG alone insufficient.
+
+**Cost:** 1-2 days.
+
+### A26. Three-layer test split for stochastic suites (cgpro 2026-04-26)
+
+**Aka `cg-A11` in MEMORY.md cross-references.** **Depends on A25.**
+
+**Why:** current cma_me + bandit suite mixes deterministic mechanics with seeded stochastic tests with empirical convergence — all run on every commit. Flakes from layer 3 break commits that touched layer 1.
+
+**cgpro proposal:**
+- Layer 1 — deterministic unit tests for mechanics (covariance update, context_mean update, cosine scoring, posterior arithmetic). No probability thresholds.
+- Layer 2 — seeded stochastic tests for realistic flow with fixed `ChaCha8Rng::seed_from_u64`. Exact expected behavior.
+- Layer 3 — `#[ignore]`'d empirical tests for "this usually converges over many seeds". Run in scheduled/nightly job, not per-commit.
+
+**Cost:** 1-2 days. Gated on A25 RNG seam.
+
+### A27. Lockfile / constraints for transitive deps (cgpro 2026-04-26)
+
+**Aka `cg-A13` in MEMORY.md cross-references.**
+
+**Why:** `pyproject.toml` pins direct deps (e.g., `a2a-sdk[http-server]>=0.3.25,<1.0`); transitives drift on every CI install. The a2a-sdk drift to 1.0.2 in the 2026-04-26 closeout was caught by chance (CI started failing, mypy traced the API drift). Without lockfile, similar drift could ship silently.
+
+**cgpro proposal:**
+1. Generate `sage-python/constraints.txt` from a clean `pip install -e .[all,dev]` resolution.
+2. CI installs with `pip install -c constraints.txt -e .[all,dev]`.
+3. Separate weekly-scheduled `latest-deps` CI job re-resolves without constraints to catch drift without making every commit hostage to upstream.
+
+**Cost:** ~½ day.
+
+### Trap C — `GammaPosterior` cost/latency semantics (cgpro 2026-04-26, latent in A24 fix-code path)
+
+**Why:** `bandit.rs::GammaPosterior::update(value)` increments `rate` by observed value. `mean = shape / rate`. **Larger observed cost/latency → lower posterior mean.** Counterintuitive if `expected_cost` / `expected_latency` are presented as "minimands" (the documented intent on `BanditDecision`).
+
+**Today inert:** `choose_contextual()` only uses sampled quality + cosine; cost/latency sampled for telemetry. **Tomorrow's bomb:** if A24 takes Path B (fix code, real Pareto multi-objective), this orientation needs explicit handling — flip convention OR document "lower posterior mean = higher expected cost".
+
+**Action:** add a deterministic posterior-arithmetic test before any A24-Path-B work. Today: docs-only annotation in `GammaPosterior::update` saying "convention: larger value → lower mean (cost/latency are minimands)".
+
+**Cost:** 1 hour for docs annotation; 1 day for the regression test (deferred to A24-Path-B).
+
 ### A15. Single-flight consolidation + graceful shutdown (NEW 2026-04-24, AUDIT3 #23)
 
 **Why:** AUDIT3 §4 claim #23 (⚠️ partial, post-Phase-3-inspection):
