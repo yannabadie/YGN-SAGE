@@ -118,13 +118,15 @@ def init_topology(
             if rust_reg and rust_bandit:
                 try:
                     cards = rust_reg.all_models()
-                    templates = ["sequential", "avr", "parallel", "debate"]
+                    templates = ["single_agent", "sequential", "avr", "parallel", "debate"]
                     model_ids = [c.id for c in cards]
                     # Build affinities in row-major: [model0_tmpl0, model0_tmpl1, ..., modelN_tmplT]
                     affinities: list[float] = []
                     for c in cards:
                         for t in templates:
-                            if t in ("sequential", "avr"):
+                            if t == "single_agent":
+                                affinities.append(max(c.s1_affinity, c.s2_affinity, c.s3_affinity))
+                            elif t in ("sequential", "avr"):
                                 affinities.append(c.s2_affinity)
                             elif t in ("parallel", "debate"):
                                 affinities.append(c.s3_affinity)

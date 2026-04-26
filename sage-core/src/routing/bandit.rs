@@ -26,13 +26,23 @@ pub enum BanditError {
     NoArms,
     #[error("Unknown decision_id: '{0}'. Was it already recorded or never issued?")]
     UnknownDecision(String),
+    #[error(
+        "Off-policy outcome for decision '{decision_id}': selected ({selected_model_id}, {selected_template}) but executed ({executed_model_id}, {executed_template})"
+    )]
+    OffPolicyOutcome {
+        decision_id: String,
+        selected_model_id: String,
+        selected_template: String,
+        executed_model_id: String,
+        executed_template: String,
+    },
 }
 
 impl From<BanditError> for PyErr {
     fn from(err: BanditError) -> PyErr {
         match &err {
             BanditError::NoArms => pyo3::exceptions::PyRuntimeError::new_err(err.to_string()),
-            BanditError::UnknownDecision(_) => {
+            BanditError::UnknownDecision(_) | BanditError::OffPolicyOutcome { .. } => {
                 pyo3::exceptions::PyValueError::new_err(err.to_string())
             }
         }
@@ -586,6 +596,154 @@ impl ContextualBandit {
         Ok(decision)
     }
 
+    fn choose_from_candidates(
+        &mut self,
+        exploration_budget: f32,
+        context: &[f32],
+        arm_keys: Vec<ArmKey>,
+    ) -> Result<BanditDecision, BanditError> {
+        if arm_keys.is_empty() {
+            return Err(BanditError::NoArms);
+        }
+
+        let mut rng = rand::rng();
+        let decision_id = ulid::Ulid::new().to_string();
+        let exploring = rng.random::<f32>() < exploration_budget;
+
+        let chosen_key = if exploring {
+            let idx = rng.random_range(0..arm_keys.len());
+            arm_keys[idx].clone()
+        } else {
+            let mut best_key = arm_keys[0].clone();
+            let mut best_score = f64::NEG_INFINITY;
+
+            for key in &arm_keys {
+                let arm = &self.arms[key];
+                let sampled_quality = arm.quality.sample(&mut rng);
+                let score = if context.is_empty() {
+                    sampled_quality
+                } else {
+                    let similarity = arm
+                        .context_mean()
+                        .map_or(0.0, |mean| cosine_similarity_f64(context, &mean).max(0.0));
+                    sampled_quality * (1.0 + similarity)
+                };
+
+                if score > best_score {
+                    best_score = score;
+                    best_key = key.clone();
+                }
+            }
+            best_key
+        };
+
+        let arm = &self.arms[&chosen_key];
+        let expected_quality = arm.quality.sample(&mut rng) as f32;
+        let expected_cost = arm.cost.sample(&mut rng) as f32;
+        let expected_latency = arm.latency.sample(&mut rng) as f32;
+
+        if self.pending.len() > 10_000 {
+            let drain_count = self.pending.len() - 5_000;
+            let keys_to_remove: Vec<String> =
+                self.pending.keys().take(drain_count).cloned().collect();
+            for key in keys_to_remove {
+                self.pending.remove(&key);
+            }
+        }
+
+        self.pending.insert(
+            decision_id.clone(),
+            PendingInfo {
+                arm_key: chosen_key.clone(),
+                context: context.to_vec(),
+            },
+        );
+
+        Ok(BanditDecision {
+            decision_id,
+            model_id: chosen_key.model_id,
+            template: chosen_key.template,
+            expected_quality,
+            expected_cost,
+            expected_latency,
+            exploration: exploring,
+            context: context.to_vec(),
+        })
+    }
+
+    /// Select the best arm for one executed template.
+    pub fn choose_for_template(
+        &mut self,
+        exploration_budget: f32,
+        template: &str,
+    ) -> Result<BanditDecision, BanditError> {
+        let _span = info_span!(
+            "bandit.select_template",
+            arms = self.arms.len(),
+            exploration = exploration_budget,
+            template = template,
+        )
+        .entered();
+
+        let arm_keys: Vec<ArmKey> = self
+            .arms
+            .keys()
+            .filter(|key| key.template == template)
+            .cloned()
+            .collect();
+        let decision = self.choose_from_candidates(exploration_budget, &[], arm_keys)?;
+
+        debug_assert_eq!(decision.template, template);
+        info!(
+            model = %decision.model_id,
+            template = %decision.template,
+            explore = decision.exploration,
+            expected_quality = decision.expected_quality,
+            "bandit_template_decision"
+        );
+        Ok(decision)
+    }
+
+    /// Select the best arm for one executed template with task-context bias.
+    pub fn choose_contextual_for_template(
+        &mut self,
+        exploration_budget: f32,
+        context: &[f32],
+        template: &str,
+    ) -> Result<BanditDecision, BanditError> {
+        if context.is_empty() {
+            return self.choose_for_template(exploration_budget, template);
+        }
+
+        let _span = info_span!(
+            "bandit.select_contextual_template",
+            arms = self.arms.len(),
+            exploration = exploration_budget,
+            context_dim = context.len(),
+            template = template,
+        )
+        .entered();
+
+        let arm_keys: Vec<ArmKey> = self
+            .arms
+            .keys()
+            .filter(|key| key.template == template)
+            .cloned()
+            .collect();
+        let decision = self.choose_from_candidates(exploration_budget, context, arm_keys)?;
+
+        debug_assert_eq!(decision.template, template);
+        info!(
+            model = %decision.model_id,
+            template = %decision.template,
+            explore = decision.exploration,
+            expected_quality = decision.expected_quality,
+            context_dim = context.len(),
+            "bandit_contextual_template_decision"
+        );
+        Ok(decision)
+    }
+
     /// Record outcome for a previous decision.
     ///
     /// Updates the arm's posteriors with temporal decay. The `decision_id`
@@ -642,6 +800,40 @@ impl ContextualBandit {
         );
 
         Ok(())
+    }
+
+    /// Record an outcome only if it matches the selected full arm.
+    pub fn record_outcome_checked(
+        &mut self,
+        decision_id: &str,
+        executed_model_id: &str,
+        executed_template: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) -> Result<(), BanditError> {
+        let pending_info = self
+            .pending
+            .get(decision_id)
+            .ok_or_else(|| BanditError::UnknownDecision(decision_id.to_string()))?;
+        let selected = &pending_info.arm_key;
+
+        if selected.model_id != executed_model_id || selected.template != executed_template {
+            return Err(BanditError::OffPolicyOutcome {
+                decision_id: decision_id.to_string(),
+                selected_model_id: selected.model_id.clone(),
+                selected_template: selected.template.clone(),
+                executed_model_id: executed_model_id.to_string(),
+                executed_template: executed_template.to_string(),
+            });
+        }
+
+        self.record_outcome(decision_id, quality, cost, latency_ms)
+    }
+
+    /// Cancel a pending decision without updating posteriors.
+    pub fn cancel_decision(&mut self, decision_id: &str) -> bool {
+        self.pending.remove(decision_id).is_some()
     }
 
     /// Number of registered arms.
@@ -881,6 +1073,19 @@ impl ContextualBandit {
         }
     }
 
+    /// Select the best arm for a template with optional task-context bias.
+    #[pyo3(name = "select_with_context_for_template")]
+    #[pyo3(signature = (exploration_budget, template, context=vec![]))]
+    pub fn py_select_with_context_for_template(
+        &mut self,
+        exploration_budget: f32,
+        template: &str,
+        context: Vec<f32>,
+    ) -> PyResult<BanditDecision> {
+        self.choose_contextual_for_template(exploration_budget, &context, template)
+            .map_err(Into::into)
+    }
+
     /// Record outcome for a previous decision.
     #[pyo3(name = "record")]
     pub fn py_record(
@@ -892,6 +1097,34 @@ impl ContextualBandit {
     ) -> PyResult<()> {
         self.record_outcome(decision_id, quality, cost, latency_ms)
             .map_err(Into::into)
+    }
+
+    /// Record outcome only if the executed full arm matches the pending decision.
+    #[pyo3(name = "record_outcome_checked")]
+    pub fn py_record_outcome_checked(
+        &mut self,
+        decision_id: &str,
+        executed_model_id: &str,
+        executed_template: &str,
+        quality: f32,
+        cost: f32,
+        latency_ms: f32,
+    ) -> PyResult<()> {
+        self.record_outcome_checked(
+            decision_id,
+            executed_model_id,
+            executed_template,
+            quality,
+            cost,
+            latency_ms,
+        )
+        .map_err(Into::into)
+    }
+
+    /// Cancel a pending decision without updating posteriors.
+    #[pyo3(name = "cancel_decision")]
+    pub fn py_cancel_decision(&mut self, decision_id: &str) -> bool {
+        self.cancel_decision(decision_id)
     }
 
     /// Number of registered arms.
@@ -1246,6 +1479,133 @@ mod tests {
         let mut bandit = ContextualBandit::create(0.995, 0.1);
         let result = bandit.choose_contextual(0.0, &[1.0, 2.0]);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn contextual_template_selection_never_returns_other_template() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+        bandit.add_arm("model-b", "sequential");
+
+        for _ in 0..20 {
+            let decision = bandit
+                .choose_contextual_for_template(1.0, &[1.0, 42.0, 0.0], "single_agent")
+                .unwrap();
+
+            assert_eq!(decision.template, "single_agent");
+            assert_ne!(decision.model_id, "model-b");
+        }
+    }
+
+    #[test]
+    fn checked_record_rejects_mismatched_model_without_update() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+        let before = bandit
+            .get_quality_mean("model-a", "single_agent")
+            .expect("registered arm should have a prior mean");
+
+        let decision = bandit
+            .choose_contextual_for_template(0.0, &[1.0, 10.0, 0.0], "single_agent")
+            .unwrap();
+        let err = bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "model-b",
+                "single_agent",
+                1.0,
+                1.0,
+                100.0,
+            )
+            .unwrap_err();
+
+        match err {
+            BanditError::OffPolicyOutcome {
+                decision_id,
+                selected_model_id,
+                selected_template,
+                executed_model_id,
+                executed_template,
+            } => {
+                assert_eq!(decision_id, decision.decision_id);
+                assert_eq!(selected_model_id, "model-a");
+                assert_eq!(selected_template, "single_agent");
+                assert_eq!(executed_model_id, "model-b");
+                assert_eq!(executed_template, "single_agent");
+            }
+            other => panic!("expected OffPolicyOutcome, got {other:?}"),
+        }
+        assert_eq!(bandit.total_observations(), 0);
+        let after = bandit
+            .get_quality_mean("model-a", "single_agent")
+            .expect("registered arm should remain present");
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn checked_record_rejects_mismatched_template_without_update() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+
+        let decision = bandit
+            .choose_contextual_for_template(0.0, &[1.0, 10.0, 0.0], "single_agent")
+            .unwrap();
+        let err = bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "model-a",
+                "sequential",
+                1.0,
+                1.0,
+                100.0,
+            )
+            .unwrap_err();
+
+        match err {
+            BanditError::OffPolicyOutcome {
+                selected_model_id,
+                selected_template,
+                executed_model_id,
+                executed_template,
+                ..
+            } => {
+                assert_eq!(selected_model_id, "model-a");
+                assert_eq!(selected_template, "single_agent");
+                assert_eq!(executed_model_id, "model-a");
+                assert_eq!(executed_template, "sequential");
+            }
+            other => panic!("expected OffPolicyOutcome, got {other:?}"),
+        }
+        assert_eq!(bandit.total_observations(), 0);
+    }
+
+    #[test]
+    fn checked_record_updates_matching_arm() {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+        let before = bandit
+            .get_quality_mean("model-a", "single_agent")
+            .expect("registered arm should have a prior mean");
+
+        let decision = bandit
+            .choose_contextual_for_template(0.0, &[1.0, 10.0, 0.0], "single_agent")
+            .unwrap();
+        bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "model-a",
+                "single_agent",
+                1.0,
+                1.0,
+                100.0,
+            )
+            .unwrap();
+
+        assert_eq!(bandit.total_observations(), 1);
+        let after = bandit
+            .get_quality_mean("model-a", "single_agent")
+            .expect("registered arm should remain present");
+        assert!(after > before, "quality mean should increase after success");
     }
 
     #[test]

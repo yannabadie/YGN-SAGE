@@ -91,6 +91,12 @@ class PipelineContext:
     latency_ms: float = 0.0
     cost: float = 0.0
     bandit_decision_id: str | None = None
+    bandit_model_id: str = ""
+    bandit_template: str = ""
+    bandit_context: list[float] = field(default_factory=list)
+    executed_model_id: str = ""
+    executed_template: str = ""
+    executed_model_ids: dict[int, str] = field(default_factory=dict)
     verification_passed: bool = True
     axis_hint: str = ""  # MASBENCH axis hint for topology selection
     tool_call_count: int = 0
@@ -437,21 +443,14 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
     def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 0: Classify task complexity, domain, and select model.
+        """Stage 0: Classify task complexity, domain, and select a legacy routing model.
 
-        Priority: Rust SystemRouter (kNN + bandit + domain + constraints)
-                > Python kNN fallback > heuristic (34%).
-
-        The Rust SystemRouter combines:
-        - Structural feature extraction (complexity, uncertainty, tool_required)
-        - kNN 93.3% GT accuracy
-        - Thompson sampling bandit (per-model posteriors)
-        - Domain scoring from cards.toml
-        - Budget-constrained model selection
-        - Formal keyword detection (prove, theorem → S3)
+        Priority: Rust SystemRouter legacy route > Python kNN fallback > heuristic.
+        Bandit decisions are not made in Stage 0 on the Python pipeline path; A14 keeps
+        bandit learning causal by recording only arms that actually execute.
 
         Returns: system (S1/S2/S3), domain, and stores RoutingDecision for
-        model selection in Stage 3 (ModelAssigner) and Stage 5 (Learn).
+        model selection in Stage 3 (ModelAssigner) and Stage 5 telemetry.
         """
         from sage.observability.spans import sage_span
         with sage_span("sage.classify", op="sage.classify"):
@@ -1155,6 +1154,92 @@ class CognitiveOrchestrationPipeline:
 
     # ── Stage 4: Execute ────────────────────────────────────────────────────
 
+    def _bandit_task_context(self, ctx: PipelineContext) -> list[float]:
+        return [
+            float(ctx.system),
+            float(len(ctx.task)),
+            float(
+                ctx.topology.node_count()
+                if ctx.topology and hasattr(ctx.topology, "node_count")
+                else 0
+            ),
+        ]
+
+    def _is_single_agent_execution(self, ctx: PipelineContext) -> bool:
+        return ctx.topology is None or (
+            hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
+        )
+
+    def _clear_bandit_decision(self, ctx: PipelineContext) -> None:
+        decision_id = getattr(ctx, "bandit_decision_id", None)
+        if decision_id and self.bandit and hasattr(self.bandit, "cancel_decision"):
+            try:
+                self.bandit.cancel_decision(decision_id)
+            except (ImportError, RuntimeError, ValueError):
+                pass
+        ctx.bandit_decision_id = None
+        ctx.bandit_model_id = ""
+        ctx.bandit_template = ""
+        ctx.bandit_context = []
+
+    def _select_bandit_single_agent(self, ctx: PipelineContext) -> Any | None:
+        if not self.bandit or not hasattr(self.bandit, "select_with_context_for_template"):
+            return None
+
+        task_context = self._bandit_task_context(ctx)
+        try:
+            decision = self.bandit.select_with_context_for_template(
+                0.1,
+                "single_agent",
+                task_context,
+            )
+        except (ImportError, RuntimeError, ValueError):
+            return None
+
+        ctx.bandit_decision_id = decision.decision_id
+        ctx.bandit_model_id = decision.model_id
+        ctx.bandit_template = decision.template
+        ctx.bandit_context = list(getattr(decision, "context", task_context) or task_context)
+        return decision
+
+    def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
+        if not self.bandit or not getattr(ctx, "bandit_decision_id", None):
+            return
+
+        if (
+            getattr(ctx, "executed_model_id", "") != getattr(ctx, "bandit_model_id", "")
+            or getattr(ctx, "executed_template", "") != getattr(ctx, "bandit_template", "")
+        ):
+            log.warning(
+                "Bandit outcome skipped: selected (%s, %s) but executed (%s, %s)",
+                getattr(ctx, "bandit_model_id", ""),
+                getattr(ctx, "bandit_template", ""),
+                getattr(ctx, "executed_model_id", ""),
+                getattr(ctx, "executed_template", ""),
+            )
+            self._clear_bandit_decision(ctx)
+            return
+
+        if not hasattr(self.bandit, "record_outcome_checked"):
+            log.warning(
+                "Bandit outcome skipped: record_outcome_checked unavailable; "
+                "refusing unchecked attribution"
+            )
+            self._clear_bandit_decision(ctx)
+            return
+
+        try:
+            self.bandit.record_outcome_checked(
+                ctx.bandit_decision_id,
+                ctx.executed_model_id,
+                ctx.executed_template,
+                quality,
+                ctx.cost,
+                ctx.latency_ms,
+            )
+        except (ImportError, RuntimeError, ValueError):
+            self._clear_bandit_decision(ctx)
+
     def _pick_fallback_provider(self):
         """Return (provider, config) for a healthy fallback, or (None, None).
 
@@ -1227,30 +1312,6 @@ class CognitiveOrchestrationPipeline:
                 ctx.result = BUDGET_EXCEEDED_RESULT
                 return ctx
 
-            # Bandit: choose arm BEFORE execution to get decision_id
-            # Pass task context features when available for contextual arm selection
-            if self.bandit and hasattr(self.bandit, "select_with_context"):
-                try:
-                    task_context = [
-                        float(ctx.system),  # cognitive system tier (1, 2, or 3)
-                        float(len(ctx.task)),  # task length as complexity proxy
-                        float(
-                            ctx.topology.node_count()
-                            if ctx.topology and hasattr(ctx.topology, "node_count")
-                            else 0
-                        ),  # topology complexity
-                    ]
-                    decision = self.bandit.select_with_context(0.1, task_context)
-                    ctx.bandit_decision_id = decision.decision_id
-                except (ImportError, RuntimeError):
-                    pass
-            elif self.bandit and hasattr(self.bandit, "select"):
-                try:
-                    decision = self.bandit.select(0.1)  # 10% exploration
-                    ctx.bandit_decision_id = decision.decision_id
-                except (ImportError, RuntimeError):
-                    pass
-
             if not ctx.verification_passed:
                 # A0b (2026-04-23, ALIRE2 §6): strict mode aborts here instead
                 # of falling through to EXECUTE_UNVERIFIED. The default keeps
@@ -1274,9 +1335,38 @@ class CognitiveOrchestrationPipeline:
                 self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
 
             # Single-agent mode (no topology or single node)
-            if ctx.topology is None or (
-                hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
-            ):
+            if self._is_single_agent_execution(ctx):
+                ctx.executed_template = "single_agent"
+                decision = self._select_bandit_single_agent(ctx)
+                bandit_provider = None
+                bandit_config = None
+                if decision is not None:
+                    try:
+                        if not self.provider_pool or not hasattr(self.provider_pool, "resolve"):
+                            raise RuntimeError("provider_pool unavailable for bandit-selected model")
+                        if (
+                            hasattr(self.provider_pool, "is_model_available")
+                            and not self.provider_pool.is_model_available(decision.model_id)
+                        ):
+                            raise RuntimeError(
+                                f"bandit-selected model unavailable: {decision.model_id}"
+                            )
+                        bandit_provider, bandit_config = self.provider_pool.resolve(decision.model_id)
+                        if bandit_provider is None:
+                            raise RuntimeError(
+                                f"provider_pool.resolve returned no provider for {decision.model_id}"
+                            )
+                    except (ImportError, RuntimeError, ValueError, TypeError, AttributeError) as exc:
+                        log.warning(
+                            "Stage 4 single-agent bandit decision %s could not execute: %s",
+                            getattr(decision, "decision_id", ""),
+                            exc,
+                        )
+                        self._clear_bandit_decision(ctx)
+                        decision = None
+                        bandit_provider = None
+                        bandit_config = None
+
                 if self._agent_loop:
                     # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
                     # guardrails + memory. Replaces the raw provider.generate() loop.
@@ -1401,24 +1491,44 @@ class CognitiveOrchestrationPipeline:
                         _new_max - 1 if _new_max > 5 else 0
                     )
 
-                    # Resolve model from Rust routing decision (preserve model selection)
-                    routing_decision = getattr(self, '_last_routing_decision', None)
                     _original_llm = self._agent_loop._llm
                     _original_config = self._agent_loop.config.llm
-                    if routing_decision and routing_decision.model_id and self.provider_pool:
-                        try:
-                            if self.provider_pool.is_model_available(routing_decision.model_id):
-                                resolved_provider, resolved_config = self.provider_pool.resolve(
-                                    routing_decision.model_id
-                                )
-                                self._agent_loop._llm = resolved_provider
-                                self._agent_loop.config.llm = resolved_config
-                                log.info(
-                                    "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
-                                    routing_decision.model_id, ctx.system,
-                                )
-                        except Exception:
-                            pass  # Keep default provider
+                    active_model_id = ""
+                    if decision is not None and bandit_provider is not None:
+                        self._agent_loop._llm = bandit_provider
+                        self._agent_loop.config.llm = bandit_config
+                        active_model_id = decision.model_id
+                        log.info(
+                            "Stage 4 bypass: agent_loop using bandit-selected %s (S%d)",
+                            decision.model_id, ctx.system,
+                        )
+                    else:
+                        # Resolve model from Rust routing decision (preserve legacy selection)
+                        routing_decision = getattr(self, '_last_routing_decision', None)
+                        if routing_decision and routing_decision.model_id and self.provider_pool:
+                            try:
+                                if self.provider_pool.is_model_available(routing_decision.model_id):
+                                    resolved_provider, resolved_config = self.provider_pool.resolve(
+                                        routing_decision.model_id
+                                    )
+                                    self._agent_loop._llm = resolved_provider
+                                    self._agent_loop.config.llm = resolved_config
+                                    active_model_id = routing_decision.model_id
+                                    log.info(
+                                        "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
+                                        routing_decision.model_id, ctx.system,
+                                    )
+                            except Exception:
+                                pass  # Keep default provider
+                    if not active_model_id:
+                        active_model_id = (
+                            getattr(self._agent_loop.config.llm, "model", "")
+                            or getattr(self._agent_loop._llm, "model_id", "")
+                            or getattr(self._agent_loop._llm, "model_string", "")
+                            or getattr(self._agent_loop._llm, "name", "")
+                        )
+                    ctx.executed_model_id = active_model_id
+                    ctx.executed_template = "single_agent"
 
                     try:
                         ctx.result = await self._agent_loop.run(ctx.task)
@@ -1447,15 +1557,47 @@ class CognitiveOrchestrationPipeline:
                         self._agent_loop._llm = _original_llm
                         self._agent_loop.config.llm = _original_config
 
-                elif self.llm_provider:
+                elif self.llm_provider or bandit_provider is not None:
                     # Simple fallback: single provider.generate() call (no tool loop).
                     # Used only when pipeline is created without agent_loop (e.g., tests).
                     from sage.llm.base import Message, Role
 
+                    active_provider = self.llm_provider
+                    active_config = self.llm_config
+                    active_model_id = (
+                        getattr(self.llm_config, "model", "")
+                        if self.llm_config is not None
+                        else ""
+                    )
+                    if decision is not None and bandit_provider is not None:
+                        active_provider = bandit_provider
+                        active_config = bandit_config
+                        active_model_id = decision.model_id
+                    else:
+                        routing_decision = getattr(self, '_last_routing_decision', None)
+                        if routing_decision and routing_decision.model_id and self.provider_pool:
+                            try:
+                                if self.provider_pool.is_model_available(routing_decision.model_id):
+                                    active_provider, active_config = self.provider_pool.resolve(
+                                        routing_decision.model_id
+                                    )
+                                    active_model_id = routing_decision.model_id
+                            except Exception:
+                                pass
+                    if active_provider is not None and not active_model_id:
+                        active_model_id = (
+                            getattr(active_config, "model", "")
+                            or getattr(active_provider, "model_id", "")
+                            or getattr(active_provider, "model_string", "")
+                            or getattr(active_provider, "name", "")
+                        )
+                    ctx.executed_model_id = active_model_id
+                    ctx.executed_template = "single_agent"
+
                     messages = [Message(role=Role.USER, content=ctx.task)]
                     try:
-                        response = await self.llm_provider.generate(
-                            messages=messages, config=self.llm_config,
+                        response = await active_provider.generate(
+                            messages=messages, config=active_config,
                         )
                         ctx.result = response.content or ""
                     except (RuntimeError, TimeoutError) as exc:
@@ -1464,6 +1606,8 @@ class CognitiveOrchestrationPipeline:
                 return ctx
 
             # Multi-agent mode: use TopologyRunner with ProviderPool
+            ctx.executed_model_ids = dict(ctx.assignments)
+            ctx.executed_template = getattr(ctx.topology, "template_type", "") or "multi_agent"
             try:
                 from sage.topology.runner import TopologyRunner
 
@@ -1529,28 +1673,10 @@ class CognitiveOrchestrationPipeline:
                     self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
                     ctx = self._stage_select_topology(ctx)  # new topology
                     ctx = self._stage_assign_models(ctx)    # re-assign models
-                    # Refresh bandit decision for the new topology
-                    if self.bandit and hasattr(self.bandit, "select_with_context"):
-                        try:
-                            task_context = [
-                                float(ctx.system),
-                                float(len(ctx.task)),
-                                float(
-                                    ctx.topology.node_count()
-                                    if ctx.topology and hasattr(ctx.topology, "node_count")
-                                    else 0
-                                ),
-                            ]
-                            new_decision = self.bandit.select_with_context(0.1, task_context)
-                            ctx.bandit_decision_id = new_decision.decision_id
-                        except (ImportError, RuntimeError):
-                            pass
-                    elif self.bandit and hasattr(self.bandit, "select"):
-                        try:
-                            new_decision = self.bandit.select(0.1)
-                            ctx.bandit_decision_id = new_decision.decision_id
-                        except (ImportError, RuntimeError):
-                            pass
+                    ctx.executed_model_ids = dict(ctx.assignments)
+                    ctx.executed_template = (
+                        getattr(ctx.topology, "template_type", "") or "multi_agent"
+                    )
                     # Fresh executor for the regenerated topology (old one is stale)
                     from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                     executor_rerouted = _TE(ctx.topology)
@@ -1755,14 +1881,9 @@ class CognitiveOrchestrationPipeline:
                 except (RuntimeError, ValueError) as exc:
                     log.warning("PRM scoring failed in LEARN: %s", exc)
 
-            # Only record to bandit when quality is known — never guess
-            if quality is not None and self.bandit and hasattr(self.bandit, "record_outcome"):
-                if ctx.bandit_decision_id:
-                    try:
-                        self.bandit.record_outcome(ctx.bandit_decision_id, quality, ctx.cost, ctx.latency_ms)
-                        log.debug("Bandit outcome recorded (in-memory, not persisted across restarts)")
-                    except (ImportError, RuntimeError):
-                        pass
+            # Only record to bandit when quality is known and attribution is causal.
+            if quality is not None:
+                self._record_bandit_outcome_checked(ctx, quality)
 
             # Evolution feedback: record outcome in TopologyEngine archive
             # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection

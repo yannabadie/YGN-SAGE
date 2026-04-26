@@ -107,18 +107,39 @@ class _MockAssigner:
 
 
 class _MockLLMResponse:
-    content: str = "Pipeline test response"
-    tool_calls: list = []
+    def __init__(self, content: str = "Pipeline test response") -> None:
+        self.content = content
+        self.tool_calls: list[Any] = []
 
 
 class _MockLLMProvider:
+    def __init__(self, content: str = "Pipeline test response") -> None:
+        self.content = content
+
     async def generate(self, messages: Any, config: Any = None, tools: Any = None, **kwargs) -> _MockLLMResponse:
-        return _MockLLMResponse()
+        return _MockLLMResponse(self.content)
+
+
+class _MockExecutionProviderPool:
+    def __init__(self, provider: _MockLLMProvider) -> None:
+        self.provider = provider
+
+    def is_model_available(self, model_id: str) -> bool:
+        return True
+
+    def infer_provider(self, model_id: str) -> str:
+        return "mock"
+
+    def resolve(self, model_id: str) -> tuple[_MockLLMProvider, Any]:
+        return self.provider, MagicMock(model=model_id, provider="mock")
 
 
 class _MockBanditDecision:
     def __init__(self):
         self.decision_id = "mock_decision_001"
+        self.model_id = "mock-model"
+        self.template = "single_agent"
+        self.context: list[float] = []
 
 
 class _MockBandit:
@@ -126,6 +147,17 @@ class _MockBandit:
 
     def __init__(self) -> None:
         self.recorded: list[tuple] = []
+
+    def select_with_context_for_template(
+        self,
+        exploration_budget: float = 0.1,
+        template: str = "single_agent",
+        context: list | None = None,
+    ):
+        decision = _MockBanditDecision()
+        decision.template = template
+        decision.context = list(context or [])
+        return decision
 
     def select_with_context(self, exploration_budget: float = 0.1, context: list | None = None):
         return _MockBanditDecision()
@@ -141,6 +173,22 @@ class _MockBandit:
 
     def record_outcome(self, decision_id: str, quality: float, cost: float, latency_ms: float) -> None:
         self.recorded.append((decision_id, quality, cost, latency_ms))
+
+    def record_outcome_checked(
+        self,
+        decision_id: str,
+        executed_model_id: str,
+        executed_template: str,
+        quality: float,
+        cost: float,
+        latency_ms: float,
+    ) -> None:
+        self.recorded.append(
+            (decision_id, executed_model_id, executed_template, quality, cost, latency_ms)
+        )
+
+    def cancel_decision(self, decision_id: str) -> bool:
+        return True
 
 
 class _MockQualityEstimator:
@@ -158,6 +206,7 @@ async def test_pipeline_full_run():
     """Pipeline completes all 5 stages and returns a result."""
     event_bus = MagicMock()
     bandit = _MockBandit()
+    provider = _MockLLMProvider()
 
     # Single-node topology: exercises classify, decompose, select, assign, and
     # single-agent execute path (avoids needing real TopologyExecutor).
@@ -165,14 +214,14 @@ async def test_pipeline_full_run():
     engine = _MockEngine(_MockGenerateResult(single_topo))
 
     pipeline = CognitiveOrchestrationPipeline(
-        router=_MockRouter(system=2),
+        router=_MockRouter(system=1),
         engine=engine,
         assigner=_MockAssigner(),
-        provider_pool=MagicMock(),
+        provider_pool=_MockExecutionProviderPool(provider),
         bandit=bandit,
         quality_estimator=_MockQualityEstimator(),
         event_bus=event_bus,
-        llm_provider=_MockLLMProvider(),
+        llm_provider=provider,
         llm_config=None,
     )
 
@@ -181,9 +230,7 @@ async def test_pipeline_full_run():
     assert result == "Pipeline test response"
     # Verify events emitted for each stage
     assert event_bus.emit.call_count >= 5  # CLASSIFY, DECOMPOSE, SELECT_TOPOLOGY, ASSIGN_MODELS, LEARN
-    # Verify bandit recorded outcome — bandit.select_with_context() is called
-    # before the single-agent early-return, so bandit_decision_id IS set and
-    # record_outcome IS called in the LEARN stage.
+    # Verify bandit recorded via the checked causal path.
     assert len(bandit.recorded) == 1
     assert bandit.recorded[0][0] == "mock_decision_001"
 
@@ -901,38 +948,40 @@ async def test_pipeline_quality_estimator_used_in_learn():
     """Stage 5 uses quality estimator for bandit feedback."""
     bandit = _MockBandit()
     qe = _MockQualityEstimator()
+    provider = _MockLLMProvider()
 
     pipeline = CognitiveOrchestrationPipeline(
         router=_MockRouter(system=1),
         engine=None,
         assigner=None,
-        provider_pool=MagicMock(),
+        provider_pool=_MockExecutionProviderPool(provider),
         bandit=bandit,
         quality_estimator=qe,
-        llm_provider=_MockLLMProvider(),
+        llm_provider=provider,
     )
 
     await pipeline.run("Quick task")
 
     assert len(bandit.recorded) == 1
     # Quality estimator returns 0.85
-    assert bandit.recorded[0][1] == 0.85
+    assert bandit.recorded[0][3] == 0.85
 
 
 @pytest.mark.asyncio
 async def test_pipeline_empty_result_records_zero_quality():
-    """Stage 5 records quality=0.0 when result is empty (bandit learns from failure)."""
+    """Stage 5 records quality=0.0 for causal empty executions."""
     bandit = _MockBandit()
     qe = _MockQualityEstimator()
+    provider = _MockLLMProvider(content="")
 
     pipeline = CognitiveOrchestrationPipeline(
         router=_MockRouter(system=1),
         engine=None,
         assigner=None,
-        provider_pool=MagicMock(),
+        provider_pool=_MockExecutionProviderPool(provider),
         bandit=bandit,
         quality_estimator=qe,
-        llm_provider=None,  # No provider => empty result
+        llm_provider=provider,
     )
 
     result = await pipeline.run("This will fail")
@@ -940,7 +989,7 @@ async def test_pipeline_empty_result_records_zero_quality():
     assert result == ""
     assert len(bandit.recorded) == 1
     # Empty result => quality must be 0.0, not 0.5
-    assert bandit.recorded[0][1] == 0.0
+    assert bandit.recorded[0][3] == 0.0
 
 
 @pytest.mark.asyncio
