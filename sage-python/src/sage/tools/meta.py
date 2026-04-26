@@ -1,22 +1,27 @@
 """Meta-tools for dynamic tool synthesis.
 
-Enables agents to write, register, and manage their own tools dynamically.
-Uses subprocess-based sandboxed execution with AST validation to prevent
-arbitrary code execution in the host process.
+Dynamic Python tools use sage_core.ToolExecutor by default: Rust tree-sitter
+validation plus validate_and_execute() in the Wasm sandbox. The legacy Python
+subprocess fallback is disabled unless SAGE_UNSAFE_PY_SUBPROCESS=1 is set.
 """
 from __future__ import annotations
 
 import asyncio
 import json
-import os
 import logging
+import os
 import shlex
-from typing import Callable
+from typing import Any, Awaitable, Callable
 
+from sage.llm.base import ToolDef
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
-from sage.tools.sandbox_executor import validate_tool_code, execute_python_in_sandbox
-from sage.llm.base import ToolDef
+from sage.tools.runtime_safety import (
+    UNSAFE_PY_SUBPROCESS_ENV,
+    load_tool_executor_or_raise,
+    unsafe_py_subprocess_enabled,
+)
+from sage.tools.sandbox_executor import execute_python_in_sandbox, validate_tool_code
 
 logger = logging.getLogger(__name__)
 
@@ -191,70 +196,103 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry | None
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
-    # Try Rust path first (tree-sitter validation + subprocess)
     try:
-        from sage_core import ToolExecutor
-        _executor = ToolExecutor()
+        ToolExecutor = load_tool_executor_or_raise()
+    except ImportError:
+        if not unsafe_py_subprocess_enabled():
+            raise
 
-        # Validate via tree-sitter
-        validation = _executor.validate(code)
-        if not validation.valid:
-            return "Blocked: " + "; ".join(validation.errors)
+        logger.warning(
+            "%s=1: using timeout-only Python subprocess fallback for tool '%s'. "
+            "This is unsafe and must not be used in production.",
+            UNSAFE_PY_SUBPROCESS_ENV,
+            name,
+        )
+        return await _create_python_tool_with_python_subprocess(name, code, registry)
 
-        # Create sandboxed handler using Rust executor.
-        # §5 flip (2026-04-22): now uses validate_and_execute — which
-        # runs the code in the embedded RustPython wasm sandbox by
-        # default. No opt-in required: the code was already tree-
-        # sitter-validated above, and the Wasm layer enforces the
-        # deny-by-default filesystem / network / env / subprocess
-        # contract even if validation missed something.
-        saved_code = code
-        async def _rust_handler(**kwargs):
-            try:
-                result = _executor.validate_and_execute(saved_code, json.dumps(kwargs))
-            except ValueError as e:
-                # Re-validation inside validate_and_execute rejected
-                # the code (shouldn't happen — we validated above —
-                # but surface cleanly if it does).
-                return f"Error (validation): {e}"
-            if result.exit_code != 0:
-                return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
-            stdout = result.stdout.strip()
-            try:
-                parsed = json.loads(stdout)
-                if isinstance(parsed, dict) and "output" in parsed:
-                    return str(parsed["output"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-            return stdout
+    try:
+        return await _create_python_tool_with_rust_executor(
+            name,
+            code,
+            registry,
+            ToolExecutor,
+        )
+    except Exception as exc:
+        raise RuntimeError(
+            "Rust ToolExecutor failed while validating/registering a dynamic "
+            "Python tool; refusing to downgrade to Python subprocess fallback."
+        ) from exc
 
-        handler = _rust_handler
-        logger.info("Using Rust ToolExecutor for tool '%s'", name)
 
-    except (ImportError, AttributeError):
-        # Fallback: Python sandbox_executor
-        errors = validate_tool_code(code)
-        if errors:
-            return "Blocked: " + "; ".join(errors)
+async def _create_python_tool_with_rust_executor(
+    name: str,
+    code: str,
+    registry: ToolRegistry,
+    tool_executor_cls: type[Any],
+) -> str:
+    executor = tool_executor_cls()
 
-        saved_code = code
-        async def _python_handler(**kwargs):
-            result = await execute_python_in_sandbox(saved_code, kwargs)
-            if result.exit_code != 0:
-                return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
-            stdout = result.stdout.strip()
-            try:
-                parsed = json.loads(stdout)
-                if isinstance(parsed, dict) and "output" in parsed:
-                    return str(parsed["output"])
-            except (json.JSONDecodeError, TypeError):
-                pass
-            return stdout
+    validation = executor.validate(code)
+    if not validation.valid:
+        return "Blocked: " + "; ".join(validation.errors)
 
-        handler = _python_handler
-        logger.info("Using Python sandbox for tool '%s' (Rust ToolExecutor not available)", name)
+    saved_code = code
 
-    # Save code for auditability
+    async def _rust_handler(**kwargs: Any) -> str:
+        try:
+            result = executor.validate_and_execute(saved_code, json.dumps(kwargs))
+        except ValueError as e:
+            return f"Error (validation): {e}"
+
+        if result.exit_code != 0:
+            return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
+
+        stdout = result.stdout.strip()
+        try:
+            parsed = json.loads(stdout)
+            if isinstance(parsed, dict) and "output" in parsed:
+                return str(parsed["output"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return stdout
+
+    return _register_generated_tool(name, code, registry, _rust_handler)
+
+
+async def _create_python_tool_with_python_subprocess(
+    name: str,
+    code: str,
+    registry: ToolRegistry,
+) -> str:
+    errors = validate_tool_code(code)
+    if errors:
+        return "Blocked: " + "; ".join(errors)
+
+    saved_code = code
+
+    async def _python_handler(**kwargs: Any) -> str:
+        result = await execute_python_in_sandbox(saved_code, kwargs)
+        if result.exit_code != 0:
+            return f"Error (exit {result.exit_code}): {result.stderr.strip()}"
+
+        stdout = result.stdout.strip()
+        try:
+            parsed = json.loads(stdout)
+            if isinstance(parsed, dict) and "output" in parsed:
+                return str(parsed["output"])
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return stdout
+
+    return _register_generated_tool(name, code, registry, _python_handler)
+
+
+def _register_generated_tool(
+    name: str,
+    code: str,
+    registry: ToolRegistry,
+    handler: Callable[..., Awaitable[str]],
+) -> str:
     file_path = os.path.join(TOOLS_WORKSPACE, f"{name}.py")
     try:
         with open(file_path, "w", encoding="utf-8") as f:
@@ -275,7 +313,10 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry | None
     registry.register(new_tool)
 
     logger.info("Registered sandboxed tool '%s' (saved to %s)", name, file_path)
-    return f"Success: Tool '{name}' has been created, validated, saved to {file_path}, and registered (sandboxed)."
+    return (
+        f"Success: Tool '{name}' has been created, validated, saved to "
+        f"{file_path}, and registered (sandboxed)."
+    )
 
 
 @Tool.define(

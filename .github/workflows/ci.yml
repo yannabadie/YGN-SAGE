@@ -114,9 +114,6 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Python SDK
-        working-directory: sage-python
-        run: pip install -e ".[all,dev]"
       # `sage_core` is required at runtime per the architecture rule
       # (TopologyController.__init__ raises ImportError if absent). CI
       # was missing this build step, so every test that touched
@@ -130,6 +127,9 @@ jobs:
           pip install maturin
           maturin build --release --features smt,onnx --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+      - name: Install Python SDK
+        working-directory: sage-python
+        run: pip install -e ".[all,dev]"
       - name: ruff
         working-directory: sage-python
         run: ruff check src/
@@ -151,6 +151,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build sage_core wheel + install (required for Python SDK)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - run: pip install -e "../sage-python[all,dev]"
       - run: pip install -e "."
       - run: python -m pytest tests/ -v --tb=short
@@ -166,9 +173,6 @@ jobs:
         with:
           python-version: "3.12"
       - uses: dtolnay/rust-toolchain@stable
-      - name: Install Python SDK
-        working-directory: sage-python
-        run: pip install -e ".[all,dev]"
       # `sage_core` is required at runtime per the architecture rule
       # (TopologyController.__init__ raises ImportError if absent). Without
       # this build step every test that imports `from sage_core import ...`
@@ -182,6 +186,9 @@ jobs:
           pip install maturin
           maturin build --release --features smt,onnx --out target/wheels
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+      - name: Install Python SDK
+        working-directory: sage-python
+        run: pip install -e ".[all,dev]"
       - name: Run Python tests
         working-directory: sage-python
         run: python -m pytest tests/ -v --tb=short
@@ -213,6 +220,13 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build sage_core wheel + install (required for Python SDK)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - run: pip install -e ".[all,dev]"
         working-directory: sage-python
       # Skip cleanly if the secret is unset — never run with an empty key

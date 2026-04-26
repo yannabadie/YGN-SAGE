@@ -18,11 +18,29 @@
 
 ---
 
-## Try it now
+## Install from source
 
-```python
-pip install ygn-sage
+YGN-SAGE currently requires the Rust `sage_core` extension at runtime.
+Until B4 publishes platform wheels, install from a source checkout:
+
+```bash
+git clone https://github.com/yannabadie/YGN-SAGE.git
+cd YGN-SAGE
+
+python -m pip install maturin
+
+cd sage-core
+maturin build --release --features smt,onnx --out target/wheels
+python -m pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+
+cd ../sage-python
+python -m pip install -e ".[all]"
 ```
+
+One-command pip install ygn-sage is intentionally not advertised until the
+sage_core runtime wheel is published or bundled.
+
+## Try it
 
 ```python
 import asyncio

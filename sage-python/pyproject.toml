@@ -23,6 +23,10 @@ dependencies = [
     "aiosqlite>=0.20",
     "numpy>=1.26",
     "truststore>=0.9",
+    # Runtime Rust extension. Built from ../sage-core with maturin until B4
+    # publishes platform wheels. Required for topology execution and dynamic
+    # Python tool sandboxing; do not remove unless ygn-sage bundles sage_core.
+    "sage-core>=0.1,<0.2",
     # LiteLLM → Pydantic AI migration 2026-04-18 (docs/plans/
     # 2026-04-18-pydantic-ai-migration.md). Pydantic AI ships native
     # providers for openai / google / xai / moonshotai / openrouter and
