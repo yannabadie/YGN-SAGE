@@ -25,14 +25,19 @@ from sage.pipeline_stages import (
     DAGFeatures,
 )
 
-# OxiZ formal verification — imported lazily to allow graceful fallback
+# OxiZ formal verification — imported lazily to allow graceful fallback.
+# Annotated as `Any` so mypy does not infer the real Callable / type and
+# then complain about the `None` sentinels in the ImportError branch.
+verify_provider_assignment: Any = None
+ProviderSpec: Any = None
+_Z3_VERIFY_AVAILABLE = False
 try:
-    from sage.contracts.z3_verify import verify_provider_assignment, ProviderSpec
+    from sage.contracts import z3_verify as _z3_verify_mod
+    verify_provider_assignment = _z3_verify_mod.verify_provider_assignment
+    ProviderSpec = _z3_verify_mod.ProviderSpec
     _Z3_VERIFY_AVAILABLE = True
 except ImportError:
-    _Z3_VERIFY_AVAILABLE = False
-    verify_provider_assignment = None
-    ProviderSpec = None
+    pass
 
 log = logging.getLogger(__name__)
 
@@ -55,7 +60,7 @@ def _is_strict_governance() -> bool:
 
 def _resolve_task_budget_usd(budget_usd: float | None) -> float:
     """Resolve task-level spend cap; 0 means unlimited."""
-    raw_budget = budget_usd
+    raw_budget: float | str | None = budget_usd
     if raw_budget is None:
         env_budget = os.environ.get("SAGE_TASK_BUDGET_USD")
         if env_budget is None or not env_budget.strip():
@@ -119,6 +124,8 @@ class CognitiveOrchestrationPipeline:
     llm_config : LLMConfig or None
         Default config.
     """
+
+    _model_catalog: Any = None
 
     def __init__(
         self,
@@ -335,8 +342,8 @@ class CognitiveOrchestrationPipeline:
                 to the hint afterwards.
         """
         from sage.observability.spans import sage_span
-        with sage_span("sage.pipeline.run", op="invoke_agent",
-                       **{"gen_ai.request.model": ""}):
+        _span_attrs: dict[str, Any] = {"gen_ai.request.model": ""}
+        with sage_span("sage.pipeline.run", op="invoke_agent", **_span_attrs):
             t0 = time.monotonic()
             effective_budget_usd = (
                 self.budget_usd
@@ -1088,10 +1095,10 @@ class CognitiveOrchestrationPipeline:
                 continue
             nid = str(i)
             node = dag_adapter.get_node(nid)
-            caps = set(node.capabilities_required) if node else set()
+            node_caps: set[str] = set(node.capabilities_required) if node else set()
             if model_id not in model_caps:
                 model_caps[model_id] = set()
-            model_caps[model_id].update(caps)
+            model_caps[model_id].update(node_caps)
 
         # Fallback: read model_id directly from topology nodes
         if not model_caps:
