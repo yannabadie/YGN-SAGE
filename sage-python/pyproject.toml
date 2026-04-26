@@ -39,7 +39,16 @@ embeddings = ["sentence-transformers>=2.2"]
 ui = ["fastapi>=0.115", "uvicorn>=0.34"]
 bench = ["evalplus>=0.3.1"]
 mcp = ["mcp>=1.7"]
-a2a = ["a2a-sdk[http-server]>=0.3"]
+a2a = [
+    # Pinned to 0.3.x: a2a-sdk 1.0 (released 2026-04-24) is a real
+    # protocol/runtime migration (AgentCard shape, RequestContext
+    # accessors, EventQueue API, streaming validity rules), not just
+    # type drift. See protocols/a2a_server.py — the code targets
+    # `RequestContext.task`, `EventQueue.put`, camelCase AgentCard
+    # kwargs (all 0.3.x names). Migrating to 1.0.x is a separate
+    # initiative with runtime smoke tests, not a CI-debt cleanup.
+    "a2a-sdk[http-server]>=0.3.25,<1.0",
+]
 protocols = ["ygn-sage[mcp,a2a]"]
 training = [
     # Training deps removed — training code lives in a separate branch.
@@ -115,6 +124,15 @@ line-length = 100
 [tool.mypy]
 python_version = "3.12"
 ignore_missing_imports = true
+
+# Sandbox-eval templates: 1-2 line scripts that rely on injected
+# globals (json, args) supplied by the tool runner at execution time.
+# They are not standalone Python and have no useful type signal.
+# Exclude here so name-defined errors don't pollute CI; the generator
+# code at sage.tools.forge / sage.tools.meta IS type-checked.
+exclude = [
+    "src/sage/tools/generated_tools/",
+]
 
 # ── Per-module suppressions (incremental: enable per-module as errors are fixed) ──
 # These modules have known type errors that were masked by `|| true` in CI.
