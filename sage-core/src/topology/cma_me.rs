@@ -256,10 +256,17 @@ mod tests {
 
     #[test]
     fn test_multiple_generations_converge() {
-        let mut e = CmaEmitter::new(1, 0.5);
+        // Same Thompson/CMA flake pattern as test_small_scale_convergence:
+        // CmaEmitter::new(1, 0.5) starts at mean=0.5, sigma=0.5, so the
+        // sample cloud is [0, 1] and the fitness signal at x=2.0 is
+        // invisible until sigma decays. 10×8 = 80 evals had a flake tail
+        // on CI run 24954171389; bumped to sigma=1.0 + 30 generations × 16
+        // samples = 480 fitness evals so the mean reliably crosses 1.0
+        // toward 2.0 within the budget.
+        let mut e = CmaEmitter::new(1, 1.0);
         // Target: high fitness at x=2.0
-        for _ in 0..10 {
-            let samples = e.ask(8);
+        for _ in 0..30 {
+            let samples = e.ask(16);
             let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
             e.tell(&samples, &fitnesses);
         }
