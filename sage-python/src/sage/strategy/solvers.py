@@ -322,6 +322,10 @@ class SAMPOSolver:
             adv_abs_max = float(np.max(np.abs(advantages.astype(np.float64))))
             max_adv = max(max_adv, adv_abs_max)
 
+            # numpy's stub for `ndarray / scalar` resolves to `floating` rather
+            # than `ndarray` in some recent versions; widen to `Any` so the
+            # subsequent `.astype(np.float64)` call type-checks across both arms.
+            advantages_for_update: Any
             if self.mixed_precision:
                 f16_max = float(np.finfo(np.float16).max)
                 if adv_abs_max * self._grad_scale > f16_max:

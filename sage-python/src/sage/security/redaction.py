@@ -101,7 +101,7 @@ class RedactionFilter:
                     updates[attr] = redacted
         if not updates:
             return event
-        if is_dataclass(event):
+        if is_dataclass(event) and not isinstance(event, type):
             return replace(event, **updates)
         for attr, value in updates.items():
             setattr(event, attr, value)

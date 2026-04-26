@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from sage.bench.runner import BenchReport, TaskResult
 
@@ -36,7 +37,7 @@ class HeterogeneousBench:
         report = asyncio.run(bench.run(limit=10))
     """
 
-    system: object  # AgentSystem
+    system: Any  # AgentSystem (typed Any to avoid a circular import)
     eval_path: Path = _DEFAULT_EVAL_PATH
 
     def load_tasks(self) -> list[dict]:

@@ -1,0 +1,35 @@
+{
+  "campaign": "e2e-validation",
+  "date": "2026-04-26",
+  "timestamp": "2026-04-26T07:20:55.200527",
+  "python_version": "3.13.12 | packaged by conda-forge | (main, Feb  5 2026, 05:41:12) [MSC v.1944 64 bit (AMD64)]",
+  "results": {
+    "c3": {
+      "status": "PASS",
+      "quality_empty": 0.0,
+      "quality_good": 0.3606,
+      "delta": 0.3606
+    },
+    "c5": {
+      "status": "PASS",
+      "heuristic_accuracy": 0.5,
+      "knn_accuracy": 0.85,
+      "knn_skipped": 0,
+      "knn_ready": true,
+      "total_tasks": 20
+    },
+    "c6": {
+      "status": "PASS",
+      "episodic_session1_results": 1,
+      "episodic_session2_python": 1,
+      "episodic_session2_rust": 1,
+      "semantic_entities": 2,
+      "semantic_context_preview": "Guido van Rossum --[created]--> Python"
+    }
+  },
+  "summary": {
+    "total_tests": 7,
+    "passed": 3,
+    "claims_validated": 3
+  }
+}

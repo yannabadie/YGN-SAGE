@@ -190,7 +190,10 @@ class CodexProvider:
             schema = config.json_schema
             if isinstance(schema, type) and hasattr(schema, "model_json_schema"):
                 schema = schema.model_json_schema()
-            # OpenAI requires additionalProperties: false at every object level
+            # OpenAI requires additionalProperties: false at every object level.
+            # By here `schema` must be a dict (model_json_schema returns one;
+            # otherwise the caller passed a dict directly).
+            assert isinstance(schema, dict)
             schema = _ensure_additional_properties_false(schema)
             try:
                 schema_tmpfile = tempfile.NamedTemporaryFile(

@@ -64,7 +64,8 @@ def execute_isolated(code: str, timeout: int = 30) -> tuple[str, str, int]:
                     "bwrap not available on %s — running without OS-level isolation",
                     platform.system(),
                 )
-                execute_isolated._warned = True
+                # Module-level monkey-patch for one-shot warn dedupe.
+                setattr(execute_isolated, "_warned", True)
 
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=timeout,

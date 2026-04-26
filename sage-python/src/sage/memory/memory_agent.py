@@ -107,9 +107,14 @@ class MemoryAgent:
 
         try:
             parsed = KGExtraction.model_validate_json(response.content)
+            relationships: list[tuple[str, str, str]] = [
+                (str(r[0]), str(r[1]), str(r[2]))
+                for r in parsed.relationships
+                if len(r) == 3
+            ]
             return ExtractionResult(
                 entities=parsed.entities,
-                relationships=[tuple(r) for r in parsed.relationships if len(r) == 3],
+                relationships=relationships,
                 summary=parsed.summary,
             )
         except Exception as e:

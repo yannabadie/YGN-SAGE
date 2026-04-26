@@ -207,7 +207,7 @@ class ExoCortex:
             from google.genai import types
 
             client = self._get_client()
-            tools = [types.Tool(
+            tools: list[Any] = [types.Tool(
                 file_search=types.FileSearch(
                     file_search_store_names=[self.store_name]
                 )

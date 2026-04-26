@@ -102,6 +102,7 @@ class LLMMutator:
         ]
 
         # Get provider based on tier
+        provider: Any
         if config.provider == "codex":
             from sage.llm.codex import CodexProvider
             provider = CodexProvider()
@@ -144,7 +145,7 @@ class AdaptiveMutator:
             t: np.random.beta(self._successes[t], self._failures[t])
             for t in self.tiers
         }
-        selected = max(samples, key=samples.get)
+        selected = max(samples, key=lambda t: samples[t])
         self._total_selections[selected] += 1
         return selected
 
