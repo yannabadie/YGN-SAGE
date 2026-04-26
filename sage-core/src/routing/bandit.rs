@@ -1275,40 +1275,59 @@ mod tests {
 
     #[test]
     fn contextual_selection_biases_toward_matching_arm() {
-        // Train two arms with different contexts:
-        // arm-s1 trained on context [1.0, 0.0] (system 1 tasks)
-        // arm-s3 trained on context [3.0, 0.0] (system 3 tasks)
+        // Test the context-bias channel of choose_contextual: when arm-s1's
+        // running context_mean is orthogonal to arm-s3's, the multiplicative
+        // bonus `quality * (1 + cosine_similarity)` favors the arm whose
+        // mean aligns with the probe context.
         //
-        // Same Thompson-sampling flake pattern as
-        // tests/test_bandit.rs::test_contextual_trained_arms_selection
-        // (30 training × 40 exploit had a non-trivial tail of <15/40 outcomes
-        // that actually flaked CI on 2026-04-26, run 24953963696). 60+60
-        // training pushes ~30 samples per arm so the posterior settles, and
-        // 50-round exploit + threshold 25 (50%) gives ~3-sigma headroom over
-        // the 50/50 random baseline. Threshold below 50% would just be
-        // checking "didn't catastrophically un-learn".
+        // Earlier (2026-04-26) the test trained both arms on a mix of two
+        // collinear contexts ([1,0] and [3,0]) under epsilon=1.0 exploration.
+        // That made each arm's context_mean converge to the same midpoint
+        // [2,0], so the cosine bonus was identical for both arms on any
+        // probe — the assertion then succeeded only by Thompson-sampling
+        // luck and flaked at 20/50 on CI run 24954374511. Fix: train each
+        // arm directly (no exploration) on a context orthogonal to the
+        // other arm's, so the post-training context_means are [1,0] and
+        // [0,1] and the cosine bonus actually differentiates.
         let mut bandit = ContextualBandit::create(0.999, 0.1);
         bandit.add_arm("arm-s1", "seq");
         bandit.add_arm("arm-s3", "seq");
 
-        // Train arm-s1 with high quality on S1-like context
-        for _ in 0..60 {
+        // Force-train arm-s1 on context [1,0]: epsilon=0 + manual seed of
+        // arm-s3 first so the choose() tie-break breaks toward arm-s1 once
+        // it's slightly ahead. We manually iterate via the public API by
+        // recording outcomes against IDs we manufacture from a single
+        // choose(). To keep this simple, we use exploration=1.0 but only
+        // record arm-s1 outcomes (drop arm-s3 picks); 60 successful records
+        // give a tight posterior on arm-s1 with context_mean [1,0].
+        let mut recorded = 0;
+        while recorded < 60 {
             let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
-            let q = if d.model_id == "arm-s1" { 0.95 } else { 0.6 };
-            bandit
-                .record_outcome(&d.decision_id, q, 0.01, 100.0)
-                .unwrap();
+            if d.model_id == "arm-s1" {
+                bandit
+                    .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
+                    .unwrap();
+                recorded += 1;
+            }
+            // arm-s3 picks: drop without recording so its context_mean
+            // stays unaffected by [1,0] contexts.
         }
-        // Train arm-s3 with high quality on S3-like context
-        for _ in 0..60 {
-            let d = bandit.choose_contextual(1.0, &[3.0, 0.0]).unwrap();
-            let q = if d.model_id == "arm-s3" { 0.95 } else { 0.6 };
-            bandit
-                .record_outcome(&d.decision_id, q, 0.01, 100.0)
-                .unwrap();
+        // Now train arm-s3 on context [0,1] the same way.
+        recorded = 0;
+        while recorded < 60 {
+            let d = bandit.choose_contextual(1.0, &[0.0, 1.0]).unwrap();
+            if d.model_id == "arm-s3" {
+                bandit
+                    .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
+                    .unwrap();
+                recorded += 1;
+            }
         }
 
-        // Now test: with S1-like context, arm-s1 should be preferred
+        // Probe with context aligned to arm-s1's context_mean. arm-s1's
+        // similarity ≈ 1.0 → score ≈ 0.95 * 2.0 ≈ 1.9; arm-s3's similarity
+        // ≈ 0.0 → score ≈ 0.95 * 1.0 ≈ 0.95. arm-s1 should win nearly
+        // every time.
         let mut s1_count = 0;
         for _ in 0..50 {
             let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
@@ -1320,9 +1339,12 @@ mod tests {
                 .unwrap();
         }
 
+        // Threshold 35/50 = 70%. With ≈1.9 vs 0.95 score, arm-s1 wins
+        // unless Thompson noise on quality flips it; the gap is wide
+        // enough that ≥70% is very stable empirically.
         assert!(
-            s1_count >= 25,
-            "arm-s1 should be preferred for S1-like context: got {}/50",
+            s1_count >= 35,
+            "arm-s1 should be preferred for S1-aligned context (orthogonal training): got {}/50",
             s1_count,
         );
     }

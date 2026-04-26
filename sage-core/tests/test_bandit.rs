@@ -411,46 +411,52 @@ fn test_record_propagates_context() {
 
 #[test]
 fn test_contextual_trained_arms_selection() {
+    // The bandit's context_mean is a running average of contexts under
+    // which an arm was chosen. Training each arm on the OTHER arm's
+    // context too (via epsilon=1.0 mixing on collinear contexts like
+    // [1,10] and [3,500]) drives both context_means to the same midpoint
+    // and erases the cosine-bias signal that this test asserts. CI run
+    // 24953963696 flaked at 11/30; bumping budget didn't help because
+    // the failure mode was symmetry of context_means, not noise.
+    //
+    // Fix: train each arm only on its own (orthogonal) context. Use
+    // [1,0] for fast-model and [0,1] for deep-model so cosine_similarity
+    // genuinely separates them at probe time. Drop picks of the wrong
+    // arm during training so its context_mean stays clean.
     let mut bandit = ContextualBandit::create(0.999, 0.1);
     bandit.add_arm("fast-model", "sequential");
     bandit.add_arm("deep-model", "avr");
 
-    // Train fast-model on simple tasks (context = [1.0, 10.0]). 60 rounds
-    // with epsilon=1.0 (full exploration) gives ~30 samples per arm so the
-    // posterior mean for fast-model on simple-context settles near 0.95;
-    // 30 rounds had high variance and CI flaked at 11/30 vs threshold 12.
-    for _ in 0..60 {
-        let d = bandit.choose_contextual(1.0, &[1.0, 10.0]).unwrap();
-        let q = if d.model_id == "fast-model" {
-            0.95
-        } else {
-            0.5
-        };
-        bandit
-            .record_outcome(&d.decision_id, q, 0.01, 50.0)
-            .unwrap();
+    // Train fast-model on context [1,0] — only record fast-model picks.
+    let mut recorded = 0;
+    while recorded < 60 {
+        let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
+        if d.model_id == "fast-model" {
+            bandit
+                .record_outcome(&d.decision_id, 0.95, 0.01, 50.0)
+                .unwrap();
+            recorded += 1;
+        }
+    }
+    // Train deep-model on context [0,1] — only record deep-model picks.
+    recorded = 0;
+    while recorded < 60 {
+        let d = bandit.choose_contextual(1.0, &[0.0, 1.0]).unwrap();
+        if d.model_id == "deep-model" {
+            bandit
+                .record_outcome(&d.decision_id, 0.95, 0.05, 200.0)
+                .unwrap();
+            recorded += 1;
+        }
     }
 
-    // Train deep-model on complex tasks (context = [3.0, 500.0])
-    for _ in 0..60 {
-        let d = bandit.choose_contextual(1.0, &[3.0, 500.0]).unwrap();
-        let q = if d.model_id == "deep-model" {
-            0.95
-        } else {
-            0.5
-        };
-        bandit
-            .record_outcome(&d.decision_id, q, 0.05, 200.0)
-            .unwrap();
-    }
-
-    // Exploit with simple-task context: should prefer fast-model. 50 trials
-    // + threshold 25 = 50% gives ~3-sigma headroom over the random 50/50
-    // baseline (Thompson sampling shouldn't drift below that with the
-    // doubled training budget).
+    // Probe with context aligned to fast-model's context_mean. cosine
+    // similarity to fast-model ≈ 1.0 → score ≈ 0.95 * 2 = 1.9; to
+    // deep-model ≈ 0.0 → score ≈ 0.95 * 1 = 0.95. fast-model should win
+    // ≥70% of trials despite Thompson sampling noise on quality.
     let mut fast_count = 0;
     for _ in 0..50 {
-        let d = bandit.choose_contextual(0.0, &[1.0, 10.0]).unwrap();
+        let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
         if d.model_id == "fast-model" {
             fast_count += 1;
         }
@@ -460,8 +466,8 @@ fn test_contextual_trained_arms_selection() {
     }
 
     assert!(
-        fast_count >= 25,
-        "fast-model should be preferred for simple tasks: got {}/50",
+        fast_count >= 35,
+        "fast-model should be preferred for fast-aligned context (orthogonal training): got {}/50",
         fast_count,
     );
 }
