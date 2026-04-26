@@ -341,27 +341,29 @@ mod tests {
 
     #[test]
     fn test_small_scale_convergence() {
-        // CMA-ME at small scale. The non-deterministic ask() uses
-        // `rand::rng()`, so we run enough generations × samples that the
-        // expected convergence dominates sample noise (~3-sigma over a
-        // dimension-1 problem). 8 samples × 10 generations = 80 fitness
-        // evaluations is the smallest budget where I observed >99% pass
-        // rate locally; the prior 4×5 = 20 evals had a non-trivial flake
-        // tail caught by CI on 2026-04-26.
+        // CMA-ME at small scale. The non-deterministic `ask()` uses
+        // `rand::rng()`, and at small populations the sample noise can
+        // dominate the fitness gradient: we observed both 4×5 (CI flake
+        // 0.82, regressed) and 8×10 (CI flake 0.9999, near-no-move).
+        // 32 samples × 20 generations = 640 fitness evals is the regime
+        // where the gradient toward x=2.0 reliably overwhelms sample
+        // noise on a 1D problem with sigma=1.0. Assertion relaxed to
+        // 0.5 (instead of 1.0) so the budget bump produces a real
+        // statement about convergence rather than just non-regression.
         let bounds = vec![DimensionBounds::new(0.0, 5.0)];
-        let mut e = CmaEmitter::with_bounds(1, 0.5, bounds, 0.98);
-        e.warm_start(&[1.0]); // start near target
+        let mut e = CmaEmitter::with_bounds(1, 1.0, bounds, 0.98);
+        e.warm_start(&[1.0]);
 
         // Target: peak fitness at x=2.0
-        for _ in 0..10 {
-            let samples = e.ask(8);
+        for _ in 0..20 {
+            let samples = e.ask(32);
             let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
             e.tell(&samples, &fitnesses);
         }
-        // Should be closer to 2.0 than initial 1.0
+        // Should converge most of the way toward 2.0 (initial dist 1.0).
         assert!(
-            (e.mean()[0] - 2.0).abs() < (1.0_f64 - 2.0).abs(),
-            "CMA should converge toward 2.0 even at small scale, got {}",
+            (e.mean()[0] - 2.0).abs() < 0.5,
+            "CMA should converge toward 2.0 within 0.5 at 640-eval budget, got {}",
             e.mean()[0]
         );
     }
