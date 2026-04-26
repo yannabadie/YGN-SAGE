@@ -239,16 +239,20 @@ class EpisodicMemory:
             import aiosqlite
             db = await self._get_connection()
             db.row_factory = aiosqlite.Row
+            # Tie-break on rowid so back-to-back inserts that land in the
+            # same created_at bucket (Windows clock resolution is ~15 ms,
+            # easily collapses 3 rapid stores) preserve insertion order.
             if self._agent_id is not None:
                 async with db.execute(
                     "SELECT key, content, metadata FROM episodes WHERE agent_id = ?"
-                    " ORDER BY created_at DESC LIMIT ?",
+                    " ORDER BY created_at DESC, rowid DESC LIMIT ?",
                     (self._agent_id, limit),
                 ) as cur:
                     rows = await cur.fetchall()
             else:
                 async with db.execute(
-                    "SELECT key, content, metadata FROM episodes ORDER BY created_at DESC LIMIT ?",
+                    "SELECT key, content, metadata FROM episodes"
+                    " ORDER BY created_at DESC, rowid DESC LIMIT ?",
                     (limit,),
                 ) as cur:
                     rows = await cur.fetchall()
