@@ -37,6 +37,16 @@ if sys.platform != "linux" and "resource" not in sys.modules:
     _stub.setrlimit = lambda _x, _y: None  # type: ignore[attr-defined]
     sys.modules["resource"] = _stub
 
+# Skip the whole module if `swebench` isn't installed. The patch module
+# under test wraps swebench's run_evaluation / build_image; without the
+# real package, apply_corporate_ca_patch returns False (correct fallback
+# behavior) and the assertions in this file no longer match reality.
+# This is the optional-dep skip pattern used elsewhere in the repo.
+pytest.importorskip(
+    "swebench",
+    reason="swebench-bench not installed; ca_patch tests rely on the real harness",
+)
+
 
 def _fresh_patch_module():
     """Import a fresh copy of the patch module, resetting the APPLIED guard.

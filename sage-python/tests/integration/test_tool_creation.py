@@ -15,6 +15,19 @@ from sage.tools.meta import create_python_tool, create_bash_tool
 from sage.tools.registry import ToolRegistry
 
 
+# Tool execution requires the embedded RustPython wasm sandbox bundled by
+# build.rs. CI builds without `SAGE_REQUIRE_WASM=1` ship a placeholder so
+# create-and-run tests fail with "No Wasm sandbox available". Skip the
+# whole file when the artefact isn't present (matches the pattern in
+# tests/test_wasm_sandbox_redteam.py).
+sage_core = pytest.importorskip("sage_core", reason="sage_core not installed")
+_embedded_wasm_available = getattr(sage_core, "embedded_wasm_available", None)
+pytestmark = pytest.mark.skipif(
+    _embedded_wasm_available is None or not _embedded_wasm_available(),
+    reason="rustpython.wasm not bundled — sandbox-dependent tests skipped",
+)
+
+
 # ── Helpers ──────────────────────────────────────────────────────
 
 def _run(coro):

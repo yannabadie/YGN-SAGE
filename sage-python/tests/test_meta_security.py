@@ -5,6 +5,11 @@ import json
 from unittest.mock import patch
 
 
+sage_core = pytest.importorskip("sage_core", reason="sage_core not installed")
+_embedded_wasm_available = getattr(sage_core, "embedded_wasm_available", None)
+_HAS_WASM = _embedded_wasm_available is not None and _embedded_wasm_available()
+
+
 class TestMetaToolsSandboxed:
     """SEC-01: Dynamic tool creation uses subprocess sandbox."""
 
@@ -28,6 +33,10 @@ class TestMetaToolsSandboxed:
         assert "Success" in result
         assert registry.get("adder") is not None
 
+    @pytest.mark.skipif(
+        not _HAS_WASM,
+        reason="rustpython.wasm not bundled — sandbox-dependent test skipped",
+    )
     def test_created_tool_executes_in_sandbox(self):
         """Created tool runs in subprocess isolation."""
         from sage.tools.meta import create_python_tool
