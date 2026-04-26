@@ -18,6 +18,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from sage._python import PYTHON
 
@@ -83,7 +84,6 @@ async def run_humaneval_config(
 
     log.info(f"Running HumanEval config '{config_name}' (limit={limit})...")
     t0 = time.perf_counter()
-    report = bench.run if asyncio.iscoroutinefunction(bench.run) else bench.run
     report = await bench.run(limit=limit)
     elapsed = time.perf_counter() - t0
 
@@ -257,7 +257,7 @@ async def run_routing_proof() -> None:
 
     # First, route all tasks to see distribution
     router = AdaptiveRouter()
-    routing_decisions = []
+    routing_decisions: list[dict[str, Any]] = []
     for item in ROUTING_PROOF_TASKS:
         profile = router.assess_complexity(item["task"])
         decision = router.route(profile)
@@ -273,9 +273,9 @@ async def run_routing_proof() -> None:
     # Print routing distribution
     from collections import Counter
     by_system = Counter(d["routed_to"] for d in routing_decisions)
-    by_category = {}
+    by_category: dict[tuple[str, str], int] = {}
     for d in routing_decisions:
-        key = (d["category"], d["routed_to"])
+        key = (str(d["category"]), str(d["routed_to"]))
         by_category[key] = by_category.get(key, 0) + 1
 
     print(f"\n{'=' * 60}")
@@ -296,7 +296,7 @@ async def run_routing_proof() -> None:
     log.info("Running 30 unseen tasks with AdaptiveRouter...")
     bus_r = EventBus()
     system_r = boot_agent_system(use_mock_llm=False, llm_tier="fast", event_bus=bus_r)
-    router_results = []
+    router_results: list[dict[str, Any]] = []
     total_cost_r = 0.0
 
     for i, item in enumerate(ROUTING_PROOF_TASKS):
@@ -330,7 +330,7 @@ async def run_routing_proof() -> None:
     log.info("Running 30 unseen tasks with ALL-S1 (cheapest)...")
     bus_s1 = EventBus()
     system_s1 = boot_agent_system(use_mock_llm=False, llm_tier="budget", event_bus=bus_s1)
-    s1_results = []
+    s1_results: list[dict[str, Any]] = []
     total_cost_s1 = 0.0
 
     for i, item in enumerate(ROUTING_PROOF_TASKS):
