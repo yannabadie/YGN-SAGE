@@ -721,6 +721,15 @@ impl ContextualBandit {
 
     /// Restore an arm with pre-computed posteriors (from SQLite load).
     #[allow(clippy::too_many_arguments)]
+    /// Reconstruct an arm from persisted state.
+    ///
+    /// `context_sum` and `context_count` are required so the bandit's
+    /// cosine-similarity context bias survives save/load. Pre-2026-04-26
+    /// this method silently dropped both fields (initialised to empty
+    /// vec / 0), erasing all contextual learning across restarts. See
+    /// `persistence::migrate_add_context_columns` for the SQLite-side
+    /// schema-evolution path.
+    #[allow(clippy::too_many_arguments)]
     pub fn restore_arm(
         &mut self,
         model_id: String,
@@ -732,6 +741,8 @@ impl ContextualBandit {
         latency_shape: f64,
         latency_rate: f64,
         observation_count: u32,
+        context_sum: Vec<f64>,
+        context_count: u32,
     ) {
         let key = ArmKey { model_id, template };
         let arm = ArmPosterior {
@@ -749,8 +760,8 @@ impl ContextualBandit {
                 rate: latency_rate,
             },
             observation_count,
-            context_sum: Vec::new(),
-            context_count: 0,
+            context_sum,
+            context_count,
         };
         self.arms.insert(key, arm);
     }

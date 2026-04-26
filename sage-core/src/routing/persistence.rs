@@ -5,6 +5,13 @@ use super::bandit::*;
 use rusqlite::{params, Connection};
 
 /// SQLite schema for bandit arm posteriors.
+///
+/// `context_sum` is a JSON array of f64 values (the running sum of all
+/// contexts under which this arm was chosen) and `context_count` is the
+/// number of times those contexts were observed. Together they let
+/// `restore_arm()` reconstruct `context_mean` exactly. Older DBs without
+/// these columns are migrated below via ALTER TABLE; the load path
+/// tolerates missing/empty values to handle legacy state cleanly.
 const CREATE_TABLE: &str = r#"
     CREATE TABLE IF NOT EXISTS bandit_arms (
         model_id TEXT NOT NULL,
@@ -16,10 +23,23 @@ const CREATE_TABLE: &str = r#"
         latency_shape REAL NOT NULL,
         latency_rate REAL NOT NULL,
         observation_count INTEGER NOT NULL,
+        context_sum TEXT NOT NULL DEFAULT '[]',
+        context_count INTEGER NOT NULL DEFAULT 0,
         updated_at TEXT NOT NULL DEFAULT (datetime('now')),
         PRIMARY KEY (model_id, template)
     )
 "#;
+
+/// Best-effort migration: add the context_* columns to a pre-existing
+/// table that didn't have them. Errors are silenced because SQLite
+/// returns "duplicate column" when the columns already exist (i.e.
+/// fresh schemas after this commit lands).
+fn migrate_add_context_columns(conn: &Connection) {
+    let _ = conn.execute_batch(
+        "ALTER TABLE bandit_arms ADD COLUMN context_sum TEXT NOT NULL DEFAULT '[]';\
+         ALTER TABLE bandit_arms ADD COLUMN context_count INTEGER NOT NULL DEFAULT 0;",
+    );
+}
 
 /// Bandit config table (stores decay_factor, exploration_bonus).
 const CREATE_CONFIG_TABLE: &str = r#"
@@ -41,6 +61,7 @@ pub fn save_bandit(bandit: &ContextualBandit, path: &str) -> Result<(), String> 
         .map_err(|e| format!("Create table: {}", e))?;
     conn.execute_batch(CREATE_CONFIG_TABLE)
         .map_err(|e| format!("Create config table: {}", e))?;
+    migrate_add_context_columns(&conn);
 
     // Save config
     conn.execute(
@@ -54,17 +75,22 @@ pub fn save_bandit(bandit: &ContextualBandit, path: &str) -> Result<(), String> 
     )
     .map_err(|e| format!("Save exploration_bonus: {}", e))?;
 
-    // Upsert each arm posterior
+    // Upsert each arm posterior. context_sum is serialized as a JSON
+    // array of f64 (compact, schema-evolution-friendly, dep already
+    // pulled in via serde_json elsewhere in sage-core).
     let mut stmt = conn
         .prepare(
             "INSERT OR REPLACE INTO bandit_arms \
              (model_id, template, quality_alpha, quality_beta, \
-              cost_shape, cost_rate, latency_shape, latency_rate, observation_count) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+              cost_shape, cost_rate, latency_shape, latency_rate, observation_count, \
+              context_sum, context_count) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         )
         .map_err(|e| format!("Prepare: {}", e))?;
 
     for arm in bandit.arms_iter() {
+        let context_sum_json = serde_json::to_string(&arm.context_sum)
+            .map_err(|e| format!("Serialize context_sum: {}", e))?;
         stmt.execute(params![
             arm.key.model_id,
             arm.key.template,
@@ -75,6 +101,8 @@ pub fn save_bandit(bandit: &ContextualBandit, path: &str) -> Result<(), String> 
             arm.latency.shape,
             arm.latency.rate,
             arm.observation_count,
+            context_sum_json,
+            arm.context_count,
         ])
         .map_err(|e| format!("Insert arm: {}", e))?;
     }
@@ -95,6 +123,7 @@ pub fn load_bandit(path: &str) -> Result<ContextualBandit, String> {
         .map_err(|e| format!("Create table: {}", e))?;
     conn.execute_batch(CREATE_CONFIG_TABLE)
         .map_err(|e| format!("Create config table: {}", e))?;
+    migrate_add_context_columns(&conn);
 
     // Load config with defaults
     let decay: f64 = conn
@@ -115,11 +144,13 @@ pub fn load_bandit(path: &str) -> Result<ContextualBandit, String> {
 
     let mut bandit = ContextualBandit::create(decay, exploration);
 
-    // Load arm posteriors
+    // Load arm posteriors. context_sum/context_count default to '[]'/0
+    // for legacy rows pre-migration (and the migration just ran above).
     let mut stmt = conn
         .prepare(
             "SELECT model_id, template, quality_alpha, quality_beta, \
-             cost_shape, cost_rate, latency_shape, latency_rate, observation_count \
+             cost_shape, cost_rate, latency_shape, latency_rate, observation_count, \
+             context_sum, context_count \
              FROM bandit_arms",
         )
         .map_err(|e| format!("Prepare: {}", e))?;
@@ -136,14 +167,30 @@ pub fn load_bandit(path: &str) -> Result<ContextualBandit, String> {
                 row.get::<_, f64>(6)?,    // latency_shape
                 row.get::<_, f64>(7)?,    // latency_rate
                 row.get::<_, u32>(8)?,    // observation_count
+                row.get::<_, String>(9)?, // context_sum (JSON)
+                row.get::<_, u32>(10)?,   // context_count
             ))
         })
         .map_err(|e| format!("Query: {}", e))?;
 
     for arm_result in arms {
-        let (model_id, template, qa, qb, cs, cr, ls, lr, obs) =
+        let (model_id, template, qa, qb, cs, cr, ls, lr, obs, ctx_json, ctx_count) =
             arm_result.map_err(|e| format!("Row: {}", e))?;
-        bandit.restore_arm(model_id, template, qa, qb, cs, cr, ls, lr, obs);
+        let context_sum: Vec<f64> =
+            serde_json::from_str(&ctx_json).map_err(|e| format!("Parse context_sum: {}", e))?;
+        bandit.restore_arm(
+            model_id,
+            template,
+            qa,
+            qb,
+            cs,
+            cr,
+            ls,
+            lr,
+            obs,
+            context_sum,
+            ctx_count,
+        );
     }
 
     Ok(bandit)

@@ -188,13 +188,15 @@ fn test_restore_arm_posteriors() {
     bandit.restore_arm(
         "test-model".to_string(),
         "avr".to_string(),
-        5.0,  // quality alpha
-        2.0,  // quality beta
-        3.0,  // cost shape
-        10.0, // cost rate
-        4.0,  // latency shape
-        20.0, // latency rate
-        42,   // observation count
+        5.0,        // quality alpha
+        2.0,        // quality beta
+        3.0,        // cost shape
+        10.0,       // cost rate
+        4.0,        // latency shape
+        20.0,       // latency rate
+        42,         // observation count
+        Vec::new(), // context_sum (unused for this posterior-only test)
+        0,          // context_count
     );
 
     assert_eq!(bandit.arm_count(), 1);
@@ -211,4 +213,85 @@ fn test_restore_arm_posteriors() {
     // latency mean = 4.0 / 20.0 = 0.2
     assert!((*latency_mean - 0.2).abs() < 0.01);
     assert_eq!(*obs, 42);
+}
+
+// ── Test: Contextual bias survives save / load ─────────────────────────────
+//
+// Pre-2026-04-26 `restore_arm()` initialised `context_sum: Vec::new(),
+// context_count: 0`, so the bandit's cosine-similarity context bias was
+// erased on every load. cgpro (ChatGPT 5.5 Pro) flagged this during the
+// CI debt closeout review. Persistence now serialises `context_sum` as
+// JSON and reconstructs it via the extended `restore_arm()` signature;
+// this test pins the contract.
+
+#[test]
+fn test_context_bias_survives_save_load() {
+    let db = temp_db();
+    let mut bandit = ContextualBandit::create(0.999, 0.1);
+    bandit.add_arm("arm-a", "seq");
+    bandit.add_arm("arm-b", "seq");
+
+    // Train arm-a only on context [1, 0]; drop arm-b picks so the
+    // wrong arm's context_mean stays clean. Same orthogonal-context
+    // pattern as the in-memory bandit context-bias tests.
+    let mut recorded = 0;
+    while recorded < 60 {
+        let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
+        if d.model_id == "arm-a" {
+            bandit
+                .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
+                .unwrap();
+            recorded += 1;
+        }
+    }
+    // Train arm-b only on context [0, 1].
+    recorded = 0;
+    while recorded < 60 {
+        let d = bandit.choose_contextual(1.0, &[0.0, 1.0]).unwrap();
+        if d.model_id == "arm-b" {
+            bandit
+                .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
+                .unwrap();
+            recorded += 1;
+        }
+    }
+
+    // Sanity: pre-save, the cosine bonus picks arm-a on [1,0] context.
+    // Don't record outcomes — keep context state untouched for the
+    // post-load comparison.
+    let mut a_count_pre = 0;
+    for _ in 0..40 {
+        let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
+        if d.model_id == "arm-a" {
+            a_count_pre += 1;
+        }
+    }
+    assert!(
+        a_count_pre >= 28,
+        "pre-save: arm-a should be preferred for [1,0] context, got {}/40",
+        a_count_pre
+    );
+
+    // Save then reload from disk.
+    sage_core::routing::persistence::save_bandit(&bandit, db.to_str().unwrap()).unwrap();
+    let mut loaded = sage_core::routing::persistence::load_bandit(db.to_str().unwrap()).unwrap();
+
+    // Same probe on the loaded bandit. If context_sum/context_count
+    // were not persisted (the pre-fix bug), arm-a's cosine bonus would
+    // collapse to 0 and the loaded bandit would converge to ~50/50
+    // Thompson noise.
+    let mut a_count_post = 0;
+    for _ in 0..40 {
+        let d = loaded.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
+        if d.model_id == "arm-a" {
+            a_count_post += 1;
+        }
+    }
+    assert!(
+        a_count_post >= 28,
+        "post-load: arm-a should still be preferred (context state must survive save/load), got {}/40",
+        a_count_post
+    );
+
+    let _ = std::fs::remove_file(&db);
 }
