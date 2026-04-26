@@ -5,7 +5,28 @@
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
 
-**2026-04-26 CI debt closeout** (~13 commits): brought CI back to green
+**2026-04-26 CI debt closeout** (~24 commits, including a real prod-bug fix
+flagged by an external review pass via `cgpro`: `bandit::restore_arm` was
+silently dropping `context_sum` / `context_count` on every save/load, so
+the contextual cosine-bias channel reset to zero on every restart in
+production. SQLite schema extended with `context_sum TEXT DEFAULT '[]'` /
+`context_count INTEGER DEFAULT 0` + ALTER-TABLE migration + serde_json
+serialization; new `test_context_bias_survives_save_load` regression
+test pins the contract).
+
+Follow-up not in this cycle:
+- **roadmap-A8 — Build rustpython.wasm in CI**. The embedded sandbox
+  artefact isn't built on GitHub-hosted runners; sandbox-dependent
+  tests (`test_meta_security::test_created_tool_executes_in_sandbox`,
+  `tests/integration/test_tool_creation.py`, parts of
+  `test_swebench_ca_patch.py`) skip via `embedded_wasm_available()`.
+  Means the sandbox has zero regression coverage in CI today. Options:
+  (a) dedicated `build-wasm-sandbox` job with GitHub Actions cache
+  keyed on RustPython submodule SHA (~5 min cold / ~30s warm); (b)
+  download from a release artefact; (c) nightly-only sandbox job.
+  Recipe: see `sage-core/src/sandbox/wasm_python.rs` module docstring.
+
+**Earlier closeout work** (~13 commits): brought CI back to green
 after the 2026-04-21 AUDIT cycle had left it red on every commit.
 Distinct fix waves: clippy `-D warnings`, sage-core/tests `cargo fmt`,
 E0432 in `wasm_python.rs:75` (sandbox+cranelift gate), Windows
