@@ -208,7 +208,6 @@ jobs:
     needs: [python-sage]
     env:
       GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
-      REQUESTS_CA_BUNDLE: ""
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v6
@@ -216,6 +215,16 @@ jobs:
           python-version: '3.12'
       - run: pip install -e ".[all,dev]"
         working-directory: sage-python
-      - run: python -m pytest -m e2e --limit 5 -x -v
+      # Skip cleanly if the secret is unset — never run with an empty key
+      # because the smoke tests then fail on auth and obscure real
+      # regressions. `-m e2e` runs the 2 real-API tests in
+      # tests/test_e2e_real.py; the prior `--limit 5` flag was unrecognized
+      # by pytest (no plugin registers it) and is removed.
+      - name: Run e2e smoke
+        if: env.GOOGLE_API_KEY != ''
         working-directory: sage-python
+        run: python -m pytest -m e2e -x -v
         timeout-minutes: 10
+      - name: Skipped (no GOOGLE_API_KEY secret)
+        if: env.GOOGLE_API_KEY == ''
+        run: echo "GOOGLE_API_KEY not set — integration smoke skipped"
