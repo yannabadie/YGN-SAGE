@@ -59,7 +59,7 @@ class ListActiveAgentsResult(BaseModel):
         "required": ["agent_name", "role", "instruction"]
     }
 )
-async def create_agent(agent_name: str, role: str, instruction: str, tools: list[str] = None, agent_pool: dict = None, parent_agent: 'Agent' = None) -> str:
+async def create_agent(agent_name: str, role: str, instruction: str, tools: list[str] | None = None, agent_pool: dict | None = None, parent_agent: 'Agent | None' = None) -> str:
     if agent_pool is None or parent_agent is None:
         return "Error: Agent pool or parent agent context not available."
         
@@ -110,7 +110,7 @@ async def create_agent(agent_name: str, role: str, instruction: str, tools: list
     },
     output_schema=CallAgentResult,
 )
-async def call_agent(agent_name: str, task_message: str, agent_pool: dict = None) -> str:
+async def call_agent(agent_name: str, task_message: str, agent_pool: dict | None = None) -> str:
     if agent_pool is None:
         return "Error: Agent pool not available."
         
@@ -142,7 +142,7 @@ async def call_agent(agent_name: str, task_message: str, agent_pool: dict = None
     },
     output_schema=ListActiveAgentsResult,
 )
-async def list_active_agents(agent_pool: dict = None) -> str:
+async def list_active_agents(agent_pool: dict | None = None) -> str:
     if agent_pool is None:
         return "Error: Agent pool not available."
         

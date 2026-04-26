@@ -263,8 +263,8 @@ async def run_memory_coherence(
     n = len(results)
     cold_q = [r.cold_quality for r in results if r.cold_error is None]
     primed_q = [r.primed_quality for r in results if r.primed_error is None]
-    cold_lat = [r.cold_latency_ms for r in results if r.cold_error is None]
-    primed_lat = [r.primed_latency_ms for r in results if r.primed_error is None]
+    cold_latencies = [r.cold_latency_ms for r in results if r.cold_error is None]
+    primed_latencies = [r.primed_latency_ms for r in results if r.primed_error is None]
 
     report = MemoryCoherenceReport(
         total=n,
@@ -272,8 +272,8 @@ async def run_memory_coherence(
         primed_pass=sum(1 for q in primed_q if q >= 0.7),
         avg_cold_quality=sum(cold_q) / len(cold_q) if cold_q else 0.0,
         avg_primed_quality=sum(primed_q) / len(primed_q) if primed_q else 0.0,
-        avg_cold_latency_ms=sum(cold_lat) / len(cold_lat) if cold_lat else 0.0,
-        avg_primed_latency_ms=sum(primed_lat) / len(primed_lat) if primed_lat else 0.0,
+        avg_cold_latency_ms=sum(cold_latencies) / len(cold_latencies) if cold_latencies else 0.0,
+        avg_primed_latency_ms=sum(primed_latencies) / len(primed_latencies) if primed_latencies else 0.0,
         probes=[
             {
                 "pair_idx": r.pair_idx,

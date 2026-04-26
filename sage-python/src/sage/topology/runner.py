@@ -545,6 +545,9 @@ class TopologyRunner:
                 except Exception:  # noqa: BLE001
                     pass
             _factory_kwargs["on_drift"] = _on_drift
+        assert self._agent_loop_factory is not None, (
+            "TopologyRunner requires agent_loop_factory at construction"
+        )
         loop = self._agent_loop_factory(**_factory_kwargs)
 
         # Build task with predecessor context (H7)
@@ -576,11 +579,15 @@ class TopologyRunner:
             or getattr(node, "role", None)
             or f"node_{node_idx}"
         )
+        _node_span_attrs: dict[str, Any] = {
+            "sage.node.name": _node_name,
+            "sage.node.index": node_idx,
+        }
         try:
             with sage_span(
                 f"sage.node.{_node_name}",
                 op="invoke_agent",
-                **{"sage.node.name": _node_name, "sage.node.index": node_idx},
+                **_node_span_attrs,
             ):
                 result = await loop.run(full_task)
         except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
@@ -797,6 +804,7 @@ class TopologyRunner:
         )
 
         if solver_ok:
+            assert solver_answer is not None  # narrowed by solver_ok above
             output = solver_answer
             log.info(
                 "Solver node %d (%s): Rust solved %d/%d vars, answer=%s (%.1fms)",
