@@ -80,6 +80,7 @@ class OutputGuardrail(Guardrail):
             else list(self._DEFAULT_REFUSAL_PATTERNS)
         )
         # Pre-compile a single regex for refusal detection (case-insensitive)
+        self._refusal_re: re.Pattern[str] | None
         if self.refusal_patterns:
             escaped = [re.escape(p) for p in self.refusal_patterns]
             self._refusal_re = re.compile("|".join(escaped), re.IGNORECASE)

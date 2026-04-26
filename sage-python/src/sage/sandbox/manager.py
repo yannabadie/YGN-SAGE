@@ -91,6 +91,7 @@ class Sandbox:
             args_json = json.dumps(self.config.env) # For now, pass env as args for demo
             
             # Execute synchronously in a thread to not block event loop
+            assert self.wasm_engine is not None  # presence-checked above
             res = await asyncio.to_thread(
                 self.wasm_engine.execute,
                 self.id, # Using sandbox ID for module caching

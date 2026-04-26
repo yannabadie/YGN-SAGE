@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role, ToolDef
 from sage.tools.registry import ToolRegistry
@@ -66,7 +67,7 @@ class Agent:
         self.working_memory = WorkingMemory(agent_id=config.name)
         self.memory_compressor = memory_compressor
         self.sandbox_manager = sandbox_manager or SandboxManager(use_docker=config.use_docker_sandbox)
-        self.sandbox = None
+        self.sandbox: Any = None
         self.prm = ProcessRewardModel()
         
         # OpenSage: Unified sub-agent pool

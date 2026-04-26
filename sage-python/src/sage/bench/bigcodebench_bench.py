@@ -71,7 +71,7 @@ class BigCodeBenchBench:
             task_ids = task_ids[:limit]
 
         results: list[TaskResult] = []
-        self._predictions: list[dict[str, str]] = []
+        self._predictions: list[dict[str, Any]] = []
         passed_count = 0
 
         from sage.input.bcb import normalize_bcb

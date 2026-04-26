@@ -93,6 +93,7 @@ class LLMProvider(Protocol):
     ) -> LLMResponse: ...
 
 
+@runtime_checkable
 class StreamingLLMProvider(LLMProvider, Protocol):
     """Extended protocol for providers that support token-level streaming.
 
@@ -101,7 +102,7 @@ class StreamingLLMProvider(LLMProvider, Protocol):
     required for non-streaming callers.
     """
 
-    async def generate_stream(
+    def generate_stream(
         self,
         messages: list[Message],
         config: LLMConfig | None = None,
@@ -110,5 +111,9 @@ class StreamingLLMProvider(LLMProvider, Protocol):
 
         Tools are intentionally excluded — streaming is for simple
         text generation only (Phase 1).
+
+        The protocol method itself is not declared `async`: implementers
+        return an AsyncIterator (either via an async-generator function
+        body that uses `async def ... yield`, or by constructing one).
         """
         ...  # pragma: no cover

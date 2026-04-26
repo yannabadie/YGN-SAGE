@@ -49,7 +49,7 @@ class EventBus:
         self._redaction_filter = RedactionFilter()
 
     @staticmethod
-    def _enqueue_async_event(q: asyncio.Queue[AgentEvent], event: AgentEvent) -> None:
+    def _enqueue_async_event(q: asyncio.Queue[AgentEvent | None], event: AgentEvent) -> None:
         """Enqueue one event into an async consumer queue."""
         try:
             q.put_nowait(event)
@@ -127,7 +127,7 @@ class EventBus:
         Each call to stream() creates an independent consumer queue.
         The caller is responsible for breaking out of the loop when done.
         """
-        q: asyncio.Queue[AgentEvent] = asyncio.Queue()
+        q: asyncio.Queue[AgentEvent | None] = asyncio.Queue()
         consumer = _AsyncConsumer(q, asyncio.get_running_loop())
         with self._lock:
             self._async_consumers.append(consumer)

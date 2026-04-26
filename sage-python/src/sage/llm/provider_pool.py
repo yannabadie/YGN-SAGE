@@ -420,7 +420,7 @@ class ProviderPool:
                     "ProviderPool: no live provider for provider_name=%s, using default",
                     provider_name,
                 )
-                result: tuple[LLMProvider, LLMConfig] = (self._default, config)
+                result = (self._default, config)
             else:
                 result = (provider, config)
 

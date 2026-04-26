@@ -88,7 +88,7 @@ def retrieve_smmu_context(
         for chunk_id, score in top_hits:
             summary = ""
             try:
-                summary = working_memory.get_chunk_summary(chunk_id)
+                summary = working_memory.get_chunk_summary(int(chunk_id))
             except (AttributeError, Exception):
                 pass
             if summary:

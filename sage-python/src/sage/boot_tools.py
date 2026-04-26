@@ -125,6 +125,7 @@ def init_metacognition(
             if emb is not None and labels is not None:
                 flat_emb = emb.flatten().tolist()
                 flat_labels = labels.astype(np.uint8).tolist()
+                assert metacognition._rust is not None  # narrowed by has_rust above
                 n = metacognition._rust.load_exemplars(flat_emb, flat_labels)
                 if n > 0:
                     _log.info("Boot: Rust kNN loaded %d exemplars (native SIMD search)", n)

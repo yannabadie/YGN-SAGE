@@ -480,7 +480,7 @@ print(f"COMPARE_RESULT:{{failures}}/{{len(inputs)}}")
 
         model_info = self.system.model_info if hasattr(self.system, "model_info") else {}
         base_model = self.manifest.model if self.manifest else "unknown"
-        _mc: dict[str, Any] = {"model": base_model}
+        _mc = {"model": base_model}
         _mc.update(model_info)
         return BenchReport.from_results(
             f"evalplus_{self.dataset}", task_results,

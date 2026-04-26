@@ -488,6 +488,7 @@ def boot_agent_system(
         safe_env = _safe_subprocess_env()
         # Use bash for Unix commands (git bash on Windows, /bin/bash on Linux)
         bash = shutil.which("bash") or shutil.which("sh")
+        cmd_args: list[str] | str
         if bash:
             cmd_args = [bash, "-c", command]
         else:

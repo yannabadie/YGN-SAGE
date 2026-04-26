@@ -63,7 +63,7 @@ class ExecutionTrace:
 
     # Stage 3: Assign Models
     assignments: dict[int, str] = field(default_factory=dict)
-    reassignments: list[dict[str, str]] = field(default_factory=list)  # [{node, from, to, reason}]
+    reassignments: list[dict[str, Any]] = field(default_factory=list)  # [{node, from, to, reason}]
 
     # Stage 4: Execute
     nodes: list[NodeTrace] = field(default_factory=list)

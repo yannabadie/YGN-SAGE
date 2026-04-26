@@ -141,7 +141,9 @@ async def learn_final(task: str, result_text: str, loop: AgentLoop) -> str:
         # Opt-in: raise instead of returning sentinel. Controllers wired for
         # structural failure handling set AgentConfig.raise_on_exhaustion=True.
         if getattr(getattr(loop, "config", None), "raise_on_exhaustion", False):
-            raise AgentLoopBudgetExhausted(loop.last_exhaustion)
+            exhaustion = loop.last_exhaustion
+            if exhaustion is not None:
+                raise AgentLoopBudgetExhausted(exhaustion)
     except AttributeError:
         # loop doesn't expose `last_exhaustion` writeable — skip metadata.
         pass

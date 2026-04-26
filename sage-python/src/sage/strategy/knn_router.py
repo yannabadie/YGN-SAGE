@@ -153,6 +153,7 @@ class KnnRouter:
         if key in _EMBED_CACHE:
             return _EMBED_CACHE[key]
         emb = self._get_embedder()
+        assert emb is not None, "embedder must be configured for kNN routing"
         vec = emb.embed(task)
         # Evict oldest entry if cache is full
         if len(_EMBED_CACHE) >= _EMBED_CACHE_MAXSIZE:
@@ -217,6 +218,7 @@ class KnnRouter:
         top_k_idx = top_k_idx[np.argsort(similarities[top_k_idx])[::-1]]
 
         k_distances = similarities[top_k_idx].tolist()
+        assert self._exemplar_labels is not None  # required for routing
         k_labels = self._exemplar_labels[top_k_idx].tolist()
         nearest_label = int(k_labels[0])
 
