@@ -82,6 +82,8 @@ _KEY_EXTRACTION_METHOD = "_extraction_method"
 # ``off`` (the default) the key is absent so predictions.jsonl is
 # byte-identical to today's behaviour.
 _KEY_DIFF_VERIFIER_MISMATCHES = "_diff_verifier_mismatches"
+_KEY_DIFF_VERIFIER_REASONS = "_diff_verifier_reasons"
+_KEY_DIFF_VERIFIER_OUTCOME = "_diff_verifier_outcome"
 
 # Sentinel string returned by agent_loop when the LLM produces no content for
 # N consecutive steps. MUST stay in sync with phases/learn.py. We classify
@@ -1175,11 +1177,13 @@ class SWEBenchBench:
             repair_stage = ""
             # Pre-emission diff-context verifier output. ``None`` when
             # the verifier is ``off`` (the default) so the prediction
-            # dict stays byte-identical to today's output. A list (empty
-            # or not) under observe/repair modes. See the
+            # dict stays byte-identical to today's output. Lists/outcome
+            # are populated under observe/repair modes. See the
             # ``_get_diff_verifier_mode`` helper and the
             # 2026-04-23-diff-context-verifier spec.
-            diff_verifier_mismatches: list[dict] | None = None
+            diff_verifier_mismatches: list[dict[str, Any]] | None = None
+            diff_verifier_reasons: list[str] | None = None
+            diff_verifier_outcome: str | None = None
 
             # Clone repo at base_commit so agent tools (execute_bash) can read code
             repo_dir = None
@@ -1308,10 +1312,10 @@ class SWEBenchBench:
                     verifier_mode = _get_diff_verifier_mode()
                     if verifier_mode in {"observe", "repair"}:
                         from sage.bench.swebench_diff_verifier import (
-                            verify_diff_context,
+                            verify_diff_context_with_reasons,
                         )
                         try:
-                            mismatches = verify_diff_context(
+                            verifier_result = verify_diff_context_with_reasons(
                                 patch, Path(repo_dir),
                             )
                         except Exception as verifier_exc:  # noqa: BLE001
@@ -1320,6 +1324,12 @@ class SWEBenchBench:
                                 instance_id, verifier_exc,
                             )
                             mismatches = []
+                            diff_verifier_reasons = ["unsupported_no_opinion"]
+                            diff_verifier_outcome = "unsupported_no_opinion"
+                        else:
+                            mismatches = verifier_result.mismatches
+                            diff_verifier_reasons = list(verifier_result.reasons)
+                            diff_verifier_outcome = verifier_result.outcome
                         if mismatches:
                             log.info(
                                 "[%s] diff verifier: %d hunk mismatch(es) "
@@ -1475,6 +1485,10 @@ class SWEBenchBench:
             # the JSONL stays byte-identical to pre-verifier output.
             if diff_verifier_mismatches is not None:
                 prediction_entry[_KEY_DIFF_VERIFIER_MISMATCHES] = diff_verifier_mismatches
+            if diff_verifier_reasons is not None:
+                prediction_entry[_KEY_DIFF_VERIFIER_REASONS] = diff_verifier_reasons
+            if diff_verifier_outcome is not None:
+                prediction_entry[_KEY_DIFF_VERIFIER_OUTCOME] = diff_verifier_outcome
             predictions.append(prediction_entry)
 
             self.manifest.add(TaskTrace(
@@ -1565,6 +1579,10 @@ class SWEBenchBench:
                 # ``in``-guarded passthrough pattern as F3.
                 if _KEY_DIFF_VERIFIER_MISMATCHES in pred:
                     entry[_KEY_DIFF_VERIFIER_MISMATCHES] = pred[_KEY_DIFF_VERIFIER_MISMATCHES]
+                if _KEY_DIFF_VERIFIER_REASONS in pred:
+                    entry[_KEY_DIFF_VERIFIER_REASONS] = pred[_KEY_DIFF_VERIFIER_REASONS]
+                if _KEY_DIFF_VERIFIER_OUTCOME in pred:
+                    entry[_KEY_DIFF_VERIFIER_OUTCOME] = pred[_KEY_DIFF_VERIFIER_OUTCOME]
                 f.write(json.dumps(entry) + "\n")
 
         log.info("Wrote %d predictions to %s", len(predictions), path)
