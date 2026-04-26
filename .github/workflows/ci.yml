@@ -137,12 +137,17 @@ jobs:
     needs: build-wasm-sandbox
     name: Rust (sandbox + ONNX + SMT + tool-executor)
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sage-core
     steps:
       - uses: actions/checkout@v6
 
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - run: pip install maturin
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -154,21 +159,50 @@ jobs:
 
       - name: Verify downloaded rustpython.wasm
         shell: bash
+        working-directory: ${{ github.workspace }}
         run: |
           set -euo pipefail
           cd external/rustpython-wasm-target/wasm32-wasip1/release
           test -s rustpython.wasm
           sha256sum -c rustpython.wasm.sha256
 
-      - name: Rust feature tests
-        working-directory: sage-core
+      # A23 rust-features split: each feature subset runs as its own cargo
+      # test invocation, mirroring the pre-A23 pattern. Combined invocations
+      # like `--features smt,cognitive,sandbox,cranelift,tool-executor --lib`
+      # fail to link on the runner because the merged feature set drags
+      # PyO3-bound symbols into a `cargo test` link that has no libpython
+      # on its lookup path. Splitting keeps the link surface small and
+      # preserves the targeted feature-isolation signal cgpro flagged at
+      # A23 verify ("A25/A26 could restore targeted feature-isolation").
+      - name: Sandbox lib tests (cranelift JIT, embedded wasm)
         env:
           SAGE_REQUIRE_WASM: "1"
-        run: cargo test --features smt,cognitive,sandbox,cranelift,tool-executor --lib
-
+        run: cargo test --no-default-features --features sandbox,cranelift --lib
+      - name: SMT verification tests
+        run: cargo test --no-default-features --features smt --lib
+      - name: Tool executor tests (tree-sitter validator)
+        run: cargo test --no-default-features --features tool-executor --lib -- sandbox::validator
+      - name: Cognitive persistence tests
+        run: cargo test --no-default-features --features cognitive --lib
       - name: ONNX feature tests
-        working-directory: sage-core
         run: cargo test --no-default-features --features onnx --lib
+      - name: OTel bridge tests (B1.b — tracing-opentelemetry pair)
+        # Catches version drift between tracing-opentelemetry 0.28 and
+        # opentelemetry 0.27 on every PR — the most likely failure mode
+        # when these two crates publish independently.
+        run: 'cargo test --no-default-features --features otel --lib observability::'
+      - name: OTel bridge end-to-end smoke (B1.b)
+        # InMemoryExporter + bridge + info_span! → asserts parent_span_id
+        # matches the W3C traceparent's span_id. #[ignore] on the test
+        # because tracing-subscriber init is process-wide; --ignored
+        # --test-threads=1 isolates it.
+        run: cargo test --no-default-features --features otel --test otel_smoke -- --ignored --test-threads=1
+      - name: Integration tests (baseline)
+        run: cargo test --no-default-features --test '*'
+      - name: Integration tests (with Python sandbox)
+        env:
+          SAGE_REQUIRE_WASM: "1"
+        run: cargo test --no-default-features --features sandbox,cranelift --test '*'
 
       - name: OTel bridge tests (B1.b tracing-opentelemetry pair)
         working-directory: sage-core

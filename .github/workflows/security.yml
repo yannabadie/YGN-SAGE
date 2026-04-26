@@ -38,7 +38,18 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
       - run: pip install cyclonedx-bom
+      # A21: sage-python declares sage-core>=0.1,<0.2 as a runtime dep but
+      # sage-core is not yet on PyPI (B4). Build + install the wheel locally
+      # so `pip install -e ".[all]"` can resolve sage-core without hitting
+      # the registry.
+      - name: Build sage_core wheel + install (required for sage-python)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - run: |
           cd sage-python
           pip install -e ".[all]"
@@ -63,8 +74,21 @@ jobs:
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
       - name: Install pip-audit
         run: pip install pip-audit
+      # A21: sage-python declares sage-core>=0.1,<0.2 as a runtime dep but
+      # sage-core is not yet on PyPI (B4). Build + install the wheel locally
+      # so `pip install -e "."` (used by both sage-python and sage-discover
+      # audit branches below) can resolve sage-core without hitting the
+      # registry. The metadata-only audit branch (--disable-pip) does not
+      # need this prebuild but doesn't conflict with it either.
+      - name: Build sage_core wheel + install (required for sage-python install)
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - name: Audit sage-python (pyproject.toml)
         run: |
           cd sage-python
