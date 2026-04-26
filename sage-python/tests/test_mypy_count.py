@@ -54,7 +54,16 @@ from pathlib import Path
 # absent that, the import gracefully falls through. Same shape as the
 # pre-existing pipeline.py sage_core import-not-found pattern (skip
 # category).
-_MAX_TYPE_IGNORES = 44
+# Raised from 44 to 45 (2026-04-26, CI debt closeout):
+# +1 for `import yaml  # type: ignore[import-untyped]` in
+# execution/__init__.py:30. yaml.dump/load is structurally typed at
+# runtime; types-PyYAML is locally installed (pulled by some dev dep)
+# but absent on the python-sage Linux CI runner, where mypy emits
+# `[import-untyped]` rather than `[import-not-found]` (the latter is
+# what `--ignore-missing-imports` suppresses). The ignore narrows to
+# this one site, so the rest of the codebase still surfaces real
+# missing-stubs cases.
+_MAX_TYPE_IGNORES = 45
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")

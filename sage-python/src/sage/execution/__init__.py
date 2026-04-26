@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 # Re-use SandboxResult from existing infra
 from sage.tools.sandbox_executor import SandboxResult
