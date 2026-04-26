@@ -27,6 +27,10 @@ class StrategyEngine:
         self.strategy_names = strategy_names
         n = len(strategy_names)
 
+        # Solver classes are siblings (no common base / Protocol). Annotate
+        # the field with the explicit Union so the runtime isinstance branches
+        # in update()/get_strategy() stay type-checkable.
+        self._solver: RegretMatcher | SAMPOSolver | VolatilityAdaptiveSolver | SHORPSROSolver
         if solver_type == "regret":
             self._solver = RegretMatcher(n)
         elif solver_type == "sampo":

@@ -144,6 +144,12 @@ class AgentEvent:
 class AgentLoop:
     """Structured agent loop with event emission for dashboard."""
 
+    # Optional collaborators wired post-construction by boot.py. Declared
+    # at class scope so mypy can resolve attribute access against the
+    # class without each caller doing getattr() with a default.
+    toolforge: Any = None
+    evolution_memory: Any = None
+
     def __init__(
         self,
         config: AgentConfig,

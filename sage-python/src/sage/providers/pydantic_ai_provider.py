@@ -386,7 +386,7 @@ def _our_tools_to_pydantic(tools: list[Any]) -> list[Any]:
         if isinstance(t, dict):
             # OpenAI-format: {"type": "function", "function": {"name": ..., "description": ..., "parameters": {...}}}
             # OR bare: {"name": ..., "description": ..., "parameters": {...}}
-            fn = t.get("function") if t.get("type") == "function" else t
+            fn = (t.get("function") or {}) if t.get("type") == "function" else t
             out.append(
                 ToolDefinition(
                     name=fn.get("name", ""),

@@ -58,7 +58,7 @@ class ModelRouter:
 
     @staticmethod
     def get_config(
-        tier: Tier = "fast",
+        tier: Tier | str = "fast",
         temperature: float = 0.7,
         json_schema: type | dict | None = None,
     ) -> LLMConfig:
