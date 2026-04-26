@@ -121,12 +121,15 @@ jobs:
       # (TopologyController.__init__ raises ImportError if absent). CI
       # was missing this build step, so every test that touched
       # `from sage_core import ...` failed with the architecture-rule
-      # ImportError. Build matches CLAUDE.md `Quick Commands`.
-      - name: Build sage_core (required for pytest)
+      # ImportError. We build a wheel and `pip install` it because
+      # `maturin develop` requires an active virtualenv that GitHub's
+      # setup-python@v6 doesn't create by default.
+      - name: Build sage_core wheel + install (required for pytest)
         working-directory: sage-core
         run: |
           pip install maturin
-          maturin develop --features smt,onnx
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - name: ruff
         working-directory: sage-python
         run: ruff check src/
@@ -169,14 +172,16 @@ jobs:
       # `sage_core` is required at runtime per the architecture rule
       # (TopologyController.__init__ raises ImportError if absent). Without
       # this build step every test that imports `from sage_core import ...`
-      # ERRORs at collection. Same step + features as the python-sage
-      # Linux job. Sandbox+cranelift are Cargo defaults; explicit
-      # smt+onnx for parity with CLAUDE.md `Quick Commands`.
-      - name: Build sage_core (required for pytest)
+      # ERRORs at collection. Same recipe as python-sage Linux job:
+      # `maturin build` (wheel) + `pip install` because `maturin develop`
+      # requires an active virtualenv that setup-python@v6 doesn't create.
+      - name: Build sage_core wheel + install (required for pytest)
         working-directory: sage-core
+        shell: bash
         run: |
           pip install maturin
-          maturin develop --features smt,onnx
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - name: Run Python tests
         working-directory: sage-python
         run: python -m pytest tests/ -v --tb=short
