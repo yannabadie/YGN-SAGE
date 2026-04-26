@@ -1,7 +1,7 @@
 ---
 title: YGN-SAGE Dashboard
 type: moc
-updated: 2026-04-23
+updated: 2026-04-26
 ---
 
 # YGN-SAGE — Self-Adaptive Generation Engine
@@ -9,12 +9,13 @@ updated: 2026-04-23
 Agent Development Kit qui **apprend** quelle topologie multi-agent utiliser pour chaque tache.
 Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
-## Etat du projet (23 Avril 2026)
+## Etat du projet (26 Avril 2026)
 
 | Metrique | Valeur | Notes |
 |----------|--------|-------|
-| Tests Python | **~2290 passing / 45 skipped** | 2339 collected excl. API-key-deps. +29 Apr 23 : diff-verifier 11 + bench-logging 8 + SR-missing sidecar 3 + F3 JSONL 2 + diff-verifier wiring 4 + parser regression 1. |
-| Tests Rust | **501/501** | +5 Apr 23 (wasm_python `cache_tests` : cold miss / warm hit / corrupt / disabled / end-to-end). |
+| Tests Python | **2501 passing** | 8 fail + 2 error tous dans `test_e2e_*` / `test_pydantic_ai_integration.py` (pré-existants, API-key-gated). |
+| Tests Rust | **501/501** | `--features smt`. cma_me::test_small_scale_convergence dé-flake (8×10 fitness evals au lieu de 4×5) le 2026-04-26. |
+| **Static analysis** | **mypy 0/183, ruff clean** | mypy passé de 131→0 le 2026-04-26 sans nouveau `# type: ignore`. type:ignore ceiling 44/44 inchangé. |
 | kNN Routing GT | **100%** (60/60) | exact-match override (CORAL ff41e53) |
 | MASBENCH breadth | **+22pp (p=0.015)** | Seul axe statistiquement significatif |
 | MASBENCH depth/horizon | +2/+4pp | Non significatifs (p>0.05) |
@@ -75,6 +76,14 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > [!info] Architecture vs Realite
 > ~90% de l'architecture documentee est implementee et integree (Apr 18).
 > Les 10% restants : evolution (opt-in), consolidation memoire, preuves formelles sandbox, learned prompt registry (discuté, pas implémenté), dynamic step budget.
+
+> [!success] Shipped (Apr 26, **CI debt closeout — 14 commits**, vert après une semaine rouge)
+> - **mypy 131→0** sans nouveau `# type: ignore` — fix forensique par root-cause: `protocols/a2a_server.py` API drift réel à 0.3.x (`context.message` vs `context.request.message`, `event_queue.enqueue_event` vs `.put`, `AgentEvent(type=, step=, timestamp=, meta=)` vs kwargs inexistants — bugs runtime que les tests ne révélaient pas) ; `bench/sprint3_evidence.py:86` dead-code qui poisonnait 12 attribute accesses ; `StreamingLLMProvider` protocol method un-`async`'d (close `Coroutine has no __aiter__` cascade) ; AgentLoop class attrs `toolforge`/`evolution_memory` ; ~30 small structural fixes (Optional defaults, Solver Union annotation, AgentEvent constructor).
+> - **a2a-sdk pinned `>=0.3.25,<1.0`** — pyproject n'avait pas d'upper bound, CI résolvait silencieusement vers 1.0.2 (1.0 est une vraie migration protocol/runtime, pas du type drift). Validé par GPT-5.5 Pro + advisor avant action.
+> - **CI maturin recipe** — `develop` requiert un venv que setup-python@v6 ne crée pas → bascule vers `maturin build --release --out target/wheels` + `pip install` du wheel. Ajouté à python-sage Linux + windows jobs.
+> - **`tools/generated_tools/` exclu de mypy** — sandbox-eval templates 1-2 lignes avec globals `json`/`args` injectés au runtime, pas du Python standalone.
+> - **Tests pré-existants exposés par le fix maturin** : sandbox-dépendants skip si pas de `rustpython.wasm` bundle (test_meta_security, test_tool_creation), swebench-dépendants skip si package absent (test_swebench_ca_patch), `episodic.py:list_all` order tie-break par rowid pour résoudre l'instabilité Windows clock 15ms, kNN `assess_complexity` skip win32 (OOD threshold sensible à l'embedder fixture).
+> - **Doc sweep** : README badge 2339→2501, CLAUDE.md Current State refresh 2026-04-26, .claude/rules/architecture.md + development.md mypy/ruff status, roadmap.md banner closeout, MEMORY.md gate update, ce dashboard.
 
 > [!success] Shipped (Apr 23, **Track 3 close-out + verifier + wasm JIT cache + ALIRE quick-wins** — 17 commits)
 > - **Track 2+3 close-out** — F3 JSONL field (`cb03773`), F2 diagnosis note (`ed4bf0e`+`60241c1`), prompt hygiene (`29987bc`), SR-missing sidecar (`2793a74`), gen-log-by-default (`9ec3dfd`), Track 3 close-out (`0b94877`+`d4d9c01`). Invalidations : sub-tasks 3.1 & 3.2 (tracers DO read test files ; prompt ne peut pas fixer les 3 modes orthogonaux de semantic-miss).
