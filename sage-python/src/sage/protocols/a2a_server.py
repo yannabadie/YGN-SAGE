@@ -56,9 +56,8 @@ class SageAgentExecutor(AgentExecutor):
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Execute a task via the SAGE cognitive pipeline with streaming."""
-        # Extract task text from A2A message
         task_text = ""
-        message = context.request.message if context.request else None
+        message = context.message
         if message and message.parts:
             for part in message.parts:
                 if hasattr(part, "root") and hasattr(part.root, "text"):
@@ -66,7 +65,13 @@ class SageAgentExecutor(AgentExecutor):
                 elif hasattr(part, "text"):
                     task_text += part.text
 
-        task = context.task or new_task(request=message)
+        if context.current_task is not None:
+            task = context.current_task
+        elif message is not None:
+            task = new_task(request=message)
+        else:
+            _log.warning("A2A execute received no task and no message; aborting")
+            return
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         if not task_text:
@@ -83,8 +88,7 @@ class SageAgentExecutor(AgentExecutor):
             )
             return
 
-        # Signal working state
-        await event_queue.put(
+        await event_queue.enqueue_event(
             TaskStatusUpdateEvent(
                 task_id=task.id,
                 context_id=task.context_id,
@@ -117,7 +121,7 @@ class SageAgentExecutor(AgentExecutor):
                                 )
                             ],
                         )
-                        await event_queue.put(
+                        await event_queue.enqueue_event(
                             TaskArtifactUpdateEvent(
                                 task_id=task.id,
                                 context_id=task.context_id,
@@ -136,7 +140,7 @@ class SageAgentExecutor(AgentExecutor):
                                 Part(root=TextPart(text=final_output[:2000]))
                             ],
                         )
-                        await event_queue.put(
+                        await event_queue.enqueue_event(
                             TaskArtifactUpdateEvent(
                                 task_id=task.id,
                                 context_id=task.context_id,
@@ -170,9 +174,10 @@ class SageAgentExecutor(AgentExecutor):
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
         """Cancel a running task."""
-        if context.task:
-            self._cancelled.add(context.task.id)
-            updater = TaskUpdater(event_queue, context.task.id, context.task.context_id)
+        task = context.current_task
+        if task is not None:
+            self._cancelled.add(task.id)
+            updater = TaskUpdater(event_queue, task.id, task.context_id)
             await updater.cancel()
         else:
             _log.warning("A2A cancel requested but no task context")
@@ -195,8 +200,8 @@ def build_agent_card(
         ),
         url=url,
         version="0.2.0",
-        defaultInputModes=["text"],
-        defaultOutputModes=["text"],
+        default_input_modes=["text"],
+        default_output_modes=["text"],
         capabilities=AgentCapabilities(streaming=True),
         skills=[
             AgentSkill(
