@@ -1,10 +1,16 @@
-//! ToolExecutor: PyO3 class combining validation + sandboxed execution.
+//! ToolExecutor: PyO3 class combining Python AST validation and sandboxed execution.
 //!
-//! Execution priority:
-//! 1. Wasm WASI sandbox (if component loaded and sandbox feature enabled)
-//!    - Tries WASI path first (for CPython components with WASI imports)
-//!    - Falls back to bare component (for simple components without WASI)
-//! 2. Subprocess fallback (always available)
+//! `validate_and_execute()` validates code first, then executes through the
+//! safest available Wasm path: an operator-loaded Component-Model sandbox if
+//! present, otherwise the embedded RustPython wasm32-wasip1 sandbox when built
+//! with `sandbox + cranelift` and a bundled `rustpython.wasm`.
+//!
+//! The embedded sandbox is deny-by-default: no filesystem, network,
+//! environment, or subprocess access, with bounded memory and timeout enforcement.
+//! If no Wasm path is available, validated execution hard-fails; it does not
+//! fall back to subprocess execution. The only subprocess-capable bypass is
+//! `execute_raw()`, which skips AST validation and requires the explicit
+//! `SAGE_UNSAFE_RAW_EXEC=1` opt-in for trusted callers.
 
 use super::subprocess::{execute_python_subprocess, ExecResult};
 use super::validator::{validate_python_code, ValidationResult};
@@ -27,7 +33,7 @@ use std::sync::OnceLock;
 /// executor = ToolExecutor()
 /// # Validate only
 /// result = executor.validate(code)
-/// # Validate + execute (tries Wasm first if loaded, then subprocess)
+/// # Validate + execute (Wasm-only; hard-fails if no sandbox is available)
 /// result = executor.validate_and_execute(code, args_json)
 /// # Load a pre-compiled Wasm component for sandboxed execution
 /// executor.load_precompiled_component(compiled_bytes)

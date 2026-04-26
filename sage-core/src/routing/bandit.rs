@@ -1,9 +1,15 @@
-//! ContextualBandit — per-arm Beta/Gamma posteriors with Thompson sampling.
+//! ContextualBandit — per-arm Thompson sampling with optional context bias.
 //!
-//! Selects the best (model, topology) combination given runtime context.
-//! Uses Beta posteriors for quality (bounded [0,1]) and Gamma posteriors
-//! for cost/latency (non-negative). Builds a global Pareto front at
-//! decision time and selects based on runtime constraints.
+//! Each arm is a `(model_id, topology_template)` pair with Beta quality and
+//! Gamma cost/latency posteriors plus restorable running context statistics.
+//! `choose()` explores randomly or selects the arm with the highest sampled
+//! quality. `choose_contextual()` uses the same quality sample multiplied by
+//! `1 + max(cosine_similarity(context, arm_context_mean), 0)`.
+//!
+//! Cost and latency posteriors are updated and sampled into `BanditDecision`
+//! for telemetry, but they do not currently affect selection. No global
+//! Pareto front or constraint-aware selection is built here; that belongs to
+//! the roadmap-A24 multi-objective routing follow-up.
 
 use pyo3::prelude::*;
 use rand::Rng;
