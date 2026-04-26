@@ -12,7 +12,8 @@
 //! the roadmap-A24 multi-objective routing follow-up.
 
 use pyo3::prelude::*;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{debug, info, info_span};
@@ -383,6 +384,16 @@ impl ContextualBandit {
             .or_insert_with(|| ArmPosterior::new(key));
     }
 
+    fn sorted_arm_keys(&self) -> Vec<ArmKey> {
+        let mut arm_keys: Vec<ArmKey> = self.arms.keys().cloned().collect();
+        arm_keys.sort_by(|a, b| {
+            a.model_id
+                .cmp(&b.model_id)
+                .then_with(|| a.template.cmp(&b.template))
+        });
+        arm_keys
+    }
+
     /// Select the best arm given an exploration budget.
     ///
     /// `exploration_budget`: 0.0 = pure exploit, 1.0 = pure explore.
@@ -391,6 +402,15 @@ impl ContextualBandit {
     /// expected quality/cost/latency. The decision_id can later be passed
     /// to `record_outcome()` to update posteriors.
     pub fn choose(&mut self, exploration_budget: f32) -> Result<BanditDecision, BanditError> {
+        let mut rng = rand::rng();
+        self.choose_with_rng(exploration_budget, &mut rng)
+    }
+
+    pub fn choose_with_rng<R: Rng>(
+        &mut self,
+        exploration_budget: f32,
+        rng: &mut R,
+    ) -> Result<BanditDecision, BanditError> {
         let _span = info_span!(
             "bandit.select",
             arms = self.arms.len(),
@@ -398,72 +418,9 @@ impl ContextualBandit {
         )
         .entered();
 
-        if self.arms.is_empty() {
-            return Err(BanditError::NoArms);
-        }
-
-        let mut rng = rand::rng();
-        let decision_id = ulid::Ulid::new().to_string();
-
-        // Decide: explore or exploit
-        let exploring = rng.random::<f32>() < exploration_budget;
-
-        let arm_keys: Vec<ArmKey> = self.arms.keys().cloned().collect();
-
-        let chosen_key = if exploring {
-            // Pure exploration: pick a random arm
-            let idx = rng.random_range(0..arm_keys.len());
-            arm_keys[idx].clone()
-        } else {
-            // Thompson sampling: sample quality from each arm, pick the best
-            let mut best_key = arm_keys[0].clone();
-            let mut best_quality = f64::NEG_INFINITY;
-
-            for key in &arm_keys {
-                let arm = &self.arms[key];
-                let sampled_quality = arm.quality.sample(&mut rng);
-                if sampled_quality > best_quality {
-                    best_quality = sampled_quality;
-                    best_key = key.clone();
-                }
-            }
-            best_key
-        };
-
-        let arm = &self.arms[&chosen_key];
-        let expected_quality = arm.quality.sample(&mut rng) as f32;
-        let expected_cost = arm.cost.sample(&mut rng) as f32;
-        let expected_latency = arm.latency.sample(&mut rng) as f32;
-
-        // Evict oldest pending entries if unbounded growth detected
-        if self.pending.len() > 10_000 {
-            let drain_count = self.pending.len() - 5_000;
-            let keys_to_remove: Vec<String> =
-                self.pending.keys().take(drain_count).cloned().collect();
-            for key in keys_to_remove {
-                self.pending.remove(&key);
-            }
-        }
-
-        // Store pending decision for deferred record()
-        self.pending.insert(
-            decision_id.clone(),
-            PendingInfo {
-                arm_key: chosen_key.clone(),
-                context: Vec::new(),
-            },
-        );
-
-        let decision = BanditDecision {
-            decision_id,
-            model_id: chosen_key.model_id,
-            template: chosen_key.template,
-            expected_quality,
-            expected_cost,
-            expected_latency,
-            exploration: exploring,
-            context: Vec::new(),
-        };
+        let arm_keys = self.sorted_arm_keys();
+        let decision =
+            self.choose_from_candidates_with_rng(exploration_budget, &[], arm_keys, rng)?;
 
         info!(
             model = %decision.model_id,
@@ -492,9 +449,19 @@ impl ContextualBandit {
         exploration_budget: f32,
         context: &[f32],
     ) -> Result<BanditDecision, BanditError> {
+        let mut rng = rand::rng();
+        self.choose_contextual_with_rng(exploration_budget, context, &mut rng)
+    }
+
+    pub fn choose_contextual_with_rng<R: Rng>(
+        &mut self,
+        exploration_budget: f32,
+        context: &[f32],
+        rng: &mut R,
+    ) -> Result<BanditDecision, BanditError> {
         // If no context provided, fall back to standard Thompson sampling
         if context.is_empty() {
-            return self.choose(exploration_budget);
+            return self.choose_with_rng(exploration_budget, rng);
         }
 
         let _span = info_span!(
@@ -505,84 +472,9 @@ impl ContextualBandit {
         )
         .entered();
 
-        if self.arms.is_empty() {
-            return Err(BanditError::NoArms);
-        }
-
-        let mut rng = rand::rng();
-        let decision_id = ulid::Ulid::new().to_string();
-
-        // Decide: explore or exploit
-        let exploring = rng.random::<f32>() < exploration_budget;
-
-        let arm_keys: Vec<ArmKey> = self.arms.keys().cloned().collect();
-
-        let chosen_key = if exploring {
-            // Pure exploration: pick a random arm
-            let idx = rng.random_range(0..arm_keys.len());
-            arm_keys[idx].clone()
-        } else {
-            // Context-biased Thompson sampling:
-            // score = thompson_quality * (1.0 + context_similarity)
-            // where context_similarity = cosine(context, arm.context_mean), clamped to [0, 1]
-            let mut best_key = arm_keys[0].clone();
-            let mut best_score = f64::NEG_INFINITY;
-
-            for key in &arm_keys {
-                let arm = &self.arms[key];
-                let sampled_quality = arm.quality.sample(&mut rng);
-
-                // Compute context bonus
-                let similarity = arm
-                    .context_mean()
-                    .map_or(0.0, |mean| cosine_similarity_f64(context, &mean).max(0.0));
-
-                // Multiplicative bonus: quality * (1 + similarity)
-                // similarity in [0, 1] → boost factor in [1.0, 2.0]
-                let score = sampled_quality * (1.0 + similarity);
-
-                if score > best_score {
-                    best_score = score;
-                    best_key = key.clone();
-                }
-            }
-            best_key
-        };
-
-        let arm = &self.arms[&chosen_key];
-        let expected_quality = arm.quality.sample(&mut rng) as f32;
-        let expected_cost = arm.cost.sample(&mut rng) as f32;
-        let expected_latency = arm.latency.sample(&mut rng) as f32;
-
-        // Evict oldest pending entries if unbounded growth detected
-        if self.pending.len() > 10_000 {
-            let drain_count = self.pending.len() - 5_000;
-            let keys_to_remove: Vec<String> =
-                self.pending.keys().take(drain_count).cloned().collect();
-            for key in keys_to_remove {
-                self.pending.remove(&key);
-            }
-        }
-
-        // Store pending decision with context for deferred record()
-        self.pending.insert(
-            decision_id.clone(),
-            PendingInfo {
-                arm_key: chosen_key.clone(),
-                context: context.to_vec(),
-            },
-        );
-
-        let decision = BanditDecision {
-            decision_id,
-            model_id: chosen_key.model_id,
-            template: chosen_key.template,
-            expected_quality,
-            expected_cost,
-            expected_latency,
-            exploration: exploring,
-            context: context.to_vec(),
-        };
+        let arm_keys = self.sorted_arm_keys();
+        let decision =
+            self.choose_from_candidates_with_rng(exploration_budget, context, arm_keys, rng)?;
 
         info!(
             model = %decision.model_id,
@@ -596,17 +488,23 @@ impl ContextualBandit {
         Ok(decision)
     }
 
-    fn choose_from_candidates(
+    fn choose_from_candidates_with_rng<R: Rng>(
         &mut self,
         exploration_budget: f32,
         context: &[f32],
-        arm_keys: Vec<ArmKey>,
+        mut arm_keys: Vec<ArmKey>,
+        rng: &mut R,
     ) -> Result<BanditDecision, BanditError> {
+        arm_keys.sort_by(|a, b| {
+            a.model_id
+                .cmp(&b.model_id)
+                .then_with(|| a.template.cmp(&b.template))
+        });
+
         if arm_keys.is_empty() {
             return Err(BanditError::NoArms);
         }
 
-        let mut rng = rand::rng();
         let decision_id = ulid::Ulid::new().to_string();
         let exploring = rng.random::<f32>() < exploration_budget;
 
@@ -619,7 +517,7 @@ impl ContextualBandit {
 
             for key in &arm_keys {
                 let arm = &self.arms[key];
-                let sampled_quality = arm.quality.sample(&mut rng);
+                let sampled_quality = arm.quality.sample(rng);
                 let score = if context.is_empty() {
                     sampled_quality
                 } else {
@@ -638,9 +536,9 @@ impl ContextualBandit {
         };
 
         let arm = &self.arms[&chosen_key];
-        let expected_quality = arm.quality.sample(&mut rng) as f32;
-        let expected_cost = arm.cost.sample(&mut rng) as f32;
-        let expected_latency = arm.latency.sample(&mut rng) as f32;
+        let expected_quality = arm.quality.sample(rng) as f32;
+        let expected_cost = arm.cost.sample(rng) as f32;
+        let expected_latency = arm.latency.sample(rng) as f32;
 
         if self.pending.len() > 10_000 {
             let drain_count = self.pending.len() - 5_000;
@@ -677,6 +575,16 @@ impl ContextualBandit {
         exploration_budget: f32,
         template: &str,
     ) -> Result<BanditDecision, BanditError> {
+        let mut rng = rand::rng();
+        self.choose_for_template_with_rng(exploration_budget, template, &mut rng)
+    }
+
+    pub fn choose_for_template_with_rng<R: Rng>(
+        &mut self,
+        exploration_budget: f32,
+        template: &str,
+        rng: &mut R,
+    ) -> Result<BanditDecision, BanditError> {
         let _span = info_span!(
             "bandit.select_template",
             arms = self.arms.len(),
@@ -691,7 +599,8 @@ impl ContextualBandit {
             .filter(|key| key.template == template)
             .cloned()
             .collect();
-        let decision = self.choose_from_candidates(exploration_budget, &[], arm_keys)?;
+        let decision =
+            self.choose_from_candidates_with_rng(exploration_budget, &[], arm_keys, rng)?;
 
         debug_assert_eq!(decision.template, template);
         info!(
@@ -711,8 +620,24 @@ impl ContextualBandit {
         context: &[f32],
         template: &str,
     ) -> Result<BanditDecision, BanditError> {
+        let mut rng = rand::rng();
+        self.choose_contextual_for_template_with_rng(
+            exploration_budget,
+            context,
+            template,
+            &mut rng,
+        )
+    }
+
+    pub fn choose_contextual_for_template_with_rng<R: Rng>(
+        &mut self,
+        exploration_budget: f32,
+        context: &[f32],
+        template: &str,
+        rng: &mut R,
+    ) -> Result<BanditDecision, BanditError> {
         if context.is_empty() {
-            return self.choose_for_template(exploration_budget, template);
+            return self.choose_for_template_with_rng(exploration_budget, template, rng);
         }
 
         let _span = info_span!(
@@ -730,7 +655,8 @@ impl ContextualBandit {
             .filter(|key| key.template == template)
             .cloned()
             .collect();
-        let decision = self.choose_from_candidates(exploration_budget, context, arm_keys)?;
+        let decision =
+            self.choose_from_candidates_with_rng(exploration_budget, context, arm_keys, rng)?;
 
         debug_assert_eq!(decision.template, template);
         info!(
@@ -1053,6 +979,18 @@ impl ContextualBandit {
         self.choose(exploration_budget).map_err(Into::into)
     }
 
+    #[pyo3(name = "select_with_seed")]
+    #[pyo3(signature = (exploration_budget, seed))]
+    pub fn py_select_with_seed(
+        &mut self,
+        exploration_budget: f32,
+        seed: u64,
+    ) -> PyResult<BanditDecision> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        self.choose_with_rng(exploration_budget, &mut rng)
+            .map_err(Into::into)
+    }
+
     /// Select the best arm with task-context bias.
     ///
     /// `context` is a small feature vector (e.g., `[system_tier, task_length, node_count]`).
@@ -1073,6 +1011,19 @@ impl ContextualBandit {
         }
     }
 
+    #[pyo3(name = "select_with_context_with_seed")]
+    #[pyo3(signature = (exploration_budget, seed, context=vec![]))]
+    pub fn py_select_with_context_with_seed(
+        &mut self,
+        exploration_budget: f32,
+        seed: u64,
+        context: Vec<f32>,
+    ) -> PyResult<BanditDecision> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        self.choose_contextual_with_rng(exploration_budget, &context, &mut rng)
+            .map_err(Into::into)
+    }
+
     /// Select the best arm for a template with optional task-context bias.
     #[pyo3(name = "select_with_context_for_template")]
     #[pyo3(signature = (exploration_budget, template, context=vec![]))]
@@ -1084,6 +1035,25 @@ impl ContextualBandit {
     ) -> PyResult<BanditDecision> {
         self.choose_contextual_for_template(exploration_budget, &context, template)
             .map_err(Into::into)
+    }
+
+    #[pyo3(name = "select_with_context_for_template_with_seed")]
+    #[pyo3(signature = (exploration_budget, template, seed, context=vec![]))]
+    pub fn py_select_with_context_for_template_with_seed(
+        &mut self,
+        exploration_budget: f32,
+        template: &str,
+        seed: u64,
+        context: Vec<f32>,
+    ) -> PyResult<BanditDecision> {
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        self.choose_contextual_for_template_with_rng(
+            exploration_budget,
+            &context,
+            template,
+            &mut rng,
+        )
+        .map_err(Into::into)
     }
 
     /// Record outcome for a previous decision.
@@ -1199,6 +1169,25 @@ impl ContextualBandit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
+
+    fn bandit_with_arms(order: &[(&str, &str)]) -> ContextualBandit {
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        for (model_id, template) in order {
+            bandit.add_arm(model_id, template);
+        }
+        bandit
+    }
+
+    fn assert_same_selection(left: &BanditDecision, right: &BanditDecision) {
+        assert_eq!(left.model_id, right.model_id);
+        assert_eq!(left.template, right.template);
+        assert_eq!(left.exploration, right.exploration);
+        assert_eq!(left.expected_quality, right.expected_quality);
+        assert_eq!(left.expected_cost, right.expected_cost);
+        assert_eq!(left.expected_latency, right.expected_latency);
+    }
 
     #[test]
     fn beta_posterior_uniform_prior() {
@@ -1452,6 +1441,153 @@ mod tests {
         assert!(arm.context_mean().is_none());
     }
 
+    #[test]
+    fn arm_keys_sort_by_model_id_then_template() {
+        let bandit = bandit_with_arms(&[
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+            ("a-model", "avr"),
+            ("m-model", "single_agent"),
+        ]);
+
+        let sorted: Vec<(String, String)> = bandit
+            .sorted_arm_keys()
+            .into_iter()
+            .map(|key| (key.model_id, key.template))
+            .collect();
+
+        assert_eq!(
+            sorted,
+            vec![
+                ("a-model".to_string(), "avr".to_string()),
+                ("a-model".to_string(), "parallel".to_string()),
+                ("m-model".to_string(), "single_agent".to_string()),
+                ("z-model".to_string(), "sequential".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn choose_with_rng_is_deterministic_across_registration_order() {
+        let order_a = [
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+            ("a-model", "avr"),
+            ("m-model", "single_agent"),
+        ];
+        let order_b = [
+            ("m-model", "single_agent"),
+            ("a-model", "avr"),
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+        ];
+        let mut left = bandit_with_arms(&order_a);
+        let mut right = bandit_with_arms(&order_b);
+        let mut left_rng = ChaCha8Rng::seed_from_u64(42);
+        let mut right_rng = ChaCha8Rng::seed_from_u64(42);
+
+        let left_decision = left.choose_with_rng(0.0, &mut left_rng).unwrap();
+        let right_decision = right.choose_with_rng(0.0, &mut right_rng).unwrap();
+
+        assert_ne!(left_decision.decision_id, right_decision.decision_id);
+        assert_same_selection(&left_decision, &right_decision);
+    }
+
+    #[test]
+    fn choose_contextual_with_rng_is_deterministic_across_registration_order() {
+        let order_a = [
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+            ("a-model", "avr"),
+            ("m-model", "single_agent"),
+        ];
+        let order_b = [
+            ("a-model", "avr"),
+            ("m-model", "single_agent"),
+            ("a-model", "parallel"),
+            ("z-model", "sequential"),
+        ];
+        let mut left = bandit_with_arms(&order_a);
+        let mut right = bandit_with_arms(&order_b);
+        let mut left_rng = ChaCha8Rng::seed_from_u64(42);
+        let mut right_rng = ChaCha8Rng::seed_from_u64(42);
+
+        let left_decision = left
+            .choose_contextual_with_rng(0.0, &[1.0, 10.0, 1.0], &mut left_rng)
+            .unwrap();
+        let right_decision = right
+            .choose_contextual_with_rng(0.0, &[1.0, 10.0, 1.0], &mut right_rng)
+            .unwrap();
+
+        assert_same_selection(&left_decision, &right_decision);
+        assert_eq!(left_decision.context, right_decision.context);
+    }
+
+    #[test]
+    fn choose_contextual_for_template_with_rng_filters_and_sorts_candidates() {
+        let order_a = [
+            ("z-model", "single_agent"),
+            ("a-model", "single_agent"),
+            ("other-model", "sequential"),
+        ];
+        let order_b = [
+            ("other-model", "sequential"),
+            ("a-model", "single_agent"),
+            ("z-model", "single_agent"),
+        ];
+        let mut left = bandit_with_arms(&order_a);
+        let mut right = bandit_with_arms(&order_b);
+        let mut left_rng = ChaCha8Rng::seed_from_u64(123);
+        let mut right_rng = ChaCha8Rng::seed_from_u64(123);
+
+        let left_decision = left
+            .choose_contextual_for_template_with_rng(
+                0.0,
+                &[2.0, 0.0, 1.0],
+                "single_agent",
+                &mut left_rng,
+            )
+            .unwrap();
+        let right_decision = right
+            .choose_contextual_for_template_with_rng(
+                0.0,
+                &[2.0, 0.0, 1.0],
+                "single_agent",
+                &mut right_rng,
+            )
+            .unwrap();
+
+        assert_eq!(left_decision.template, "single_agent");
+        assert_eq!(right_decision.template, "single_agent");
+        assert_ne!(left_decision.model_id, "other-model");
+        assert_ne!(right_decision.model_id, "other-model");
+        assert_same_selection(&left_decision, &right_decision);
+    }
+
+    #[test]
+    fn py_seeded_selection_wrappers_are_reproducible() {
+        let order_a = [
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+            ("a-model", "avr"),
+            ("m-model", "single_agent"),
+        ];
+        let order_b = [
+            ("m-model", "single_agent"),
+            ("a-model", "avr"),
+            ("z-model", "sequential"),
+            ("a-model", "parallel"),
+        ];
+        let mut left = bandit_with_arms(&order_a);
+        let mut right = bandit_with_arms(&order_b);
+
+        let left_decision = left.py_select_with_seed(0.0, 7).unwrap();
+        let right_decision = right.py_select_with_seed(0.0, 7).unwrap();
+
+        assert_ne!(left_decision.decision_id, right_decision.decision_id);
+        assert_same_selection(&left_decision, &right_decision);
+    }
+
     // ── choose_contextual tests ──────────────────────────────────────────
 
     #[test]
@@ -1486,10 +1622,16 @@ mod tests {
         let mut bandit = ContextualBandit::create(0.995, 0.1);
         bandit.add_arm("model-a", "single_agent");
         bandit.add_arm("model-b", "sequential");
+        let mut rng = ChaCha8Rng::seed_from_u64(0xBADC_0FFE);
 
         for _ in 0..20 {
             let decision = bandit
-                .choose_contextual_for_template(1.0, &[1.0, 42.0, 0.0], "single_agent")
+                .choose_contextual_for_template_with_rng(
+                    1.0,
+                    &[1.0, 42.0, 0.0],
+                    "single_agent",
+                    &mut rng,
+                )
                 .unwrap();
 
             assert_eq!(decision.template, "single_agent");
@@ -1669,6 +1811,7 @@ mod tests {
         let mut bandit = ContextualBandit::create(0.999, 0.1);
         bandit.add_arm("arm-s1", "seq");
         bandit.add_arm("arm-s3", "seq");
+        let mut rng = ChaCha8Rng::seed_from_u64(0xBADC_0FFE);
 
         // Force-train arm-s1 on context [1,0]: epsilon=0 + manual seed of
         // arm-s3 first so the choose() tie-break breaks toward arm-s1 once
@@ -1679,7 +1822,9 @@ mod tests {
         // give a tight posterior on arm-s1 with context_mean [1,0].
         let mut recorded = 0;
         while recorded < 60 {
-            let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
+            let d = bandit
+                .choose_contextual_with_rng(1.0, &[1.0, 0.0], &mut rng)
+                .unwrap();
             if d.model_id == "arm-s1" {
                 bandit
                     .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
@@ -1692,7 +1837,9 @@ mod tests {
         // Now train arm-s3 on context [0,1] the same way.
         recorded = 0;
         while recorded < 60 {
-            let d = bandit.choose_contextual(1.0, &[0.0, 1.0]).unwrap();
+            let d = bandit
+                .choose_contextual_with_rng(1.0, &[0.0, 1.0], &mut rng)
+                .unwrap();
             if d.model_id == "arm-s3" {
                 bandit
                     .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
@@ -1707,7 +1854,9 @@ mod tests {
         // every time.
         let mut s1_count = 0;
         for _ in 0..50 {
-            let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
+            let d = bandit
+                .choose_contextual_with_rng(0.0, &[1.0, 0.0], &mut rng)
+                .unwrap();
             if d.model_id == "arm-s1" {
                 s1_count += 1;
             }

@@ -55,6 +55,7 @@ tracing-subscriber = { version = "0.3", features = ["registry", "env-filter"], o
 opentelemetry-stdout = { version = "0.27", optional = true }
 toml = "0.8"
 rand = "0.9"
+rand_chacha = "0.9"
 # Plan 2.2 (2026-04-20): regex for TopologyController port (path 1
 # error-pattern detection, path 6 emergent-subtask detection). Already
 # in the workspace Cargo.lock transitively; pinning here makes it

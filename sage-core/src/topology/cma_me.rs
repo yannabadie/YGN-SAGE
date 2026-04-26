@@ -8,6 +8,8 @@
 //!
 //! Uses a simplified diagonal covariance (no full matrix needed for 3D).
 
+use rand::Rng;
+
 /// Per-dimension bounds for clamping samples.
 #[derive(Debug, Clone)]
 pub struct DimensionBounds {
@@ -115,8 +117,11 @@ impl CmaEmitter {
     /// centered on `mean` with variance `sigma^2 * cov_diag[j]`.
     /// Values are clamped to per-dimension bounds.
     pub fn ask(&self, n: usize) -> Vec<Vec<f64>> {
-        use rand::Rng;
         let mut rng = rand::rng();
+        self.ask_with_rng(n, &mut rng)
+    }
+
+    pub fn ask_with_rng<R: Rng>(&self, n: usize, rng: &mut R) -> Vec<Vec<f64>> {
         (0..n)
             .map(|_| {
                 (0..self.dim)
@@ -202,6 +207,8 @@ impl CmaEmitter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rand::SeedableRng;
+    use rand_chacha::ChaCha8Rng;
 
     #[test]
     fn test_new_defaults() {
@@ -230,6 +237,30 @@ mod tests {
                 assert!(v > 0.0 && v < 2.0);
             }
         }
+    }
+
+    #[test]
+    fn test_ask_with_rng_same_seed_same_samples() {
+        let e = CmaEmitter::new(3, 0.3);
+        let mut rng_a = ChaCha8Rng::seed_from_u64(123);
+        let mut rng_b = ChaCha8Rng::seed_from_u64(123);
+
+        let left = e.ask_with_rng(8, &mut rng_a);
+        let right = e.ask_with_rng(8, &mut rng_b);
+
+        assert_eq!(left, right);
+    }
+
+    #[test]
+    fn test_ask_with_rng_different_seed_different_samples() {
+        let e = CmaEmitter::new(3, 0.3);
+        let mut rng_a = ChaCha8Rng::seed_from_u64(123);
+        let mut rng_b = ChaCha8Rng::seed_from_u64(456);
+
+        let left = e.ask_with_rng(8, &mut rng_a);
+        let right = e.ask_with_rng(8, &mut rng_b);
+
+        assert_ne!(left, right);
     }
 
     #[test]
@@ -264,9 +295,10 @@ mod tests {
         // samples = 480 fitness evals so the mean reliably crosses 1.0
         // toward 2.0 within the budget.
         let mut e = CmaEmitter::new(1, 1.0);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE25);
         // Target: high fitness at x=2.0
         for _ in 0..30 {
-            let samples = e.ask(16);
+            let samples = e.ask_with_rng(16, &mut rng);
             let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
             e.tell(&samples, &fitnesses);
         }
@@ -360,10 +392,11 @@ mod tests {
         let bounds = vec![DimensionBounds::new(0.0, 5.0)];
         let mut e = CmaEmitter::with_bounds(1, 1.0, bounds, 0.98);
         e.warm_start(&[1.0]);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE26);
 
         // Target: peak fitness at x=2.0
         for _ in 0..20 {
-            let samples = e.ask(32);
+            let samples = e.ask_with_rng(32, &mut rng);
             let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
             e.tell(&samples, &fitnesses);
         }
