@@ -1,0 +1,135 @@
+name: Latest Python dependencies
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  latest-deps:
+    name: Re-resolve latest allowed Python deps
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure constraints compiler is executable
+        run: chmod +x scripts/compile_python_constraints.sh
+
+      - name: Re-resolve constraints to latest allowed versions
+        run: ./scripts/compile_python_constraints.sh --upgrade
+
+      - name: Capture dependency diff
+        id: dependency-diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- sage-python/constraints.txt sage-discover/constraints.txt; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No dependency drift detected."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff -- sage-python/constraints.txt sage-discover/constraints.txt > dependency-diff.patch
+            cat dependency-diff.patch
+          fi
+
+      - name: Build sage_core wheel + install
+        working-directory: sage-core
+        run: |
+          pip install maturin
+          maturin build --release --features smt,onnx --out target/wheels
+          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
+
+      - name: Install Python SDK with latest resolved constraints
+        working-directory: sage-python
+        run: pip install -c constraints.txt -e ".[all,dev]"
+
+      - name: Install Discovery SDK with latest resolved constraints
+        working-directory: sage-discover
+        run: |
+          pip install -c ../sage-python/constraints.txt -e "../sage-python[all,dev]"
+          pip install -c ../sage-python/constraints.txt -c constraints.txt -e "."
+
+      - name: Run dependency drift smoke checks
+        run: |
+          cd sage-python
+          python -m pytest \
+            tests/test_pipeline_bandit_causality.py \
+            tests/test_tool_runtime_fail_closed.py \
+            tests/test_swebench_diff_verifier_reasons.py \
+            tests/test_swebench_diff_verifier_annotation.py \
+            -q
+          python -m mypy src/sage/ --ignore-missing-imports
+          ruff check src/
+
+      - name: Upload dependency diff
+        if: steps.dependency-diff.outputs.changed == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-dependency-diff
+          path: dependency-diff.patch
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Open or update dependency drift issue
+        if: failure() || steps.dependency-diff.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = "Python dependency drift detected";
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            const body = [
+              "The weekly latest-deps workflow detected Python dependency drift or a smoke-check failure.",
+              "",
+              `Workflow run: ${runUrl}`,
+              "",
+              "Regenerate locally with:",
+              "",
+              "```bash",
+              "./scripts/compile_python_constraints.sh --upgrade",
+              "```",
+              "",
+              "Then run the A14/A15/A22 regression smoke and commit the updated constraints if the result is acceptable."
+            ].join("\n");
+
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: "open",
+              labels: "dependencies"
+            });
+
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: ["dependencies", "ci"]
+              });
+            }
+
+      - name: Fail when dependency drift exists
+        if: steps.dependency-diff.outputs.changed == 'true'
+        run: exit 1

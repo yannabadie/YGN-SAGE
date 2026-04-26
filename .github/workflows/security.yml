@@ -42,7 +42,7 @@ jobs:
       - run: pip install cyclonedx-bom
       # A21: sage-python declares sage-core>=0.1,<0.2 as a runtime dep but
       # sage-core is not yet on PyPI (B4). Build + install the wheel locally
-      # so `pip install -e ".[all]"` can resolve sage-core without hitting
+      # so the constrained sage-python install can resolve sage-core without hitting
       # the registry.
       - name: Build sage_core wheel + install (required for sage-python)
         working-directory: sage-core
@@ -52,7 +52,7 @@ jobs:
           pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
       - run: |
           cd sage-python
-          pip install -e ".[all]"
+          pip install -c constraints.txt -e ".[all,dev]"
           cyclonedx-py environment -o ../sbom.json --output-format json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -79,7 +79,7 @@ jobs:
         run: pip install pip-audit
       # A21: sage-python declares sage-core>=0.1,<0.2 as a runtime dep but
       # sage-core is not yet on PyPI (B4). Build + install the wheel locally
-      # so `pip install -e "."` (used by both sage-python and sage-discover
+      # so constrained editable installs (used by both sage-python and sage-discover
       # audit branches below) can resolve sage-core without hitting the
       # registry. The metadata-only audit branch (--disable-pip) does not
       # need this prebuild but doesn't conflict with it either.
@@ -100,12 +100,12 @@ jobs:
             --requirement <(python -c 'import tomllib,sys; d=tomllib.load(open("pyproject.toml","rb")); [print(r) for r in d.get("project",{}).get("dependencies",[])]') \
             || true
           # Primary run: real install + audit (exits non-zero on any finding).
-          pip install -e "."
+          pip install -c constraints.txt -e ".[all,dev]"
           pip-audit --strict
       - name: Audit sage-discover (pyproject.toml)
         run: |
           cd sage-discover
-          pip install -e "."
+          pip install -c ../sage-python/constraints.txt -c constraints.txt -e "."
           pip-audit --strict
       # Also run the pypa action so the output lands in the GitHub
       # Security tab when a SARIF-capable step is wired later.

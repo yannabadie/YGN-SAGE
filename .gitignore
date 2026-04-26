@@ -104,6 +104,7 @@ sage-python/*.key
 sage-python/*.xlsx
 sage-python/*.csv
 sage-python/*.txt
+!sage-python/constraints.txt
 sage-python/test_*.json
 sage-python/output/
 docs/VeRLGIGPO_README.md

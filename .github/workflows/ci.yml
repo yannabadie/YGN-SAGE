@@ -84,6 +84,42 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  python-constraints:
+    name: Python constraints freshness
+    runs-on: ubuntu-latest
+
+    # A27 first-landing observation mode: the initial Windows-generated
+    # constraints carry transient platform pins (pywin32, pywin32-ctypes)
+    # that the Linux-runner re-compile won't reproduce. continue-on-error
+    # lets the workflow surface the diff without blocking the rest of CI
+    # while we regenerate from the Linux baseline. Flip to a hard gate
+    # via A27-followup once `sage-{python,discover}/constraints.txt` are
+    # regenerated from a clean Ubuntu/Python 3.12 environment (either
+    # via WSL/Docker locally or by triggering the latest-deps workflow
+    # and committing its output).
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure constraints compiler is executable
+        run: chmod +x scripts/compile_python_constraints.sh
+
+      - name: Recompile Python constraints
+        run: ./scripts/compile_python_constraints.sh
+
+      - name: Assert constraints are committed
+        run: |
+          git diff --exit-code -- \
+            sage-python/constraints.txt \
+            sage-discover/constraints.txt
+
   rust:
     name: Rust (cargo test + clippy)
     runs-on: ubuntu-latest
@@ -265,7 +301,7 @@ jobs:
 
       - name: Install Python SDK
         working-directory: sage-python
-        run: pip install -e ".[all,dev]"
+        run: pip install -c constraints.txt -e ".[all,dev]"
 
       - name: Assert embedded wasm sandbox is available
         working-directory: sage-python
@@ -333,7 +369,7 @@ jobs:
 
       - name: Install Python SDK
         working-directory: sage-discover
-        run: pip install -e "../sage-python[all,dev]"
+        run: pip install -c ../sage-python/constraints.txt -e "../sage-python[all,dev]"
 
       - name: Assert embedded wasm sandbox is available
         working-directory: sage-discover
@@ -341,7 +377,7 @@ jobs:
 
       - name: Install Discovery SDK
         working-directory: sage-discover
-        run: pip install -e "."
+        run: pip install -c ../sage-python/constraints.txt -c constraints.txt -e "."
 
       - name: Run Discovery tests
         working-directory: sage-discover
@@ -393,7 +429,7 @@ jobs:
 
       - name: Install Python SDK
         working-directory: sage-python
-        run: pip install -e ".[all,dev]"
+        run: pip install -c constraints.txt -e ".[all,dev]"
 
       - name: Assert embedded wasm sandbox is available
         working-directory: sage-python
@@ -466,7 +502,7 @@ jobs:
 
       - name: Install Python SDK
         working-directory: sage-python
-        run: pip install -e ".[all,dev]"
+        run: pip install -c constraints.txt -e ".[all,dev]"
 
       - name: Assert embedded wasm sandbox is available
         working-directory: sage-python
