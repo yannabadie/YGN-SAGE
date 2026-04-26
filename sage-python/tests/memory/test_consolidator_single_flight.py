@@ -82,7 +82,11 @@ async def test_concurrent_consolidate_calls_share_single_in_flight_pass():
     elapsed = time.perf_counter() - start
 
     assert episodic.calls == 1
-    assert elapsed >= 0.1
+    # Lower bound is `delay` minus a small epsilon to absorb Windows
+    # asyncio.sleep's ~10–15 ms timer granularity. CI on 2026-04-26 hit
+    # 0.09996 (3e-5s under the strict 0.1 bound). The point of the
+    # assertion is "second call waited for the first", not exact timing.
+    assert elapsed >= 0.099
     assert elapsed < 0.2
     assert isinstance(first, ConsolidationResult)
     assert first is second
