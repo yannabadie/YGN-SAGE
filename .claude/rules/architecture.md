@@ -7,8 +7,8 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). **501 tests** (+5 net 2026-04-23: wasm_python JIT `cache_tests`).
-- `sage-python/` — Python SDK. **2339 collected** (~2290 passing / 45 skipped excluding API-key-dependent files; 11 pre-existing failures isolated there). +29 this session across bench-logging, SR-missing sidecar, diff-verifier, F3 passthrough, headerless-diff regression.
+- `sage-core/` — Rust orchestrator (PyO3). **501 tests** with `--features smt`.
+- `sage-python/` — Python SDK. **2501 passing**, 63 skipped, 8 fail + 2 error in API-key-dependent files (`test_e2e_*`, `test_pydantic_ai_integration.py`). **mypy 0 errors / 183 source files (2026-04-26).** ruff clean. Type:ignore ceiling 44/44.
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.

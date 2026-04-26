@@ -1,11 +1,23 @@
 # YGN-SAGE roadmap
 
-**Last updated:** 2026-04-23
-**Scope:** forward-looking work surfaced by the 2026-04-23 session (Track 2+3
-close-out, wasm JIT cache, pre-emission diff-context verifier, ALIRE audit
-triage). Not a long-term strategy doc — a living backlog grouped by
-expected time horizon. Priorities inside each horizon ordered by
+**Last updated:** 2026-04-26
+**Scope:** forward-looking work. Living backlog grouped by expected
+time horizon; priorities inside each horizon ordered by
 impact-over-effort.
+
+**2026-04-26 CI debt closeout** (~13 commits): brought CI back to green
+after the 2026-04-21 AUDIT cycle had left it red on every commit.
+Distinct fix waves: clippy `-D warnings`, sage-core/tests `cargo fmt`,
+E0432 in `wasm_python.rs:75` (sandbox+cranelift gate), Windows
+`embedded_wasm_available` runtime-attribute resilience, ruff lint debt
+across 26 files, **mypy 131→0 errors** (a2a-sdk pinned `<1.0`,
+`tools/generated_tools/` excluded, real a2a_server.py runtime-API
+bugs at 0.3.x fixed, sprint3_evidence.py async cascade root removed,
+AgentLoop class attrs for `toolforge`/`evolution_memory`,
+StreamingLLMProvider protocol method un-`async`'d, ~30 small
+structural fixes), maturin `develop`→`build`+`pip install` CI recipe
+(setup-python@v6 has no venv). Type:ignore ceiling 44/44 unchanged.
+ruff clean. 2501 Python tests passing.
 
 Reference frames:
 - `ALIRE.md` — external audit of commit `44a157c` (2026-04-22). Several of

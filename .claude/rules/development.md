@@ -20,8 +20,16 @@ cd sage-python && pip install -e ".[all,dev]"          # Python SDK
 
 ## Test
 ```bash
-cd sage-core && cargo test --features smt --lib     # Rust (501 tests; +5 wasm_python cache_tests landed 2026-04-23)
-cd sage-python && python -m pytest tests/ -v        # Python (2339 collected excl API-key-deps; 40-attack red-team corpus + diff-verifier + bench-logging + SR-missing-sidecar added since mid-April)
+cd sage-core && cargo test --features smt --lib     # Rust (501 tests)
+cd sage-python && python -m pytest tests/ -v        # Python (2501 passing excl API-key-deps; 8 fail + 2 error pre-existing in test_e2e_*.py / test_pydantic_ai_integration.py)
+```
+
+## Lint / typecheck
+```bash
+cd sage-python && ruff check src/                                  # ruff: clean
+cd sage-python && python -m mypy src/sage/ --ignore-missing-imports # mypy: 0 errors / 183 files (2026-04-26)
+cd sage-core && cargo clippy --no-default-features -- -D warnings  # clippy: clean
+cd sage-core && cargo fmt --check                                  # rustfmt: clean
 ```
 
 ## Benchmarks — USE THESE (not HumanEval+)
@@ -143,8 +151,3 @@ python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 
 
 Training code (verl/, scripts/, data/, models/) lives on a dedicated training branch — removed from `main` on 2026-04-15 (commit `b2f59ee`, -4.3 GB). Z3 quality labels, SFT generation and GRPO training live there. Checkpoints remain on HuggingFace (`yannabadie/sage-topology-policy-local`, `yannabadie/sage-topology-policy-v2`).
 
-## Lint
-```bash
-cd sage-python && ruff check src/ && mypy src/ --ignore-missing-imports
-cd sage-core && cargo clippy --no-default-features
-```

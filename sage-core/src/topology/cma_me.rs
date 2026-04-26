@@ -341,15 +341,20 @@ mod tests {
 
     #[test]
     fn test_small_scale_convergence() {
-        // Simulate CMA-ME at small scale: only 4 samples per generation,
-        // 5 generations. Should still converge toward target.
+        // CMA-ME at small scale. The non-deterministic ask() uses
+        // `rand::rng()`, so we run enough generations × samples that the
+        // expected convergence dominates sample noise (~3-sigma over a
+        // dimension-1 problem). 8 samples × 10 generations = 80 fitness
+        // evaluations is the smallest budget where I observed >99% pass
+        // rate locally; the prior 4×5 = 20 evals had a non-trivial flake
+        // tail caught by CI on 2026-04-26.
         let bounds = vec![DimensionBounds::new(0.0, 5.0)];
         let mut e = CmaEmitter::with_bounds(1, 0.5, bounds, 0.98);
         e.warm_start(&[1.0]); // start near target
 
         // Target: peak fitness at x=2.0
-        for _ in 0..5 {
-            let samples = e.ask(4); // small population
+        for _ in 0..10 {
+            let samples = e.ask(8);
             let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
             e.tell(&samples, &fitnesses);
         }
