@@ -603,10 +603,10 @@ def main() -> None:
         else:
             from sage.bench.gaia_bench import GaiaBench
             system, bus = _boot_system()
-            bench: Any = GaiaBench(system=system)
-            report = asyncio.run(bench.run(limit=args.limit))
-            _print_report(report)
-            _save_report(report, bench, args.output, "gaia")
+            gaia_bench = GaiaBench(system=system)
+            gaia_report = asyncio.run(gaia_bench.run(limit=args.limit))
+            _print_report(gaia_report)
+            _save_report(gaia_report, gaia_bench, args.output, "gaia")
 
     if args.type == "bigcodebench":
         asyncio.run(_run_bigcodebench(args.output, args.limit, args.subset, args.split))
@@ -624,20 +624,20 @@ def main() -> None:
         from sage.bench.memory_coherence import run_memory_coherence, _default_boot
         from datetime import datetime, timezone
 
-        report = asyncio.run(run_memory_coherence(_default_boot, limit=args.limit))
+        mc_report = asyncio.run(run_memory_coherence(_default_boot, limit=args.limit))
         print(f"\n{'=' * 60}")
         print("  Benchmark: memory_coherence")
         print(f"{'=' * 60}")
-        print(f"  Pairs run          : {report.total}")
-        print(f"  Cold   pass@0.7    : {report.cold_pass}/{report.total}")
-        print(f"  Primed pass@0.7    : {report.primed_pass}/{report.total}")
+        print(f"  Pairs run          : {mc_report.total}")
+        print(f"  Cold   pass@0.7    : {mc_report.cold_pass}/{mc_report.total}")
+        print(f"  Primed pass@0.7    : {mc_report.primed_pass}/{mc_report.total}")
         print(
-            f"  Avg quality        : cold={report.avg_cold_quality:.3f}  "
-            f"primed={report.avg_primed_quality:.3f}  Δ={report.quality_gain:+.3f}"
+            f"  Avg quality        : cold={mc_report.avg_cold_quality:.3f}  "
+            f"primed={mc_report.avg_primed_quality:.3f}  Δ={mc_report.quality_gain:+.3f}"
         )
         print(
-            f"  Avg latency (ms)   : cold={report.avg_cold_latency_ms:.0f}  "
-            f"primed={report.avg_primed_latency_ms:.0f}  Δ={report.latency_gain_ms:+.0f}"
+            f"  Avg latency (ms)   : cold={mc_report.avg_cold_latency_ms:.0f}  "
+            f"primed={mc_report.avg_primed_latency_ms:.0f}  Δ={mc_report.latency_gain_ms:+.0f}"
         )
         print(f"{'=' * 60}\n")
         if args.output is None:
@@ -646,7 +646,7 @@ def main() -> None:
             bench_dir.mkdir(parents=True, exist_ok=True)
             date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
             args.output = str(bench_dir / f"{date_str}-memory_coherence.json")
-        data = dataclasses.asdict(report)
+        data = dataclasses.asdict(mc_report)
         Path(args.output).write_text(json.dumps(data, indent=2), encoding="utf-8")
         print(f"  Report saved to: {args.output}")
 
