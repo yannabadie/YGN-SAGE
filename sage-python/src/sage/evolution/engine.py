@@ -85,7 +85,7 @@ class EvolutionEngine:
 
         # SAMPO solver for action selection (hyperparameter adjustment)
         self._sampo_solver = SAMPOSolver(n_actions=5) # Actions: MutateCode, MutatePrompt, MutateHyper, etc.
-        self._trajectories = []
+        self._trajectories: list[dict[str, Any]] = []
 
     @property
     def population(self) -> Population:
@@ -119,7 +119,7 @@ class EvolutionEngine:
         if not parents:
             return []
 
-        current_gen_traj = {"actions": [], "rewards": []}
+        current_gen_traj: dict[str, list[Any]] = {"actions": [], "rewards": []}
 
         for mut_i, parent in enumerate(parents):
             self.total_mutations += 1

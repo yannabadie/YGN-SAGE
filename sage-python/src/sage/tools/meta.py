@@ -187,7 +187,7 @@ def _build_isolated_exec_wrapper(argv: list[str]) -> str:
         "required": ["name", "code"]
     }
 )
-async def create_python_tool(name: str, code: str, registry: ToolRegistry = None) -> str:
+async def create_python_tool(name: str, code: str, registry: ToolRegistry | None = None) -> str:
     if not registry:
         return "Error: Tool registry not available for dynamic registration."
 
@@ -291,7 +291,7 @@ async def create_python_tool(name: str, code: str, registry: ToolRegistry = None
         "required": ["name", "description", "script"]
     }
 )
-async def create_bash_tool(name: str, description: str, script: str, registry: ToolRegistry = None) -> str:
+async def create_bash_tool(name: str, description: str, script: str, registry: ToolRegistry | None = None) -> str:
     # 1. Registry required
     if not registry:
         return "Error: Tool registry not available for dynamic registration."

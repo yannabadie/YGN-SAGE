@@ -23,6 +23,7 @@ def init_llm_provider(
     Returns:
         (provider, llm_config) tuple.
     """
+    provider: Any
     if use_mock_llm:
         provider = MockProvider(responses=["<think>Processing</think>\nDone."])
         llm_config = LLMConfig(provider="mock", model="mock")

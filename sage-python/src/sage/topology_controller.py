@@ -190,8 +190,16 @@ class TopologyController:
     def _emit(self, event_type: str, data: dict) -> None:
         if self._event_bus and hasattr(self._event_bus, 'emit'):
             try:
+                import time as _time
                 from sage.agent_loop import AgentEvent
-                self._event_bus.emit(AgentEvent(phase="PIPELINE", data={"stage": event_type, **data}))
+                self._event_bus.emit(
+                    AgentEvent(
+                        type="PIPELINE",
+                        step=0,
+                        timestamp=_time.time(),
+                        meta={"stage": event_type, **data},
+                    )
+                )
             except Exception:
                 pass
 
@@ -286,7 +294,8 @@ class TopologyController:
                 # Rust wrote reason + action + retry counter; Python
                 # enriches with invariant feedback + new_model_id which
                 # need topology / SmtVerifier / assigner access.
-                feedback = self._get_invariant_feedback(result, topology, node_idx)
+                feedback_opt = self._get_invariant_feedback(result, topology, node_idx)
+                feedback = feedback_opt or ""
                 new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
                 return AdaptationDecision(
                     action="upgrade_model",

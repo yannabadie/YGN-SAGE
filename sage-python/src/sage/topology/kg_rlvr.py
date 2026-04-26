@@ -233,7 +233,7 @@ class FormalKnowledgeGraph:
 class ProcessRewardModel:
     """Evaluates agent reasoning paths using verifiable Z3/KG rewards."""
     
-    def __init__(self, kg: FormalKnowledgeGraph = None):
+    def __init__(self, kg: FormalKnowledgeGraph | None = None):
         self.kg = kg or FormalKnowledgeGraph()
         self.logger = logging.getLogger(__name__)
 
@@ -268,15 +268,16 @@ class ProcessRewardModel:
             
         r_path = sum(step_scores) / len(step_scores)
         
-        details = {
+        hallucination_ratio = sum(1 for s in step_scores if s < 0.0) / len(steps)
+        details: dict[str, Any] = {
             "total_steps": len(steps),
             "step_scores": step_scores,
             "verifiable_ratio": sum(1 for s in step_scores if s > 0.5) / len(steps),
-            "hallucination_ratio": sum(1 for s in step_scores if s < 0.0) / len(steps)
+            "hallucination_ratio": hallucination_ratio,
         }
-        
+
         # Severe penalty if any mathematical proof failed
-        if details["hallucination_ratio"] > 0:
+        if hallucination_ratio > 0:
             r_path = -1.0
 
         return r_path, details

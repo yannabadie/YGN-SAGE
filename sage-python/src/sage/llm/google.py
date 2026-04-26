@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 from sage.llm.base import LLMConfig, LLMResponse, Message, ToolDef
 
 logger = logging.getLogger(__name__)
@@ -76,8 +77,10 @@ class GoogleProvider:
             
         logger.info(f"Using Google Gemini model: {model}")
 
-        # Convert messages to Gemini format
-        contents = []
+        # Convert messages to Gemini format. The genai SDK accepts a wide
+        # union for `contents`; we build `Content` objects but type as Any
+        # so mypy doesn't pick the narrowest list[Content] overload arm.
+        contents: list[Any] = []
         system_instruction = None
         has_tool_role_rewrite = False
         for msg in messages:
@@ -200,7 +203,7 @@ class GoogleProvider:
             model = config.model
 
         # Convert messages to Gemini format (same as generate())
-        contents = []
+        contents: list[Any] = []
         system_instruction = None
         for msg in messages:
             if msg.role.value == "system":

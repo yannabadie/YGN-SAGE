@@ -313,7 +313,7 @@ class OpenAICompatProvider:
                     "total_tokens": getattr(response.usage, "total_tokens", 0) or 0,
                 }
 
-            tool_calls = []
+            tool_calls: list[Any] = []
             if msg.tool_calls:
                 from sage.llm.base import ToolCall
 
