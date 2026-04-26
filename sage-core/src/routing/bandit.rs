@@ -1278,12 +1278,21 @@ mod tests {
         // Train two arms with different contexts:
         // arm-s1 trained on context [1.0, 0.0] (system 1 tasks)
         // arm-s3 trained on context [3.0, 0.0] (system 3 tasks)
+        //
+        // Same Thompson-sampling flake pattern as
+        // tests/test_bandit.rs::test_contextual_trained_arms_selection
+        // (30 training × 40 exploit had a non-trivial tail of <15/40 outcomes
+        // that actually flaked CI on 2026-04-26, run 24953963696). 60+60
+        // training pushes ~30 samples per arm so the posterior settles, and
+        // 50-round exploit + threshold 25 (50%) gives ~3-sigma headroom over
+        // the 50/50 random baseline. Threshold below 50% would just be
+        // checking "didn't catastrophically un-learn".
         let mut bandit = ContextualBandit::create(0.999, 0.1);
         bandit.add_arm("arm-s1", "seq");
         bandit.add_arm("arm-s3", "seq");
 
         // Train arm-s1 with high quality on S1-like context
-        for _ in 0..30 {
+        for _ in 0..60 {
             let d = bandit.choose_contextual(1.0, &[1.0, 0.0]).unwrap();
             let q = if d.model_id == "arm-s1" { 0.95 } else { 0.6 };
             bandit
@@ -1291,7 +1300,7 @@ mod tests {
                 .unwrap();
         }
         // Train arm-s3 with high quality on S3-like context
-        for _ in 0..30 {
+        for _ in 0..60 {
             let d = bandit.choose_contextual(1.0, &[3.0, 0.0]).unwrap();
             let q = if d.model_id == "arm-s3" { 0.95 } else { 0.6 };
             bandit
@@ -1301,7 +1310,7 @@ mod tests {
 
         // Now test: with S1-like context, arm-s1 should be preferred
         let mut s1_count = 0;
-        for _ in 0..40 {
+        for _ in 0..50 {
             let d = bandit.choose_contextual(0.0, &[1.0, 0.0]).unwrap();
             if d.model_id == "arm-s1" {
                 s1_count += 1;
@@ -1311,11 +1320,9 @@ mod tests {
                 .unwrap();
         }
 
-        // With context bias, arm-s1 should be picked more often for S1-like context
-        // (exact threshold depends on stochastic Thompson sampling, so we're generous)
         assert!(
-            s1_count >= 15,
-            "arm-s1 should be preferred for S1-like context: got {}/40",
+            s1_count >= 25,
+            "arm-s1 should be preferred for S1-like context: got {}/50",
             s1_count,
         );
     }
