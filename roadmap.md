@@ -899,17 +899,31 @@ Two new tests pin the contract:
 
 **Cost:** 10 minutes (defence in depth).
 
-### A30. Dormant persistence-round-trip gaps elsewhere (sans-pitié audit 2026-04-27) — open follow-ups
+### A30. Dormant persistence-round-trip gaps (sans-pitié audit 2026-04-27) — ✅ ALL RESOLVED 2026-04-27 (commit `352d7687`)
 
-Three more "save persists subset → load reconstructs subset" gaps found this audit, all currently dormant (no production caller exercises the dropped fields), kept here so they're tracked.
+cgpro 2026-04-27 verdict (resumed conversation `cgpro_2026_04_26_review`) split the 3 items into delete/persist with clear rationale:
 
-**A30a — `SemanticMemory.save/load` drops `_entity_owner`** (`sage-python/src/sage/memory/semantic.py`). Multi-tenant agent-ownership scoping — `get_context_for` filters by `_entity_owner.get(e) == self._agent_id` when `agent_id` is non-None. Save dumps only entities + relations. Reload empties the owner map → if anyone constructs `SemanticMemory(agent_id="...")`, the multi-tenant filter rejects every loaded entity (None != "..."). No production caller passes `agent_id` today. **Fix:** add `entity_owners(name TEXT PRIMARY KEY, owner TEXT)` table + populate on save / restore on load + regression test that round-trips `agent_id` filtering.
+**A30a — `SemanticMemory._entity_owner`: ✅ DELETED.** cgpro: "private, unwired multi-tenant feature whose failure mode is worse than its current value: if `agent_id` is ever set, loaded entities lose owner data and `get_context_for()` filters them all out. EpisodicMemory already owns the agent-scoped persisted memory concept." Removed `agent_id` constructor param, `_agent_id` + `_entity_owner` instance vars, and the multi-tenant filter in `get_context_for`. No production caller passed `agent_id`; no tests asserted on `_entity_owner`.
 
-**A30b — `CausalMemory.save/load` drops entity metadata + edge metadata** (`sage-python/src/sage/memory/causal.py`). `_entities[name]` holds a `dict[str, Any]` of metadata; `CausalEdge.metadata: dict[str, Any]`. Both are dropped on save (only name + sort_order + source/target/cause_type are stored). Reload reconstructs with empty `{}`. No production caller passes metadata today (`add_entity(name)` / `add_causal_edge(src, tgt)` are the only call sites in `phases/act.py` + `consolidator.py`). **Fix:** widen schemas to `entities(name, sort_order, metadata_json)` + `causal_edges(source, target, cause_type, metadata_json)`; serialise/deserialise as JSON like the bandit's `context_sum`.
+**A30b — CausalMemory entity + edge metadata: ✅ PERSISTED.** cgpro: "metadata is already part of the public API shape (`add_entity(metadata=...)`, `CausalEdge.metadata`, `add_causal_edge(**metadata)`), and tests already exercise passing it. The current save/load path drops it because the SQLite tables store only name/sort_order and source/target/cause_type; that is a genuine persistence-contract bug, not merely dead private state. Add JSON columns for entity metadata and edge metadata, keep backward-compatible load for old DBs with missing columns, and add round-trip tests."
 
-**A30c — Qwen3 thinking-mode quirk gated on dead provider name** (`sage-python/src/sage/providers/openai_compat.py:183-186`). Branch fires only when `provider_name == "qwen"`, but `cards.toml` ships `qwen/qwen3.5-plus-02-15` under `provider = "openrouter"`. There is no provider named `"qwen"` in the registry → branch never executes → `enable_thinking=True` is never sent for Qwen3.5. Either Qwen3.5-via-OpenRouter genuinely needs `enable_thinking=True` (then the branch needs `provider_name == "openrouter" and ("qwen3" in model or "qwq" in model)`), or it doesn't (then the branch is dead and should be deleted). Verify via OpenRouter / Qwen3.5 docs (Context7 `/openrouter/openrouter`) before fixing — directive #6 protocol.
+Schema upgrade: `metadata_json TEXT NOT NULL DEFAULT '{}'` added to `causal_entities` + `causal_edges`. Additive ALTER TABLE migration with `duplicate column name` catch (steady-state post-v2). `load()` detects column presence per-table via PRAGMA table_info and falls back to the legacy SELECT when absent. Two new tests (`test_causal_memory_metadata_survives_save_load` + `test_causal_memory_load_legacy_schema_no_metadata_column`) pin the contract — including a synthetic v1 DB construction that asserts post-load schema upgrade. Existing `causal.db` on disk (74 entities + 122 edges) preserved through the upgrade.
 
-**Cost:** A30a/A30b ~½ day each (parity with A20-cycle bandit fix). A30c ~1 hour after Context7 verification.
+**A30c — Qwen3 thinking-mode quirk: ✅ DELETED.** User confirmed Qwen3 won't be used. Branch was gated on `provider_name == "qwen"` but cards.toml ships qwen3.5 under `provider = "openrouter"` — never reachable anyway, so deletion is also a dead-branch cleanup not just a feature drop.
+
+### A32. AdaptiveMutator persistence + offline-only wiring stance (cgpro 2026-04-27) — ✅ SHIPPED 2026-04-27 (commit `352d7687`)
+
+cgpro verdict: "AdaptiveMutator: keep, wire, and persist. Do not delete it. The class is honest that it is not currently invoked, but its design maps directly to the ShinkaEvolve thesis: LLM-driven program evolution benefits from bandit-based LLM ensemble/model selection. The live class already has the right posterior shape (`_successes`, `_failures`, `_total_selections`) but no durable state; add a persistence interface and then wire it into the offline evolution path, not the runtime pipeline by default."
+
+Action shipped:
+- `state_dict()` / `load_state_dict(state)` for in-process serialisation (mirrors the PyTorch convention).
+- `save(db_path)` / `load(db_path)` via SQLite (`adaptive_mutator_state(tier, successes, failures, total_selections)`). Snapshot semantics with `INSERT OR REPLACE` so widening the tier list later doesn't lose history.
+- 4 round-trip tests covering state_dict, sqlite, missing-file cold start, and tier-list-widening migration.
+- `record()` comment updated to reflect cgpro's "offline only" guidance — runtime per-task `AgentLoop` calls keep their fixed-tier behaviour. The runtime pipeline default-path is unchanged.
+
+The "wire into offline evolution loop" call site remains a roadmap follow-up — adding the persistence + tests now closes the persistence-loss bug class without changing runtime behaviour.
+
+**Open follow-up — A32-wire:** integrate `AdaptiveMutator` into `EvolutionEngine.evolve()` or the standalone evolution training scripts (offline only). Keep the per-task `AgentLoop` runtime path on fixed-tier. ~½ day, gated on a real benchmark to validate that bandit-driven tier selection beats fixed-tier mutation in practice.
 
 ### A31. S-MMU cold-start gap (sans-pitié audit 2026-04-27) — architectural follow-up
 
