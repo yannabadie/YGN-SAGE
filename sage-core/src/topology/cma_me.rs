@@ -210,6 +210,13 @@ mod tests {
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 
+    fn assert_close(actual: f64, expected: f64, label: &str) {
+        assert!(
+            (actual - expected).abs() < 1e-12,
+            "{label}: expected {expected:.17}, got {actual:.17}"
+        );
+    }
+
     #[test]
     fn test_new_defaults() {
         let e = CmaEmitter::new(3, 0.3);
@@ -286,7 +293,51 @@ mod tests {
     }
 
     #[test]
-    fn test_multiple_generations_converge() {
+    fn tell_updates_mean_and_cov_diag_from_synthetic_elites_exact() {
+        let mut e = CmaEmitter::new(1, 0.5);
+        let samples = vec![vec![0.0], vec![2.0], vec![4.0], vec![6.0]];
+        let fitnesses = vec![0.0, 10.0, 1.0, -1.0];
+
+        e.tell(&samples, &fitnesses);
+
+        assert_close(e.mean[0], 8.0 / 3.0, "mean[0]");
+        assert_close(e.cov_diag[0], 8.0 / 9.0, "cov_diag[0]");
+    }
+
+    #[test]
+    fn seeded_cma_one_generation_snapshot_exact() {
+        let mut e = CmaEmitter::new(1, 1.0);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE26);
+        let samples = e.ask_with_rng(8, &mut rng);
+        let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
+
+        e.tell(&samples, &fitnesses);
+
+        assert_close(e.mean[0], 1.64439030009577003, "mean[0]");
+        assert_close(e.sigma, 1.0, "sigma");
+        assert_close(e.cov_diag[0], 0.58182936732858193, "cov_diag[0]");
+    }
+
+    #[test]
+    fn seeded_cma_three_generation_snapshot_exact() {
+        let mut e = CmaEmitter::with_bounds(1, 1.0, vec![DimensionBounds::new(0.0, 5.0)], 0.98);
+        e.warm_start(&[1.0]);
+        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE27);
+
+        for _ in 0..3 {
+            let samples = e.ask_with_rng(8, &mut rng);
+            let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
+            e.tell(&samples, &fitnesses);
+        }
+
+        assert_close(e.mean[0], 1.64492369682609296, "mean[0]");
+        assert_close(e.sigma, 0.94119199999999992, "sigma");
+        assert_close(e.cov_diag[0], 0.00453737301757347, "cov_diag[0]");
+    }
+
+    #[test]
+    #[ignore = "empirical CMA convergence; run by stochastic-empirical workflow"]
+    fn empirical_cma_multiple_generations_converge_many_seeds() {
         // Same Thompson/CMA flake pattern as test_small_scale_convergence:
         // CmaEmitter::new(1, 0.5) starts at mean=0.5, sigma=0.5, so the
         // sample cloud is [0, 1] and the fitness signal at x=2.0 is
@@ -294,16 +345,20 @@ mod tests {
         // on CI run 24954171389; bumped to sigma=1.0 + 30 generations × 16
         // samples = 480 fitness evals so the mean reliably crosses 1.0
         // toward 2.0 within the budget.
-        let mut e = CmaEmitter::new(1, 1.0);
-        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE25);
-        // Target: high fitness at x=2.0
-        for _ in 0..30 {
-            let samples = e.ask_with_rng(16, &mut rng);
-            let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
-            e.tell(&samples, &fitnesses);
+        let mut successes = 0;
+        for seed in 0..50 {
+            let mut e = CmaEmitter::new(1, 1.0);
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            for _ in 0..30 {
+                let samples = e.ask_with_rng(16, &mut rng);
+                let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
+                e.tell(&samples, &fitnesses);
+            }
+            if e.mean[0] > 1.0 {
+                successes += 1;
+            }
         }
-        // Mean should be closer to 2.0 than initial 0.5
-        assert!((e.mean()[0] - 2.0).abs() < (0.5_f64 - 2.0).abs());
+        assert!(successes >= 45, "successes={successes}/50");
     }
 
     #[test]
@@ -379,7 +434,8 @@ mod tests {
     }
 
     #[test]
-    fn test_small_scale_convergence() {
+    #[ignore = "empirical CMA convergence; run by stochastic-empirical workflow"]
+    fn empirical_cma_small_scale_convergence_many_seeds() {
         // CMA-ME at small scale. The non-deterministic `ask()` uses
         // `rand::rng()`, and at small populations the sample noise can
         // dominate the fitness gradient: we observed both 4×5 (CI flake
@@ -389,22 +445,22 @@ mod tests {
         // noise on a 1D problem with sigma=1.0. Assertion relaxed to
         // 0.5 (instead of 1.0) so the budget bump produces a real
         // statement about convergence rather than just non-regression.
-        let bounds = vec![DimensionBounds::new(0.0, 5.0)];
-        let mut e = CmaEmitter::with_bounds(1, 1.0, bounds, 0.98);
-        e.warm_start(&[1.0]);
-        let mut rng = ChaCha8Rng::seed_from_u64(0xC0FF_EE26);
+        let mut successes = 0;
+        for seed in 0..50 {
+            let bounds = vec![DimensionBounds::new(0.0, 5.0)];
+            let mut e = CmaEmitter::with_bounds(1, 1.0, bounds, 0.98);
+            e.warm_start(&[1.0]);
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
 
-        // Target: peak fitness at x=2.0
-        for _ in 0..20 {
-            let samples = e.ask_with_rng(32, &mut rng);
-            let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
-            e.tell(&samples, &fitnesses);
+            for _ in 0..20 {
+                let samples = e.ask_with_rng(32, &mut rng);
+                let fitnesses: Vec<f64> = samples.iter().map(|s| -(s[0] - 2.0).powi(2)).collect();
+                e.tell(&samples, &fitnesses);
+            }
+            if (e.mean()[0] - 2.0).abs() < 0.5 {
+                successes += 1;
+            }
         }
-        // Should converge most of the way toward 2.0 (initial dist 1.0).
-        assert!(
-            (e.mean()[0] - 2.0).abs() < 0.5,
-            "CMA should converge toward 2.0 within 0.5 at 640-eval budget, got {}",
-            e.mean()[0]
-        );
+        assert!(successes >= 45, "successes={successes}/50");
     }
 }

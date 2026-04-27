@@ -312,6 +312,13 @@ fn cosine_similarity_f64(a: &[f32], b: &[f64]) -> f64 {
     dot / denom
 }
 
+fn contextual_score(sampled_quality: f64, context: &[f32], arm: &ArmPosterior) -> f64 {
+    let similarity = arm
+        .context_mean()
+        .map_or(0.0, |mean| cosine_similarity_f64(context, &mean).max(0.0));
+    sampled_quality * (1.0 + similarity)
+}
+
 /// Info stored for a pending decision (between choose and record_outcome).
 #[derive(Debug, Clone)]
 struct PendingInfo {
@@ -521,10 +528,7 @@ impl ContextualBandit {
                 let score = if context.is_empty() {
                     sampled_quality
                 } else {
-                    let similarity = arm
-                        .context_mean()
-                        .map_or(0.0, |mean| cosine_similarity_f64(context, &mean).max(0.0));
-                    sampled_quality * (1.0 + similarity)
+                    contextual_score(sampled_quality, context, arm)
                 };
 
                 if score > best_score {
@@ -1180,6 +1184,27 @@ mod tests {
         bandit
     }
 
+    fn train_arm_on_context(
+        bandit: &mut ContextualBandit,
+        model_id: &str,
+        template: &str,
+        context: &[f32],
+    ) {
+        let key = ArmKey {
+            model_id: model_id.to_string(),
+            template: template.to_string(),
+        };
+        let decay = bandit.decay_factor();
+        let arm = bandit
+            .arms
+            .get_mut(&key)
+            .expect("test arm should be registered before training");
+        for _ in 0..16 {
+            arm.update(0.95, 0.01, 100.0, decay);
+            arm.update_context(context);
+        }
+    }
+
     fn assert_same_selection(left: &BanditDecision, right: &BanditDecision) {
         assert_eq!(left.model_id, right.model_id);
         assert_eq!(left.template, right.template);
@@ -1397,6 +1422,33 @@ mod tests {
         let a = &[1.0_f32, 2.0];
         let b = &[1.0_f64, 2.0, 3.0];
         assert_eq!(cosine_similarity_f64(a, b), 0.0);
+    }
+
+    #[test]
+    fn cosine_similarity_mechanics_exact() {
+        assert_eq!(cosine_similarity_f64(&[1.0, 0.0], &[1.0, 0.0]), 1.0);
+        assert_eq!(cosine_similarity_f64(&[1.0, 0.0], &[0.0, 1.0]), 0.0);
+        assert_eq!(cosine_similarity_f64(&[1.0, 0.0], &[-1.0, 0.0]), -1.0);
+        assert_eq!(cosine_similarity_f64(&[0.0, 0.0], &[1.0, 0.0]), 0.0);
+    }
+
+    #[test]
+    fn contextual_score_bonus_mechanics_exact() {
+        let key = ArmKey {
+            model_id: "arm-s1".into(),
+            template: "single_agent".into(),
+        };
+        let mut arm = ArmPosterior::new(key);
+        arm.update_context(&[1.0, 0.0]);
+
+        let sampled_quality = 0.25;
+        let matching = contextual_score(sampled_quality, &[1.0, 0.0], &arm);
+        let orthogonal = contextual_score(sampled_quality, &[0.0, 1.0], &arm);
+        let opposite = contextual_score(sampled_quality, &[-1.0, 0.0], &arm);
+
+        assert!((matching - 0.5).abs() < 1e-12);
+        assert!((orthogonal - 0.25).abs() < 1e-12);
+        assert!((opposite - 0.25).abs() < 1e-12);
     }
 
     // ── Arm context tracking tests ───────────────────────────────────────
@@ -1618,13 +1670,15 @@ mod tests {
     }
 
     #[test]
-    fn contextual_template_selection_never_returns_other_template() {
+    fn seeded_contextual_template_selection_sequence_is_exact() {
         let mut bandit = ContextualBandit::create(0.995, 0.1);
-        bandit.add_arm("model-a", "single_agent");
-        bandit.add_arm("model-b", "sequential");
-        let mut rng = ChaCha8Rng::seed_from_u64(0xBADC_0FFE);
+        bandit.add_arm("a-model", "single_agent");
+        bandit.add_arm("z-model", "single_agent");
+        bandit.add_arm("other-model", "sequential");
+        let mut rng = ChaCha8Rng::seed_from_u64(0xA25_5EED);
+        let mut selected = Vec::new();
 
-        for _ in 0..20 {
+        for _ in 0..10 {
             let decision = bandit
                 .choose_contextual_for_template_with_rng(
                     1.0,
@@ -1635,8 +1689,16 @@ mod tests {
                 .unwrap();
 
             assert_eq!(decision.template, "single_agent");
-            assert_ne!(decision.model_id, "model-b");
+            assert_ne!(decision.model_id, "other-model");
+            selected.push(decision.model_id);
         }
+
+        // Fixed by ChaCha8Rng seed + lexicographic candidate ordering.
+        let expected: Vec<&str> = vec![
+            "a-model", "a-model", "a-model", "z-model", "a-model", "a-model", "z-model", "a-model",
+            "z-model", "z-model",
+        ];
+        assert_eq!(selected, expected);
     }
 
     #[test]
@@ -1793,85 +1855,57 @@ mod tests {
     }
 
     #[test]
-    fn contextual_selection_biases_toward_matching_arm() {
-        // Test the context-bias channel of choose_contextual: when arm-s1's
-        // running context_mean is orthogonal to arm-s3's, the multiplicative
-        // bonus `quality * (1 + cosine_similarity)` favors the arm whose
-        // mean aligns with the probe context.
-        //
-        // Earlier (2026-04-26) the test trained both arms on a mix of two
-        // collinear contexts ([1,0] and [3,0]) under epsilon=1.0 exploration.
-        // That made each arm's context_mean converge to the same midpoint
-        // [2,0], so the cosine bonus was identical for both arms on any
-        // probe — the assertion then succeeded only by Thompson-sampling
-        // luck and flaked at 20/50 on CI run 24954374511. Fix: train each
-        // arm directly (no exploration) on a context orthogonal to the
-        // other arm's, so the post-training context_means are [1,0] and
-        // [0,1] and the cosine bonus actually differentiates.
+    #[ignore = "empirical contextual bandit convergence; run by stochastic-empirical workflow"]
+    fn empirical_contextual_bandit_matching_context_wins_many_seeds() {
+        let mut passing_seeds = 0;
+
+        for seed in 0..100 {
+            let mut bandit = ContextualBandit::create(0.999, 0.1);
+            bandit.add_arm("arm-s1", "single_agent");
+            bandit.add_arm("arm-s3", "single_agent");
+            train_arm_on_context(&mut bandit, "arm-s1", "single_agent", &[1.0, 0.0]);
+            train_arm_on_context(&mut bandit, "arm-s3", "single_agent", &[0.0, 1.0]);
+
+            let mut rng = ChaCha8Rng::seed_from_u64(seed);
+            let mut arm_s1_wins = 0;
+            for _ in 0..50 {
+                let decision = bandit
+                    .choose_contextual_for_template_with_rng(
+                        0.0,
+                        &[1.0, 0.0],
+                        "single_agent",
+                        &mut rng,
+                    )
+                    .unwrap();
+                if decision.model_id == "arm-s1" {
+                    arm_s1_wins += 1;
+                }
+            }
+
+            if arm_s1_wins >= 35 {
+                passing_seeds += 1;
+            }
+        }
+
+        assert!(passing_seeds >= 90, "passing_seeds={passing_seeds}/100");
+    }
+
+    #[test]
+    fn seeded_contextual_selection_prefers_matching_arm_exact() {
         let mut bandit = ContextualBandit::create(0.999, 0.1);
-        bandit.add_arm("arm-s1", "seq");
-        bandit.add_arm("arm-s3", "seq");
-        let mut rng = ChaCha8Rng::seed_from_u64(0xBADC_0FFE);
+        bandit.add_arm("arm-s1", "single_agent");
+        bandit.add_arm("arm-s3", "single_agent");
+        train_arm_on_context(&mut bandit, "arm-s1", "single_agent", &[1.0, 0.0]);
+        train_arm_on_context(&mut bandit, "arm-s3", "single_agent", &[0.0, 1.0]);
 
-        // Force-train arm-s1 on context [1,0]: epsilon=0 + manual seed of
-        // arm-s3 first so the choose() tie-break breaks toward arm-s1 once
-        // it's slightly ahead. We manually iterate via the public API by
-        // recording outcomes against IDs we manufacture from a single
-        // choose(). To keep this simple, we use exploration=1.0 but only
-        // record arm-s1 outcomes (drop arm-s3 picks); 60 successful records
-        // give a tight posterior on arm-s1 with context_mean [1,0].
-        let mut recorded = 0;
-        while recorded < 60 {
-            let d = bandit
-                .choose_contextual_with_rng(1.0, &[1.0, 0.0], &mut rng)
-                .unwrap();
-            if d.model_id == "arm-s1" {
-                bandit
-                    .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
-                    .unwrap();
-                recorded += 1;
-            }
-            // arm-s3 picks: drop without recording so its context_mean
-            // stays unaffected by [1,0] contexts.
-        }
-        // Now train arm-s3 on context [0,1] the same way.
-        recorded = 0;
-        while recorded < 60 {
-            let d = bandit
-                .choose_contextual_with_rng(1.0, &[0.0, 1.0], &mut rng)
-                .unwrap();
-            if d.model_id == "arm-s3" {
-                bandit
-                    .record_outcome(&d.decision_id, 0.95, 0.01, 100.0)
-                    .unwrap();
-                recorded += 1;
-            }
-        }
+        const BANDIT_A25_SEED: u64 = 0xBAD_1A25;
+        let mut rng = ChaCha8Rng::seed_from_u64(BANDIT_A25_SEED);
+        let decision = bandit
+            .choose_contextual_for_template_with_rng(0.0, &[1.0, 0.0], "single_agent", &mut rng)
+            .unwrap();
 
-        // Probe with context aligned to arm-s1's context_mean. arm-s1's
-        // similarity ≈ 1.0 → score ≈ 0.95 * 2.0 ≈ 1.9; arm-s3's similarity
-        // ≈ 0.0 → score ≈ 0.95 * 1.0 ≈ 0.95. arm-s1 should win nearly
-        // every time.
-        let mut s1_count = 0;
-        for _ in 0..50 {
-            let d = bandit
-                .choose_contextual_with_rng(0.0, &[1.0, 0.0], &mut rng)
-                .unwrap();
-            if d.model_id == "arm-s1" {
-                s1_count += 1;
-            }
-            bandit
-                .record_outcome(&d.decision_id, 0.8, 0.01, 100.0)
-                .unwrap();
-        }
-
-        // Threshold 35/50 = 70%. With ≈1.9 vs 0.95 score, arm-s1 wins
-        // unless Thompson noise on quality flips it; the gap is wide
-        // enough that ≥70% is very stable empirically.
-        assert!(
-            s1_count >= 35,
-            "arm-s1 should be preferred for S1-aligned context (orthogonal training): got {}/50",
-            s1_count,
-        );
+        assert_eq!(decision.model_id, "arm-s1");
+        assert_eq!(decision.template, "single_agent");
+        assert!(!decision.exploration);
     }
 }
