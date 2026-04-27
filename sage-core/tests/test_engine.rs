@@ -509,8 +509,167 @@ mod persistence_tests {
         assert!(dir.exists());
         assert!(dir.join("bandit_state.db").exists());
         assert!(dir.join("archive_state.db").exists());
+        assert!(dir.join("engine_extras.json").exists());
 
         // Cleanup
         let _ = std::fs::remove_dir_all(std::env::temp_dir().join("sage_test_nested"));
+    }
+
+    /// Regression test for the engine-extras persistence gap.
+    ///
+    /// Before 2026-04-27, `save_state` only persisted bandit + MAP-Elites
+    /// archive — losing CMA-ME emitter state (mean, sigma, cov_diag,
+    /// generation) and Thompson-sampling posteriors per mutation operator
+    /// on every restart. Same defect class as `bandit::restore_arm`
+    /// dropping `context_sum`/`context_count` (caught 2026-04-26).
+    ///
+    /// This test pins the fix: drive evolve() to advance both pieces of
+    /// state, save, load into a fresh engine, and assert the values
+    /// survive byte-for-byte (alpha/beta posteriors as floats; cma
+    /// generation as u32).
+    #[test]
+    fn test_engine_extras_survives_save_load() {
+        let mut engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+
+        // Seed the archive so evolve() has elites to pick parents from
+        // (CMA-ME emitter only updates when there is at least one elite).
+        for i in 0..4 {
+            let graph = templates::sequential(&format!("model-{}", i));
+            let topo_id = graph.id.clone();
+            engine.cache_topology(graph);
+            engine.record_outcome(
+                &mut smmu,
+                &topo_id,
+                &format!("Seed task {}", i),
+                vec!["test".into()],
+                None,
+                0.7 + i as f32 * 0.05,
+                0.005 + i as f32 * 0.01,
+                100.0 + i as f32 * 50.0,
+            );
+        }
+
+        // Drive evolve() once with a small population — advances both
+        // CMA generation and exercises mutation_stats Thompson sampling.
+        engine.evolve(4, 1);
+
+        let stats_before = engine.mutation_stats_snapshot();
+        let cma_gen_before = engine.cma_generation();
+        let bandit_arms_before = engine.bandit().arm_count();
+        let archive_cells_before = engine.archive().cell_count();
+
+        // Sanity: at least one operator should have an attempt count > 0
+        // OR cma generation should have advanced. evolve() may early-exit
+        // if no mutations succeed; assert the state is non-trivial.
+        let total_attempts: u32 = stats_before.iter().map(|(_, a, _, _, _)| a).sum();
+        assert!(
+            total_attempts > 0 || cma_gen_before > 0,
+            "evolve should have advanced at least one piece of extras state",
+        );
+
+        // Round-trip
+        let dir = temp_state_dir();
+        engine
+            .save_state(dir.to_str().unwrap())
+            .expect("save should succeed");
+
+        // The extras file MUST exist after save.
+        assert!(
+            dir.join("engine_extras.json").exists(),
+            "save_state must produce engine_extras.json",
+        );
+
+        let mut engine2 = TopologyEngine::new();
+        // Verify fresh engine has default extras
+        assert_eq!(engine2.cma_generation(), 0);
+        let fresh_stats = engine2.mutation_stats_snapshot();
+        let fresh_attempts: u32 = fresh_stats.iter().map(|(_, a, _, _, _)| a).sum();
+        assert_eq!(fresh_attempts, 0, "fresh engine should have zero attempts");
+
+        engine2
+            .load_state(dir.to_str().unwrap())
+            .expect("load should succeed");
+
+        // Bandit + archive still survive (sanity)
+        assert_eq!(engine2.bandit().arm_count(), bandit_arms_before);
+        assert_eq!(engine2.archive().cell_count(), archive_cells_before);
+
+        // CMA generation MUST round-trip
+        assert_eq!(
+            engine2.cma_generation(),
+            cma_gen_before,
+            "CMA generation lost on save/load round-trip",
+        );
+
+        // Mutation Thompson posteriors MUST round-trip per operator
+        let stats_after = engine2.mutation_stats_snapshot();
+        assert_eq!(stats_after.len(), stats_before.len());
+        for ((name_a, att_a, suc_a, alpha_a, beta_a), (name_b, att_b, suc_b, alpha_b, beta_b)) in
+            stats_before.iter().zip(stats_after.iter())
+        {
+            assert_eq!(name_a, name_b, "operator name order must be stable");
+            assert_eq!(att_a, att_b, "attempts({}) lost", name_a);
+            assert_eq!(suc_a, suc_b, "successes({}) lost", name_a);
+            assert!(
+                (alpha_a - alpha_b).abs() < 1e-9,
+                "alpha({}) drift: {} -> {}",
+                name_a,
+                alpha_a,
+                alpha_b
+            );
+            assert!(
+                (beta_a - beta_b).abs() < 1e-9,
+                "beta({}) drift: {} -> {}",
+                name_a,
+                beta_a,
+                beta_b
+            );
+        }
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cold-start case: load_state from a directory missing engine_extras.json
+    /// must succeed and leave defaults in place. Covers the migration path
+    /// for pre-extras checkpoint directories.
+    #[test]
+    fn test_engine_load_pre_extras_checkpoint() {
+        // Build a "legacy" checkpoint by saving and then deleting the extras file.
+        let mut engine = TopologyEngine::new();
+        let mut smmu = MultiViewMMU::new();
+        let graph = templates::sequential("only-model");
+        let topo_id = graph.id.clone();
+        engine.cache_topology(graph);
+        engine.record_outcome(
+            &mut smmu,
+            &topo_id,
+            "task",
+            vec!["test".into()],
+            None,
+            0.8,
+            0.01,
+            100.0,
+        );
+        let dir = temp_state_dir();
+        engine.save_state(dir.to_str().unwrap()).unwrap();
+
+        let extras_path = dir.join("engine_extras.json");
+        assert!(extras_path.exists(), "save should write extras");
+        std::fs::remove_file(&extras_path).expect("simulate legacy checkpoint");
+
+        let mut engine2 = TopologyEngine::new();
+        engine2
+            .load_state(dir.to_str().unwrap())
+            .expect("load should tolerate missing extras file");
+
+        // Bandit + archive still load; extras stay at defaults
+        assert!(engine2.bandit().arm_count() > 0);
+        assert!(engine2.archive().cell_count() > 0);
+        assert_eq!(engine2.cma_generation(), 0);
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

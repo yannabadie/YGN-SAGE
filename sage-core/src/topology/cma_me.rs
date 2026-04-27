@@ -9,9 +9,10 @@
 //! Uses a simplified diagonal covariance (no full matrix needed for 3D).
 
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 
 /// Per-dimension bounds for clamping samples.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DimensionBounds {
     pub min: f64,
     pub max: f64,
@@ -30,6 +31,7 @@ impl DimensionBounds {
 
 /// CMA-ME emitter — samples continuous parameter vectors and adapts the
 /// search distribution based on elite fitness feedback.
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CmaEmitter {
     dim: usize,
     mean: Vec<f64>,

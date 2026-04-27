@@ -224,7 +224,20 @@ def init_pipeline(
                 _t.join(timeout=30.0)
                 health = _result[0]
             else:
+                # Same loop-snapshot pattern as _discover_models: asyncio.run()
+                # cleanup calls set_event_loop(None), which would break any
+                # downstream sync caller of asyncio.get_event_loop(). Snapshot
+                # before, restore after.
+                _h_prior_loop = None
+                _h_policy = asyncio.get_event_loop_policy()
+                _h_local = getattr(_h_policy, "_local", None)
+                if _h_local is not None:
+                    _h_prior_loop = getattr(_h_local, "_loop", None)
                 health = _run_health()
+                if _h_prior_loop is not None and not _h_prior_loop.is_closed():
+                    asyncio.set_event_loop(_h_prior_loop)
+                else:
+                    asyncio.set_event_loop(asyncio.new_event_loop())
 
             if health is None:
                 _log.warning(

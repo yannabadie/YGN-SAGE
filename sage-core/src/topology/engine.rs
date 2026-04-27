@@ -149,6 +149,14 @@ impl TopologyEngine {
         std::mem::take(&mut *guard)
     }
 
+    /// Current generation count of the embedded CMA-ME emitter — increments
+    /// once per `evolve()` call that has at least one elite to operate on.
+    /// Persisted via `save_state` (engine_extras.json) so `load_state`
+    /// resumes search from where it left off instead of cold-starting.
+    pub fn cma_generation(&self) -> u32 {
+        self.cma_emitter.generation
+    }
+
     /// Read-only snapshot of the per-operator Thompson-sampling stats.
     /// Returns `(op_name, attempts, successes, alpha, beta)` for each of the
     /// 7 operators in the same order as `OPERATOR_NAMES`.
@@ -950,9 +958,11 @@ impl TopologyEngine {
 impl TopologyEngine {
     /// Save both bandit posteriors and MAP-Elites archive to a directory.
     ///
-    /// Creates two SQLite files:
+    /// Creates three files:
     /// - `{dir}/bandit_state.db` — arm posteriors, config (decay, exploration)
     /// - `{dir}/archive_state.db` — MAP-Elites grid cells with topology JSON
+    /// - `{dir}/engine_extras.json` — CMA-ME emitter state (mean, sigma,
+    ///   cov_diag, generation) + Thompson posteriors per mutation operator
     ///
     /// Existing files are overwritten (WAL mode, UPSERT semantics).
     pub fn save_state(&self, dir: &str) -> Result<(), String> {
@@ -961,6 +971,7 @@ impl TopologyEngine {
 
         let bandit_path = dir_path.join("bandit_state.db");
         let archive_path = dir_path.join("archive_state.db");
+        let extras_path = dir_path.join("engine_extras.json");
 
         crate::routing::persistence::save_bandit(
             &self.bandit,
@@ -970,10 +981,29 @@ impl TopologyEngine {
         self.archive
             .save_to_sqlite(archive_path.to_str().ok_or("invalid archive path")?)?;
 
+        // Engine extras: CMA-ME emitter state + per-operator mutation posteriors.
+        // Without these, every restart resets the continuous-parameter optimiser
+        // and the Thompson sampling over mutation operators — same defect class
+        // as the bandit::restore_arm context-bias loss caught in 2026-04-26.
+        let mutation_stats = self
+            .mutation_stats
+            .lock()
+            .map_err(|e| format!("mutation_stats lock poisoned: {}", e))?
+            .clone();
+        let extras = EngineExtras {
+            cma_emitter: self.cma_emitter.clone(),
+            mutation_stats,
+        };
+        let extras_json = serde_json::to_string(&extras)
+            .map_err(|e| format!("serialize engine extras: {}", e))?;
+        std::fs::write(&extras_path, extras_json)
+            .map_err(|e| format!("write engine extras: {}", e))?;
+
         info!(
             dir = dir,
             bandit_arms = self.bandit.arm_count(),
             archive_cells = self.archive.cell_count(),
+            cma_generation = self.cma_emitter.generation,
             "engine_state_saved"
         );
 
@@ -1017,6 +1047,29 @@ impl TopologyEngine {
             debug!(path = ?archive_path, "archive_state_file_not_found_cold_start");
         }
 
+        // Load engine extras: CMA-ME emitter + mutation Thompson posteriors.
+        // Missing file is OK (cold start or pre-extras checkpoint) — keep
+        // the defaults set by TopologyEngine::new().
+        let extras_path = dir_path.join("engine_extras.json");
+        if extras_path.exists() {
+            let extras_bytes =
+                std::fs::read(&extras_path).map_err(|e| format!("read engine extras: {}", e))?;
+            let extras: EngineExtras = serde_json::from_slice(&extras_bytes)
+                .map_err(|e| format!("deserialize engine extras: {}", e))?;
+            self.cma_emitter = extras.cma_emitter;
+            *self
+                .mutation_stats
+                .lock()
+                .map_err(|e| format!("mutation_stats lock poisoned: {}", e))? =
+                extras.mutation_stats;
+            info!(
+                cma_generation = self.cma_emitter.generation,
+                "engine_extras_loaded"
+            );
+        } else {
+            debug!(path = ?extras_path, "engine_extras_file_not_found_cold_start");
+        }
+
         info!(
             dir = dir,
             bandit_arms = bandit_arms,
@@ -1026,6 +1079,15 @@ impl TopologyEngine {
 
         Ok((bandit_arms, archive_cells))
     }
+}
+
+/// Bundle of TopologyEngine state pieces that live outside bandit.db / archive.db.
+/// Persisted as JSON next to the SQLite files in `save_state`.
+#[cfg(feature = "cognitive")]
+#[derive(serde::Serialize, serde::Deserialize)]
+struct EngineExtras {
+    cma_emitter: CmaEmitter,
+    mutation_stats: MutationStats,
 }
 
 impl Default for TopologyEngine {
