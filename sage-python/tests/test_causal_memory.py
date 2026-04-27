@@ -234,3 +234,98 @@ def test_causal_memory_save_overwrites_previous():
         assert cm3.entity_count() == 1
     finally:
         os.unlink(db_path)
+
+
+def test_causal_memory_metadata_survives_save_load():
+    """Regression: entity metadata + edge metadata round-trip via JSON columns.
+
+    Before 2026-04-27, ``save`` only persisted name/order/source/target/
+    cause_type; ``add_entity(metadata={...})`` and
+    ``add_causal_edge(**metadata)`` payloads were dropped on every
+    save → silent persistence-contract bug. cgpro recommended additive
+    ALTER TABLE migration with JSON columns.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cm = CausalMemory(db_path=db_path)
+        cm.add_entity("AgentA", metadata={"type": "agent", "version": 2})
+        cm.add_entity("StepB", metadata={"role": "step", "duration_ms": 42})
+        cm.add_entity("Bare")  # no metadata
+        cm.add_causal_edge("AgentA", "StepB", cause_type="enabled", confidence=0.9, src_run="run-001")
+        cm.add_causal_edge("StepB", "Bare", cause_type="caused")  # bare edge
+        cm.save()
+
+        cm2 = CausalMemory(db_path=db_path)
+        cm2.load()
+
+        # Entity metadata round-trips
+        assert cm2._entities["AgentA"] == {"type": "agent", "version": 2}
+        assert cm2._entities["StepB"] == {"role": "step", "duration_ms": 42}
+        assert cm2._entities["Bare"] == {}
+
+        # Edge metadata round-trips
+        edges = list(cm2._causal_edges)
+        labelled = next(e for e in edges if e.source == "AgentA" and e.target == "StepB")
+        assert labelled.metadata == {"confidence": 0.9, "src_run": "run-001"}
+        bare = next(e for e in edges if e.source == "StepB" and e.target == "Bare")
+        assert bare.metadata == {}
+    finally:
+        os.unlink(db_path)
+
+
+def test_causal_memory_load_legacy_schema_no_metadata_column():
+    """Backward compat: a v1 DB without metadata_json columns must still load.
+
+    Pre-2026-04-27 deployments wrote the 3-column schema. Loading these
+    must not crash and must default metadata to ``{}``. ``save`` then
+    upgrades the schema in place via ``ALTER TABLE``.
+    """
+    import sqlite3 as _sqlite3
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        # Manually construct a legacy v1 DB exactly as the pre-fix code wrote it.
+        conn = _sqlite3.connect(db_path)
+        conn.execute(
+            "CREATE TABLE causal_entities (name TEXT PRIMARY KEY, sort_order INTEGER)"
+        )
+        conn.execute(
+            "CREATE TABLE causal_relations "
+            "(subj TEXT, pred TEXT, obj TEXT, PRIMARY KEY (subj, pred, obj))"
+        )
+        conn.execute(
+            "CREATE TABLE causal_edges (source TEXT, target TEXT, cause_type TEXT, "
+            "PRIMARY KEY (source, target, cause_type))"
+        )
+        conn.executemany(
+            "INSERT INTO causal_entities VALUES (?, ?)",
+            [("A", 0), ("B", 1)],
+        )
+        conn.executemany(
+            "INSERT INTO causal_edges VALUES (?, ?, ?)",
+            [("A", "B", "caused")],
+        )
+        conn.commit()
+        conn.close()
+
+        # Load the legacy DB; must not raise.
+        cm = CausalMemory(db_path=db_path)
+        cm.load()
+        assert cm.has_entity("A")
+        assert cm.has_entity("B")
+        assert cm._entities["A"] == {}  # legacy → empty metadata
+        assert cm._causal_edges[0].metadata == {}
+
+        # Save once; ALTER TABLE upgrades the schema in place.
+        cm.save()
+
+        # Re-open the DB directly and verify the column now exists.
+        conn = _sqlite3.connect(db_path)
+        ent_cols = {row[1] for row in conn.execute("PRAGMA table_info(causal_entities)")}
+        edge_cols = {row[1] for row in conn.execute("PRAGMA table_info(causal_edges)")}
+        conn.close()
+        assert "metadata_json" in ent_cols
+        assert "metadata_json" in edge_cols
+    finally:
+        os.unlink(db_path)

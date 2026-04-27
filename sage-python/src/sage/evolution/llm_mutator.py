@@ -6,6 +6,7 @@ Thompson sampling over LLM tiers for mutation selection.
 from __future__ import annotations
 
 import logging
+import sqlite3
 from dataclasses import dataclass
 from typing import Any
 
@@ -161,9 +162,11 @@ class AdaptiveMutator:
         # In-run observability: log every Thompson-sampling posterior update so
         # future evolution runs show per-tier arm statistics. Note:
         # AdaptiveMutator is NOT invoked on the pipeline runtime path today
-        # (no call sites outside this module) -- the log is wired now so the
-        # observability is ready when the offline evolution training path is
-        # re-activated.
+        # (no call sites outside this module) — cgpro 2026-04-27 verdict:
+        # keep + persist + wire into offline evolution path only, not the
+        # runtime per-task agent loop. `save()` / `load()` and
+        # `state_dict()` / `load_state_dict()` are wired below; the
+        # offline-path call site remains a roadmap follow-up.
         a = self._successes[tier]
         b = self._failures[tier]
         log.info(
@@ -189,3 +192,115 @@ class AdaptiveMutator:
             }
             for tier in self.tiers
         }
+
+    def state_dict(self) -> dict[str, Any]:
+        """Serialise Thompson posteriors + selection counts for persistence.
+
+        cgpro 2026-04-27: AdaptiveMutator was the third instance of the
+        bandit::restore_arm class — research-backed (ShinkaEvolve, arXiv
+        2509.19349) but in-memory only. Persisting state lets the offline
+        evolution path resume search from where it left off instead of
+        cold-starting at uniform Beta(1,1) priors on every restart.
+        """
+        return {
+            "tiers": list(self.tiers),
+            "successes": dict(self._successes),
+            "failures": dict(self._failures),
+            "total_selections": dict(self._total_selections),
+        }
+
+    def load_state_dict(self, state: dict[str, Any]) -> None:
+        """Restore from a ``state_dict()`` payload.
+
+        Tiers absent from ``state`` keep their default Beta(1, 1) prior.
+        Tiers present in ``state`` but not configured on this instance
+        are added so callers don't lose history when the tier list is
+        widened across versions.
+        """
+        loaded_tiers = state.get("tiers") or list(state.get("successes", {}).keys())
+        for tier in loaded_tiers:
+            if tier not in self.tiers:
+                self.tiers = [*self.tiers, tier]
+                self._successes.setdefault(tier, 1.0)
+                self._failures.setdefault(tier, 1.0)
+                self._total_selections.setdefault(tier, 0)
+        for tier, value in (state.get("successes") or {}).items():
+            self._successes[tier] = float(value)
+        for tier, value in (state.get("failures") or {}).items():
+            self._failures[tier] = float(value)
+        for tier, value in (state.get("total_selections") or {}).items():
+            self._total_selections[tier] = int(value)
+
+    def save(self, db_path: str) -> None:
+        """Persist Thompson posteriors + selection counts to SQLite.
+
+        Schema: a single row per tier in ``adaptive_mutator_state``.
+        Snapshot semantics: existing rows for tiers in this instance are
+        replaced; tiers from earlier configurations remain untouched so
+        widening the tier list later doesn't lose history.
+        """
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA synchronous=NORMAL")
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS adaptive_mutator_state "
+                "(tier TEXT PRIMARY KEY, successes REAL NOT NULL, "
+                "failures REAL NOT NULL, total_selections INTEGER NOT NULL)"
+            )
+            rows = [
+                (
+                    tier,
+                    self._successes[tier],
+                    self._failures[tier],
+                    self._total_selections[tier],
+                )
+                for tier in self.tiers
+            ]
+            conn.executemany(
+                "INSERT OR REPLACE INTO adaptive_mutator_state "
+                "(tier, successes, failures, total_selections) VALUES (?, ?, ?, ?)",
+                rows,
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def load(self, db_path: str) -> None:
+        """Restore from a SQLite file written by :meth:`save`.
+
+        No-op if the file or table is missing (cold start). Existing
+        in-memory state is overwritten only for tiers present in the DB.
+        """
+        import os
+
+        if not os.path.exists(db_path):
+            return
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
+            if "adaptive_mutator_state" not in tables:
+                return
+            rows = list(
+                conn.execute(
+                    "SELECT tier, successes, failures, total_selections "
+                    "FROM adaptive_mutator_state"
+                )
+            )
+        finally:
+            conn.close()
+
+        if not rows:
+            return
+        state = {
+            "tiers": [r[0] for r in rows],
+            "successes": {r[0]: float(r[1]) for r in rows},
+            "failures": {r[0]: float(r[2]) for r in rows},
+            "total_selections": {r[0]: int(r[3]) for r in rows},
+        }
+        self.load_state_dict(state)

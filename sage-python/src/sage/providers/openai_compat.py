@@ -180,11 +180,6 @@ class OpenAICompatProvider:
                 params.pop("top_p", None)
             elif "temperature" in params:
                 params["temperature"] = min(params["temperature"], 1.0)
-        elif self.provider_name == "qwen":
-            if "qwen3" in model or "qwq" in model:
-                params.setdefault("extra_body", {})
-                params["extra_body"]["enable_thinking"] = True
-
         return params
 
     def _extract_reasoning(self, message: Any) -> tuple[str, str]:

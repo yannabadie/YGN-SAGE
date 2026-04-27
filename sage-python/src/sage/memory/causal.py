@@ -11,6 +11,7 @@ Inspired by AMA-Bench (2602.22769) causal memory baselines.
 """
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 from collections import defaultdict, deque
@@ -224,9 +225,17 @@ class CausalMemory:
     def save(self) -> None:
         """Persist causal memory to SQLite.
 
-        Stores entities (with insertion order), semantic relations, and
-        causal edges.  The database is overwritten on each save (snapshot
-        semantics, same pattern as :class:`SemanticMemory`).
+        Stores entities (with insertion order + metadata), semantic
+        relations, and causal edges (with metadata).  The database is
+        overwritten on each save (snapshot semantics, same pattern as
+        :class:`SemanticMemory`).
+
+        Schema version 2 (2026-04-27) adds ``metadata_json`` columns to
+        ``causal_entities`` and ``causal_edges`` so the
+        ``add_entity(metadata=...)`` / ``add_causal_edge(**metadata)``
+        public API survives save/load round-trip. Pre-v2 DBs are
+        upgraded in place via additive ``ALTER TABLE``; legacy rows
+        load with empty ``{}`` metadata.
         """
         if not self.db_path:
             return
@@ -237,7 +246,8 @@ class CausalMemory:
             conn.execute("PRAGMA busy_timeout=5000")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS causal_entities "
-                "(name TEXT PRIMARY KEY, sort_order INTEGER)"
+                "(name TEXT PRIMARY KEY, sort_order INTEGER, "
+                "metadata_json TEXT NOT NULL DEFAULT '{}')"
             )
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS causal_relations "
@@ -247,27 +257,46 @@ class CausalMemory:
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS causal_edges "
                 "(source TEXT, target TEXT, cause_type TEXT, "
+                "metadata_json TEXT NOT NULL DEFAULT '{}', "
                 "PRIMARY KEY (source, target, cause_type))"
             )
+            # Pre-v2 DB upgrade: ALTER TABLE if metadata_json absent.
+            # SQLite raises "duplicate column name" when the column
+            # already exists; that's the expected post-v2 path.
+            for _tbl in ("causal_entities", "causal_edges"):
+                try:
+                    conn.execute(
+                        f"ALTER TABLE {_tbl} ADD COLUMN "
+                        "metadata_json TEXT NOT NULL DEFAULT '{}'"
+                    )
+                except sqlite3.OperationalError as exc:
+                    if "duplicate column name" not in str(exc).lower():
+                        raise
             # Snapshot: clear and rewrite
             conn.execute("DELETE FROM causal_entities")
             conn.execute("DELETE FROM causal_relations")
             conn.execute("DELETE FROM causal_edges")
-            # Entities — preserve insertion order
+            # Entities — preserve insertion order + metadata
             conn.executemany(
-                "INSERT OR IGNORE INTO causal_entities VALUES (?, ?)",
-                [(name, idx) for idx, name in enumerate(self._entity_order)],
+                "INSERT OR IGNORE INTO causal_entities "
+                "(name, sort_order, metadata_json) VALUES (?, ?, ?)",
+                [
+                    (name, idx, json.dumps(self._entities.get(name, {}), default=str))
+                    for idx, name in enumerate(self._entity_order)
+                ],
             )
             # Semantic relations
             conn.executemany(
                 "INSERT OR IGNORE INTO causal_relations VALUES (?, ?, ?)",
                 self._relations,
             )
-            # Causal edges
+            # Causal edges (with metadata)
             conn.executemany(
-                "INSERT OR IGNORE INTO causal_edges VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO causal_edges "
+                "(source, target, cause_type, metadata_json) "
+                "VALUES (?, ?, ?, ?)",
                 [
-                    (e.source, e.target, e.cause_type)
+                    (e.source, e.target, e.cause_type, json.dumps(e.metadata, default=str))
                     for e in self._causal_edges
                 ],
             )
@@ -281,6 +310,9 @@ class CausalMemory:
         Rebuilds in-memory data structures (entities, relations, causal
         edges) from a previously saved database.  No-op if *db_path* is
         ``None`` or the file does not exist yet.
+
+        Backward compatible with pre-v2 DBs that lack ``metadata_json``
+        columns: missing values default to ``{}``.
         """
         if not self.db_path:
             return
@@ -299,22 +331,56 @@ class CausalMemory:
             }
             if "causal_entities" not in tables:
                 return
+            # Detect metadata_json column presence per table to stay
+            # backward compatible with v1 DBs (no migration on load).
+            ent_cols = {
+                row[1] for row in conn.execute("PRAGMA table_info(causal_entities)")
+            }
+            ent_has_meta = "metadata_json" in ent_cols
+            edge_has_meta = (
+                "causal_edges" in tables
+                and "metadata_json" in {
+                    row[1] for row in conn.execute("PRAGMA table_info(causal_edges)")
+                }
+            )
             # Entities (ordered by sort_order)
-            for (name,) in conn.execute(
-                "SELECT name FROM causal_entities ORDER BY sort_order"
-            ):
-                self.add_entity(name)
+            if ent_has_meta:
+                rows = conn.execute(
+                    "SELECT name, metadata_json FROM causal_entities ORDER BY sort_order"
+                )
+                for name, meta_json in rows:
+                    try:
+                        meta = json.loads(meta_json) if meta_json else {}
+                    except json.JSONDecodeError:
+                        meta = {}
+                    self.add_entity(name, metadata=meta)
+            else:
+                for (name,) in conn.execute(
+                    "SELECT name FROM causal_entities ORDER BY sort_order"
+                ):
+                    self.add_entity(name)
             # Semantic relations
             if "causal_relations" in tables:
                 for subj, pred, obj in conn.execute(
                     "SELECT subj, pred, obj FROM causal_relations"
                 ):
                     self.add_relation(subj, pred, obj)
-            # Causal edges
+            # Causal edges (with metadata)
             if "causal_edges" in tables:
-                for source, target, cause_type in conn.execute(
-                    "SELECT source, target, cause_type FROM causal_edges"
-                ):
-                    self.add_causal_edge(source, target, cause_type=cause_type)
+                if edge_has_meta:
+                    rows = conn.execute(
+                        "SELECT source, target, cause_type, metadata_json FROM causal_edges"
+                    )
+                    for source, target, cause_type, meta_json in rows:
+                        try:
+                            meta = json.loads(meta_json) if meta_json else {}
+                        except json.JSONDecodeError:
+                            meta = {}
+                        self.add_causal_edge(source, target, cause_type=cause_type, **meta)
+                else:
+                    for source, target, cause_type in conn.execute(
+                        "SELECT source, target, cause_type FROM causal_edges"
+                    ):
+                        self.add_causal_edge(source, target, cause_type=cause_type)
         finally:
             conn.close()

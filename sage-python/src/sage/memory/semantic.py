@@ -29,12 +29,10 @@ class SemanticMemory:
         max_relations: int = 10_000,
         max_context_lines: int = 50,
         db_path: str | None = None,
-        agent_id: str | None = None,
     ) -> None:
         self.max_relations = max_relations
         self.max_context_lines = max_context_lines
         self.db_path = db_path
-        self._agent_id = agent_id
         self._entities: set[str] = set()
         self._relations: deque[tuple[str, str, str]] = deque()
         self._relations_set: set[tuple[str, str, str]] = set()
@@ -42,8 +40,6 @@ class SemanticMemory:
         self._adj: dict[str, list[int]] = defaultdict(list)
         # Offset tracking: absolute index of the first element in _relations
         self._evicted_count: int = 0
-        # Per-entity owner tracking for agent_id scoping
-        self._entity_owner: dict[str, str | None] = {}  # entity_name -> agent_id
 
     # ------------------------------------------------------------------
     # Mutation
@@ -53,9 +49,6 @@ class SemanticMemory:
         """Ingest entities and relationships from an extraction result."""
         for ent in result.entities:
             self._entities.add(ent)
-            # Track ownership: first writer wins; don't overwrite existing owner
-            if ent not in self._entity_owner:
-                self._entity_owner[ent] = self._agent_id
 
         for rel in result.relationships:
             if len(rel) != 3:
@@ -138,23 +131,14 @@ class SemanticMemory:
         if not self._entities:
             return ""
 
-        # When agent_id is set, only consider entities owned by this agent
-        candidate_entities = (
-            {e for e in self._entities if self._entity_owner.get(e) == self._agent_id}
-            if self._agent_id is not None
-            else self._entities
-        )
-        if not candidate_entities:
-            return ""
-
         # Find entities present in the task text (word-boundary match)
-        mentioned = [ent for ent in candidate_entities if re.search(r'\b' + re.escape(ent) + r'\b', task, re.IGNORECASE)]
+        mentioned = [ent for ent in self._entities if re.search(r'\b' + re.escape(ent) + r'\b', task, re.IGNORECASE)]
         if not mentioned:
             # Gap 4 (2026-04-21): emit a read log on every call, even 0-hit,
             # so the memory read path is auditable from grep alone.
             log.info(
                 "memory.semantic.query entity=%s hits=0 top_score=0.000 entities_seen=%d",
-                "<none>", len(candidate_entities),
+                "<none>", len(self._entities),
             )
             return ""
 
@@ -175,7 +159,7 @@ class SemanticMemory:
         log.info(
             "memory.semantic.query entity=%r hits=%d entities_seen=%d mentioned=%d",
             mentioned[0][:40] if mentioned else "<none>",
-            len(all_rels), len(candidate_entities), len(mentioned),
+            len(all_rels), len(self._entities), len(mentioned),
         )
 
         if not all_rels:
