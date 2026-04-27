@@ -730,7 +730,7 @@ token for remote, (c) audit log every resource/tool access.
 
 **Cost:** ~1 week.
 
-### A20. Bandit causality test — Python pipeline off-policy (cgpro 2026-04-26)
+### A20. Bandit causality test — Python pipeline off-policy (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `48dc7c3f`)
 
 **Aka `cg-A14` in MEMORY.md cross-references.** Source: cgpro 2026-04-26 post-closeout review (conversation `cgpro_2026_04_26_review`).
 
@@ -751,7 +751,7 @@ Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persi
 
 **Cost:** 1-2 days (decision + impl + tests + audit if option-c).
 
-### A21. Packaging fail-closed — `pip install ygn-sage` doesn't get sage_core (cgpro 2026-04-26)
+### A21. Packaging fail-closed — `pip install ygn-sage` doesn't get sage_core (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `761c1797`)
 
 **Aka `cg-A15` in MEMORY.md cross-references.**
 
@@ -765,7 +765,7 @@ Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persi
 
 **Cost:** 2-3 days (packaging story + fail-closed wiring + smoke test).
 
-### A22. Diff-context verifier reason codes (cgpro 2026-04-26)
+### A22. Diff-context verifier reason codes (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `133b86b5`)
 
 **Aka `cg-A3a` in MEMORY.md cross-references.**
 
@@ -785,7 +785,7 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Cost:** ~1 day. **No API budget needed** — local code change exercised by existing test fixtures.
 
-### A23. Build rustpython.wasm in CI + Python 3.13 + Windows sandbox matrix (cgpro 2026-04-26 + Trap E)
+### A23. Build rustpython.wasm in CI + Python 3.13 + Windows sandbox matrix (cgpro 2026-04-26 + Trap E) — ✅ SHIPPED 2026-04-26 (commits `7f72ad28` + `a5688048` hotfix)
 
 **Aka `cg-A8` in MEMORY.md cross-references** (renamed from earlier "roadmap-A8" wasm-ci entry at top of this file). Bundles **Trap E** (CI matrix gaps) and **Trap F** (`tool_executor.rs` stale subprocess-fallback doc) since they're all "CI matrix coherence + sandbox truthfulness" class.
 
@@ -803,9 +803,9 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Cost:** ~½ day (mostly CI YAML; cache wiring is the time sink).
 
-### A24. Bandit Pareto contract docs vs code reconciliation (cgpro 2026-04-26)
+### A24. Bandit Pareto contract docs vs code reconciliation (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 Path A docs (commit `5a390c48`)
 
-**Aka `cg-A12` in MEMORY.md cross-references.**
+**Aka `cg-A12` in MEMORY.md cross-references.** Path A (docs-only) shipped 2026-04-26 alongside Trap F bundled in same commit. Path B (real Pareto multi-obj routing) still tracked here as future work — see Trap C (GammaPosterior semantics) below for the prerequisite posterior-arithmetic work.
 
 **Why:** `sage-core/src/routing/bandit.rs:1-7` module-doc claims "Builds a global Pareto front at decision time and selects based on runtime constraints." Actual `choose()` (lines 377-461) and `choose_contextual()` (lines 474+): pure Thompson sample on `arm.quality.sample()` (with cosine bonus for contextual). Cost/latency are sampled for telemetry on the returned `BanditDecision`, **not** used for selection. Docs lie about behavior.
 
@@ -815,7 +815,7 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Decision:** start with Path A (this cycle, pilot run). Path B becomes a separate item when prioritized.
 
-### A25. RNG seam + sort `arm_keys` for stochastic determinism (cgpro 2026-04-26)
+### A25. RNG seam + sort `arm_keys` for stochastic determinism (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `5ef1940f`)
 
 **Aka `cg-A9 + cg-A10` in MEMORY.md cross-references.** Paired — A9 alone is insufficient because `HashMap` iteration order is undefined (Rust stdlib documents this).
 
@@ -828,7 +828,7 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Cost:** 1-2 days.
 
-### A26. Three-layer test split for stochastic suites (cgpro 2026-04-26)
+### A26. Three-layer test split for stochastic suites (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-27 (commit `e57ae680`)
 
 **Aka `cg-A11` in MEMORY.md cross-references.** **Depends on A25.**
 
@@ -841,7 +841,7 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Cost:** 1-2 days. Gated on A25 RNG seam.
 
-### A27. Lockfile / constraints for transitive deps (cgpro 2026-04-26)
+### A27. Lockfile / constraints for transitive deps (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `2c8d2557`; A27-followup tracks Linux constraint regen)
 
 **Aka `cg-A13` in MEMORY.md cross-references.**
 
