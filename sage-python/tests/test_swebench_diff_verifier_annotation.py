@@ -141,3 +141,46 @@ async def test_generate_patches_annotates_diff_verifier_reasons_in_observe_mode(
     assert prediction["_diff_verifier_mismatches"] == []
     assert prediction["_diff_verifier_reasons"] == ["clean"]
     assert prediction["_diff_verifier_outcome"] == "clean"
+
+
+# A22c (cgpro 2026-04-27 post-cycle playbook): off-mode JSONL must remain
+# byte-identical to pre-A22 — none of the three diff-verifier keys may
+# leak into prediction dicts when SAGE_DIFF_VERIFIER_MODE is unset/off.
+# This test pins that contract so a future regression that flips the
+# mode default or removes the gating shows up immediately.
+@pytest.mark.asyncio
+async def test_generate_patches_omits_diff_verifier_keys_in_off_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SAGE_DIFF_VERIFIER_MODE", raising=False)
+    monkeypatch.delenv("SAGE_EMISSION_FORMAT", raising=False)
+    _stub_dataset(monkeypatch)
+    _stub_no_repair(monkeypatch)
+
+    repo_dir = tmp_path / "repo"
+    (repo_dir / "pkg").mkdir(parents=True)
+    (repo_dir / "pkg" / "mod.py").write_text("old\n", encoding="utf-8")
+    monkeypatch.setattr(
+        SWEBenchBench,
+        "_setup_repo",
+        staticmethod(lambda _inst: str(repo_dir)),
+    )
+
+    canned = (
+        "```diff\n"
+        "--- a/pkg/mod.py\n"
+        "+++ b/pkg/mod.py\n"
+        "@@ -1 +1 @@\n"
+        "-old\n"
+        "+new\n"
+        "```\n"
+    )
+    bench = SWEBenchBench(system=_FakeSystem(canned), dataset="lite")
+
+    predictions = await bench.generate_patches(limit=1, out_dir=tmp_path)
+    prediction = predictions[0]
+
+    assert "_diff_verifier_mismatches" not in prediction
+    assert "_diff_verifier_reasons" not in prediction
+    assert "_diff_verifier_outcome" not in prediction

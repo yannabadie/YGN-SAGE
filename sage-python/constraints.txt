@@ -86,11 +86,6 @@ click==8.3.3
     #   uvicorn
 cohere==5.21.1
     # via pydantic-ai-slim
-colorama==0.4.6
-    # via
-    #   click
-    #   pytest
-    #   tqdm
 coverage==7.13.5
     # via pytest-cov
 cryptography==47.0.0
@@ -99,6 +94,13 @@ cryptography==47.0.0
     #   google-auth
     #   joserfc
     #   pyjwt
+    #   secretstorage
+cuda-bindings==13.2.0
+    # via torch
+cuda-pathfinder==1.5.3
+    # via cuda-bindings
+cuda-toolkit==13.0.2
+    # via torch
 cyclopts==4.11.0
     # via fastmcp
 datasets==4.8.4
@@ -263,6 +265,10 @@ jaraco-context==6.1.2
     # via keyring
 jaraco-functools==4.4.0
     # via keyring
+jeepney==0.9.0
+    # via
+    #   keyring
+    #   secretstorage
 jinja2==3.1.6
     # via torch
 jiter==0.14.0
@@ -343,6 +349,45 @@ numpy==2.4.4
     #   transformers
     #   ygn-sage
     #   ygn-sage (pyproject.toml)
+nvidia-cublas==13.1.0.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cudnn-cu13
+    #   nvidia-cusolver
+nvidia-cuda-cupti==13.0.85
+    # via cuda-toolkit
+nvidia-cuda-nvrtc==13.0.88
+    # via cuda-toolkit
+nvidia-cuda-runtime==13.0.96
+    # via cuda-toolkit
+nvidia-cudnn-cu13==9.19.0.56
+    # via torch
+nvidia-cufft==12.0.0.61
+    # via cuda-toolkit
+nvidia-cufile==1.15.1.6
+    # via cuda-toolkit
+nvidia-curand==10.4.0.35
+    # via cuda-toolkit
+nvidia-cusolver==12.0.4.66
+    # via cuda-toolkit
+nvidia-cusparse==12.6.3.3
+    # via
+    #   cuda-toolkit
+    #   nvidia-cusolver
+nvidia-cusparselt-cu13==0.8.0
+    # via torch
+nvidia-nccl-cu13==2.28.9
+    # via torch
+nvidia-nvjitlink==13.0.88
+    # via
+    #   cuda-toolkit
+    #   nvidia-cufft
+    #   nvidia-cusolver
+    #   nvidia-cusparse
+nvidia-nvshmem-cu13==3.4.5
+    # via torch
+nvidia-nvtx==13.0.85
+    # via cuda-toolkit
 openai==2.32.0
     # via
     #   evalplus
@@ -400,7 +445,7 @@ pandas==3.0.2
     # via datasets
 pathable==0.5.0
     # via jsonschema-path
-pathspec==1.1.0
+pathspec==1.1.1
     # via mypy
 platformdirs==4.9.6
     # via fastmcp
@@ -522,10 +567,6 @@ python-dotenv==1.2.2
     #   pydantic-settings
 python-multipart==0.0.26
     # via mcp
-pywin32==311
-    # via mcp
-pywin32-ctypes==0.2.3
-    # via keyring
 pyyaml==6.0.3
     # via
     #   datasets
@@ -589,6 +630,8 @@ scipy==1.17.1
     # via
     #   scikit-learn
     #   sentence-transformers
+secretstorage==3.5.0
+    # via keyring
 sentence-transformers==5.4.1
     # via ygn-sage
 setuptools==81.0.0
@@ -660,6 +703,8 @@ tree-sitter==0.25.2
     # via evalplus
 tree-sitter-python==0.25.0
     # via evalplus
+triton==3.6.0
+    # via torch
 truststore==0.10.4
     # via
     #   ygn-sage
@@ -713,8 +758,6 @@ typing-inspection==0.4.2
     #   pydantic-ai-slim
     #   pydantic-graph
     #   pydantic-settings
-tzdata==2026.2
-    # via pandas
 ulid-py==1.1.0
     # via ygn-sage (pyproject.toml)
 uncalled-for==0.3.1

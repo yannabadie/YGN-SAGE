@@ -68,45 +68,51 @@ jobs:
   pip-audit:
     name: pip-audit (Python deps)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           python-version: '3.12'
-      - uses: dtolnay/rust-toolchain@stable
       - name: Install pip-audit
         run: pip install pip-audit
-      # A21: sage-python declares sage-core>=0.1,<0.2 as a runtime dep but
-      # sage-core is not yet on PyPI (B4). Build + install the wheel locally
-      # so constrained editable installs (used by both sage-python and sage-discover
-      # audit branches below) can resolve sage-core without hitting the
-      # registry. The metadata-only audit branch (--disable-pip) does not
-      # need this prebuild but doesn't conflict with it either.
-      - name: Build sage_core wheel + install (required for sage-python install)
-        working-directory: sage-core
+      # A27-followup: audit the LOCKED constraints (which represent the actual
+      # versions we ship), not free pyproject metadata. pip-audit's two
+      # supported avoidance paths for environment resolution are: audit an
+      # already-installed env, OR audit a fully pinned requirements file with
+      # `--no-deps`. The `--disable-pip` path required `--no-deps` or hashed
+      # reqs anyway and was emitting an error before `|| true` could swallow
+      # it, so we drop it.
+      #
+      # We also strip the local `sage-core==0.1.0` line from the audit input
+      # because sage-core is not yet on PyPI (B4); pip-audit would fail to
+      # resolve it through the OSV vuln service.
+      - name: Stage pinned constraint files for audit
         run: |
-          pip install maturin
-          maturin build --release --features smt,onnx --out target/wheels
-          pip install target/wheels/sage_core-*.whl --force-reinstall --no-deps
-      - name: Audit sage-python (pyproject.toml)
-        run: |
-          cd sage-python
-          # --disable-pip forces pip-audit to resolve directly from the
-          # pyproject metadata without invoking `pip install`, which
-          # avoids triggering optional C-extension builds during audit.
-          pip-audit --strict --vulnerability-service osv \
-            --disable-pip \
-            --requirement <(python -c 'import tomllib,sys; d=tomllib.load(open("pyproject.toml","rb")); [print(r) for r in d.get("project",{}).get("dependencies",[])]') \
-            || true
-          # Primary run: real install + audit (exits non-zero on any finding).
-          pip install -c constraints.txt -e ".[all,dev]"
-          pip-audit --strict
-      - name: Audit sage-discover (pyproject.toml)
-        run: |
-          cd sage-discover
-          pip install -c ../sage-python/constraints.txt -c constraints.txt -e "."
-          pip-audit --strict
+          python - <<'PY'
+          from pathlib import Path
+
+          pairs = [
+              ("sage-python/constraints.txt", "audit-sage-python.txt"),
+              ("sage-discover/constraints.txt", "audit-sage-discover.txt"),
+          ]
+
+          for src, dst in pairs:
+              out = []
+              for raw in Path(src).read_text(encoding="utf-8").splitlines():
+                  line = raw.strip()
+                  if not line or line.startswith("#") or line.startswith("--"):
+                      continue
+                  if line.lower().startswith("sage-core==") or line.lower().startswith("ygn-sage=="):
+                      # local-only packages, not on PyPI until B4
+                      continue
+                  out.append(line)
+              Path(dst).write_text("\n".join(out) + "\n", encoding="utf-8")
+              print(f"wrote {dst} ({len(out)} pinned packages)")
+          PY
+      - name: Audit sage-python pinned constraints
+        run: pip-audit --strict --vulnerability-service osv --no-deps -r audit-sage-python.txt
+      - name: Audit sage-discover pinned constraints
+        run: pip-audit --strict --vulnerability-service osv --no-deps -r audit-sage-discover.txt
       # Also run the pypa action so the output lands in the GitHub
       # Security tab when a SARIF-capable step is wired later.
       - name: Reference pypa/gh-action-pip-audit

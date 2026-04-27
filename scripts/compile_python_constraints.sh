@@ -57,7 +57,15 @@ cd "$ROOT/sage-python"
   "${UPGRADE_FLAG[@]}"
 
 cd "$ROOT/sage-discover"
+# Layer the discover compile on top of sage-python's already-pinned
+# constraints. pip constraints are global version limits, not independent
+# lock universes — the python-discover CI job installs sage-python AND
+# sage-discover in the same env, so the two constraint files MUST be
+# composable. Without `--constraint`, pip-compile resolves typer freely
+# for sage-discover (e.g. 0.25.0) while sage-python pins it elsewhere
+# (e.g. 0.21.2), producing an unsatisfiable dual `-c` install on Linux.
 "$PYTHON_BIN" -m piptools compile pyproject.toml \
+  --constraint "$ROOT/sage-python/constraints.txt" \
   --strip-extras \
   --resolver=backtracking \
   --newline=lf \

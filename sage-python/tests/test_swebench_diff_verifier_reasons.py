@@ -209,3 +209,29 @@ def test_diff_verifier_mixed_reasons_roll_up_to_strongest_outcome(
     assert "clean" in result.reasons
     assert "hunk_body_count_mismatch" in result.reasons
     assert result.outcome == "hunk_body_count_mismatch"
+
+
+# A22d (cgpro 2026-04-27 post-cycle playbook): the deletion-side
+# `/dev/null` case. The creation-side variant is already covered;
+# this test pins that for `--- a/...` paired with `+++ /dev/null`,
+# the verifier (a) records `file_creation_or_deletion` as a reason
+# AND (b) still verifies the old-side body — so a hallucinated
+# removed-line surfaces as `content_mismatch` rather than getting
+# masked by the deletion telemetry.
+def test_diff_verifier_reason_file_deletion_still_verifies_old_side(
+    tmp_path: Path,
+) -> None:
+    _write(tmp_path, "pkg/old.py", "actual\n")
+    diff = (
+        "--- a/pkg/old.py\n"
+        "+++ /dev/null\n"
+        "@@ -1,1 +0,0 @@\n"
+        "-claimed\n"
+    )
+
+    result = verify_diff_context_with_reasons(diff, tmp_path)
+
+    assert "file_creation_or_deletion" in result.reasons
+    assert "content_mismatch" in result.reasons
+    assert result.outcome == "content_mismatch"
+    assert result.mismatches[0].kind == "content_mismatch"
