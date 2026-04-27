@@ -117,11 +117,16 @@ jobs:
       - name: Reference pypa/gh-action-pip-audit
         uses: pypa/gh-action-pip-audit@1220774d901786e6f652ae159f7b6bc8fea6d266 # v1.1.0
         with:
-          inputs: sage-python/pyproject.toml
+          inputs: audit-sage-python.txt audit-sage-discover.txt
+          no-deps: true
+          vulnerability-service: OSV
 
   cargo-audit:
     name: cargo-audit (Rust deps)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
     # A23-security-followup landed 2026-04-27: wasmtime 43.0 → 44.0
     # cleared 11 RustSec advisories (sandbox-escape on cranelift x86-64
     # / aarch64, host panics, OOB transcoding, UAF on Linker clone,
