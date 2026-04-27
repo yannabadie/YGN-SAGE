@@ -765,7 +765,7 @@ Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persi
 
 **Cost:** 2-3 days (packaging story + fail-closed wiring + smoke test).
 
-### A22. Diff-context verifier reason codes (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `133b86b5`)
+### A22. Diff-context verifier reason codes (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `133b86b5`; A22b/c/d follow-ups closed 2026-04-27)
 
 **Aka `cg-A3a` in MEMORY.md cross-references.**
 
@@ -782,6 +782,11 @@ Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persi
 - `unsupported_no_opinion`
 
 Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` alongside existing `_diff_verifier_mismatches`. Bucket-analysis script aggregates reasons across runs.
+
+**Follow-up closure (2026-04-27):** A22b/c/d added the no-op/off-mode
+annotation regressions, deletion-side hunk-body count coverage, and
+`scripts/analyze_diff_verifier_buckets.py` for outcome/reason bucket
+aggregation across archived predictions.
 
 **Cost:** ~1 day. **No API budget needed** — local code change exercised by existing test fixtures.
 
@@ -841,7 +846,7 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 
 **Cost:** 1-2 days. Gated on A25 RNG seam.
 
-### A27. Lockfile / constraints for transitive deps (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `2c8d2557`; A27-followup tracks Linux constraint regen)
+### A27. Lockfile / constraints for transitive deps (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `2c8d2557`; A27-followup closed 2026-04-27)
 
 **Aka `cg-A13` in MEMORY.md cross-references.**
 
@@ -851,6 +856,12 @@ Annotate `predictions.jsonl` with new field `_diff_verifier_reasons: list[str]` 
 1. Generate `sage-python/constraints.txt` from a clean `pip install -e .[all,dev]` resolution.
 2. CI installs with `pip install -c constraints.txt -e .[all,dev]`.
 3. Separate weekly-scheduled `latest-deps` CI job re-resolves without constraints to catch drift without making every commit hostage to upstream.
+
+**Follow-up closure (2026-04-27):** constraints were regenerated from
+the Linux/Python 3.12 baseline, Windows-only transients were removed,
+`typer` was capped to `<0.22` to match `docling` and keep the layered
+`sage-python` + `sage-discover` install satisfiable, and the Python
+constraints/discovery CI jobs were restored as hard gates.
 
 **Cost:** ~½ day.
 

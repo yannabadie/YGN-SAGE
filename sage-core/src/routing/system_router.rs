@@ -335,6 +335,26 @@ impl SystemRouter {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Route with contextual, template-filtered bandit integration.
+    #[pyo3(name = "route_integrated_contextual")]
+    pub fn py_route_integrated_contextual(
+        &mut self,
+        task: &str,
+        constraints: &RoutingConstraints,
+        topology_id: &str,
+        executed_template: &str,
+        context: Vec<f32>,
+    ) -> PyResult<RoutingDecision> {
+        self.route_integrated_contextual(
+            task,
+            constraints,
+            topology_id,
+            executed_template,
+            &context,
+        )
+        .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
+    }
+
     /// Record outcome for a previous routing decision.
     ///
     /// Forwards to bandit (if available) and always records telemetry.
@@ -481,6 +501,151 @@ impl SystemRouter {
             cost = decision.estimated_cost,
             topology = %decision.topology_id,
             "integrated_routing_decision"
+        );
+
+        Ok(decision)
+    }
+
+    /// Route with contextual, template-filtered bandit integration.
+    ///
+    /// This is the canonical causal-safe routing API for future Python pipeline
+    /// migration. It records a pending bandit decision only for the exact
+    /// `(model_id, executed_template)` arm that can later be checked with
+    /// `ContextualBandit::record_outcome_checked`.
+    ///
+    /// Pipeline migration note: `sage-python/src/sage/pipeline.py` still calls
+    /// the legacy `route()` path. Do not wire Stage 0 to this method without a
+    /// separate full pipeline regression pass.
+    pub fn route_integrated_contextual(
+        &mut self,
+        task: &str,
+        constraints: &RoutingConstraints,
+        topology_id: &str,
+        executed_template: &str,
+        context: &[f32],
+    ) -> Result<RoutingDecision, String> {
+        let _span = info_span!(
+            "system_router.route_integrated_contextual",
+            task_len = task.len(),
+            topology_id = topology_id,
+            executed_template = executed_template,
+            context_dim = context.len(),
+        )
+        .entered();
+
+        // Step 1: Structural analysis + system decision
+        let features = StructuralFeatures::extract_from(task);
+        let (system, confidence) = self.decide_system(task, &features);
+
+        // Step 2: Get candidates + hard constraint filtering
+        let mut candidates = self.registry.select_for_system(system);
+        candidates = self.apply_constraints(&candidates, constraints);
+        if candidates.is_empty() {
+            candidates = self.registry.all_models();
+            candidates = self.apply_constraints(&candidates, constraints);
+        }
+        if candidates.is_empty() {
+            candidates = self.registry.all_models();
+        }
+
+        // Step 2.5: Domain hint — reorder candidates by domain preference
+        if !constraints.domain_hint.is_empty() {
+            candidates.sort_by(|a, b| {
+                let sa = a.domain_score(&constraints.domain_hint);
+                let sb = b.domain_score(&constraints.domain_hint);
+                sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
+
+        let budget = if constraints.max_cost_usd > 0.0 {
+            constraints.max_cost_usd
+        } else {
+            f32::MAX
+        };
+
+        let bandit_decision = if let Some(ref mut bandit) = self.bandit {
+            let mut rng = rand::rng();
+            match bandit.choose_contextual_for_template_with_rng(
+                constraints.exploration_budget,
+                context,
+                executed_template,
+                &mut rng,
+            ) {
+                Ok(decision) => Some(decision),
+                Err(err) => {
+                    debug!(
+                        error = %err,
+                        template = executed_template,
+                        "bandit_contextual_template_selection_failed_falling_back"
+                    );
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        let (model_id, estimated_cost, decision_id) = if let Some(bd) = bandit_decision {
+            if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
+                let est = card.estimate_cost(1000, 2000);
+                (bd.model_id.clone(), est, bd.decision_id.clone())
+            } else {
+                if let Some(ref mut bandit) = self.bandit {
+                    let cancelled = bandit.cancel_decision(&bd.decision_id);
+                    debug!(
+                        bandit_model = %bd.model_id,
+                        bandit_template = %bd.template,
+                        decision_id = %bd.decision_id,
+                        cancelled = cancelled,
+                        "bandit_contextual_model_failed_constraints_cancelled"
+                    );
+                }
+                let (model, cost) = self.select_within_budget(&candidates, budget);
+                (model.id.clone(), cost, ulid::Ulid::new().to_string())
+            }
+        } else {
+            let (model, cost) = self.select_within_budget(&candidates, budget);
+            (model.id.clone(), cost, ulid::Ulid::new().to_string())
+        };
+
+        // Step 3: Use calibrated affinity for confidence adjustment
+        let calibrated = self.registry.calibrated_affinity(&model_id, system);
+        let adjusted_confidence = confidence * calibrated.max(0.1);
+
+        // Step 4: Determine final system from selected model
+        let final_system = self
+            .registry
+            .get(&model_id)
+            .map(|c| c.best_system())
+            .unwrap_or(system);
+
+        let decision = RoutingDecision {
+            decision_id,
+            system: final_system,
+            model_id: model_id.clone(),
+            confidence: adjusted_confidence,
+            estimated_cost,
+            topology_id: topology_id.to_string(),
+        };
+
+        // Store decision → model mapping for record_outcome telemetry
+        if self.decision_models.len() >= 1000 {
+            if let Some(old_id) = self.decision_order.pop_front() {
+                self.decision_models.remove(&old_id);
+            }
+        }
+        self.decision_models
+            .insert(decision.decision_id.clone(), decision.model_id.clone());
+        self.decision_order.push_back(decision.decision_id.clone());
+
+        info!(
+            system = %decision.system,
+            model = %decision.model_id,
+            confidence = decision.confidence,
+            cost = decision.estimated_cost,
+            topology = %decision.topology_id,
+            template = executed_template,
+            "integrated_contextual_routing_decision"
         );
 
         Ok(decision)
@@ -659,6 +824,7 @@ impl SystemRouter {
 
 #[cfg(test)]
 mod tests {
+    use super::super::bandit::BanditError;
     use super::*;
 
     #[test]
@@ -777,6 +943,241 @@ mod tests {
             "unexpected model: {}",
             decision.model_id
         );
+    }
+
+    fn contextual_registry() -> ModelRegistry {
+        let toml_str = r#"
+            [[models]]
+            id = "model-a"
+            provider = "test"
+            family = "test"
+            code_score = 0.9
+            reasoning_score = 0.8
+            tool_use_score = 0.8
+            math_score = 0.5
+            formal_z3_strength = 0.4
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.8
+            s2_affinity = 0.9
+            s3_affinity = 0.4
+            recommended_topologies = ["single_agent"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+
+            [[models]]
+            id = "model-b"
+            provider = "test"
+            family = "test"
+            code_score = 0.7
+            reasoning_score = 0.7
+            tool_use_score = 0.7
+            math_score = 0.4
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.8
+            s2_affinity = 0.8
+            s3_affinity = 0.3
+            recommended_topologies = ["sequential"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+        "#;
+        ModelRegistry::from_toml_str(toml_str).unwrap()
+    }
+
+    #[test]
+    fn route_integrated_contextual_passes_full_arm_to_bandit_and_executes_it() {
+        let registry = contextual_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+        bandit.add_arm("model-b", "sequential");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router
+            .route_integrated_contextual(
+                "write code using a helper tool",
+                &constraints,
+                "topology-1",
+                "single_agent",
+                &[1.0, 42.0, 1.0],
+            )
+            .unwrap();
+
+        assert_eq!(decision.model_id, "model-a");
+        assert_eq!(decision.topology_id, "topology-1");
+        let bandit = router
+            .bandit
+            .as_mut()
+            .expect("bandit should remain installed");
+        assert!(bandit.repr().contains("pending=1"));
+        bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "model-a",
+                "single_agent",
+                0.95,
+                0.01,
+                120.0,
+            )
+            .unwrap();
+        assert_eq!(bandit.total_observations(), 1);
+    }
+
+    fn constrained_fallback_registry() -> ModelRegistry {
+        let toml_str = r#"
+            [[models]]
+            id = "expensive-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.95
+            reasoning_score = 0.95
+            tool_use_score = 0.95
+            math_score = 0.8
+            formal_z3_strength = 0.7
+            cost_input_per_m = 50000.0
+            cost_output_per_m = 25000.0
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 100.0
+            s1_affinity = 0.9
+            s2_affinity = 0.95
+            s3_affinity = 0.8
+            recommended_topologies = ["single_agent"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+
+            [[models]]
+            id = "fallback-model"
+            provider = "test"
+            family = "test"
+            code_score = 0.7
+            reasoning_score = 0.7
+            tool_use_score = 0.7
+            math_score = 0.4
+            formal_z3_strength = 0.3
+            cost_input_per_m = 0.1
+            cost_output_per_m = 0.2
+            latency_ttft_ms = 100.0
+            tokens_per_sec = 200.0
+            s1_affinity = 0.8
+            s2_affinity = 0.8
+            s3_affinity = 0.3
+            recommended_topologies = ["single_agent"]
+            supports_tools = true
+            supports_json_mode = true
+            supports_vision = false
+            context_window = 128000
+        "#;
+        ModelRegistry::from_toml_str(toml_str).unwrap()
+    }
+
+    #[test]
+    fn route_integrated_contextual_cancels_decision_when_bandit_pick_fails_constraints() {
+        let registry = constrained_fallback_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("expensive-model", "single_agent");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(10.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router
+            .route_integrated_contextual(
+                "write code using a helper tool",
+                &constraints,
+                "topology-2",
+                "single_agent",
+                &[1.0, 42.0, 1.0],
+            )
+            .unwrap();
+
+        assert_eq!(decision.model_id, "fallback-model");
+        assert!(!decision.decision_id.is_empty());
+        let bandit = router
+            .bandit
+            .as_mut()
+            .expect("bandit should remain installed");
+        assert!(bandit.repr().contains("pending=0"));
+        let err = bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "expensive-model",
+                "single_agent",
+                0.99,
+                100.0,
+                120.0,
+            )
+            .unwrap_err();
+        assert!(matches!(err, BanditError::UnknownDecision(_)));
+        assert_eq!(bandit.total_observations(), 0);
+    }
+
+    #[test]
+    fn route_integrated_contextual_record_outcome_checked_rejects_off_policy() {
+        let registry = contextual_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("model-a", "single_agent");
+        bandit.add_arm("model-b", "sequential");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router
+            .route_integrated_contextual(
+                "write code using a helper tool",
+                &constraints,
+                "topology-3",
+                "single_agent",
+                &[1.0, 42.0, 1.0],
+            )
+            .unwrap();
+
+        let bandit = router
+            .bandit
+            .as_mut()
+            .expect("bandit should remain installed");
+        let err = bandit
+            .record_outcome_checked(
+                &decision.decision_id,
+                "model-b",
+                "single_agent",
+                0.95,
+                0.01,
+                120.0,
+            )
+            .unwrap_err();
+
+        match err {
+            BanditError::OffPolicyOutcome {
+                decision_id,
+                selected_model_id,
+                selected_template,
+                executed_model_id,
+                executed_template,
+            } => {
+                assert_eq!(decision_id, decision.decision_id);
+                assert_eq!(selected_model_id, "model-a");
+                assert_eq!(selected_template, "single_agent");
+                assert_eq!(executed_model_id, "model-b");
+                assert_eq!(executed_template, "single_agent");
+            }
+            other => panic!("expected OffPolicyOutcome, got {other:?}"),
+        }
+        assert_eq!(bandit.total_observations(), 0);
     }
 
     #[test]
