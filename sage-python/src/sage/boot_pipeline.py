@@ -33,6 +33,19 @@ def _discover_models(registry: Any, use_mock_llm: bool) -> None:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
                 pool.submit(lambda: asyncio.run(registry.refresh())).result(timeout=30)
         else:
+            # Snapshot the caller's pre-set loop (if any) so asyncio.run()'s
+            # cleanup (which calls set_event_loop(None)) does not strip it.
+            # Downstream lazily-async clients in pydantic-ai/grpc.aio call
+            # asyncio.get_event_loop() at construction time on Python 3.12+,
+            # which raises RuntimeError when _set_called=True and _loop=None.
+            # We restore (or create) a loop after asyncio.run() so the rest
+            # of boot can construct grpc.aio clients in sync contexts
+            # (tests, CLI scripts).
+            _prior_loop = None
+            _policy = asyncio.get_event_loop_policy()
+            _local = getattr(_policy, "_local", None)
+            if _local is not None:
+                _prior_loop = getattr(_local, "_loop", None)
             # Wrap in timeout to prevent hanging on slow provider discovery
             async def _refresh_with_timeout():
                 try:
@@ -40,6 +53,12 @@ def _discover_models(registry: Any, use_mock_llm: bool) -> None:
                 except asyncio.TimeoutError:
                     _log.warning("Provider discovery timed out (30s) -- using cached/TOML models only")
             asyncio.run(_refresh_with_timeout())
+            # Restore caller's loop, or create a fresh one for downstream
+            # grpc.aio clients to discover via get_event_loop().
+            if _prior_loop is not None and not _prior_loop.is_closed():
+                asyncio.set_event_loop(_prior_loop)
+            else:
+                asyncio.set_event_loop(asyncio.new_event_loop())
         # Log per-provider summary
         available = registry.list_available()
         provider_counts = Counter(p.provider for p in available)

@@ -21,7 +21,7 @@ class TestProviderPoolWiring:
 
     @pytest.fixture(autouse=True)
     def _boot_system(self):
-        """Boot the agent system once for the class."""
+        """Boot the agent system once per test in this class."""
         key = os.environ.get("GOOGLE_API_KEY", "")
         # Skip if key is absent or obviously fake (leaked from other tests)
         if not key or "fake" in key or "test" in key or len(key) < 20:
