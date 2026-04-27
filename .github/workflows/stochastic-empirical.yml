@@ -17,9 +17,19 @@ jobs:
         with:
           python-version: "3.12"
 
+      - run: pip install maturin
+
       - uses: dtolnay/rust-toolchain@stable
 
+      # `--no-default-features --features smt` (instead of just
+      # `--features smt`) avoids dragging the default `tool-executor`
+      # feature into the link surface. tool-executor pulls PyO3, and
+      # `cargo test` link without `pip install maturin`'s libpython
+      # setup yields `undefined symbol: PyLong_AsLong / PyLong_FromLong`
+      # — same class as the A23 rust-features hotfix split. The
+      # empirical tests live in `bandit::tests` and `cma_me::tests`,
+      # which only need `smt`; they do not call into ToolExecutor.
       - name: Run ignored empirical stochastic tests
         working-directory: sage-core
         run: |
-          cargo test --features smt --lib empirical_ -- --ignored --test-threads=1
+          cargo test --no-default-features --features smt --lib empirical_ -- --ignored --test-threads=1

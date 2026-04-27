@@ -335,6 +335,19 @@ jobs:
     needs: build-wasm-sandbox
     name: Python Discovery (sage-discover)
     runs-on: ubuntu-latest
+
+    # A27 first-landing observation mode (same pattern as
+    # `python-constraints` above): the Windows-generated
+    # `sage-python/constraints.txt` and `sage-discover/constraints.txt`
+    # were resolved separately and disagree on transitive pins
+    # (e.g. typer==0.21.2 vs typer==0.25.0), so the dual `-c` install
+    # in this job hits ResolutionImpossible on Linux. Flip to a hard
+    # gate via A27-followup once both constraints are regenerated
+    # from the same Linux/Python 3.12 baseline (either WSL/Docker
+    # locally or by triggering the latest-deps workflow and
+    # committing its output).
+    continue-on-error: true
+
     steps:
       - uses: actions/checkout@v6
 
