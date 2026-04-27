@@ -875,6 +875,52 @@ constraints/discovery CI jobs were restored as hard gates.
 
 **Cost:** 1 hour for docs annotation; 1 day for the regression test (deferred to A24-Path-B).
 
+### A28. Engine extras persistence — CMA-ME emitter + mutation Thompson posteriors (sans-pitié audit 2026-04-27) — ✅ SHIPPED 2026-04-27 (commit `160e57e0`)
+
+**Why:** `TopologyEngine::save_state` only persisted bandit + MAP-Elites archive. It silently dropped `cma_emitter` (mean, sigma, cov_diag, generation — full CMA-ES state for continuous parameter optimisation of max_cost_usd / max_wall_time_s / edge_weight) AND `mutation_stats` (Thompson Beta posteriors per mutation operator: alphas[7], betas[7]). Same defect class as `bandit::restore_arm` dropping `context_sum`/`context_count` (A26-cycle find).
+
+The pre-existing round-trip test `test_engine_save_load_round_trip` was test theatre — it only asserted bandit_arm count and archive_cell count, so neither extras field was inspected. Identical pattern to a2a_server runtime drift hidden by tests that only constructed AgentCard.
+
+**Action shipped (commit `160e57e0`):** serialised both as JSON in a third file `engine_extras.json` alongside `bandit_state.db` / `archive_state.db`. `MutationStats` already had `Serialize/Deserialize`; added `Serialize/Deserialize` to `CmaEmitter` + `DimensionBounds`. New `TopologyEngine::cma_generation()` accessor exposes the round-tripped value.
+
+Two new tests pin the contract:
+- `test_engine_extras_survives_save_load` — drives `evolve()` once, asserts CMA generation round-trips byte-identical AND every `(alphas[i], betas[i], attempts[i], successes[i])` round-trips byte-identical for all 7 operators.
+- `test_engine_load_pre_extras_checkpoint` — covers cold-start path (missing extras file → keep TopologyEngine::new defaults; bandit/archive still load).
+
+`cargo test --features smt --lib`: 522 passed (was 501 — +21 incl. these). Python `test_engine_persistence.py` 6/6 still green.
+
+**Cost:** ½ day. Closed in same session.
+
+### A29. Boot pipeline health-check loop preservation (sans-pitié audit 2026-04-27) — ✅ SHIPPED 2026-04-27 (commit `160e57e0`)
+
+**Why:** Earlier in the session we fixed `_discover_models()` calling `asyncio.run()` and stripping the caller's loop on cleanup, breaking subsequent grpc.aio.Channel construction (xAI / Google providers) on Python 3.12+. The same anti-pattern lives at `boot_pipeline.py:200` `_run_health()` — every fresh boot from sync code calls `asyncio.run(provider_pool.health_check())`, whose exit calls `events.set_event_loop(None)`. Today there are no later sync grpc.aio call sites between health-check and end-of-init, so the bug is dormant — but adding any new grpc client construction post-health-check would silently break.
+
+**Action shipped:** snapshot caller's loop, restore (or create fresh) after `_run_health()`. Same 12-line pattern as the `_discover_models` fix.
+
+**Cost:** 10 minutes (defence in depth).
+
+### A30. Dormant persistence-round-trip gaps elsewhere (sans-pitié audit 2026-04-27) — open follow-ups
+
+Three more "save persists subset → load reconstructs subset" gaps found this audit, all currently dormant (no production caller exercises the dropped fields), kept here so they're tracked.
+
+**A30a — `SemanticMemory.save/load` drops `_entity_owner`** (`sage-python/src/sage/memory/semantic.py`). Multi-tenant agent-ownership scoping — `get_context_for` filters by `_entity_owner.get(e) == self._agent_id` when `agent_id` is non-None. Save dumps only entities + relations. Reload empties the owner map → if anyone constructs `SemanticMemory(agent_id="...")`, the multi-tenant filter rejects every loaded entity (None != "..."). No production caller passes `agent_id` today. **Fix:** add `entity_owners(name TEXT PRIMARY KEY, owner TEXT)` table + populate on save / restore on load + regression test that round-trips `agent_id` filtering.
+
+**A30b — `CausalMemory.save/load` drops entity metadata + edge metadata** (`sage-python/src/sage/memory/causal.py`). `_entities[name]` holds a `dict[str, Any]` of metadata; `CausalEdge.metadata: dict[str, Any]`. Both are dropped on save (only name + sort_order + source/target/cause_type are stored). Reload reconstructs with empty `{}`. No production caller passes metadata today (`add_entity(name)` / `add_causal_edge(src, tgt)` are the only call sites in `phases/act.py` + `consolidator.py`). **Fix:** widen schemas to `entities(name, sort_order, metadata_json)` + `causal_edges(source, target, cause_type, metadata_json)`; serialise/deserialise as JSON like the bandit's `context_sum`.
+
+**A30c — Qwen3 thinking-mode quirk gated on dead provider name** (`sage-python/src/sage/providers/openai_compat.py:183-186`). Branch fires only when `provider_name == "qwen"`, but `cards.toml` ships `qwen/qwen3.5-plus-02-15` under `provider = "openrouter"`. There is no provider named `"qwen"` in the registry → branch never executes → `enable_thinking=True` is never sent for Qwen3.5. Either Qwen3.5-via-OpenRouter genuinely needs `enable_thinking=True` (then the branch needs `provider_name == "openrouter" and ("qwen3" in model or "qwq" in model)`), or it doesn't (then the branch is dead and should be deleted). Verify via OpenRouter / Qwen3.5 docs (Context7 `/openrouter/openrouter`) before fixing — directive #6 protocol.
+
+**Cost:** A30a/A30b ~½ day each (parity with A20-cycle bandit fix). A30c ~1 hour after Context7 verification.
+
+### A31. S-MMU cold-start gap (sans-pitié audit 2026-04-27) — architectural follow-up
+
+**Why:** `MultiViewMMU` (`sage-core/src/memory/smmu.rs`) has no `save`/`load` — chunks are wholly in-memory. Path 1 of the 6-path topology generation (S-MMU similarity hit, similarity > 0.7 AND quality > 0.5) is therefore guaranteed to miss on every cold start. Falls through to Path 2 (archive, which IS persisted) so the loss is bounded — but the costly retrieval work S-MMU was doing is reset with each restart.
+
+**Decision needed:** is this by design (S-MMU = recency-cache only, durable signal lives in archive) or a real gap (S-MMU was meant to be durable)? The 4-tier memory diagram in `architecture.md` lists S-MMU as the working tier with episodic/semantic/causal/exocortex below, suggesting recency-cache is the intent.
+
+**Action:** if recency-cache is intent, add a one-line ADR to that effect. If durability is intent, add Arrow IPC dump/restore (S-MMU is already Arrow-backed) keyed off the same state directory as `engine.save_state`.
+
+**Cost:** 10 minutes for the ADR; ½ day for Arrow IPC persistence if needed.
+
 ### A15. Single-flight consolidation + graceful shutdown (NEW 2026-04-24, AUDIT3 #23)
 
 **Why:** AUDIT3 §4 claim #23 (⚠️ partial, post-Phase-3-inspection):
