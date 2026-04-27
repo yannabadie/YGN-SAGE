@@ -65,7 +65,7 @@ cd "$ROOT/sage-discover"
 # for sage-discover (e.g. 0.25.0) while sage-python pins it elsewhere
 # (e.g. 0.21.2), producing an unsatisfiable dual `-c` install on Linux.
 "$PYTHON_BIN" -m piptools compile pyproject.toml \
-  --constraint "$ROOT/sage-python/constraints.txt" \
+  --constraint ../sage-python/constraints.txt \
   --strip-extras \
   --resolver=backtracking \
   --newline=lf \
