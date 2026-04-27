@@ -88,17 +88,10 @@ jobs:
     name: Python constraints freshness
     runs-on: ubuntu-latest
 
-    # A27 first-landing observation mode: the initial Windows-generated
-    # constraints carry transient platform pins (pywin32, pywin32-ctypes)
-    # that the Linux-runner re-compile won't reproduce. continue-on-error
-    # lets the workflow surface the diff without blocking the rest of CI
-    # while we regenerate from the Linux baseline. Flip to a hard gate
-    # via A27-followup once `sage-{python,discover}/constraints.txt` are
-    # regenerated from a clean Ubuntu/Python 3.12 environment (either
-    # via WSL/Docker locally or by triggering the latest-deps workflow
-    # and committing its output).
-    continue-on-error: true
-
+    # A27-followup landed 2026-04-27: constraints regenerated from a
+    # clean WSL Ubuntu 24.04 + Python 3.12 baseline; pywin32 transients
+    # dropped, layered sage-discover compile composes with sage-python.
+    # Hard gate restored.
     steps:
       - uses: actions/checkout@v6
 
@@ -336,18 +329,11 @@ jobs:
     name: Python Discovery (sage-discover)
     runs-on: ubuntu-latest
 
-    # A27 first-landing observation mode (same pattern as
-    # `python-constraints` above): the Windows-generated
-    # `sage-python/constraints.txt` and `sage-discover/constraints.txt`
-    # were resolved separately and disagree on transitive pins
-    # (e.g. typer==0.21.2 vs typer==0.25.0), so the dual `-c` install
-    # in this job hits ResolutionImpossible on Linux. Flip to a hard
-    # gate via A27-followup once both constraints are regenerated
-    # from the same Linux/Python 3.12 baseline (either WSL/Docker
-    # locally or by triggering the latest-deps workflow and
-    # committing its output).
-    continue-on-error: true
-
+    # A27-followup landed 2026-04-27: layered sage-discover constraints
+    # now compose cleanly with sage-python (typer==0.21.2 matched both
+    # sides via a defensive cap in sage-python/pyproject.toml that
+    # aligns with docling 2.91.0's `typer<0.22.0,>=0.12.5` upstream).
+    # Hard gate restored.
     steps:
       - uses: actions/checkout@v6
 

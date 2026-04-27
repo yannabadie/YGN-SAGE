@@ -709,10 +709,12 @@ truststore==0.10.4
     # via
     #   ygn-sage
     #   ygn-sage (pyproject.toml)
-typer==0.25.0
+typer==0.21.2
     # via
     #   huggingface-hub
     #   transformers
+    #   ygn-sage
+    #   ygn-sage (pyproject.toml)
 types-protobuf==6.32.1.20260221
     # via temporalio
 types-requests==2.33.0.20260408

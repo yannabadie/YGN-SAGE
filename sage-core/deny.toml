@@ -9,8 +9,46 @@
 
 [advisories]
 # Quarantine list for known-but-accepted advisories. Each entry MUST
-# have a dated rationale and owner before landing. Empty to start.
-ignore = []
+# have a dated rationale and owner before landing. Cleared by
+# A23-security-followup 2026-04-27 (the 11 wasmtime 43.0.0 CVEs
+# were fixed by upgrading to wasmtime 44.0; the remaining two
+# advisories are quarantined here with rationale).
+ignore = [
+    # RUSTSEC-2026-0097: rand 0.9.x is "unsound with a custom logger
+    # using rand::rng()". The advisory describes a logger-callback
+    # path: if a custom global tracing/logger handler reads
+    # uninitialized RNG state during a panic-unwind, it can observe
+    # before-init bytes. sage-core uses rand::rng() only inside the
+    # bandit + CMA selection helpers (sage-core/src/routing/bandit.rs,
+    # sage-core/src/topology/cma_me.rs), never inside a tracing
+    # handler, and we don't ship a custom logger callback that touches
+    # the RNG. Risk = unreachable from our code paths. Re-evaluate
+    # when rand 0.10 ships with the unsound path removed.
+    # Owner: roadmap-A23-security-followup, 2026-04-27.
+    { id = "RUSTSEC-2026-0097", reason = "unreachable: rand::rng() is not called from any custom logger callback in sage-core" },
+
+    # RUSTSEC-2025-0052: async-std discontinued. Pulled in transitively
+    # via only one dev-time path (a build-script chain). Not used by
+    # any sage-core runtime path. Tracked for migration to smol/tokio
+    # in B-series cleanup.
+    # Owner: roadmap-A23-security-followup, 2026-04-27.
+    { id = "RUSTSEC-2025-0052", reason = "unmaintained, transitive build-time only; not in runtime path" },
+
+    # RUSTSEC-2024-0436: `paste` no longer maintained. Pulled in by the
+    # `--features onnx` graph (via tokenizers/tracing-core macros).
+    # `paste` is a `proc-macro` crate consumed only at compile time —
+    # no runtime exposure. The Rust ecosystem has not produced a
+    # mainstream replacement; we accept the unmaintained status until
+    # an upstream pivots away.
+    # Owner: roadmap-A23-security-followup, 2026-04-27.
+    { id = "RUSTSEC-2024-0436", reason = "compile-time proc-macro; no runtime exposure; no mainstream replacement available" },
+
+    # RUSTSEC-2025-0119: `number_prefix` unmaintained. Pulled in only
+    # via `--features onnx`'s `indicatif` progress-bar dep. Compile-time
+    # display formatter; no security-sensitive surface.
+    # Owner: roadmap-A23-security-followup, 2026-04-27.
+    { id = "RUSTSEC-2025-0119", reason = "unmaintained progress-bar formatter; transitive only via --features onnx; no security surface" },
+]
 
 [licenses]
 # Minimum-viable permissive allow-list per A17 spec. All six SPDX ids
@@ -24,9 +62,41 @@ ignore = []
 allow = [
     "MIT",
     "Apache-2.0",
+    # A23-security-followup (2026-04-27): the wasmtime 44.0 / cranelift
+    # 0.131 upgrade introduced LLVM-exception variants of Apache-2.0
+    # across the cranelift+wasmtime crate family. LLVM-exception is
+    # the standard linking-exception clause that explicitly permits
+    # static linking against permissively-licensed code; FSF/GNU-OK.
+    "Apache-2.0 WITH LLVM-exception",
     "BSD-3-Clause",
     "BSD-2-Clause",
     "ISC",
+    # A23-security-followup (2026-04-27): the ICU normalizer/properties
+    # crates (transitive of `idna`, transitive of `url`, transitive of
+    # `wasmtime-wasi`) ship under Unicode-3.0 — the modern successor to
+    # Unicode-DFS-2016 (which is no longer used in this tree as of the
+    # wasmtime 44 upgrade).
+    "Unicode-3.0",
+    # A23-security-followup (2026-04-27): `foldhash` (transitive of
+    # `hashbrown` / `dashmap`) and a couple of OS bindings are Zlib;
+    # Zlib is OSI-approved permissive, equivalent to BSD-3-Clause for
+    # our purposes.
+    "Zlib",
+    # A23-security-followup (2026-04-27): `notify` (transitive of
+    # `wasmtime-wasi-io`) and a couple of dev-only crates ship under
+    # CC0-1.0, the Creative Commons public-domain dedication. Equivalent
+    # to BSD-0 for redistribution purposes.
+    "CC0-1.0",
+    # A23-security-followup (2026-04-27 with --all-features): `webpki-roots`
+    # (transitive of HTTP/TLS deps under --features onnx + otel) ships
+    # under MPL-2.0 with the implicit `+` (later-versions OK) — file-level
+    # copyleft, OK for our redistribution.
+    "MPL-2.0",
+    # A23-security-followup (2026-04-27 with --all-features): the ONNX
+    # operator schema crates (transitive of `ort`) are licensed under
+    # CDLA-Permissive-2.0 (Community Data License Agreement). It's the
+    # standard license for ML model artifacts and operator definitions.
+    "CDLA-Permissive-2.0",
     "Unicode-DFS-2016",
 ]
 # Require every crate in the graph to resolve to one of the allowed

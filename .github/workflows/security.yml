@@ -60,10 +60,9 @@ jobs:
           path: sbom.json
 
   # --- AUDIT-annex A17: minimum-viable supply-chain gates ---
-  # All three audit jobs start with `continue-on-error: true` for the
-  # first landing week so the team can observe severity distributions
-  # before the gates start failing PRs. Flip to `false` per the timeline
-  # in docs/security/supply-chain.md once baseline is established.
+  # A23/A27 follow-ups restored these jobs as hard gates on 2026-04-27:
+  # pip-audit runs against locked constraints, and cargo-audit/cargo-deny
+  # are backed by wasmtime 44 + documented deny.toml quarantines.
 
   pip-audit:
     name: pip-audit (Python deps)
@@ -123,7 +122,12 @@ jobs:
   cargo-audit:
     name: cargo-audit (Rust deps)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # A23-security-followup landed 2026-04-27: wasmtime 43.0 → 44.0
+    # cleared 11 RustSec advisories (sandbox-escape on cranelift x86-64
+    # / aarch64, host panics, OOB transcoding, UAF on Linker clone,
+    # pooling allocator data leakage). The remaining `rand` and
+    # `async-std` advisories are quarantined in deny.toml with
+    # rationale. Hard gate restored.
     defaults:
       run:
         working-directory: sage-core
@@ -141,7 +145,12 @@ jobs:
   cargo-deny:
     name: cargo-deny (license + advisories + bans)
     runs-on: ubuntu-latest
-    continue-on-error: true
+    # A23-security-followup landed 2026-04-27: wasmtime 43.0 → 44.0
+    # cleared 11 RustSec advisories (sandbox-escape on cranelift x86-64
+    # / aarch64, host panics, OOB transcoding, UAF on Linker clone,
+    # pooling allocator data leakage). The remaining `rand` and
+    # `async-std` advisories are quarantined in deny.toml with
+    # rationale. Hard gate restored.
     defaults:
       run:
         working-directory: sage-core

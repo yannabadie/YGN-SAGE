@@ -32,6 +32,16 @@ dependencies = [
     # providers for openai / google / xai / moonshotai / openrouter and
     # a clean custom-base_url pattern for deepseek / minimax.
     "pydantic-ai>=1.84",
+    # A27-followup transitive cap. `typer` arrives as a
+    # transitive of `huggingface-hub` (via pydantic-ai-slim, transformers
+    # in [embeddings], etc.). sage-discover pulls `docling` which pins
+    # `typer<0.22.0,>=0.12.5` through 2.91.0 (latest), and the
+    # python-discover CI job installs sage-python AND sage-discover into
+    # one env. Without this cap pip-compile resolves typer freely (most
+    # recently 0.25.0) and the dual `-c constraints.txt` install hits
+    # ResolutionImpossible. Cap aligned to docling's range; revisit when
+    # docling >= 3.x ships with a wider typer range.
+    "typer<0.22",
 ]
 
 [project.optional-dependencies]
