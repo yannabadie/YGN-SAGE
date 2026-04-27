@@ -28,12 +28,41 @@ MAX_CREATIONS_PER_RUN = 2
 MAX_BUILD_ROUNDS = 3
 _APPROVE_ALL_WARNED = False
 _AST_FALLBACK_WARNED = False
+_UNSAFE_TOOLFORGE_SUBPROCESS_ENV = "SAGE_UNSAFE_TOOLFORGE_SUBPROCESS"
 
 
 def _is_toolforge_strict() -> bool:
     """Return whether ToolForge must fail closed on Rust validator errors."""
     value = os.environ.get("SAGE_TOOLFORGE_STRICT", "1").strip().lower()
     return value not in {"0", "false", "no", "off"}
+
+
+def _is_toolforge_subprocess_allowed() -> bool:
+    """Return whether Gate 2 may use the legacy plain subprocess fallback."""
+    value = os.environ.get(_UNSAFE_TOOLFORGE_SUBPROCESS_ENV, "").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+async def _run_tests_plain_subprocess(combined: str) -> tuple[bool, str]:
+    """Run Gate 2 tests in the legacy plain subprocess fallback."""
+    import subprocess
+    from sage._python import PYTHON
+
+    try:
+        proc = subprocess.run(
+            [PYTHON, "-c", combined],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if proc.returncode == 0:
+            return True, ""
+        return False, f"exit={proc.returncode}: {proc.stderr[:300]}"
+    except subprocess.TimeoutExpired:
+        return False, "Timeout (30s)"
+    except Exception as exc:
+        return False, str(exc)
+
 
 _TOOL_GEN_PROMPT = """\
 You are a tool engineer. Create a Python tool that fills the following capability gap.
@@ -389,26 +418,33 @@ class ToolForge:
 
         try:
             from sage.sandbox.isolated_executor import execute_isolated
-            stdout, stderr, exit_code = execute_isolated(combined, timeout=30)
-            if exit_code == 0:
-                return True, ""
-            return False, f"exit={exit_code}: {stderr[:300]}"
         except ImportError:
-            # No sandbox available — fall back to subprocess
-            import subprocess
-            from sage._python import PYTHON
-            try:
-                proc = subprocess.run(
-                    [PYTHON, "-c", combined],
-                    capture_output=True, text=True, timeout=30,
+            if not _is_toolforge_subprocess_allowed():
+                return False, (
+                    "Gate 2: sage.sandbox.isolated_executor unavailable and "
+                    "SAGE_UNSAFE_TOOLFORGE_SUBPROCESS is not set. ToolForge "
+                    "refuses to run untrusted test code in a plain subprocess; "
+                    "see docs/security/toolforge-gate-2.md."
                 )
-                if proc.returncode == 0:
-                    return True, ""
-                return False, f"exit={proc.returncode}: {proc.stderr[:300]}"
-            except subprocess.TimeoutExpired:
-                return False, "Timeout (30s)"
-            except Exception as exc:
-                return False, str(exc)
+            log.warning(
+                "SAGE_UNSAFE_TOOLFORGE_SUBPROCESS=1: running Gate 2 tests in a "
+                "plain Python subprocess (no isolation). DO NOT USE IN PRODUCTION."
+            )
+            return await _run_tests_plain_subprocess(combined)
+
+        try:
+            _stdout, stderr, exit_code = execute_isolated(combined, timeout=30)
+        except Exception as exc:
+            return False, (
+                "Gate 2: isolated executor failed "
+                f"({type(exc).__name__}: {exc}); refusing to downgrade to a "
+                "plain subprocess. SAGE_UNSAFE_TOOLFORGE_SUBPROCESS only unlocks "
+                "fallback when sage.sandbox.isolated_executor cannot be imported; "
+                "see docs/security/toolforge-gate-2.md."
+            )
+        if exit_code == 0:
+            return True, ""
+        return False, f"exit={exit_code}: {stderr[:300]}"
 
     @staticmethod
     def _extract_tool_name(code: str, hint: str) -> str:
