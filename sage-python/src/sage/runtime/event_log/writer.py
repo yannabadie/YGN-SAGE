@@ -20,6 +20,7 @@ from sage.runtime.event_log.events import (
     _NodeCompleted,
     _NodeStarted,
     _RoutingDecision,
+    _RunFrameSummary,
     _StateApplied,
     _TaskStarted,
     _TopologySelected,
@@ -71,6 +72,12 @@ class _SinkHandle:
     def fileno(self) -> int:
         return self._fh.fileno()
 
+    def tell(self) -> int:
+        return self._fh.tell()
+
+    def truncate(self, size: int | None = None) -> int:
+        return self._fh.truncate(size)
+
     def close(self) -> None:
         self._fh.close()
 
@@ -114,9 +121,10 @@ class RuntimeEventLog:
         """Cache the task hash used by every event in this run."""
         self._cached_task_hash = _hash_text(task)
 
-    def emit_task_started(self, task: str) -> None:
+    def emit_task_started(self, task: str) -> int | None:
+        """Returns the seq of the emitted event, or None if writer is disabled."""
         self.set_task_text(task)
-        self._emit(_TaskStarted, "task_started", "pipeline", payload=task)
+        return self._emit(_TaskStarted, "task_started", "pipeline", payload=task)
 
     def emit_routing_decision(
         self,
@@ -126,7 +134,7 @@ class RuntimeEventLog:
         domain: str,
         confidence: float | None,
         model_id: str = "",
-    ) -> None:
+    ) -> int | None:
         payload = {
             "routing_source": routing_source,
             "system": system,
@@ -134,7 +142,7 @@ class RuntimeEventLog:
             "confidence": round(confidence, 4) if confidence is not None else None,
             "model_id": model_id,
         }
-        self._emit(
+        return self._emit(
             _RoutingDecision,
             "routing_decision",
             "pipeline",
@@ -155,7 +163,7 @@ class RuntimeEventLog:
         edge_count: int,
         nodes_summary: list[dict[str, Any]],
         edges_summary: list[dict[str, Any]],
-    ) -> None:
+    ) -> int | None:
         payload = {
             "topology_id": topology_id,
             "template_type": template_type,
@@ -171,7 +179,7 @@ class RuntimeEventLog:
                 ),
             ),
         }
-        self._emit(
+        return self._emit(
             _TopologySelected,
             "topology_selected",
             "pipeline",
@@ -190,7 +198,7 @@ class RuntimeEventLog:
         model_id: str,
         provider_id: str,
         required_capabilities: tuple[str, ...],
-    ) -> None:
+    ) -> int | None:
         capabilities = tuple(sorted(required_capabilities))
         payload = {
             "node_id": node_id,
@@ -199,7 +207,7 @@ class RuntimeEventLog:
             "provider_id": provider_id,
             "required_capabilities": list(capabilities),
         }
-        self._emit(
+        return self._emit(
             _ModelAssigned,
             "model_assigned",
             "pipeline",
@@ -223,7 +231,7 @@ class RuntimeEventLog:
         predecessor_ids: tuple[str, ...],
         edge_ids: tuple[str, ...],
         predecessors_by_channel: dict[str, tuple[str, ...]] | None = None,
-    ) -> None:
+    ) -> int | None:
         predecessors = tuple(sorted(predecessor_ids))
         edges = tuple(sorted(edge_ids))
         payload = {
@@ -241,7 +249,7 @@ class RuntimeEventLog:
                 key: list(values)
                 for key, values in sorted(predecessors_by_channel.items())
             }
-        self._emit(
+        return self._emit(
             _NodeStarted,
             "node_started",
             "topology_runner",
@@ -267,7 +275,7 @@ class RuntimeEventLog:
         conflict_count: int,
         applied: bool,
         invalidated_assumption_ids: tuple[str, ...] = (),
-    ) -> None:
+    ) -> int | None:
         sources = tuple(source_node_ids)
         invalidated = tuple(invalidated_assumption_ids)
         payload = {
@@ -280,7 +288,7 @@ class RuntimeEventLog:
             "applied": applied,
             "invalidated_assumption_ids": list(invalidated),
         }
-        self._emit(
+        return self._emit(
             _StateApplied,
             "state_applied",
             "topology_runner",
@@ -305,8 +313,8 @@ class RuntimeEventLog:
         cost_usd: float,
         model_id: str,
         provider_id: str,
-    ) -> None:
-        self._emit(
+    ) -> int | None:
+        return self._emit(
             _NodeCompleted,
             "node_completed",
             "topology_runner",
@@ -329,7 +337,7 @@ class RuntimeEventLog:
         gate_source_id: str | None = None,
         gate_target_id: str | None = None,
         reason: str = "",
-    ) -> None:
+    ) -> int | None:
         payload = {
             "action": action,
             "target_node_id": target_node_id,
@@ -337,7 +345,7 @@ class RuntimeEventLog:
             "gate_target_id": gate_target_id,
             "reason": reason,
         }
-        self._emit(
+        return self._emit(
             _ControllerDecision,
             "controller_decision",
             "controller",
@@ -356,9 +364,9 @@ class RuntimeEventLog:
         error_type: str,
         message: str,
         node_id: str = "",
-    ) -> None:
+    ) -> int | None:
         payload = {"kind": kind, "error_type": error_type, "message": message}
-        self._emit(
+        return self._emit(
             _Failure,
             "failure",
             "topology_runner",
@@ -375,14 +383,14 @@ class RuntimeEventLog:
         budget_limit_usd: float,
         budget_remaining_usd: float,
         cost_so_far_usd: float,
-    ) -> None:
+    ) -> int | None:
         payload = {
             "kind": kind,
             "budget_limit_usd": budget_limit_usd,
             "budget_remaining_usd": budget_remaining_usd,
             "cost_so_far_usd": cost_so_far_usd,
         }
-        self._emit(
+        return self._emit(
             _Budget,
             "budget",
             "topology_runner",
@@ -401,10 +409,10 @@ class RuntimeEventLog:
         total_cost_usd: float,
         total_latency_ms: float,
         node_count: int,
-    ) -> None:
+    ) -> int | None:
         if status not in FINAL_RESULT_STATUSES:
             status = "failure"
-        self._emit(
+        return self._emit(
             _FinalResult,
             "final_result",
             "pipeline",
@@ -415,6 +423,27 @@ class RuntimeEventLog:
             total_latency_ms=total_latency_ms,
             node_count=node_count,
             _is_final=True,
+        )
+
+    def emit_run_frame_summary(
+        self,
+        *,
+        parent_event_id: int,
+        summary: dict[str, Any],
+    ) -> int | None:
+        """Emit the trailing run_frame_summary diagnostic.
+
+        ONLY called when SAGE_RUN_FRAME=1. Best-effort: callers must catch
+        EventLogUnavailable and not propagate.
+        """
+        payload = dict(summary)
+        return self._emit(
+            _RunFrameSummary,
+            "run_frame_summary",
+            "pipeline",
+            payload=payload,
+            parent_event_id=parent_event_id,
+            _force_payload=True,
         )
 
     def close(self) -> None:
@@ -434,15 +463,19 @@ class RuntimeEventLog:
         *,
         payload: Any,
         _is_final: bool = False,
+        _force_payload: bool = False,
+        parent_event_id: int | None = None,
         **fields: Any,
-    ) -> None:
+    ) -> int | None:
         if self.disabled or self._fh is None:
-            return
+            return None
 
         seq = self._seq
         self._seq += 1
-        parent = self._last_event_seq
+        parent = self._last_event_seq if parent_event_id is None else parent_event_id
+        offset: int | None = None
         try:
+            offset = self._fh.tell()
             payload_redacted = _redact_payload(payload)
             event = cls(
                 schema_version=SCHEMA_VERSION,
@@ -456,7 +489,7 @@ class RuntimeEventLog:
                 task_hash=self._cached_task_hash,
                 payload_hash=_hash_payload(event_type, payload),
                 redaction_state=self._redaction_state_for(payload),
-                payload=payload_redacted if self._raw_payload else None,
+                payload=payload_redacted if self._raw_payload or _force_payload else None,
                 **fields,
             )
             line = json.dumps(
@@ -470,8 +503,16 @@ class RuntimeEventLog:
                 self._fh.flush()
                 os.fsync(self._fh.fileno())
             self._last_event_seq = seq
+            return seq
         except (OSError, IOError, ValueError, TypeError) as exc:
+            if offset is not None and self._fh is not None and not self._fh.closed:
+                try:
+                    self._fh.truncate(offset)
+                    self._fh.flush()
+                except Exception:  # noqa: BLE001
+                    pass
             self._handle_sink_failure(exc, phase=event_type)
+            return None
 
     def _redaction_state_for(self, payload: Any) -> str:
         if payload is None:

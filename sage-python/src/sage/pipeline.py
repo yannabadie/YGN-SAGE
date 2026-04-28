@@ -5,6 +5,8 @@ with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import os
 import secrets
@@ -25,6 +27,7 @@ from sage.pipeline_stages import (
     select_macro_topology,
     DAGFeatures,
 )
+from sage.runtime.run_frame import RunFrame, RunStatus
 
 # OxiZ formal verification — imported lazily to allow graceful fallback.
 # Annotated as `Any` so mypy does not infer the real Callable / type and
@@ -434,21 +437,62 @@ class CognitiveOrchestrationPipeline:
                 return tuple(str(item) for item in raw)
         return ()
 
-    def _runtime_emit_topology_selected(self, ctx: PipelineContext, event_log: Any) -> None:
-        if event_log is None or ctx.topology is None:
+    def _runtime_graph_digest(
+        self,
+        *,
+        nodes_summary: list[dict[str, Any]],
+        edges_summary: list[dict[str, Any]],
+    ) -> str:
+        canonical = json.dumps(
+            {"nodes": nodes_summary, "edges": edges_summary},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _runtime_emit_topology_selected(
+        self,
+        ctx: PipelineContext,
+        event_log: Any,
+        run_frame_builder: Any | None = None,
+        *,
+        reason: str = "initial",
+    ) -> None:
+        if ctx.topology is None:
             return
         edge_count, edges_summary = self._runtime_edge_summary(ctx.topology)
-        event_log.emit_topology_selected(
-            topology_id=ctx.topology_id or getattr(ctx.topology, "id", "") or "",
-            template_type=getattr(ctx.topology, "template_type", "") or "",
-            node_count=self._runtime_node_count(ctx.topology),
-            edge_count=edge_count,
-            nodes_summary=self._runtime_node_summary(ctx),
-            edges_summary=edges_summary,
-        )
+        nodes_summary = self._runtime_node_summary(ctx)
+        topology_id = ctx.topology_id or getattr(ctx.topology, "id", "") or ""
+        seq = None
+        if event_log is not None:
+            seq = event_log.emit_topology_selected(
+                topology_id=topology_id,
+                template_type=getattr(ctx.topology, "template_type", "") or "",
+                node_count=self._runtime_node_count(ctx.topology),
+                edge_count=edge_count,
+                nodes_summary=nodes_summary,
+                edges_summary=edges_summary,
+            )
+        if run_frame_builder is not None:
+            run_frame_builder.record_topology_selected(
+                seq=seq,
+                topology_id=topology_id,
+                graph_digest=self._runtime_graph_digest(
+                    nodes_summary=nodes_summary,
+                    edges_summary=edges_summary,
+                ),
+                reason=reason,
+            )
 
-    def _runtime_emit_model_assigned(self, ctx: PipelineContext, event_log: Any) -> None:
-        if event_log is None or ctx.topology is None:
+    def _runtime_emit_model_assigned(
+        self,
+        ctx: PipelineContext,
+        event_log: Any,
+        run_frame_builder: Any | None = None,
+    ) -> None:
+        if ctx.topology is None:
             return
         for idx in range(self._runtime_node_count(ctx.topology)):
             try:
@@ -456,15 +500,29 @@ class CognitiveOrchestrationPipeline:
             except (AttributeError, RuntimeError, TypeError):
                 continue
             model_id = ctx.assignments.get(idx, getattr(node, "model_id", "") or "")
-            event_log.emit_model_assigned(
-                node_id=str(idx),
-                node_role=getattr(node, "role", "") or f"node-{idx}",
-                model_id=model_id,
-                provider_id=self._runtime_provider_id_for_model(model_id, ctx),
-                required_capabilities=self._runtime_node_capabilities(node),
-            )
+            node_role = getattr(node, "role", "") or f"node-{idx}"
+            provider_id = self._runtime_provider_id_for_model(model_id, ctx)
+            capabilities = self._runtime_node_capabilities(node)
+            seq = None
+            if event_log is not None:
+                seq = event_log.emit_model_assigned(
+                    node_id=str(idx),
+                    node_role=node_role,
+                    model_id=model_id,
+                    provider_id=provider_id,
+                    required_capabilities=capabilities,
+                )
+            if run_frame_builder is not None:
+                run_frame_builder.record_model_assigned(
+                    seq=seq,
+                    node_id=str(idx),
+                    node_role=node_role,
+                    model_id=model_id,
+                    provider_id=provider_id,
+                    required_capabilities=capabilities,
+                )
 
-    def _runtime_final_status(self, ctx: PipelineContext | None) -> str:
+    def _runtime_final_status(self, ctx: PipelineContext | None) -> RunStatus:
         if ctx is None:
             return "failure"
         if ctx.result == BUDGET_EXCEEDED_RESULT:
@@ -482,6 +540,32 @@ class CognitiveOrchestrationPipeline:
         budget_usd: float | None = None,
         system_hint: int | None = None,
     ) -> str:
+        """Execute the full 5-stage pipeline and return only the output string."""
+        result, _frame = await self._run_internal(
+            task,
+            budget_usd=budget_usd,
+            system_hint=system_hint,
+            emit_run_frame_summary=os.environ.get("SAGE_RUN_FRAME") == "1",
+        )
+        return result
+
+    async def run_with_frame(self, task: str) -> tuple[str, RunFrame]:
+        """Like run() but returns (output, frozen RunFrame)."""
+        return await self._run_internal(
+            task,
+            budget_usd=None,
+            system_hint=None,
+            emit_run_frame_summary=os.environ.get("SAGE_RUN_FRAME") == "1",
+        )
+
+    async def _run_internal(
+        self,
+        task: str,
+        budget_usd: float | None = None,
+        system_hint: int | None = None,
+        *,
+        emit_run_frame_summary: bool = False,
+    ) -> tuple[str, RunFrame]:
         """Execute the full 5-stage pipeline.
 
         Args:
@@ -496,9 +580,21 @@ class CognitiveOrchestrationPipeline:
                 to the hint afterwards.
         """
         from sage.observability.spans import sage_span
-        from sage.runtime.event_log import RuntimeEventLog, install_event_log
+        from sage.runtime.event_log import (
+            EventLogUnavailable,
+            RuntimeEventLog,
+            install_event_log,
+        )
+        from sage.runtime.event_log.redaction import _hash_text
+        from sage.runtime.run_frame.builder import _RunFrameBuilder
 
         event_log = RuntimeEventLog(run_id=_new_runtime_run_id())
+        run_frame_builder = _RunFrameBuilder(
+            run_id=event_log.run_id,
+            task_id=event_log.run_id,
+            task_hash=_hash_text(task),
+        )
+        run_frame_builder.capture_feature_flags()
         token = install_event_log(event_log)
         final_emitted = False
         ctx: PipelineContext | None = None
@@ -534,12 +630,23 @@ class CognitiveOrchestrationPipeline:
                         system_hint, ctx.system,
                     )
                     ctx.system = system_hint
-                event_log.emit_routing_decision(
-                    routing_source=getattr(self, "_last_runtime_routing_source", "default"),
+                routing_source = getattr(self, "_last_runtime_routing_source", "default")
+                routing_confidence = getattr(self, "_last_runtime_routing_confidence", None)
+                routing_model_id = getattr(self, "_last_runtime_routing_model_id", "")
+                routing_seq = event_log.emit_routing_decision(
+                    routing_source=routing_source,
                     system=ctx.system,
                     domain=ctx.domain,
-                    confidence=getattr(self, "_last_runtime_routing_confidence", None),
-                    model_id=getattr(self, "_last_runtime_routing_model_id", ""),
+                    confidence=routing_confidence,
+                    model_id=routing_model_id,
+                )
+                run_frame_builder.record_routing_decision(
+                    seq=routing_seq,
+                    routing_source=routing_source,
+                    system=ctx.system,
+                    domain=ctx.domain,
+                    confidence=routing_confidence,
+                    model_id=routing_model_id,
                 )
                 self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
@@ -574,18 +681,27 @@ class CognitiveOrchestrationPipeline:
                     if ctx.topology and hasattr(ctx.topology, "node_count")
                     else 0
                 )
-                self._runtime_emit_topology_selected(ctx, event_log)
+                self._runtime_emit_topology_selected(
+                    ctx,
+                    event_log,
+                    run_frame_builder,
+                    reason="initial",
+                )
                 self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
 
                 # Stage 3: ASSIGN MODELS
                 ctx = self._stage_assign_models(ctx)
-                self._runtime_emit_model_assigned(ctx, event_log)
+                self._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
                 self._emit(
                     "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
                 )
 
                 # Stage 4: EXECUTE
-                ctx = await self._stage_execute(ctx, event_log=event_log)
+                ctx = await self._stage_execute(
+                    ctx,
+                    event_log=event_log,
+                    run_frame_builder=run_frame_builder,
+                )
                 ctx.latency_ms = (time.monotonic() - t0) * 1000
 
                 # Write execution trace to memory (Tier 0 + Tier 1)
@@ -608,27 +724,42 @@ class CognitiveOrchestrationPipeline:
                 if self._agent_loop is not None and ctx.cost:
                     self._agent_loop.total_cost_usd = float(ctx.cost)
 
-                event_log.emit_final_result(
-                    status=self._runtime_final_status(ctx),
+                final_status = self._runtime_final_status(ctx)
+                final_seq = event_log.emit_final_result(
+                    status=final_status,
                     output=ctx.result or "",
                     total_cost_usd=float(ctx.cost or 0.0),
                     total_latency_ms=ctx.latency_ms,
                     node_count=self._runtime_final_node_count(ctx),
                 )
+                run_frame_builder.record_final_result(
+                    seq=final_seq,
+                    status=final_status,
+                )
                 final_emitted = True
-                return ctx.result
+                frame = run_frame_builder.finalize()
+                if emit_run_frame_summary and frame.final_result_seq is not None:
+                    try:
+                        event_log.emit_run_frame_summary(
+                            parent_event_id=frame.final_result_seq,
+                            summary=frame.to_summary_dict(redacted=True),
+                        )
+                    except (EventLogUnavailable, OSError, IOError, ValueError):
+                        pass
+                return ctx.result, frame
         except Exception:
             if not final_emitted:
                 latency_ms = (time.monotonic() - t0) * 1000
                 if ctx is not None:
                     ctx.latency_ms = latency_ms
-                event_log.emit_final_result(
+                final_seq = event_log.emit_final_result(
                     status="failure",
                     output=(ctx.result if ctx is not None else "") or "",
                     total_cost_usd=float((ctx.cost if ctx is not None else 0.0) or 0.0),
                     total_latency_ms=latency_ms,
                     node_count=self._runtime_final_node_count(ctx),
                 )
+                run_frame_builder.record_final_result(seq=final_seq, status="failure")
             raise
         finally:
             token.var.reset(token)
@@ -1519,7 +1650,12 @@ class CognitiveOrchestrationPipeline:
         # 3. Last resort: default even if marked dead (better than nothing).
         return default, self.llm_config
 
-    async def _stage_execute(self, ctx: PipelineContext, event_log: Any | None = None) -> PipelineContext:
+    async def _stage_execute(
+        self,
+        ctx: PipelineContext,
+        event_log: Any | None = None,
+        run_frame_builder: Any | None = None,
+    ) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
         from sage.observability.spans import sage_span
         with sage_span("sage.execute", op="sage.execute"):
@@ -1873,6 +2009,7 @@ class CognitiveOrchestrationPipeline:
                     task_domain=getattr(ctx, "domain", "") or "",
                     budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                     event_log=event_log,
+                    run_frame_builder=run_frame_builder,
                 )
                 result = await runner.run(ctx.task)
                 # Roll up tool-use telemetry from TopologyRunner → ctx. Without
@@ -1894,8 +2031,13 @@ class CognitiveOrchestrationPipeline:
                     self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
                     ctx = self._stage_select_topology(ctx)  # new topology
                     ctx = self._stage_assign_models(ctx)    # re-assign models
-                    self._runtime_emit_topology_selected(ctx, event_log)
-                    self._runtime_emit_model_assigned(ctx, event_log)
+                    self._runtime_emit_topology_selected(
+                        ctx,
+                        event_log,
+                        run_frame_builder,
+                        reason="reroute",
+                    )
+                    self._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
                     ctx.executed_model_ids = dict(ctx.assignments)
                     ctx.executed_template = (
                         getattr(ctx.topology, "template_type", "") or "multi_agent"
@@ -1915,6 +2057,7 @@ class CognitiveOrchestrationPipeline:
                         task_domain=getattr(ctx, "domain", "") or "",
                         budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                         event_log=event_log,
+                        run_frame_builder=run_frame_builder,
                     )
                     result = await runner2.run(ctx.task)
                     # Prefer the post-reroute telemetry (it's the attempt that
@@ -1987,7 +2130,11 @@ class CognitiveOrchestrationPipeline:
                                                 ctx.topology.set_node_model_id(i, default_model)
                                                 log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
                             # Re-execute with upgraded models
-                            self._runtime_emit_model_assigned(ctx, event_log)
+                            self._runtime_emit_model_assigned(
+                                ctx,
+                                event_log,
+                                run_frame_builder,
+                            )
                             from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                             executor2 = _TE(ctx.topology)
                             runner3 = TopologyRunner(
@@ -2000,6 +2147,7 @@ class CognitiveOrchestrationPipeline:
                                 task_domain=getattr(ctx, "domain", "") or "",
                                 budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                                 event_log=event_log,
+                                run_frame_builder=run_frame_builder,
                             )
                             retry_result = await runner3.run(ctx.task)
                             if retry_result:

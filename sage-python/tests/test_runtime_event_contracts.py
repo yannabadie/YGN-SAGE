@@ -293,6 +293,7 @@ def test_event_type_catalog_completeness() -> None:
         "budget",
         "state_applied",
         "final_result",
+        "run_frame_summary",
     }
 
     assert set(EVENT_TYPES) == expected, (

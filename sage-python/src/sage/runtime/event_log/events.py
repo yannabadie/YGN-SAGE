@@ -130,3 +130,8 @@ class _FinalResult(_EventCore):
     total_cost_usd: float = 0.0
     total_latency_ms: float = 0.0
     node_count: int = 0
+
+
+@dataclass(frozen=True)
+class _RunFrameSummary(_EventCore):
+    pass

@@ -20,6 +20,7 @@ from typing import Any, AsyncIterator, Callable
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 from sage.runtime.event_log import RuntimeEventLog
+from sage.runtime.run_frame.builder import _RunFrameBuilder
 from sage.runtime.state import StateApplyResult, StateDelta, StateFrame, apply_deltas
 from sage.tools.sage_recurse import sage_recurse_origin_node
 
@@ -232,6 +233,7 @@ class TopologyRunner:
         task_domain: str = "",
         budget_usd: float = 0.0,
         event_log: RuntimeEventLog | None = None,
+        run_frame_builder: _RunFrameBuilder | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -261,6 +263,8 @@ class TopologyRunner:
         self._task_domain = task_domain
         self._budget_usd = float(budget_usd or 0.0)
         self._event_log = event_log
+        self._run_frame_builder = run_frame_builder
+        self._run_frame_node_runs: dict[int, str] = {}
         self._node_event_costs: dict[int, float] = {}
         self._statecore_enabled = os.environ.get("SAGE_STATECORE") == "1"
         self._node_state_deltas: dict[int, StateDelta] = {}
@@ -498,18 +502,36 @@ class TopologyRunner:
         state_preds: list[int],
         result: StateApplyResult,
     ) -> None:
-        if self._event_log is None:
-            return
-        self._event_log.emit_state_applied(
-            target_node_id=str(node_idx),
-            source_node_ids=tuple(str(idx) for idx in state_preds),
-            before_version=result.before_version,
-            after_version=result.after.version,
-            delta_count=len(state_preds),
-            conflict_count=len(result.conflicts),
-            applied=result.applied,
-            invalidated_assumption_ids=tuple(result.after.invalidated_assumptions),
-        )
+        seq = None
+        if self._event_log is not None:
+            seq = self._event_log.emit_state_applied(
+                target_node_id=str(node_idx),
+                source_node_ids=tuple(str(idx) for idx in state_preds),
+                before_version=result.before_version,
+                after_version=result.after.version,
+                delta_count=len(state_preds),
+                conflict_count=len(result.conflicts),
+                applied=result.applied,
+                invalidated_assumption_ids=tuple(result.after.invalidated_assumptions),
+            )
+        if self._run_frame_builder is not None:
+            state_delta = (
+                self._node_state_deltas.get(state_preds[0], StateDelta())
+                if len(state_preds) == 1
+                else StateDelta()
+            )
+            self._run_frame_builder.record_state_applied(
+                seq=seq,
+                target_node_id=str(node_idx),
+                before_version=result.before_version,
+                after_version=result.after.version,
+                state_delta=state_delta,
+                state_frame=result.after,
+                source_node_ids=tuple(str(idx) for idx in state_preds),
+                delta_count=len(state_preds),
+                conflict_count=len(result.conflicts),
+                applied=result.applied,
+            )
 
     def _assemble_node_inputs(self, node_idx: int) -> tuple[str, StateFrame | None, bool]:
         """Return message context, state frame, and control readiness for a node."""
@@ -1727,8 +1749,6 @@ class TopologyRunner:
         role: str,
         open_nodes: dict[int, str],
     ) -> None:
-        if self._event_log is None:
-            return
         node = self.graph.get_node(node_idx)
         open_nodes[node_idx] = role
         predecessors_by_channel = (
@@ -1736,17 +1756,32 @@ class TopologyRunner:
             if self._statecore_enabled
             else None
         )
-        self._event_log.emit_node_started(
-            topology_id=self._runtime_topology_id(),
-            node_id=str(node_idx),
-            node_role=role,
-            attempt=self._node_exec_count.get(node_idx, 0) + 1,
-            model_id=getattr(node, "model_id", "") or "",
-            provider_id=self._runtime_provider_id_for_node(node),
-            predecessor_ids=self._runtime_predecessor_ids(node_idx),
-            edge_ids=self._runtime_edge_ids(node_idx),
-            predecessors_by_channel=predecessors_by_channel,
-        )
+        predecessor_ids = self._runtime_predecessor_ids(node_idx)
+        model_id = getattr(node, "model_id", "") or ""
+        provider_id = self._runtime_provider_id_for_node(node)
+        seq = None
+        if self._event_log is not None:
+            seq = self._event_log.emit_node_started(
+                topology_id=self._runtime_topology_id(),
+                node_id=str(node_idx),
+                node_role=role,
+                attempt=self._node_exec_count.get(node_idx, 0) + 1,
+                model_id=model_id,
+                provider_id=provider_id,
+                predecessor_ids=predecessor_ids,
+                edge_ids=self._runtime_edge_ids(node_idx),
+                predecessors_by_channel=predecessors_by_channel,
+            )
+        if self._run_frame_builder is not None:
+            node_run_id = self._run_frame_builder.record_node_started(
+                seq=seq,
+                node_id=str(node_idx),
+                provider_id=provider_id,
+                model_id=model_id,
+                predecessor_ids=predecessor_ids,
+                predecessors_by_channel=predecessors_by_channel,
+            )
+            self._run_frame_node_runs[node_idx] = node_run_id
 
     def _runtime_emit_node_completed(
         self,
@@ -1756,34 +1791,63 @@ class TopologyRunner:
         latency_ms: float,
         open_nodes: dict[int, str],
     ) -> None:
-        if self._event_log is None:
-            return
         node = self.graph.get_node(node_idx)
-        self._event_log.emit_node_completed(
-            node_id=str(node_idx),
-            node_role=role,
-            output=output,
-            latency_ms=latency_ms,
-            cost_usd=self._runtime_node_cost_usd(node_idx),
-            model_id=getattr(node, "model_id", "") or "",
-            provider_id=self._runtime_provider_id_for_node(node),
-        )
+        cost_usd = self._runtime_node_cost_usd(node_idx)
+        model_id = getattr(node, "model_id", "") or ""
+        provider_id = self._runtime_provider_id_for_node(node)
+        seq = None
+        if self._event_log is not None:
+            seq = self._event_log.emit_node_completed(
+                node_id=str(node_idx),
+                node_role=role,
+                output=output,
+                latency_ms=latency_ms,
+                cost_usd=cost_usd,
+                model_id=model_id,
+                provider_id=provider_id,
+            )
+        if self._run_frame_builder is not None:
+            node_run_id = self._run_frame_node_runs.get(node_idx)
+            if node_run_id is not None:
+                self._run_frame_builder.record_node_completed(
+                    seq=seq,
+                    node_run_id=node_run_id,
+                    output=output,
+                    latency_ms=latency_ms,
+                    cost_usd=cost_usd,
+                )
+                self._run_frame_node_runs.pop(node_idx, None)
         open_nodes.pop(node_idx, None)
 
     def _runtime_emit_controller_decision(self, node_idx: int, decision: Any) -> None:
-        if self._event_log is None:
-            return
         target = getattr(decision, "target_node", "")
         gate_source = getattr(decision, "gate_source", None)
         gate_target = getattr(decision, "gate_target", None)
-        self._event_log.emit_controller_decision(
-            node_id=str(node_idx),
-            action=str(getattr(decision, "action", "continue") or "continue"),
-            target_node_id="" if target is None else str(target),
-            gate_source_id=None if gate_source is None else str(gate_source),
-            gate_target_id=None if gate_target is None else str(gate_target),
-            reason=getattr(decision, "reason", "") or "",
-        )
+        action = str(getattr(decision, "action", "continue") or "continue")
+        target_node_id = "" if target is None else str(target)
+        gate_source_id = None if gate_source is None else str(gate_source)
+        gate_target_id = None if gate_target is None else str(gate_target)
+        reason = getattr(decision, "reason", "") or ""
+        seq = None
+        if self._event_log is not None:
+            seq = self._event_log.emit_controller_decision(
+                node_id=str(node_idx),
+                action=action,
+                target_node_id=target_node_id,
+                gate_source_id=gate_source_id,
+                gate_target_id=gate_target_id,
+                reason=reason,
+            )
+        if self._run_frame_builder is not None:
+            self._run_frame_builder.record_controller_decision(
+                seq=seq,
+                node_run_id=self._run_frame_node_runs.get(node_idx),
+                action=action,
+                target_node_id=target_node_id,
+                gate_source_id=gate_source_id,
+                gate_target_id=gate_target_id,
+                reason=reason,
+            )
 
     def _runtime_emit_failure(
         self,
@@ -1794,41 +1858,75 @@ class TopologyRunner:
         open_nodes: dict[int, str],
         node_idx: int | None = None,
     ) -> None:
-        if self._event_log is None:
-            return
         if node_idx is None:
             targets = list(open_nodes)
         else:
             targets = [node_idx] if node_idx in open_nodes else []
         if not targets:
-            self._event_log.emit_failure(
-                kind=kind,
-                error_type=error_type,
-                message=message,
-                node_id="" if node_idx is None else str(node_idx),
-            )
+            seq = None
+            if self._event_log is not None:
+                seq = self._event_log.emit_failure(
+                    kind=kind,
+                    error_type=error_type,
+                    message=message,
+                    node_id="" if node_idx is None else str(node_idx),
+                )
+            if self._run_frame_builder is not None:
+                node_run_id = (
+                    self._run_frame_node_runs.get(node_idx)
+                    if node_idx is not None
+                    else None
+                )
+                self._run_frame_builder.record_failure(
+                    seq=seq,
+                    node_run_id=node_run_id,
+                    kind=kind,
+                    error_type=error_type,
+                    message=message,
+                )
             return
         for target in targets:
-            self._event_log.emit_failure(
-                kind=kind,
-                error_type=error_type,
-                message=message,
-                node_id=str(target),
-            )
+            seq = None
+            if self._event_log is not None:
+                seq = self._event_log.emit_failure(
+                    kind=kind,
+                    error_type=error_type,
+                    message=message,
+                    node_id=str(target),
+                )
+            if self._run_frame_builder is not None:
+                self._run_frame_builder.record_failure(
+                    seq=seq,
+                    node_run_id=self._run_frame_node_runs.get(target),
+                    kind=kind,
+                    error_type=error_type,
+                    message=message,
+                )
+                self._run_frame_node_runs.pop(target, None)
             open_nodes.pop(target, None)
 
     def _runtime_emit_budget_exceeded(self, open_nodes: dict[int, str]) -> None:
-        if self._event_log is None:
-            return
         remaining = self._remaining_budget_usd()
         if remaining == float("inf"):
             remaining = 0.0
-        self._event_log.emit_budget(
-            kind="exceeded",
-            budget_limit_usd=float(self._budget_usd or 0.0),
-            budget_remaining_usd=float(remaining),
-            cost_so_far_usd=float(self.total_cost_usd or 0.0),
-        )
+        budget_limit = float(self._budget_usd or 0.0)
+        cost_so_far = float(self.total_cost_usd or 0.0)
+        seq = None
+        if self._event_log is not None:
+            seq = self._event_log.emit_budget(
+                kind="exceeded",
+                budget_limit_usd=budget_limit,
+                budget_remaining_usd=float(remaining),
+                cost_so_far_usd=cost_so_far,
+            )
+        if self._run_frame_builder is not None:
+            self._run_frame_builder.record_budget(
+                seq=seq,
+                kind="exceeded",
+                budget_limit_usd=budget_limit,
+                budget_remaining_usd=float(remaining),
+                cost_so_far_usd=cost_so_far,
+            )
         self._runtime_emit_failure(
             kind="budget_exceeded",
             error_type="BudgetExceeded",

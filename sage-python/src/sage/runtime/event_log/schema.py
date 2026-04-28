@@ -15,6 +15,7 @@ EVENT_TYPES = (
     "failure",
     "budget",
     "final_result",
+    "run_frame_summary",
 )
 
 REDACTION_STATES = (

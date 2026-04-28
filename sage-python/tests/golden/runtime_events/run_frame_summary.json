@@ -1,0 +1,20 @@
+{
+  "_doc": "Golden fixture for run_frame_summary event (R7 RunFrame). ONLY emitted when SAGE_RUN_FRAME=1.",
+  "schema_version": "1.0",
+  "event_type": "run_frame_summary",
+  "source_component": "pipeline",
+  "_required_always": [
+    "schema_version", "run_id", "trace_id", "parent_event_id", "seq",
+    "timestamp_ns", "event_type", "source_component", "task_hash",
+    "payload_hash", "redaction_state"
+  ],
+  "_required_in_payload": [
+    "run_frame_schema_version", "run_frame_hash", "status",
+    "node_record_count", "final_result_seq"
+  ],
+  "_invariants": [
+    "parent_event_id == final_result.seq (the previous event in the JSONL)",
+    "MUST be the LAST event in the JSONL when SAGE_RUN_FRAME=1",
+    "MUST NEVER appear when SAGE_RUN_FRAME unset or '0' (byte-identical R6 baseline)"
+  ]
+}

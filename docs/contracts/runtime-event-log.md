@@ -15,9 +15,17 @@ The contract is enforced by `tests/test_runtime_event_contracts.py`. Breaking ch
 | Failure event with `kind="budget_exceeded"` | emitted | emitted |
 | All other events (TaskStarted, RoutingDecision, TopologySelected, ModelAssigned, NodeStarted core fields, NodeCompleted, ControllerDecision, Failure, Budget, FinalResult) | byte-identical to R5 baseline | byte-identical to R5 baseline |
 
-The OFF-mode column is the **byte-identical R5 schema guarantee**. Any field added unconditionally there breaks R5 callers (e.g., `protocols/a2a_server.py`, `scripts/run_masbench_traced.py`) that may be parsing the JSONL.
+| Field on event | SAGE_RUN_FRAME unset / 0 | SAGE_RUN_FRAME=1 |
+|---|---|---|
+| `run_frame_summary` event type | **never emitted** | emitted as trailing diagnostic AFTER `final_result` |
 
-## Event-type catalog (11 types as of R6)
+The OFF-mode columns are the **byte-identical baseline guarantees**. Any field added unconditionally there breaks downstream callers (e.g., `protocols/a2a_server.py`, `scripts/run_masbench_traced.py`) that may be parsing the JSONL. Behavior must match the previous milestone exactly when the gating flag is unset/0.
+
+## Final-event semantics (R7+)
+
+`final_result` is the LAST **business** event of any run. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result`. The summary's `parent_event_id` MUST equal `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of summary success.
+
+## Event-type catalog (12 types as of R7)
 
 | Event | Source component | Pipeline scope | When emitted |
 |---|---|---|---|
@@ -31,7 +39,8 @@ The OFF-mode column is the **byte-identical R5 schema guarantee**. Any field add
 | `failure` | topology_runner | runner | per-node failure (provider, controller_reroute, budget_exceeded, unknown_edge_type, etc.) |
 | `budget` | topology_runner | runner | when budget threshold crossed |
 | `state_applied` | topology_runner | runner | per-node reduction in StateCore strict mode (R6, behind SAGE_STATECORE=1) |
-| `final_result` | pipeline | pipeline | once per run, last event, with `status: success` / `failure` / `budget_exceeded` |
+| `final_result` | pipeline | pipeline | once per run, last BUSINESS event, with `status: success` / `failure` / `budget_exceeded` |
+| `run_frame_summary` | pipeline | pipeline | trailing DIAGNOSTIC event (R7, behind SAGE_RUN_FRAME=1); follows `final_result` with `parent_event_id == final_result.seq`; best-effort emission — sink failure here MUST NOT change pipeline result |
 
 ## Core fields (always present on every event)
 
@@ -76,6 +85,7 @@ These fields are reserved for future expansion. They are dropped from `to_dict()
 - `statecore_off_node_started.json` — NodeStarted contract in legacy mode
 - `statecore_on_node_started.json` — NodeStarted contract in strict mode
 - `state_applied.json` — state_applied event contract (only emitted in strict mode)
+- `run_frame_summary.json` — run_frame_summary trailing diagnostic event (only emitted under SAGE_RUN_FRAME=1)
 
 The `_required_always` / `_required_in_payload` / `_forbidden_in_payload_when_off` keys in each fixture are read by `test_runtime_event_contracts.py` to validate live JSONL output against the locked schema.
 
@@ -93,4 +103,6 @@ The `_required_always` / `_required_in_payload` / `_forbidden_in_payload_when_of
 
 - R5 cycle 2 spec — `.tmp/cgpro_r5_design_locked_spec.md`
 - R6 cycle 3 spec — `.tmp/cgpro_r6_design_locked_spec.md`
+- R7 cycle 4 spec — `.tmp/cgpro_r7_design_locked_spec.md`
 - cgpro 2026-04-29 cycle 3 reassess — recommended this contract hardening as R6.0.1 follow-up
+- cgpro 2026-04-29 R7 verify — required this doc update before R7 SHIP (12 event types, final-event semantics)
