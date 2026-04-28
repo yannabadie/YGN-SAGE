@@ -22,7 +22,6 @@ in the contract surface as test failures, not silent schema drift.
 """
 from __future__ import annotations
 
-import asyncio
 import json
 import pathlib
 import shutil
