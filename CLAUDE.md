@@ -97,11 +97,21 @@ Two complementary tools. Use deliberately, not reflexively. Different verbs.
 
 ### `cgpro` — ChatGPT 5.5 Pro (analytic, slow, second opinion)
 
-- **Invoke**: skill `cgpro:ask` or `cgpro ask --json --no-stream --timeout 600 "<prompt>"` (long prompts via stdin to avoid shell quoting). Web search always on (policy).
-- **Pass the GitHub repo URL** in the prompt — cgpro will pull live source. Verified 2026-04-26: caught a real prod bug in `bandit::restore_arm` not persisting `context_sum`/`context_count` that I missed by reading only locally-changed files.
-- **Use for**: holistic review of a substantial cycle (5+ commits), strategy critique before committing to an approach, finding non-obvious bugs across files, second opinion on stochastic test design, methodology audit.
+- **Invoke (verified 2026-04-28)**: `cgpro ask --json --background --timeout 1800 "$(cat .tmp/<prompt>.md)"` via Bash `run_in_background: true`. **Avoid `--no-stream`** — it buffers until done and loses ALL output if the stream interrupts mid-flight (R1+R2 verify hang incident). `--json` alone gives NDJSON streaming (one event per line, partial captures survive). `--background` keeps Chromium off-screen.
+- **Skill `cgpro:cgpro` is doc-only**: it loads cgpro skill instructions but does NOT invoke the CLI. Always call via Bash.
+- **Pass the GitHub repo URL** in the prompt — cgpro pulls live source. Verified caught real prod bugs (bandit `restore_arm`, R3 `_remaining_budget_usd` cost_tracker fall-through, R3 default-provider fail-open).
+- **Project routing (2026-04-28)**: this cwd is linked to ChatGPT Project `YGN-SAGE` (gizmoId `g-p-69ed9637e63c8191b61c9741b50d1c01`). New conversations auto-route there with project memory pre-pended. `--resume <name|id>` DISABLES project auto-routing — resumed convos stay in original location.
+- **Conversation pattern**:
+  - **Fresh conv per ticket** (preferred since 2026-04-28): `cgpro ask --new-session --save cgpro_<item>_design ...` creates new conv in YGN-SAGE project, bookmarks for VERIFY follow-up via `--resume cgpro_<item>_design`. Avoids the cgpro_2026_04_26_review thread getting too long.
+  - **Cycle-spanning thread**: `cgpro ask --resume cgpro_2026_04_26_review ...` — keeps full context but stays out of the project sidebar.
+- **Browser profile lock**: cgpro Chromium uses `~/.cgpro/profile/Default/`. ChatGPT desktop app uses the same profile. **Only ONE process can hold the lock**. Symptom = `browserType.launchPersistentContext: Target page, context or browser has been closed`. Fix: close desktop app, OR `cgpro daemon start` to share warm browser.
+- **NEVER `TaskStop` a cgpro BG that may be near completion**. The R1 incident: GPT response landed server-side, my TaskStop killed local CLI before it could read back. If a BG cgpro shows 0 bytes after ~20 min, THEN diagnose. Easiest recovery: ask user to copy-paste the chatgpt.com response into a local `Aᵢ.md` file.
+- **Schema-first DESIGN for runtime contracts** (cgpro 2026-04-28 reassess methodology tweak): for tickets touching runner/event semantics, force cgpro to lock the SCHEMA (events, fields, redaction policy, sink failure semantics, public/private API boundary, pre-fix tests, non-goals) BEFORE codex writes any code. This avoids codex turning observability tickets into replay/dashboards/StateCore creep.
+- **Use for**: holistic review of a substantial cycle (5+ commits), strategy critique before committing to an approach, finding non-obvious bugs across files, second opinion on stochastic test design, methodology audit, locked-spec DESIGN→VERIFY for the cycle pattern.
 - **Don't use for**: quick syntax lookups (Context7), one-line refactors, well-known API explanations.
-- **Prompt hygiene**: lead with repo URL + commit SHA, structured "what shipped / what's stuck / what I'm about to do" summary, then 2-3 specific questions split into "verdict on what I did" / "what should I do next" / "what trap am I missing".
+- **Cycle pattern**: cgpro DESIGN (locked spec) → codex IMPLEMENT (gpt-5.5 xhigh, full-auto direct exec) → claude verify-local (TDD via `git stash --keep-index` for pre-fix evidence) → cgpro VERIFY (debate if needed) → SHIP commit + push. Verified across 4 P0 tickets in cycle 1 (2026-04-28). R3 had a true VERIFY round-trip catching 2 micro-fixes — keep VERIFY for anything touching runner semantics.
+- **Prompt hygiene**: lead with repo URL + commit SHA, structured "what shipped / what's stuck / what I'm about to do" summary, then 2-3 specific questions split into "verdict on what I did" / "what should I do next" / "what trap am I missing". For VERIFY: include diff summary + TDD evidence (pre-fix fail / post-fix pass) + 2-3 scrutiny points + commit message draft.
+- **Source code reference**: cgpro plugin lives at `C:\Code\CGPro4Code` (also installed as `cgpro` on PATH). Read `src/cli/commands/ask.ts` + `src/core/orchestrator.ts` + `src/cli/commands/project.ts` for behavioral truths.
 
 ### `codex` — GPT-5.5 xhigh (action-oriented, second implementation)
 
