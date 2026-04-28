@@ -549,12 +549,22 @@ class CognitiveOrchestrationPipeline:
         )
         return result
 
-    async def run_with_frame(self, task: str) -> tuple[str, RunFrame]:
-        """Like run() but returns (output, frozen RunFrame)."""
+    async def run_with_frame(
+        self,
+        task: str,
+        budget_usd: float | None = None,
+        system_hint: int | None = None,
+    ) -> tuple[str, RunFrame]:
+        """Like run() but returns (output, frozen RunFrame).
+
+        Signature mirrors run() so bench/traced adapters can use either
+        entry point without parameter loss (cgpro 2026-04-29 cycle 4
+        reassess R7.0.2).
+        """
         return await self._run_internal(
             task,
-            budget_usd=None,
-            system_hint=None,
+            budget_usd=budget_usd,
+            system_hint=system_hint,
             emit_run_frame_summary=os.environ.get("SAGE_RUN_FRAME") == "1",
         )
 

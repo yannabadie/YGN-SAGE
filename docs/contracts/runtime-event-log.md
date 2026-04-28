@@ -51,7 +51,7 @@ trace_id: str          # = run_id in v0
 parent_event_id: int | None  # parent's seq; None for task_started
 seq: int               # 0-indexed, contiguous, strictly monotonic per run
 timestamp_ns: int      # time.time_ns()
-event_type: str        # one of the 11 above
+event_type: str        # one of EVENT_TYPES above (12 as of R7)
 source_component: str  # pipeline | topology_runner | controller | model_assigner | provider_pool
 task_hash: str         # sha256(task_text), 64 lowercase hex
 payload_hash: str      # sha256({schema_version, event_type, payload}), 64 lowercase hex

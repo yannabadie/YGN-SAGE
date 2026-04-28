@@ -453,6 +453,46 @@ async def test_pipeline_run_with_frame_returns_typed_runframe(
 
 
 @pytest.mark.asyncio
+async def test_run_with_frame_signature_mirrors_run(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """R7.0.2 (cgpro 2026-04-29 cycle 4 reassess): run_with_frame() must
+    accept budget_usd + system_hint kwargs identically to run(), so bench
+    and traced adapters can switch entry points without parameter loss.
+    """
+    import inspect
+
+    from sage.pipeline import CognitiveOrchestrationPipeline
+
+    run_sig = inspect.signature(CognitiveOrchestrationPipeline.run)
+    frame_sig = inspect.signature(CognitiveOrchestrationPipeline.run_with_frame)
+
+    # Same input parameters (excluding self) — only return type differs
+    run_params = list(run_sig.parameters.keys())
+    frame_params = list(frame_sig.parameters.keys())
+    assert run_params == frame_params, (
+        f"run_with_frame signature must mirror run(); "
+        f"run params={run_params} vs frame params={frame_params}"
+    )
+
+    # Smoke-test: passing budget_usd + system_hint must not error
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.delenv("SAGE_RUN_FRAME", raising=False)
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id",
+        lambda: "01RFPARITY0000000000000001",
+    )
+    result, frame = await _make_pipeline("parity output").run_with_frame(
+        "task",
+        budget_usd=2.0,
+        system_hint=2,
+    )
+    assert result == "parity output"
+    assert isinstance(frame, RunFrame)
+
+
+@pytest.mark.asyncio
 async def test_run_frame_off_exactly_matches_r6_jsonl(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
