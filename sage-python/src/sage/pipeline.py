@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import secrets
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -42,6 +43,23 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
+_ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def _new_runtime_run_id() -> str:
+    """Return a canonical 26-char uppercase ULID, with a local fallback."""
+    try:
+        import ulid
+
+        return str(ulid.new()).upper()
+    except Exception:  # noqa: BLE001 - tracing must not depend on ulid availability
+        timestamp_ms = (time.time_ns() // 1_000_000) & ((1 << 48) - 1)
+        value = (timestamp_ms << 80) | secrets.randbits(80)
+        chars: list[str] = []
+        for _ in range(26):
+            chars.append(_ULID_ALPHABET[value & 0x1F])
+            value >>= 5
+        return "".join(reversed(chars))
 
 
 def _is_strict_governance() -> bool:
@@ -328,6 +346,136 @@ class CognitiveOrchestrationPipeline:
             except (ImportError, RuntimeError):
                 pass
 
+    @staticmethod
+    def _runtime_node_count(topology: Any) -> int:
+        if topology is None or not hasattr(topology, "node_count"):
+            return 0
+        try:
+            node_count = topology.node_count()
+            return int(node_count() if callable(node_count) else node_count)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return 0
+
+    @staticmethod
+    def _runtime_edge_type(value: Any) -> str:
+        if value == 0:
+            return "control"
+        if value == 1:
+            return "message"
+        if value == 2:
+            return "state"
+        return str(value or "")
+
+    def _runtime_edge_summary(self, topology: Any) -> tuple[int, list[dict[str, Any]]]:
+        if topology is None:
+            return 0, []
+        try:
+            if hasattr(topology, "get_edges"):
+                raw_edges = list(topology.get_edges() or [])
+                summaries: list[dict[str, Any]] = []
+                for idx, edge in enumerate(raw_edges):
+                    source_id = edge[0] if len(edge) > 0 else ""
+                    target_id = edge[1] if len(edge) > 1 else ""
+                    edge_type = self._runtime_edge_type(edge[2] if len(edge) > 2 else "")
+                    summaries.append(
+                        {
+                            "edge_id": f"{source_id}->{target_id}:{idx}",
+                            "source_id": str(source_id),
+                            "target_id": str(target_id),
+                            "edge_type": edge_type,
+                            "channel": edge_type,
+                        }
+                    )
+                return len(raw_edges), summaries
+            if hasattr(topology, "edge_count"):
+                edge_count = topology.edge_count()
+                return int(edge_count() if callable(edge_count) else edge_count), []
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            return 0, []
+        return 0, []
+
+    def _runtime_node_summary(self, ctx: PipelineContext) -> list[dict[str, Any]]:
+        topology = ctx.topology
+        summaries: list[dict[str, Any]] = []
+        for idx in range(self._runtime_node_count(topology)):
+            try:
+                node = topology.get_node(idx)
+            except (AttributeError, RuntimeError, TypeError):
+                continue
+            summaries.append(
+                {
+                    "node_id": str(idx),
+                    "node_role": getattr(node, "role", "") or f"node-{idx}",
+                    "node_type": getattr(node, "node_type", "") or "",
+                    "model_id": getattr(node, "model_id", "") or "",
+                    "provider_hint": ctx.provider_hints.get(idx, ""),
+                }
+            )
+        return summaries
+
+    def _runtime_provider_id_for_model(self, model_id: str, ctx: PipelineContext) -> str:
+        for node_idx, assigned_model in ctx.assignments.items():
+            if assigned_model == model_id and node_idx in ctx.provider_hints:
+                return str(ctx.provider_hints[node_idx])
+        if self.provider_pool is not None and hasattr(self.provider_pool, "infer_provider"):
+            try:
+                provider_id = self.provider_pool.infer_provider(model_id)
+                if provider_id:
+                    return str(provider_id)
+            except (AttributeError, RuntimeError, TypeError, ValueError):
+                pass
+        return str(getattr(self.llm_config, "provider", "") if self.llm_config else "")
+
+    @staticmethod
+    def _runtime_node_capabilities(node: Any) -> tuple[str, ...]:
+        for attr in ("required_capabilities", "capabilities_required", "capabilities"):
+            raw = getattr(node, attr, None)
+            if raw:
+                return tuple(str(item) for item in raw)
+        return ()
+
+    def _runtime_emit_topology_selected(self, ctx: PipelineContext, event_log: Any) -> None:
+        if event_log is None or ctx.topology is None:
+            return
+        edge_count, edges_summary = self._runtime_edge_summary(ctx.topology)
+        event_log.emit_topology_selected(
+            topology_id=ctx.topology_id or getattr(ctx.topology, "id", "") or "",
+            template_type=getattr(ctx.topology, "template_type", "") or "",
+            node_count=self._runtime_node_count(ctx.topology),
+            edge_count=edge_count,
+            nodes_summary=self._runtime_node_summary(ctx),
+            edges_summary=edges_summary,
+        )
+
+    def _runtime_emit_model_assigned(self, ctx: PipelineContext, event_log: Any) -> None:
+        if event_log is None or ctx.topology is None:
+            return
+        for idx in range(self._runtime_node_count(ctx.topology)):
+            try:
+                node = ctx.topology.get_node(idx)
+            except (AttributeError, RuntimeError, TypeError):
+                continue
+            model_id = ctx.assignments.get(idx, getattr(node, "model_id", "") or "")
+            event_log.emit_model_assigned(
+                node_id=str(idx),
+                node_role=getattr(node, "role", "") or f"node-{idx}",
+                model_id=model_id,
+                provider_id=self._runtime_provider_id_for_model(model_id, ctx),
+                required_capabilities=self._runtime_node_capabilities(node),
+            )
+
+    def _runtime_final_status(self, ctx: PipelineContext | None) -> str:
+        if ctx is None:
+            return "failure"
+        if ctx.result == BUDGET_EXCEEDED_RESULT:
+            return "budget_exceeded"
+        return "success" if ctx.result else "failure"
+
+    def _runtime_final_node_count(self, ctx: PipelineContext | None) -> int:
+        if ctx is None or ctx.topology is None:
+            return 0
+        return self._runtime_node_count(ctx.topology)
+
     async def run(
         self,
         task: str,
@@ -348,97 +496,143 @@ class CognitiveOrchestrationPipeline:
                 to the hint afterwards.
         """
         from sage.observability.spans import sage_span
+        from sage.runtime.event_log import RuntimeEventLog, install_event_log
+
+        event_log = RuntimeEventLog(run_id=_new_runtime_run_id())
+        token = install_event_log(event_log)
+        final_emitted = False
+        ctx: PipelineContext | None = None
+        t0 = time.monotonic()
         _span_attrs: dict[str, Any] = {"gen_ai.request.model": ""}
-        with sage_span("sage.pipeline.run", op="invoke_agent", **_span_attrs):
-            t0 = time.monotonic()
-            effective_budget_usd = (
-                self.budget_usd
-                if budget_usd is None
-                else _resolve_task_budget_usd(budget_usd)
-            )
-            ctx = PipelineContext(task=task, budget=effective_budget_usd)
-            if effective_budget_usd > 0:
-                ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
-
-            # G-series (2026-04-19): rebuild write gate per task so entries from a
-            # previous task don't persist as novelty penalties or exact-dedup hits
-            # on content in THIS task. Rust gate has no in-place reset yet.
-            self.write_gate = self._build_write_gate()
-
-            # Stage 0: CLASSIFY
-            ctx = self._stage_classify(ctx)
-            if system_hint in (1, 2, 3) and ctx.system != system_hint:
-                log.info(
-                    "Stage 0: system_hint=S%d overrides router S%d",
-                    system_hint, ctx.system,
+        try:
+            with sage_span("sage.pipeline.run", op="invoke_agent", **_span_attrs):
+                effective_budget_usd = (
+                    self.budget_usd
+                    if budget_usd is None
+                    else _resolve_task_budget_usd(budget_usd)
                 )
-                ctx.system = system_hint
-            self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
+                ctx = PipelineContext(task=task, budget=effective_budget_usd)
+                if effective_budget_usd > 0:
+                    ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
 
-            # Stage 1: DECOMPOSE (S2/S3 only)
-            ctx = await self._stage_decompose(ctx)
-            dag_node_count = 0
-            if ctx.task_dag is not None:
-                if hasattr(ctx.task_dag, "node_count"):
-                    dag_node_count = ctx.task_dag.node_count
-                elif hasattr(ctx.task_dag, "node_ids"):
-                    dag_node_count = len(list(ctx.task_dag.node_ids))
-            self._emit(
-                "DECOMPOSE",
-                {
-                    "dag_nodes": dag_node_count,
-                    "features": (
-                        {
-                            "omega": ctx.dag_features.omega,
-                            "delta": ctx.dag_features.delta,
-                            "gamma": ctx.dag_features.gamma,
-                        }
-                        if ctx.dag_features
-                        else {}
-                    ),
-                },
-            )
+                self._last_routing_decision = None
+                self._last_runtime_routing_source = "default"
+                self._last_runtime_routing_confidence = None
+                self._last_runtime_routing_model_id = ""
+                event_log.emit_task_started(ctx.task)
 
-            # Stage 2: SELECT TOPOLOGY
-            ctx = self._stage_select_topology(ctx)
-            topo_nodes = (
-                ctx.topology.node_count()
-                if ctx.topology and hasattr(ctx.topology, "node_count")
-                else 0
-            )
-            self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
+                # G-series (2026-04-19): rebuild write gate per task so entries from a
+                # previous task don't persist as novelty penalties or exact-dedup hits
+                # on content in THIS task. Rust gate has no in-place reset yet.
+                self.write_gate = self._build_write_gate()
 
-            # Stage 3: ASSIGN MODELS
-            ctx = self._stage_assign_models(ctx)
-            self._emit(
-                "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
-            )
+                # Stage 0: CLASSIFY
+                ctx = self._stage_classify(ctx)
+                if system_hint in (1, 2, 3) and ctx.system != system_hint:
+                    log.info(
+                        "Stage 0: system_hint=S%d overrides router S%d",
+                        system_hint, ctx.system,
+                    )
+                    ctx.system = system_hint
+                event_log.emit_routing_decision(
+                    routing_source=getattr(self, "_last_runtime_routing_source", "default"),
+                    system=ctx.system,
+                    domain=ctx.domain,
+                    confidence=getattr(self, "_last_runtime_routing_confidence", None),
+                    model_id=getattr(self, "_last_runtime_routing_model_id", ""),
+                )
+                self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
-            # Stage 4: EXECUTE
-            ctx = await self._stage_execute(ctx)
-            ctx.latency_ms = (time.monotonic() - t0) * 1000
+                # Stage 1: DECOMPOSE (S2/S3 only)
+                ctx = await self._stage_decompose(ctx)
+                dag_node_count = 0
+                if ctx.task_dag is not None:
+                    if hasattr(ctx.task_dag, "node_count"):
+                        dag_node_count = ctx.task_dag.node_count
+                    elif hasattr(ctx.task_dag, "node_ids"):
+                        dag_node_count = len(list(ctx.task_dag.node_ids))
+                self._emit(
+                    "DECOMPOSE",
+                    {
+                        "dag_nodes": dag_node_count,
+                        "features": (
+                            {
+                                "omega": ctx.dag_features.omega,
+                                "delta": ctx.dag_features.delta,
+                                "gamma": ctx.dag_features.gamma,
+                            }
+                            if ctx.dag_features
+                            else {}
+                        ),
+                    },
+                )
 
-            # Write execution trace to memory (Tier 0 + Tier 1)
-            self._record_to_memory(ctx)
+                # Stage 2: SELECT TOPOLOGY
+                ctx = self._stage_select_topology(ctx)
+                topo_nodes = (
+                    ctx.topology.node_count()
+                    if ctx.topology and hasattr(ctx.topology, "node_count")
+                    else 0
+                )
+                self._runtime_emit_topology_selected(ctx, event_log)
+                self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
 
-            # Stage 5: LEARN
-            await self._stage_learn(ctx)
-            self._emit("LEARN", {"latency_ms": ctx.latency_ms})
+                # Stage 3: ASSIGN MODELS
+                ctx = self._stage_assign_models(ctx)
+                self._runtime_emit_model_assigned(ctx, event_log)
+                self._emit(
+                    "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
+                )
 
-            # Expose full context for observability (bench, tracing, debugging)
-            self.last_context = ctx
+                # Stage 4: EXECUTE
+                ctx = await self._stage_execute(ctx, event_log=event_log)
+                ctx.latency_ms = (time.monotonic() - t0) * 1000
 
-            # Sync the per-task cost back onto the top-level agent_loop so
-            # bench adapters that read `system.agent_loop.total_cost_usd`
-            # (evalplus, humaneval, legacy reporters) observe the value
-            # regardless of whether this task went through bypass or topology.
-            # The bypass path already wrote ctx.cost from its own loop; the
-            # multi-agent path wrote it from runner aggregation. Writing it
-            # back keeps the observable surface consistent.
-            if self._agent_loop is not None and ctx.cost:
-                self._agent_loop.total_cost_usd = float(ctx.cost)
+                # Write execution trace to memory (Tier 0 + Tier 1)
+                self._record_to_memory(ctx)
 
-            return ctx.result
+                # Stage 5: LEARN
+                await self._stage_learn(ctx)
+                self._emit("LEARN", {"latency_ms": ctx.latency_ms})
+
+                # Expose full context for observability (bench, tracing, debugging)
+                self.last_context = ctx
+
+                # Sync the per-task cost back onto the top-level agent_loop so
+                # bench adapters that read `system.agent_loop.total_cost_usd`
+                # (evalplus, humaneval, legacy reporters) observe the value
+                # regardless of whether this task went through bypass or topology.
+                # The bypass path already wrote ctx.cost from its own loop; the
+                # multi-agent path wrote it from runner aggregation. Writing it
+                # back keeps the observable surface consistent.
+                if self._agent_loop is not None and ctx.cost:
+                    self._agent_loop.total_cost_usd = float(ctx.cost)
+
+                event_log.emit_final_result(
+                    status=self._runtime_final_status(ctx),
+                    output=ctx.result or "",
+                    total_cost_usd=float(ctx.cost or 0.0),
+                    total_latency_ms=ctx.latency_ms,
+                    node_count=self._runtime_final_node_count(ctx),
+                )
+                final_emitted = True
+                return ctx.result
+        except Exception:
+            if not final_emitted:
+                latency_ms = (time.monotonic() - t0) * 1000
+                if ctx is not None:
+                    ctx.latency_ms = latency_ms
+                event_log.emit_final_result(
+                    status="failure",
+                    output=(ctx.result if ctx is not None else "") or "",
+                    total_cost_usd=float((ctx.cost if ctx is not None else 0.0) or 0.0),
+                    total_latency_ms=latency_ms,
+                    node_count=self._runtime_final_node_count(ctx),
+                )
+            raise
+        finally:
+            token.var.reset(token)
+            event_log.close()
 
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
@@ -462,6 +656,13 @@ class CognitiveOrchestrationPipeline:
                     ctx.domain = _infer_domain(ctx.task)
                     # Store decision for model selection + telemetry
                     self._last_routing_decision = decision
+                    self._last_runtime_routing_source = "rust_system_router"
+                    self._last_runtime_routing_confidence = getattr(
+                        decision,
+                        "confidence",
+                        None,
+                    )
+                    self._last_runtime_routing_model_id = getattr(decision, "model_id", "") or ""
                     log.info(
                         "Stage 0: Rust routing → S%d model=%s (conf=%.2f, cost=%.4f)",
                         ctx.system, decision.model_id, decision.confidence, decision.estimated_cost,
@@ -479,6 +680,13 @@ class CognitiveOrchestrationPipeline:
                         log.info("Stage 0: kNN routing → S%d (conf=%.2f, %s)",
                                  knn_result.system, knn_result.confidence, knn_result.method)
                         ctx.domain = _infer_domain(ctx.task)
+                        self._last_runtime_routing_source = "knn"
+                        self._last_runtime_routing_confidence = getattr(
+                            knn_result,
+                            "confidence",
+                            None,
+                        )
+                        self._last_runtime_routing_model_id = ""
                         return ctx
                 except (ImportError, RuntimeError) as exc:
                     log.debug("Stage 0: kNN failed (%s), falling back", exc)
@@ -489,11 +697,20 @@ class CognitiveOrchestrationPipeline:
                     profile = self.router.assess_complexity(ctx.task)
                     decision = self.router.route(profile)
                     ctx.system = getattr(decision, "system", 2)
+                    self._last_runtime_routing_source = "adaptive_router"
+                    self._last_runtime_routing_confidence = getattr(decision, "confidence", None)
+                    self._last_runtime_routing_model_id = getattr(decision, "model_id", "") or ""
                 except (ImportError, RuntimeError) as exc:
                     log.warning("Stage 0 classify failed: %s, defaulting to S2", exc)
                     ctx.system = 2
+                    self._last_runtime_routing_source = "default"
+                    self._last_runtime_routing_confidence = None
+                    self._last_runtime_routing_model_id = ""
             else:
                 ctx.system = 2
+                self._last_runtime_routing_source = "default"
+                self._last_runtime_routing_confidence = None
+                self._last_runtime_routing_model_id = ""
 
             ctx.domain = _infer_domain(ctx.task)
             return ctx
@@ -1302,7 +1519,7 @@ class CognitiveOrchestrationPipeline:
         # 3. Last resort: default even if marked dead (better than nothing).
         return default, self.llm_config
 
-    async def _stage_execute(self, ctx: PipelineContext) -> PipelineContext:
+    async def _stage_execute(self, ctx: PipelineContext, event_log: Any | None = None) -> PipelineContext:
         """Stage 4: Execute topology with per-node model resolution."""
         from sage.observability.spans import sage_span
         with sage_span("sage.execute", op="sage.execute"):
@@ -1655,6 +1872,7 @@ class CognitiveOrchestrationPipeline:
                     assigner=self.assigner,
                     task_domain=getattr(ctx, "domain", "") or "",
                     budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
+                    event_log=event_log,
                 )
                 result = await runner.run(ctx.task)
                 # Roll up tool-use telemetry from TopologyRunner → ctx. Without
@@ -1676,6 +1894,8 @@ class CognitiveOrchestrationPipeline:
                     self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
                     ctx = self._stage_select_topology(ctx)  # new topology
                     ctx = self._stage_assign_models(ctx)    # re-assign models
+                    self._runtime_emit_topology_selected(ctx, event_log)
+                    self._runtime_emit_model_assigned(ctx, event_log)
                     ctx.executed_model_ids = dict(ctx.assignments)
                     ctx.executed_template = (
                         getattr(ctx.topology, "template_type", "") or "multi_agent"
@@ -1694,6 +1914,7 @@ class CognitiveOrchestrationPipeline:
                         assigner=self.assigner,
                         task_domain=getattr(ctx, "domain", "") or "",
                         budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
+                        event_log=event_log,
                     )
                     result = await runner2.run(ctx.task)
                     # Prefer the post-reroute telemetry (it's the attempt that
@@ -1766,6 +1987,7 @@ class CognitiveOrchestrationPipeline:
                                                 ctx.topology.set_node_model_id(i, default_model)
                                                 log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
                             # Re-execute with upgraded models
+                            self._runtime_emit_model_assigned(ctx, event_log)
                             from sage_core import TopologyExecutor as _TE  # type: ignore[import-not-found]
                             executor2 = _TE(ctx.topology)
                             runner3 = TopologyRunner(
@@ -1777,6 +1999,7 @@ class CognitiveOrchestrationPipeline:
                                 assigner=self.assigner,
                                 task_domain=getattr(ctx, "domain", "") or "",
                                 budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
+                                event_log=event_log,
                             )
                             retry_result = await runner3.run(ctx.task)
                             if retry_result:

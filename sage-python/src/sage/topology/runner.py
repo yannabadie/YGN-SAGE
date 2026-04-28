@@ -19,6 +19,7 @@ from typing import Any, AsyncIterator, Callable
 
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
+from sage.runtime.event_log import RuntimeEventLog
 from sage.tools.sage_recurse import sage_recurse_origin_node
 
 log = logging.getLogger(__name__)
@@ -159,6 +160,7 @@ class TopologyRunner:
         assigner: Any | None = None,
         task_domain: str = "",
         budget_usd: float = 0.0,
+        event_log: RuntimeEventLog | None = None,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -187,6 +189,8 @@ class TopologyRunner:
         self._assigner = assigner
         self._task_domain = task_domain
         self._budget_usd = float(budget_usd or 0.0)
+        self._event_log = event_log
+        self._node_event_costs: dict[int, float] = {}
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -206,6 +210,7 @@ class TopologyRunner:
         if self._cost_tracker is None:
             return
         node_cost = float(self._node_costs.pop(node_idx, 0.0) or 0.0)
+        self._node_event_costs[node_idx] = node_cost
         self._cost_tracker.record_spend(node_cost)
 
     def _remaining_budget_usd(self) -> float:
@@ -1393,6 +1398,153 @@ class TopologyRunner:
 
         return result, decision
 
+    def _runtime_topology_id(self) -> str:
+        return (
+            str(getattr(self.graph, "id", "") or "")
+            or str(getattr(self.graph, "topology_id", "") or "")
+            or str(getattr(self.graph, "template_type", "") or "")
+        )
+
+    def _runtime_provider_id_for_node(self, node: Any) -> str:
+        model_id = getattr(node, "model_id", "") or ""
+        if self._provider_pool is not None and hasattr(self._provider_pool, "infer_provider"):
+            try:
+                provider_id = self._provider_pool.infer_provider(model_id)
+                if provider_id:
+                    return str(provider_id)
+            except (AttributeError, RuntimeError, ValueError, TypeError):
+                pass
+        config_provider = getattr(self._config, "provider", "") if self._config is not None else ""
+        return str(config_provider or "")
+
+    def _runtime_predecessor_ids(self, node_idx: int) -> tuple[str, ...]:
+        try:
+            predecessors = self.graph.get_predecessors(node_idx)
+        except (AttributeError, Exception):
+            predecessors = []
+        return tuple(str(idx) for idx in predecessors)
+
+    def _runtime_edge_ids(self, node_idx: int) -> tuple[str, ...]:
+        return tuple(f"{pred}->{node_idx}" for pred in self._runtime_predecessor_ids(node_idx))
+
+    def _runtime_node_cost_usd(self, node_idx: int) -> float:
+        return float(
+            self._node_event_costs.get(
+                node_idx,
+                self._node_costs.get(node_idx, 0.0),
+            )
+            or 0.0
+        )
+
+    def _runtime_emit_node_started(
+        self,
+        node_idx: int,
+        role: str,
+        open_nodes: dict[int, str],
+    ) -> None:
+        if self._event_log is None:
+            return
+        node = self.graph.get_node(node_idx)
+        open_nodes[node_idx] = role
+        self._event_log.emit_node_started(
+            topology_id=self._runtime_topology_id(),
+            node_id=str(node_idx),
+            node_role=role,
+            attempt=self._node_exec_count.get(node_idx, 0) + 1,
+            model_id=getattr(node, "model_id", "") or "",
+            provider_id=self._runtime_provider_id_for_node(node),
+            predecessor_ids=self._runtime_predecessor_ids(node_idx),
+            edge_ids=self._runtime_edge_ids(node_idx),
+        )
+
+    def _runtime_emit_node_completed(
+        self,
+        node_idx: int,
+        role: str,
+        output: str,
+        latency_ms: float,
+        open_nodes: dict[int, str],
+    ) -> None:
+        if self._event_log is None:
+            return
+        node = self.graph.get_node(node_idx)
+        self._event_log.emit_node_completed(
+            node_id=str(node_idx),
+            node_role=role,
+            output=output,
+            latency_ms=latency_ms,
+            cost_usd=self._runtime_node_cost_usd(node_idx),
+            model_id=getattr(node, "model_id", "") or "",
+            provider_id=self._runtime_provider_id_for_node(node),
+        )
+        open_nodes.pop(node_idx, None)
+
+    def _runtime_emit_controller_decision(self, node_idx: int, decision: Any) -> None:
+        if self._event_log is None:
+            return
+        target = getattr(decision, "target_node", "")
+        gate_source = getattr(decision, "gate_source", None)
+        gate_target = getattr(decision, "gate_target", None)
+        self._event_log.emit_controller_decision(
+            node_id=str(node_idx),
+            action=str(getattr(decision, "action", "continue") or "continue"),
+            target_node_id="" if target is None else str(target),
+            gate_source_id=None if gate_source is None else str(gate_source),
+            gate_target_id=None if gate_target is None else str(gate_target),
+            reason=getattr(decision, "reason", "") or "",
+        )
+
+    def _runtime_emit_failure(
+        self,
+        *,
+        kind: str,
+        error_type: str,
+        message: str,
+        open_nodes: dict[int, str],
+        node_idx: int | None = None,
+    ) -> None:
+        if self._event_log is None:
+            return
+        if node_idx is None:
+            targets = list(open_nodes)
+        else:
+            targets = [node_idx] if node_idx in open_nodes else []
+        if not targets:
+            self._event_log.emit_failure(
+                kind=kind,
+                error_type=error_type,
+                message=message,
+                node_id="" if node_idx is None else str(node_idx),
+            )
+            return
+        for target in targets:
+            self._event_log.emit_failure(
+                kind=kind,
+                error_type=error_type,
+                message=message,
+                node_id=str(target),
+            )
+            open_nodes.pop(target, None)
+
+    def _runtime_emit_budget_exceeded(self, open_nodes: dict[int, str]) -> None:
+        if self._event_log is None:
+            return
+        remaining = self._remaining_budget_usd()
+        if remaining == float("inf"):
+            remaining = 0.0
+        self._event_log.emit_budget(
+            kind="exceeded",
+            budget_limit_usd=float(self._budget_usd or 0.0),
+            budget_remaining_usd=float(remaining),
+            cost_so_far_usd=float(self.total_cost_usd or 0.0),
+        )
+        self._runtime_emit_failure(
+            kind="budget_exceeded",
+            error_type="BudgetExceeded",
+            message="budget exceeded",
+            open_nodes=open_nodes,
+        )
+
     async def _run_core(self, task: str) -> AsyncIterator[_RunEvent]:
         """Central executor loop yielding private RunEvents.
 
@@ -1403,9 +1555,11 @@ class TopologyRunner:
 
         last_output = ""
         nodes_executed = 0
+        open_nodes: dict[int, str] = {}
 
         while not self.executor.is_done():
             if self._is_over_budget():
+                self._runtime_emit_budget_exceeded(open_nodes)
                 yield _BudgetExceededEvent()
                 return
 
@@ -1417,13 +1571,25 @@ class TopologyRunner:
                 node_idx = ready[0]
                 node = self.graph.get_node(node_idx)
                 role = getattr(node, "role", f"node-{node_idx}")
+                self._runtime_emit_node_started(node_idx, role, open_nodes)
                 yield _NodeStartEvent(node_idx=node_idx, role=role)
 
                 t0 = _time.monotonic()
-                result = await self._execute_node(node_idx, task)
+                try:
+                    result = await self._execute_node(node_idx, task)
+                except Exception as exc:
+                    self._runtime_emit_failure(
+                        kind="provider_error",
+                        error_type=type(exc).__name__,
+                        message=str(exc),
+                        open_nodes=open_nodes,
+                        node_idx=node_idx,
+                    )
+                    raise
                 latency_ms = (_time.monotonic() - t0) * 1000
 
                 if result == _BUDGET_EXCEEDED_RESULT:
+                    self._runtime_emit_budget_exceeded(open_nodes)
                     yield _BudgetExceededEvent()
                     return
 
@@ -1432,6 +1598,7 @@ class TopologyRunner:
                     self._node_exec_count[node_idx] = (
                         self._node_exec_count.get(node_idx, 0) + 1
                     )
+                    self._runtime_emit_budget_exceeded(open_nodes)
                     yield _BudgetExceededEvent()
                     return
 
@@ -1443,12 +1610,19 @@ class TopologyRunner:
                     parallel_outputs=None,
                 )
                 if decision is not None:
+                    self._runtime_emit_controller_decision(node_idx, decision)
                     yield _ControllerDecisionEvent(
                         node_idx=node_idx,
                         action=decision.action,
                         reason=getattr(decision, "reason", "") or "",
                     )
                     if decision.action == "reroute_topology":
+                        self._runtime_emit_failure(
+                            kind="controller_reroute",
+                            error_type="ControllerReroute",
+                            message=getattr(decision, "reason", "") or "controller reroute",
+                            open_nodes=open_nodes,
+                        )
                         yield _RerouteEvent(reason=getattr(decision, "reason", "") or "")
                         return
 
@@ -1458,6 +1632,13 @@ class TopologyRunner:
                 )
                 last_output = self._node_outputs.get(node_idx, result)
                 nodes_executed += 1
+                self._runtime_emit_node_completed(
+                    node_idx,
+                    role,
+                    last_output,
+                    latency_ms,
+                    open_nodes,
+                )
                 yield _NodeDoneEvent(
                     node_idx=node_idx,
                     role=role,
@@ -1468,9 +1649,11 @@ class TopologyRunner:
             else:
                 for idx in ready:
                     node = self.graph.get_node(idx)
+                    role = getattr(node, "role", f"node-{idx}")
+                    self._runtime_emit_node_started(idx, role, open_nodes)
                     yield _NodeStartEvent(
                         node_idx=idx,
-                        role=getattr(node, "role", f"node-{idx}"),
+                        role=role,
                     )
 
                 ctx_snapshot = self._gather_all_context()
@@ -1479,10 +1662,39 @@ class TopologyRunner:
                     for idx in ready
                 ]
                 t0_par = _time.monotonic()
-                results = await asyncio.gather(*coros)
+                results = await asyncio.gather(*coros, return_exceptions=True)
                 par_latency_ms = (_time.monotonic() - t0_par) * 1000
 
+                first_exc: BaseException | None = None
+                for idx, parallel_result in zip(ready, results):
+                    if isinstance(parallel_result, BaseException):
+                        if first_exc is None:
+                            first_exc = parallel_result
+                        self._runtime_emit_failure(
+                            kind="provider_error",
+                            error_type=type(parallel_result).__name__,
+                            message=str(parallel_result),
+                            open_nodes=open_nodes,
+                            node_idx=idx,
+                        )
+                if first_exc is not None:
+                    for idx, parallel_result in zip(ready, results):
+                        if isinstance(parallel_result, BaseException):
+                            continue
+                        node = self.graph.get_node(idx)
+                        role = getattr(node, "role", f"node-{idx}")
+                        output = self._node_outputs.get(idx, str(parallel_result))
+                        self._runtime_emit_node_completed(
+                            idx,
+                            role,
+                            output,
+                            par_latency_ms,
+                            open_nodes,
+                        )
+                    raise first_exc
+
                 if _BUDGET_EXCEEDED_RESULT in results:
+                    self._runtime_emit_budget_exceeded(open_nodes)
                     yield _BudgetExceededEvent()
                     return
 
@@ -1490,22 +1702,24 @@ class TopologyRunner:
                     for idx in ready:
                         self.executor.mark_completed(idx)
                         self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
+                    self._runtime_emit_budget_exceeded(open_nodes)
                     yield _BudgetExceededEvent()
                     return
 
-                parallel_outputs = list(results)
+                parallel_outputs = [str(parallel_result) for parallel_result in results]
                 updated_results: list[str] = []
                 reroute_reason: str | None = None
-                for idx, result in zip(ready, results):
-                    result, decision = await self._apply_controller_decision(
+                for idx, parallel_result in zip(ready, parallel_outputs):
+                    updated_result, decision = await self._apply_controller_decision(
                         node_idx=idx,
-                        result=result,
+                        result=parallel_result,
                         task=task,
                         latency_ms=par_latency_ms,
                         parallel_outputs=parallel_outputs,
                     )
-                    updated_results.append(result)
+                    updated_results.append(updated_result)
                     if decision is not None:
+                        self._runtime_emit_controller_decision(idx, decision)
                         yield _ControllerDecisionEvent(
                             node_idx=idx,
                             action=decision.action,
@@ -1515,6 +1729,12 @@ class TopologyRunner:
                             reroute_reason = getattr(decision, "reason", "") or ""
 
                 if reroute_reason is not None:
+                    self._runtime_emit_failure(
+                        kind="controller_reroute",
+                        error_type="ControllerReroute",
+                        message=reroute_reason or "controller reroute",
+                        open_nodes=open_nodes,
+                    )
                     yield _RerouteEvent(reason=reroute_reason)
                     return
 
@@ -1524,9 +1744,17 @@ class TopologyRunner:
                     node = self.graph.get_node(idx)
                     last_output = self._node_outputs.get(idx, output)
                     nodes_executed += 1
+                    role = getattr(node, "role", f"node-{idx}")
+                    self._runtime_emit_node_completed(
+                        idx,
+                        role,
+                        last_output,
+                        par_latency_ms,
+                        open_nodes,
+                    )
                     yield _NodeDoneEvent(
                         node_idx=idx,
-                        role=getattr(node, "role", f"node-{idx}"),
+                        role=role,
                         output=last_output,
                         latency_ms=par_latency_ms,
                         model_id=getattr(node, "model_id", "") or "",

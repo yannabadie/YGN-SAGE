@@ -1,0 +1,43 @@
+"""RuntimeEventLog schema constants. Public API."""
+from typing import Literal
+
+SCHEMA_VERSION: Literal["1.0"] = "1.0"
+
+EVENT_TYPES = (
+    "task_started",
+    "routing_decision",
+    "topology_selected",
+    "model_assigned",
+    "node_started",
+    "node_completed",
+    "controller_decision",
+    "failure",
+    "budget",
+    "final_result",
+)
+
+REDACTION_STATES = (
+    "redacted",
+    "raw",
+    "partial",
+    "none_applicable",
+)
+
+SOURCE_COMPONENTS = (
+    "pipeline",
+    "topology_runner",
+    "controller",
+    "model_assigner",
+    "provider_pool",
+)
+
+CONTROLLER_ACTIONS = (
+    "continue",
+    "upgrade_model",
+    "prune_node",
+    "reroute_topology",
+    "spawn_subagent",
+    "open_gate",
+)
+
+FINAL_RESULT_STATUSES = ("success", "failure", "budget_exceeded")
