@@ -12,16 +12,29 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import subprocess
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable
-
-import os
 
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 from sage.tools.sage_recurse import sage_recurse_origin_node
 
 log = logging.getLogger(__name__)
+
+execute_isolated: Any
+try:
+    from sage.sandbox.isolated_executor import BWRAP_AVAILABLE, execute_isolated
+
+    _SANDBOX_IMPORT_OK = True
+except ImportError as _import_exc:
+    execute_isolated = None
+    BWRAP_AVAILABLE = False
+    _SANDBOX_IMPORT_OK = False
+    _SANDBOX_IMPORT_ERR: ImportError | None = _import_exc
+else:
+    _SANDBOX_IMPORT_ERR = None
 
 # Edge type constants (matching sage-core/src/topology/topology_graph.rs)
 EDGE_CONTROL = 0
@@ -746,29 +759,55 @@ class TopologyRunner:
             f"{code_spec}\n"
         )
 
-        try:
-            from sage.sandbox.isolated_executor import execute_isolated
+        unsafe_raw_exec = os.environ.get("SAGE_UNSAFE_RAW_EXEC") == "1"
+        sandbox_isolated_available = _SANDBOX_IMPORT_OK and BWRAP_AVAILABLE
+
+        if sandbox_isolated_available:
             stdout, stderr, exit_code = execute_isolated(wrapped_code, timeout=30)
-            output = stdout
-        except ImportError:
-            # Fallback: subprocess execution (no bwrap)
-            import subprocess
+        elif unsafe_raw_exec:
+            log.warning(
+                "[TopologyRunner] _execute_code_node falling back to raw subprocess "
+                "(SAGE_UNSAFE_RAW_EXEC=1; isolated_executor %s). "
+                "DO NOT USE IN PRODUCTION.",
+                "missing"
+                if not _SANDBOX_IMPORT_OK
+                else "imported but BWRAP_AVAILABLE=False",
+            )
             try:
                 proc = subprocess.run(
                     [PYTHON, "-c", wrapped_code],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
-                output = proc.stdout
+                stdout = proc.stdout
                 stderr = proc.stderr
                 exit_code = proc.returncode
             except subprocess.TimeoutExpired:
-                output = ""
+                stdout = ""
                 stderr = "TIMEOUT"
                 exit_code = -1
             except (OSError, ValueError) as exc:
-                output = ""
+                stdout = ""
                 stderr = str(exc)
                 exit_code = -1
+        else:
+            from sage.sandbox.errors import SandboxUnavailable
+
+            if _SANDBOX_IMPORT_ERR is not None:
+                raise SandboxUnavailable(
+                    "sage.sandbox.isolated_executor unavailable; refusing to execute "
+                    "topology code node without sandbox. Set SAGE_UNSAFE_RAW_EXEC=1 "
+                    "only for local/dev unsafe raw execution."
+                ) from _SANDBOX_IMPORT_ERR
+            raise SandboxUnavailable(
+                "sage.sandbox.isolated_executor imported but BWRAP_AVAILABLE=False "
+                "(no bwrap binary on this platform). Refusing to execute topology "
+                "code node without isolation. Set SAGE_UNSAFE_RAW_EXEC=1 only for "
+                "local/dev unsafe raw execution."
+            )
+
+        output = stdout
 
         latency_ms = (time.monotonic() - t0) * 1000
 
