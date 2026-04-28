@@ -143,6 +143,9 @@ class TopologyRunner:
         harness_config: Any | None = None,
         agent_loop_factory: Any | None = None,
         cost_tracker: Any | None = None,
+        assigner: Any | None = None,
+        task_domain: str = "",
+        budget_usd: float = 0.0,
     ) -> None:
         self.graph = graph
         self.executor = executor
@@ -168,6 +171,9 @@ class TopologyRunner:
         self.total_cost_usd: float = 0.0
         self._node_costs: dict[int, float] = {}
         self._cost_tracker = cost_tracker
+        self._assigner = assigner
+        self._task_domain = task_domain
+        self._budget_usd = float(budget_usd or 0.0)
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -188,6 +194,40 @@ class TopologyRunner:
             return
         node_cost = float(self._node_costs.pop(node_idx, 0.0) or 0.0)
         self._cost_tracker.record_spend(node_cost)
+
+    def _remaining_budget_usd(self) -> float:
+        """Available budget for the current run, in USD.
+
+        Returns the conservative MIN of:
+        - cost_tracker.remaining (task-level budget authority — exposes inf
+          for unlimited, finite values that hit 0.0 on exhaustion)
+        - budget_usd - total_cost_usd (runner-internal accounting)
+
+        Returns float("inf") only when neither bound is configured.
+
+        cost_tracker.remaining == 0.0 is the correct fail-closed signal,
+        not "unknown" — assign_single_node treats budget_usd as a hard
+        filter and will refuse paid models when 0.0 is passed. That is the
+        intended behavior on a fully-spent budget. Never coerce 0.0 to inf.
+
+        Never pass 0.0 as "unlimited" to assign_single_node; it treats 0.0
+        as a hard filter that rejects every paid model. Unbounded mode uses
+        float("inf").
+        """
+        tracker_remaining: float | None = None
+        if self._cost_tracker is not None and hasattr(self._cost_tracker, "remaining"):
+            try:
+                tracker_remaining = float(self._cost_tracker.remaining)
+            except (AttributeError, TypeError, ValueError):
+                tracker_remaining = None
+
+        internal_remaining = float("inf")
+        if self._budget_usd > 0:
+            internal_remaining = max(self._budget_usd - self.total_cost_usd, 0.0)
+
+        if tracker_remaining is not None:
+            return min(tracker_remaining, internal_remaining)
+        return internal_remaining
 
     @staticmethod
     def _response_cost_usd(response: Any) -> float:
@@ -907,6 +947,89 @@ class TopologyRunner:
 
         return best_var if best_score >= 2 else None
 
+    async def _capability_aware_fallback_generate(
+        self,
+        *,
+        node_idx: int,
+        messages: list[Message],
+        original_config: Any,
+    ) -> tuple[str, float] | None:
+        """Retry a failed node through ModelAssigner + ProviderPool.
+
+        Replaces the legacy connector-order fallback. Candidates must satisfy
+        the graph node's capability requirements, remaining budget, explicit
+        model exclusions, and the provider pool's runtime availability guard.
+        """
+        if self._assigner is None or self._provider_pool is None:
+            return None
+
+        node = self.graph.get_node(node_idx)
+        failed_model_id = (
+            getattr(node, "model_id", "") or getattr(original_config, "model", "") or ""
+        )
+        excluded: set[str] = {failed_model_id} if failed_model_id else set()
+        original_model_id = failed_model_id
+
+        while True:
+            try:
+                fallback_model_id = self._assigner.assign_single_node(
+                    self.graph,
+                    node_idx,
+                    task_domain=self._task_domain,
+                    budget_usd=self._remaining_budget_usd(),
+                    exclude_model_ids=sorted(excluded) or None,
+                    task_system=getattr(node, "system", None),
+                )
+            except ValueError:
+                if original_model_id and hasattr(self.graph, "set_node_model_id"):
+                    try:
+                        self.graph.set_node_model_id(node_idx, original_model_id)
+                    except Exception:  # noqa: BLE001
+                        pass
+                return None
+
+            if (
+                hasattr(self._provider_pool, "is_model_available")
+                and not self._provider_pool.is_model_available(fallback_model_id)
+            ):
+                excluded.add(fallback_model_id)
+                continue
+
+            try:
+                fallback_provider, fallback_config = self._provider_pool.resolve(
+                    fallback_model_id,
+                )
+            except (RuntimeError, ValueError, AttributeError):
+                excluded.add(fallback_model_id)
+                continue
+
+            try:
+                response = await asyncio.wait_for(
+                    fallback_provider.generate(messages=messages, config=fallback_config),
+                    timeout=60.0,
+                )
+            except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as exc:
+                fallback_provider_name = getattr(fallback_config, "provider", "unknown")
+                if hasattr(self._provider_pool, "record_failure"):
+                    try:
+                        self._provider_pool.record_failure(fallback_provider_name, exc)
+                    except Exception:  # noqa: BLE001
+                        pass
+                excluded.add(fallback_model_id)
+                continue
+
+            output = response.content or ""
+            node_cost = self._response_cost_usd(response)
+
+            fallback_provider_name = getattr(fallback_config, "provider", "unknown")
+            if hasattr(self._provider_pool, "record_success"):
+                try:
+                    self._provider_pool.record_success(fallback_provider_name)
+                except Exception:  # noqa: BLE001
+                    pass
+
+            return output, node_cost
+
     async def _execute_node(
         self, node_idx: int, task: str, context_override: str | None = None,
     ) -> str:
@@ -1054,54 +1177,42 @@ class TopologyRunner:
                 provider_name = getattr(config, "provider", "unknown")
                 # Record failure in circuit breaker
                 if self._provider_pool and hasattr(self._provider_pool, "record_failure"):
-                    self._provider_pool.record_failure(provider_name, exc)
+                    try:
+                        self._provider_pool.record_failure(provider_name, exc)
+                    except Exception:  # noqa: BLE001 - telemetry must not mask the real error
+                        pass
                 log.warning(
-                    "[TopologyRunner] node %d (%s) failed with %s provider: %s — retrying with default",
+                    "[TopologyRunner] node %d (%s) failed with %s provider: %s - "
+                    "attempting capability-aware fallback",
                     node_idx, role, provider_name, str(exc)[:150],
                 )
-                # Fallback to first available provider (connector.py = source of truth)
-                if provider is not self._llm:
-                    try:
-                        import os
-                        from sage.providers.connector import get_available_providers
-                        from sage.providers.openai_compat import OpenAICompatProvider
-                        fallback_cfgs = get_available_providers()
-                        fallback_cfg = fallback_cfgs[0] if fallback_cfgs else None
-                        if fallback_cfg and fallback_cfg.get("sdk") != "google-genai":
-                            fallback_provider = OpenAICompatProvider(
-                                api_key=os.environ.get(fallback_cfg["api_key_env"], ""),
-                                base_url=fallback_cfg["base_url"],
-                                provider_name=fallback_cfg["provider"],
-                            )
-                            fallback_model = fallback_cfg.get("default_model", "")
-                            fallback_config = LLMConfig(provider=fallback_cfg["provider"], model=fallback_model)
-                            response = await fallback_provider.generate(
-                                messages=messages,
-                                config=fallback_config,
-                            )
-                        else:
-                            response = await self._llm.generate(
-                                messages=messages,
-                                config=self._config or LLMConfig(provider="default", model="default"),
-                            )
-                        output = response.content or ""
-                        node_cost = self._response_cost_usd(response)
-                        self.total_cost_usd += node_cost
-                        self._node_costs[node_idx] = self._node_costs.get(node_idx, 0.0) + node_cost
-                        log.info(
-                            "[TopologyRunner] node %d (%s) succeeded with fallback (%s)",
-                            node_idx, role, fallback_cfg["provider"] if fallback_cfg else "default",
-                        )
-                    except (RuntimeError, TimeoutError, asyncio.TimeoutError, ConnectionError) as fallback_exc:
-                        log.error(
-                            "[TopologyRunner] node %d (%s) fallback also failed: %s",
-                            node_idx, role, str(fallback_exc)[:150],
-                        )
-                else:
-                    log.error(
-                        "[TopologyRunner] node %d (%s) default provider failed, no fallback: %s",
-                        node_idx, role, str(exc)[:150],
+                # cgpro 2026-04-28 R3 verify "best patch": always attempt the
+                # capability-aware fallback (no `provider is not self._llm`
+                # guard). When assigner+pool are wired, even a default-provider
+                # failure deserves a retry on a different model. When they're
+                # not wired, the helper returns None and we raise.
+                fallback_result = await self._capability_aware_fallback_generate(
+                    node_idx=node_idx,
+                    messages=messages,
+                    original_config=config,
+                )
+                if fallback_result is None:
+                    log.warning(
+                        "[TopologyRunner] node %d (%s) capability-aware fallback exhausted; raising",
+                        node_idx,
+                        role,
                     )
+                    raise
+                output, fallback_cost = fallback_result
+                self.total_cost_usd += fallback_cost
+                self._node_costs[node_idx] = (
+                    self._node_costs.get(node_idx, 0.0) + fallback_cost
+                )
+                log.info(
+                    "[TopologyRunner] node %d (%s) succeeded via capability-aware fallback",
+                    node_idx,
+                    role,
+                )
             self._node_outputs[node_idx] = output
             log.info(
                 "[TopologyRunner] node %d (%s) completed, output %d chars",

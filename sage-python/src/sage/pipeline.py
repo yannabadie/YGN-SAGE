@@ -1652,6 +1652,9 @@ class CognitiveOrchestrationPipeline:
                     axis_hint=ctx.axis_hint,
                     agent_loop_factory=_agent_loop_factory,
                     cost_tracker=getattr(ctx, "cost_tracker", None),
+                    assigner=self.assigner,
+                    task_domain=getattr(ctx, "domain", "") or "",
+                    budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                 )
                 result = await runner.run(ctx.task)
                 # Roll up tool-use telemetry from TopologyRunner → ctx. Without
@@ -1688,6 +1691,9 @@ class CognitiveOrchestrationPipeline:
                         controller=None,  # no controller on retry to prevent loop
                         agent_loop_factory=_agent_loop_factory,
                         cost_tracker=getattr(ctx, "cost_tracker", None),
+                        assigner=self.assigner,
+                        task_domain=getattr(ctx, "domain", "") or "",
+                        budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                     )
                     result = await runner2.run(ctx.task)
                     # Prefer the post-reroute telemetry (it's the attempt that
@@ -1768,6 +1774,9 @@ class CognitiveOrchestrationPipeline:
                                 provider_pool=self.provider_pool,
                                 agent_loop_factory=_agent_loop_factory,
                                 cost_tracker=getattr(ctx, "cost_tracker", None),
+                                assigner=self.assigner,
+                                task_domain=getattr(ctx, "domain", "") or "",
+                                budget_usd=float(getattr(ctx, "budget", 0.0) or 0.0),
                             )
                             retry_result = await runner3.run(ctx.task)
                             if retry_result:
