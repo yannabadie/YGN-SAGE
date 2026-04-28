@@ -1,0 +1,48 @@
+{
+  "_doc": "Golden JSON fixture for state_applied event (R6 StateCore). ONLY emitted when SAGE_STATECORE='1'. Pinned by tests/test_runtime_event_contracts.py.",
+  "schema_version": "1.0",
+  "event_type": "state_applied",
+  "source_component": "topology_runner",
+  "_required_always": [
+    "schema_version",
+    "run_id",
+    "trace_id",
+    "parent_event_id",
+    "seq",
+    "timestamp_ns",
+    "event_type",
+    "source_component",
+    "task_hash",
+    "payload_hash",
+    "redaction_state",
+    "target_node_id",
+    "source_node_ids",
+    "before_version",
+    "after_version",
+    "delta_count",
+    "conflict_count",
+    "applied",
+    "invalidated_assumption_ids"
+  ],
+  "_field_types": {
+    "target_node_id": "str",
+    "source_node_ids": "list[str]",
+    "before_version": "int (>= 0)",
+    "after_version": "int (>= before_version)",
+    "delta_count": "int (>= 0)",
+    "conflict_count": "int (>= 0)",
+    "applied": "bool",
+    "invalidated_assumption_ids": "list[str]"
+  },
+  "_invariants": [
+    "applied=True implies after_version >= before_version (== if all deltas empty)",
+    "applied=False implies after_version == before_version (frame unchanged on conflict)",
+    "applied=False implies conflict_count > 0",
+    "source_node_ids sorted ascending lexicographically",
+    "invalidated_assumption_ids reflects assumptions removed in this batch"
+  ],
+  "_notes": [
+    "MUST NEVER appear in OFF-mode JSONL (byte-identical R5 schema guarantee).",
+    "applied: bool was added in cgpro 2026-04-28 R6 verify schema correction — disambiguates 'accepted no-op' (applied=True, conflicts=()) from 'blocked by conflict' (applied=False, conflicts non-empty)."
+  ]
+}
