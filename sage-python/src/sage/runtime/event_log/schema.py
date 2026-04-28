@@ -11,6 +11,7 @@ EVENT_TYPES = (
     "node_started",
     "node_completed",
     "controller_decision",
+    "state_applied",
     "failure",
     "budget",
     "final_result",

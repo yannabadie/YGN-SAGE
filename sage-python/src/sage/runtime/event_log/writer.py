@@ -20,6 +20,7 @@ from sage.runtime.event_log.events import (
     _NodeCompleted,
     _NodeStarted,
     _RoutingDecision,
+    _StateApplied,
     _TaskStarted,
     _TopologySelected,
 )
@@ -221,6 +222,7 @@ class RuntimeEventLog:
         provider_id: str,
         predecessor_ids: tuple[str, ...],
         edge_ids: tuple[str, ...],
+        predecessors_by_channel: dict[str, tuple[str, ...]] | None = None,
     ) -> None:
         predecessors = tuple(sorted(predecessor_ids))
         edges = tuple(sorted(edge_ids))
@@ -234,6 +236,11 @@ class RuntimeEventLog:
             "predecessor_ids": list(predecessors),
             "edge_ids": list(edges),
         }
+        if predecessors_by_channel is not None:
+            payload["predecessors_by_channel"] = {
+                key: list(values)
+                for key, values in sorted(predecessors_by_channel.items())
+            }
         self._emit(
             _NodeStarted,
             "node_started",
@@ -247,6 +254,45 @@ class RuntimeEventLog:
             provider_id=provider_id,
             predecessor_ids=predecessors,
             edge_ids=edges,
+        )
+
+    def emit_state_applied(
+        self,
+        *,
+        target_node_id: str,
+        source_node_ids: tuple[str, ...],
+        before_version: int,
+        after_version: int,
+        delta_count: int,
+        conflict_count: int,
+        applied: bool,
+        invalidated_assumption_ids: tuple[str, ...] = (),
+    ) -> None:
+        sources = tuple(source_node_ids)
+        invalidated = tuple(invalidated_assumption_ids)
+        payload = {
+            "target_node_id": target_node_id,
+            "source_node_ids": list(sources),
+            "before_version": before_version,
+            "after_version": after_version,
+            "delta_count": delta_count,
+            "conflict_count": conflict_count,
+            "applied": applied,
+            "invalidated_assumption_ids": list(invalidated),
+        }
+        self._emit(
+            _StateApplied,
+            "state_applied",
+            "topology_runner",
+            payload=payload,
+            target_node_id=target_node_id,
+            source_node_ids=sources,
+            before_version=before_version,
+            after_version=after_version,
+            delta_count=delta_count,
+            conflict_count=conflict_count,
+            applied=applied,
+            invalidated_assumption_ids=invalidated,
         )
 
     def emit_node_completed(

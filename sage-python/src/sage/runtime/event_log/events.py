@@ -97,6 +97,18 @@ class _ControllerDecision(_EventCore):
 
 
 @dataclass(frozen=True)
+class _StateApplied(_EventCore):
+    target_node_id: str = ""
+    source_node_ids: tuple[str, ...] = ()
+    before_version: int = 0
+    after_version: int = 0
+    delta_count: int = 0
+    conflict_count: int = 0
+    applied: bool = True
+    invalidated_assumption_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class _Failure(_EventCore):
     kind: str = ""
     error_type: str = ""

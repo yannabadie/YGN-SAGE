@@ -20,6 +20,7 @@ from typing import Any, AsyncIterator, Callable
 from sage._python import PYTHON
 from sage.llm.base import LLMConfig, LLMProvider, Message, Role
 from sage.runtime.event_log import RuntimeEventLog
+from sage.runtime.state import StateApplyResult, StateDelta, StateFrame, apply_deltas
 from sage.tools.sage_recurse import sage_recurse_origin_node
 
 log = logging.getLogger(__name__)
@@ -120,6 +121,76 @@ def _is_planner_role(role: str) -> bool:
     return any(kw in rl for kw in _PLANNER_ROLE_KEYWORDS)
 
 
+def _edge_type_name(edge_type: Any) -> str:
+    if edge_type == EDGE_CONTROL:
+        return "control"
+    if edge_type == EDGE_MESSAGE:
+        return "message"
+    if edge_type == EDGE_STATE:
+        return "state"
+    return str(edge_type).strip().lower()
+
+
+def _partition_incoming_edges(
+    graph: Any,
+    node_idx: int,
+    *,
+    legacy_mode: bool,
+) -> tuple[list[int], list[int], list[int]]:
+    """Return incoming (control_preds, message_preds, state_preds) via get_edges()."""
+    try:
+        edges = graph.get_edges()
+    except AttributeError as exc:
+        if legacy_mode:
+            log.warning(
+                "topology.runner: graph.get_edges() unavailable in legacy mode; "
+                "falling back to get_predecessors() for message context",
+            )
+            try:
+                return [], list(graph.get_predecessors(node_idx)), []
+            except (AttributeError, Exception):
+                return [], [], []
+        raise ValueError("StateCore requires graph.get_edges() for edge partitioning") from exc
+
+    control_preds: list[int] = []
+    message_preds: list[int] = []
+    state_preds: list[int] = []
+    for edge in edges:
+        try:
+            src, dst, edge_type = edge
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid edge tuple for node {node_idx}: {edge!r}") from exc
+        if int(dst) != node_idx:
+            continue
+
+        edge_type_name = _edge_type_name(edge_type)
+        src_idx = int(src)
+        if edge_type_name == "control":
+            control_preds.append(src_idx)
+            if legacy_mode:
+                message_preds.append(src_idx)
+        elif edge_type_name == "message":
+            message_preds.append(src_idx)
+        elif edge_type_name == "state":
+            state_preds.append(src_idx)
+            if legacy_mode:
+                message_preds.append(src_idx)
+        elif legacy_mode:
+            log.warning(
+                "topology.runner: unknown edge type %r for %s->%s in legacy mode; "
+                "treating as message context",
+                edge_type,
+                src,
+                dst,
+            )
+            message_preds.append(src_idx)
+        else:
+            raise ValueError(
+                f"unknown edge type {edge_type!r} for incoming edge {src}->{dst}"
+            )
+    return control_preds, message_preds, state_preds
+
+
 class TopologyRunner:
     """Execute a TopologyGraph as a real multi-agent system.
 
@@ -191,6 +262,10 @@ class TopologyRunner:
         self._budget_usd = float(budget_usd or 0.0)
         self._event_log = event_log
         self._node_event_costs: dict[int, float] = {}
+        self._statecore_enabled = os.environ.get("SAGE_STATECORE") == "1"
+        self._node_state_deltas: dict[int, StateDelta] = {}
+        self._node_state_frames: dict[int, StateFrame] = {}
+        self._node_state_apply_results: dict[int, StateApplyResult] = {}
 
         # Meta-Harness (arXiv 2603.28052): optional harness config overlay.
         # Loaded from config/harness.json at boot. Overrides context budget,
@@ -295,19 +370,11 @@ class TopologyRunner:
             return output
         return output[:budget] + "..."
 
-    def _gather_predecessor_context(self, node_idx: int) -> str:
-        """Collect outputs from direct predecessors of node_idx only.
-
-        Uses Rust TopologyGraph.get_predecessors() for correct DAG traversal.
-        Falls back to all completed nodes if get_predecessors unavailable.
-        Deduplicates near-identical outputs (S2-MAD arXiv 2502.04790).
-        """
-        predecessor_indices: list[int] = []
-        try:
-            predecessor_indices = self.graph.get_predecessors(node_idx)
-        except (AttributeError, Exception):
-            return self._gather_all_context()
-
+    def _format_predecessor_context(
+        self,
+        node_idx: int,
+        predecessor_indices: list[int],
+    ) -> str:
         budget = self._context_budget_per_predecessor(len(predecessor_indices), node_idx)
 
         parts_with_roles: list[tuple[str, str]] = []
@@ -373,6 +440,172 @@ class TopologyRunner:
             )
         return ""
 
+    def _gather_predecessor_context(self, node_idx: int) -> str:
+        """Collect outputs from direct predecessors of node_idx only.
+
+        Uses Rust TopologyGraph.get_predecessors() for correct DAG traversal.
+        Falls back to all completed nodes if get_predecessors unavailable.
+        Deduplicates near-identical outputs (S2-MAD arXiv 2502.04790).
+        """
+        try:
+            predecessor_indices = self.graph.get_predecessors(node_idx)
+        except (AttributeError, Exception):
+            return self._gather_all_context()
+        return self._format_predecessor_context(node_idx, list(predecessor_indices))
+
+    def _partition_incoming_edges(self, node_idx: int) -> tuple[list[int], list[int], list[int]]:
+        legacy_mode = not self._statecore_enabled
+        try:
+            return _partition_incoming_edges(
+                self.graph,
+                node_idx,
+                legacy_mode=legacy_mode,
+            )
+        except ValueError as exc:
+            if self._statecore_enabled and self._event_log is not None:
+                self._event_log.emit_failure(
+                    kind="statecore_edge_type",
+                    error_type=type(exc).__name__,
+                    message=str(exc),
+                    node_id=str(node_idx),
+                )
+            raise
+
+    def _predecessors_by_channel(self, node_idx: int) -> dict[str, tuple[str, ...]]:
+        control_preds, message_preds, state_preds = self._partition_incoming_edges(node_idx)
+        return {
+            "control": tuple(str(idx) for idx in control_preds),
+            "message": tuple(str(idx) for idx in message_preds),
+            "state": tuple(str(idx) for idx in state_preds),
+        }
+
+    def _state_task_id(self) -> str:
+        if self._event_log is not None:
+            return self._event_log.run_id
+        return self._runtime_topology_id() or "topology"
+
+    def _base_state_frame_for(self, state_preds: list[int]) -> StateFrame:
+        for pred_idx in sorted(state_preds, key=lambda value: str(value)):
+            frame = self._node_state_frames.get(pred_idx)
+            if frame is not None:
+                return frame
+        return StateFrame(task_id=self._state_task_id())
+
+    def _emit_state_applied(
+        self,
+        *,
+        node_idx: int,
+        state_preds: list[int],
+        result: StateApplyResult,
+    ) -> None:
+        if self._event_log is None:
+            return
+        self._event_log.emit_state_applied(
+            target_node_id=str(node_idx),
+            source_node_ids=tuple(str(idx) for idx in state_preds),
+            before_version=result.before_version,
+            after_version=result.after.version,
+            delta_count=len(state_preds),
+            conflict_count=len(result.conflicts),
+            applied=result.applied,
+            invalidated_assumption_ids=tuple(result.after.invalidated_assumptions),
+        )
+
+    def _assemble_node_inputs(self, node_idx: int) -> tuple[str, StateFrame | None, bool]:
+        """Return message context, state frame, and control readiness for a node."""
+        if not self._statecore_enabled:
+            return self._gather_predecessor_context(node_idx), None, True
+
+        _control_preds, message_preds, state_preds = self._partition_incoming_edges(node_idx)
+        message_text = self._format_predecessor_context(node_idx, message_preds)
+        state_frame: StateFrame | None = None
+
+        if state_preds:
+            base_frame = self._base_state_frame_for(state_preds)
+            deltas = tuple(
+                (str(src), self._node_state_deltas.get(src, StateDelta()))
+                for src in state_preds
+            )
+            result = apply_deltas(base_frame, deltas)
+            self._node_state_apply_results[node_idx] = result
+            self._node_state_frames[node_idx] = result.after
+            self._emit_state_applied(
+                node_idx=node_idx,
+                state_preds=state_preds,
+                result=result,
+            )
+            state_frame = result.after
+        else:
+            self._node_state_apply_results.pop(node_idx, None)
+
+        return message_text, state_frame, True
+
+    def _render_state_frame(self, state_frame: StateFrame | None) -> str:
+        if state_frame is None:
+            return ""
+        import json
+
+        lines = [
+            "StateCore frame:",
+            f"task_id: {state_frame.task_id}",
+            f"version: {state_frame.version}",
+            f"confidence: {state_frame.confidence}",
+        ]
+        if state_frame.objective:
+            lines.append(f"objective: {state_frame.objective}")
+        if state_frame.constraints:
+            lines.append("constraints:")
+            lines.extend(f"- {value}" for value in state_frame.constraints)
+        if state_frame.assumptions:
+            lines.append("assumptions:")
+            lines.extend(f"- {value}" for value in state_frame.assumptions)
+        if state_frame.invalidated_assumptions:
+            lines.append("invalidated_assumptions:")
+            lines.extend(f"- {value}" for value in state_frame.invalidated_assumptions)
+        if state_frame.entities:
+            lines.append("entities:")
+            for entity_id, fields in sorted(state_frame.entities.items()):
+                payload = json.dumps(dict(fields), sort_keys=True, default=str)
+                lines.append(f"- {entity_id}: {payload}")
+        if state_frame.decisions:
+            lines.append("decisions:")
+            for decision in state_frame.decisions:
+                lines.append(f"- {json.dumps(dict(decision), sort_keys=True, default=str)}")
+        if state_frame.tool_facts:
+            lines.append("tool_facts:")
+            for fact in state_frame.tool_facts:
+                lines.append(f"- {json.dumps(dict(fact), sort_keys=True, default=str)}")
+        if state_frame.open_questions:
+            lines.append("open_questions:")
+            lines.extend(f"- {value}" for value in state_frame.open_questions)
+        return "\n".join(lines)
+
+    def _prepare_statecore_node(
+        self,
+        node_idx: int,
+        open_nodes: dict[int, str],
+    ) -> tuple[str, StateFrame | None, bool]:
+        message_text, state_frame, control_ready = self._assemble_node_inputs(node_idx)
+        apply_result = self._node_state_apply_results.get(node_idx)
+        if apply_result is not None and not apply_result.applied:
+            self._runtime_emit_failure(
+                kind="state_conflict",
+                error_type="StateConflict",
+                message="; ".join(apply_result.conflicts),
+                open_nodes=open_nodes,
+                node_idx=node_idx,
+            )
+            try:
+                self.executor.mark_skipped(node_idx)
+            except (AttributeError, Exception):
+                pass
+            try:
+                self.executor.mark_completed(node_idx)
+            except (AttributeError, Exception):
+                pass
+            return message_text, state_frame, False
+        return message_text, state_frame, control_ready
+
     def _maybe_planner_injection(self, node_idx: int, system_prompt: str) -> str:
         """Optionally prepend upstream planner output to this node's system_prompt.
 
@@ -402,10 +635,13 @@ class TopologyRunner:
         if _is_planner_role(current_role):
             return system_prompt
 
-        try:
-            predecessors = self.graph.get_predecessors(node_idx)
-        except (AttributeError, Exception):
-            return system_prompt
+        if self._statecore_enabled:
+            _control_preds, predecessors, _state_preds = self._partition_incoming_edges(node_idx)
+        else:
+            try:
+                predecessors = self.graph.get_predecessors(node_idx)
+            except (AttributeError, Exception):
+                return system_prompt
 
         for pred_idx in predecessors:
             pred_node = self.graph.get_node(pred_idx)
@@ -542,7 +778,11 @@ class TopologyRunner:
         return [(t, r) for t, r, _ in deduplicated]
 
     async def _execute_node_via_agent_loop(
-        self, node_idx: int, task: str, context_override: str | None = None,
+        self,
+        node_idx: int,
+        task: str,
+        context_override: str | None = None,
+        state_frame: StateFrame | None = None,
     ) -> str:
         """Execute an LLM node via per-node AgentLoop (Phase 2).
 
@@ -658,18 +898,20 @@ class TopologyRunner:
         loop = self._agent_loop_factory(**_factory_kwargs)
 
         # Build task with predecessor context (H7)
-        context = (
-            context_override
-            if context_override is not None
-            else self._gather_predecessor_context(node_idx)
-        )
-        if context:
-            full_task = (
-                f"## Previous agent output:\n{context}\n\n"
-                f"## Task:\n{task}"
-            )
+        if context_override is not None:
+            context = context_override
+        elif self._statecore_enabled:
+            context, state_frame, _control_ready = self._assemble_node_inputs(node_idx)
         else:
-            full_task = task
+            context = self._gather_predecessor_context(node_idx)
+        state_block = self._render_state_frame(state_frame)
+        sections: list[str] = []
+        if context:
+            sections.append(f"## Previous agent output:\n{context}")
+        if state_block:
+            sections.append(f"## StateCore frame:\n{state_block}")
+        sections.append(f"## Task:\n{task}" if sections else task)
+        full_task = "\n\n".join(sections)
 
         # Execute. Before Apr 18 2026 the agent-loop path had no provider
         # circuit-breaker wiring: if the per-node loop raised because of
@@ -730,7 +972,11 @@ class TopologyRunner:
         return result
 
     async def _execute_code_node(
-        self, node_idx: int, task: str, context_override: str | None = None,
+        self,
+        node_idx: int,
+        task: str,
+        context_override: str | None = None,
+        state_frame: StateFrame | None = None,
     ) -> str:
         """Execute a code node in sandbox (HyEvo v^Code deterministic execution).
 
@@ -749,11 +995,12 @@ class TopologyRunner:
             log.error("Code node %d (%s) has no code_spec", node_idx, role)
             return f"ERROR: code node {node_idx} has no code_spec"
 
-        context = (
-            context_override
-            if context_override is not None
-            else self._gather_predecessor_context(node_idx)
-        )
+        if context_override is not None:
+            context = context_override
+        elif self._statecore_enabled:
+            context, state_frame, _control_ready = self._assemble_node_inputs(node_idx)
+        else:
+            context = self._gather_predecessor_context(node_idx)
 
         t0 = time.monotonic()
 
@@ -761,6 +1008,7 @@ class TopologyRunner:
         wrapped_code = (
             f"_TASK = {json.dumps(task[:2000])}\n"
             f"_CONTEXT = {json.dumps(context[:5000])}\n"
+            f"_STATECORE = {json.dumps(self._render_state_frame(state_frame)[:5000])}\n"
             f"{code_spec}\n"
         )
 
@@ -831,7 +1079,11 @@ class TopologyRunner:
         return output
 
     async def _execute_solver_node(
-        self, node_idx: int, task: str, context_override: str | None = None,
+        self,
+        node_idx: int,
+        task: str,
+        context_override: str | None = None,
+        state_frame: StateFrame | None = None,
     ) -> str:
         """Execute a formal solver node — try Rust solver, fall back to LLM.
 
@@ -849,11 +1101,12 @@ class TopologyRunner:
         node = self.graph.get_node(node_idx)
         role = getattr(node, "role", f"node-{node_idx}")
 
-        context = (
-            context_override
-            if context_override is not None
-            else self._gather_predecessor_context(node_idx)
-        )
+        if context_override is not None:
+            context = context_override
+        elif self._statecore_enabled:
+            context, state_frame, _control_ready = self._assemble_node_inputs(node_idx)
+        else:
+            context = self._gather_predecessor_context(node_idx)
 
         t0 = _time.monotonic()
 
@@ -1075,7 +1328,11 @@ class TopologyRunner:
             return output, node_cost
 
     async def _execute_node(
-        self, node_idx: int, task: str, context_override: str | None = None,
+        self,
+        node_idx: int,
+        task: str,
+        context_override: str | None = None,
+        state_frame: StateFrame | None = None,
     ) -> str:
         """Execute a single topology node — LLM call or code sandbox.
 
@@ -1103,19 +1360,34 @@ class TopologyRunner:
             # HyEvo code node dispatch: deterministic sandbox execution
             node_type = getattr(node, "node_type", "llm")
             if node_type == "code":
-                result = await self._execute_code_node(node_idx, task, context_override)
+                result = await self._execute_code_node(
+                    node_idx,
+                    task,
+                    context_override,
+                    state_frame,
+                )
                 self._record_spend_for_node(node_idx)
                 return result
 
             # Formal solver node: parse equations from predecessor, solve via Rust
             if node_type == "solver" or getattr(node, "role", "") == "solver":
-                result = await self._execute_solver_node(node_idx, task, context_override)
+                result = await self._execute_solver_node(
+                    node_idx,
+                    task,
+                    context_override,
+                    state_frame,
+                )
                 self._record_spend_for_node(node_idx)
                 return result
 
             # Phase 2: LLM nodes use agent_loop when factory available
             if self._agent_loop_factory:
-                result = await self._execute_node_via_agent_loop(node_idx, task, context_override)
+                result = await self._execute_node_via_agent_loop(
+                    node_idx,
+                    task,
+                    context_override,
+                    state_frame,
+                )
                 self._record_spend_for_node(node_idx)
                 return result
 
@@ -1154,7 +1426,20 @@ class TopologyRunner:
                 Message(role=Role.SYSTEM, content=system_prompt),
             ]
 
-            context = context_override if context_override is not None else self._gather_predecessor_context(node_idx)
+            if context_override is not None:
+                context = context_override
+            elif self._statecore_enabled:
+                context, state_frame, _control_ready = self._assemble_node_inputs(node_idx)
+            else:
+                context = self._gather_predecessor_context(node_idx)
+            state_block = self._render_state_frame(state_frame)
+            if state_block:
+                messages.append(
+                    Message(
+                        role=Role.SYSTEM,
+                        content=state_block,
+                    )
+                )
             if context:
                 messages.append(Message(
                     role=Role.SYSTEM,
@@ -1446,6 +1731,11 @@ class TopologyRunner:
             return
         node = self.graph.get_node(node_idx)
         open_nodes[node_idx] = role
+        predecessors_by_channel = (
+            self._predecessors_by_channel(node_idx)
+            if self._statecore_enabled
+            else None
+        )
         self._event_log.emit_node_started(
             topology_id=self._runtime_topology_id(),
             node_id=str(node_idx),
@@ -1455,6 +1745,7 @@ class TopologyRunner:
             provider_id=self._runtime_provider_id_for_node(node),
             predecessor_ids=self._runtime_predecessor_ids(node_idx),
             edge_ids=self._runtime_edge_ids(node_idx),
+            predecessors_by_channel=predecessors_by_channel,
         )
 
     def _runtime_emit_node_completed(
@@ -1571,12 +1862,25 @@ class TopologyRunner:
                 node_idx = ready[0]
                 node = self.graph.get_node(node_idx)
                 role = getattr(node, "role", f"node-{node_idx}")
+                context_override: str | None = None
+                state_frame: StateFrame | None = None
+                if self._statecore_enabled:
+                    context_override, state_frame, should_execute = (
+                        self._prepare_statecore_node(node_idx, open_nodes)
+                    )
+                    if not should_execute:
+                        continue
                 self._runtime_emit_node_started(node_idx, role, open_nodes)
                 yield _NodeStartEvent(node_idx=node_idx, role=role)
 
                 t0 = _time.monotonic()
                 try:
-                    result = await self._execute_node(node_idx, task)
+                    result = await self._execute_node(
+                        node_idx,
+                        task,
+                        context_override=context_override,
+                        state_frame=state_frame,
+                    )
                 except Exception as exc:
                     self._runtime_emit_failure(
                         kind="provider_error",
@@ -1630,6 +1934,7 @@ class TopologyRunner:
                 self._node_exec_count[node_idx] = (
                     self._node_exec_count.get(node_idx, 0) + 1
                 )
+                self._node_state_deltas.setdefault(node_idx, StateDelta())
                 last_output = self._node_outputs.get(node_idx, result)
                 nodes_executed += 1
                 self._runtime_emit_node_completed(
@@ -1647,26 +1952,57 @@ class TopologyRunner:
                     model_id=getattr(node, "model_id", "") or "",
                 )
             else:
-                for idx in ready:
-                    node = self.graph.get_node(idx)
-                    role = getattr(node, "role", f"node-{idx}")
-                    self._runtime_emit_node_started(idx, role, open_nodes)
-                    yield _NodeStartEvent(
-                        node_idx=idx,
-                        role=role,
-                    )
+                prepared_inputs: dict[int, tuple[str | None, StateFrame | None]] = {}
+                if self._statecore_enabled:
+                    ready_to_execute: list[int] = []
+                    for idx in ready:
+                        context_override, state_frame, should_execute = (
+                            self._prepare_statecore_node(idx, open_nodes)
+                        )
+                        if should_execute:
+                            ready_to_execute.append(idx)
+                            prepared_inputs[idx] = (context_override, state_frame)
+                    if not ready_to_execute:
+                        continue
+                    for idx in ready_to_execute:
+                        node = self.graph.get_node(idx)
+                        role = getattr(node, "role", f"node-{idx}")
+                        self._runtime_emit_node_started(idx, role, open_nodes)
+                        yield _NodeStartEvent(
+                            node_idx=idx,
+                            role=role,
+                        )
+                    coros = [
+                        self._execute_node(
+                            idx,
+                            task,
+                            context_override=prepared_inputs[idx][0],
+                            state_frame=prepared_inputs[idx][1],
+                        )
+                        for idx in ready_to_execute
+                    ]
+                else:
+                    ready_to_execute = list(ready)
+                    for idx in ready_to_execute:
+                        node = self.graph.get_node(idx)
+                        role = getattr(node, "role", f"node-{idx}")
+                        self._runtime_emit_node_started(idx, role, open_nodes)
+                        yield _NodeStartEvent(
+                            node_idx=idx,
+                            role=role,
+                        )
 
-                ctx_snapshot = self._gather_all_context()
-                coros = [
-                    self._execute_node(idx, task, context_override=ctx_snapshot)
-                    for idx in ready
-                ]
+                    ctx_snapshot = self._gather_all_context()
+                    coros = [
+                        self._execute_node(idx, task, context_override=ctx_snapshot)
+                        for idx in ready_to_execute
+                    ]
                 t0_par = _time.monotonic()
                 results = await asyncio.gather(*coros, return_exceptions=True)
                 par_latency_ms = (_time.monotonic() - t0_par) * 1000
 
                 first_exc: BaseException | None = None
-                for idx, parallel_result in zip(ready, results):
+                for idx, parallel_result in zip(ready_to_execute, results):
                     if isinstance(parallel_result, BaseException):
                         if first_exc is None:
                             first_exc = parallel_result
@@ -1678,7 +2014,7 @@ class TopologyRunner:
                             node_idx=idx,
                         )
                 if first_exc is not None:
-                    for idx, parallel_result in zip(ready, results):
+                    for idx, parallel_result in zip(ready_to_execute, results):
                         if isinstance(parallel_result, BaseException):
                             continue
                         node = self.graph.get_node(idx)
@@ -1699,7 +2035,7 @@ class TopologyRunner:
                     return
 
                 if self._is_over_budget():
-                    for idx in ready:
+                    for idx in ready_to_execute:
                         self.executor.mark_completed(idx)
                         self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
                     self._runtime_emit_budget_exceeded(open_nodes)
@@ -1709,7 +2045,7 @@ class TopologyRunner:
                 parallel_outputs = [str(parallel_result) for parallel_result in results]
                 updated_results: list[str] = []
                 reroute_reason: str | None = None
-                for idx, parallel_result in zip(ready, parallel_outputs):
+                for idx, parallel_result in zip(ready_to_execute, parallel_outputs):
                     updated_result, decision = await self._apply_controller_decision(
                         node_idx=idx,
                         result=parallel_result,
@@ -1738,9 +2074,10 @@ class TopologyRunner:
                     yield _RerouteEvent(reason=reroute_reason)
                     return
 
-                for idx, output in zip(ready, updated_results):
+                for idx, output in zip(ready_to_execute, updated_results):
                     self.executor.mark_completed(idx)
                     self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
+                    self._node_state_deltas.setdefault(idx, StateDelta())
                     node = self.graph.get_node(idx)
                     last_output = self._node_outputs.get(idx, output)
                     nodes_executed += 1
