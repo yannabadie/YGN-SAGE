@@ -620,32 +620,6 @@ class TopologyRunner:
             node_idx, role, len(result), int(getattr(loop, "tool_call_count", 0) or 0),
         )
 
-        # Inter-node quality signal (VPRMs pattern, arXiv 2601.17223):
-        # evaluate output quality and let controller decide next action.
-        if self._controller and result:
-            try:
-                node_ctx = {
-                    "node_idx": node_idx,
-                    "latency_ms": 0.0,
-                    "model_id": getattr(node, "model_id", ""),
-                    "output_length": len(result),
-                    "axis_hint": self._axis_hint,
-                }
-                decision = self._controller.evaluate_and_decide(
-                    node_idx=node_idx,
-                    result=result,
-                    task=task,
-                    topology=self.graph,
-                    ctx=node_ctx,
-                )
-                if decision and hasattr(decision, 'action'):
-                    log.debug(
-                        "[TopologyRunner] controller decision for node %d: %s",
-                        node_idx, decision.action,
-                    )
-            except Exception as exc:
-                log.debug("[TopologyRunner] controller evaluation failed: %s", exc)
-
         return result
 
     async def _execute_code_node(
