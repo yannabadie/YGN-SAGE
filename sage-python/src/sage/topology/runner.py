@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Callable
+from dataclasses import dataclass
+from typing import Any, AsyncIterator, Callable
 
 import os
 
@@ -34,6 +35,54 @@ EDGE_STATE = 2
 # predecessor context entirely (without fabricating a replacement prompt).
 _SENTINEL_PREFIX = "[sage: agent exited after"
 _BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
+
+
+@dataclass(frozen=True)
+class _NodeStartEvent:
+    node_idx: int
+    role: str
+
+
+@dataclass(frozen=True)
+class _NodeDoneEvent:
+    node_idx: int
+    role: str
+    output: str
+    latency_ms: float
+    model_id: str
+
+
+@dataclass(frozen=True)
+class _ControllerDecisionEvent:
+    node_idx: int
+    action: str
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class _RerouteEvent:
+    reason: str = ""
+
+
+@dataclass(frozen=True)
+class _BudgetExceededEvent:
+    reason: str = "budget exceeded"
+
+
+@dataclass(frozen=True)
+class _TopologyDoneEvent:
+    final_output: str
+    node_count: int
+
+
+_RunEvent = (
+    _NodeStartEvent
+    | _NodeDoneEvent
+    | _ControllerDecisionEvent
+    | _RerouteEvent
+    | _BudgetExceededEvent
+    | _TopologyDoneEvent
+)
 
 # Roles recognized as "planner" for the optional planner-output injection
 # experiment. Kept in sync with topology/role_prompts.py _PLANNER aliases.
@@ -1105,6 +1154,236 @@ class TopologyRunner:
         except (RuntimeError, TimeoutError, ValueError) as exc:
             log.warning("Sub-agent spawn failed: %s", exc)
 
+    async def _apply_controller_decision(
+        self,
+        *,
+        node_idx: int,
+        result: str,
+        task: str,
+        latency_ms: float,
+        parallel_outputs: list[str] | None,
+    ) -> tuple[str, Any | None]:
+        """Run the controller for one node and apply its decision.
+
+        Calls self._controller.evaluate_and_decide ONCE. Handles all 5
+        actions: upgrade_model, spawn_subagent, reroute_topology, prune_node,
+        open_gate. Returns (possibly-updated result, raw decision or None).
+        Caller is responsible for yielding the _ControllerDecisionEvent and
+        deciding whether to early-return on reroute (look at decision.action).
+        Does NOT mark the node completed -- caller does that.
+        """
+        if not self._controller:
+            return result, None
+
+        node = self.graph.get_node(node_idx)
+        node_ctx = {
+            "node_idx": node_idx,
+            "latency_ms": latency_ms,
+            "model_id": getattr(node, "model_id", ""),
+            "output_length": len(result),
+            "axis_hint": self._axis_hint,
+        }
+        decision = self._controller.evaluate_and_decide(
+            node_idx,
+            result,
+            task,
+            self.graph,
+            node_ctx,
+            parallel_outputs=parallel_outputs,
+        )
+
+        if (
+            self._approval_callback
+            and decision.action in ("upgrade_model", "reroute_topology", "open_gate")
+        ):
+            try:
+                approved = await self._approval_callback(decision)
+                if not approved:
+                    log.info("HITL rejected %s for node %d", decision.action, node_idx)
+                    decision = type(decision)(action="continue", target_node=node_idx)
+            except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
+                log.warning("HITL callback failed: %s, proceeding", exc)
+
+        if decision.action == "upgrade_model":
+            result = await self._retry_with_upgrade(node_idx, decision, task)
+            self._node_outputs[node_idx] = result
+        elif decision.action == "spawn_subagent":
+            await self._spawn_sub(node_idx, decision, task)
+        elif decision.action == "reroute_topology":
+            pass
+        elif decision.action == "prune_node":
+            try:
+                self.executor.mark_skipped(decision.target_node)
+            except (AttributeError, Exception):
+                pass  # Executor may not support skip
+            log.info("Node %d pruned by controller", decision.target_node)
+        elif decision.action == "open_gate":
+            target = decision.gate_target
+            source = decision.gate_source
+            if target is not None and source is not None:
+                count = self._node_exec_count.get(target, 1)
+                if count < self._max_rounds:
+                    self.executor.open_gate(self.graph, source, target)
+                    self.executor.reset_node(target)
+                    self._node_exec_count[target] = count + 1
+                    log.info(
+                        "Multi-turn: reopened gate %d->%d (round %d/%d)",
+                        source,
+                        target,
+                        count + 1,
+                        self._max_rounds,
+                    )
+                else:
+                    log.info(
+                        "Multi-turn: max rounds reached for node %d (%d/%d)",
+                        target,
+                        count,
+                        self._max_rounds,
+                    )
+
+        return result, decision
+
+    async def _run_core(self, task: str) -> AsyncIterator[_RunEvent]:
+        """Central executor loop yielding private RunEvents.
+
+        All 3 public methods (run, run_traced, run_stream) consume this
+        generator and translate events to their respective return shapes.
+        """
+        import time as _time
+
+        last_output = ""
+        nodes_executed = 0
+
+        while not self.executor.is_done():
+            if self._is_over_budget():
+                yield _BudgetExceededEvent()
+                return
+
+            ready = self.executor.next_ready(self.graph)
+            if not ready:
+                break
+
+            if len(ready) == 1:
+                node_idx = ready[0]
+                node = self.graph.get_node(node_idx)
+                role = getattr(node, "role", f"node-{node_idx}")
+                yield _NodeStartEvent(node_idx=node_idx, role=role)
+
+                t0 = _time.monotonic()
+                result = await self._execute_node(node_idx, task)
+                latency_ms = (_time.monotonic() - t0) * 1000
+
+                if result == _BUDGET_EXCEEDED_RESULT:
+                    yield _BudgetExceededEvent()
+                    return
+
+                if self._is_over_budget():
+                    self.executor.mark_completed(node_idx)
+                    self._node_exec_count[node_idx] = (
+                        self._node_exec_count.get(node_idx, 0) + 1
+                    )
+                    yield _BudgetExceededEvent()
+                    return
+
+                result, decision = await self._apply_controller_decision(
+                    node_idx=node_idx,
+                    result=result,
+                    task=task,
+                    latency_ms=latency_ms,
+                    parallel_outputs=None,
+                )
+                if decision is not None:
+                    yield _ControllerDecisionEvent(
+                        node_idx=node_idx,
+                        action=decision.action,
+                        reason=getattr(decision, "reason", "") or "",
+                    )
+                    if decision.action == "reroute_topology":
+                        yield _RerouteEvent(reason=getattr(decision, "reason", "") or "")
+                        return
+
+                self.executor.mark_completed(node_idx)
+                self._node_exec_count[node_idx] = (
+                    self._node_exec_count.get(node_idx, 0) + 1
+                )
+                last_output = self._node_outputs.get(node_idx, result)
+                nodes_executed += 1
+                yield _NodeDoneEvent(
+                    node_idx=node_idx,
+                    role=role,
+                    output=last_output,
+                    latency_ms=latency_ms,
+                    model_id=getattr(node, "model_id", "") or "",
+                )
+            else:
+                for idx in ready:
+                    node = self.graph.get_node(idx)
+                    yield _NodeStartEvent(
+                        node_idx=idx,
+                        role=getattr(node, "role", f"node-{idx}"),
+                    )
+
+                ctx_snapshot = self._gather_all_context()
+                coros = [
+                    self._execute_node(idx, task, context_override=ctx_snapshot)
+                    for idx in ready
+                ]
+                t0_par = _time.monotonic()
+                results = await asyncio.gather(*coros)
+                par_latency_ms = (_time.monotonic() - t0_par) * 1000
+
+                if _BUDGET_EXCEEDED_RESULT in results:
+                    yield _BudgetExceededEvent()
+                    return
+
+                if self._is_over_budget():
+                    for idx in ready:
+                        self.executor.mark_completed(idx)
+                        self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
+                    yield _BudgetExceededEvent()
+                    return
+
+                parallel_outputs = list(results)
+                updated_results: list[str] = []
+                reroute_reason: str | None = None
+                for idx, result in zip(ready, results):
+                    result, decision = await self._apply_controller_decision(
+                        node_idx=idx,
+                        result=result,
+                        task=task,
+                        latency_ms=par_latency_ms,
+                        parallel_outputs=parallel_outputs,
+                    )
+                    updated_results.append(result)
+                    if decision is not None:
+                        yield _ControllerDecisionEvent(
+                            node_idx=idx,
+                            action=decision.action,
+                            reason=getattr(decision, "reason", "") or "",
+                        )
+                        if decision.action == "reroute_topology" and reroute_reason is None:
+                            reroute_reason = getattr(decision, "reason", "") or ""
+
+                if reroute_reason is not None:
+                    yield _RerouteEvent(reason=reroute_reason)
+                    return
+
+                for idx, output in zip(ready, updated_results):
+                    self.executor.mark_completed(idx)
+                    self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
+                    node = self.graph.get_node(idx)
+                    last_output = self._node_outputs.get(idx, output)
+                    nodes_executed += 1
+                    yield _NodeDoneEvent(
+                        node_idx=idx,
+                        role=getattr(node, "role", f"node-{idx}"),
+                        output=last_output,
+                        latency_ms=par_latency_ms,
+                        model_id=getattr(node, "model_id", "") or "",
+                    )
+
+        yield _TopologyDoneEvent(final_output=last_output, node_count=nodes_executed)
+
     async def run(self, task: str) -> str:
         """Execute the full topology, returning the final node's output.
 
@@ -1116,145 +1395,15 @@ class TopologyRunner:
         method returns the special sentinel ``"__REROUTE__"`` so the caller
         (Pipeline Stage 4) can handle the reroute.
         """
-        last_output = ""
-
-        while not self.executor.is_done():
-            if self._is_over_budget():
+        final = ""
+        async for event in self._run_core(task):
+            if isinstance(event, _BudgetExceededEvent):
                 return _BUDGET_EXCEEDED_RESULT
-
-            ready = self.executor.next_ready(self.graph)
-            if not ready:
-                break
-
-            if len(ready) == 1:
-                node_idx = ready[0]
-                import time as _time
-                _t0 = _time.monotonic()
-                result = await self._execute_node(node_idx, task)
-                _latency_ms = (_time.monotonic() - _t0) * 1000
-                if result == _BUDGET_EXCEEDED_RESULT:
-                    return result
-
-                if self._is_over_budget():
-                    self.executor.mark_completed(node_idx)
-                    self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
-                    return _BUDGET_EXCEEDED_RESULT
-
-                # Phase C: runtime adaptation (single-node path)
-                if self._controller:
-                    node_ctx = {
-                        "node_idx": node_idx,
-                        "latency_ms": _latency_ms,
-                        "model_id": getattr(self.graph.get_node(node_idx), "model_id", ""),
-                        "output_length": len(result),
-                        "axis_hint": self._axis_hint,
-                    }
-                    decision = self._controller.evaluate_and_decide(
-                        node_idx, result, task, self.graph, node_ctx,
-                        parallel_outputs=None,
-                    )
-                    # HITL: pause for human approval on disruptive actions
-                    # Based on LangGraph interrupt() + A2A input-required
-                    if (self._approval_callback
-                            and decision.action in ("upgrade_model", "reroute_topology", "open_gate")):
-                        try:
-                            approved = await self._approval_callback(decision)
-                            if not approved:
-                                log.info("HITL rejected %s for node %d", decision.action, node_idx)
-                                decision = type(decision)(action="continue", target_node=node_idx)
-                        except (RuntimeError, TimeoutError, asyncio.TimeoutError) as exc:
-                            log.warning("HITL callback failed: %s, proceeding", exc)
-                    if decision.action == "upgrade_model":
-                        result = await self._retry_with_upgrade(node_idx, decision, task)
-                        self._node_outputs[node_idx] = result
-                    elif decision.action == "spawn_subagent":
-                        await self._spawn_sub(node_idx, decision, task)
-                    elif decision.action == "reroute_topology":
-                        return "__REROUTE__"
-                    elif decision.action == "prune_node":
-                        try:
-                            self.executor.mark_skipped(decision.target_node)
-                        except (AttributeError, Exception):
-                            pass  # Executor may not support skip
-                        log.info("Node %d pruned by controller", decision.target_node)
-                    elif decision.action == "open_gate":
-                        # Multi-turn: re-enable a node for another round
-                        # MALT (arXiv 2412.01928): Generation→Verification→Refinement
-                        target = decision.gate_target
-                        source = decision.gate_source
-                        if target is not None and source is not None:
-                            count = self._node_exec_count.get(target, 1)
-                            if count < self._max_rounds:
-                                self.executor.open_gate(self.graph, source, target)
-                                self.executor.reset_node(target)
-                                self._node_exec_count[target] = count + 1
-                                log.info(
-                                    "Multi-turn: reopened gate %d→%d (round %d/%d)",
-                                    source, target, count + 1, self._max_rounds,
-                                )
-                            else:
-                                log.info(
-                                    "Multi-turn: max rounds reached for node %d (%d/%d)",
-                                    target, count, self._max_rounds,
-                                )
-
-                self.executor.mark_completed(node_idx)
-                self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
-                last_output = self._node_outputs.get(node_idx, result)
-            else:
-                # Snapshot context before gather to prevent race:
-                # concurrent coroutines must not see each other's outputs.
-                ctx_snapshot = self._gather_all_context()
-                coros = [
-                    self._execute_node(idx, task, context_override=ctx_snapshot)
-                    for idx in ready
-                ]
-                import time as _time
-                _t0_par = _time.monotonic()
-                results = await asyncio.gather(*coros)
-                _par_latency_ms = (_time.monotonic() - _t0_par) * 1000
-                if _BUDGET_EXCEEDED_RESULT in results:
-                    return _BUDGET_EXCEEDED_RESULT
-
-                if self._is_over_budget():
-                    for idx in ready:
-                        self.executor.mark_completed(idx)
-                        self._node_exec_count[idx] = self._node_exec_count.get(idx, 0) + 1
-                    return _BUDGET_EXCEEDED_RESULT
-
-                # Phase C: runtime adaptation (parallel path)
-                if self._controller:
-                    parallel_outputs = list(results)
-                    for idx, result in zip(ready, results):
-                        node_ctx = {
-                            "node_idx": idx,
-                            "latency_ms": _par_latency_ms,  # Total parallel batch latency
-                            "model_id": getattr(self.graph.get_node(idx), "model_id", ""),
-                            "output_length": len(result),
-                        }
-                        decision = self._controller.evaluate_and_decide(
-                            idx, result, task, self.graph, node_ctx,
-                            parallel_outputs=parallel_outputs,
-                        )
-                        if decision.action == "upgrade_model":
-                            upgraded = await self._retry_with_upgrade(idx, decision, task)
-                            self._node_outputs[idx] = upgraded
-                        elif decision.action == "spawn_subagent":
-                            await self._spawn_sub(idx, decision, task)
-                        elif decision.action == "reroute_topology":
-                            return "__REROUTE__"
-                        elif decision.action == "prune_node":
-                            try:
-                                self.executor.mark_skipped(decision.target_node)
-                            except (AttributeError, Exception):
-                                pass  # Executor may not support skip
-                            log.info("Node %d pruned by controller", decision.target_node)
-
-                for idx, output in zip(ready, results):
-                    self.executor.mark_completed(idx)
-                    last_output = self._node_outputs.get(idx, output)
-
-        return last_output
+            if isinstance(event, _RerouteEvent):
+                return "__REROUTE__"
+            if isinstance(event, _TopologyDoneEvent):
+                final = event.final_output
+        return final
 
     async def run_traced(self, task: str) -> list[dict]:
         """Execute topology and return per-node traces for GiGPO step rewards.
@@ -1265,49 +1414,18 @@ class TopologyRunner:
         Uses the same execution logic as run() (ProviderPool, controller, fallback)
         but captures per-node metadata instead of just the final output.
         """
-        import time
         traces: list[dict] = []
-
-        while not self.executor.is_done():
-            ready = self.executor.next_ready(self.graph)
-            if not ready:
-                break
-
-            for node_idx in ready:
-                t0 = time.time()
-                node = self.graph.get_node(node_idx)
-                role = getattr(node, "role", f"node-{node_idx}")
-
-                result = await self._execute_node(node_idx, task)
-
-                _node_latency_ms = (time.time() - t0) * 1000
-
-                # Phase C adaptation (same as run())
-                if self._controller:
-                    node_ctx = {
-                        "node_idx": node_idx,
-                        "latency_ms": _node_latency_ms,
-                        "model_id": getattr(node, "model_id", ""),
-                        "output_length": len(result),
+        async for event in self._run_core(task):
+            if isinstance(event, _NodeDoneEvent):
+                traces.append(
+                    {
+                        "node_idx": event.node_idx,
+                        "role": event.role,
+                        "output": event.output,
+                        "latency": event.latency_ms / 1000.0,
+                        "model_id": event.model_id,
                     }
-                    decision = self._controller.evaluate_and_decide(
-                        node_idx, result, task, self.graph, node_ctx,
-                        parallel_outputs=None,
-                    )
-                    if decision.action == "upgrade_model":
-                        result = await self._retry_with_upgrade(node_idx, decision, task)
-                        self._node_outputs[node_idx] = result
-
-                self.executor.mark_completed(node_idx)
-
-                traces.append({
-                    "node_idx": node_idx,
-                    "role": role,
-                    "output": self._node_outputs.get(node_idx, result),
-                    "latency": time.time() - t0,
-                    "model_id": getattr(node, "model_id", ""),
-                })
-
+                )
         return traces
 
     async def run_stream(self, task: str):
@@ -1317,101 +1435,40 @@ class TopologyRunner:
         - {"type": "node_start", "node_idx": int, "role": str}
         - {"type": "node_done", "node_idx": int, "role": str, "output": str, "latency_ms": float}
         - {"type": "topology_done", "final_output": str, "node_count": int}
+        - {"type": "topology_reroute", "reason": str}  (on controller reroute)
 
         Enables real-time UI updates (LangGraph-style streaming) and is the
         foundation for HITL interrupt/resume (Patch 6).
         """
-        import time as _time
-
-        last_output = ""
-        nodes_executed = 0
-
-        while not self.executor.is_done():
-            ready = self.executor.next_ready(self.graph)
-            if not ready:
-                break
-
-            if len(ready) == 1:
-                node_idx = ready[0]
-                node = self.graph.get_node(node_idx)
-                role = getattr(node, "role", f"node-{node_idx}")
-
-                yield {"type": "node_start", "node_idx": node_idx, "role": role}
-
-                _t0 = _time.monotonic()
-                result = await self._execute_node(node_idx, task)
-                _latency_ms = (_time.monotonic() - _t0) * 1000
-
-                # Controller adaptation (same logic as run())
-                if self._controller:
-                    node_ctx = {
-                        "node_idx": node_idx,
-                        "latency_ms": _latency_ms,
-                        "model_id": getattr(node, "model_id", ""),
-                        "output_length": len(result),
-                        "axis_hint": self._axis_hint,
-                    }
-                    decision = self._controller.evaluate_and_decide(
-                        node_idx, result, task, self.graph, node_ctx,
-                        parallel_outputs=None,
-                    )
-                    if decision.action == "upgrade_model":
-                        result = await self._retry_with_upgrade(node_idx, decision, task)
-                        self._node_outputs[node_idx] = result
-                    elif decision.action == "reroute_topology":
-                        yield {"type": "topology_reroute", "reason": decision.reason}
-                        return
-                    elif decision.action == "open_gate" and decision.gate_target is not None:
-                        target = decision.gate_target
-                        source = decision.gate_source
-                        count = self._node_exec_count.get(target, 1)
-                        if source is not None and count < self._max_rounds:
-                            self.executor.open_gate(self.graph, source, target)
-                            self.executor.reset_node(target)
-                            self._node_exec_count[target] = count + 1
-
-                self.executor.mark_completed(node_idx)
-                self._node_exec_count[node_idx] = self._node_exec_count.get(node_idx, 0) + 1
-                last_output = self._node_outputs.get(node_idx, result)
-                nodes_executed += 1
-
+        async for event in self._run_core(task):
+            if isinstance(event, _NodeStartEvent):
+                yield {
+                    "type": "node_start",
+                    "node_idx": event.node_idx,
+                    "role": event.role,
+                }
+            elif isinstance(event, _NodeDoneEvent):
                 yield {
                     "type": "node_done",
-                    "node_idx": node_idx,
-                    "role": role,
-                    "output": last_output,
-                    "latency_ms": _latency_ms,
+                    "node_idx": event.node_idx,
+                    "role": event.role,
+                    "output": event.output,
+                    "latency_ms": event.latency_ms,
                 }
-            else:
-                # Parallel batch — emit start for all, then done for all
-                for idx in ready:
-                    node = self.graph.get_node(idx)
-                    yield {"type": "node_start", "node_idx": idx,
-                           "role": getattr(node, "role", f"node-{idx}")}
-
-                ctx_snapshot = self._gather_all_context()
-                coros = [
-                    self._execute_node(idx, task, context_override=ctx_snapshot)
-                    for idx in ready
-                ]
-                _t0_par = _time.monotonic()
-                results = await asyncio.gather(*coros)
-                _par_latency_ms = (_time.monotonic() - _t0_par) * 1000
-
-                for idx, output in zip(ready, results):
-                    self.executor.mark_completed(idx)
-                    last_output = self._node_outputs.get(idx, output)
-                    nodes_executed += 1
-                    yield {
-                        "type": "node_done",
-                        "node_idx": idx,
-                        "role": getattr(self.graph.get_node(idx), "role", f"node-{idx}"),
-                        "output": last_output,
-                        "latency_ms": _par_latency_ms,
-                    }
-
-        yield {
-            "type": "topology_done",
-            "final_output": last_output,
-            "node_count": nodes_executed,
-        }
+            elif isinstance(event, _RerouteEvent):
+                yield {"type": "topology_reroute", "reason": event.reason}
+                return
+            elif isinstance(event, _BudgetExceededEvent):
+                yield {
+                    "type": "topology_done",
+                    "final_output": _BUDGET_EXCEEDED_RESULT,
+                    "node_count": 0,
+                }
+                return
+            elif isinstance(event, _TopologyDoneEvent):
+                yield {
+                    "type": "topology_done",
+                    "final_output": event.final_output,
+                    "node_count": event.node_count,
+                }
+        return
