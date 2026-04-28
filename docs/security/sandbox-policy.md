@@ -1,6 +1,6 @@
 # Sandbox policy
 
-YGN-SAGE has TWO distinct sandbox surfaces. They are independent and have
+YGN-SAGE has THREE distinct sandbox surfaces. They are independent and have
 their own escape hatches that DO NOT cross-unlock.
 
 ## 1. Tool execution path
