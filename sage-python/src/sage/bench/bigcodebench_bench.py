@@ -126,13 +126,27 @@ class BigCodeBenchBench:
                         # records which path produced bench_result so the
                         # downstream report can audit calibration provenance.
                         def _bench_evaluator(raw_output: str) -> dict:
+                            """Sanitised bench result for the OracleStack.
+
+                            cgpro 2026-04-29 cycle-7 flip review push-back:
+                            never put raw harness fragments (stderr tail,
+                            traceback) into ``bench_result["reason"]`` —
+                            ``_exact_oracle`` would surface them in
+                            ``oracle_verdict.reason_codes`` and they would
+                            mirror into ``run_frame_summary``. We emit:
+
+                            - ``reason_code`` (small enum-like tag).
+                            - ``reason_sha256`` (audit pointer to the raw
+                              stderr if any) — never the raw text.
+                            """
+                            import hashlib as _hashlib
                             sol = extract_code(raw_output, eval_entry)
                             if not sol:
                                 return {
                                     "passed": False,
                                     "score": 0.0,
                                     "verifier_id": "bcb_no_solution",
-                                    "reason": "no_solution_extracted",
+                                    "reason_code": "bcb_no_solution_extracted",
                                 }
                             # Try official first.
                             try:
@@ -160,7 +174,11 @@ class BigCodeBenchBench:
                                         "verifier_id": (
                                             "bigcodebench.eval.untrusted_check"
                                         ),
-                                        "reason": stat_official,
+                                        "reason_code": (
+                                            "bcb_unittest_pass"
+                                            if passed_off
+                                            else "bcb_unittest_fail"
+                                        ),
                                     }
                             except Exception:  # noqa: BLE001 - fallback path
                                 pass
@@ -174,18 +192,25 @@ class BigCodeBenchBench:
                                     timeout=eval_timeout_local,
                                 )
                             )
-                            return {
+                            result: dict = {
                                 "passed": bool(passed_seam),
                                 "score": 1.0 if passed_seam else 0.0,
                                 "verifier_id": (
                                     "bcb_internal_subprocess_fallback"
                                 ),
-                                "reason": (
-                                    "pass"
+                                "reason_code": (
+                                    "bcb_unittest_pass"
                                     if passed_seam
-                                    else (stderr_seam or "fail")[:128]
+                                    else "bcb_unittest_fail"
                                 ),
                             }
+                            if not passed_seam and stderr_seam:
+                                result["reason_sha256"] = (
+                                    _hashlib.sha256(
+                                        stderr_seam.encode("utf-8")
+                                    ).hexdigest()
+                                )
+                            return result
 
                         raw, _frame_seam = await asyncio.wait_for(
                             self.system.run_with_bench_evaluator(

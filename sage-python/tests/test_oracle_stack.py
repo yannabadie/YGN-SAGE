@@ -236,6 +236,84 @@ def test_evaluate_no_evidence_returns_abstain() -> None:
     assert verdict.score is None
 
 
+# cgpro 2026-04-29 cycle-7 flip review push-back: regression tests pinning
+# that ``_exact_oracle`` never propagates raw bench_result["reason"] into
+# oracle_verdict.reason_codes (would leak harness traceback / stderr into
+# JSONL traces).
+
+
+def test_exact_oracle_raw_reason_does_not_leak_into_reason_codes() -> None:
+    raw_traceback = (
+        "Traceback (most recent call last):\n"
+        "  File \"/tmp/test.py\", line 42, in test_foo\n"
+        "    self.assertEqual(actual, expected)\n"
+        "AssertionError: 1 != 2\n"
+        "SECRET_RAW_TEST_OUTPUT_canary"
+    )
+    verdict = evaluate(
+        FakeRunFrameView(),
+        final_output="bad",
+        bench_result={
+            "passed": False,
+            "score": 0.0,
+            "verifier_id": "bench",
+            "reason": raw_traceback,
+        },
+    )
+
+    assert verdict.trainable is True
+    assert verdict.verdict_source == "exact"
+    assert verdict.quality_label == "fail"
+    # reason_codes must contain only the structured tags, not the raw text.
+    assert verdict.reason_codes == (
+        "exact_test_fail",
+        "exact_harness_detail_present",
+    )
+    for code in verdict.reason_codes:
+        assert "Traceback" not in code
+        assert "AssertionError" not in code
+        assert "SECRET_RAW_TEST_OUTPUT_canary" not in code
+    # Hash carries the audit pointer instead.
+    assert verdict.evidence[0].evidence_hash is not None
+    assert len(verdict.evidence[0].evidence_hash) == 64  # SHA-256 hex
+
+
+def test_exact_oracle_pre_classified_reason_code_passes_through() -> None:
+    verdict = evaluate(
+        FakeRunFrameView(),
+        final_output="bad",
+        bench_result={
+            "passed": False,
+            "score": 0.0,
+            "verifier_id": "bench",
+            "reason_code": "bcb_unittest_fail",
+        },
+    )
+
+    assert verdict.reason_codes == ("exact_test_fail", "bcb_unittest_fail")
+    # No raw reason ⇒ no harness_detail_present sentinel
+    assert "exact_harness_detail_present" not in verdict.reason_codes
+    # No reason_sha256 supplied ⇒ evidence_hash stays None
+    assert verdict.evidence[0].evidence_hash is None
+
+
+def test_exact_oracle_pre_supplied_reason_sha256_takes_precedence() -> None:
+    verdict = evaluate(
+        FakeRunFrameView(),
+        final_output="bad",
+        bench_result={
+            "passed": False,
+            "score": 0.0,
+            "verifier_id": "bench",
+            "reason_code": "bcb_timeout",
+            "reason_sha256": "a" * 64,
+        },
+    )
+
+    assert verdict.evidence[0].evidence_hash == "a" * 64
+    assert verdict.reason_codes == ("exact_test_fail", "bcb_timeout")
+
+
 @pytest.mark.asyncio
 async def test_abstain_blocks_bandit_update(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SAGE_ORACLE", "1")

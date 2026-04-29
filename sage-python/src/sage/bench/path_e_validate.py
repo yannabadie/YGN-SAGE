@@ -53,7 +53,11 @@ def _sha256(path: Path) -> str:
 
 
 def _load_jsonl(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 @dataclass
@@ -104,9 +108,24 @@ def _validate_run(events: list[dict[str, Any]]) -> TaskValidation:
     )
 
 
+_RAW_LEAK_PHRASES: tuple[str, ...] = (
+    "Traceback (most recent call last)",
+    "AssertionError",
+    "  File \"",
+    "Error: ",
+    "FAIL: test_",
+    "ERROR: test_",
+)
+
+
 def _scan_payload_for_raw_leaks(payload: Any, _path: str = "") -> list[str]:
     """Walk the payload tree and return paths where forbidden raw-output keys
-    carry strings longer than 64 chars (suggesting full body, not metadata).
+    carry strings longer than 64 chars OR where any string anywhere contains
+    a known raw-output phrase (e.g. unittest traceback fragment, harness
+    error tail). The phrase scan is the cgpro 2026-04-29 cycle-7 flip review
+    add-on: ``oracle_verdict.reason_codes`` is a tuple of strings, not a
+    forbidden-key field, but a raw harness reason can still leak through
+    that channel as a tuple element. Scan ALL strings, not just keys.
     """
     forbidden = {
         "stdout",
@@ -124,6 +143,7 @@ def _scan_payload_for_raw_leaks(payload: Any, _path: str = "") -> list[str]:
         "final_answer",
         "message",
         "traceback",
+        "reason",
     }
     leaks: list[str] = []
     if isinstance(payload, dict):
@@ -132,9 +152,14 @@ def _scan_payload_for_raw_leaks(payload: Any, _path: str = "") -> list[str]:
             if k in forbidden and isinstance(v, str) and len(v) > 64:
                 leaks.append(f"{sub_path}=str{len(v)}")
             leaks.extend(_scan_payload_for_raw_leaks(v, sub_path))
-    elif isinstance(payload, list):
+    elif isinstance(payload, list) or isinstance(payload, tuple):
         for i, item in enumerate(payload):
             leaks.extend(_scan_payload_for_raw_leaks(item, f"{_path}[{i}]"))
+    elif isinstance(payload, str):
+        for phrase in _RAW_LEAK_PHRASES:
+            if phrase in payload:
+                leaks.append(f"{_path}: raw-phrase {phrase!r} in str{len(payload)}")
+                break
     return leaks
 
 
@@ -171,9 +196,13 @@ def main() -> int:
         # node_started events to find any model_id hints, otherwise keep
         # run-level identity only).
         runs.append(v)
-        # Raw output safety scan across all event payloads.
+        # Raw output safety scan across the full event document — not only
+        # ``payload``. cgpro 2026-04-29 cycle-7 flip review: oracle_verdict
+        # reason_codes / run_frame_summary nested oracle_verdict / EvidenceRef
+        # fields can all carry strings outside the conventional ``payload``
+        # subtree.
         for e in events:
-            leaks = _scan_payload_for_raw_leaks(e.get("payload", {}))
+            leaks = _scan_payload_for_raw_leaks(e)
             for leak in leaks:
                 raw_leak_findings.append(
                     f"{e.get('event_type','?')}@seq{e.get('seq','?')}:{leak}"
@@ -309,9 +338,7 @@ def main() -> int:
         "## cgpro Path E B' minimum pass criteria",
         "",
     ]
-    md_lines.append(
-        f"| # | Criterion | Result |"
-    )
+    md_lines.append("| # | Criterion | Result |")
     md_lines.append("|---|---|---|")
     md_lines.append(
         f"| 1 | ≥1 ``verdict_source='exact', quality_label='pass', trainable=True`` | "

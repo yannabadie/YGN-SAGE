@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Mapping
 
 from sage.runtime.oracle.config import OracleConfig
@@ -17,7 +18,25 @@ def _exact_oracle(
     bench_result: Mapping[str, Any] | None,
     config: OracleConfig,
 ) -> OracleVerdict | None:
-    """Bench harness pass/fail from normalized structured bench_result keys."""
+    """Bench harness pass/fail from normalized structured bench_result keys.
+
+    cgpro 2026-04-29 cycle-7 flip review push-back: ``bench_result["reason"]``
+    is allowed to be a raw harness fragment (unittest traceback, stderr tail,
+    timeout sentinel, …). Earlier code appended that raw string directly to
+    ``reason_codes``, which leaked the harness body into ``oracle_verdict``
+    payloads and ``run_frame_summary.oracle_verdict`` mirrors. We now:
+
+    - Stamp ``reason_codes`` with structured tags only (``exact_test_pass`` /
+      ``exact_test_fail`` plus, when an opaque reason is present, the
+      sentinel ``exact_harness_detail_present``).
+    - Carry the SHA-256 of the raw reason via ``EvidenceRef.evidence_hash``
+      so audit trails can correlate verdicts to harness logs without the
+      payload itself appearing in the JSONL.
+
+    Optional pre-classified ``bench_result["reason_code"]`` (e.g.
+    ``"bcb_unittest_error"``, ``"bcb_timeout"``) is appended verbatim — the
+    bench seam owns this field's vocabulary, no raw text.
+    """
     del final_output, config
     if bench_result is None:
         return None
@@ -31,10 +50,22 @@ def _exact_oracle(
         return None
     score = max(0.0, min(1.0, score))
     label: QualityLabel = "pass" if passed else "fail"
-    reason_codes = [f"exact_test_{label}"]
-    reason = bench_result.get("reason")
-    if isinstance(reason, str) and reason:
-        reason_codes.append(reason)
+    reason_codes: list[str] = [f"exact_test_{label}"]
+
+    pre_classified_code = bench_result.get("reason_code")
+    if isinstance(pre_classified_code, str) and pre_classified_code:
+        reason_codes.append(pre_classified_code)
+
+    raw_reason = bench_result.get("reason")
+    reason_hash: str | None = None
+    if isinstance(raw_reason, str) and raw_reason:
+        reason_hash = hashlib.sha256(raw_reason.encode("utf-8")).hexdigest()
+        if "exact_harness_detail_present" not in reason_codes:
+            reason_codes.append("exact_harness_detail_present")
+
+    pre_supplied_hash = bench_result.get("reason_sha256")
+    if isinstance(pre_supplied_hash, str) and pre_supplied_hash:
+        reason_hash = pre_supplied_hash
 
     return OracleVerdict(
         trainable=True,
@@ -51,6 +82,7 @@ def _exact_oracle(
                 output_sha256=bench_result.get("output_sha256"),
                 tool_call_id=bench_result.get("tool_call_id"),
                 verifier_id=bench_result.get("verifier_id", "bench_harness"),
+                evidence_hash=reason_hash,
             ),
         ),
     )
