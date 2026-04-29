@@ -1,0 +1,21 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "test_parser",
+      "delta_kind": "parse_failed",
+      "polarity": "unknown",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-tests",
+      "event_seq": 23,
+      "source_id": "pytest:unit",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "framework": "pytest",
+        "parser_id": "pytest_summary_v0",
+        "suite_id": "unit"
+      }
+    }
+  ]
+}

@@ -49,6 +49,8 @@ the shape emitted by both ``git diff`` and our own
 from __future__ import annotations
 
 import difflib
+import hashlib
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -184,6 +186,12 @@ def verify_diff_context(
     diff: str,
     repo_dir: Path,
     fuzzy_threshold: float = _FUZZY_THRESHOLD,
+    *,
+    run_frame_builder: Any | None = None,
+    run_id: str | None = None,
+    node_run_id: str | None = None,
+    event_seq: int | None = None,
+    source_id: str = "swebench:diff_verifier",
 ) -> list[HunkMismatch]:
     """Return one ``HunkMismatch`` per problematic hunk.
 
@@ -192,7 +200,14 @@ def verify_diff_context(
     no-op verifier outcomes.
     """
     return verify_diff_context_with_reasons(
-        diff, repo_dir, fuzzy_threshold
+        diff,
+        repo_dir,
+        fuzzy_threshold,
+        run_frame_builder=run_frame_builder,
+        run_id=run_id,
+        node_run_id=node_run_id,
+        event_seq=event_seq,
+        source_id=source_id,
     ).mismatches
 
 
@@ -200,6 +215,12 @@ def verify_diff_context_with_reasons(
     diff: str,
     repo_dir: Path,
     fuzzy_threshold: float = _FUZZY_THRESHOLD,
+    *,
+    run_frame_builder: Any | None = None,
+    run_id: str | None = None,
+    node_run_id: str | None = None,
+    event_seq: int | None = None,
+    source_id: str = "swebench:diff_verifier",
 ) -> DiffVerifierResult:
     """Return mismatch records plus reason/outcome telemetry for one diff."""
     parsed = _parse_diff_items(diff)
@@ -333,11 +354,52 @@ def verify_diff_context_with_reasons(
             )
         )
 
-    return DiffVerifierResult(
+    result = DiffVerifierResult(
         mismatches=mismatches,
         reason_events=reason_events,
         outcome=_roll_up_outcome(reason_events),
     )
+    _record_diff_delta(
+        diff=diff,
+        result=result,
+        run_frame_builder=run_frame_builder,
+        run_id=run_id,
+        node_run_id=node_run_id,
+        event_seq=event_seq,
+        source_id=source_id,
+    )
+    return result
+
+
+def _record_diff_delta(
+    *,
+    diff: str,
+    result: DiffVerifierResult,
+    run_frame_builder: Any | None,
+    run_id: str | None,
+    node_run_id: str | None,
+    event_seq: int | None,
+    source_id: str,
+) -> None:
+    if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
+        return
+    from sage.runtime.evidence.producers.diff import produce_diff_verifier_deltas
+
+    patch_hash = hashlib.sha256(diff.encode("utf-8", errors="replace")).hexdigest()
+    producer_result = produce_diff_verifier_deltas(
+        run_id=run_id or run_frame_builder.run_id,
+        node_run_id=node_run_id,
+        event_seq=event_seq,
+        source_id=source_id,
+        verify_result={
+            "outcome": result.outcome,
+            "mismatches": [{"kind": mismatch.kind} for mismatch in result.mismatches],
+            "reasons": list(result.reasons),
+            "patch_hash": patch_hash,
+        },
+    )
+    for delta in producer_result.deltas:
+        run_frame_builder.record_delta(delta)
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ from sage.runtime.state import StateDelta, StateFrame
 
 if TYPE_CHECKING:
     from sage.runtime.oracle import OracleVerdict
+    from sage.runtime.evidence import RuntimeDelta
 
 RUN_FRAME_SCHEMA_VERSION: Literal["0"] = "0"
 
@@ -85,6 +86,7 @@ class RunFrameView:
     failure_seqs: tuple[int, ...]
     terminal_failure_seq: int | None
     status: RunStatus
+    runtime_deltas: tuple["RuntimeDelta", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +108,7 @@ class RunFrame:
     failure_seqs: tuple[int, ...]
     terminal_failure_seq: int | None
     status: RunStatus
+    runtime_deltas: tuple["RuntimeDelta", ...] = ()
     oracle_verdict: "OracleVerdict | None" = None
 
     def to_summary_dict(self, *, redacted: bool = True) -> dict[str, Any]:
@@ -153,6 +156,12 @@ class RunFrame:
             "node_records": node_records,
             "state_frame_count": len(self.state_frames),
             "controller_decision_count": len(self.controller_decisions),
+            "runtime_delta_count": len(self.runtime_deltas),
+            "runtime_delta_hashes": [
+                delta.evidence_hash
+                for delta in self.runtime_deltas
+                if delta.evidence_hash is not None
+            ],
             "final_result_seq": self.final_result_seq,
             "failure_seqs": list(self.failure_seqs),
             "terminal_failure_seq": self.terminal_failure_seq,

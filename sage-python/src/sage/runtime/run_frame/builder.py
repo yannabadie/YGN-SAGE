@@ -6,6 +6,7 @@ import os
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from sage.runtime.evidence import EvidenceError, RuntimeDelta
 from sage.runtime.oracle.verdict import OracleVerdict
 from sage.runtime.run_frame.frame import (
     RUN_FRAME_SCHEMA_VERSION,
@@ -60,6 +61,7 @@ class _RunFrameBuilder:
         self._status: RunStatus = "unknown"
         self._oracle_verdict: OracleVerdict | None = None
         self._oracle_verdict_seq: int | None = None
+        self._runtime_deltas: list[RuntimeDelta] = []
         self._current_topology_epoch = 0
         self._current_topology_id: str | None = None
         self._current_graph_digest: str | None = None
@@ -317,6 +319,27 @@ class _RunFrameBuilder:
         self._oracle_verdict_seq = seq
         self._oracle_verdict = verdict
 
+    def record_delta(self, delta: RuntimeDelta) -> None:
+        if delta.run_id != self.run_id:
+            raise EvidenceError(
+                f"delta run_id mismatch: {delta.run_id!r} != {self.run_id!r}"
+            )
+        self._runtime_deltas.append(
+            RuntimeDelta(
+                schema_version=delta.schema_version,
+                producer=delta.producer,
+                delta_kind=delta.delta_kind,
+                polarity=delta.polarity,
+                confidence=delta.confidence,
+                run_id=delta.run_id,
+                node_run_id=delta.node_run_id,
+                event_seq=delta.event_seq,
+                source_id=delta.source_id,
+                evidence_hash=delta.evidence_hash,
+                payload=delta.payload,
+            )
+        )
+
     def open_node_run_id(self, *, node_id: str) -> str | None:
         return self._open_node_runs.get((self._current_topology_epoch, str(node_id)))
 
@@ -359,6 +382,7 @@ class _RunFrameBuilder:
             failure_seqs=tuple(self._failure_seqs),
             terminal_failure_seq=self._terminal_failure_seq,
             status=status,
+            runtime_deltas=self._ordered_runtime_deltas(),
         )
 
     def finalize(self) -> RunFrame:
@@ -401,6 +425,7 @@ class _RunFrameBuilder:
             failure_seqs=tuple(self._failure_seqs),
             terminal_failure_seq=self._terminal_failure_seq,
             status=status,
+            runtime_deltas=self._ordered_runtime_deltas(),
             oracle_verdict=self._oracle_verdict,
         )
 
@@ -411,6 +436,19 @@ class _RunFrameBuilder:
             if record.topology_epoch == topology_epoch and record.node_id == node_id
         ]
         return max(attempts, default=0) + 1
+
+    def _ordered_runtime_deltas(self) -> tuple[RuntimeDelta, ...]:
+        return tuple(
+            delta
+            for _idx, delta in sorted(
+                enumerate(self._runtime_deltas),
+                key=lambda item: (
+                    item[1].event_seq is None,
+                    item[1].event_seq if item[1].event_seq is not None else 0,
+                    item[0],
+                ),
+            )
+        )
 
 
 def _seq_tuple(*seqs: int | None) -> tuple[int, ...]:

@@ -1,0 +1,14 @@
+{
+  "producer": "test_parser",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-tests",
+    "event_seq": 21,
+    "source_id": "pytest:unit",
+    "framework": "pytest",
+    "stdout": "==================== 2 failed, 1 error in 1.25s ====================",
+    "stderr": "",
+    "exit_code": 1,
+    "suite_id": "unit"
+  }
+}

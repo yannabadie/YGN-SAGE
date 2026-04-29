@@ -918,6 +918,9 @@ class TopologyRunner:
             "TopologyRunner requires agent_loop_factory at construction"
         )
         loop = self._agent_loop_factory(**_factory_kwargs)
+        if self._run_frame_builder is not None:
+            loop._run_frame_builder = self._run_frame_builder
+            loop._runtime_node_run_id = self._run_frame_node_runs.get(node_idx)
 
         # Build task with predecessor context (H7)
         if context_override is not None:
@@ -1037,8 +1040,10 @@ class TopologyRunner:
         unsafe_raw_exec = os.environ.get("SAGE_UNSAFE_RAW_EXEC") == "1"
         sandbox_isolated_available = _SANDBOX_IMPORT_OK and BWRAP_AVAILABLE
 
+        timed_out = False
         if sandbox_isolated_available:
             stdout, stderr, exit_code = execute_isolated(wrapped_code, timeout=30)
+            timed_out = exit_code == -1 and "TIMEOUT" in (stderr or "").upper()
         elif unsafe_raw_exec:
             log.warning(
                 "[TopologyRunner] _execute_code_node falling back to raw subprocess "
@@ -1062,6 +1067,7 @@ class TopologyRunner:
                 stdout = ""
                 stderr = "TIMEOUT"
                 exit_code = -1
+                timed_out = True
             except (OSError, ValueError) as exc:
                 stdout = ""
                 stderr = str(exc)
@@ -1085,6 +1091,28 @@ class TopologyRunner:
         output = stdout
 
         latency_ms = (time.monotonic() - t0) * 1000
+        if (
+            os.environ.get("SAGE_ORACLE") == "1"
+            and self._run_frame_builder is not None
+        ):
+            from sage.runtime.evidence.producers.tool import produce_tool_deltas
+
+            result = produce_tool_deltas(
+                run_id=self._run_frame_builder.run_id,
+                node_run_id=self._run_frame_node_runs.get(node_idx),
+                event_seq=None,
+                source_id=f"code_node:{node_idx}",
+                exit_code=exit_code,
+                timed_out=timed_out,
+                duration_ms=latency_ms,
+                tool_error_class=(
+                    "TimeoutExpired"
+                    if timed_out
+                    else ("CodeNodeError" if exit_code != 0 and stderr else "")
+                ),
+            )
+            for delta in result.deltas:
+                self._run_frame_builder.record_delta(delta)
 
         if stderr and exit_code != 0:
             log.warning(

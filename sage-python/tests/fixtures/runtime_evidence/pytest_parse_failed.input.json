@@ -1,0 +1,14 @@
+{
+  "producer": "test_parser",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-tests",
+    "event_seq": 23,
+    "source_id": "pytest:unit",
+    "framework": "pytest",
+    "stdout": "collection interrupted before summary",
+    "stderr": "internal error",
+    "exit_code": 2,
+    "suite_id": "unit"
+  }
+}

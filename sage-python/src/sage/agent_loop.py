@@ -180,6 +180,8 @@ class AgentLoop:
         self.tool_executor: Any = None  # Injected by boot.py (Rust tree-sitter + subprocess)
         self.topology_engine: Any = None  # Injected by boot.py (Rust TopologyEngine)
         self._current_topology: Any = None  # Set by boot.py before each run
+        self._run_frame_builder: Any | None = None
+        self._runtime_node_run_id: str | None = None
 
         # Ablation skip flags (set by AblationConfig.apply)
         self._skip_memory: bool = False
@@ -376,6 +378,9 @@ class AgentLoop:
             self._emit,
             toolforge=getattr(self, "toolforge", None),
             task_context=getattr(self, "_current_task", "") or "",
+            run_frame_builder=getattr(self, "_run_frame_builder", None),
+            node_run_id=getattr(self, "_runtime_node_run_id", None),
+            source_id=f"tool:{getattr(tc, 'name', '')}",
         )
 
     async def run(self, task: str) -> str:

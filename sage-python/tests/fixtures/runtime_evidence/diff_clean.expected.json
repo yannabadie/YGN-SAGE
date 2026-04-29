@@ -1,0 +1,22 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "diff_verifier",
+      "delta_kind": "patch_applied",
+      "polarity": "positive",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-diff",
+      "event_seq": 30,
+      "source_id": "swebench:verify",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "patch_apply_ok": true,
+        "mismatch_count": 0,
+        "mismatch_kinds": {},
+        "patch_hash": "patch-clean"
+      }
+    }
+  ]
+}

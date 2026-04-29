@@ -25,7 +25,9 @@ Validator:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import os
 import re
 import subprocess
 from typing import Any
@@ -260,6 +262,11 @@ async def try_repair_patch(
     problem_statement: str,
     instance_id: str = "",
     llm_timeout: float = 60.0,
+    run_frame_builder: Any | None = None,
+    run_id: str | None = None,
+    node_run_id: str | None = None,
+    event_seq: int | None = None,
+    source_id: str = "swebench:patch_repair",
 ) -> tuple[str, str]:
     """Validate + repair pipeline. Returns ``(final_patch, repair_stage)``.
 
@@ -279,6 +286,18 @@ async def try_repair_patch(
     if not patch or not repo_dir:
         return patch, ""
 
+    def _finish(final_patch: str, repair_stage: str) -> tuple[str, str]:
+        _record_repair_delta(
+            patch=final_patch,
+            repair_stage=repair_stage,
+            run_frame_builder=run_frame_builder,
+            run_id=run_id,
+            node_run_id=node_run_id,
+            event_seq=event_seq,
+            source_id=source_id,
+        )
+        return final_patch, repair_stage
+
     # Stage 0 (A6, 2026-04-24): LF normalization. CRLF bytes in the
     # patch are a Windows-emission artefact that both ``git apply`` and
     # GNU ``patch`` reject as "corrupt patch". Belt-and-suspenders even
@@ -293,8 +312,8 @@ async def try_repair_patch(
             log.info(
                 "[%s] CRLF normalization resolved patch", instance_id or "?",
             )
-            return patch, "crlf_normalized"
-        return patch, "unchanged"
+            return _finish(patch, "crlf_normalized")
+        return _finish(patch, "unchanged")
 
     log.info(
         "[%s] patch validation failed: %s",
@@ -307,29 +326,65 @@ async def try_repair_patch(
         ok2, err2 = validate_patch_apply(fixed, repo_dir)
         if ok2:
             log.info("[%s] programmatic counts-fix resolved patch", instance_id or "?")
-            return fixed, "programmatic_counts"
+            return _finish(fixed, "programmatic_counts")
         err = err2 or err  # latest error feeds LLM repair
 
     # Stage 2: LLM repair (costs one call).
     if llm is None:
-        return patch, "failed"
+        return _finish(patch, "failed")
 
     repaired = await repair_patch_via_llm(
         llm, problem_statement, patch, err, timeout=llm_timeout,
     )
     if not repaired:
-        return patch, "failed"
+        return _finish(patch, "failed")
 
     ok3, err3 = validate_patch_apply(repaired, repo_dir)
     if ok3:
         log.info("[%s] LLM repair resolved patch", instance_id or "?")
-        return repaired, "llm_repair"
+        return _finish(repaired, "llm_repair")
 
     log.info(
         "[%s] LLM repair still invalid: %s",
         instance_id or "?", (err3 or "no stderr")[:200],
     )
-    return patch, "failed"
+    return _finish(patch, "failed")
+
+
+def _record_repair_delta(
+    *,
+    patch: str,
+    repair_stage: str,
+    run_frame_builder: Any | None,
+    run_id: str | None,
+    node_run_id: str | None,
+    event_seq: int | None,
+    source_id: str,
+) -> None:
+    if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
+        return
+    from sage.runtime.evidence.producers.diff import produce_diff_verifier_deltas
+
+    patch_hash = hashlib.sha256(patch.encode("utf-8", errors="replace")).hexdigest()
+    verify_outcome = "clean" if repair_stage and repair_stage != "failed" else "unsupported_no_opinion"
+    producer_result = produce_diff_verifier_deltas(
+        run_id=run_id or run_frame_builder.run_id,
+        node_run_id=node_run_id,
+        event_seq=event_seq,
+        source_id=source_id,
+        verify_result={
+            "outcome": verify_outcome,
+            "mismatches": [],
+            "reasons": [verify_outcome],
+            "patch_hash": patch_hash,
+        },
+        repair_result={
+            "repair_stage": repair_stage,
+            "patch_hash": patch_hash,
+        },
+    )
+    for delta in producer_result.deltas:
+        run_frame_builder.record_delta(delta)
 
 
 __all__ = [

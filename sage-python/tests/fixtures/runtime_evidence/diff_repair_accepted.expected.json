@@ -1,0 +1,41 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "diff_verifier",
+      "delta_kind": "context_mismatch",
+      "polarity": "negative",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-diff",
+      "event_seq": 32,
+      "source_id": "swebench:verify",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "patch_apply_ok": false,
+        "mismatch_count": 2,
+        "mismatch_kinds": {
+          "content_mismatch": 1,
+          "file_missing": 1
+        },
+        "patch_hash": "patch-repaired"
+      }
+    },
+    {
+      "schema_version": "0",
+      "producer": "diff_verifier",
+      "delta_kind": "repair_accepted",
+      "polarity": "positive",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-diff",
+      "event_seq": 32,
+      "source_id": "swebench:verify",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "repair_stage": "programmatic_counts",
+        "patch_hash": "patch-repaired"
+      }
+    }
+  ]
+}

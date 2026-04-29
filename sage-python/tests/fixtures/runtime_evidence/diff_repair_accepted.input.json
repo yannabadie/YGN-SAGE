@@ -1,0 +1,22 @@
+{
+  "producer": "diff_verifier",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-diff",
+    "event_seq": 32,
+    "source_id": "swebench:verify",
+    "verify_result": {
+      "outcome": "content_mismatch",
+      "mismatches": [
+        {"kind": "content_mismatch"},
+        {"kind": "file_missing"}
+      ],
+      "reasons": ["content_mismatch", "file_missing"],
+      "patch_hash": "patch-repaired"
+    },
+    "repair_result": {
+      "repair_stage": "programmatic_counts",
+      "patch_hash": "patch-repaired"
+    }
+  }
+}

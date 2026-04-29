@@ -1,0 +1,24 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "formal_verifier",
+      "delta_kind": "obligation_refuted",
+      "polarity": "negative",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-formal",
+      "event_seq": 41,
+      "source_id": "z3",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "obligation_id": "obl-1",
+        "obligation_type": "postcondition",
+        "verifier_id": "z3",
+        "solver_status": "sat",
+        "encoding": "find_counterexample",
+        "counterexample_hash": "cex123"
+      }
+    }
+  ]
+}

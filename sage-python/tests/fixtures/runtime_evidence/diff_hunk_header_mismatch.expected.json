@@ -1,0 +1,24 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "diff_verifier",
+      "delta_kind": "hunk_header_mismatch",
+      "polarity": "negative",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-diff",
+      "event_seq": 31,
+      "source_id": "swebench:verify",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "patch_apply_ok": false,
+        "mismatch_count": 0,
+        "mismatch_kinds": {
+          "malformed_hunk_header": 1
+        },
+        "patch_hash": "patch-bad-header"
+      }
+    }
+  ]
+}

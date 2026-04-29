@@ -1,0 +1,23 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "tool_execution",
+      "delta_kind": "exit_zero",
+      "polarity": "positive",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-1",
+      "event_seq": 10,
+      "source_id": "tool:pytest",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "exit_code": 0,
+        "timed_out": false,
+        "tool_error_class": "",
+        "artifact_hash": "abc123",
+        "duration_ms": 12.5
+      }
+    }
+  ]
+}

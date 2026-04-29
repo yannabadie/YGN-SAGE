@@ -7,6 +7,8 @@ self.X attribute access.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from typing import Any
 
 from sage.llm.base import Message, Role
@@ -20,6 +22,9 @@ async def execute_tool_call(
     emit_fn: Any,
     toolforge: Any = None,
     task_context: str = "",
+    run_frame_builder: Any | None = None,
+    node_run_id: str | None = None,
+    source_id: str = "",
 ) -> str:
     """Execute a single tool call with argument validation.
 
@@ -50,6 +55,7 @@ async def execute_tool_call(
     """
     from sage.agent_loop import LoopPhase
 
+    t0 = time.monotonic()
     tool = tool_registry.get(tc.name)
     if tool is None:
         # Emit TOOL_GAP for observability / tracing.
@@ -97,10 +103,28 @@ async def execute_tool_call(
                 log.warning("ToolForge synthesis for '%s' failed: %s", tc.name, exc)
 
         if tool is None:
+            _record_tool_delta(
+                run_frame_builder=run_frame_builder,
+                node_run_id=node_run_id,
+                source_id=source_id or f"tool:{tc.name}",
+                exit_code=127,
+                timed_out=False,
+                duration_ms=(time.monotonic() - t0) * 1000,
+                tool_error_class="ToolUnavailable",
+            )
             return f"Error: Unknown tool '{tc.name}'"
     kwargs = tc.arguments
     if not isinstance(kwargs, dict):
         log.warning("Tool '%s' received non-dict arguments: %s", tc.name, type(kwargs))
+        _record_tool_delta(
+            run_frame_builder=run_frame_builder,
+            node_run_id=node_run_id,
+            source_id=source_id or f"tool:{tc.name}",
+            exit_code=-1,
+            timed_out=False,
+            duration_ms=(time.monotonic() - t0) * 1000,
+            tool_error_class="InvalidArguments",
+        )
         return (
             f"Error: Tool '{tc.name}' received invalid arguments "
             f"(expected dict, got {type(kwargs).__name__})"
@@ -108,6 +132,14 @@ async def execute_tool_call(
     try:
         result = await tool.execute(kwargs.copy())
         output_len = len(result.output) if result and result.output else 0
+        _record_tool_delta(
+            run_frame_builder=run_frame_builder,
+            node_run_id=node_run_id,
+            source_id=source_id or f"tool:{tc.name}",
+            exit_code=0,
+            timed_out=False,
+            duration_ms=(time.monotonic() - t0) * 1000,
+        )
         log.info(
             "tool.call name=%s args_keys=%s output_len=%d",
             tc.name,
@@ -117,7 +149,44 @@ async def execute_tool_call(
         return result.output
     except (RuntimeError, ValueError, TimeoutError) as e:
         log.error("Tool '%s' execution failed: %s", tc.name, e)
+        _record_tool_delta(
+            run_frame_builder=run_frame_builder,
+            node_run_id=node_run_id,
+            source_id=source_id or f"tool:{tc.name}",
+            exit_code=-1,
+            timed_out=isinstance(e, TimeoutError),
+            duration_ms=(time.monotonic() - t0) * 1000,
+            tool_error_class=type(e).__name__,
+        )
         return f"Error executing tool '{tc.name}': {type(e).__name__}: {e}"
+
+
+def _record_tool_delta(
+    *,
+    run_frame_builder: Any | None,
+    node_run_id: str | None,
+    source_id: str,
+    exit_code: int,
+    timed_out: bool,
+    duration_ms: float,
+    tool_error_class: str = "",
+) -> None:
+    if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
+        return
+    from sage.runtime.evidence.producers.tool import produce_tool_deltas
+
+    result = produce_tool_deltas(
+        run_id=run_frame_builder.run_id,
+        node_run_id=node_run_id,
+        event_seq=None,
+        source_id=source_id,
+        exit_code=exit_code,
+        timed_out=timed_out,
+        duration_ms=duration_ms,
+        tool_error_class=tool_error_class,
+    )
+    for delta in result.deltas:
+        run_frame_builder.record_delta(delta)
 
 
 def schedule_from_topology(current_topology: Any) -> list[dict]:

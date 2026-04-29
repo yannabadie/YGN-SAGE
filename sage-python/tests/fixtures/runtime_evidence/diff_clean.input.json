@@ -1,0 +1,15 @@
+{
+  "producer": "diff_verifier",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-diff",
+    "event_seq": 30,
+    "source_id": "swebench:verify",
+    "verify_result": {
+      "outcome": "clean",
+      "mismatches": [],
+      "reasons": ["clean"],
+      "patch_hash": "patch-clean"
+    }
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "producer": "code_node_return",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-code",
+    "event_seq": 50,
+    "source_id": "code:return",
+    "return_value": {
+      "status": "ok",
+      "count": 2
+    },
+    "return_schema": {
+      "schema_id": "return-v1",
+      "fields": ["status", "count"]
+    }
+  }
+}

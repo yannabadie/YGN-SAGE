@@ -1,0 +1,13 @@
+{
+  "producer": "tool_execution",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-1",
+    "event_seq": 12,
+    "source_id": "tool:pytest",
+    "exit_code": -1,
+    "timed_out": true,
+    "duration_ms": 30000.0,
+    "tool_error_class": "TimeoutExpired"
+  }
+}

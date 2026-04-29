@@ -1,0 +1,22 @@
+{
+  "deltas": [
+    {
+      "schema_version": "0",
+      "producer": "code_node_return",
+      "delta_kind": "structured_return_valid",
+      "polarity": "positive",
+      "confidence": 1.0,
+      "run_id": "run-fixture",
+      "node_run_id": "node-code",
+      "event_seq": 50,
+      "source_id": "code:return",
+      "evidence_hash": "$AUTO",
+      "payload": {
+        "schema_id": "return-v1",
+        "valid": true,
+        "return_hash": "$RETURN_HASH",
+        "declared_fields": ["status", "count"]
+      }
+    }
+  ]
+}

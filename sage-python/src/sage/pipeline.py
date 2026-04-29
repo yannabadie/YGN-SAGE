@@ -1852,6 +1852,16 @@ class CognitiveOrchestrationPipeline:
                         "gate_current_task": getattr(self._agent_loop, "gate_current_task", None),
                         "gate_source_tier": getattr(self._agent_loop, "gate_source_tier", None),
                         "_on_drift": getattr(self._agent_loop, "_on_drift", None),
+                        "_run_frame_builder": getattr(
+                            self._agent_loop,
+                            "_run_frame_builder",
+                            None,
+                        ),
+                        "_runtime_node_run_id": getattr(
+                            self._agent_loop,
+                            "_runtime_node_run_id",
+                            None,
+                        ),
                         "validation_level": self._agent_loop.config.validation_level,
                         "max_steps": self._agent_loop.config.max_steps,
                         "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
@@ -1873,6 +1883,8 @@ class CognitiveOrchestrationPipeline:
                     # H4 (cache_topology) — fix perfectly wired, never fires.
                     self._agent_loop.write_gate = self.write_gate
                     self._agent_loop.gate_current_task = ctx.task
+                    self._agent_loop._run_frame_builder = run_frame_builder
+                    self._agent_loop._runtime_node_run_id = None
                     try:
                         from sage.memory.write_gate import infer_source_tier
                         model_id = getattr(
@@ -2016,6 +2028,12 @@ class CognitiveOrchestrationPipeline:
                         self._agent_loop.gate_current_task = _orig_bypass_state["gate_current_task"]
                         self._agent_loop.gate_source_tier = _orig_bypass_state["gate_source_tier"]
                         self._agent_loop._on_drift = _orig_bypass_state["_on_drift"]
+                        self._agent_loop._run_frame_builder = _orig_bypass_state[
+                            "_run_frame_builder"
+                        ]
+                        self._agent_loop._runtime_node_run_id = _orig_bypass_state[
+                            "_runtime_node_run_id"
+                        ]
                         self._agent_loop.config.validation_level = _orig_bypass_state["validation_level"]
                         self._agent_loop.config.max_steps = _orig_bypass_state["max_steps"]
                         self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]

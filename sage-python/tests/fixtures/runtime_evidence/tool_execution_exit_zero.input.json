@@ -1,0 +1,14 @@
+{
+  "producer": "tool_execution",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-1",
+    "event_seq": 10,
+    "source_id": "tool:pytest",
+    "exit_code": 0,
+    "timed_out": false,
+    "duration_ms": 12.5,
+    "tool_error_class": "",
+    "artifact_hash": "abc123"
+  }
+}

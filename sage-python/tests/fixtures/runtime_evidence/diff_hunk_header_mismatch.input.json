@@ -1,0 +1,15 @@
+{
+  "producer": "diff_verifier",
+  "kwargs": {
+    "run_id": "run-fixture",
+    "node_run_id": "node-diff",
+    "event_seq": 31,
+    "source_id": "swebench:verify",
+    "verify_result": {
+      "outcome": "malformed_hunk_header",
+      "mismatches": [],
+      "reasons": ["malformed_hunk_header"],
+      "patch_hash": "patch-bad-header"
+    }
+  }
+}

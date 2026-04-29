@@ -27,6 +27,7 @@ class EvidenceRef:
     output_sha256: str | None = None
     tool_call_id: str | None = None
     verifier_id: str | None = None
+    evidence_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +96,7 @@ class OracleVerdict:
                     "output_sha256": e.output_sha256,
                     "tool_call_id": e.tool_call_id,
                     "verifier_id": e.verifier_id,
+                    "evidence_hash": e.evidence_hash,
                 }
                 for e in self.evidence
             ],
