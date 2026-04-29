@@ -6,6 +6,8 @@ is not compiled. See spec for weight rationale (0.4/0.4/0.2).
 from __future__ import annotations
 
 import logging
+import os
+from dataclasses import dataclass
 from typing import Any
 
 log = logging.getLogger(__name__)
@@ -14,6 +16,19 @@ WEIGHT_AFFINITY = 0.4
 WEIGHT_DOMAIN = 0.4
 WEIGHT_COST = 0.2
 BUDGET_EPSILON = 0.01
+_LOG_TOP3_ENV = "SAGE_ASSIGNER_LOG_TOP3"
+
+
+@dataclass(frozen=True, slots=True)
+class _CandidateScore:
+    model_id: str
+    score: float
+    affinity: float
+    domain: float
+    cost_norm: float
+    hint_bonus: float
+    diversity_penalty: float
+    est_cost: float
 
 
 class ModelAssigner:
@@ -23,8 +38,16 @@ class ModelAssigner:
         """catalog: ModelRegistry (sage.llm.model_registry.ModelRegistry)."""
         self._catalog = catalog
 
-    def assign_models(self, graph: Any, task_domain: str, budget_usd: float) -> int:
+    def assign_models(
+        self,
+        graph: Any,
+        task_domain: str,
+        budget_usd: float,
+        hints: Any = None,
+        task_system: int | None = None,
+    ) -> int:
         """Assign model_id to every node. Modifies graph in-place. Returns count assigned."""
+        del hints, task_system
         node_count = graph.node_count()
         remaining = budget_usd
         assigned = 0
@@ -41,33 +64,21 @@ class ModelAssigner:
             node = graph.get_node(idx) if hasattr(graph, 'get_node') else None
             if node is None:
                 continue
-            caps = getattr(node, "required_capabilities", [])
-            needs_tools = "tools" in caps
-            needs_json = "json" in caps
             node_budget = min(getattr(node, "max_cost_usd", remaining), remaining)
-            system = getattr(node, "system", 1)
 
-            best_id, best_score = None, float("-inf")
-            for card in cards:
-                if needs_tools and not card.supports_tools:
-                    continue
-                if needs_json and not card.supports_json_mode:
-                    continue
-                est = card.estimate_cost(1000, 500)
-                if est > node_budget:
-                    continue
-                aff = self._catalog.calibrated_affinity(card.id, system)
-                dom = card.domain_score(task_domain)
-                cost_n = est / max_cost
-                score = WEIGHT_AFFINITY * aff + WEIGHT_DOMAIN * dom + WEIGHT_COST * (1.0 - cost_n)
-                if score > best_score:
-                    best_score = score
-                    best_id = card.id
+            candidates = self._score_candidates(
+                cards=cards,
+                node=node,
+                task_domain=task_domain,
+                node_budget=node_budget,
+                max_cost=max_cost,
+            )
 
-            if best_id is not None:
-                graph.set_node_model_id(idx, best_id)
-                est = next((c.estimate_cost(1000, 500) for c in cards if c.id == best_id), 0)
-                remaining -= est
+            if candidates:
+                best = candidates[0]
+                graph.set_node_model_id(idx, best.model_id)
+                self._log_top_candidates(idx, candidates)
+                remaining -= best.est_cost
                 assigned += 1
             else:
                 log.warning("node %d (%s): no candidate, keeping existing model_id",
@@ -107,31 +118,97 @@ class ModelAssigner:
         if not cards:
             raise ValueError("No models in catalog")
         max_cost = max((c.estimate_cost(1000, 500) for c in cards), default=0.001)
+        _excluded = set(exclude_model_ids) if exclude_model_ids else set()
+
+        candidates = self._score_candidates(
+            cards=cards,
+            node=node,
+            task_domain=task_domain,
+            node_budget=budget_usd,
+            max_cost=max_cost,
+            exclude_model_ids=_excluded,
+        )
+        if not candidates:
+            raise ValueError(f"No candidate for node {node_idx}")
+        best = candidates[0]
+        graph.set_node_model_id(node_idx, best.model_id)
+        self._log_top_candidates(node_idx, candidates)
+        return best.model_id
+
+    def _score_candidates(
+        self,
+        *,
+        cards: list[Any],
+        node: Any,
+        task_domain: str,
+        node_budget: float,
+        max_cost: float,
+        exclude_model_ids: set[str] | None = None,
+    ) -> list[_CandidateScore]:
         caps = getattr(node, "required_capabilities", [])
         needs_tools = "tools" in caps
         needs_json = "json" in caps
         system = getattr(node, "system", 1)
-        _excluded = set(exclude_model_ids) if exclude_model_ids else set()
+        excluded = exclude_model_ids or set()
+        candidates: list[_CandidateScore] = []
 
-        best_id, best_score = None, float("-inf")
         for card in cards:
-            if card.id in _excluded:
+            if card.id in excluded:
                 continue
             if needs_tools and not card.supports_tools:
                 continue
             if needs_json and not card.supports_json_mode:
                 continue
-            if card.estimate_cost(1000, 500) > budget_usd:
+            est = card.estimate_cost(1000, 500)
+            if est > node_budget:
                 continue
-            aff = self._catalog.calibrated_affinity(card.id, system)
-            dom = card.domain_score(task_domain)
-            cost_n = card.estimate_cost(1000, 500) / max_cost
-            score = WEIGHT_AFFINITY * aff + WEIGHT_DOMAIN * dom + WEIGHT_COST * (1.0 - cost_n)
-            if score > best_score:
-                best_score = score
-                best_id = card.id
+            affinity = self._catalog.calibrated_affinity(card.id, system)
+            domain = card.domain_score(task_domain)
+            cost_norm = est / max(max_cost, 0.001)
+            hint_bonus = 0.0
+            diversity_penalty = 0.0
+            score = (
+                WEIGHT_AFFINITY * affinity
+                + WEIGHT_DOMAIN * domain
+                + WEIGHT_COST * (1.0 - cost_norm)
+                + hint_bonus
+                - diversity_penalty
+            )
+            candidates.append(
+                _CandidateScore(
+                    model_id=card.id,
+                    score=score,
+                    affinity=affinity,
+                    domain=domain,
+                    cost_norm=cost_norm,
+                    hint_bonus=hint_bonus,
+                    diversity_penalty=diversity_penalty,
+                    est_cost=est,
+                )
+            )
 
-        if best_id is None:
-            raise ValueError(f"No candidate for node {node_idx}")
-        graph.set_node_model_id(node_idx, best_id)
-        return best_id
+        candidates.sort(key=lambda item: (-item.score, item.model_id))
+        return candidates
+
+    def _log_top_candidates(
+        self,
+        node_idx: int,
+        candidates: list[_CandidateScore],
+    ) -> None:
+        if os.environ.get(_LOG_TOP3_ENV) != "1":
+            return
+        for rank, candidate in enumerate(candidates[:3], start=1):
+            log.info(
+                "model_assigner.candidates node_id=%d rank=%d model=%s "
+                "score=%.6f affinity=%.6f domain=%.6f cost_norm=%.6f "
+                "hint_bonus=%.6f diversity_penalty=%.6f",
+                node_idx,
+                rank,
+                candidate.model_id,
+                candidate.score,
+                candidate.affinity,
+                candidate.domain,
+                candidate.cost_norm,
+                candidate.hint_bonus,
+                candidate.diversity_penalty,
+            )
