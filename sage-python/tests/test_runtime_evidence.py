@@ -21,6 +21,7 @@ from sage.runtime.evidence import (
     produce_test_parser_deltas,
     produce_tool_deltas,
 )
+from sage.runtime.evidence.delta import RUNTIME_DELTA_SCHEMA_VERSION
 from sage.runtime.oracle import evaluate
 from sage.runtime.run_frame.builder import _RunFrameBuilder
 
@@ -829,3 +830,74 @@ class TestToolFatalScopeGate:
         )
         assert result.deltas == ()
         assert "fatal_scope" in (result.rejected_reason or "")
+
+
+class TestFormalOracleDirectDeltaDefenseInDepth:
+    """cgpro 2026-04-29 R6.1a verify round-2 push-back: the producer rejects
+    formal deltas missing obligation_id, but a direct RuntimeDelta could
+    bypass the producer entirely. _formal_delta_is_complete must re-check
+    obligation_id presence in the oracle hot path so synthetic/direct deltas
+    cannot become trainable formal verdicts without an obligation reference.
+    """
+
+    def _direct_delta(self, kind: str, **payload_overrides: Any) -> RuntimeDelta:
+        """Construct a RuntimeDelta directly, bypassing the producer."""
+        polarity_map: dict[str, str] = {
+            "obligation_proved": "positive",
+            "obligation_refuted": "negative",
+            "counterexample_found": "negative",
+        }
+        payload: dict[str, Any] = {
+            "verifier_id": "z3",
+            "encoding": (
+                "prove_no_counterexample"
+                if kind == "obligation_proved"
+                else "find_counterexample"
+            ),
+            "solver_status": "unsat" if kind == "obligation_proved" else "sat",
+        }
+        # Default includes obligation_id; tests override to drop it.
+        if "obligation_id" not in payload_overrides:
+            payload["obligation_id"] = "obl-direct"
+        payload.update(payload_overrides)
+        return RuntimeDelta(
+            schema_version=RUNTIME_DELTA_SCHEMA_VERSION,
+            producer="formal_verifier",
+            delta_kind=kind,
+            polarity=polarity_map[kind],  # type: ignore[arg-type]
+            confidence=1.0,
+            run_id="run-direct",
+            node_run_id="node-d",
+            event_seq=12,
+            source_id="z3",
+            payload=payload,
+        )
+
+    def test_obligation_proved_without_obligation_id_abstains(self) -> None:
+        delta = self._direct_delta("obligation_proved", obligation_id="")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="proved without obligation reference",
+        )
+        assert verdict.verdict_source == "abstain"
+        assert verdict.trainable is False
+
+    def test_obligation_refuted_without_obligation_id_abstains(self) -> None:
+        delta = self._direct_delta("obligation_refuted", obligation_id="")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="refuted without obligation reference",
+        )
+        assert verdict.verdict_source == "abstain"
+        assert verdict.trainable is False
+
+    def test_obligation_proved_with_complete_evidence_trains_pass(self) -> None:
+        # Sanity: when all fields are present, the oracle still trains.
+        delta = self._direct_delta("obligation_proved")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="proved",
+        )
+        assert verdict.verdict_source == "formal"
+        assert verdict.quality_label == "pass"
+        assert verdict.trainable is True

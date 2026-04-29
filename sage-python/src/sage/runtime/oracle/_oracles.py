@@ -246,19 +246,24 @@ def _formal_delta_is_complete(delta: Any) -> bool:
 
     A trainable formal delta (obligation_proved / obligation_refuted /
     counterexample_found) MUST carry complete obligation semantics:
-    verifier_id + encoding + solver_status, and solver_status must match
-    the kind's expected direction. obligation_unknown / verifier_unavailable
-    do not produce trainable verdicts and are skipped here (the caller
-    handles them as Abstain triggers).
+    obligation_id + verifier_id + encoding + solver_status, and
+    solver_status must match the kind's expected direction.
+    obligation_unknown / verifier_unavailable do not produce trainable
+    verdicts and are skipped here (the caller handles them as Abstain
+    triggers). cgpro 2026-04-29 R6.1a verify round-2 push-back: the
+    obligation_id check is here AS WELL AS in the producer so a directly-
+    constructed RuntimeDelta cannot bypass the producer to become a
+    trainable formal verdict without an obligation reference.
     """
     kind = getattr(delta, "delta_kind", "")
     if kind not in _FORMAL_KIND_TO_SOLVER_STATUS:
         return True
     payload = getattr(delta, "payload", {}) or {}
+    obligation_id = str(payload.get("obligation_id", "")).strip()
     verifier_id = str(payload.get("verifier_id", "")).strip()
     encoding = str(payload.get("encoding", "")).strip()
     solver_status = str(payload.get("solver_status", "")).strip().lower()
-    if not verifier_id or not encoding or not solver_status:
+    if not obligation_id or not verifier_id or not encoding or not solver_status:
         return False
     return solver_status in _FORMAL_KIND_TO_SOLVER_STATUS[kind]
 
