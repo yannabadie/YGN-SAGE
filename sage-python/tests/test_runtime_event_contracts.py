@@ -351,3 +351,74 @@ def test_controller_decision_payload_contains_quality_metadata(
     assert payload["quality_source"] == "onnx"
     assert payload["threshold_band"] == "critical"
     assert payload["reason_code"] == "quality_below_theta_critical"
+
+
+def test_controller_decision_payload_populated_under_default_on(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Post-flip default-on contract: unset SAGE_ORACLE still forces the
+    controller_decision safe payload fields.
+    """
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+
+    run_id = "01CONTRACTCTRLDEFAULTON01"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    log.emit_controller_decision(
+        node_id="2",
+        action="retry_node",
+        target_node_id="2",
+        quality_score=0.11,
+        quality_source="onnx",
+        threshold_band="critical",
+        reason_code="quality_below_theta_critical",
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    controller = next(e for e in events if e["event_type"] == "controller_decision")
+    payload = controller["payload"]
+
+    for field in (
+        "quality_score",
+        "quality_source",
+        "threshold_band",
+        "reason_code",
+        "node_id",
+    ):
+        assert field in payload
+
+    assert payload["node_id"] == "2"
+    assert payload["quality_score"] == 0.11
+    assert payload["quality_source"] == "onnx"
+    assert payload["threshold_band"] == "critical"
+    assert payload["reason_code"] == "quality_below_theta_critical"
+
+
+def test_controller_decision_payload_fields_present_in_cycle7_n50_jsonls() -> None:
+    """Analyzer reconciliation over the N=50 cycle-7 trace set."""
+    from sage.bench.path_e_validate import (
+        CONTROLLER_DECISION_SAFE_FIELDS,
+        _summarize_controller_decision_payloads,
+    )
+
+    jsonl_dir = (
+        pathlib.Path(__file__).resolve().parents[2]
+        / "docs"
+        / "benchmarks"
+        / "2026-04-29-cycle7-evidence-bcb-N50-jsonl"
+    )
+    assert jsonl_dir.exists(), f"missing committed trace directory: {jsonl_dir}"
+    assert len(list(jsonl_dir.glob("*.jsonl"))) == 50
+
+    summary = _summarize_controller_decision_payloads(jsonl_dir)
+
+    assert summary.event_count > 0
+    assert summary.non_empty_payload_count == summary.event_count
+    assert summary.missing_examples == ()
+    assert summary.field_presence == {
+        field: summary.event_count for field in CONTROLLER_DECISION_SAFE_FIELDS
+    }

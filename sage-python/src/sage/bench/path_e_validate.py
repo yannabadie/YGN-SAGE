@@ -74,6 +74,67 @@ class TaskValidation:
     event_order_ok: bool
 
 
+@dataclass(frozen=True)
+class ControllerDecisionPayloadSummary:
+    event_count: int
+    non_empty_payload_count: int
+    field_presence: dict[str, int]
+    missing_examples: tuple[dict[str, Any], ...]
+
+
+CONTROLLER_DECISION_SAFE_FIELDS: tuple[str, ...] = (
+    "quality_score",
+    "quality_source",
+    "threshold_band",
+    "reason_code",
+    "node_id",
+)
+
+
+def _summarize_controller_decision_payloads(
+    jsonl_dir: Path,
+) -> ControllerDecisionPayloadSummary:
+    """Count safe controller_decision payload fields across trace JSONLs."""
+    field_presence = {field: 0 for field in CONTROLLER_DECISION_SAFE_FIELDS}
+    missing_examples: list[dict[str, Any]] = []
+    event_count = 0
+    non_empty_payload_count = 0
+
+    for jf in sorted(jsonl_dir.glob("*.jsonl")):
+        for event in _load_jsonl(jf):
+            if event.get("event_type") != "controller_decision":
+                continue
+            event_count += 1
+            raw_payload = event.get("payload")
+            payload: dict[str, Any] = (
+                raw_payload if isinstance(raw_payload, dict) else {}
+            )
+            if payload:
+                non_empty_payload_count += 1
+            missing_fields: list[str] = []
+            for field in CONTROLLER_DECISION_SAFE_FIELDS:
+                if field in payload:
+                    field_presence[field] += 1
+                else:
+                    missing_fields.append(field)
+            if missing_fields and len(missing_examples) < 3:
+                missing_examples.append(
+                    {
+                        "file": jf.name,
+                        "seq": event.get("seq"),
+                        "missing_fields": missing_fields,
+                        "payload_keys": sorted(str(key) for key in payload.keys()),
+                    }
+                )
+
+    return ControllerDecisionPayloadSummary(
+        event_count=event_count,
+        non_empty_payload_count=non_empty_payload_count,
+        field_presence=field_presence,
+        missing_examples=tuple(missing_examples),
+    )
+
+
 def _validate_run(events: list[dict[str, Any]]) -> TaskValidation:
     """Reduce a single run's events into a validation record."""
     by_type: dict[str, dict[str, Any]] = {}
@@ -182,6 +243,7 @@ def main() -> int:
     if not jsonl_files:
         print(f"ERROR: no JSONL files in {args.jsonl_dir}", file=sys.stderr)
         return 1
+    controller_payload_summary = _summarize_controller_decision_payloads(args.jsonl_dir)
 
     # Validate each run.
     runs: list[TaskValidation] = []
@@ -392,6 +454,25 @@ def main() -> int:
 
     md_lines += [
         "",
+        "## Controller decision payload reconciliation",
+        "",
+        f"- ``controller_decision`` events: {controller_payload_summary.event_count}",
+        f"- Non-empty payloads: {controller_payload_summary.non_empty_payload_count}",
+        "- Safe field presence: "
+        + ", ".join(
+            f"``{field}``={count}"
+            for field, count in controller_payload_summary.field_presence.items()
+        ),
+        "- First missing examples: "
+        + (
+            json.dumps(
+                list(controller_payload_summary.missing_examples),
+                ensure_ascii=False,
+            )
+            if controller_payload_summary.missing_examples
+            else "[]"
+        ),
+        "",
         "## Reproducibility",
         "",
         "- Repo: https://github.com/yannabadie/YGN-SAGE",
@@ -424,6 +505,25 @@ def main() -> int:
     print(f"  Seam Exact fail: {has_exact_fail}")
     print(f"  Event order pass: {event_order_pass}")
     print(f"  Raw output leaks: {len(raw_leak_findings)}")
+    print(
+        "  Controller decisions: "
+        f"{controller_payload_summary.event_count} events, "
+        f"{controller_payload_summary.non_empty_payload_count} non-empty payloads"
+    )
+    print(
+        "  Controller decision safe field presence: "
+        + ", ".join(
+            f"{field}={count}"
+            for field, count in controller_payload_summary.field_presence.items()
+        )
+    )
+    print(
+        "  Controller decision first missing examples: "
+        + json.dumps(
+            list(controller_payload_summary.missing_examples),
+            ensure_ascii=False,
+        )
+    )
     print(f"  Cross-check agree/diverged/unknown: "
           f"{seam_match_bench}/{seam_diverged_bench}/{seam_unknown}")
     print(f"  Manifest: {args.out_manifest}")
