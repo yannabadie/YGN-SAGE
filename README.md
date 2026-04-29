@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2447%20Py%20%2B%20522%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2484%20Py%20%2B%20522%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -176,7 +176,7 @@ Plus:
 
 ## Runtime Architecture — typed execution spine (v0, 2026-04-29)
 
-A 5-cycle arc shipped a typed runtime layer underneath the orchestration pipeline. All four strategic feature flags default OFF (byte-identical to legacy); flip ON to opt into the new contract.
+A 6-cycle arc shipped a typed runtime layer underneath the orchestration pipeline. All four strategic feature flags default OFF (byte-identical to legacy); flip ON to opt into the new contract.
 
 | Layer | Module | Flag (opt-in) | Purpose |
 |-------|--------|---------------|---------|
@@ -185,10 +185,11 @@ A 5-cycle arc shipped a typed runtime layer underneath the orchestration pipelin
 | StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` | Control / Message / State edge-channel partitioning, atomic delta reducer |
 | RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
 | OracleStack (cycle 5) | `sage/runtime/oracle/` | `SAGE_ORACLE=1` | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
+| EvidenceProducers (cycle 6, R6.1a) | `sage/runtime/evidence/` | gated by `SAGE_ORACLE=1` | 6 deterministic producers (tool / test / diff / formal / code-node / planner) emit typed `RuntimeDelta` records consumed by Tool/Formal/Spec v1 oracles |
 
-Hard invariant under `SAGE_ORACLE=1`: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs. Cycle-7 default-on flip is gated on R6.1a deterministic delta producers + smoke validation.
+Hard invariant under `SAGE_ORACLE=1`: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs. Cycle-7 default-on flip is gated on (a) R6.1a ship (done), (b) bench smoke N=10 with `SAGE_ORACLE=1`, (c) bandit posterior reset audit.
 
-Detail: [ADR-014..ADR-018](YGN-SAGE/Decisions/) (Obsidian vault), [docs/contracts/runtime-event-log.md](docs/contracts/runtime-event-log.md) (mode-aware contract matrix + golden fixtures).
+Detail: [ADR-014..ADR-019](YGN-SAGE/Decisions/) (Obsidian vault), [docs/contracts/runtime-event-log.md](docs/contracts/runtime-event-log.md) (mode-aware contract matrix + golden fixtures).
 
 ## Formal Verification (Rust)
 
@@ -246,7 +247,7 @@ Each topology node can use a different provider. The policy model can express `p
 
 | Suite | Result |
 |-------|--------|
-| Python | **2447 passing** (excluding API-key-gated files; +90 vs the 2026-04-26 closeout baseline of 2357 after the 5-cycle Apr 28-29 runtime arc). 8 fail + 2 error remain in `test_e2e_*` / `test_pydantic_ai_integration.py` — pre-existing API-key-gated fixtures. |
+| Python | **2484 passing** (excluding API-key-gated files; +127 vs the 2026-04-26 closeout baseline of 2357 after the 6-cycle Apr 28-29 runtime arc + R6.1a evidence producers). 8 fail + 2 error remain in `test_e2e_*` / `test_pydantic_ai_integration.py` — pre-existing API-key-gated fixtures. |
 | Rust | **522 passing** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery | 95 tests |
 | CI | 8 jobs (Rust, Rust features, Python Linux, Python Windows, Discover, OTel Linux, OTel Windows, Integration Smoke) |
