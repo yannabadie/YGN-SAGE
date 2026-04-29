@@ -1,0 +1,50 @@
+{
+  "benchmark": "bigcodebench-hard-instruct",
+  "total": 2,
+  "passed": 2,
+  "failed": 0,
+  "errors": 0,
+  "pass_rate": 1.0,
+  "avg_latency_ms": 37632.83979892731,
+  "avg_cost_usd": 0.049267487512200614,
+  "routing_breakdown": {
+    "S1": 0,
+    "S2": 1,
+    "S3": 1
+  },
+  "results": [
+    {
+      "task_id": "BigCodeBench/13",
+      "passed": true,
+      "system_used": 2,
+      "latency_ms": 41085.09707450867,
+      "cost_usd": 0.05600359501426202,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    },
+    {
+      "task_id": "BigCodeBench/15",
+      "passed": true,
+      "system_used": 3,
+      "latency_ms": 34180.58252334595,
+      "cost_usd": 0.0425313800101392,
+      "sandbox_executions": 0,
+      "memory_events": 0,
+      "escalations": 0,
+      "z3_checks": 0,
+      "tokens_used": 0,
+      "error": ""
+    }
+  ],
+  "model_config": {},
+  "model": "unknown",
+  "provider": "",
+  "git_sha": "",
+  "feature_flags": [],
+  "timestamp": "",
+  "temperature": 0.0
+}

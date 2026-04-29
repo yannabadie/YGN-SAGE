@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import subprocess
 import tempfile
 import time
@@ -95,10 +96,107 @@ class BigCodeBenchBench:
 
             if self.system:
                 try:
-                    raw = await asyncio.wait_for(
-                        self.system.run(task_input),
-                        timeout=self.task_timeout,
+                    # cgpro 2026-04-29 R6.1a verify Path E: opt-in
+                    # bench-result feedback seam. With SAGE_BENCH_ORACLE_SEAM=1,
+                    # the pipeline calls our evaluator BEFORE final_result so
+                    # _exact_oracle sees bench_result["passed"] and emits a
+                    # trainable Exact verdict on the live trace. The bench
+                    # still does the same evaluation afterwards (cheap; idempotent
+                    # for deterministic test code) so escalation logic below
+                    # is unchanged.
+                    use_seam = (
+                        os.environ.get("SAGE_BENCH_ORACLE_SEAM") == "1"
+                        and hasattr(self.system, "run_with_bench_evaluator")
                     )
+                    if use_seam:
+                        eval_test_code = task["test"]
+                        eval_entry = entry
+                        eval_task_id = tid
+                        eval_timeout_local = self.eval_timeout
+
+                        # Path E seam evaluator. We try the OFFICIAL
+                        # bigcodebench.eval.untrusted_check first (calibrated
+                        # per the BCB protocol — POSIX-only); on Windows it
+                        # raises AttributeError on os.killpg, in which case
+                        # we fall back to the in-tree
+                        # _evaluate_solution_with_stderr (matplotlib-headless
+                        # subprocess; Windows-compatible and deterministic
+                        # per (solution, test_code)). The verifier_id field
+                        # records which path produced bench_result so the
+                        # downstream report can audit calibration provenance.
+                        def _bench_evaluator(raw_output: str) -> dict:
+                            sol = extract_code(raw_output, eval_entry)
+                            if not sol:
+                                return {
+                                    "passed": False,
+                                    "score": 0.0,
+                                    "verifier_id": "bcb_no_solution",
+                                    "reason": "no_solution_extracted",
+                                }
+                            # Try official first.
+                            try:
+                                from bigcodebench.eval import untrusted_check
+                                stat_official, _details = untrusted_check(
+                                    code=sol,
+                                    test_code=eval_test_code,
+                                    entry_point=eval_entry,
+                                    max_as_limit=30 * 1024,
+                                    max_data_limit=30 * 1024,
+                                    max_stack_limit=10,
+                                    min_time_limit=1,
+                                    gt_time_limit=60,
+                                )
+                                # On Windows untrusted_check returns
+                                # 'timeout' due to os.killpg AttributeError
+                                # silently caught upstream; treat as fall-
+                                # back trigger if stat is not a clean
+                                # pass / fail.
+                                if stat_official in ("pass", "fail"):
+                                    passed_off = (stat_official == "pass")
+                                    return {
+                                        "passed": passed_off,
+                                        "score": 1.0 if passed_off else 0.0,
+                                        "verifier_id": (
+                                            "bigcodebench.eval.untrusted_check"
+                                        ),
+                                        "reason": stat_official,
+                                    }
+                            except Exception:  # noqa: BLE001 - fallback path
+                                pass
+                            # Windows / non-clean fallback to in-tree eval.
+                            passed_seam, stderr_seam = (
+                                BigCodeBenchBench._evaluate_solution_with_stderr(
+                                    solution=sol,
+                                    test_code=eval_test_code,
+                                    entry_point=eval_entry,
+                                    task_id=eval_task_id,
+                                    timeout=eval_timeout_local,
+                                )
+                            )
+                            return {
+                                "passed": bool(passed_seam),
+                                "score": 1.0 if passed_seam else 0.0,
+                                "verifier_id": (
+                                    "bcb_internal_subprocess_fallback"
+                                ),
+                                "reason": (
+                                    "pass"
+                                    if passed_seam
+                                    else (stderr_seam or "fail")[:128]
+                                ),
+                            }
+
+                        raw, _frame_seam = await asyncio.wait_for(
+                            self.system.run_with_bench_evaluator(
+                                task_input, _bench_evaluator,
+                            ),
+                            timeout=self.task_timeout,
+                        )
+                    else:
+                        raw = await asyncio.wait_for(
+                            self.system.run(task_input),
+                            timeout=self.task_timeout,
+                        )
                     solution = extract_code(raw, entry)
                     # Capture pipeline context if available
                     pipe = getattr(self.system, "pipeline", None)
