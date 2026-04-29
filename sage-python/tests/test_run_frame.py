@@ -405,6 +405,15 @@ async def test_run_frame_summary_event_only_when_r7_enabled(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """R7 contract: run_frame_summary appears only when SAGE_RUN_FRAME=1.
+
+    Post cycle-7 default-on flip: SAGE_ORACLE unset = ON, which would
+    insert an oracle_verdict event between final_result and
+    run_frame_summary. This test isolates the R7 legacy contract by
+    flipping the kill-switch ``SAGE_ORACLE=0`` so the event order stays
+    final_result → run_frame_summary (no oracle insert).
+    """
+    monkeypatch.setenv("SAGE_ORACLE", "0")
     off_dir = tmp_path / "off"
     on_dir = tmp_path / "on"
     off_dir.mkdir()

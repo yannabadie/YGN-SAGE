@@ -414,17 +414,21 @@ class TestRawOutputSafety:
 
 class TestOffModeStability:
     @pytest.mark.asyncio
-    async def test_code_node_runtime_skips_tool_producer_when_oracle_unset(
+    async def test_code_node_runtime_skips_tool_producer_when_killswitch_set(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
+        """Post cycle-7 default-on flip: oracle is ON when SAGE_ORACLE is
+        unset; the legacy producer-skipped path is reached via the explicit
+        kill-switch ``SAGE_ORACLE=0``.
+        """
         from sage.topology.runner import TopologyRunner
 
-        monkeypatch.delenv("SAGE_ORACLE", raising=False)
+        monkeypatch.setenv("SAGE_ORACLE", "0")
         monkeypatch.setenv("SAGE_UNSAFE_RAW_EXEC", "1")
 
         def _boom(**_kwargs: Any) -> Any:
-            raise AssertionError("producer must not be called when SAGE_ORACLE is unset")
+            raise AssertionError("producer must not be called when killswitch is set")
 
         monkeypatch.setattr(
             "sage.runtime.evidence.producers.tool.produce_tool_deltas",
@@ -458,14 +462,15 @@ class TestOffModeStability:
         assert builder.finalize().runtime_deltas == ()
 
     @pytest.mark.asyncio
-    async def test_agent_loop_tool_path_skips_producer_when_oracle_unset(
+    async def test_agent_loop_tool_path_skips_producer_when_killswitch_set(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        monkeypatch.delenv("SAGE_ORACLE", raising=False)
+        """Post cycle-7 default-on flip: kill-switch path."""
+        monkeypatch.setenv("SAGE_ORACLE", "0")
 
         def _boom(**_kwargs: Any) -> Any:
-            raise AssertionError("producer must not be called when SAGE_ORACLE is unset")
+            raise AssertionError("producer must not be called when killswitch is set")
 
         monkeypatch.setattr(
             "sage.runtime.evidence.producers.tool.produce_tool_deltas",

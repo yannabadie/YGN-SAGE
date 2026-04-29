@@ -1,5 +1,6 @@
 """OracleStack v0 - quality verdict hierarchy for trainable-gate."""
 from sage.runtime.oracle.config import OracleConfig
+from sage.runtime.oracle.env import oracle_enabled
 from sage.runtime.oracle.errors import OracleUnavailable
 from sage.runtime.oracle.verdict import (
     ORACLE_VERDICT_SCHEMA_VERSION,
@@ -27,6 +28,7 @@ __all__ = [
     "OracleConfig",
     "OracleUnavailable",
     "evaluate",
+    "oracle_enabled",
     "VERDICT_SOURCES",
     "QUALITY_LABELS",
     "ORACLE_VERDICT_SCHEMA_VERSION",

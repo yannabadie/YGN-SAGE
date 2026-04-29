@@ -314,6 +314,47 @@ def test_exact_oracle_pre_supplied_reason_sha256_takes_precedence() -> None:
     assert verdict.reason_codes == ("exact_test_fail", "bcb_timeout")
 
 
+def test_exact_oracle_reason_code_with_raw_text_is_rejected() -> None:
+    """cgpro 2026-04-29 flip approval hardening: bench seams must not put
+    raw stderr or traceback into ``bench_result["reason_code"]``. Anything
+    not matching the structured-token regex is replaced with the sentinel
+    ``exact_reason_code_rejected`` so the audit log still surfaces the
+    rejection.
+    """
+    verdict = evaluate(
+        FakeRunFrameView(),
+        final_output="bad",
+        bench_result={
+            "passed": False,
+            "score": 0.0,
+            "verifier_id": "bench",
+            "reason_code": "Traceback (most recent call last)\n  File \"x.py\"",
+        },
+    )
+
+    assert verdict.reason_codes == (
+        "exact_test_fail",
+        "exact_reason_code_rejected",
+    )
+    for code in verdict.reason_codes:
+        assert "Traceback" not in code
+        assert '  File "' not in code
+
+
+def test_exact_oracle_non_string_reason_code_is_rejected() -> None:
+    verdict = evaluate(
+        FakeRunFrameView(),
+        final_output="bad",
+        bench_result={
+            "passed": False,
+            "score": 0.0,
+            "verifier_id": "bench",
+            "reason_code": 12345,  # int, not a string token
+        },
+    )
+    assert "exact_reason_code_rejected" in verdict.reason_codes
+
+
 @pytest.mark.asyncio
 async def test_abstain_blocks_bandit_update(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SAGE_ORACLE", "1")
@@ -466,12 +507,16 @@ def test_run_frame_includes_oracle_verdict_when_present() -> None:
 
 
 @pytest.mark.asyncio
-async def test_oracle_off_via_sage_oracle_unset_preserves_legacy_behavior(
+async def test_oracle_off_via_killswitch_preserves_legacy_behavior(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Post cycle-7 default-on flip: SAGE_ORACLE unset is now ON (default).
+    The legacy "oracle skipped" path is reached by the explicit kill-switch
+    ``SAGE_ORACLE=0``. This test pins the kill-switch contract.
+    """
     run_id = "01ORACLEOFF0000000000001"
-    monkeypatch.delenv("SAGE_ORACLE", raising=False)
+    monkeypatch.setenv("SAGE_ORACLE", "0")
     monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
     monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: run_id)
     bandit = RecordingBandit()

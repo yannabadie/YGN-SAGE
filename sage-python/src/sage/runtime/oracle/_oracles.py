@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from typing import Any, Mapping
 
 from sage.runtime.oracle.config import OracleConfig
@@ -9,6 +10,32 @@ from sage.runtime.oracle.verdict import EvidenceRef, OracleVerdict, QualityLabel
 _TRUSTED_TEST_PARSERS: frozenset[str] = frozenset(
     {"pytest_summary_v0", "junit_xml_v0", "unittest_summary_v0"}
 )
+
+# cgpro 2026-04-29 cycle-7 flip approval hardening: bench seams could
+# accidentally put raw stderr into ``bench_result["reason_code"]``. We
+# only allow short structured tokens (lowercase ASCII, digits, separators).
+# Anything else is replaced with a sentinel so the JSONL stays clean.
+_REASON_CODE_RE = re.compile(r"^[a-z0-9_:.\-]{1,80}$")
+
+
+def _safe_reason_code(value: Any) -> str | None:
+    """Sanitize ``bench_result['reason_code']`` to a structured token.
+
+    Returns ``None`` if no reason_code was supplied (caller should skip
+    appending). Returns ``"exact_reason_code_rejected"`` if a value was
+    supplied but doesn't match the structured-token regex (caller still
+    appends so audit logs surface the rejection).
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        return "exact_reason_code_rejected"
+    code = value.strip().lower()
+    if not code:
+        return None
+    if not _REASON_CODE_RE.fullmatch(code):
+        return "exact_reason_code_rejected"
+    return code
 
 
 def _exact_oracle(
@@ -52,9 +79,9 @@ def _exact_oracle(
     label: QualityLabel = "pass" if passed else "fail"
     reason_codes: list[str] = [f"exact_test_{label}"]
 
-    pre_classified_code = bench_result.get("reason_code")
-    if isinstance(pre_classified_code, str) and pre_classified_code:
-        reason_codes.append(pre_classified_code)
+    sanitized_code = _safe_reason_code(bench_result.get("reason_code"))
+    if sanitized_code is not None:
+        reason_codes.append(sanitized_code)
 
     raw_reason = bench_result.get("reason")
     reason_hash: str | None = None

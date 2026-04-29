@@ -7,7 +7,6 @@ self.X attribute access.
 from __future__ import annotations
 
 import logging
-import os
 import time
 from typing import Any
 
@@ -180,7 +179,8 @@ def _record_tool_delta(
     abstains rather than producing a trainable fail. The bench harness +
     code-node executor pass `fatal_scope="claimed_task_output"` separately.
     """
-    if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
+    from sage.runtime.oracle.env import oracle_enabled
+    if not oracle_enabled() or run_frame_builder is None:
         return
     from sage.runtime.evidence.producers.tool import produce_tool_deltas
 

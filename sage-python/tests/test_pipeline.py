@@ -1,4 +1,10 @@
-"""Tests for CognitiveOrchestrationPipeline (5-stage orchestration)."""
+"""Tests for CognitiveOrchestrationPipeline (5-stage orchestration).
+
+Post cycle-7 default-on flip (2026-04-29): SAGE_ORACLE unset means ON.
+This module's tests cover the LEGACY (pre-oracle) pipeline path. Set
+``SAGE_ORACLE=0`` (kill-switch) module-wide so the legacy expectations
+hold. Tests for the oracle path live in test_oracle_stack.py.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +21,15 @@ from sage.pipeline_stages import (
     select_macro_topology,
     DAGFeatures,
 )
+
+
+@pytest.fixture(autouse=True)
+def _legacy_oracle_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """All tests in this module exercise the legacy (pre-oracle) pipeline
+    path. Apply the cycle-7 kill-switch ``SAGE_ORACLE=0`` automatically so
+    the new default-on does not change these tests' expectations.
+    """
+    monkeypatch.setenv("SAGE_ORACLE", "0")
 
 
 # ── Helper mocks ────────────────────────────────────────────────────────────

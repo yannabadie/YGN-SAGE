@@ -1112,10 +1112,8 @@ class TopologyRunner:
         output = stdout
 
         latency_ms = (time.monotonic() - t0) * 1000
-        if (
-            os.environ.get("SAGE_ORACLE") == "1"
-            and self._run_frame_builder is not None
-        ):
+        from sage.runtime.oracle.env import oracle_enabled as _oracle_enabled
+        if _oracle_enabled() and self._run_frame_builder is not None:
             from sage.runtime.evidence.producers.tool import produce_tool_deltas
 
             # Code-node failures invalidate the claimed task output: a code

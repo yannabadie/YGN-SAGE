@@ -27,7 +27,7 @@ from sage.pipeline_stages import (
     select_macro_topology,
     DAGFeatures,
 )
-from sage.runtime.oracle import EvidenceRef, OracleConfig, OracleVerdict
+from sage.runtime.oracle import EvidenceRef, OracleConfig, OracleVerdict, oracle_enabled
 from sage.runtime.run_frame import RunFrame, RunStatus
 
 # OxiZ formal verification — imported lazily to allow graceful fallback.
@@ -836,10 +836,10 @@ class CognitiveOrchestrationPipeline:
                             _eval_exc,
                         )
 
-                oracle_enabled = os.environ.get("SAGE_ORACLE") == "1"
+                oracle_on = oracle_enabled()
                 final_status = self._runtime_final_status(ctx)
 
-                if oracle_enabled:
+                if oracle_on:
                     final_seq = event_log.emit_final_result(
                         status=final_status,
                         output=ctx.result or "",
@@ -913,7 +913,7 @@ class CognitiveOrchestrationPipeline:
                     )
                     final_emitted = True
 
-                if oracle_enabled:
+                if oracle_on:
                     self.last_context = ctx
                     if self._agent_loop is not None and ctx.cost:
                         self._agent_loop.total_cost_usd = float(ctx.cost)
@@ -1911,7 +1911,7 @@ class CognitiveOrchestrationPipeline:
         return decision
 
     def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
-        if os.environ.get("SAGE_ORACLE") == "1":
+        if oracle_enabled():
             verdict = getattr(ctx, "oracle_verdict", None)
             if verdict is None or not verdict.trainable:
                 return
@@ -2619,10 +2619,10 @@ class CognitiveOrchestrationPipeline:
             import re
 
             quality: float | None = None
-            oracle_enabled = os.environ.get("SAGE_ORACLE") == "1"
+            oracle_on = oracle_enabled()
             oracle_trainable = False
 
-            if oracle_enabled:
+            if oracle_on:
                 verdict = getattr(ctx, "oracle_verdict", None)
                 if verdict is not None and verdict.trainable:
                     quality = verdict.score
@@ -2643,7 +2643,7 @@ class CognitiveOrchestrationPipeline:
             # Only blend when quality is known (not None)
             _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
             if (
-                not oracle_enabled
+                not oracle_on
                 and self.prm
                 and quality is not None
                 and ctx.result
@@ -2744,7 +2744,7 @@ class CognitiveOrchestrationPipeline:
             # just appended an outcome to the archive, so should_evolve()
             # has fresh data. Constants come from sage.constants — single
             # source of truth, already covered by test_online_evolution.py.
-            allow_training_updates = (not oracle_enabled) or oracle_trainable
+            allow_training_updates = (not oracle_on) or oracle_trainable
             if allow_training_updates and self.engine and hasattr(self.engine, "should_evolve"):
                 try:
                     from sage.constants import (

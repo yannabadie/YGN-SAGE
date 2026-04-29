@@ -375,7 +375,8 @@ class RuntimeEventLog:
         safe_threshold_band = _coerce_threshold_band(
             threshold_band if isinstance(threshold_band, str) else None
         )
-        force_safe_payload = os.environ.get("SAGE_ORACLE") == "1"
+        from sage.runtime.oracle.env import oracle_enabled as _oracle_enabled
+        force_safe_payload = _oracle_enabled()
         payload: dict[str, Any] = {
             "action": safe_action,
             "target_node_id": target_node_id,

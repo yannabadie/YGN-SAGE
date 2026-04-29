@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import os
 import re
 import subprocess
 from typing import Any
@@ -361,7 +360,8 @@ def _record_repair_delta(
     event_seq: int | None,
     source_id: str,
 ) -> None:
-    if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
+    from sage.runtime.oracle.env import oracle_enabled
+    if not oracle_enabled() or run_frame_builder is None:
         return
     from sage.runtime.evidence.producers.diff import produce_diff_verifier_deltas
 
