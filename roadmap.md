@@ -13,7 +13,7 @@ All 4 strategic feature flags ship **default-OFF** for safety:
 
 - **`SAGE_STATECORE=1`** (R6) — Control/Message/State edge-channel separation.
 - **`SAGE_RUN_FRAME=1`** (R7) — typed RunFrame trailing diagnostic.
-- **`SAGE_ORACLE=1`** (R9 + R6.1a) — OracleStack training gate. Default OFF still until cycle-7 default-on flip; the R6.1a EvidenceProducers ship deterministic delta producers (Tool/Formal/Spec v1) so the oracle isn't evidence-starved.
+- **`SAGE_ORACLE`** (R9 + R6.1a) — OracleStack training gate. **DEFAULT-ON since cycle-7 flip 2026-04-29** (commit `128e1b89`). Unset = ON; `SAGE_ORACLE=0` (or `false`/`off`/`no`) = kill-switch (operator escape hatch). Centralized predicate in `sage/runtime/oracle/env.py` `oracle_enabled()`. Validated by N=5 unset smoke (5/5 oracle_verdicts emitted) + N=2 kill-switch smoke (0 oracle_verdicts).
 - **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — durable JSONL sink.
 
 Plus the new bench seam (R6.1a Path E):

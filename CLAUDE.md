@@ -125,7 +125,11 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 `advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
 
-## Current State (April 26, 2026)
+## Current State (April 29, 2026)
+
+- **Cycle-7 default-on flip** (`128e1b89`, 2026-04-29 evening): `SAGE_ORACLE` is now **DEFAULT-ON**. Unset = oracle path active; `SAGE_ORACLE=0`/`false`/`off`/`no` = kill-switch (operator escape hatch). Centralized predicate in `sage/runtime/oracle/env.py` `oracle_enabled()`. Validated by N=5 unset smoke (5/5 oracle_verdicts emitted, 0 raw leaks) + N=2 kill-switch smoke (0 oracle_verdicts emitted). Bandit / MAP-Elites / online-evolution / training-memory ONLY update when `verdict.trainable=True`. Posterior epoch=1 (post A14 reset 2026-04-29). Pre-flip code commits: `162e82ea` (BCB-Hard N=50 evidence with internal pass@1=30%, official Docker pass@1=32%, 49/50 = 98% per-task agreement) → `f6711385` (closed cgpro PUSH BACK on raw `bench_result["reason"]` leak; reason now SHA-256-hashed into `EvidenceRef.evidence_hash`) → `f9305d74` (post-leak-fix smoke 0 leaks across 106 events) → flip → `a5f916ea` (unset evidence) → `8b4b34b6` (kill-switch evidence).
+
+## Previous State (April 26, 2026)
 
 - **Tests**: Python **2501 passing (excluding API-key-dependent files)**, 63 skipped, 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` (pre-existing, all API-key-gated). Rust **501+ passed** with `--features smt,cognitive,sandbox,cranelift` (CI plein vert on commit `50fb8e4f`).
 - **Static analysis**: **mypy 0 errors** across 183 source files (was 131 errors / 48 files at start of 2026-04-26 closeout). type:ignore ceiling **45/45** (44→45 for `import yaml  # type: ignore[import-untyped]` — CI Linux runner doesn't get types-PyYAML transitively). **ruff clean.**
