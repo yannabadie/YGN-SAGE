@@ -13,6 +13,11 @@ from uuid import uuid4
 import pytest
 
 from sage.pipeline import CognitiveOrchestrationPipeline
+from sage.runtime.evidence import (
+    RuntimeDelta,
+    produce_test_parser_deltas,
+    produce_tool_deltas,
+)
 from sage.runtime.oracle import (
     ORACLE_VERDICT_SCHEMA_VERSION,
     EvidenceRef,
@@ -37,6 +42,7 @@ def tmp_path() -> pathlib.Path:
 class FakeRunFrameView:
     run_id: str = "01ORACLEVIEW0000000000001"
     final_result_seq: int | None = 7
+    runtime_deltas: tuple[RuntimeDelta, ...] = ()
     state_frames: Mapping[str, StateFrame] = field(default_factory=dict)
     node_records: Mapping[str, Any] = field(default_factory=dict)
 
@@ -450,6 +456,142 @@ def test_lexical_fallback_off_by_default_means_abstain() -> None:
 
     assert verdict.verdict_source == "abstain"
     assert verdict.trainable is False
+
+
+def _pytest_delta(stdout: str) -> RuntimeDelta:
+    result = produce_test_parser_deltas(
+        run_id="01ORACLEVIEW0000000000001",
+        node_run_id="node-tests",
+        event_seq=3,
+        source_id="pytest:unit",
+        framework="pytest",
+        stdout=stdout,
+        stderr="",
+        exit_code=0,
+        suite_id="unit",
+    )
+    assert result.rejected_reason is None
+    return result.deltas[0]
+
+
+def _legacy_pytest_v0_pass_delta() -> RuntimeDelta:
+    return RuntimeDelta(
+        schema_version="0",
+        producer="test_parser",
+        delta_kind="tests_passed",
+        polarity="positive",
+        confidence=1.0,
+        run_id="01ORACLEVIEW0000000000001",
+        node_run_id="node-tests",
+        event_seq=3,
+        source_id="pytest:unit",
+        payload={
+            "framework": "pytest",
+            "parser_id": "pytest_summary_v0",
+            "suite_id": "unit",
+            "passed_count": 1,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "error_count": 0,
+            "duration_ms": 100.0,
+        },
+    )
+
+
+def _tool_fatal_delta(fatal_scope: str) -> RuntimeDelta:
+    result = produce_tool_deltas(
+        run_id="01ORACLEVIEW0000000000001",
+        node_run_id="node-tool",
+        event_seq=4,
+        source_id="tool:runner",
+        exit_code=-1,
+        timed_out=False,
+        duration_ms=2.0,
+        tool_error_class="RuntimeError",
+        fatal_scope=fatal_scope,
+    )
+    assert result.rejected_reason is None
+    return result.deltas[0]
+
+
+def test_tool_oracle_accepts_pytest_summary_v1_parser() -> None:
+    parser_pass = _pytest_delta("==== 1 passed in 0.10s ====")
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_pass,)),
+        final_output="tests passed",
+    )
+
+    assert verdict.verdict_source == "tool"
+    assert verdict.quality_label == "pass"
+    assert verdict.trainable is True
+
+
+def test_tool_oracle_keeps_pytest_summary_v0_backcompat() -> None:
+    parser_pass = _legacy_pytest_v0_pass_delta()
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_pass,)),
+        final_output="legacy parser pass",
+    )
+
+    assert verdict.verdict_source == "tool"
+    assert verdict.quality_label == "pass"
+    assert verdict.trainable is True
+
+
+def test_tool_oracle_parser_pass_with_incidental_fatal_still_passes() -> None:
+    parser_pass = _pytest_delta("==== 1 passed in 0.10s ====")
+    incidental_fatal = _tool_fatal_delta("incidental_tool_call")
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_pass, incidental_fatal)),
+        final_output="tests passed despite incidental tool failure",
+    )
+
+    assert verdict.verdict_source == "tool"
+    assert verdict.quality_label == "pass"
+    assert verdict.trainable is True
+
+
+def test_tool_oracle_parser_pass_with_unknown_fatal_abstains() -> None:
+    parser_pass = _pytest_delta("==== 1 passed in 0.10s ====")
+    unknown_fatal = _tool_fatal_delta("unknown")
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_pass, unknown_fatal)),
+        final_output="tests passed with unscoped fatal",
+    )
+
+    assert verdict.verdict_source == "abstain"
+    assert verdict.trainable is False
+
+
+def test_tool_oracle_parser_pass_with_claimed_task_output_fatal_abstains() -> None:
+    parser_pass = _pytest_delta("==== 1 passed in 0.10s ====")
+    scoped_fatal = _tool_fatal_delta("claimed_task_output")
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_pass, scoped_fatal)),
+        final_output="tests passed but artifact fatal invalidates confidence",
+    )
+
+    assert verdict.verdict_source == "abstain"
+    assert verdict.trainable is False
+
+
+def test_tool_oracle_parser_fail_with_incidental_fatal_still_fails() -> None:
+    parser_fail = _pytest_delta("==== 1 failed in 0.10s ====")
+    incidental_fatal = _tool_fatal_delta("incidental_tool_call")
+
+    verdict = evaluate(
+        FakeRunFrameView(runtime_deltas=(parser_fail, incidental_fatal)),
+        final_output="tests failed",
+    )
+
+    assert verdict.verdict_source == "tool"
+    assert verdict.quality_label == "fail"
+    assert verdict.trainable is True
 
 
 @pytest.mark.asyncio

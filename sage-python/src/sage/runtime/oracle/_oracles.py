@@ -8,7 +8,7 @@ from sage.runtime.oracle.config import OracleConfig
 from sage.runtime.oracle.verdict import EvidenceRef, OracleVerdict, QualityLabel
 
 _TRUSTED_TEST_PARSERS: frozenset[str] = frozenset(
-    {"pytest_summary_v0", "junit_xml_v0", "unittest_summary_v0"}
+    {"pytest_summary_v0", "pytest_summary_v1", "junit_xml_v0", "unittest_summary_v0"}
 )
 
 # cgpro 2026-04-29 cycle-7 flip approval hardening: bench seams could
@@ -142,9 +142,22 @@ def _tool_oracle(
     if _has_contradictory_parser_facts(parser_deltas):
         return None
     fatal_deltas = [delta for delta in tool_deltas if delta.delta_kind == "fatal_failure"]
+    scoped_fatals = [
+        delta
+        for delta in fatal_deltas
+        if str(delta.payload.get("fatal_scope", "")).strip().lower()
+        == "claimed_task_output"
+    ]
+    unknown_fatals = [
+        delta
+        for delta in fatal_deltas
+        if str(delta.payload.get("fatal_scope", "")).strip().lower() == "unknown"
+    ]
 
     if parser_deltas:
-        if fatal_deltas and all(delta.delta_kind == "tests_passed" for delta in parser_deltas):
+        if (scoped_fatals or unknown_fatals) and all(
+            delta.delta_kind == "tests_passed" for delta in parser_deltas
+        ):
             return None
         negative = [
             delta
@@ -192,12 +205,6 @@ def _tool_oracle(
         # (`fatal_scope == "incidental_tool_call"`) and unscoped failures
         # must NOT become trainable fail; the hierarchy falls through to
         # the next oracle (Formal / Spec / Abstain).
-        scoped_fatals = [
-            delta
-            for delta in fatal_deltas
-            if str(getattr(delta, "payload", {}).get("fatal_scope", "")).strip().lower()
-            == "claimed_task_output"
-        ]
         if scoped_fatals:
             return OracleVerdict(
                 trainable=True,
