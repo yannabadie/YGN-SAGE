@@ -74,6 +74,7 @@ class BigCodeBenchBench:
         results: list[TaskResult] = []
         self._predictions: list[dict[str, Any]] = []
         passed_count = 0
+        disable_repair = os.environ.get("SAGE_BENCH_DISABLE_REPAIR") == "1"
 
         from sage.input.bcb import normalize_bcb
 
@@ -235,108 +236,109 @@ class BigCodeBenchBench:
                     timeout=self.eval_timeout,
                 )
 
-                # Escalation strategy (Conductor-inspired recursive self-invocation):
-                # 1. Bypass already tried (fast single-agent) → failed
-                # 2. Try reasoner repair (stronger model fixes syntax/logic)
-                # 3. If still fails AND was bypassed → escalate with full topology
-                was_bypassed = trace.get("topology_nodes", 0) == 0
+                if not disable_repair:
+                    # Escalation strategy (Conductor-inspired recursive self-invocation):
+                    # 1. Bypass already tried (fast single-agent) → failed
+                    # 2. Try reasoner repair (stronger model fixes syntax/logic)
+                    # 3. If still fails AND was bypassed → escalate with full topology
+                    was_bypassed = trace.get("topology_nodes", 0) == 0
 
-                # Step 1: Reasoner repair (arXiv 2306.09896: 1 repair optimal)
-                #
-                # 2026-04-21 audit (docs/audits/2026-04-21-bcb-hard-failure-analysis.md,
-                # top-1 lever). Prior prompt only gave the LLM the NL description
-                # + last 500 chars of stderr. The repair stage fired 72/72 times
-                # on non-API failures in the Apr-08 run and repaired 0 of them —
-                # classic "not enough signal" bottleneck. Expected lift +5-8 pp.
-                #
-                # Enrichments (all already public for this instance — no leakage):
-                #   - Function template (``task['code_prompt']``) — signature +
-                #     docstring. Anchors the repair on the exact entry-point shape.
-                #   - Acceptance tests (``task['test']``) — the tests that just
-                #     failed. This is the contract, not the solution. Equivalent
-                #     to what SWE-bench's agent discovers via ``grep test_*``;
-                #     BCB has no tool loop, so we inject directly. Standard Aider
-                #     / OpenHands / SWE-agent practice.
-                #   - Stderr window raised 500 → 1500 chars (cap is 2000 since
-                #     this morning's commit c6e40e9); keeps full tracebacks.
-                #   - Entry-point explicitly named again to prevent LLM renaming.
-                #
-                # NOT included (would be overfitting / leakage):
-                #   - ``task['canonical_solution']`` — ground-truth code. Excluded.
-                if not task_passed and eval_stderr:
-                    code_template = task.get("code_prompt", "") or task.get("prompt", "")
-                    test_code = task.get("test", "")
-                    # C4 (2026-04-22): `prompt` was renamed to `task_input`
-                    # at the loop head. Rebuild the pre-C4 string on the fly
-                    # so the AVR retry prompt stays byte-identical with what
-                    # the commit 9eb05b0 smoke measured.
-                    from sage.input.bcb import render_bcb_prompt
-                    original_prompt = render_bcb_prompt(task_input)
-                    retry_prompt = (
-                        f"Your previous code for this task failed. Read the error, "
-                        f"the function template, and the acceptance tests, then "
-                        f"return a corrected implementation.\n\n"
-                        f"## Error from the failing test run\n"
-                        f"```\n{eval_stderr[-1500:]}\n```\n\n"
-                        f"## Original task description\n"
-                        f"{original_prompt}\n\n"
-                        f"## Function template to complete\n"
-                        f"```python\n{code_template}\n```\n\n"
-                        f"## Acceptance tests (these are what just failed)\n"
-                        f"```python\n{test_code}\n```\n\n"
-                        f"Return ONLY the corrected Python code inside a "
-                        f"```python fenced block. The function must be named "
-                        f"exactly `{entry}`. Do not include the tests — only "
-                        f"the implementation."
-                    )
-                    try:
-                        raw = await asyncio.wait_for(
-                            self._run_with_reasoner(retry_prompt),
-                            timeout=self.task_timeout,
+                    # Step 1: Reasoner repair (arXiv 2306.09896: 1 repair optimal)
+                    #
+                    # 2026-04-21 audit (docs/audits/2026-04-21-bcb-hard-failure-analysis.md,
+                    # top-1 lever). Prior prompt only gave the LLM the NL description
+                    # + last 500 chars of stderr. The repair stage fired 72/72 times
+                    # on non-API failures in the Apr-08 run and repaired 0 of them —
+                    # classic "not enough signal" bottleneck. Expected lift +5-8 pp.
+                    #
+                    # Enrichments (all already public for this instance — no leakage):
+                    #   - Function template (``task['code_prompt']``) — signature +
+                    #     docstring. Anchors the repair on the exact entry-point shape.
+                    #   - Acceptance tests (``task['test']``) — the tests that just
+                    #     failed. This is the contract, not the solution. Equivalent
+                    #     to what SWE-bench's agent discovers via ``grep test_*``;
+                    #     BCB has no tool loop, so we inject directly. Standard Aider
+                    #     / OpenHands / SWE-agent practice.
+                    #   - Stderr window raised 500 → 1500 chars (cap is 2000 since
+                    #     this morning's commit c6e40e9); keeps full tracebacks.
+                    #   - Entry-point explicitly named again to prevent LLM renaming.
+                    #
+                    # NOT included (would be overfitting / leakage):
+                    #   - ``task['canonical_solution']`` — ground-truth code. Excluded.
+                    if not task_passed and eval_stderr:
+                        code_template = task.get("code_prompt", "") or task.get("prompt", "")
+                        test_code = task.get("test", "")
+                        # C4 (2026-04-22): `prompt` was renamed to `task_input`
+                        # at the loop head. Rebuild the pre-C4 string on the fly
+                        # so the AVR retry prompt stays byte-identical with what
+                        # the commit 9eb05b0 smoke measured.
+                        from sage.input.bcb import render_bcb_prompt
+                        original_prompt = render_bcb_prompt(task_input)
+                        retry_prompt = (
+                            f"Your previous code for this task failed. Read the error, "
+                            f"the function template, and the acceptance tests, then "
+                            f"return a corrected implementation.\n\n"
+                            f"## Error from the failing test run\n"
+                            f"```\n{eval_stderr[-1500:]}\n```\n\n"
+                            f"## Original task description\n"
+                            f"{original_prompt}\n\n"
+                            f"## Function template to complete\n"
+                            f"```python\n{code_template}\n```\n\n"
+                            f"## Acceptance tests (these are what just failed)\n"
+                            f"```python\n{test_code}\n```\n\n"
+                            f"Return ONLY the corrected Python code inside a "
+                            f"```python fenced block. The function must be named "
+                            f"exactly `{entry}`. Do not include the tests — only "
+                            f"the implementation."
                         )
-                        code = extract_code(raw, entry)
-                        if code.strip():
-                            solution = code
-                            task_passed, eval_stderr = self._evaluate_solution_with_stderr(
-                                solution=code,
-                                test_code=task["test"],
-                                entry_point=entry,
-                                task_id=tid,
-                                timeout=self.eval_timeout,
+                        try:
+                            raw = await asyncio.wait_for(
+                                self._run_with_reasoner(retry_prompt),
+                                timeout=self.task_timeout,
                             )
-                            if task_passed:
-                                log.info("  Repair succeeded for %s (reasoner tier)", tid)
-                    except Exception:
-                        pass
+                            code = extract_code(raw, entry)
+                            if code.strip():
+                                solution = code
+                                task_passed, eval_stderr = self._evaluate_solution_with_stderr(
+                                    solution=code,
+                                    test_code=task["test"],
+                                    entry_point=entry,
+                                    task_id=tid,
+                                    timeout=self.eval_timeout,
+                                )
+                                if task_passed:
+                                    log.info("  Repair succeeded for %s (reasoner tier)", tid)
+                        except Exception:
+                            pass
 
-                # Step 2: Topology escalation (only if bypassed and still failing)
-                if not task_passed and was_bypassed:
-                    try:
-                        pipe = getattr(self.system, "pipeline", None)
-                        if pipe:
-                            pipe._force_topology = True  # Override bypass
-                        raw = await asyncio.wait_for(
-                            self.system.run(task_input),
-                            timeout=self.task_timeout,
-                        )
-                        if pipe:
-                            pipe._force_topology = False
-                        code = extract_code(raw, entry)
-                        if code.strip():
-                            solution = code
-                            task_passed, eval_stderr = self._evaluate_solution_with_stderr(
-                                solution=code,
-                                test_code=task["test"],
-                                entry_point=entry,
-                                task_id=tid,
-                                timeout=self.eval_timeout,
+                    # Step 2: Topology escalation (only if bypassed and still failing)
+                    if not task_passed and was_bypassed:
+                        try:
+                            pipe = getattr(self.system, "pipeline", None)
+                            if pipe:
+                                pipe._force_topology = True  # Override bypass
+                            raw = await asyncio.wait_for(
+                                self.system.run(task_input),
+                                timeout=self.task_timeout,
                             )
-                            if task_passed:
-                                log.info("  Topology escalation succeeded for %s", tid)
-                    except Exception:
-                        pipe = getattr(self.system, "pipeline", None)
-                        if pipe:
-                            pipe._force_topology = False
+                            if pipe:
+                                pipe._force_topology = False
+                            code = extract_code(raw, entry)
+                            if code.strip():
+                                solution = code
+                                task_passed, eval_stderr = self._evaluate_solution_with_stderr(
+                                    solution=code,
+                                    test_code=task["test"],
+                                    entry_point=entry,
+                                    task_id=tid,
+                                    timeout=self.eval_timeout,
+                                )
+                                if task_passed:
+                                    log.info("  Topology escalation succeeded for %s", tid)
+                        except Exception:
+                            pipe = getattr(self.system, "pipeline", None)
+                            if pipe:
+                                pipe._force_topology = False
             else:
                 task_passed = False
                 if not error:
