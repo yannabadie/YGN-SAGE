@@ -1,0 +1,19 @@
+{
+  "_doc": "Golden fixture for controller_decision safe payload metadata. Payload is forced only when SAGE_ORACLE=1.",
+  "schema_version": "1.0",
+  "event_type": "controller_decision",
+  "source_component": "controller",
+  "_required_always": [
+    "schema_version", "run_id", "trace_id", "parent_event_id", "seq",
+    "timestamp_ns", "event_type", "source_component", "task_hash",
+    "payload_hash", "redaction_state", "node_id", "action"
+  ],
+  "_required_in_payload": [
+    "node_id", "quality_score", "quality_source", "threshold_band",
+    "action", "reason_code"
+  ],
+  "_invariants": [
+    "MUST NEVER include raw node output text",
+    "Payload is forced for SAGE_ORACLE=1 and remains legacy-redacted when SAGE_ORACLE is unset"
+  ]
+}

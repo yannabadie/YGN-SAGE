@@ -2,7 +2,18 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Literal
+
+ControllerAction = Literal[
+    "continue",
+    "upgrade_model",
+    "reroute_topology",
+    "prune_node",
+    "spawn_subagent",
+    "open_gate",
+]
+QualitySource = Literal["formal", "onnx", "heuristic", "external", "abstain"]
+ThresholdBand = Literal["critical", "continue", "good"]
 
 
 @dataclass(frozen=True)
@@ -90,10 +101,26 @@ class _NodeCompleted(_EventCore):
 @dataclass(frozen=True)
 class _ControllerDecision(_EventCore):
     node_id: str = ""
-    action: str = "continue"
+    quality_score: float | None = None
+    quality_source: QualitySource | None = None
+    threshold_band: ThresholdBand | None = None
+    action: ControllerAction = "continue"
+    reason_code: str = ""
     target_node_id: str = ""
     gate_source_id: str | None = None
     gate_target_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        d = super().to_dict()
+        for key in (
+            "quality_score",
+            "quality_source",
+            "threshold_band",
+            "reason_code",
+        ):
+            if d.get(key) in (None, ""):
+                d.pop(key, None)
+        return d
 
 
 @dataclass(frozen=True)

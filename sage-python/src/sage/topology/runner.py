@@ -103,6 +103,8 @@ _RunEvent = (
 # Roles recognized as "planner" for the optional planner-output injection
 # experiment. Kept in sync with topology/role_prompts.py _PLANNER aliases.
 _PLANNER_ROLE_KEYWORDS = ("planner", "input_processor", "decomposer")
+_CONTROLLER_QUALITY_SOURCES = {"formal", "onnx", "heuristic", "external", "abstain"}
+_CONTROLLER_THRESHOLD_BANDS = {"critical", "continue", "good"}
 
 # Max characters of planner output injected into downstream system prompt.
 # Keeps the prompt bounded regardless of how verbose the planner is.
@@ -120,6 +122,25 @@ def _is_planner_role(role: str) -> bool:
         return False
     rl = role.lower()
     return any(kw in rl for kw in _PLANNER_ROLE_KEYWORDS)
+
+
+def _controller_optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _controller_safe_choice(value: Any, allowed: set[str]) -> str | None:
+    if isinstance(value, str) and value in allowed:
+        return value
+    return None
 
 
 def _edge_type_name(edge_type: Any) -> str:
@@ -1860,6 +1881,18 @@ class TopologyRunner:
         gate_source_id = None if gate_source is None else str(gate_source)
         gate_target_id = None if gate_target is None else str(gate_target)
         reason = getattr(decision, "reason", "") or ""
+        quality_score = _controller_optional_float(
+            getattr(decision, "quality_score", None)
+        )
+        quality_source = _controller_safe_choice(
+            getattr(decision, "quality_source", None),
+            _CONTROLLER_QUALITY_SOURCES,
+        )
+        threshold_band = _controller_safe_choice(
+            getattr(decision, "threshold_band", None),
+            _CONTROLLER_THRESHOLD_BANDS,
+        )
+        reason_code = str(getattr(decision, "reason_code", "") or "")
         seq = None
         if self._event_log is not None:
             seq = self._event_log.emit_controller_decision(
@@ -1869,6 +1902,10 @@ class TopologyRunner:
                 gate_source_id=gate_source_id,
                 gate_target_id=gate_target_id,
                 reason=reason,
+                quality_score=quality_score,
+                quality_source=quality_source,
+                threshold_band=threshold_band,
+                reason_code=reason_code,
             )
         if self._run_frame_builder is not None:
             self._run_frame_builder.record_controller_decision(

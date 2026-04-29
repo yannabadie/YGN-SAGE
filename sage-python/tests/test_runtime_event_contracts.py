@@ -301,3 +301,53 @@ def test_event_type_catalog_completeness() -> None:
         "EVENT_TYPES drift: docs/contracts/runtime-event-log.md and "
         "docs/contracts/runtime-event-log.md catalog must be updated together."
     )
+
+
+def test_controller_decision_payload_contains_quality_metadata(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Oracle-mode controller_decision payload carries safe quality metadata."""
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+    fixture = _load_fixture("controller_decision.json")
+
+    run_id = "01CONTRACTCTRLDEC00000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    log.emit_controller_decision(
+        node_id="0",
+        action="upgrade_model",
+        target_node_id="0",
+        quality_score=0.25,
+        quality_source="onnx",
+        threshold_band="critical",
+        reason_code="quality_below_theta_critical",
+    )
+    log.emit_final_result(
+        status="success",
+        output="ok",
+        total_cost_usd=0.0,
+        total_latency_ms=1.0,
+        node_count=1,
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    controller = next(e for e in events if e["event_type"] == "controller_decision")
+
+    for field in fixture["_required_always"]:
+        assert field in controller, f"missing required-always field {field!r}"
+
+    assert "payload" in controller
+    payload = controller["payload"]
+    for field in fixture["_required_in_payload"]:
+        assert field in payload, f"missing required-in-payload field {field!r}"
+
+    assert payload["node_id"] == "0"
+    assert payload["action"] == "upgrade_model"
+    assert payload["quality_score"] == 0.25
+    assert payload["quality_source"] == "onnx"
+    assert payload["threshold_band"] == "critical"
+    assert payload["reason_code"] == "quality_below_theta_critical"

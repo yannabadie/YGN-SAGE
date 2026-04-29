@@ -7,11 +7,12 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, TextIO, get_args, cast
 
 from sage.runtime.event_log.errors import EventLogUnavailable
 from sage.runtime.event_log.events import (
     _Budget,
+    ControllerAction,
     _ControllerDecision,
     _EventCore,
     _Failure,
@@ -19,12 +20,14 @@ from sage.runtime.event_log.events import (
     _ModelAssigned,
     _NodeCompleted,
     _NodeStarted,
+    QualitySource,
     _OracleVerdict,
     _RoutingDecision,
     _RunFrameSummary,
     _StateApplied,
     _TaskStarted,
     _TopologySelected,
+    ThresholdBand,
 )
 from sage.runtime.event_log.redaction import (
     _hash_payload,
@@ -42,6 +45,28 @@ _FAIL_CLOSED_ENV = "SAGE_TRACE_FAIL_CLOSED"
 _current_event_log: contextvars.ContextVar[RuntimeEventLog | None] = (
     contextvars.ContextVar("_current_event_log", default=None)
 )
+
+_CONTROLLER_ACTIONS = set(get_args(ControllerAction))
+_QUALITY_SOURCES = set(get_args(QualitySource))
+_THRESHOLD_BANDS = set(get_args(ThresholdBand))
+
+
+def _coerce_controller_action(value: str) -> ControllerAction:
+    if value in _CONTROLLER_ACTIONS:
+        return cast(ControllerAction, value)
+    return "continue"
+
+
+def _coerce_quality_source(value: str | None) -> QualitySource:
+    if value in _QUALITY_SOURCES:
+        return cast(QualitySource, value)
+    return "abstain"
+
+
+def _coerce_threshold_band(value: str | None) -> ThresholdBand:
+    if value in _THRESHOLD_BANDS:
+        return cast(ThresholdBand, value)
+    return "continue"
 
 
 def install_event_log(log_obj: RuntimeEventLog | None) -> contextvars.Token[RuntimeEventLog | None]:
@@ -338,21 +363,48 @@ class RuntimeEventLog:
         gate_source_id: str | None = None,
         gate_target_id: str | None = None,
         reason: str = "",
+        quality_score: float | None = None,
+        quality_source: QualitySource | str | None = None,
+        threshold_band: ThresholdBand | str | None = None,
+        reason_code: str = "",
     ) -> int | None:
-        payload = {
-            "action": action,
+        safe_action = _coerce_controller_action(action)
+        safe_quality_source = _coerce_quality_source(
+            quality_source if isinstance(quality_source, str) else None
+        )
+        safe_threshold_band = _coerce_threshold_band(
+            threshold_band if isinstance(threshold_band, str) else None
+        )
+        force_safe_payload = os.environ.get("SAGE_ORACLE") == "1"
+        payload: dict[str, Any] = {
+            "action": safe_action,
             "target_node_id": target_node_id,
             "gate_source_id": gate_source_id,
             "gate_target_id": gate_target_id,
             "reason": reason,
         }
+        if force_safe_payload:
+            payload.update(
+                {
+                    "node_id": node_id,
+                    "quality_score": quality_score,
+                    "quality_source": safe_quality_source,
+                    "threshold_band": safe_threshold_band,
+                    "reason_code": reason_code or "abstain_no_signal",
+                }
+            )
         return self._emit(
             _ControllerDecision,
             "controller_decision",
             "controller",
             payload=payload,
+            _force_payload=force_safe_payload,
             node_id=node_id,
-            action=action,
+            action=safe_action,
+            quality_score=quality_score if force_safe_payload else None,
+            quality_source=safe_quality_source if force_safe_payload else None,
+            threshold_band=safe_threshold_band if force_safe_payload else None,
+            reason_code=(reason_code or "abstain_no_signal") if force_safe_payload else "",
             target_node_id=target_node_id,
             gate_source_id=gate_source_id,
             gate_target_id=gate_target_id,

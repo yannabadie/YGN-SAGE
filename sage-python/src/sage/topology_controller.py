@@ -16,9 +16,12 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 log = logging.getLogger(__name__)
+
+QualitySource = Literal["formal", "onnx", "heuristic", "external", "abstain"]
+ThresholdBand = Literal["critical", "continue", "good"]
 
 # Plan 2.1 import guard — Rust scaffold becomes available after
 # `maturin develop` rebuild. When absent (e.g. Python-only dev env),
@@ -41,6 +44,10 @@ class AdaptationDecision:
     invariant_feedback: str | None = None  # clause-level from OxiZ
     gate_source: int | None = None  # for open_gate: source node of back-edge
     gate_target: int | None = None  # for open_gate: target node to re-execute
+    quality_score: float | None = None
+    quality_source: QualitySource | None = None
+    threshold_band: ThresholdBand | None = None
+    reason_code: str = ""
 
 
 def _rust_to_py_decision(rust_decision: Any) -> AdaptationDecision:
@@ -60,6 +67,30 @@ def _rust_to_py_decision(rust_decision: Any) -> AdaptationDecision:
         gate_source=rust_decision.gate_source,
         gate_target=rust_decision.gate_target,
     )
+
+
+def _threshold_band_for(quality: float | None) -> ThresholdBand:
+    if quality is None:
+        return "critical"
+    if quality < TopologyController.THETA_CRITICAL:
+        return "critical"
+    if quality >= TopologyController.THETA_GOOD:
+        return "good"
+    return "continue"
+
+
+def _with_quality_metadata(
+    decision: AdaptationDecision,
+    *,
+    quality_score: float | None,
+    quality_source: QualitySource,
+    reason_code: str,
+) -> AdaptationDecision:
+    decision.quality_score = quality_score
+    decision.quality_source = quality_source
+    decision.threshold_band = _threshold_band_for(quality_score)
+    decision.reason_code = reason_code
+    return decision
 
 
 # Regex for detecting structured reasoning content
@@ -255,13 +286,19 @@ class TopologyController:
         if rd is not None:
             if rd.action == "reroute_topology":
                 self._emit("REROUTE_TOPOLOGY", {"node": node_idx, "reason": rd.reason})
-            return _rust_to_py_decision(rd)
+            return _with_quality_metadata(
+                _rust_to_py_decision(rd),
+                quality_score=None,
+                quality_source="abstain",
+                reason_code="empty_or_error_reroute",
+            )
 
         # Quality compute stays Python (estimator is Python-held; Rust
         # takes the pre-computed float — same pattern as 2.3's port).
         _abstain_before = self._rust_ctrl.abstain_count
         quality = self._compute_quality(node_idx, result, task, ctx)
         _quality_is_known = self._rust_ctrl.abstain_count == _abstain_before
+        quality_source: QualitySource = "onnx" if _quality_is_known else "heuristic"
 
         # Depth axis arithmetic verify stays Python — MASPRM-specific,
         # not one of the six ported paths.
@@ -277,11 +314,16 @@ class TopologyController:
                     # check_quality_cascade reads the bumped count on the next
                     # call for the same node.
                     self._rust_ctrl.set_node_retries(node_idx, new_retries)
-                    return AdaptationDecision(
-                        action="upgrade_model",
-                        target_node=node_idx,
-                        reason=f"arithmetic verification failed: {feedback}",
-                        invariant_feedback=feedback,
+                    return _with_quality_metadata(
+                        AdaptationDecision(
+                            action="upgrade_model",
+                            target_node=node_idx,
+                            reason=f"arithmetic verification failed: {feedback}",
+                            invariant_feedback=feedback,
+                        ),
+                        quality_score=quality,
+                        quality_source=quality_source,
+                        reason_code="arithmetic_verification_failed",
                     )
 
         # Path 2 (Rust): quality cascade — good / critical-with-retry.
@@ -289,7 +331,12 @@ class TopologyController:
         rd = self._rust_ctrl.check_quality_cascade(quality, node_idx, retry_limit)
         if rd is not None:
             if rd.action == "continue":
-                return _rust_to_py_decision(rd)
+                return _with_quality_metadata(
+                    _rust_to_py_decision(rd),
+                    quality_score=quality,
+                    quality_source=quality_source,
+                    reason_code="quality_above_theta_good",
+                )
             if rd.action == "upgrade_model":
                 # Rust wrote reason + action + retry counter; Python
                 # enriches with invariant feedback + new_model_id which
@@ -297,12 +344,17 @@ class TopologyController:
                 feedback_opt = self._get_invariant_feedback(result, topology, node_idx)
                 feedback = feedback_opt or ""
                 new_model_id = self._resolve_upgrade_model(node_idx, task, topology, ctx)
-                return AdaptationDecision(
-                    action="upgrade_model",
-                    target_node=node_idx,
-                    reason=rd.reason,
-                    invariant_feedback=feedback,
-                    new_model_id=new_model_id,
+                return _with_quality_metadata(
+                    AdaptationDecision(
+                        action="upgrade_model",
+                        target_node=node_idx,
+                        reason=rd.reason,
+                        invariant_feedback=feedback,
+                        new_model_id=new_model_id,
+                    ),
+                    quality_score=quality,
+                    quality_source=quality_source,
+                    reason_code="quality_below_theta_critical",
                 )
 
         # Path 3 (Python): debate gate — walks topology.get_predecessors,
@@ -311,7 +363,12 @@ class TopologyController:
         if self._rust_ctrl.is_in_gate_band(quality):
             gate_decision = self._open_gate(node_idx, topology, parallel_outputs)
             if gate_decision is not None:
-                return gate_decision
+                return _with_quality_metadata(
+                    gate_decision,
+                    quality_score=quality,
+                    quality_source=quality_source,
+                    reason_code="quality_continue_band_open_gate",
+                )
 
         # Paths 4 (parallel inconsistency) + 5 (importance prune) share
         # parallel_outputs preconditions — compute scores once, delegate
@@ -328,7 +385,12 @@ class TopologyController:
                     "REROUTE_TOPOLOGY",
                     {"consistency": consistency, "node": node_idx},
                 )
-                return _rust_to_py_decision(rd)
+                return _with_quality_metadata(
+                    _rust_to_py_decision(rd),
+                    quality_score=quality,
+                    quality_source=quality_source,
+                    reason_code="parallel_inconsistency_below_theta",
+                )
 
             importance = self.compute_importance_score(
                 node_idx, result, parallel_outputs
@@ -341,10 +403,20 @@ class TopologyController:
                     "PRUNE_NODE",
                     {"node": node_idx, "importance": importance},
                 )
-                return _rust_to_py_decision(rd)
+                return _with_quality_metadata(
+                    _rust_to_py_decision(rd),
+                    quality_score=quality,
+                    quality_source=quality_source,
+                    reason_code="low_importance_prune",
+                )
 
         # Default: continue (accept imperfect result).
-        return AdaptationDecision(action="continue", target_node=node_idx)
+        return _with_quality_metadata(
+            AdaptationDecision(action="continue", target_node=node_idx),
+            quality_score=quality,
+            quality_source=quality_source,
+            reason_code="quality_continue_band",
+        )
 
     def _compute_quality(self, node_idx: int, result: str, task: str, ctx: Any) -> float:
         """Formal quality estimate with heuristic fallback and optional PRM blend."""
