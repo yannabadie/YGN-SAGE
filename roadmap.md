@@ -5,27 +5,45 @@
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
 
-## ⭐ Current operational gates (2026-04-29 — 5 cycles shipped)
+## ⭐ Current operational gates (2026-04-29 — 6 cycles shipped + Path E + Gate D + A14 reset)
 
-5 cycles of cgpro-driven RuntimeContracts work shipped (R0..R7 + R6.0.1 + R7.0.1+R7.0.2 + R9). 17 commits + 2 doc fixes pushed to main. ~9300 LOC, 2447 regression tests in CI, mypy 0/204, ruff clean.
+6 cycles of cgpro-driven runtime work shipped (R0..R7 + R9 + R6.1a). ~12000+ LOC, 2484+37 regression tests, mypy 0/, ruff clean. **Gate D PASS** (SWE-bench N=10 throwaway). **Path E step 3 PASS** (BCB-Hard N=10 with bench-result feedback seam: 5 Exact pass + 5 Exact fail trainable, 0 raw leaks, event order 10/10). **A14 reset operation executed 2026-04-29** — bandit/MAP-Elites posteriors moved to `~/.sage/contaminated_pre_a14_20260429/`, fresh epoch=1 marker at `~/.sage/posterior_epoch.json`, audit dump at `.tmp/a14_reset_20260429/MANIFEST.json` (SHA256-hashed).
 
 All 4 strategic feature flags ship **default-OFF** for safety:
 
-- **`SAGE_STATECORE=1`** (R6) — Control/Message/State edge-channel separation. Default OFF preserves legacy text-aggregated `_gather_predecessor_context`. ON requires strict typed edges + state delta channel.
-- **`SAGE_RUN_FRAME=1`** (R7) — typed RunFrame trailing diagnostic in JSONL trace. Default OFF; OFF byte-identical to R5 baseline.
-- **`SAGE_ORACLE=1`** (R9) — OracleStack training gate. Default OFF preserves legacy QualityEstimator path. **Do NOT flip default-on** until R6.1a deterministic evidence producers ship + N=10 SWE-bench observe-mode smoke validates oracle event ordering + abstain gating + no training-sink leak under abstain. Tool/Formal oracles return None v0 (placeholders for R6.1a).
-- **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — RuntimeEventLog durable JSONL sink. Off when unset.
+- **`SAGE_STATECORE=1`** (R6) — Control/Message/State edge-channel separation.
+- **`SAGE_RUN_FRAME=1`** (R7) — typed RunFrame trailing diagnostic.
+- **`SAGE_ORACLE=1`** (R9 + R6.1a) — OracleStack training gate. Default OFF still until cycle-7 default-on flip; the R6.1a EvidenceProducers ship deterministic delta producers (Tool/Formal/Spec v1) so the oracle isn't evidence-starved.
+- **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — durable JSONL sink.
 
-Cycle sequencing per cgpro (2026-04-29 cycle 5 reassess):
+Plus the new bench seam (R6.1a Path E):
+- **`SAGE_BENCH_ORACLE_SEAM=1`** — BCB/synchronous-eval benches feed `bench_result["passed"]` to the OracleStack BEFORE final_result/oracle_verdict/learn so Exact verdicts fire on the live trace.
+
+Cycle sequencing post-Path-E-step3 (cgpro 2026-04-29 lock):
 
 ```
-Cycle 6 = R6.1a deterministic delta producers
-Cycle 7 = SAGE_ORACLE default-on flip + roadmap-A14-reset (operator action paired with rollout)
-Cycle 8+ = R6.1b (LLM delta candidates), R8/B9 (AgentLoop immutable per-run context),
-           R10 (MAP-Elites descriptor v2), R5b/B2b (replay)
+Cycle 6 = R6.1a deterministic delta producers (DONE 38c0da4e..426dfb6f)
+Path E  = bench-result feedback seam (DONE c1a45213) + step 3 BCB-N10 PASS (e74289fd)
+A14     = reset to empty, epoch=1 (DONE 2026-04-29)
+Cycle 7 = T1-T5 diagnostic tickets (below) + tonight's BCB-Hard N=50 evidence run +
+          official Docker re-grade + SAGE_ORACLE default-on flip + post-flip smoke
+Cycle 8+ = R6.1b (pytest parser anchoring + planner producer live + ToolOracle
+           incidental-fatal cleanup), R6.1c (per-(producer, delta_kind) payload schema),
+           T2-T5 architecture activation work
 ```
 
-The cycle-7 default-on gate is: N=10 smoke green on event ordering + R6.1a tests green + at least 1 ToolOracle positive/negative + 1 FormalOracle abstain/negative fixture + A14 reset script tested + roadmap+CLAUDE docs updated.
+## Cycle 7 diagnostic tickets (cgpro 2026-04-29 Path E postmortem)
+
+Path E step 3 BCB-Hard N=10 trace analysis revealed 4 architecture-activation gaps + 1 provider-skew observation. cgpro confirmed these are NOT training-safety blockers (default-on can ship from clean A14-reset epoch with oracle gate intact) — they are cycle-7 follow-up tickets.
+
+- **roadmap-T1 topology engine-first diagnostic flags** (codex BG `bj9duspc0`): `_stage_select_topology` short-circuits to `dag_template` path before `DynamicTopologyEngine.generate()` ever runs ⇒ monotonic `sequential` template on BCB cold-start. Add `SAGE_TOPOLOGY_SKIP_DAG_TEMPLATE=1`, `SAGE_TOPOLOGY_FORCE_ENGINE=1`, `SAGE_TOPOLOGY_LOG_ALL_CANDIDATES=1` env flags. Default OFF, byte-identical legacy.
+- **roadmap-T2 memory backend wiring + telemetry split**: `content_too_short` skip reason mislabels — root cause is `create_node_agent_loop()` not injecting `episodic_memory`/`semantic_memory`/`memory_agent` into node loops. Telemetry split: `memory_backend_unwired` vs `gate_rejected` vs `content_too_short`. Wire backends BEFORE tuning thresholds.
+- **roadmap-T3 BCB tools wiring + validate-before-final instruction**: BCB prompt doesn't tell agents to call validation tool before final answer. `synthesizer` role memory-only, no `sandbox_manager`/`tool_executor` injection. Add code-domain instruction + sandbox wiring + emit `RuntimeDelta` (test_parser/tool_execution) from validation step.
+- **roadmap-T4 unredact controller_decision payload safe fields** (codex BG): expose `quality_score, quality_source, threshold_band, action, reason_code` in event payload. Hashes/scores only, no raw output. Already in cgpro spec for the diagnostic round.
+- **roadmap-T5 model assigner top-3 candidate logging** (codex BG): `SAGE_ASSIGNER_LOG_TOP3=1` logs per-node top-3 candidates with score components (affinity/domain/cost_norm/hint_bonus/diversity_penalty). Diagnose 75% Google skew without hard-overriding Stage 4.
+- **roadmap-T6 SAGE_BENCH_DISABLE_REPAIR flag** (codex BG): bypass repair/escalation branch for clean first-attempt measurement on tonight's BCB N=50 evidence run.
+
+The cycle-7 default-on gate post-A14-reset is: T1+T6 shipped (for Phase 2 evidence run) + tonight's BCB-Hard N=50 with `SAGE_BENCH_DISABLE_REPAIR=1 SAGE_ORACLE=1 SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1` produces ≥1 trainable Exact verdict path + ≥1 trainable formal/tool path + 0 raw leaks + official Docker re-grade per-task agreement.
 
 
 
