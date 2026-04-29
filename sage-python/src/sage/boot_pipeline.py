@@ -135,6 +135,9 @@ def init_pipeline(
     memory_compressor: Any,
     rust_router: Any = None,
     agent_loop: Any = None,
+    semantic_memory: Any = None,
+    memory_agent: Any = None,
+    causal_memory: Any = None,
 ) -> dict[str, Any]:
     """Initialize the CognitiveOrchestrationPipeline and supporting components.
 
@@ -280,6 +283,9 @@ def init_pipeline(
                 consolidator=consolidator,
                 working_memory=working_memory,
                 episodic_memory=episodic_memory,
+                semantic_memory=semantic_memory,
+                memory_agent=memory_agent,
+                causal_memory=causal_memory,
                 tool_registry=tool_registry,
                 agent_loop=agent_loop,
             )

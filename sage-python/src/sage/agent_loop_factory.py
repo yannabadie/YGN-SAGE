@@ -64,6 +64,10 @@ def create_node_agent_loop(
     on_drift: Any = None,
     write_gate: Any = None,
     task_text: str = "",
+    episodic_memory: Any = None,
+    semantic_memory: Any = None,
+    memory_agent: Any = None,
+    causal_memory: Any = None,
 ) -> AgentLoop:
     """Create an independent AgentLoop for a topology node.
 
@@ -184,6 +188,22 @@ def create_node_agent_loop(
     if llm_config and getattr(llm_config, "model", None):
         from sage.memory.write_gate import infer_source_tier
         loop.gate_source_tier = infer_source_tier(llm_config.model)
+
+    # T2 phase 0/1 (cgpro 2026-04-29 cycle-7 post-flip): pass the 4
+    # memory collaborators through to per-node agent loops so the write
+    # gate can target real backends instead of always hitting
+    # ``memory_backend_unwired``. Backends are optional — None preserves
+    # legacy "ungated, no-op" behavior. boot creates these in
+    # boot_memory.py, pipeline carries them on self, runner forwards
+    # via the partial(create_node_agent_loop, ...) factory.
+    if episodic_memory is not None:
+        loop.episodic_memory = episodic_memory
+    if semantic_memory is not None:
+        loop.semantic_memory = semantic_memory
+    if memory_agent is not None:
+        loop.memory_agent = memory_agent
+    if causal_memory is not None:
+        loop.causal_memory = causal_memory
 
     # H1/H4 carryover: pipeline already handled routing and topology
     loop._skip_routing = True

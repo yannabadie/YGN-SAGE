@@ -174,6 +174,9 @@ class CognitiveOrchestrationPipeline:
         consolidator: Any = None,
         working_memory: Any = None,
         episodic_memory: Any = None,
+        semantic_memory: Any = None,
+        memory_agent: Any = None,
+        causal_memory: Any = None,
         tool_forge: Any = None,
         tool_registry: Any = None,
         harness_config: Any = None,
@@ -199,6 +202,12 @@ class CognitiveOrchestrationPipeline:
         self.consolidator = consolidator
         self.working_memory = working_memory
         self.episodic_memory = episodic_memory
+        # T2 phase 0/1 (cgpro 2026-04-29): forward the other 3 memory
+        # backends to per-node agent loops so write-gate skips can target
+        # real backends instead of "memory_backend_unwired".
+        self.semantic_memory = semantic_memory
+        self.memory_agent = memory_agent
+        self.causal_memory = causal_memory
         self.tool_forge = tool_forge
         self.harness_config = harness_config  # Meta-Harness: loaded from config/harness.json at boot
         self._harness_patcher = None
@@ -2376,6 +2385,14 @@ class CognitiveOrchestrationPipeline:
                         # G-series: pipeline-scoped gate + task text for relevance
                         write_gate=self.write_gate,
                         task_text=ctx.task,
+                        # T2 phase 0/1 (cgpro 2026-04-29): forward memory
+                        # backends so per-node loops can write to real
+                        # episodic/semantic/causal stores instead of
+                        # always hitting memory_backend_unwired.
+                        episodic_memory=self.episodic_memory,
+                        semantic_memory=self.semantic_memory,
+                        memory_agent=self.memory_agent,
+                        causal_memory=self.causal_memory,
                     )
 
                 runner = TopologyRunner(

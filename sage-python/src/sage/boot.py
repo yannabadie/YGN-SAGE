@@ -439,6 +439,7 @@ def boot_agent_system(
     mem = init_memory(event_bus, provider, use_mock_llm, loop)
     memory_agent = mem["memory_agent"]
     episodic_memory = mem["episodic_memory"]
+    semantic_memory = mem.get("semantic_memory")
     consolidator = mem["consolidator"]
     causal_memory = mem["causal_memory"]
 
@@ -662,6 +663,9 @@ def boot_agent_system(
         consolidator=consolidator,
         working_memory=loop.working_memory,
         episodic_memory=episodic_memory,
+        semantic_memory=semantic_memory,
+        memory_agent=memory_agent,
+        causal_memory=causal_memory,
         tool_registry=tool_registry,
         memory_compressor=memory_compressor,
         rust_router=rust_router,
