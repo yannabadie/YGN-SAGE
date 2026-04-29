@@ -25,6 +25,33 @@ class _ActResult:
     has_tool_calls: bool = False
 
 
+def _memory_write_gate_skip_reason(
+    *,
+    gate_available: bool,
+    content_len: int,
+    has_tool_calls: bool,
+    episodic_wired: bool,
+    semantic_wired: bool,
+    memory_agent_wired: bool,
+    episodic_content_ok: bool,
+    semantic_content_ok: bool,
+) -> str | None:
+    """Classify why write-gate telemetry did not cover all memory paths."""
+    if not gate_available and not (episodic_content_ok or semantic_content_ok):
+        return "gate_unavailable"
+    if not episodic_wired and (not semantic_wired or not memory_agent_wired):
+        return "memory_backend_unwired"
+    if not episodic_wired:
+        return "episodic_backend_unwired"
+    if not semantic_wired or not memory_agent_wired:
+        return "semantic_backend_unwired"
+    if content_len == 0 and has_tool_calls:
+        return "tool_only_empty_content"
+    if content_len > 0 and not episodic_content_ok and not semantic_content_ok:
+        return "content_too_short"
+    return None
+
+
 async def _run_avr_sandbox(
     cleaned_code: str, content: str, messages: list[Message], loop: AgentLoop,
 ) -> _ActResult | None:
@@ -262,6 +289,8 @@ async def act(
     # extraction still requires real prose (entities from "[tools: bash]"
     # are meaningless) so its threshold is unchanged.
     tool_names = [tc.name for tc in (response.tool_calls or [])]
+    tool_call_count = len(response.tool_calls or [])
+    has_tool_calls = tool_call_count > 0
     tool_signal = f"[tools: {', '.join(tool_names)}]" if tool_names else ""
     turn_signal = f"{content}\n{tool_signal}".strip()
 
@@ -271,22 +300,38 @@ async def act(
     # skip log so `grep memory.write_gate` post-run distinguishes "not wired"
     # from "wired but short content". Only fires when gate IS wired; no-op
     # for ungated legacy callers.
-    _episodic_content_ok = bool(loop.episodic_memory) and (
-        len(content) > 100 or bool(tool_names)
+    content_len = len(content or "")
+    episodic_wired = bool(loop.episodic_memory)
+    semantic_wired = bool(loop.semantic_memory)
+    memory_agent_wired = bool(loop.memory_agent)
+    _episodic_content_ok = episodic_wired and (
+        content_len > 100 or bool(tool_names)
     )
     _semantic_content_ok = bool(
-        loop.memory_agent and loop.semantic_memory and content and len(content) > 50
+        memory_agent_wired and semantic_wired and content and content_len > 50
     )
-    if (gate is not None
-            and not _episodic_content_ok
-            and not _semantic_content_ok):
+    skip_reason = _memory_write_gate_skip_reason(
+        gate_available=gate is not None,
+        content_len=content_len,
+        has_tool_calls=has_tool_calls,
+        episodic_wired=episodic_wired,
+        semantic_wired=semantic_wired,
+        memory_agent_wired=memory_agent_wired,
+        episodic_content_ok=_episodic_content_ok,
+        semantic_content_ok=_semantic_content_ok,
+    )
+    if skip_reason is not None:
         try:
             from sage.memory.write_gate import log_write_gate_skipped
             log_write_gate_skipped(
-                reason="content_too_short",
-                content_len=len(content or ""),
-                has_tool_calls=bool(response.tool_calls),
+                reason=skip_reason,
+                content_len=content_len,
+                has_tool_calls=has_tool_calls,
                 source_tier=gate_tier,
+                tool_call_count=tool_call_count,
+                episodic_wired=episodic_wired,
+                semantic_wired=semantic_wired,
+                memory_agent_wired=memory_agent_wired,
             )
         except Exception:
             pass  # never break the act path on logging

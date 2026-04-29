@@ -380,6 +380,11 @@ def log_write_gate_skipped(
     content_len: int,
     has_tool_calls: bool,
     source_tier: str = "unknown",
+    *,
+    tool_call_count: int = 0,
+    episodic_wired: bool = False,
+    semantic_wired: bool = False,
+    memory_agent_wired: bool = False,
 ) -> None:
     """Emit a structured INFO log when the write_gate was BYPASSED entirely.
 
@@ -399,9 +404,16 @@ def log_write_gate_skipped(
     import logging as _logging
     _log = _logging.getLogger(__name__)
     _log.info(
-        "memory.write_gate.skipped reason=%s content_len=%d has_tool_calls=%s tier=%s",
-        reason, content_len,
+        "memory.write_gate.skipped reason=%s content_len=%d has_tool_calls=%s "
+        "tool_call_count=%d episodic_wired=%s semantic_wired=%s "
+        "memory_agent_wired=%s source_tier=%s",
+        reason,
+        content_len,
         "true" if has_tool_calls else "false",
+        tool_call_count,
+        "true" if episodic_wired else "false",
+        "true" if semantic_wired else "false",
+        "true" if memory_agent_wired else "false",
         source_tier or "unknown",
     )
 
