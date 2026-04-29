@@ -13,7 +13,7 @@
       "evidence_hash": "$AUTO",
       "payload": {
         "framework": "pytest",
-        "parser_id": "pytest_summary_v0",
+        "parser_id": "pytest_summary_v1",
         "suite_id": "unit",
         "passed_count": 0,
         "failed_count": 2,

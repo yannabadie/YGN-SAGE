@@ -261,6 +261,82 @@ class TestSemanticNegatives:
         assert result.rejected_reason is not None
 
 
+class TestPytestSummaryParserAnchoring:
+    @staticmethod
+    def _parse(stdout: str) -> RuntimeDelta:
+        result = produce_test_parser_deltas(
+            run_id="run-pytest-summary",
+            node_run_id="node-tests",
+            event_seq=4,
+            source_id="pytest:unit",
+            framework="pytest",
+            stdout=stdout,
+            stderr="",
+            exit_code=0,
+            suite_id="unit",
+        )
+        assert result.rejected_reason is None
+        return result.deltas[0]
+
+    @pytest.mark.parametrize(
+        "stdout",
+        [
+            '"""1 passed in 0.1s"""',
+            "all good: 1 passed in 0.1s",
+            "Traceback log tail: 2 failed in 3.0s",
+            "1 passed in 0.1s",
+        ],
+    )
+    def test_pytest_parser_rejects_unanchored_summary_lookalikes(
+        self,
+        stdout: str,
+    ) -> None:
+        delta = self._parse(stdout)
+
+        assert delta.delta_kind == "parse_failed"
+        assert delta.payload["parser_id"] == "pytest_summary_v1"
+
+    @pytest.mark.parametrize(
+        ("stdout", "delta_kind", "passed", "failed", "errors", "skipped"),
+        [
+            ("==== 1 passed in 0.10s ====", "tests_passed", 1, 0, 0, 0),
+            (
+                "==== 2 passed, 1 failed in 3.25s ====",
+                "tests_partial",
+                2,
+                1,
+                0,
+                0,
+            ),
+            (
+                "==== 1 failed, 2 errors, 3 skipped in 4.50s ====",
+                "tests_failed",
+                0,
+                1,
+                2,
+                3,
+            ),
+        ],
+    )
+    def test_pytest_parser_accepts_delimited_summary_lines(
+        self,
+        stdout: str,
+        delta_kind: str,
+        passed: int,
+        failed: int,
+        errors: int,
+        skipped: int,
+    ) -> None:
+        delta = self._parse(stdout)
+
+        assert delta.delta_kind == delta_kind
+        assert delta.payload["parser_id"] == "pytest_summary_v1"
+        assert delta.payload["passed_count"] == passed
+        assert delta.payload["failed_count"] == failed
+        assert delta.payload["error_count"] == errors
+        assert delta.payload["skipped_count"] == skipped
+
+
 class TestOracleConsumption:
     def test_tool_oracle_parser_pass_returns_trainable_positive(self) -> None:
         delta = produce_test_parser_deltas(

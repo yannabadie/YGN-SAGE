@@ -25,23 +25,30 @@ _COUNT_RE = re.compile(
     r"(?P<kind>passed|pass|failed|failures?|errors?|skipped|skip)",
     re.IGNORECASE,
 )
-_DURATION_RE = re.compile(r"\bin\s+(?P<seconds>\d+(?:\.\d+)?)s\b")
+_PYTEST_SUMMARY_RE = re.compile(
+    r"^=+\s+"
+    r"(?P<body>.*?)"
+    r"\s+in\s+(?P<seconds>\d+(?:\.\d+)?)s"
+    r"\s+=+$",
+    re.IGNORECASE,
+)
 _UNITTEST_RAN_RE = re.compile(
     r"\bRan\s+(?P<tests>\d+)\s+tests?\s+in\s+(?P<seconds>\d+(?:\.\d+)?)s\b"
 )
 
 
 def parse_pytest_output(stdout: str, stderr: str, exit_code: int) -> dict[str, Any]:
-    """Parse pytest's summary tail line without retaining raw output."""
+    """Parse pytest's delimited summary tail line without retaining raw output."""
     del exit_code
     for line in _tail_lines(stdout, stderr):
-        counts = _parse_count_tokens(line)
+        summary = _PYTEST_SUMMARY_RE.fullmatch(line)
+        if summary is None:
+            continue
+        counts = _parse_count_tokens(summary.group("body"))
         if not counts:
             continue
-        duration = _parse_duration_ms(line)
-        if duration is None:
-            continue
-        return {**counts, "duration_ms": duration}
+        duration_ms = float(summary.group("seconds")) * 1000.0
+        return {**counts, "duration_ms": duration_ms}
     return {"parse_failed": True}
 
 
@@ -126,7 +133,7 @@ def produce_test_parser_deltas(
     try:
         framework_name = framework.lower().strip()
         if framework_name == "pytest":
-            parser_id = "pytest_summary_v0"
+            parser_id = "pytest_summary_v1"
             parsed = parse_pytest_output(stdout, stderr, exit_code)
         elif framework_name == "junit":
             parser_id = "junit_xml_v0"
@@ -219,13 +226,6 @@ def _parse_count_tokens(line: str) -> dict[str, int]:
         elif kind.startswith("skip"):
             counts["skipped"] += count
     return counts if any(counts.values()) else {}
-
-
-def _parse_duration_ms(line: str) -> float | None:
-    match = _DURATION_RE.search(line)
-    if match is None:
-        return None
-    return float(match.group("seconds")) * 1000.0
 
 
 def _int_attr(node: ET.Element, key: str) -> int:
