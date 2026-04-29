@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from sage.llm.model_assigner import ModelAssigner
 from sage.llm.model_registry import ModelRegistry
@@ -126,7 +127,10 @@ def test_assigner_log_top3_flag_emits_ranked_candidates(
     assert "node_id=0 rank=1" in lines[0]
     assert "rank=2" in lines[1]
     assert "rank=3" in lines[2]
+    assert all("source=python_fallback" in line for line in lines)
+    assert all("reason_code=ok" in line for line in lines)
     assert all("affinity=" in line and "cost_norm=" in line for line in lines)
+    assert not any("nan" in line.lower() for line in lines)
 
 
 def test_assigner_top3_logging_default_off_is_silent(monkeypatch, caplog) -> None:
@@ -183,6 +187,54 @@ def test_pipeline_logs_chosen_model_when_top3_not_derivable(monkeypatch, caplog)
     ]
     assert lines == [
         "model_assigner.candidates node_id=0 rank=1 model=rust-choice "
-        "score=nan affinity=nan domain=nan cost_norm=nan "
-        "hint_bonus=nan diversity_penalty=nan"
+        "source=wrapper_fallback reason_code=non_finite_score "
+        "score=0.000000 affinity=0.000000 domain=0.000000 cost_norm=0.000000 "
+        "hint_bonus=0.000000 diversity_penalty=0.000000"
+    ]
+
+
+class _NanCard:
+    id = "nan-card"
+    supports_tools = True
+    supports_json_mode = True
+
+    def estimate_cost(self, _input_tokens: int, _output_tokens: int) -> float:
+        return 0.1
+
+    def domain_score(self, _task_domain: str) -> float:
+        return math.nan
+
+
+class _NanCatalog:
+    def all_models(self) -> list[_NanCard]:
+        return [_NanCard()]
+
+    def calibrated_affinity(self, _model_id: str, _system: int) -> float:
+        return math.nan
+
+
+def test_assigner_top3_logging_guards_non_finite_scores(
+    monkeypatch,
+    caplog,
+) -> None:
+    monkeypatch.setenv("SAGE_ASSIGNER_LOG_TOP3", "1")
+    caplog.set_level(logging.INFO, logger="sage.llm.model_assigner")
+
+    count = ModelAssigner(_NanCatalog()).assign_models(
+        _Graph(),
+        task_domain="code",
+        budget_usd=10.0,
+    )
+
+    assert count == 1
+    lines = [
+        record.getMessage()
+        for record in caplog.records
+        if "model_assigner.candidates" in record.getMessage()
+    ]
+    assert lines == [
+        "model_assigner.candidates node_id=0 rank=1 model=nan-card "
+        "source=python_fallback reason_code=non_finite_score "
+        "score=0.000000 affinity=0.000000 domain=0.000000 cost_norm=1.000000 "
+        "hint_bonus=0.000000 diversity_penalty=0.000000"
     ]

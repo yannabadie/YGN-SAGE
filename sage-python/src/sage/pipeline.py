@@ -1693,7 +1693,6 @@ class CognitiveOrchestrationPipeline:
             if hasattr(ctx.topology, "node_count")
             else 0
         )
-        unknown = float("nan")
         for node_idx in range(node_count):
             model_id = ctx.assignments.get(node_idx, "")
             if not model_id and hasattr(ctx.topology, "get_node"):
@@ -1703,16 +1702,17 @@ class CognitiveOrchestrationPipeline:
                 continue
             log.info(
                 "model_assigner.candidates node_id=%d rank=1 model=%s "
-                "score=%s affinity=%s domain=%s cost_norm=%s "
-                "hint_bonus=%s diversity_penalty=%s",
+                "source=wrapper_fallback reason_code=non_finite_score "
+                "score=%.6f affinity=%.6f domain=%.6f cost_norm=%.6f "
+                "hint_bonus=%.6f diversity_penalty=%.6f",
                 node_idx,
                 model_id,
-                unknown,
-                unknown,
-                unknown,
-                unknown,
-                unknown,
-                unknown,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
             )
 
     def _verify_assignment_formal(self, ctx: PipelineContext) -> None:

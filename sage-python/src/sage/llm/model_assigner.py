@@ -6,6 +6,7 @@ is not compiled. See spec for weight rationale (0.4/0.4/0.2).
 from __future__ import annotations
 
 import logging
+import math
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -29,6 +30,8 @@ class _CandidateScore:
     hint_bonus: float
     diversity_penalty: float
     est_cost: float
+    source: str
+    reason_code: str
 
 
 class ModelAssigner:
@@ -162,18 +165,29 @@ class ModelAssigner:
             est = card.estimate_cost(1000, 500)
             if est > node_budget:
                 continue
-            affinity = self._catalog.calibrated_affinity(card.id, system)
-            domain = card.domain_score(task_domain)
-            cost_norm = est / max(max_cost, 0.001)
+            affinity_raw = _float_or_nan(
+                self._catalog.calibrated_affinity(card.id, system)
+            )
+            domain_raw = _float_or_nan(card.domain_score(task_domain))
+            cost_norm_raw = _float_or_nan(est / max(max_cost, 0.001))
+            affinity = _finite_or_zero(affinity_raw)
+            domain = _finite_or_zero(domain_raw)
+            cost_norm = _finite_or_zero(cost_norm_raw)
             hint_bonus = 0.0
             diversity_penalty = 0.0
-            score = (
-                WEIGHT_AFFINITY * affinity
-                + WEIGHT_DOMAIN * domain
-                + WEIGHT_COST * (1.0 - cost_norm)
+            score_raw = (
+                WEIGHT_AFFINITY * affinity_raw
+                + WEIGHT_DOMAIN * domain_raw
+                + WEIGHT_COST * (1.0 - cost_norm_raw)
                 + hint_bonus
                 - diversity_penalty
             )
+            reason_code = "ok"
+            if not math.isfinite(score_raw):
+                score = 0.0
+                reason_code = "non_finite_score"
+            else:
+                score = score_raw
             candidates.append(
                 _CandidateScore(
                     model_id=card.id,
@@ -184,6 +198,8 @@ class ModelAssigner:
                     hint_bonus=hint_bonus,
                     diversity_penalty=diversity_penalty,
                     est_cost=est,
+                    source="python_fallback",
+                    reason_code=reason_code,
                 )
             )
 
@@ -200,11 +216,14 @@ class ModelAssigner:
         for rank, candidate in enumerate(candidates[:3], start=1):
             log.info(
                 "model_assigner.candidates node_id=%d rank=%d model=%s "
+                "source=%s reason_code=%s "
                 "score=%.6f affinity=%.6f domain=%.6f cost_norm=%.6f "
                 "hint_bonus=%.6f diversity_penalty=%.6f",
                 node_idx,
                 rank,
                 candidate.model_id,
+                candidate.source,
+                candidate.reason_code,
                 candidate.score,
                 candidate.affinity,
                 candidate.domain,
@@ -212,3 +231,16 @@ class ModelAssigner:
                 candidate.hint_bonus,
                 candidate.diversity_penalty,
             )
+
+
+def _float_or_nan(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _finite_or_zero(value: float) -> float:
+    if not math.isfinite(value):
+        return 0.0
+    return value
