@@ -451,36 +451,15 @@ async def test_episodic_memory_records_abstain_with_training_flag_false(
     assert content["is_training_evidence"] is False
 
 
-def test_spec_oracle_state_contradiction_returns_trainable_negative() -> None:
-    view = FakeRunFrameView(
-        state_frames={
-            "node-a": StateFrame(
-                task_id="task",
-                invalidated_assumptions=("ASSUMPTION_42",),
-            )
-        }
-    )
+def test_spec_oracle_lexical_substring_does_not_train() -> None:
+    """cgpro 2026-04-29 R6.1a verify push-back: the lexical substring path
+    (assumption_id ∈ output_text + invalidation-marker check) is removed.
 
-    verdict = evaluate(view, final_output="We can rely on ASSUMPTION_42.")
-
-    assert verdict.verdict_source == "spec"
-    assert verdict.trainable is True
-    assert verdict.quality_label == "fail"
-    assert verdict.score == 0.0
-    assert "state_contradiction" in verdict.reason_codes
-
-
-def test_spec_oracle_invalidated_assumption_mentioned_as_invalid_does_not_train() -> None:
-    """cgpro 2026-04-29 R9 verify push-back: merely MENTIONING an invalidated
-    assumption (with a negation/invalidation marker present in the output)
-    must NOT trigger a trainable=True negative spec verdict.
-
-    Required behavior:
-    - "We can rely on ASSUMPTION_42." → trainable=True negative (test above)
-    - "ASSUMPTION_42 was found to be wrong, so we tried a different approach."
-       → Abstain (mention only — output is acknowledging the invalidation,
-                  not contradicting it; spec oracle returns None and the
-                  hierarchy falls through to Abstain).
+    For v1, spec oracle abstains unless a structured claim-dependency channel
+    proves the final output reasserts the invalidated assumption. Until that
+    channel exists (cycle 7+), every state_frame + final_output pair MUST
+    collapse to abstain — both the "reassertion" wording (was trainable=True
+    in R9) AND the "mention-as-invalidated" wording (was abstain in R9).
     """
     view = FakeRunFrameView(
         state_frames={
@@ -491,24 +470,29 @@ def test_spec_oracle_invalidated_assumption_mentioned_as_invalid_does_not_train(
         }
     )
 
-    # Multiple "mention-as-invalidated" patterns must all collapse to Abstain.
-    mention_patterns = [
+    outputs = [
+        # Previously trainable=True in R9 (reassertion) — now abstain.
+        "We can rely on ASSUMPTION_42.",
+        # Previously abstain in R9 (mention-as-invalidated) — still abstain.
         "We learned that ASSUMPTION_42 was wrong, so we tried a different approach.",
         "ASSUMPTION_42 is no longer valid; revising plan.",
         "ASSUMPTION_42 was retracted by the verifier.",
         "ASSUMPTION_42 was invalidated upstream; pursuing alternative.",
         "ASSUMPTION_42 was found to be incorrect.",
         "ASSUMPTION_42 doesn't hold under the new constraints.",
+        # No claim-dependency channel ⇒ no trainable spec verdict regardless
+        # of phrasing. The substring scan is gone for both directions.
     ]
-    for output in mention_patterns:
+    for output in outputs:
         verdict = evaluate(view, final_output=output)
         assert verdict.verdict_source == "abstain", (
-            f"output {output!r} merely mentions the invalidation; spec oracle "
-            f"must NOT fire as a contradiction. Got verdict_source={verdict.verdict_source!r}"
+            f"output {output!r} must NOT produce a trainable spec verdict in "
+            f"R6.1a v1 (no structured claim-dependency channel exists yet); "
+            f"got verdict_source={verdict.verdict_source!r}"
         )
         assert verdict.trainable is False, (
-            f"mention-as-invalidated for {output!r} must collapse to "
-            f"trainable=False; got trainable={verdict.trainable}"
+            f"output {output!r} must collapse to trainable=False; "
+            f"got trainable={verdict.trainable}"
         )
 
 

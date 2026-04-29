@@ -1097,6 +1097,9 @@ class TopologyRunner:
         ):
             from sage.runtime.evidence.producers.tool import produce_tool_deltas
 
+            # Code-node failures invalidate the claimed task output: a code
+            # node IS the artifact under evaluation, not a side-effect tool.
+            # Tag fatal_scope="claimed_task_output" so ToolOracle trains fail.
             result = produce_tool_deltas(
                 run_id=self._run_frame_builder.run_id,
                 node_run_id=self._run_frame_node_runs.get(node_idx),
@@ -1110,6 +1113,7 @@ class TopologyRunner:
                     if timed_out
                     else ("CodeNodeError" if exit_code != 0 and stderr else "")
                 ),
+                fatal_scope="claimed_task_output",
             )
             for delta in result.deltas:
                 self._run_frame_builder.record_delta(delta)

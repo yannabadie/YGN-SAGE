@@ -127,15 +127,28 @@ def _tool_oracle(
             )
 
     if fatal_deltas:
-        return OracleVerdict(
-            trainable=True,
-            verdict_source="tool",
-            quality_label="fail",
-            score=0.0,
-            confidence=1.0,
-            reason_codes=("tool_fatal_failure",),
-            evidence=tuple(_evidence_ref(delta) for delta in fatal_deltas),
-        )
+        # cgpro 2026-04-29 R6.1a verify push-back: only fatal failures whose
+        # `fatal_scope == "claimed_task_output"` deterministically invalidate
+        # the artifact under evaluation. Generic agent-loop tool exceptions
+        # (`fatal_scope == "incidental_tool_call"`) and unscoped failures
+        # must NOT become trainable fail; the hierarchy falls through to
+        # the next oracle (Formal / Spec / Abstain).
+        scoped_fatals = [
+            delta
+            for delta in fatal_deltas
+            if str(getattr(delta, "payload", {}).get("fatal_scope", "")).strip().lower()
+            == "claimed_task_output"
+        ]
+        if scoped_fatals:
+            return OracleVerdict(
+                trainable=True,
+                verdict_source="tool",
+                quality_label="fail",
+                score=0.0,
+                confidence=1.0,
+                reason_codes=("tool_fatal_failure",),
+                evidence=tuple(_evidence_ref(delta) for delta in scoped_fatals),
+            )
 
     return None
 
@@ -172,6 +185,14 @@ def _formal_oracle(
         }
     ]
     if not trainable_deltas:
+        return None
+
+    # Defense-in-depth (cgpro 2026-04-29 R6.1a verify push-back): even though
+    # the formal producer rejects incomplete trainable deltas, re-check that
+    # any delta we are about to convert into a trainable verdict carries
+    # complete obligation semantics (verifier_id + encoding + solver_status
+    # consistent with delta_kind). Incomplete deltas force Abstain.
+    if not all(_formal_delta_is_complete(delta) for delta in trainable_deltas):
         return None
 
     negatives = [
@@ -213,39 +234,33 @@ def _formal_oracle(
     return None
 
 
-# Negation/invalidation phrases that, when co-occurring with an invalidated
-# assumption_id, indicate the output is acknowledging the invalidation
-# (mention-as-invalid) rather than reasserting the assumption as true.
-# In that case _spec_oracle MUST NOT emit a trainable=True negative verdict
-# (cgpro 2026-04-29 R9 verify push-back: mention ≠ contradiction).
-_INVALIDATION_MARKERS: tuple[str, ...] = (
-    "was wrong",
-    "is wrong",
-    "was incorrect",
-    "is incorrect",
-    "is false",
-    "was false",
-    "no longer holds",
-    "no longer valid",
-    "no longer true",
-    "was invalidated",
-    "was retracted",
-    "doesn't hold",
-    "does not hold",
-    "doesn't apply",
-    "does not apply",
-    "doesn't work",
-    "does not work",
-    "ruled out",
-    "found to be wrong",
-    "found to be false",
-    "found to be incorrect",
-    "found to be invalid",
-    "rejected",
-    "discarded",
-    "is invalid",
-    "was invalid",
-)
+_FORMAL_KIND_TO_SOLVER_STATUS: dict[str, frozenset[str]] = {
+    "obligation_proved": frozenset({"unsat"}),
+    "obligation_refuted": frozenset({"sat"}),
+    "counterexample_found": frozenset({"sat"}),
+}
+
+
+def _formal_delta_is_complete(delta: Any) -> bool:
+    """Defense-in-depth re-check for trainable formal deltas.
+
+    A trainable formal delta (obligation_proved / obligation_refuted /
+    counterexample_found) MUST carry complete obligation semantics:
+    verifier_id + encoding + solver_status, and solver_status must match
+    the kind's expected direction. obligation_unknown / verifier_unavailable
+    do not produce trainable verdicts and are skipped here (the caller
+    handles them as Abstain triggers).
+    """
+    kind = getattr(delta, "delta_kind", "")
+    if kind not in _FORMAL_KIND_TO_SOLVER_STATUS:
+        return True
+    payload = getattr(delta, "payload", {}) or {}
+    verifier_id = str(payload.get("verifier_id", "")).strip()
+    encoding = str(payload.get("encoding", "")).strip()
+    solver_status = str(payload.get("solver_status", "")).strip().lower()
+    if not verifier_id or not encoding or not solver_status:
+        return False
+    return solver_status in _FORMAL_KIND_TO_SOLVER_STATUS[kind]
 
 
 def _spec_oracle(
@@ -255,60 +270,19 @@ def _spec_oracle(
     bench_result: Mapping[str, Any] | None,
     config: OracleConfig,
 ) -> OracleVerdict | None:
-    """Detect final-output reassertions of invalidated StateFrame assumptions.
+    """Spec oracle: trainable=True only with structured claim-dependency evidence.
 
-    v0 guard: if the assumption_id appears in the output AND the output also
-    contains an invalidation/negation marker phrase, treat the appearance as
-    a "mention as invalidated" (NOT a contradiction) and return None so the
-    hierarchy falls through to Abstain. Only when the assumption_id appears
-    WITHOUT any invalidation marker do we emit trainable=True negative.
-
-    This prevents the lexical-fallback failure mode where merely discussing
-    that an assumption WAS invalidated would train a negative reward.
+    cgpro 2026-04-29 R6.1a verify push-back: the lexical/substring scan
+    (`_INVALIDATION_MARKERS` + `assumption_id in output_text`) is removed.
+    For v1, we abstain unless a future cycle (cycle 7+) wires a structured
+    claim-dependency channel proving the final output reasserts the
+    invalidated assumption. StateFrame.invalidated_assumptions alone OR
+    formal_verifier/assumption_invalidated alone are insufficient — we need
+    proof that the output structurally depends on the invalidated assumption.
+    Until that channel exists, spec oracle abstains and the hierarchy falls
+    through to LLMJudge stub → Abstain.
     """
-    del bench_result, config
-    if not getattr(view, "state_frames", None):
-        return None
-    output_text = final_output or ""
-    output_lower = output_text.lower()
-    has_invalidation_marker = any(
-        marker in output_lower for marker in _INVALIDATION_MARKERS
-    )
-    formal_assumption_deltas = _formal_assumption_invalidations(view)
-    for node_id, frame in view.state_frames.items():
-        if not frame.invalidated_assumptions:
-            continue
-        for assumption_id in frame.invalidated_assumptions:
-            if not assumption_id or assumption_id not in output_text:
-                continue
-            if has_invalidation_marker:
-                # Output discusses the assumption in the context of its
-                # invalidation; this is acknowledgment, not contradiction.
-                continue
-            corroborating = formal_assumption_deltas.get(assumption_id)
-            evidence = [
-                EvidenceRef(
-                    run_id=view.run_id,
-                    node_run_id=str(node_id),
-                    event_seq=None,
-                    output_sha256=None,
-                    verifier_id="statecore_spec",
-                )
-            ]
-            if corroborating is not None:
-                evidence.append(_evidence_ref(corroborating))
-            return OracleVerdict(
-                trainable=True,
-                verdict_source="spec",
-                quality_label="fail",
-                score=0.0,
-                confidence=0.9 if corroborating is not None else 0.85,
-                reason_codes=(
-                    "state_contradiction",
-                    f"invalidated_assumption_in_output:{assumption_id}",
-                ),
-                evidence=tuple(evidence),
-            )
+    del view, final_output, bench_result, config
     return None
 
 

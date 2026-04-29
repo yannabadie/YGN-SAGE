@@ -27,6 +27,20 @@ _DEFAULT_POLARITY: dict[str, DeltaPolarity] = {
     "assumption_invalidated": "negative",
 }
 
+# cgpro 2026-04-29 R6.1a verify push-back: trainable formal kinds must carry
+# complete obligation semantics (obligation_id + verifier_id + encoding +
+# solver_status), and solver_status must match the kind's proof/refutation
+# direction. Incomplete or inconsistent deltas are rejected by the producer
+# and re-checked by the oracle as defense-in-depth.
+_TRAINABLE_KINDS: frozenset[str] = frozenset(
+    {"obligation_proved", "obligation_refuted", "counterexample_found"}
+)
+_KIND_TO_REQUIRED_SOLVER_STATUS: dict[str, frozenset[str]] = {
+    "obligation_proved": frozenset({"unsat"}),
+    "obligation_refuted": frozenset({"sat"}),
+    "counterexample_found": frozenset({"sat"}),
+}
+
 
 def produce_formal_verifier_deltas(
     *,
@@ -56,6 +70,45 @@ def produce_formal_verifier_deltas(
                 deltas=(),
                 rejected_reason="obligation_id is required for formal facts",
             )
+        # Trainable formal kinds (obligation_proved/refuted/counterexample_found)
+        # must carry complete obligation semantics: verifier_id, encoding,
+        # solver_status, and solver_status must match the kind's direction.
+        if delta_kind in _TRAINABLE_KINDS:
+            normalized_status = (solver_status or "").strip().lower()
+            if not verifier_id:
+                return DeltaProducerResult(
+                    deltas=(),
+                    rejected_reason=(
+                        f"verifier_id is required for trainable formal kind "
+                        f"{delta_kind!r}"
+                    ),
+                )
+            if not encoding:
+                return DeltaProducerResult(
+                    deltas=(),
+                    rejected_reason=(
+                        f"encoding is required for trainable formal kind "
+                        f"{delta_kind!r}"
+                    ),
+                )
+            if not normalized_status:
+                return DeltaProducerResult(
+                    deltas=(),
+                    rejected_reason=(
+                        f"solver_status is required for trainable formal kind "
+                        f"{delta_kind!r}"
+                    ),
+                )
+            allowed_status = _KIND_TO_REQUIRED_SOLVER_STATUS[delta_kind]
+            if normalized_status not in allowed_status:
+                return DeltaProducerResult(
+                    deltas=(),
+                    rejected_reason=(
+                        f"solver_status {solver_status!r} is inconsistent with "
+                        f"delta_kind {delta_kind!r} (expected one of "
+                        f"{sorted(allowed_status)})"
+                    ),
+                )
         payload: dict[str, Any] = {}
         for key, value in (
             ("obligation_id", obligation_id),

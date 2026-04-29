@@ -8,6 +8,7 @@
     "exit_code": -1,
     "timed_out": false,
     "duration_ms": 5.0,
-    "tool_error_class": "RuntimeError"
+    "tool_error_class": "RuntimeError",
+    "fatal_scope": "claimed_task_output"
   }
 }

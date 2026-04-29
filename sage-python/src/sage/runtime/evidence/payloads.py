@@ -38,6 +38,7 @@ PAYLOAD_ALLOWED_KEYS: dict[str, frozenset[str]] = {
             "timeout_sec",
             "timed_out",
             "tool_error_class",
+            "fatal_scope",
             "artifact_hash",
             "duration_ms",
         }
@@ -97,6 +98,7 @@ PAYLOAD_MAX_STRING_LENGTHS: dict[str, int] = {
     "parser_id": 96,
     "suite_id": 128,
     "tool_error_class": 128,
+    "fatal_scope": 64,
     "artifact_hash": 128,
     "patch_hash": 128,
     "repair_stage": 96,

@@ -18,6 +18,16 @@ ALLOWED_DELTA_KINDS = _DELTA_KIND_TABLE["tool_execution"]
 ALLOWED_PAYLOAD_KEYS = PAYLOAD_ALLOWED_KEYS["tool_execution"]
 POLARITY_RULES = _POLARITY_RULES["tool_execution"]
 
+# cgpro 2026-04-29 R6.1a verify push-back: ToolOracle may train fail on a
+# `fatal_failure` delta only when the failure deterministically invalidates
+# the claimed task output. Generic agent-loop tool exceptions (incidental,
+# not tied to the artifact under test) must NOT become trainable fail.
+# Producers MUST tag every fatal_failure with one of the values below so
+# the oracle can gate on `fatal_scope == "claimed_task_output"`.
+FATAL_SCOPES: frozenset[str] = frozenset(
+    {"claimed_task_output", "incidental_tool_call", "unknown"}
+)
+
 
 def produce_tool_deltas(
     *,
@@ -29,11 +39,21 @@ def produce_tool_deltas(
     timed_out: bool,
     duration_ms: float,
     tool_error_class: str = "",
+    fatal_scope: str = "unknown",
     artifact_hash: str | None = None,
     timeout_sec: float | None = None,
 ) -> DeltaProducerResult:
     """Produce tool_execution facts from structured metadata only."""
     try:
+        normalized_scope = (fatal_scope or "unknown").strip().lower()
+        if normalized_scope not in FATAL_SCOPES:
+            return DeltaProducerResult(
+                deltas=(),
+                rejected_reason=(
+                    f"fatal_scope {fatal_scope!r} is not one of "
+                    f"{sorted(FATAL_SCOPES)}"
+                ),
+            )
         payload: dict[str, Any] = {
             "exit_code": int(exit_code),
             "timed_out": bool(timed_out),
@@ -57,6 +77,7 @@ def produce_tool_deltas(
         elif tool_error_class:
             delta_kind = "fatal_failure"
             polarity = "negative"
+            payload["fatal_scope"] = normalized_scope
         else:
             delta_kind = "exit_nonzero"
             polarity = "neutral"

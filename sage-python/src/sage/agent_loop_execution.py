@@ -171,6 +171,15 @@ def _record_tool_delta(
     duration_ms: float,
     tool_error_class: str = "",
 ) -> None:
+    """Record an incidental agent-loop tool execution as evidence.
+
+    cgpro 2026-04-29 R6.1a verify push-back: agent-loop tool calls are
+    incidental side effects (look-up, search, lint helper, etc.), not the
+    deterministic evaluator of the claimed task output. We tag every fatal
+    failure here as `fatal_scope="incidental_tool_call"` so ToolOracle
+    abstains rather than producing a trainable fail. The bench harness +
+    code-node executor pass `fatal_scope="claimed_task_output"` separately.
+    """
     if os.environ.get("SAGE_ORACLE") != "1" or run_frame_builder is None:
         return
     from sage.runtime.evidence.producers.tool import produce_tool_deltas
@@ -184,6 +193,7 @@ def _record_tool_delta(
         timed_out=timed_out,
         duration_ms=duration_ms,
         tool_error_class=tool_error_class,
+        fatal_scope="incidental_tool_call",
     )
     for delta in result.deltas:
         run_frame_builder.record_delta(delta)

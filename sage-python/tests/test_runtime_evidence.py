@@ -664,3 +664,168 @@ class TestMultiSourcePrecedence:
         assert verdict.verdict_source == "tool"
         assert verdict.quality_label == "partial"
         assert verdict.score == pytest.approx(0.8)
+
+
+# ---------------------------------------------------------------------------
+# cgpro 2026-04-29 R6.1a verify push-back — Gate A regression tests
+# ---------------------------------------------------------------------------
+
+
+class TestFormalCompletenessGate:
+    """Producer + oracle defense-in-depth: trainable formal kinds require
+    obligation_id + verifier_id + encoding + solver_status, and solver_status
+    must match delta_kind direction.
+    """
+
+    def _common_kwargs(self) -> dict[str, Any]:
+        return {
+            "run_id": "run-formal-gate",
+            "node_run_id": "node-fa",
+            "event_seq": 11,
+            "source_id": "z3",
+            "obligation_id": "obl-1",
+            "obligation_type": "postcondition",
+        }
+
+    def test_obligation_proved_missing_verifier_id_is_rejected(self) -> None:
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_proved",
+            verifier_id="",
+            solver_status="unsat",
+            encoding="prove_no_counterexample",
+            **self._common_kwargs(),
+        )
+        assert result.deltas == ()
+        assert result.rejected_reason is not None
+        assert "verifier_id" in result.rejected_reason
+
+    def test_obligation_proved_missing_encoding_is_rejected(self) -> None:
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_proved",
+            verifier_id="z3",
+            solver_status="unsat",
+            encoding="",
+            **self._common_kwargs(),
+        )
+        assert result.deltas == ()
+        assert "encoding" in (result.rejected_reason or "")
+
+    def test_obligation_proved_missing_solver_status_is_rejected(self) -> None:
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_proved",
+            verifier_id="z3",
+            solver_status="",
+            encoding="prove_no_counterexample",
+            **self._common_kwargs(),
+        )
+        assert result.deltas == ()
+        assert "solver_status" in (result.rejected_reason or "")
+
+    def test_obligation_proved_with_sat_status_is_rejected(self) -> None:
+        # obligation_proved must pair with UNSAT (no counterexample). SAT is
+        # the refutation direction; producer rejects the inconsistency.
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_proved",
+            verifier_id="z3",
+            solver_status="sat",
+            encoding="prove_no_counterexample",
+            **self._common_kwargs(),
+        )
+        assert result.deltas == ()
+        assert "solver_status" in (result.rejected_reason or "")
+
+    def test_obligation_refuted_with_unsat_status_is_rejected(self) -> None:
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_refuted",
+            verifier_id="z3",
+            solver_status="unsat",
+            encoding="find_counterexample",
+            **self._common_kwargs(),
+        )
+        assert result.deltas == ()
+        assert "solver_status" in (result.rejected_reason or "")
+
+    def test_obligation_unknown_does_not_require_solver_status(self) -> None:
+        # Non-trainable kinds (unknown / verifier_unavailable) keep the
+        # original lenient producer contract — only obligation_id is needed.
+        result = produce_formal_verifier_deltas(
+            delta_kind="obligation_unknown",
+            verifier_id="",
+            solver_status="",
+            encoding="",
+            **self._common_kwargs(),
+        )
+        assert len(result.deltas) == 1
+        delta = result.deltas[0]
+        # _formal_oracle treats unknown as Abstain regardless of completeness.
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="undecided",
+        )
+        assert verdict.verdict_source == "abstain"
+        assert verdict.trainable is False
+
+
+class TestToolFatalScopeGate:
+    """ToolOracle trains fail on `fatal_failure` ONLY when
+    `payload["fatal_scope"] == "claimed_task_output"`. Generic agent-loop
+    tool exceptions tagged `incidental_tool_call` must abstain.
+    """
+
+    def _fatal(self, fatal_scope: str) -> RuntimeDelta:
+        result = produce_tool_deltas(
+            run_id="run-tool-gate",
+            node_run_id="node-tg",
+            event_seq=8,
+            source_id="tool:incidental",
+            exit_code=-1,
+            timed_out=False,
+            duration_ms=2.0,
+            tool_error_class="RuntimeError",
+            fatal_scope=fatal_scope,
+        )
+        assert result.rejected_reason is None, result.rejected_reason
+        return result.deltas[0]
+
+    def test_incidental_tool_fatal_does_not_train(self) -> None:
+        delta = self._fatal("incidental_tool_call")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="generic agent loop side effect",
+        )
+        assert verdict.verdict_source == "abstain"
+        assert verdict.trainable is False
+
+    def test_unknown_scope_fatal_does_not_train(self) -> None:
+        delta = self._fatal("unknown")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="unscoped failure",
+        )
+        assert verdict.verdict_source == "abstain"
+
+    def test_claimed_task_output_fatal_trains_fail(self) -> None:
+        delta = self._fatal("claimed_task_output")
+        verdict = evaluate(
+            FakeRunFrameView(runtime_deltas=(delta,)),
+            final_output="harness failure invalidates artifact",
+        )
+        assert verdict.verdict_source == "tool"
+        assert verdict.quality_label == "fail"
+        assert verdict.trainable is True
+        assert verdict.score == 0.0
+
+    def test_invalid_fatal_scope_is_rejected_at_producer(self) -> None:
+        result = produce_tool_deltas(
+            run_id="run-tool-gate",
+            node_run_id="node-tg",
+            event_seq=9,
+            source_id="tool:bad-scope",
+            exit_code=-1,
+            timed_out=False,
+            duration_ms=2.0,
+            tool_error_class="RuntimeError",
+            fatal_scope="not-a-real-scope",
+        )
+        assert result.deltas == ()
+        assert "fatal_scope" in (result.rejected_reason or "")
