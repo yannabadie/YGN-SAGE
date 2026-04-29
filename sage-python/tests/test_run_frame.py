@@ -199,7 +199,7 @@ def _make_pipeline(output: str = "pipeline output") -> CognitiveOrchestrationPip
     pipeline._stage_assign_models = _assign
     pipeline._stage_execute = _execute
     pipeline._stage_learn = _learn
-    pipeline._record_to_memory = lambda _ctx: None
+    pipeline._record_to_memory = lambda _ctx, **_kw: None
     return pipeline
 
 
@@ -770,3 +770,218 @@ def test_run_frame_reroute_topology_epoch_prevents_node_id_collision() -> None:
     assert set(frame.node_records) == {"0:shared:1", "1:shared:1"}
     assert frame.node_records["0:shared:1"].output_length == len("before")
     assert frame.node_records["1:shared:1"].output_length == len("after")
+
+
+# ---------------------------------------------------------------------------
+# cgpro 2026-04-29 R6.1a verify Path E: bench-result feedback seam
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_passed_trains_exact_pass(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Synchronous-eval bench evaluator returning passed=True must produce
+    a trainable Exact verdict (verdict_source='exact', quality_label='pass',
+    score=1.0, trainable=True) emitted on the live trace.
+    """
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id", lambda: "01RFEVAL0PASS00000000001",
+    )
+
+    def evaluator(output: str) -> dict:
+        return {
+            "passed": True,
+            "score": 1.0,
+            "verifier_id": "test_unit_eval",
+            "reason": "all assertions passed",
+        }
+
+    result, frame = await _make_pipeline("evaluated output").run_with_bench_evaluator(
+        "task", evaluator,
+    )
+    assert result == "evaluated output"
+    assert frame.oracle_verdict is not None
+    assert frame.oracle_verdict.verdict_source == "exact"
+    assert frame.oracle_verdict.quality_label == "pass"
+    assert frame.oracle_verdict.score == 1.0
+    assert frame.oracle_verdict.trainable is True
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_failed_trains_exact_fail(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evaluator returning passed=False must train Exact fail (R9 design:
+    failure is high-value negative evidence, NOT abstain).
+    """
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id", lambda: "01RFEVAL0FAIL00000000001",
+    )
+
+    def evaluator(_output: str) -> dict:
+        return {"passed": False, "score": 0.0, "verifier_id": "test_unit_eval"}
+
+    _, frame = await _make_pipeline("bad output").run_with_bench_evaluator(
+        "task", evaluator,
+    )
+    assert frame.oracle_verdict is not None
+    assert frame.oracle_verdict.verdict_source == "exact"
+    assert frame.oracle_verdict.quality_label == "fail"
+    assert frame.oracle_verdict.score == 0.0
+    assert frame.oracle_verdict.trainable is True
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_async_evaluator_supported(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evaluator may be sync OR async; awaitable returns are awaited."""
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id", lambda: "01RFEVAL0ASYNC0000000001",
+    )
+
+    async def evaluator(_output: str) -> dict:
+        return {"passed": True, "score": 1.0, "verifier_id": "async_eval"}
+
+    _, frame = await _make_pipeline("ok").run_with_bench_evaluator("task", evaluator)
+    assert frame.oracle_verdict is not None
+    assert frame.oracle_verdict.verdict_source == "exact"
+    assert frame.oracle_verdict.trainable is True
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_raises_fails_closed_to_abstain(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If the evaluator raises, ctx.bench_result stays None and the oracle
+    abstains via _exact_oracle's None-guard. The pipeline result is unchanged.
+    """
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id", lambda: "01RFEVAL0RAISE0000000001",
+    )
+
+    def evaluator(_output: str) -> dict:
+        raise RuntimeError("evaluator boom")
+
+    result, frame = await _make_pipeline("output").run_with_bench_evaluator(
+        "task", evaluator,
+    )
+    assert result == "output"
+    assert frame.oracle_verdict is not None
+    assert frame.oracle_verdict.verdict_source == "abstain"
+    assert frame.oracle_verdict.trainable is False
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_invalid_shape_abstains(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evaluator returning a non-Mapping (or missing 'passed') is rejected;
+    oracle abstains via _exact_oracle's missing-passed-key guard.
+    """
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    monkeypatch.setattr(
+        "sage.pipeline._new_runtime_run_id", lambda: "01RFEVAL0BAD000000000001",
+    )
+
+    def evaluator(_output: str) -> str:  # not a Mapping
+        return "not a mapping"
+
+    _, frame = await _make_pipeline("output").run_with_bench_evaluator(
+        "task", evaluator,
+    )
+    assert frame.oracle_verdict is not None
+    assert frame.oracle_verdict.verdict_source == "abstain"
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_signature_parity_with_run_with_frame(
+    tmp_path: pathlib.Path,
+) -> None:
+    """run_with_bench_evaluator must accept the same budget_usd + system_hint
+    kwargs as run() / run_with_frame() so bench adapters can switch entry
+    points without parameter loss (cgpro Path E + R7.0.2 lock).
+    """
+    import inspect
+
+    from sage.pipeline import CognitiveOrchestrationPipeline
+
+    run_sig = inspect.signature(CognitiveOrchestrationPipeline.run)
+    eval_sig = inspect.signature(
+        CognitiveOrchestrationPipeline.run_with_bench_evaluator,
+    )
+    # eval method has one extra positional param (`evaluator`); the rest of
+    # the kwargs (budget_usd, system_hint) must be present and identical.
+    for kw in ("budget_usd", "system_hint"):
+        assert kw in run_sig.parameters
+        assert kw in eval_sig.parameters
+        assert (
+            run_sig.parameters[kw].annotation
+            == eval_sig.parameters[kw].annotation
+        ), f"{kw} annotation must match across run() and run_with_bench_evaluator()"
+
+
+@pytest.mark.asyncio
+async def test_run_with_bench_evaluator_event_order_preserved(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Locked event order: execute → evaluator → final_result → oracle_verdict
+    → run_frame_summary. The evaluator runs BEFORE final_result so the oracle
+    sees bench_result; final_result still parents oracle_verdict and
+    run_frame_summary as in R9.
+    """
+    import json as _json
+
+    monkeypatch.setenv("SAGE_TRACE_JSONL_DIR", str(tmp_path))
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    monkeypatch.setenv("SAGE_RUN_FRAME", "1")
+    run_id = "01RFEVAL0ORDER0000000001"
+    monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: run_id)
+
+    evaluator_called_at: list[float] = []
+
+    def evaluator(_output: str) -> dict:
+        import time as _time
+        evaluator_called_at.append(_time.monotonic())
+        return {"passed": True, "score": 1.0, "verifier_id": "order_test"}
+
+    _, _ = await _make_pipeline("ordered output").run_with_bench_evaluator(
+        "task", evaluator,
+    )
+
+    assert len(evaluator_called_at) == 1, "evaluator must be invoked exactly once"
+
+    # JSONL event order: every final_result seq < oracle_verdict seq <
+    # run_frame_summary seq.
+    jsonl = (tmp_path / f"{run_id}.jsonl").read_text(encoding="utf-8").splitlines()
+    events = [_json.loads(l) for l in jsonl if l.strip()]
+    by_type = {e["event_type"]: e["seq"] for e in events}
+    assert "final_result" in by_type
+    assert "oracle_verdict" in by_type
+    assert "run_frame_summary" in by_type
+    assert (
+        by_type["final_result"]
+        < by_type["oracle_verdict"]
+        < by_type["run_frame_summary"]
+    ), f"event order violated: {by_type}"

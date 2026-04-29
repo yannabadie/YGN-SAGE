@@ -12,7 +12,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Mapping
+from typing import Any, Awaitable, Callable, Mapping
 
 from sage.contracts.cost_tracker import CostTracker
 from sage.events import (
@@ -616,6 +616,49 @@ class CognitiveOrchestrationPipeline:
             emit_run_frame_summary=os.environ.get("SAGE_RUN_FRAME") == "1",
         )
 
+    async def run_with_bench_evaluator(
+        self,
+        task: str,
+        evaluator: "Callable[[str], Mapping[str, Any] | Awaitable[Mapping[str, Any]]]",
+        *,
+        budget_usd: float | None = None,
+        system_hint: int | None = None,
+    ) -> tuple[str, RunFrame]:
+        """Run the pipeline with a synchronous-eval bench evaluator wired in.
+
+        cgpro 2026-04-29 R6.1a verify Path E: synchronous-eval benches
+        (BigCodeBench, EvalPlus, HumanEval) need their pass/fail to be
+        available to the OracleStack BEFORE final_result + oracle_verdict
+        + Stage 5 learning fire. Without this seam, those adapters call
+        ``system.run()``, get the output, and only then evaluate — but by
+        then the live oracle has already abstained because ``ctx.bench_result``
+        was never populated.
+
+        Locked event order::
+
+            Stage 0-4 execute  →  evaluator(final_output)  →
+            final_result  →  oracle_verdict  →  Stage 5 learn  →
+            run_frame_summary
+
+        The evaluator MUST return a Mapping with at least ``{"passed": bool}``;
+        ``score``, ``reason``, ``output_sha256``, ``tool_call_id``,
+        ``verifier_id`` are accepted by ``_exact_oracle``. If the evaluator
+        raises or returns an invalid shape, ``ctx.bench_result`` stays None
+        and the oracle abstains as if no evaluator were attached
+        (fail-closed by design via ``_exact_oracle`` itself, which returns
+        None on missing/malformed input).
+
+        Sync and async evaluators are both supported: if ``evaluator(...)``
+        returns an awaitable, it is awaited.
+        """
+        return await self._run_internal(
+            task,
+            budget_usd=budget_usd,
+            system_hint=system_hint,
+            emit_run_frame_summary=os.environ.get("SAGE_RUN_FRAME") == "1",
+            bench_evaluator=evaluator,
+        )
+
     async def _run_internal(
         self,
         task: str,
@@ -623,6 +666,9 @@ class CognitiveOrchestrationPipeline:
         system_hint: int | None = None,
         *,
         emit_run_frame_summary: bool = False,
+        bench_evaluator: (
+            "Callable[[str], Mapping[str, Any] | Awaitable[Mapping[str, Any]]] | None"
+        ) = None,
     ) -> tuple[str, RunFrame]:
         """Execute the full 5-stage pipeline.
 
@@ -761,6 +807,34 @@ class CognitiveOrchestrationPipeline:
                     run_frame_builder=run_frame_builder,
                 )
                 ctx.latency_ms = (time.monotonic() - t0) * 1000
+
+                # cgpro 2026-04-29 R6.1a verify Path E: bench-result feedback
+                # seam. Synchronous-eval benches (BigCodeBench, EvalPlus, etc.)
+                # attach an evaluator via run_with_bench_evaluator(); we call
+                # it on the executed output BEFORE final_result + oracle so
+                # _exact_oracle has bench_result["passed"] available. Fail-
+                # closed: any exception leaves ctx.bench_result=None and the
+                # oracle abstains via _exact_oracle's None-guard.
+                if bench_evaluator is not None and ctx.bench_result is None:
+                    try:
+                        candidate = bench_evaluator(ctx.result or "")
+                        import inspect as _inspect
+                        if _inspect.isawaitable(candidate):
+                            candidate = await candidate
+                        if isinstance(candidate, Mapping):
+                            ctx.bench_result = candidate
+                        else:
+                            log.warning(
+                                "bench_evaluator returned %r; expected Mapping. "
+                                "Oracle will abstain.",
+                                type(candidate).__name__,
+                            )
+                    except Exception as _eval_exc:  # noqa: BLE001 - fail-closed
+                        log.warning(
+                            "bench_evaluator raised %s: %s; oracle will abstain.",
+                            type(_eval_exc).__name__,
+                            _eval_exc,
+                        )
 
                 oracle_enabled = os.environ.get("SAGE_ORACLE") == "1"
                 final_status = self._runtime_final_status(ctx)

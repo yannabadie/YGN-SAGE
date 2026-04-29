@@ -203,6 +203,60 @@ class AgentSystem:
         await self._persist_memory()
         return result
 
+    async def run_with_bench_evaluator(
+        self,
+        task: "str | TaskInput",
+        evaluator: Any,
+        *,
+        system_hint: int | None = None,
+    ) -> tuple[str, Any]:
+        """Run with a synchronous-eval bench evaluator wired to the OracleStack.
+
+        cgpro 2026-04-29 R6.1a verify Path E: synchronous-eval benches
+        (BigCodeBench, EvalPlus, HumanEval) attach an evaluator that the
+        pipeline calls between Stage 4 execute and the OracleStack so that
+        ``_exact_oracle`` sees ``bench_result["passed"]`` and produces a
+        trainable verdict on the live trace.
+
+        Returns ``(output, RunFrame)`` so the caller can inspect
+        ``frame.runtime_deltas``, ``frame.oracle_verdict``, ``frame.status``,
+        etc. Pipeline-only path; mock and direct fallback paths do not
+        consume the evaluator (no oracle there).
+        """
+        if isinstance(task, TaskInput):
+            self._last_task_input = task
+            if task.source == "swebench":
+                from sage.input.swebench import render_swebench_prompt
+                task = render_swebench_prompt(task)
+            elif task.source == "bcb":
+                from sage.input.bcb import render_bcb_prompt
+                task = render_bcb_prompt(task)
+            else:
+                task = task.prompt
+        else:
+            self._last_task_input = None
+
+        _budget = (
+            self._guardrail_budget
+            if hasattr(self, "_guardrail_budget")
+            else DEFAULT_BUDGET_USD
+        )
+
+        if self.pipeline is None:
+            raise RuntimeError(
+                "run_with_bench_evaluator requires the pipeline path; "
+                "mock / direct agent_loop fallback does not emit oracle verdicts."
+            )
+        result, frame = await self.pipeline.run_with_bench_evaluator(
+            task,
+            evaluator,
+            budget_usd=_budget,
+            system_hint=system_hint,
+        )
+        self._last_execution_path = "pipeline"
+        await self._persist_memory()
+        return result, frame
+
     def _record_topology_outcome(self, task: str, result: str, topology_result: Any, bandit_decision: Any = None, run_start: float = 0.0) -> None:
         """Record outcome into topology engine's learning loop (S-MMU + MAP-Elites)."""
         if not self.topology_engine or topology_result is None:
