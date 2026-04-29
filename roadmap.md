@@ -1,9 +1,33 @@
 # YGN-SAGE roadmap
 
-**Last updated:** 2026-04-26
+**Last updated:** 2026-04-29
 **Scope:** forward-looking work. Living backlog grouped by expected
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
+
+## ⭐ Current operational gates (2026-04-29 — 5 cycles shipped)
+
+5 cycles of cgpro-driven RuntimeContracts work shipped (R0..R7 + R6.0.1 + R7.0.1+R7.0.2 + R9). 17 commits + 2 doc fixes pushed to main. ~9300 LOC, 2447 regression tests in CI, mypy 0/204, ruff clean.
+
+All 4 strategic feature flags ship **default-OFF** for safety:
+
+- **`SAGE_STATECORE=1`** (R6) — Control/Message/State edge-channel separation. Default OFF preserves legacy text-aggregated `_gather_predecessor_context`. ON requires strict typed edges + state delta channel.
+- **`SAGE_RUN_FRAME=1`** (R7) — typed RunFrame trailing diagnostic in JSONL trace. Default OFF; OFF byte-identical to R5 baseline.
+- **`SAGE_ORACLE=1`** (R9) — OracleStack training gate. Default OFF preserves legacy QualityEstimator path. **Do NOT flip default-on** until R6.1a deterministic evidence producers ship + N=10 SWE-bench observe-mode smoke validates oracle event ordering + abstain gating + no training-sink leak under abstain. Tool/Formal oracles return None v0 (placeholders for R6.1a).
+- **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — RuntimeEventLog durable JSONL sink. Off when unset.
+
+Cycle sequencing per cgpro (2026-04-29 cycle 5 reassess):
+
+```
+Cycle 6 = R6.1a deterministic delta producers
+Cycle 7 = SAGE_ORACLE default-on flip + roadmap-A14-reset (operator action paired with rollout)
+Cycle 8+ = R6.1b (LLM delta candidates), R8/B9 (AgentLoop immutable per-run context),
+           R10 (MAP-Elites descriptor v2), R5b/B2b (replay)
+```
+
+The cycle-7 default-on gate is: N=10 smoke green on event ordering + R6.1a tests green + at least 1 ToolOracle positive/negative + 1 FormalOracle abstain/negative fixture + A14 reset script tested + roadmap+CLAUDE docs updated.
+
+
 
 **2026-04-26 CI debt closeout** (~24 commits, including a real prod-bug fix
 flagged by an external review pass via `cgpro`: `bandit::restore_arm` was

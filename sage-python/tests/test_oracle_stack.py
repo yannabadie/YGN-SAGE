@@ -512,6 +512,46 @@ def test_spec_oracle_invalidated_assumption_mentioned_as_invalid_does_not_train(
         )
 
 
+def test_oracle_v0_evidence_starved_default_falls_through_to_abstain() -> None:
+    """R9.0.1 (cgpro 2026-04-29 cycle 5 reassess): documents the v0
+    evidence-starved state explicitly. With SAGE_ORACLE=1 but NO evidence
+    sources active (no bench_result, Tool/Formal oracles return None v0,
+    no StateCore contradiction, LLMJudge stubbed), the hierarchy MUST fall
+    through to Abstain — and Abstain MUST gate all downstream training.
+
+    This test pins the intended R6.1a insertion point: when R6.1a deterministic
+    delta producers ship, Tool/Formal oracles will start returning real
+    verdicts, and runs that previously hit Abstain may become trainable. Until
+    then, every non-bench path is starved-Abstain by design.
+
+    Documents the cycle 5→6 handoff state.
+    """
+    view = FakeRunFrameView()  # default: no state_frames, no bench evidence
+
+    # No bench result. No state contradiction. Tool + Formal oracles are
+    # placeholders that return None in v0. LLMJudge stubbed.
+    verdict = evaluate(view, final_output="any free-form output", bench_result=None)
+
+    assert verdict.verdict_source == "abstain", (
+        f"v0 evidence-starved evaluate must Abstain; got verdict_source="
+        f"{verdict.verdict_source!r}. If this assertion fails after R6.1a "
+        f"ships, update the test rationale to reflect the new evidence sources."
+    )
+    assert verdict.trainable is False
+    assert verdict.score is None
+    assert verdict.quality_label == "unknown"
+
+    # Reason codes should reflect "hierarchy exhausted" or similar — the
+    # placeholder fallthrough path. Don't lock the exact string; just check
+    # it's one of the expected v0 abstain reasons.
+    assert verdict.reason_codes, "Abstain verdict must carry at least one reason_code"
+    abstain_reasons = {"hierarchy_exhausted", "hierarchy_low_confidence_only"}
+    assert any(rc in abstain_reasons for rc in verdict.reason_codes), (
+        f"v0 evidence-starved abstain expected one of {abstain_reasons}, "
+        f"got reason_codes={verdict.reason_codes!r}"
+    )
+
+
 @pytest.mark.asyncio
 async def test_abstain_blocks_all_training_sinks(monkeypatch: pytest.MonkeyPatch) -> None:
     from sage.constants import CONSOLIDATION_INTERVAL_STEPS
