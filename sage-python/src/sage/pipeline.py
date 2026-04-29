@@ -1080,6 +1080,14 @@ class CognitiveOrchestrationPipeline:
         """
         from sage.observability.spans import sage_span
         with sage_span("sage.topology_select", op="sage.topology_select"):
+            skip_dag_template = (
+                os.environ.get("SAGE_TOPOLOGY_SKIP_DAG_TEMPLATE") == "1"
+                or os.environ.get("SAGE_TOPOLOGY_FORCE_ENGINE") == "1"
+            )
+            log_all_candidates = (
+                os.environ.get("SAGE_TOPOLOGY_LOG_ALL_CANDIDATES") == "1"
+            )
+
             # Sprint 5 ablation: force bypass to measure framework delta.
             if os.environ.get("SAGE_ABLATION_NO_TOPOLOGY") == "1":
                 ctx.topology = None
@@ -1089,7 +1097,7 @@ class CognitiveOrchestrationPipeline:
             # S1 fast path: skip topology for non-math tasks.
             # Math tasks use formal_solver (SatLM NeurIPS 2023): LLM formalizes,
             # Rust solves exactly. Falls back to single-agent if solver fails.
-            if ctx.system == 1:
+            if ctx.system == 1 and not skip_dag_template:
                 if ctx.domain == "math":
                     topo = self._build_topology_from_hint("formal_solver")
                     if topo:
@@ -1106,14 +1114,18 @@ class CognitiveOrchestrationPipeline:
             # Uses omega (parallelism), delta (depth), gamma (coupling) —
             # no regex heuristics, purely structural signals from Stage 1.
             hint = "sequential"
-            if ctx.dag_features:
+            if ctx.dag_features and not skip_dag_template:
                 hint = select_macro_topology(ctx.dag_features, ctx.system, ctx.domain)
 
             # S2+sequential: use the sequential topology template instead of bypass.
             # Research (AdaptOrch 2602.16873, MASS 2502.02533) shows sequential
             # planner→coder→synthesizer pipeline beats single-agent by 12-23%.
             # The old bypass (SAGE_BYPASS_S2_SEQUENTIAL=1) is available for A/B testing.
-            if ctx.system == 2 and hint == "sequential":
+            if (
+                ctx.system == 2
+                and hint == "sequential"
+                and not skip_dag_template
+            ):
                 # `os` is imported at module level; a redundant local `import os`
                 # here would shadow it and break the earlier SAGE_ABLATION_NO_TOPOLOGY
                 # check (UnboundLocalError when Python treats `os` as local).
@@ -1124,7 +1136,17 @@ class CognitiveOrchestrationPipeline:
 
             # Build topology from template hint. All DAG-selected templates go
             # through TemplateStore which creates multi-node topologies.
-            if hint in ("sequential", "avr", "parallel", "robust", "horizon_pipeline", "parallel_fanout"):
+            if (
+                not skip_dag_template
+                and hint in (
+                    "sequential",
+                    "avr",
+                    "parallel",
+                    "robust",
+                    "horizon_pipeline",
+                    "parallel_fanout",
+                )
+            ):
                 topo = self._build_topology_from_hint(hint)
                 if topo:
                     ctx.topology = topo
@@ -1155,7 +1177,17 @@ class CognitiveOrchestrationPipeline:
                     except (ImportError, RuntimeError, OSError):
                         # OSError: model weights not on disk / HF_HUB_OFFLINE=1 without cache
                         pass
-                    result = self.engine.generate(ctx.task, task_embedding, ctx.system, ctx.budget)
+                    raw_result = self.engine.generate(
+                        ctx.task, task_embedding, ctx.system, ctx.budget
+                    )
+                    candidates = self._topology_candidate_items(raw_result)
+                    if log_all_candidates:
+                        self._log_topology_candidates(candidates)
+                    result = (
+                        candidates[0]
+                        if isinstance(raw_result, (list, tuple)) and candidates
+                        else raw_result
+                    )
                     if result and hasattr(result, "topology"):
                         ctx.topology = result.topology
                         # Plan item 1.4a (2026-04-20): always use ctx.topology.id
@@ -1222,6 +1254,111 @@ class CognitiveOrchestrationPipeline:
                 )
             self._apply_topology_budget_and_cache(ctx)
             return ctx
+
+    def _topology_candidate_items(self, result: Any) -> list[Any]:
+        if result is None:
+            return []
+        if isinstance(result, (list, tuple)):
+            return list(result)
+        candidates_attr = getattr(result, "candidates", None)
+        if callable(candidates_attr):
+            try:
+                candidates_attr = candidates_attr()
+            except Exception:
+                candidates_attr = None
+        if candidates_attr is not None:
+            try:
+                return list(candidates_attr)
+            except TypeError:
+                pass
+        return [result]
+
+    def _log_topology_candidates(self, candidates: list[Any]) -> None:
+        for path, candidate in enumerate(candidates, start=1):
+            source = self._candidate_text_attr(candidate, ("source",), "unknown")
+            score = self._candidate_float_attr(
+                candidate,
+                ("score", "confidence", "quality"),
+                0.0,
+            )
+            topology = getattr(candidate, "topology", None)
+            template = self._candidate_text_attr(
+                topology if topology is not None else candidate,
+                ("template_type", "template"),
+                "unknown",
+            )
+            nodes = self._candidate_node_count(topology if topology is not None else candidate)
+            log.info(
+                "topology.candidate path=%d source=%s archive_hit=%s "
+                "score=%.3f template_type=%s nodes=%d",
+                path,
+                source,
+                "true" if source in ("archive", "archive_hit") else "false",
+                score,
+                template,
+                nodes,
+            )
+
+    @staticmethod
+    def _candidate_text_attr(
+        obj: Any,
+        names: tuple[str, ...],
+        default: str,
+    ) -> str:
+        if obj is None:
+            return default
+        for name in names:
+            value = getattr(obj, name, None)
+            if callable(value):
+                try:
+                    value = value()
+                except Exception:
+                    value = None
+            if value is not None:
+                text = str(value)
+                if text:
+                    return text
+        return default
+
+    @staticmethod
+    def _candidate_float_attr(
+        obj: Any,
+        names: tuple[str, ...],
+        default: float,
+    ) -> float:
+        if obj is None:
+            return default
+        for name in names:
+            value = getattr(obj, name, None)
+            if callable(value):
+                try:
+                    value = value()
+                except Exception:
+                    value = None
+            if isinstance(value, bool) or value is None:
+                continue
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    continue
+        return default
+
+    @staticmethod
+    def _candidate_node_count(obj: Any) -> int:
+        if obj is None:
+            return 0
+        try:
+            node_count = getattr(obj, "node_count", None)
+            if callable(node_count):
+                return int(node_count())
+            if node_count is not None:
+                return int(node_count)
+        except Exception:
+            return 0
+        return 0
 
     def _log_topology_structure(
         self,
@@ -1502,6 +1639,7 @@ class CognitiveOrchestrationPipeline:
                     )
                     if node:
                         ctx.assignments[i] = getattr(node, "model_id", "")
+                self._log_model_assigner_chosen_fallback(ctx)
             except (ImportError, RuntimeError) as exc:
                 log.warning("Stage 3 assign failed: %s", exc)
 
@@ -1535,6 +1673,47 @@ class CognitiveOrchestrationPipeline:
                 log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
 
             return ctx
+
+    def _log_model_assigner_chosen_fallback(self, ctx: PipelineContext) -> None:
+        """T5 diagnostic fallback for opaque Rust assigners.
+
+        The Python fallback logs true top-3 candidates from its scoring table.
+        Rust's PyO3 assigner does not expose that table yet, so this branch
+        emits only the chosen model as rank 1, with unknown score components.
+        """
+        if os.environ.get("SAGE_ASSIGNER_LOG_TOP3") != "1":
+            return
+        if self.assigner is not None and hasattr(self.assigner, "_score_candidates"):
+            return
+        if ctx.topology is None:
+            return
+
+        node_count = (
+            ctx.topology.node_count()
+            if hasattr(ctx.topology, "node_count")
+            else 0
+        )
+        unknown = float("nan")
+        for node_idx in range(node_count):
+            model_id = ctx.assignments.get(node_idx, "")
+            if not model_id and hasattr(ctx.topology, "get_node"):
+                node = ctx.topology.get_node(node_idx)
+                model_id = getattr(node, "model_id", "") if node else ""
+            if not model_id:
+                continue
+            log.info(
+                "model_assigner.candidates node_id=%d rank=1 model=%s "
+                "score=%s affinity=%s domain=%s cost_norm=%s "
+                "hint_bonus=%s diversity_penalty=%s",
+                node_idx,
+                model_id,
+                unknown,
+                unknown,
+                unknown,
+                unknown,
+                unknown,
+                unknown,
+            )
 
     def _verify_assignment_formal(self, ctx: PipelineContext) -> None:
         """Formally verify provider assignment via OxiZ / Z3 (NON-BLOCKING).
