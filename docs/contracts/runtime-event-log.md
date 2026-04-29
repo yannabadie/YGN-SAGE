@@ -19,13 +19,17 @@ The contract is enforced by `tests/test_runtime_event_contracts.py`. Breaking ch
 |---|---|---|
 | `run_frame_summary` event type | **never emitted** | emitted as trailing diagnostic AFTER `final_result` |
 
+| Field on event | SAGE_ORACLE unset / 0 | SAGE_ORACLE=1 |
+|---|---|---|
+| `oracle_verdict` event type | **never emitted** | emitted after `final_result` with `parent_event_id == final_result.seq` |
+
 The OFF-mode columns are the **byte-identical baseline guarantees**. Any field added unconditionally there breaks downstream callers (e.g., `protocols/a2a_server.py`, `scripts/run_masbench_traced.py`) that may be parsing the JSONL. Behavior must match the previous milestone exactly when the gating flag is unset/0.
 
-## Final-event semantics (R7+)
+## Final-event semantics (R9+)
 
-`final_result` is the LAST **business** event of any run. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result`. The summary's `parent_event_id` MUST equal `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of summary success.
+`final_result` is the LAST **business** event of any run. Under `SAGE_ORACLE=1`, exactly ONE `oracle_verdict` event is emitted after `final_result` and before any optional `run_frame_summary`; its `parent_event_id` MUST equal `final_result.seq`. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result` or `oracle_verdict`. The summary's `parent_event_id` remains `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of oracle or summary success.
 
-## Event-type catalog (12 types as of R7)
+## Event-type catalog (13 types as of R9)
 
 | Event | Source component | Pipeline scope | When emitted |
 |---|---|---|---|
@@ -40,6 +44,7 @@ The OFF-mode columns are the **byte-identical baseline guarantees**. Any field a
 | `budget` | topology_runner | runner | when budget threshold crossed |
 | `state_applied` | topology_runner | runner | per-node reduction in StateCore strict mode (R6, behind SAGE_STATECORE=1) |
 | `final_result` | pipeline | pipeline | once per run, last BUSINESS event, with `status: success` / `failure` / `budget_exceeded` |
+| `oracle_verdict` | pipeline | pipeline | OracleStack verdict event (R9, behind SAGE_ORACLE=1); follows `final_result` with `parent_event_id == final_result.seq`; payload is `OracleVerdict.to_dict()` with no raw output |
 | `run_frame_summary` | pipeline | pipeline | trailing DIAGNOSTIC event (R7, behind SAGE_RUN_FRAME=1); follows `final_result` with `parent_event_id == final_result.seq`; best-effort emission — sink failure here MUST NOT change pipeline result |
 
 ## Core fields (always present on every event)
@@ -51,7 +56,7 @@ trace_id: str          # = run_id in v0
 parent_event_id: int | None  # parent's seq; None for task_started
 seq: int               # 0-indexed, contiguous, strictly monotonic per run
 timestamp_ns: int      # time.time_ns()
-event_type: str        # one of EVENT_TYPES above (12 as of R7)
+event_type: str        # one of EVENT_TYPES above (13 as of R9)
 source_component: str  # pipeline | topology_runner | controller | model_assigner | provider_pool
 task_hash: str         # sha256(task_text), 64 lowercase hex
 payload_hash: str      # sha256({schema_version, event_type, payload}), 64 lowercase hex
@@ -82,6 +87,7 @@ These fields are reserved for future expansion. They are dropped from `to_dict()
 ## Golden fixtures
 
 `sage-python/tests/golden/runtime_events/`:
+- `oracle_verdict.json` - oracle_verdict event contract (only emitted under SAGE_ORACLE=1)
 - `statecore_off_node_started.json` — NodeStarted contract in legacy mode
 - `statecore_on_node_started.json` — NodeStarted contract in strict mode
 - `state_applied.json` — state_applied event contract (only emitted in strict mode)
@@ -101,6 +107,7 @@ The `_required_always` / `_required_in_payload` / `_forbidden_in_payload_when_of
 
 ## References
 
+- R9 cycle 5 spec - `.tmp/cgpro_r9_design_locked_spec.md`
 - R5 cycle 2 spec — `.tmp/cgpro_r5_design_locked_spec.md`
 - R6 cycle 3 spec — `.tmp/cgpro_r6_design_locked_spec.md`
 - R7 cycle 4 spec — `.tmp/cgpro_r7_design_locked_spec.md`

@@ -89,7 +89,7 @@ async def test_pipeline_run_applies_hint():
     def _fake_assign(ctx):
         return ctx
 
-    async def _fake_execute(ctx):
+    async def _fake_execute(ctx, **_kwargs):
         ctx.result = "ok"
         return ctx
 
@@ -121,7 +121,7 @@ async def test_pipeline_run_without_hint_keeps_router_choice():
     def _fake_assign(ctx):
         return ctx
 
-    async def _fake_execute(ctx):
+    async def _fake_execute(ctx, **_kwargs):
         ctx.result = "ok"
         return ctx
 

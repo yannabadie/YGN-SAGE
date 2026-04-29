@@ -1,9 +1,34 @@
 """Global test configuration for sage-python tests."""
 import asyncio
 import os
+import shutil
 import sys
+import tempfile
+from pathlib import Path
+from uuid import uuid4
 
 import pytest
+
+# Windows host guard: the default `%LOCALAPPDATA%\Temp\pytest-of-*` root can be
+# ACL-denied on this machine. Keep pytest-created temp dirs inside the repo.
+_PYTEST_TEMP_ROOT = (
+    Path(__file__).resolve().parents[1] / ".tmp" / f"pytest-temp-root-{os.getpid()}"
+)
+_PYTEST_TEMP_ROOT.mkdir(parents=True, exist_ok=True)
+for _name in ("TMPDIR", "TEMP", "TMP"):
+    os.environ.setdefault(_name, str(_PYTEST_TEMP_ROOT))
+tempfile.tempdir = str(_PYTEST_TEMP_ROOT)
+
+_PYTEST_HOME = _PYTEST_TEMP_ROOT / "home"
+_PYTEST_HOME.mkdir(parents=True, exist_ok=True)
+os.environ["HOME"] = str(_PYTEST_HOME)
+os.environ["USERPROFILE"] = str(_PYTEST_HOME)
+_PYTEST_LOCAL_APPDATA = _PYTEST_HOME / "AppData" / "Local"
+_PYTEST_ROAMING_APPDATA = _PYTEST_HOME / "AppData" / "Roaming"
+_PYTEST_LOCAL_APPDATA.mkdir(parents=True, exist_ok=True)
+_PYTEST_ROAMING_APPDATA.mkdir(parents=True, exist_ok=True)
+os.environ["LOCALAPPDATA"] = str(_PYTEST_LOCAL_APPDATA)
+os.environ["APPDATA"] = str(_PYTEST_ROAMING_APPDATA)
 
 # Allow SageTopologyEnv to be instantiated in tests without verl-agent.
 # See Issue G audit fix: topology_env.py now guards against accidental use
@@ -70,3 +95,14 @@ def _restore_windows_proactor_policy():
         return
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
     yield
+
+
+@pytest.fixture
+def tmp_path() -> Path:
+    """Repo-local tmp_path replacement for Windows ACL-restricted sandboxes."""
+    path = _PYTEST_TEMP_ROOT / "cases" / uuid4().hex
+    path.mkdir(parents=True, exist_ok=False)
+    try:
+        yield path
+    finally:
+        shutil.rmtree(path, ignore_errors=True)

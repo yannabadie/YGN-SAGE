@@ -6,11 +6,13 @@ import os
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from sage.runtime.oracle.verdict import OracleVerdict
 from sage.runtime.run_frame.frame import (
     RUN_FRAME_SCHEMA_VERSION,
     NodeRunRecord,
     NodeRunStatus,
     RunFrame,
+    RunFrameView,
     RunStatus,
     TopologyRunRef,
 )
@@ -33,6 +35,7 @@ class _RunFrameBuilder:
             "SAGE_TRACE_FAIL_CLOSED",
             "SAGE_DIFF_VERIFIER_MODE",
             "SAGE_ENABLE_PATH6",
+            "SAGE_ORACLE",
         }
     )
     _PATH_LIKE_FLAGS: frozenset[str] = frozenset({"SAGE_TRACE_JSONL_DIR"})
@@ -55,6 +58,8 @@ class _RunFrameBuilder:
         self._failure_seqs: list[int] = []
         self._terminal_failure_seq: int | None = None
         self._status: RunStatus = "unknown"
+        self._oracle_verdict: OracleVerdict | None = None
+        self._oracle_verdict_seq: int | None = None
         self._current_topology_epoch = 0
         self._current_topology_id: str | None = None
         self._current_graph_digest: str | None = None
@@ -308,8 +313,53 @@ class _RunFrameBuilder:
         self._final_result_seq = seq
         self._status = status
 
+    def record_oracle_verdict(self, *, seq: int | None, verdict: OracleVerdict) -> None:
+        self._oracle_verdict_seq = seq
+        self._oracle_verdict = verdict
+
     def open_node_run_id(self, *, node_id: str) -> str | None:
         return self._open_node_runs.get((self._current_topology_epoch, str(node_id)))
+
+    def snapshot_view(self) -> RunFrameView:
+        """Return a raw-output-free, immutable view for OracleStack."""
+        status = self._status
+        if status == "unknown" and self._terminal_failure_seq is not None:
+            status = "failure"
+        return RunFrameView(
+            run_id=self.run_id,
+            task_id=self._task_id,
+            task_hash=self._task_hash,
+            feature_flags=_freeze_mapping(self._feature_flags),
+            topology_id=self._current_topology_id,
+            graph_digest=self._current_graph_digest,
+            topology_history=tuple(self._topology_history),
+            state_frames=_freeze_mapping(
+                {key: _freeze_state_frame(value) for key, value in self._state_frames.items()}
+            ),
+            node_records=_freeze_mapping(
+                {
+                    key: _freeze_node_record(value)
+                    for key, value in self._node_records.items()
+                }
+            ),
+            routing_decision=(
+                _freeze_mapping(self._routing_decision)
+                if self._routing_decision is not None
+                else None
+            ),
+            controller_decisions=tuple(
+                _freeze_mapping(decision) for decision in self._controller_decisions
+            ),
+            budget_snapshot=(
+                _freeze_mapping(self._budget_snapshot)
+                if self._budget_snapshot is not None
+                else None
+            ),
+            final_result_seq=self._final_result_seq,
+            failure_seqs=tuple(self._failure_seqs),
+            terminal_failure_seq=self._terminal_failure_seq,
+            status=status,
+        )
 
     def finalize(self) -> RunFrame:
         """Produce a frozen RunFrame snapshot. Called once per run."""
@@ -351,6 +401,7 @@ class _RunFrameBuilder:
             failure_seqs=tuple(self._failure_seqs),
             terminal_failure_seq=self._terminal_failure_seq,
             status=status,
+            oracle_verdict=self._oracle_verdict,
         )
 
     def _next_attempt(self, topology_epoch: int, node_id: str) -> int:

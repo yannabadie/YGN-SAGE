@@ -4,12 +4,14 @@ from sage.runtime.run_frame.frame import (
     NodeRunRecord,
     NodeRunStatus,
     RunFrame,
+    RunFrameView,
     RunStatus,
     TopologyRunRef,
 )
 
 __all__ = [
     "RunFrame",
+    "RunFrameView",
     "NodeRunRecord",
     "TopologyRunRef",
     "NodeRunStatus",

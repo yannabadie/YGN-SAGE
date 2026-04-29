@@ -219,7 +219,7 @@ async def _run_pipeline_trace(
     monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: run_id)
 
     stamps = iter(range(10_000, 10_100))
-    monotonic = iter([1.0, 2.0])
+    monotonic = iter([1.0] * 100)
     monkeypatch.setattr("sage.runtime.event_log.writer.time.time_ns", lambda: next(stamps, 10_099))
     monkeypatch.setattr("sage.pipeline.time.monotonic", lambda: next(monotonic, 2.0))
 

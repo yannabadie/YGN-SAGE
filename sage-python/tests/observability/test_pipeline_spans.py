@@ -43,7 +43,7 @@ async def test_pipeline_run_emits_top_level_span(in_memory_exporter) -> None:
     pipeline._stage_decompose = AsyncMock(side_effect=lambda ctx: ctx)
     pipeline._stage_select_topology = MagicMock(side_effect=lambda ctx: ctx)
     pipeline._stage_assign_models = MagicMock(side_effect=lambda ctx: ctx)
-    pipeline._stage_execute = AsyncMock(side_effect=lambda ctx: ctx)
+    pipeline._stage_execute = AsyncMock(side_effect=lambda ctx, **_kwargs: ctx)
     pipeline._stage_learn = AsyncMock(side_effect=lambda ctx: ctx)
     pipeline._emit_budget_exceeded = MagicMock()
 

@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import re as _re
+import subprocess
 import sys as _sys
 import tempfile
 import time
@@ -95,6 +96,84 @@ class ExecutionStats:
 _stats = ExecutionStats()
 
 
+def _subprocess_result_from_completed(
+    completed: subprocess.CompletedProcess[bytes],
+) -> SandboxResult:
+    return SandboxResult(
+        stdout=(completed.stdout or b"").decode("utf-8", errors="replace"),
+        stderr=(completed.stderr or b"").decode("utf-8", errors="replace"),
+        exit_code=completed.returncode,
+    )
+
+
+def _run_python_script_sync(
+    script_path: str,
+    *,
+    timeout: int,
+    stdin: bytes | None = None,
+) -> SandboxResult:
+    try:
+        completed = subprocess.run(
+            [_sys.executable, script_path],
+            input=stdin,
+            capture_output=True,
+            timeout=timeout,
+            check=False,
+        )
+        return _subprocess_result_from_completed(completed)
+    except subprocess.TimeoutExpired as exc:
+        stdout = exc.stdout or b""
+        stderr = exc.stderr or b"TIMEOUT"
+        if isinstance(stdout, str):
+            stdout = stdout.encode("utf-8", errors="replace")
+        if isinstance(stderr, str):
+            stderr = stderr.encode("utf-8", errors="replace")
+        return SandboxResult(
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace") or "TIMEOUT",
+            exit_code=-1,
+            timed_out=True,
+        )
+
+
+async def _run_python_script(
+    script_path: str,
+    *,
+    timeout: int,
+    stdin: bytes | None = None,
+) -> SandboxResult:
+    if _sys.platform == "win32":
+        return await asyncio.to_thread(
+            _run_python_script_sync,
+            script_path,
+            timeout=timeout,
+            stdin=stdin,
+        )
+
+    proc = await asyncio.create_subprocess_exec(
+        _sys.executable, script_path,
+        stdin=asyncio.subprocess.PIPE if stdin is not None else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout_b, stderr_b = await asyncio.wait_for(
+            proc.communicate(input=stdin),
+            timeout=timeout,
+        )
+        return SandboxResult(
+            stdout=stdout_b.decode("utf-8", errors="replace"),
+            stderr=stderr_b.decode("utf-8", errors="replace"),
+            exit_code=proc.returncode or 0,
+        )
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return SandboxResult(stdout="", stderr="TIMEOUT", exit_code=-1, timed_out=True)
+
+
 # ── Code extraction ──────────────────────────────────────────────
 
 def extract_python_code(response: str) -> str | None:
@@ -129,26 +208,7 @@ async def run_code_sandbox(code: str, timeout: int = 30) -> SandboxResult:
     try:
         tmp.write(code)
         tmp.close()
-        proc = await asyncio.create_subprocess_exec(
-            _sys.executable, script_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            stdout_b, stderr_b = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout,
-            )
-            return SandboxResult(
-                stdout=stdout_b.decode("utf-8", errors="replace"),
-                stderr=stderr_b.decode("utf-8", errors="replace"),
-                exit_code=proc.returncode or 0,
-            )
-        except asyncio.TimeoutError:
-            try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-            return SandboxResult(stdout="", stderr="TIMEOUT", exit_code=-1, timed_out=True)
+        return await _run_python_script(script_path, timeout=timeout)
     finally:
         try:
             os.unlink(script_path)
@@ -215,28 +275,21 @@ async def _run_stdin_tests(
     errors = 0
     try:
         for inp, expected in pairs:
-            proc = await asyncio.create_subprocess_exec(
-                _sys.executable, script_path,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
             try:
-                stdout_b, stderr_b = await asyncio.wait_for(
-                    proc.communicate(input=inp.encode("utf-8")),
+                result = await _run_python_script(
+                    script_path,
+                    stdin=inp.encode("utf-8"),
                     timeout=timeout // max(len(pairs), 1) + 5,
                 )
-                got = stdout_b.decode("utf-8", errors="replace").strip()
+                got = result.stdout.strip()
                 want = expected.strip()
                 if got == want:
                     passed += 1
                 else:
                     wrong += 1
+                if result.timed_out:
+                    return 0.5, "TIMEOUT"
             except asyncio.TimeoutError:
-                try:
-                    proc.kill()
-                except ProcessLookupError:
-                    pass
                 return 0.5, "TIMEOUT"
             except Exception:
                 errors += 1

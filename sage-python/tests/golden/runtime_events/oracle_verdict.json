@@ -1,0 +1,21 @@
+{
+  "_doc": "Golden fixture for oracle_verdict event (R9 OracleStack). ONLY emitted when SAGE_ORACLE=1.",
+  "schema_version": "1.0",
+  "event_type": "oracle_verdict",
+  "source_component": "pipeline",
+  "_required_always": [
+    "schema_version", "run_id", "trace_id", "parent_event_id", "seq",
+    "timestamp_ns", "event_type", "source_component", "task_hash",
+    "payload_hash", "redaction_state"
+  ],
+  "_required_in_payload": [
+    "schema_version", "trainable", "verdict_source", "quality_label",
+    "score", "confidence", "reason_codes", "evidence"
+  ],
+  "_invariants": [
+    "parent_event_id == final_result.seq",
+    "MUST be emitted after final_result and before run_frame_summary when SAGE_RUN_FRAME=1",
+    "MUST NEVER include raw final output text",
+    "MUST NEVER appear when SAGE_ORACLE is unset"
+  ]
+}

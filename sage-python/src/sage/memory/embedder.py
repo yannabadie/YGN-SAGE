@@ -288,7 +288,7 @@ class Embedder:
         """
         try:
             return self._provider.embed(text)
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             self._demote_to_hash(exc)
             return self._provider.embed(text)
 
@@ -296,7 +296,7 @@ class Embedder:
         """Embed a batch of texts. Same runtime-fallback semantics as embed()."""
         try:
             return self._provider.embed_batch(texts)
-        except (OSError, RuntimeError) as exc:
+        except (OSError, RuntimeError, ValueError) as exc:
             self._demote_to_hash(exc)
             return self._provider.embed_batch(texts)
 

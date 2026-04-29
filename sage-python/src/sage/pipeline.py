@@ -12,7 +12,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 
 from sage.contracts.cost_tracker import CostTracker
 from sage.events import (
@@ -27,6 +27,7 @@ from sage.pipeline_stages import (
     select_macro_topology,
     DAGFeatures,
 )
+from sage.runtime.oracle import EvidenceRef, OracleConfig, OracleVerdict
 from sage.runtime.run_frame import RunFrame, RunStatus
 
 # OxiZ formal verification — imported lazily to allow graceful fallback.
@@ -125,6 +126,8 @@ class PipelineContext:
     executed_commands: list[str] = field(default_factory=list)
     executed_tools: list[str] = field(default_factory=list)
     cost_tracker: Any = None
+    oracle_verdict: OracleVerdict | None = None
+    bench_result: Mapping[str, Any] | None = None
 
 
 class CognitiveOrchestrationPipeline:
@@ -176,6 +179,7 @@ class CognitiveOrchestrationPipeline:
         harness_config: Any = None,
         agent_loop: Any = None,
         budget_usd: float | None = None,
+        oracle_config: OracleConfig | None = None,
     ) -> None:
         self.router = router
         self.engine = engine
@@ -209,6 +213,7 @@ class CognitiveOrchestrationPipeline:
         self._agent_loop = agent_loop
         self._task_count = 0
         self.budget_usd = _resolve_task_budget_usd(budget_usd)
+        self._oracle_config = oracle_config or OracleConfig()
 
         # G-series audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
         # RustCompositeWriteGate was built, exported, but never called at
@@ -271,7 +276,12 @@ class CognitiveOrchestrationPipeline:
             log.debug("CompositeWriteGate init failed, memory writes ungated: %s", exc)
             return None
 
-    def _record_to_memory(self, ctx: PipelineContext) -> None:
+    def _record_to_memory(
+        self,
+        ctx: PipelineContext,
+        *,
+        is_training_evidence: bool | None = None,
+    ) -> None:
         """Write execution trace to Tier 0 (working memory) and Tier 1 (episodic).
 
         This closes the gap where the pipeline bypassed memory entirely.
@@ -322,13 +332,51 @@ class CognitiveOrchestrationPipeline:
                     "latency_ms": ctx.latency_ms,
                     "cost": ctx.cost,
                 }
+                metadata: dict[str, Any] = {}
+                if is_training_evidence is not None:
+                    entry["is_training_evidence"] = is_training_evidence
+                    metadata["is_training_evidence"] = is_training_evidence
+                    if ctx.oracle_verdict is not None:
+                        metadata["oracle_verdict"] = ctx.oracle_verdict.to_dict()
                 import json
                 content = json.dumps(entry, default=str)
                 # Use sync add if available, else async
                 if hasattr(self.episodic_memory, 'add'):
-                    self.episodic_memory.add(key=f"pipeline-{self._task_count}", content=content)
+                    try:
+                        if metadata:
+                            self.episodic_memory.add(
+                                key=f"pipeline-{self._task_count}",
+                                content=content,
+                                metadata=metadata,
+                            )
+                        else:
+                            self.episodic_memory.add(
+                                key=f"pipeline-{self._task_count}",
+                                content=content,
+                            )
+                    except TypeError:
+                        self.episodic_memory.add(
+                            key=f"pipeline-{self._task_count}",
+                            content=content,
+                        )
                 elif hasattr(self.episodic_memory, 'add_episode'):
-                    self.episodic_memory.add_episode(key=f"pipeline-{self._task_count}", content=content)
+                    try:
+                        if metadata:
+                            self.episodic_memory.add_episode(
+                                key=f"pipeline-{self._task_count}",
+                                content=content,
+                                metadata=metadata,
+                            )
+                        else:
+                            self.episodic_memory.add_episode(
+                                key=f"pipeline-{self._task_count}",
+                                content=content,
+                            )
+                    except TypeError:
+                        self.episodic_memory.add_episode(
+                            key=f"pipeline-{self._task_count}",
+                            content=content,
+                        )
             except (RuntimeError, IOError) as exc:
                 log.debug("Memory write (Tier 1) failed: %s", exc)
 
@@ -714,39 +762,88 @@ class CognitiveOrchestrationPipeline:
                 )
                 ctx.latency_ms = (time.monotonic() - t0) * 1000
 
-                # Write execution trace to memory (Tier 0 + Tier 1)
-                self._record_to_memory(ctx)
-
-                # Stage 5: LEARN
-                await self._stage_learn(ctx)
-                self._emit("LEARN", {"latency_ms": ctx.latency_ms})
-
-                # Expose full context for observability (bench, tracing, debugging)
-                self.last_context = ctx
-
-                # Sync the per-task cost back onto the top-level agent_loop so
-                # bench adapters that read `system.agent_loop.total_cost_usd`
-                # (evalplus, humaneval, legacy reporters) observe the value
-                # regardless of whether this task went through bypass or topology.
-                # The bypass path already wrote ctx.cost from its own loop; the
-                # multi-agent path wrote it from runner aggregation. Writing it
-                # back keeps the observable surface consistent.
-                if self._agent_loop is not None and ctx.cost:
-                    self._agent_loop.total_cost_usd = float(ctx.cost)
-
+                oracle_enabled = os.environ.get("SAGE_ORACLE") == "1"
                 final_status = self._runtime_final_status(ctx)
-                final_seq = event_log.emit_final_result(
-                    status=final_status,
-                    output=ctx.result or "",
-                    total_cost_usd=float(ctx.cost or 0.0),
-                    total_latency_ms=ctx.latency_ms,
-                    node_count=self._runtime_final_node_count(ctx),
-                )
-                run_frame_builder.record_final_result(
-                    seq=final_seq,
-                    status=final_status,
-                )
-                final_emitted = True
+
+                if oracle_enabled:
+                    final_seq = event_log.emit_final_result(
+                        status=final_status,
+                        output=ctx.result or "",
+                        total_cost_usd=float(ctx.cost or 0.0),
+                        total_latency_ms=ctx.latency_ms,
+                        node_count=self._runtime_final_node_count(ctx),
+                    )
+                    run_frame_builder.record_final_result(
+                        seq=final_seq,
+                        status=final_status,
+                    )
+                    final_emitted = True
+                    try:
+                        from sage.runtime import oracle as oracle_stack
+
+                        verdict = oracle_stack.evaluate(
+                            run_frame_builder.snapshot_view(),
+                            final_output=ctx.result or "",
+                            bench_result=ctx.bench_result,
+                            config=self._oracle_config,
+                        )
+                    except Exception as exc:  # noqa: BLE001 - oracle must fail closed
+                        log.warning("OracleStack failed; collapsing to Abstain: %s", exc)
+                        verdict = OracleVerdict(
+                            trainable=False,
+                            verdict_source="abstain",
+                            quality_label="unknown",
+                            score=None,
+                            confidence=1.0,
+                            reason_codes=("oracle_exception", type(exc).__name__),
+                            evidence=(EvidenceRef(run_id=event_log.run_id),),
+                        )
+                    oracle_seq = event_log.emit_oracle_verdict(
+                        parent_event_id=final_seq,
+                        verdict=verdict,
+                    )
+                    run_frame_builder.record_oracle_verdict(
+                        seq=oracle_seq,
+                        verdict=verdict,
+                    )
+                    ctx.oracle_verdict = verdict
+
+                    self._record_to_memory(
+                        ctx,
+                        is_training_evidence=verdict.trainable,
+                    )
+                    await self._stage_learn(ctx)
+                    self._emit("LEARN", {"latency_ms": ctx.latency_ms})
+                else:
+                    # Legacy OFF mode: keep the R7 execution/learn/final order.
+                    self._record_to_memory(ctx)
+                    await self._stage_learn(ctx)
+                    self._emit("LEARN", {"latency_ms": ctx.latency_ms})
+
+                    # Expose full context before final_result, preserving R7 order.
+                    self.last_context = ctx
+
+                    if self._agent_loop is not None and ctx.cost:
+                        self._agent_loop.total_cost_usd = float(ctx.cost)
+
+                    final_seq = event_log.emit_final_result(
+                        status=final_status,
+                        output=ctx.result or "",
+                        total_cost_usd=float(ctx.cost or 0.0),
+                        total_latency_ms=ctx.latency_ms,
+                        node_count=self._runtime_final_node_count(ctx),
+                    )
+                    run_frame_builder.record_final_result(
+                        seq=final_seq,
+                        status=final_status,
+                    )
+                    final_emitted = True
+
+                if oracle_enabled:
+                    self.last_context = ctx
+                    if self._agent_loop is not None and ctx.cost:
+                        self._agent_loop.total_cost_usd = float(ctx.cost)
+
                 frame = run_frame_builder.finalize()
                 if emit_run_frame_summary and frame.final_result_seq is not None:
                     try:
@@ -1561,6 +1658,11 @@ class CognitiveOrchestrationPipeline:
         return decision
 
     def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
+        if os.environ.get("SAGE_ORACLE") == "1":
+            verdict = getattr(ctx, "oracle_verdict", None)
+            if verdict is None or not verdict.trainable:
+                return
+
         if not self.bandit or not getattr(ctx, "bandit_decision_id", None):
             return
 
@@ -2246,9 +2348,16 @@ class CognitiveOrchestrationPipeline:
             import re
 
             quality: float | None = None
+            oracle_enabled = os.environ.get("SAGE_ORACLE") == "1"
+            oracle_trainable = False
 
+            if oracle_enabled:
+                verdict = getattr(ctx, "oracle_verdict", None)
+                if verdict is not None and verdict.trainable:
+                    quality = verdict.score
+                    oracle_trainable = quality is not None
             # Empty result => total failure, bandit must learn from it
-            if not ctx.result or not ctx.result.strip():
+            elif not ctx.result or not ctx.result.strip():
                 quality = 0.0
             elif self.quality_estimator:
                 try:
@@ -2262,7 +2371,13 @@ class CognitiveOrchestrationPipeline:
             # Guard: only call PRM on structured content (<think>, assert, code)
             # Only blend when quality is known (not None)
             _STRUCTURED = re.compile(r'<think>|```|assert\s|def\s+test_', re.IGNORECASE)
-            if self.prm and quality is not None and ctx.result and _STRUCTURED.search(ctx.result):
+            if (
+                not oracle_enabled
+                and self.prm
+                and quality is not None
+                and ctx.result
+                and _STRUCTURED.search(ctx.result)
+            ):
                 try:
                     r_path, _ = self.prm.calculate_r_path(ctx.result)
                     if r_path >= 0.0:  # valid score (negative = penalty for no reasoning)
@@ -2358,7 +2473,8 @@ class CognitiveOrchestrationPipeline:
             # just appended an outcome to the archive, so should_evolve()
             # has fresh data. Constants come from sage.constants — single
             # source of truth, already covered by test_online_evolution.py.
-            if self.engine and hasattr(self.engine, "should_evolve"):
+            allow_training_updates = (not oracle_enabled) or oracle_trainable
+            if allow_training_updates and self.engine and hasattr(self.engine, "should_evolve"):
                 try:
                     from sage.constants import (
                         EVOLUTION_MIN_OUTCOMES,
@@ -2465,7 +2581,8 @@ class CognitiveOrchestrationPipeline:
 
             # Inter-tier consolidation: episodic → semantic → causal (MAGMA 2601.03236)
             from sage.constants import CONSOLIDATION_INTERVAL_STEPS
-            if (self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
+            if (allow_training_updates
+                    and self._task_count % CONSOLIDATION_INTERVAL_STEPS == 0
                     and self.consolidator is not None):
                 try:
                     consolidation_result = await self.consolidator.consolidate()

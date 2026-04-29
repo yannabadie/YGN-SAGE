@@ -19,6 +19,7 @@ from sage.runtime.event_log.events import (
     _ModelAssigned,
     _NodeCompleted,
     _NodeStarted,
+    _OracleVerdict,
     _RoutingDecision,
     _RunFrameSummary,
     _StateApplied,
@@ -442,6 +443,22 @@ class RuntimeEventLog:
             "run_frame_summary",
             "pipeline",
             payload=payload,
+            parent_event_id=parent_event_id,
+            _force_payload=True,
+        )
+
+    def emit_oracle_verdict(
+        self,
+        *,
+        parent_event_id: int | None,
+        verdict: Any,
+    ) -> int | None:
+        """Emit the OracleStack verdict event after final_result."""
+        return self._emit(
+            _OracleVerdict,
+            "oracle_verdict",
+            "pipeline",
+            payload=verdict.to_dict(),
             parent_event_id=parent_event_id,
             _force_payload=True,
         )

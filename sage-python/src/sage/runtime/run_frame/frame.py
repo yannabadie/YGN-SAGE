@@ -3,9 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import hashlib
 import json
-from typing import Any, Literal, Mapping
+from typing import TYPE_CHECKING, Any, Literal, Mapping
 
 from sage.runtime.state import StateDelta, StateFrame
+
+if TYPE_CHECKING:
+    from sage.runtime.oracle import OracleVerdict
 
 RUN_FRAME_SCHEMA_VERSION: Literal["0"] = "0"
 
@@ -63,6 +66,28 @@ class TopologyRunRef:
 
 
 @dataclass(frozen=True, slots=True)
+class RunFrameView:
+    """Read-only in-flight RunFrame view for OracleStack. No raw outputs."""
+
+    run_id: str
+    task_id: str
+    task_hash: str
+    feature_flags: Mapping[str, str]
+    topology_id: str | None
+    graph_digest: str | None
+    topology_history: tuple[TopologyRunRef, ...]
+    state_frames: Mapping[str, StateFrame]
+    node_records: Mapping[str, NodeRunRecord]
+    routing_decision: Mapping[str, Any] | None
+    controller_decisions: tuple[Mapping[str, Any], ...]
+    budget_snapshot: Mapping[str, Any] | None
+    final_result_seq: int | None
+    failure_seqs: tuple[int, ...]
+    terminal_failure_seq: int | None
+    status: RunStatus
+
+
+@dataclass(frozen=True, slots=True)
 class RunFrame:
     schema_version: Literal["0"]
     run_id: str
@@ -81,6 +106,7 @@ class RunFrame:
     failure_seqs: tuple[int, ...]
     terminal_failure_seq: int | None
     status: RunStatus
+    oracle_verdict: "OracleVerdict | None" = None
 
     def to_summary_dict(self, *, redacted: bool = True) -> dict[str, Any]:
         """Return a raw-output-free summary for the diagnostic JSONL event."""
@@ -134,6 +160,8 @@ class RunFrame:
             "feature_flags": dict(sorted(self.feature_flags.items())),
             "redacted": redacted,
         }
+        if self.oracle_verdict is not None:
+            summary["oracle_verdict"] = self.oracle_verdict.to_dict()
         canonical = json.dumps(
             {key: value for key, value in summary.items() if key != "run_frame_hash"},
             sort_keys=True,

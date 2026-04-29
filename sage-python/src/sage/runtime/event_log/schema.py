@@ -15,6 +15,7 @@ EVENT_TYPES = (
     "failure",
     "budget",
     "final_result",
+    "oracle_verdict",
     "run_frame_summary",
 )
 

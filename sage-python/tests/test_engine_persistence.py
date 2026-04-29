@@ -1,7 +1,6 @@
 """Tests for P1: Persist MAP-Elites + bandit posteriors across restarts."""
 import os
-import shutil
-import tempfile
+from pathlib import Path
 
 import pytest
 
@@ -16,11 +15,11 @@ pytestmark = pytest.mark.skipif(not _HAS_RUST, reason="sage_core not available")
 
 
 @pytest.fixture
-def state_dir():
+def state_dir(tmp_path: Path):
     """Create a temporary directory for state persistence tests."""
-    d = tempfile.mkdtemp(prefix="sage_persist_test_")
-    yield d
-    shutil.rmtree(d, ignore_errors=True)
+    d = tmp_path / "sage_persist_test"
+    d.mkdir()
+    yield str(d)
 
 
 class TestEngineStatePersistence:

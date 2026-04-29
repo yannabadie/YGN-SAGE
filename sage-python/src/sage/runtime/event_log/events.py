@@ -133,5 +133,10 @@ class _FinalResult(_EventCore):
 
 
 @dataclass(frozen=True)
+class _OracleVerdict(_EventCore):
+    pass
+
+
+@dataclass(frozen=True)
 class _RunFrameSummary(_EventCore):
     pass

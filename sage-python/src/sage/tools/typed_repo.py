@@ -337,12 +337,13 @@ def _build_search_repo_tool() -> Tool:
             code, output = await _run_argv(
                 argv, timeout=DEFAULT_TIMEOUT_SECS, max_bytes=MAX_TEST_OUTPUT_BYTES
             )
-            if code == 1 and not output.strip():
-                return "[0 results]"
-            lines = output.splitlines()[:cap]
-            if len(lines) < len(output.splitlines()):
-                lines.append(f"[... truncated to {cap} results]")
-            return "\n".join(lines) if lines else "[0 results]"
+            if code != 127:
+                if code == 1 and not output.strip():
+                    return "[0 results]"
+                lines = output.splitlines()[:cap]
+                if len(lines) < len(output.splitlines()):
+                    lines.append(f"[... truncated to {cap} results]")
+                return "\n".join(lines) if lines else "[0 results]"
 
         # Fallback: Python scan. Acceptable for small repos; correctness
         # over speed. Mirrors the happy-path output shape.

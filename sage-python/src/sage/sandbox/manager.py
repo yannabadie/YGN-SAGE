@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
+import sys
 import uuid
 import json
 from dataclasses import dataclass, field
@@ -126,6 +128,35 @@ class Sandbox:
                 stdout=stdout, stderr=stderr, exit_code=rc,
                 timed_out=(rc == -1 and "Timeout" in stderr),
             )
+
+        if sys.platform == "win32":
+            try:
+                completed = await asyncio.to_thread(
+                    subprocess.run,
+                    command,
+                    shell=True,
+                    capture_output=True,
+                    timeout=self.config.timeout,
+                    check=False,
+                )
+                return SandboxResult(
+                    stdout=(completed.stdout or b"").decode("utf-8", errors="replace"),
+                    stderr=(completed.stderr or b"").decode("utf-8", errors="replace"),
+                    exit_code=completed.returncode,
+                )
+            except subprocess.TimeoutExpired as exc:
+                stderr_obj = exc.stderr or b"Timed out"
+                stderr_text = (
+                    stderr_obj
+                    if isinstance(stderr_obj, str)
+                    else stderr_obj.decode("utf-8", errors="replace")
+                )
+                return SandboxResult(
+                    stdout="",
+                    stderr=stderr_text or "Timed out",
+                    exit_code=137,
+                    timed_out=True,
+                )
 
         proc = await asyncio.create_subprocess_shell(
             command,

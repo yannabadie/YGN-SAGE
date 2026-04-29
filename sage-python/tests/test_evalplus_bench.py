@@ -2,6 +2,7 @@
 
 import sys
 import types
+import os
 
 if "sage_core" not in sys.modules:
     sys.modules["sage_core"] = types.ModuleType("sage_core")
@@ -23,6 +24,24 @@ _skip_no_evalplus = pytest.mark.skipif(
 )
 
 from sage.bench.runner import BenchReport
+
+
+def _fake_evalplus_dataset(size: int = 3) -> dict[str, dict[str, str]]:
+    return {
+        f"HumanEval/{i}": {
+            "prompt": "def has_close_elements(numbers, threshold):\n",
+            "entry_point": "has_close_elements",
+        }
+        for i in range(size)
+    }
+
+
+def _skip_real_evalplus_dataset() -> None:
+    if os.environ.get("SAGE_RUN_EVALPLUS_DATASET_TESTS") != "1":
+        pytest.skip(
+            "EvalPlus dataset-loading tests are opt-in; set "
+            "SAGE_RUN_EVALPLUS_DATASET_TESTS=1 when the dataset cache is ready."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -109,7 +128,8 @@ async def test_generate_solutions_with_mock_system():
     )
 
     bench = EvalPlusBench(system=mock_system)
-    solutions = await bench.generate_solutions(limit=3)
+    with patch("sage.bench.evalplus_bench._load_dataset", return_value=_fake_evalplus_dataset(3)):
+        solutions = await bench.generate_solutions(limit=3)
 
     # Should have 3 solutions
     assert len(solutions) == 3
@@ -150,7 +170,8 @@ async def test_generate_solutions_baseline_mode():
     mock_system.agent_loop.total_cost_usd = 0.0
 
     bench = EvalPlusBench(system=mock_system, baseline_mode=True)
-    solutions = await bench.generate_solutions(limit=2)
+    with patch("sage.bench.evalplus_bench._load_dataset", return_value=_fake_evalplus_dataset(2)):
+        solutions = await bench.generate_solutions(limit=2)
 
     assert len(solutions) == 2
     # Baseline mode: system_used should be 0
@@ -179,7 +200,8 @@ async def test_generate_solutions_with_event_bus():
     mock_bus = MagicMock()
 
     bench = EvalPlusBench(system=mock_system, event_bus=mock_bus)
-    solutions = await bench.generate_solutions(limit=2)
+    with patch("sage.bench.evalplus_bench._load_dataset", return_value=_fake_evalplus_dataset(2)):
+        solutions = await bench.generate_solutions(limit=2)
 
     assert len(solutions) == 2
     # Event bus should have emitted 2 events
@@ -201,7 +223,8 @@ async def test_generate_solutions_handles_errors():
     mock_system.run = AsyncMock(side_effect=RuntimeError("LLM exploded"))
 
     bench = EvalPlusBench(system=mock_system)
-    solutions = await bench.generate_solutions(limit=2)
+    with patch("sage.bench.evalplus_bench._load_dataset", return_value=_fake_evalplus_dataset(2)):
+        solutions = await bench.generate_solutions(limit=2)
 
     # Should still return 2 solutions (with errors)
     assert len(solutions) == 2
@@ -246,6 +269,7 @@ def test_write_solutions(tmp_path):
 @_skip_no_evalplus
 def test_load_dataset_humaneval():
     """Loading humaneval dataset returns 164 tasks."""
+    _skip_real_evalplus_dataset()
     data = _load_dataset("humaneval")
     assert len(data) == 164
     first_key = list(data.keys())[0]
@@ -288,7 +312,10 @@ async def test_run_with_mock_system():
     bench = EvalPlusBench(system=mock_system)
 
     # Mock evaluate_task to avoid running real subprocess evaluation
-    with patch.object(bench, "evaluate_task", return_value={"base_passed": True, "plus_passed": False, "error": ""}):
+    with (
+        patch("sage.bench.evalplus_bench._load_dataset", return_value=_fake_evalplus_dataset(2)),
+        patch.object(bench, "evaluate_task", return_value={"base_passed": True, "plus_passed": False, "error": ""}),
+    ):
         report = await bench.run(limit=2)
 
     assert isinstance(report, BenchReport)

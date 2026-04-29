@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import asyncio
 import json
+import subprocess
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -178,6 +179,36 @@ async def execute_python_in_sandbox(
 
         # Serialize args
         stdin_data = json.dumps(args).encode("utf-8")
+
+        if sys.platform == "win32":
+            try:
+                completed = await asyncio.to_thread(
+                    subprocess.run,
+                    [sys.executable, script_path],
+                    input=stdin_data,
+                    capture_output=True,
+                    timeout=timeout,
+                    check=False,
+                )
+                return SandboxResult(
+                    stdout=(completed.stdout or b"").decode("utf-8", errors="replace"),
+                    stderr=(completed.stderr or b"").decode("utf-8", errors="replace"),
+                    exit_code=completed.returncode,
+                    timed_out=False,
+                )
+            except subprocess.TimeoutExpired as exc:
+                stdout = exc.stdout or b""
+                stderr = exc.stderr or b""
+                if isinstance(stdout, str):
+                    stdout = stdout.encode("utf-8", errors="replace")
+                if isinstance(stderr, str):
+                    stderr = stderr.encode("utf-8", errors="replace")
+                return SandboxResult(
+                    stdout=stdout.decode("utf-8", errors="replace"),
+                    stderr=stderr.decode("utf-8", errors="replace"),
+                    exit_code=-1,
+                    timed_out=True,
+                )
 
         # Launch subprocess
         proc = await asyncio.create_subprocess_exec(

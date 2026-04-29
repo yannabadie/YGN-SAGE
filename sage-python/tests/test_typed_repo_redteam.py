@@ -93,12 +93,14 @@ def test_path_jail_rejects_unc_path_as_absolute(sandbox):
 
 
 @pytest.mark.skipif(not hasattr(os, "symlink"), reason="symlinks not supported on this OS")
-def test_path_jail_rejects_symlink_escape(sandbox, tmp_path_factory):
+def test_path_jail_rejects_symlink_escape(sandbox):
     """Plant a symlink inside the sandbox pointing at a real file
     outside it, then try to read through the symlink. `_resolve_within_cwd`
     calls Path.resolve() which follows symlinks — the resolved target
     is outside the sandbox, so the relative_to() check rejects it."""
-    outside = tmp_path_factory.mktemp("outside") / "secret.txt"
+    outside_dir = sandbox.parent / f"{sandbox.name}_outside"
+    outside_dir.mkdir()
+    outside = outside_dir / "secret.txt"
     outside.write_text("super-secret", encoding="utf-8")
     link = sandbox / "evil_link"
     try:
@@ -110,11 +112,13 @@ def test_path_jail_rejects_symlink_escape(sandbox, tmp_path_factory):
 
 
 @pytest.mark.asyncio
-async def test_read_file_rejects_symlink_escape(tools_by_name, sandbox, tmp_path_factory):
+async def test_read_file_rejects_symlink_escape(tools_by_name, sandbox):
     """End-to-end: the read_file tool (not the helper) must ALSO
     reject the symlink escape, since the LLM calls the tool, not
     the helper directly."""
-    outside = tmp_path_factory.mktemp("outside_e2e") / "secret.txt"
+    outside_dir = sandbox.parent / f"{sandbox.name}_outside_e2e"
+    outside_dir.mkdir()
+    outside = outside_dir / "secret.txt"
     outside.write_text("super-secret", encoding="utf-8")
     link = sandbox / "evil_link"
     try:

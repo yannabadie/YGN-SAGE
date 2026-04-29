@@ -1,7 +1,22 @@
 """Tests for BigCodeBench adapter."""
 from __future__ import annotations
 
+import os
+
 import pytest
+
+
+def _get_bigcodebench_or_skip(subset: str):
+    if os.environ.get("SAGE_RUN_BIGCODEBENCH_DATASET_TESTS") != "1":
+        pytest.skip(
+            "BigCodeBench dataset-loading tests are opt-in; set "
+            "SAGE_RUN_BIGCODEBENCH_DATASET_TESTS=1 when the dataset cache is ready."
+        )
+    try:
+        from bigcodebench.data import get_bigcodebench
+    except ImportError:
+        pytest.skip("bigcodebench not installed")
+    return get_bigcodebench(subset=subset)
 
 
 class TestBigCodeBenchLoader:
@@ -10,11 +25,7 @@ class TestBigCodeBenchLoader:
         assert callable(BigCodeBenchBench)
 
     def test_load_dataset_hard(self):
-        try:
-            from bigcodebench.data import get_bigcodebench
-        except ImportError:
-            pytest.skip("bigcodebench not installed")
-        problems = get_bigcodebench(subset="hard")
+        problems = _get_bigcodebench_or_skip("hard")
         assert len(problems) > 100
         first_id = next(iter(problems))
         task = problems[first_id]
@@ -24,23 +35,15 @@ class TestBigCodeBenchLoader:
         assert "entry_point" in task
 
     def test_load_dataset_full(self):
-        try:
-            from bigcodebench.data import get_bigcodebench
-        except ImportError:
-            pytest.skip("bigcodebench not installed")
-        problems = get_bigcodebench(subset="full")
+        problems = _get_bigcodebench_or_skip("full")
         assert len(problems) >= 1100
 
 
 class TestBigCodeBenchEval:
     def test_eval_correct_solution(self):
-        try:
-            from bigcodebench.data import get_bigcodebench
-        except ImportError:
-            pytest.skip("bigcodebench not installed")
         from sage.bench.bigcodebench_bench import BigCodeBenchBench
 
-        problems = get_bigcodebench(subset="hard")
+        problems = _get_bigcodebench_or_skip("hard")
         first_id = next(iter(problems))
         task = problems[first_id]
         passed = BigCodeBenchBench._evaluate_solution(
@@ -55,13 +58,9 @@ class TestBigCodeBenchEval:
         assert isinstance(passed, bool)
 
     def test_eval_empty_solution_fails(self):
-        try:
-            from bigcodebench.data import get_bigcodebench
-        except ImportError:
-            pytest.skip("bigcodebench not installed")
         from sage.bench.bigcodebench_bench import BigCodeBenchBench
 
-        problems = get_bigcodebench(subset="hard")
+        problems = _get_bigcodebench_or_skip("hard")
         first_id = next(iter(problems))
         task = problems[first_id]
         passed = BigCodeBenchBench._evaluate_solution(
