@@ -1,0 +1,20 @@
+{
+  "pass@1": 0.9,
+  "model": "sage",
+  "split": "instruct",
+  "subset": "hard",
+  "calibrated": true,
+  "gt_pass_rate": 0.0,
+  "failed_tasks": [
+    "BigCodeBench/13",
+    "BigCodeBench/15",
+    "BigCodeBench/17",
+    "BigCodeBench/19",
+    "BigCodeBench/34",
+    "BigCodeBench/37",
+    "BigCodeBench/82",
+    "BigCodeBench/89",
+    "BigCodeBench/92",
+    "BigCodeBench/93"
+  ]
+}
