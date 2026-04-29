@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2501%20Py%20%2B%20501%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2447%20Py%20%2B%20522%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -174,6 +174,22 @@ Plus:
 - **ProviderPool**: 7 API providers + Codex, per-node resolution, circuit breaker with auto-failover
 - **4-stage cascade routing**: validated by [ETH-SRI ICLR 2025](https://arxiv.org/abs/2410.10347) and [routing survey 2603.04445](https://arxiv.org/abs/2603.04445)
 
+## Runtime Architecture — typed execution spine (v0, 2026-04-29)
+
+A 5-cycle arc shipped a typed runtime layer underneath the orchestration pipeline. All four strategic feature flags default OFF (byte-identical to legacy); flip ON to opt into the new contract.
+
+| Layer | Module | Flag (opt-in) | Purpose |
+|-------|--------|---------------|---------|
+| RuntimeContracts (cycle 1) | `sage/topology/runner.py` | always-on | Controller single-commit, unified `_run_core`, capability-aware fallback, sandbox fail-closed |
+| RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` | 13 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
+| StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` | Control / Message / State edge-channel partitioning, atomic delta reducer |
+| RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
+| OracleStack (cycle 5) | `sage/runtime/oracle/` | `SAGE_ORACLE=1` | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
+
+Hard invariant under `SAGE_ORACLE=1`: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs. Cycle-7 default-on flip is gated on R6.1a deterministic delta producers + smoke validation.
+
+Detail: [ADR-014..ADR-018](YGN-SAGE/Decisions/) (Obsidian vault), [docs/contracts/runtime-event-log.md](docs/contracts/runtime-event-log.md) (mode-aware contract matrix + golden fixtures).
+
 ## Formal Verification (Rust)
 
 Verification components (scope and framing corrected 2026-04-22 per audit — some competitors have structural workflow verification, though SMT-grounded component verification for agent runtimes is not standard):
@@ -230,10 +246,11 @@ Each topology node can use a different provider. The policy model can express `p
 
 | Suite | Result |
 |-------|--------|
-| Python | **~2290 passed / 45 skipped** (2339 collected excl. API-key-dependent files; 11 pre-existing failures sit in `test_e2e_*`, `test_provider_pool_wiring.py`, `test_pydantic_ai_integration.py`). Full green on bench + sandbox + verifier modules. |
-| Rust | **501 passed** with `smt` feature (2026-04-23 `+5` cache_tests for the wasm-python JIT cache). `sandbox`, `cranelift`, `tool-executor`, `cognitive` are Cargo default features (ADR-013 §5 flip). |
+| Python | **2447 passing** (excluding API-key-gated files; +90 vs the 2026-04-26 closeout baseline of 2357 after the 5-cycle Apr 28-29 runtime arc). 8 fail + 2 error remain in `test_e2e_*` / `test_pydantic_ai_integration.py` — pre-existing API-key-gated fixtures. |
+| Rust | **522 passing** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery | 95 tests |
-| CI | 5 jobs (Rust, Rust features, Python, Discover, Windows) |
+| CI | 8 jobs (Rust, Rust features, Python Linux, Python Windows, Discover, OTel Linux, OTel Windows, Integration Smoke) |
+| Static analysis | mypy **0 errors / 204 files**; ruff clean |
 
 ## sage-discover — Knowledge Discovery Engine
 
@@ -319,6 +336,7 @@ YGN-SAGE/
 |       |-- phases/      #   PERCEIVE → THINK → ACT → LEARN (OODA loop)
 |       |-- protocols/   #   A2A v1.0, MCP server, unified serve
 |       |-- providers/   #   connector.py (single source of truth), OpenAI-compat wrapper
+|       |-- runtime/     #   2026-04-29 typed runtime spine (event_log, state, run_frame, oracle)
 |       |-- strategy/    #   S1/S2/S3 routing, kNN (92%), AdaptiveRouter
 |       |-- tools/       #   ToolForge, AgentTool, agent_mgmt, sandbox_executor, gap_detector
 |       |-- topology/    #   TopologyRunner (code node dispatch), LLM caller (Path 6 V1/V2), controller
