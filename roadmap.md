@@ -5,13 +5,13 @@
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
 
-## ⭐ Current operational gates (2026-04-30 — Cycle-8 SHIPPED + Cycle-9 DESIGN in flight)
+## ⭐ Current operational gates (2026-04-30 — Cycle-8 SHIPPED + Cycle-9 A14b closed)
 
 **Cycle-8 closed at `86681ac8`** (closeout commit). Stack: `78565578` R6.1c → `9944674e` R6.1c round-1 fixes → `49648263` R6.1c round-2 disclosure → `6b2ebcbe` A14 round-1 → `f9521616` A14 round-2 fixes → `86681ac8` closeout (status JSON + 2 contract docs + directive #9 + ALIRE3 advisory + cgpro architect review locks).
 
 **Live test counts** (canonical at `docs/status/current.json`, regenerated via `python scripts/status_snapshot.py`): **2887 Python collected** / **544 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
 
-**Cycle-9 = learning attribution + benchmark loop** (per cgpro architect review 2026-04-30 + Q1/Q2/Q3 strategy locks). DESIGN ask in flight at conv `cgpro_cycle9_a14b_design`. Scope: A14b Stage-0 `route_integrated()` repair + minimal T2 memory write paths + A2 N=10 budget-tier paired smoke + decision gate to A3 N=50.
+**Cycle-9 = learning attribution + benchmark loop** (per cgpro architect review 2026-04-30 + Q1/Q2/Q3 strategy locks). A14b Stage-0 attribution closure is shipped and cgpro-approved at `6f23eea4` (`34e42ea5` round-1 + `352b06fe`/`6f23eea4` round-2): Stage 0 now uses `route_integrated()`, recorder updates go through Rust `record_outcome_checked()`, and skipped/refused bandit labels are cancelled instead of remaining replayable. Next scope: minimal T2 memory write paths + A2 N=10 budget-tier paired smoke + decision gate to A3 N=50.
 
 **Strategic positioning locked**: Cycle-9 = **budget tier paired ablation** (DeepSeek/Gemini Flash). Premium frontier = Cycle-12+. SWE-bench-Live (replaces SWE-bench Lite as primary public gauge) = Cycle-11 reproducibility lane. NO model hardcoding — baseline = "frontier current at eval date".
 
@@ -801,7 +801,9 @@ Combined with the 2026-04-26 morning `restore_arm` fix (commit `9f251276`, persi
 
 **Acceptance test (TDD):** new test at `sage-python/tests/test_bandit_causality.py` — force two distinguishable arms (different model_ids), run one pipeline task, assert (a) the executed model matches the bandit-selected arm AND (b) record_outcome is called with quality of THAT model's execution. Green only after the fix.
 
-**Cost:** 1-2 days (decision + impl + tests + audit if option-c).
+**Cycle-9 A14b closure (2026-04-30):** closed forward attribution at `6f23eea4` after cgpro VERIFY round-2. The pipeline no longer records via a standalone bandit recorder: Stage 0 issues the bandit decision through Rust `route_integrated()`, Stage 5 records through `SystemRouter.record_outcome_checked()`, and every invalid or skipped attribution path consumes/cancels the pending `decision_id`. `bandit_attribution_mismatch.v1` records blocked cases; per-node attribution for parallel/debate/selfmoa remains deferred to cycle-10+.
+
+**Cost:** shipped.
 
 ### A21. Packaging fail-closed — `pip install ygn-sage` doesn't get sage_core (cgpro 2026-04-26) — ✅ SHIPPED 2026-04-26 (commit `761c1797`)
 
