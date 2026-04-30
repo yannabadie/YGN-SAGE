@@ -94,6 +94,7 @@ class _RustRouter:
         self.record_error = record_error
         self.integrated_calls: list[tuple[str, Any, str]] = []
         self.checked_records: list[tuple[str, str, str, float, float, float]] = []
+        self.cancelled_decisions: list[str] = []
 
     def route_integrated(self, task: str, constraints: Any, topology_id: str) -> Any:
         self.integrated_calls.append((task, constraints, topology_id))
@@ -125,6 +126,10 @@ class _RustRouter:
         if self.record_error is not None:
             raise self.record_error
         return SimpleNamespace(status="recorded")
+
+    def cancel_bandit_decision(self, decision_id: str) -> bool:
+        self.cancelled_decisions.append(decision_id)
+        return True
 
 
 class _QualityEstimator:
@@ -410,9 +415,40 @@ async def test_parallel_topology_emits_multi_node_ambiguous(
     await _learn_with_trace(pipeline, ctx, tmp_path)
 
     assert rust_router.checked_records == []
+    assert rust_router.cancelled_decisions == ["d-parallel"]
     payloads = _mismatch_payloads(tmp_path)
     assert [payload["reason_code"] for payload in payloads] == ["multi_node_ambiguous"]
     assert payloads[0]["decision_id"] == "d-parallel"
+    assert ctx.bandit_attribution_state == "skipped"
+
+
+@pytest.mark.asyncio
+async def test_quality_abstain_cancels_pending_bandit_decision(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "0")
+    rust_router = _RustRouter()
+    pipeline = _pipeline(bandit=None)
+    pipeline._rust_router = rust_router
+    pipeline.quality_estimator = None
+    ctx = PipelineContext(
+        task="abstain task",
+        bandit_decision_id="d-abstain",
+        bandit_model_id="model-a",
+        bandit_template="single_agent",
+        executed_model_id="model-a",
+        executed_template="single_agent",
+        result="non-empty but unscored",
+        cost=0.01,
+        latency_ms=10.0,
+    )
+
+    await _learn_with_trace(pipeline, ctx, tmp_path)
+
+    assert rust_router.checked_records == []
+    assert rust_router.cancelled_decisions == ["d-abstain"]
+    assert _mismatch_payloads(tmp_path) == []
     assert ctx.bandit_attribution_state == "skipped"
 
 

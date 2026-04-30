@@ -742,13 +742,15 @@ impl ContextualBandit {
         cost: f32,
         latency_ms: f32,
     ) -> Result<(), BanditError> {
-        let pending_info = self
+        let selected = self
             .pending
             .get(decision_id)
-            .ok_or_else(|| BanditError::UnknownDecision(decision_id.to_string()))?;
-        let selected = &pending_info.arm_key;
+            .ok_or_else(|| BanditError::UnknownDecision(decision_id.to_string()))?
+            .arm_key
+            .clone();
 
         if selected.model_id != executed_model_id || selected.template != executed_template {
+            self.pending.remove(decision_id);
             return Err(BanditError::OffPolicyOutcome {
                 decision_id: decision_id.to_string(),
                 selected_model_id: selected.model_id.clone(),

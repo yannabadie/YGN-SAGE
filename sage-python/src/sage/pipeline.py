@@ -1054,16 +1054,19 @@ class CognitiveOrchestrationPipeline:
                     )
                     decision = self._rust_router.route_integrated(ctx.task, constraints, "")
                     ctx.system = int(decision.system)
-                    ctx.bandit_decision_id = str(getattr(decision, "decision_id", "") or "")
-                    ctx.bandit_model_id = str(getattr(decision, "model_id", "") or "")
-                    ctx.bandit_template = str(
+                    decision_id = str(getattr(decision, "decision_id", "") or "")
+                    selected_template = str(
                         getattr(decision, "selected_template", "")
                         or getattr(decision, "template", "")
                         or ""
                     )
-                    ctx.bandit_attribution_state = (
-                        "pending" if ctx.bandit_decision_id else "skipped"
-                    )
+                    if selected_template:
+                        ctx.bandit_decision_id = decision_id
+                        ctx.bandit_model_id = str(getattr(decision, "model_id", "") or "")
+                        ctx.bandit_template = selected_template
+                        ctx.bandit_attribution_state = "pending" if decision_id else "skipped"
+                    else:
+                        self._clear_bandit_decision(ctx)
                     # Store decision for model selection + telemetry
                     self._last_routing_decision = decision
                     self._last_runtime_routing_source = "rust_system_router"
@@ -1985,10 +1988,25 @@ class CognitiveOrchestrationPipeline:
         ctx.bandit_context = []
         ctx.bandit_attribution_state = "skipped"
 
+    def _cancel_bandit_decision(self, ctx: PipelineContext) -> bool:
+        decision_id = str(getattr(ctx, "bandit_decision_id", "") or "")
+        if not decision_id:
+            return False
+        if self._rust_router and hasattr(self._rust_router, "cancel_bandit_decision"):
+            try:
+                return bool(self._rust_router.cancel_bandit_decision(decision_id))
+            except (ImportError, RuntimeError, ValueError) as exc:
+                log.warning("Bandit decision cancel failed: %s", exc)
+                return False
+        log.warning("Bandit decision cancel unavailable: SystemRouter wrapper missing")
+        return False
+
     def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
         if oracle_enabled():
             verdict = getattr(ctx, "oracle_verdict", None)
             if verdict is None or not verdict.trainable:
+                self._cancel_bandit_decision(ctx)
+                self._clear_bandit_decision(ctx)
                 return
 
         if not getattr(ctx, "bandit_decision_id", ""):
@@ -2003,7 +2021,9 @@ class CognitiveOrchestrationPipeline:
             or getattr(ctx, "executed_template", "") in _MULTI_NODE_ATTRIBUTION_TEMPLATES
         ):
             ctx.bandit_attribution_state = "skipped"
+            self._cancel_bandit_decision(ctx)
             self._emit_bandit_attribution_mismatch(ctx, "multi_node_ambiguous")
+            self._clear_bandit_decision(ctx)
             return
 
         if not self._rust_router or not hasattr(self._rust_router, "record_outcome_checked"):
@@ -2722,6 +2742,9 @@ class CognitiveOrchestrationPipeline:
             # Only record to bandit when quality is known and attribution is causal.
             if quality is not None:
                 self._record_bandit_outcome_checked(ctx, quality)
+            else:
+                self._cancel_bandit_decision(ctx)
+                self._clear_bandit_decision(ctx)
 
             # Evolution feedback: record outcome in TopologyEngine archive
             # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection

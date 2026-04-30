@@ -437,7 +437,8 @@ impl SystemRouter {
 
     /// Record outcome for a previous routing decision.
     ///
-    /// Forwards to bandit (if available) and always records telemetry.
+    /// Legacy telemetry-only path. Bandit posterior updates require
+    /// `record_outcome_checked`, which verifies the executed full arm.
     #[pyo3(name = "record_outcome")]
     pub fn py_record_outcome(
         &mut self,
@@ -470,6 +471,12 @@ impl SystemRouter {
             latency_ms,
         )
         .map_err(Into::into)
+    }
+
+    /// Cancel a pending SystemRouter-owned bandit decision without learning.
+    #[pyo3(name = "cancel_bandit_decision")]
+    pub fn py_cancel_bandit_decision(&mut self, decision_id: &str) -> bool {
+        self.cancel_bandit_decision(decision_id)
     }
 
     fn __repr__(&self) -> String {
@@ -539,16 +546,20 @@ impl SystemRouter {
                         } else {
                             // Bandit chose a model that doesn't pass constraints — fallback
                             // to best candidate by domain score (already sorted in Step 2)
+                            let cancelled = bandit.cancel_decision(&bd.decision_id);
                             debug!(
                                 bandit_model = %bd.model_id,
-                                "bandit_model_not_in_candidates_falling_back"
+                                bandit_template = %bd.template,
+                                decision_id = %bd.decision_id,
+                                cancelled = cancelled,
+                                "bandit_model_not_in_candidates_cancelled_falling_back"
                             );
                             let best = &candidates[0]; // candidates guaranteed non-empty (checked above)
                             (
                                 best.id.clone(),
                                 best.estimate_cost(1000, 2000),
-                                bd.decision_id.clone(),
-                                bd.template.clone(),
+                                ulid::Ulid::new().to_string(),
+                                String::new(),
                             )
                         }
                     }
@@ -788,7 +799,7 @@ impl SystemRouter {
         Ok(decision)
     }
 
-    /// Record outcome: forwards to bandit (if available) and updates registry telemetry.
+    /// Record outcome: telemetry-only legacy path.
     pub fn record_outcome(
         &mut self,
         decision_id: &str,
@@ -805,10 +816,14 @@ impl SystemRouter {
         )
         .entered();
 
-        // Forward to bandit if available (may fail if decision_id unknown)
+        // Never update bandit posteriors on the unchecked legacy path.
+        // If the id is a pending bandit token, consume it so it cannot be replayed.
         if let Some(ref mut bandit) = self.bandit {
-            if let Err(e) = bandit.record_outcome(decision_id, quality, cost, latency_ms) {
-                info!(error = %e, "bandit_record_outcome_skipped");
+            if bandit.cancel_decision(decision_id) {
+                info!(
+                    decision_id = decision_id,
+                    "unchecked_bandit_decision_cancelled"
+                );
             }
         }
 
@@ -821,6 +836,13 @@ impl SystemRouter {
         }
 
         Ok(())
+    }
+
+    /// Cancel a pending bandit decision without updating posteriors.
+    pub fn cancel_bandit_decision(&mut self, decision_id: &str) -> bool {
+        self.bandit
+            .as_mut()
+            .is_some_and(|bandit| bandit.cancel_decision(decision_id))
     }
 
     /// Record outcome through the same ContextualBandit instance that issued the decision.
@@ -1430,9 +1452,13 @@ mod tests {
             .route_integrated("hello", &constraints, "t1")
             .unwrap();
 
-        // Record outcome — should succeed if bandit has the pending decision
+        // Legacy record_outcome is telemetry-only. A bandit posterior update
+        // without the executed full arm would make decision_id a bearer token.
         let result = router.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0);
         assert!(result.is_ok());
+        let bandit = router.bandit.as_ref().unwrap();
+        assert_eq!(bandit.total_observations(), 0);
+        assert!(bandit.repr().contains("pending=0"));
     }
 
     #[test]
@@ -1500,6 +1526,10 @@ mod tests {
 
         assert_eq!(err.reason_code(), "model_mismatch");
         assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
+
+        let replay = router.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0);
+        assert!(replay.is_ok());
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
     }
 
     #[test]
@@ -1527,6 +1557,43 @@ mod tests {
 
         assert_eq!(err.reason_code(), "template_mismatch");
         assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
+
+        let replay = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "fast-model",
+                "sequential",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap_err();
+        assert_eq!(replay.reason_code(), "decision_unknown");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
+    }
+
+    #[test]
+    fn route_integrated_cancels_decision_when_bandit_pick_fails_constraints() {
+        let registry = constrained_fallback_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("expensive-model", "single_agent");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(10.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router
+            .route_integrated("write code using a helper tool", &constraints, "topology-1")
+            .unwrap();
+
+        assert_eq!(decision.model_id, "fallback-model");
+        assert!(!decision.decision_id.is_empty());
+        let bandit = router
+            .bandit
+            .as_ref()
+            .expect("bandit should remain installed");
+        assert!(bandit.repr().contains("pending=0"));
+        assert_eq!(bandit.total_observations(), 0);
     }
 
     #[test]
