@@ -12,6 +12,7 @@ pub mod llm_synthesis;
 pub mod map_elites;
 pub mod mcts;
 pub mod mutations;
+pub mod posterior_epoch;
 pub mod pyo3_wrappers;
 pub mod reward;
 pub mod smmu_bridge;

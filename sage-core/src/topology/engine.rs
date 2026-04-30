@@ -25,6 +25,7 @@ use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mcts::MctsSearcher;
 use super::mutations::{apply_mutation_tracked, MutationResult, MutationStats};
+use super::posterior_epoch;
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;
 use super::topology_graph::TopologyGraph;
@@ -968,6 +969,7 @@ impl TopologyEngine {
     pub fn save_state(&self, dir: &str) -> Result<(), String> {
         let dir_path = std::path::Path::new(dir);
         std::fs::create_dir_all(dir_path).map_err(|e| format!("create dir {}: {}", dir, e))?;
+        posterior_epoch::validate_epoch_for_save(dir_path)?;
 
         let bandit_path = dir_path.join("bandit_state.db");
         let archive_path = dir_path.join("archive_state.db");
@@ -1017,6 +1019,7 @@ impl TopologyEngine {
     /// of items loaded as `(bandit_arms, archive_cells)`.
     pub fn load_state(&mut self, dir: &str) -> Result<(usize, usize), String> {
         let dir_path = std::path::Path::new(dir);
+        posterior_epoch::validate_epoch_for_load(dir_path)?;
 
         let mut bandit_arms = 0usize;
         let mut archive_cells = 0usize;

@@ -2,8 +2,16 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Any
+
+from sage.posterior_epoch import (
+    A14_BYPASS_ENV,
+    check_posterior_epoch_for_boot,
+    ensure_clean_epoch_before_save,
+    is_a14_epoch_guard_error,
+)
 
 __all__ = ["init_topology"]
 
@@ -146,10 +154,13 @@ def init_topology(
             _log.warning("Boot: Phase 6 TopologyEngine init failed (%s)", e)
 
     # P1: Restore persisted bandit + MAP-Elites state from previous session
-    _sage_state_dir = str(Path.home() / ".sage")
+    _sage_state_dir_path = Path.home() / ".sage"
+    _sage_state_dir = str(_sage_state_dir_path)
+    _epoch_bypass_active = os.environ.get(A14_BYPASS_ENV) == "1"
     if rust_topology_engine is not None:
         try:
             if hasattr(rust_topology_engine, 'load_state'):
+                check_posterior_epoch_for_boot(_sage_state_dir_path)
                 bandit_arms, archive_cells = rust_topology_engine.load_state(_sage_state_dir)
                 if bandit_arms > 0 or archive_cells > 0:
                     _log.info(
@@ -157,21 +168,28 @@ def init_topology(
                         bandit_arms, archive_cells, _sage_state_dir,
                     )
         except (IOError, OSError, RuntimeError) as e:
+            if is_a14_epoch_guard_error(e):
+                _log.error("Boot: A14 epoch guard fail-closed (%s)", e)
+                raise
             _log.debug("Boot: No persisted state loaded (%s)", e)
 
     # P1: Register atexit handler to save bandit + MAP-Elites state at shutdown
     if rust_topology_engine is not None and hasattr(rust_topology_engine, 'save_state'):
-        import atexit
+        if _epoch_bypass_active:
+            _log.warning("a14_epoch_guard_bypass_save_disabled state_dir=%s", _sage_state_dir)
+        else:
+            import atexit
 
-        def _save_engine_state(engine=rust_topology_engine, state_dir=_sage_state_dir):
-            try:
-                engine.save_state(state_dir)
-                _log.info("Shutdown: Saved engine state to %s", state_dir)
-            except (IOError, OSError, RuntimeError) as exc:
-                _log.warning("Shutdown: Failed to save engine state (%s)", exc)
+            def _save_engine_state(engine=rust_topology_engine, state_dir=_sage_state_dir):
+                try:
+                    ensure_clean_epoch_before_save(Path(state_dir))
+                    engine.save_state(state_dir)
+                    _log.info("Shutdown: Saved engine state to %s", state_dir)
+                except (IOError, OSError, RuntimeError) as exc:
+                    _log.warning("Shutdown: Failed to save engine state (%s)", exc)
 
-        atexit.register(_save_engine_state)
-        _log.info("Boot: atexit handler registered for engine state persistence")
+            atexit.register(_save_engine_state)
+            _log.info("Boot: atexit handler registered for engine state persistence")
 
     # Bootstrap S-MMU with template topologies on cold start (P5)
     if rust_topology_engine is not None and rust_topology_engine.smmu_chunk_count() == 0:
