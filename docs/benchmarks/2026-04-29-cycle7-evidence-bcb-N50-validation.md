@@ -1,8 +1,16 @@
-# Path E step 3 — BigCodeBench Hard Instruct N=10 seam validation
+# Cycle 7 default-on flip — BigCodeBench Hard Instruct N=50 validation
 
-**Date**: 2026-04-29
-**Cycle**: 6 R6.1a verify Path E (post Gate D)
-**Purpose**: prove the live ``verdict_source="exact", trainable=True`` contract on a synchronous-eval bench via the bench-result feedback seam.
+**Date**: 2026-04-29 (evening, post commit `128e1b89` default-on flip + commit `f6711385` raw-reason leak fix)
+**Cycle**: 7 default-on flip evidence (`SAGE_ORACLE` unset = ON)
+**Purpose**: prove the live ``verdict_source="exact", trainable=True`` contract under cycle-7 default-on on a synchronous-eval bench via the bench-result feedback seam.
+
+## Headline
+
+- **Internal pass@1 = 30%** (15 exact/pass, 34 exact/fail, 1 abstain on `BigCodeBench/227`)
+- **Official Docker pass@1 = 32%** (16/50, see `2026-04-29-cycle7-evidence-bcb-N50-official-pass-at-k.json`)
+- **Per-task agreement = 49/50 = 98%** (the single divergence is the abstain task; bench fail = direction agreement)
+- **0 raw stdout/stderr/raw_output/raw_patch leaks** across all events
+- **Event order final_result < oracle_verdict < run_frame_summary** holds on every committed run
 
 ## Honest framing locks
 
@@ -12,12 +20,18 @@
 
 ## Setup
 
-- ``SAGE_ORACLE=1``, ``SAGE_RUN_FRAME=1``, ``SAGE_BENCH_ORACLE_SEAM=1``, ``SAGE_DIFF_VERIFIER_MODE=observe``
+- ``SAGE_ORACLE`` **unset** (cycle-7 default-on contract — `oracle_enabled()` returns True). Kill-switch via ``SAGE_ORACLE=0|false|off|no|disable|disabled``.
+- ``SAGE_RUN_FRAME=1``, ``SAGE_BENCH_ORACLE_SEAM=1``, ``SAGE_DIFF_VERIFIER_MODE=observe``.
+- ``SAGE_BENCH_DISABLE_REPAIR=1`` (T6) for clean first-attempt measurement.
 - ``StateCore`` OFF (``SAGE_STATECORE`` unset).
-- Throwaway bandit DB: production state moved to ``.tmp/path_e_backup/`` pre-bench, restored post-bench. Production posteriors not polluted.
+- Throwaway bandit DB: production state moved to ``.tmp/path_e_backup/`` pre-bench, restored post-bench. Production posteriors not polluted. **A14 reset paired with the flip** — pre-existing off-policy posteriors discarded; production starts fresh at Posterior epoch=1 (commit `128e1b89` and ops runbook `docs/ops/runbooks/2026-04-29-a14-reset.md`).
 - SSL: ``SSL_CERT_FILE`` + ``REQUESTS_CA_BUNDLE`` + ``CURL_CA_BUNDLE`` + ``GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`` set to ``C:/Code/certs/windows-full-bundle.pem``.
 - Greedy decoding: SAGE pipeline default temperature settings; not the BCB CLI ``--temp 0`` enforcement (separate from the seam contract).
-- Single entry point: ``python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 10`` — no parallel scripts.
+- Single entry point: ``python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 50`` — no parallel scripts.
+
+## controller_decision payload note (cgpro 2026-04-30 cycle-7 VERIFY round-1)
+
+This N=50 evidence was produced with the **pre-allowlist** controller_decision payload writer (commit history `b6820f2b` and earlier). 157/157 events therefore carry a top-level ``payload.reason`` field; in 137/157 events it is empty (`""`), in 20/157 events it carries short non-PII ratio strings (e.g. ``"quality=0.25 < 0.3"``, ``"importance=0.09 < 0.2"``, ``"error-like output"``). cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK closed this class by tightening the writer to **allowlist-only** forced payloads (no free-form ``reason``). Future regenerated N=X evidence (post-allowlist, e.g. round-2 verify) will not contain the ``reason`` key.
 
 ## cgpro Path E B' minimum pass criteria
 
@@ -100,10 +114,11 @@ Escalation/repair may turn a first-attempt seam fail into a final bench pass; th
 - Bench command (canonical, single entry point):
 
 ```bash
-SAGE_ORACLE=1 SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 \
-  SAGE_TRACE_JSONL_DIR=.tmp/path_e_artifacts/jsonl_n10 \
+# cycle-7 default-on (SAGE_ORACLE unset)
+SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 SAGE_BENCH_DISABLE_REPAIR=1 \
+  SAGE_TRACE_JSONL_DIR=.tmp/path_e_artifacts/jsonl_n50 \
   python -m sage.bench --type bigcodebench --subset hard --split instruct \
-                       --limit 10 --output report.json
+                       --limit 50 --output report.json
 ```
 
 ## Manifest (SHA-256)

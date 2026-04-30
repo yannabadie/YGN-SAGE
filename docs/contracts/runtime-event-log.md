@@ -19,15 +19,18 @@ The contract is enforced by `tests/test_runtime_event_contracts.py`. Breaking ch
 |---|---|---|
 | `run_frame_summary` event type | **never emitted** | emitted as trailing diagnostic AFTER `final_result` |
 
-| Field on event | SAGE_ORACLE unset / 0 | SAGE_ORACLE=1 |
+| Field on event | SAGE_ORACLE unset / true-ish (default-on, cycle 7+) | SAGE_ORACLE=0/false/off/no/disable/disabled |
 |---|---|---|
-| `oracle_verdict` event type | **never emitted** | emitted after `final_result` with `parent_event_id == final_result.seq` |
+| `oracle_verdict` event type | emitted after `final_result` with `parent_event_id == final_result.seq` | **never emitted** |
+| `controller_decision.payload` | forced **allowlist-only** payload (9 keys: `node_id`, `action`, `target_node_id`, `gate_source_id`, `gate_target_id`, `quality_score`, `quality_source`, `threshold_band`, `reason_code`) — no free-form `reason`, slug-constrained `reason_code`, clamped `quality_score` | legacy redacted payload only emitted when `SAGE_TRACE_RAW=1` |
 
-The OFF-mode columns are the **byte-identical baseline guarantees**. Any field added unconditionally there breaks downstream callers (e.g., `protocols/a2a_server.py`, `scripts/run_masbench_traced.py`) that may be parsing the JSONL. Behavior must match the previous milestone exactly when the gating flag is unset/0.
+**Cycle-7 default-on flip (2026-04-29, commit `128e1b89`)**: the contract above is the new default. The legacy "byte-identical to R5 baseline" guarantee for `SAGE_ORACLE` survived for `SAGE_STATECORE` and `SAGE_RUN_FRAME` only — those are still opt-in. The `oracle_verdict` and forced `controller_decision.payload` events ship by default; operators turn them OFF via the kill-switch. cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK closed by tightening the forced payload to allowlist-only (no free-form `reason` leak).
+
+The remaining OFF-mode columns (StateCore / RunFrame) are still **byte-identical baseline guarantees**. Any field added unconditionally there breaks downstream callers (e.g., `protocols/a2a_server.py`, `scripts/run_masbench_traced.py`) that may be parsing the JSONL. Behavior must match the previous milestone exactly when the gating flag is unset/0.
 
 ## Final-event semantics (R9+)
 
-`final_result` is the LAST **business** event of any run. Under `SAGE_ORACLE=1`, exactly ONE `oracle_verdict` event is emitted after `final_result` and before any optional `run_frame_summary`; its `parent_event_id` MUST equal `final_result.seq`. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result` or `oracle_verdict`. The summary's `parent_event_id` remains `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of oracle or summary success.
+`final_result` is the LAST **business** event of any run. Under default-on `SAGE_ORACLE` (unset or any non-kill-switch value, cycle 7+), exactly ONE `oracle_verdict` event is emitted after `final_result` and before any optional `run_frame_summary`; its `parent_event_id` MUST equal `final_result.seq`. Under `SAGE_RUN_FRAME=1`, exactly ONE optional trailing `run_frame_summary` diagnostic event MAY follow `final_result` or `oracle_verdict`. The summary's `parent_event_id` remains `final_result.seq`. The summary is best-effort: any sink failure during its emission MUST NOT change the pipeline result. `final_result` is still emitted exactly once per run regardless of oracle or summary success.
 
 ## Event-type catalog (13 types as of R9)
 
@@ -44,7 +47,7 @@ The OFF-mode columns are the **byte-identical baseline guarantees**. Any field a
 | `budget` | topology_runner | runner | when budget threshold crossed |
 | `state_applied` | topology_runner | runner | per-node reduction in StateCore strict mode (R6, behind SAGE_STATECORE=1) |
 | `final_result` | pipeline | pipeline | once per run, last BUSINESS event, with `status: success` / `failure` / `budget_exceeded` |
-| `oracle_verdict` | pipeline | pipeline | OracleStack verdict event (R9, behind SAGE_ORACLE=1); follows `final_result` with `parent_event_id == final_result.seq`; payload is `OracleVerdict.to_dict()` with no raw output |
+| `oracle_verdict` | pipeline | pipeline | OracleStack verdict event (R9, **default-on since cycle 7 — `SAGE_ORACLE` unset = ON**); follows `final_result` with `parent_event_id == final_result.seq`; payload is `OracleVerdict.to_dict()` with no raw output. Kill-switch via `SAGE_ORACLE=0|false|off|no|disable|disabled`. |
 | `run_frame_summary` | pipeline | pipeline | trailing DIAGNOSTIC event (R7, behind SAGE_RUN_FRAME=1); follows `final_result` with `parent_event_id == final_result.seq`; best-effort emission — sink failure here MUST NOT change pipeline result |
 
 ## Core fields (always present on every event)
@@ -87,7 +90,8 @@ These fields are reserved for future expansion. They are dropped from `to_dict()
 ## Golden fixtures
 
 `sage-python/tests/golden/runtime_events/`:
-- `oracle_verdict.json` - oracle_verdict event contract (only emitted under SAGE_ORACLE=1)
+- `oracle_verdict.json` - oracle_verdict event contract (default-on since cycle 7; suppressed only when `SAGE_ORACLE=0|false|off|no|disable|disabled`)
+- `controller_decision.json` - controller_decision event contract; allowlist-only forced payload under default-on (cgpro 2026-04-30 cycle-7 VERIFY round-1)
 - `statecore_off_node_started.json` — NodeStarted contract in legacy mode
 - `statecore_on_node_started.json` — NodeStarted contract in strict mode
 - `state_applied.json` — state_applied event contract (only emitted in strict mode)
@@ -113,3 +117,4 @@ The `_required_always` / `_required_in_payload` / `_forbidden_in_payload_when_of
 - R7 cycle 4 spec — `.tmp/cgpro_r7_design_locked_spec.md`
 - cgpro 2026-04-29 cycle 3 reassess — recommended this contract hardening as R6.0.1 follow-up
 - cgpro 2026-04-29 R7 verify — required this doc update before R7 SHIP (12 event types, final-event semantics)
+- cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK — flipped SAGE_ORACLE row to default-on; tightened `controller_decision.payload` to allowlist-only (no free-form `reason`); operator-friendly kill-switch values (`disable`, `disabled`)

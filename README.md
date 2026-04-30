@@ -176,18 +176,19 @@ Plus:
 
 ## Runtime Architecture — typed execution spine (v0, 2026-04-29)
 
-A 6-cycle arc shipped a typed runtime layer underneath the orchestration pipeline. All four strategic feature flags default OFF (byte-identical to legacy); flip ON to opt into the new contract.
+A 7-cycle arc shipped a typed runtime layer underneath the orchestration pipeline. The OracleStack training-gate is **default-on since cycle 7** (2026-04-29, commit `128e1b89`); the other strategic flags remain opt-in (byte-identical to legacy when unset).
 
-| Layer | Module | Flag (opt-in) | Purpose |
-|-------|--------|---------------|---------|
+| Layer | Module | Flag | Purpose |
+|-------|--------|------|---------|
 | RuntimeContracts (cycle 1) | `sage/topology/runner.py` | always-on | Controller single-commit, unified `_run_core`, capability-aware fallback, sandbox fail-closed |
-| RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` | 13 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
-| StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` | Control / Message / State edge-channel partitioning, atomic delta reducer |
-| RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
-| OracleStack (cycle 5) | `sage/runtime/oracle/` | `SAGE_ORACLE=1` | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
-| EvidenceProducers (cycle 6, R6.1a) | `sage/runtime/evidence/` | gated by `SAGE_ORACLE=1` | 6 deterministic producers (tool / test / diff / formal / code-node / planner) emit typed `RuntimeDelta` records consumed by Tool/Formal/Spec v1 oracles |
+| RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` (opt-in) | 13 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
+| StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` (opt-in) | Control / Message / State edge-channel partitioning, atomic delta reducer |
+| RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` (opt-in) | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
+| OracleStack (cycle 5) | `sage/runtime/oracle/` | **default-on (cycle 7); kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`** | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
+| EvidenceProducers (cycle 6, R6.1a) | `sage/runtime/evidence/` | gated by oracle (default-on) | 6 deterministic producers (tool / test / diff / formal / code-node / planner) emit typed `RuntimeDelta` records consumed by Tool/Formal/Spec v1 oracles |
+| Cycle-7 default-on flip | `sage/runtime/oracle/env.py` `oracle_enabled()` | predicate (default-on) | Centralised `SAGE_ORACLE` predicate; replaces 8 scattered `os.environ.get == "1"` checks. cgpro 2026-04-30 VERIFY round-1: forced `controller_decision.payload` is **allowlist-only** (no free-form `reason` leak), operator-friendly kill-switch values (`disable`/`disabled`). |
 
-Hard invariant under `SAGE_ORACLE=1`: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs. Cycle-7 default-on flip is gated on (a) R6.1a ship (done), (b) bench smoke N=10 with `SAGE_ORACLE=1`, (c) bandit posterior reset audit.
+Hard invariant under default-on: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs (`verdict.trainable=False` blocks the learning gate). Cycle-7 default-on flip evidence: BCB-Hard N=50 internal pass@1 30% / official Docker 32% / 49/50 = 98% per-task agreement (commit `01b0bb24`); kill-switch smoke (commit `8b4b34b6`) confirms operator escape hatch silences oracle path end-to-end. A14 reset paired with the flip (Posterior epoch=1, old off-policy bandit posteriors discarded).
 
 Detail: [ADR-014..ADR-019](YGN-SAGE/Decisions/) (Obsidian vault), [docs/contracts/runtime-event-log.md](docs/contracts/runtime-event-log.md) (mode-aware contract matrix + golden fixtures).
 
