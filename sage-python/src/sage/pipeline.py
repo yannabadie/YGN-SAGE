@@ -1083,8 +1083,10 @@ class CognitiveOrchestrationPipeline:
                     return ctx
                 except Exception as exc:
                     log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
+                    self._cancel_bandit_decision(ctx, force=True)
                     ctx.bandit_attribution_state = "skipped"
                     self._emit_bandit_attribution_mismatch(ctx, "router_fallback_degraded")
+                    self._clear_bandit_decision(ctx)
 
             # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
             if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
@@ -1988,9 +1990,9 @@ class CognitiveOrchestrationPipeline:
         ctx.bandit_context = []
         ctx.bandit_attribution_state = "skipped"
 
-    def _cancel_bandit_decision(self, ctx: PipelineContext) -> bool:
+    def _cancel_bandit_decision(self, ctx: PipelineContext, *, force: bool = False) -> bool:
         decision_id = str(getattr(ctx, "bandit_decision_id", "") or "")
-        if not decision_id:
+        if not decision_id and not force:
             return False
         if self._rust_router and hasattr(self._rust_router, "cancel_bandit_decision"):
             try:
@@ -2031,6 +2033,7 @@ class CognitiveOrchestrationPipeline:
                 "Bandit outcome skipped: SystemRouter record_outcome_checked unavailable"
             )
             ctx.bandit_attribution_state = "mismatch"
+            self._cancel_bandit_decision(ctx)
             self._emit_bandit_attribution_mismatch(ctx, "recorder_instance_mismatch")
             return
 
@@ -2047,6 +2050,7 @@ class CognitiveOrchestrationPipeline:
         except (ImportError, RuntimeError, ValueError) as exc:
             reason_code = self._bandit_reason_from_exception(exc)
             ctx.bandit_attribution_state = "mismatch"
+            self._cancel_bandit_decision(ctx)
             self._emit_bandit_attribution_mismatch(ctx, reason_code)
 
     def _pick_fallback_provider(self):

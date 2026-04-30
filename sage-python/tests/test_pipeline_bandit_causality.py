@@ -88,10 +88,13 @@ class _RustRouter:
         decision: _Decision | None = None,
         route_error: Exception | None = None,
         record_error: Exception | None = None,
+        strict_pending: bool = False,
     ) -> None:
         self.decision = decision or _Decision()
         self.route_error = route_error
         self.record_error = record_error
+        self.strict_pending = strict_pending
+        self.pending_decisions: set[str] = {self.decision.decision_id}
         self.integrated_calls: list[tuple[str, Any, str]] = []
         self.checked_records: list[tuple[str, str, str, float, float, float]] = []
         self.cancelled_decisions: list[str] = []
@@ -100,6 +103,7 @@ class _RustRouter:
         self.integrated_calls.append((task, constraints, topology_id))
         if self.route_error is not None:
             raise self.route_error
+        self.pending_decisions.add(self.decision.decision_id)
         return SimpleNamespace(
             decision_id=self.decision.decision_id,
             system=1,
@@ -125,11 +129,16 @@ class _RustRouter:
         )
         if self.record_error is not None:
             raise self.record_error
+        if self.strict_pending and decision_id not in self.pending_decisions:
+            raise RuntimeError("decision_unknown")
+        self.pending_decisions.discard(decision_id)
         return SimpleNamespace(status="recorded")
 
     def cancel_bandit_decision(self, decision_id: str) -> bool:
         self.cancelled_decisions.append(decision_id)
-        return True
+        was_pending = decision_id in self.pending_decisions
+        self.pending_decisions.discard(decision_id)
+        return was_pending
 
 
 class _QualityEstimator:
@@ -343,6 +352,7 @@ async def test_route_integrated_fallback_marks_attribution_degraded(
     assert constraints.max_cost_usd == pytest.approx(3.0)
     assert topology_id == ""
     assert rust_router.checked_records == []
+    assert rust_router.cancelled_decisions == [""]
     assert _mismatch_payloads(tmp_path) == [
         {
             "decision_id": "",
@@ -396,7 +406,10 @@ async def test_parallel_topology_emits_multi_node_ambiguous(
 ) -> None:
     """Threat 3: parallel/debate multi-model runs are skipped for round-1 attribution."""
     monkeypatch.setenv("SAGE_ORACLE", "0")
-    rust_router = _RustRouter()
+    rust_router = _RustRouter(
+        decision=_Decision(decision_id="d-parallel", model_id="model-a", template="parallel"),
+        strict_pending=True,
+    )
     pipeline = _pipeline(bandit=None)
     pipeline._rust_router = rust_router
     ctx = PipelineContext(
@@ -416,6 +429,16 @@ async def test_parallel_topology_emits_multi_node_ambiguous(
 
     assert rust_router.checked_records == []
     assert rust_router.cancelled_decisions == ["d-parallel"]
+    assert "d-parallel" not in rust_router.pending_decisions
+    with pytest.raises(RuntimeError, match="decision_unknown"):
+        rust_router.record_outcome_checked(
+            "d-parallel",
+            "model-a",
+            "parallel",
+            0.8,
+            0.04,
+            99.0,
+        )
     payloads = _mismatch_payloads(tmp_path)
     assert [payload["reason_code"] for payload in payloads] == ["multi_node_ambiguous"]
     assert payloads[0]["decision_id"] == "d-parallel"
@@ -428,7 +451,10 @@ async def test_quality_abstain_cancels_pending_bandit_decision(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setenv("SAGE_ORACLE", "0")
-    rust_router = _RustRouter()
+    rust_router = _RustRouter(
+        decision=_Decision(decision_id="d-abstain", model_id="model-a"),
+        strict_pending=True,
+    )
     pipeline = _pipeline(bandit=None)
     pipeline._rust_router = rust_router
     pipeline.quality_estimator = None
@@ -448,6 +474,7 @@ async def test_quality_abstain_cancels_pending_bandit_decision(
 
     assert rust_router.checked_records == []
     assert rust_router.cancelled_decisions == ["d-abstain"]
+    assert "d-abstain" not in rust_router.pending_decisions
     assert _mismatch_payloads(tmp_path) == []
     assert ctx.bandit_attribution_state == "skipped"
 
@@ -516,6 +543,7 @@ async def test_stage_learn_refuses_off_policy_bandit_outcome(
     assert bandit.checked_records == []
     assert bandit.cancelled == []
     assert bandit.unchecked_record_calls == 0
+    assert rust_router.cancelled_decisions == ["d-offpolicy"]
     assert [payload["reason_code"] for payload in _mismatch_payloads(tmp_path)] == [
         "model_mismatch"
     ]

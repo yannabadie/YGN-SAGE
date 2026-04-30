@@ -644,9 +644,9 @@ impl SystemRouter {
     /// `(model_id, executed_template)` arm that can later be checked with
     /// `ContextualBandit::record_outcome_checked`.
     ///
-    /// Pipeline migration note: `sage-python/src/sage/pipeline.py` still calls
-    /// the legacy `route()` path. Do not wire Stage 0 to this method without a
-    /// separate full pipeline regression pass.
+    /// Pipeline migration note: Stage 0 currently calls plain `route_integrated`.
+    /// Do not wire Stage 0 to this contextual method without a real context
+    /// vector and a separate full pipeline regression pass.
     pub fn route_integrated_contextual(
         &mut self,
         task: &str,
@@ -816,17 +816,6 @@ impl SystemRouter {
         )
         .entered();
 
-        // Never update bandit posteriors on the unchecked legacy path.
-        // If the id is a pending bandit token, consume it so it cannot be replayed.
-        if let Some(ref mut bandit) = self.bandit {
-            if bandit.cancel_decision(decision_id) {
-                info!(
-                    decision_id = decision_id,
-                    "unchecked_bandit_decision_cancelled"
-                );
-            }
-        }
-
         // Record telemetry on registry using stored decision→model mapping
         if let Some(model_id) = self.decision_models.get(decision_id).cloned() {
             self.registry
@@ -835,14 +824,38 @@ impl SystemRouter {
             info!(decision_id = decision_id, "no_model_mapping_for_telemetry");
         }
 
+        // Legacy callers may still pass a bandit decision id. Keep this path
+        // telemetry-only, and consume the pending token so it cannot be replayed.
+        if let Some(ref mut bandit) = self.bandit {
+            if bandit.cancel_decision(decision_id) {
+                info!(
+                    decision_id = decision_id,
+                    "unchecked_bandit_decision_cancelled"
+                );
+            }
+        }
+        if !decision_id.is_empty() {
+            self.forget_decision_mapping(decision_id);
+        }
+
         Ok(())
+    }
+
+    fn forget_decision_mapping(&mut self, decision_id: &str) {
+        self.decision_models.remove(decision_id);
+        self.decision_order.retain(|id| id != decision_id);
     }
 
     /// Cancel a pending bandit decision without updating posteriors.
     pub fn cancel_bandit_decision(&mut self, decision_id: &str) -> bool {
-        self.bandit
+        let cancelled = self
+            .bandit
             .as_mut()
-            .is_some_and(|bandit| bandit.cancel_decision(decision_id))
+            .is_some_and(|bandit| bandit.cancel_decision(decision_id));
+        if !decision_id.is_empty() {
+            self.forget_decision_mapping(decision_id);
+        }
+        cancelled
     }
 
     /// Record outcome through the same ContextualBandit instance that issued the decision.
@@ -870,21 +883,25 @@ impl SystemRouter {
         let cost_f32 = cost_usd as f32;
         let latency_f32 = latency_ms as f32;
 
-        let bandit =
-            self.bandit
-                .as_mut()
-                .ok_or_else(|| AttributionError::RecorderInstanceMismatch {
-                    decision_id: decision_id.to_string(),
-                })?;
+        let outcome = {
+            let bandit =
+                self.bandit
+                    .as_mut()
+                    .ok_or_else(|| AttributionError::RecorderInstanceMismatch {
+                        decision_id: decision_id.to_string(),
+                    })?;
 
-        match bandit.record_outcome_checked(
-            decision_id,
-            executed_model_id,
-            executed_template,
-            quality_f32,
-            cost_f32,
-            latency_f32,
-        ) {
+            bandit.record_outcome_checked(
+                decision_id,
+                executed_model_id,
+                executed_template,
+                quality_f32,
+                cost_f32,
+                latency_f32,
+            )
+        };
+
+        match outcome {
             Ok(()) => {
                 if let Some(model_id) = self.decision_models.get(decision_id).cloned() {
                     self.registry.record_telemetry_full(
@@ -899,6 +916,7 @@ impl SystemRouter {
                         "no_model_mapping_for_checked_telemetry"
                     );
                 }
+                self.forget_decision_mapping(decision_id);
                 Ok(RecordOutcomeResult::recorded())
             }
             Err(BanditError::UnknownDecision(_)) | Err(BanditError::NoArms) => {
@@ -913,6 +931,16 @@ impl SystemRouter {
                 executed_model_id,
                 executed_template,
             }) => {
+                let cancelled = self
+                    .bandit
+                    .as_mut()
+                    .is_some_and(|bandit| bandit.cancel_decision(&decision_id));
+                self.forget_decision_mapping(&decision_id);
+                debug!(
+                    decision_id = %decision_id,
+                    cancelled = cancelled,
+                    "off_policy_bandit_decision_cancelled"
+                );
                 if selected_model_id != executed_model_id {
                     Err(AttributionError::ModelMismatch {
                         decision_id,
@@ -1437,7 +1465,7 @@ mod tests {
     }
 
     #[test]
-    fn record_outcome_with_bandit_records() {
+    fn test_legacy_record_outcome_is_telemetry_only_not_bandit() {
         let registry = test_registry();
         let mut router = SystemRouter::new(registry);
 
@@ -1451,6 +1479,8 @@ mod tests {
         let decision = router
             .route_integrated("hello", &constraints, "t1")
             .unwrap();
+        let model_id = decision.model_id.clone();
+        assert!(router.bandit.as_ref().unwrap().repr().contains("pending=1"));
 
         // Legacy record_outcome is telemetry-only. A bandit posterior update
         // without the executed full arm would make decision_id a bearer token.
@@ -1459,6 +1489,8 @@ mod tests {
         let bandit = router.bandit.as_ref().unwrap();
         assert_eq!(bandit.total_observations(), 0);
         assert!(bandit.repr().contains("pending=0"));
+        let p95 = router.registry.observed_latency_p95(&model_id);
+        assert!((p95 - 100.0).abs() < 0.001);
     }
 
     #[test]
@@ -1502,7 +1534,7 @@ mod tests {
     }
 
     #[test]
-    fn test_record_outcome_checked_model_mismatch() {
+    fn test_record_outcome_checked_cancels_pending_on_mismatch() {
         let registry = test_registry();
         let mut router = SystemRouter::new(registry);
         let mut bandit = ContextualBandit::create(0.995, 0.1);
@@ -1525,6 +1557,19 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err.reason_code(), "model_mismatch");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
+
+        let replay_checked = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "fast-model",
+                "sequential",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap_err();
+        assert_eq!(replay_checked.reason_code(), "decision_unknown");
         assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
 
         let replay = router.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0);
@@ -1594,6 +1639,19 @@ mod tests {
             .expect("bandit should remain installed");
         assert!(bandit.repr().contains("pending=0"));
         assert_eq!(bandit.total_observations(), 0);
+
+        let replay = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "fallback-model",
+                "single_agent",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap_err();
+        assert_eq!(replay.reason_code(), "decision_unknown");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
     }
 
     #[test]
