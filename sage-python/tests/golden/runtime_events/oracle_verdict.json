@@ -1,5 +1,5 @@
 {
-  "_doc": "Golden fixture for oracle_verdict event (R9 OracleStack). ONLY emitted when SAGE_ORACLE=1.",
+  "_doc": "Golden fixture for oracle_verdict event (R9 OracleStack). Default-on since cycle-7 flip 2026-04-29 (commit 128e1b89): emitted when SAGE_ORACLE is unset or any non-kill-switch value; suppressed only by kill-switch values 0/false/off/no/disable/disabled (case-insensitive).",
   "schema_version": "1.0",
   "event_type": "oracle_verdict",
   "source_component": "pipeline",
@@ -14,8 +14,8 @@
   ],
   "_invariants": [
     "parent_event_id == final_result.seq",
-    "MUST be emitted after final_result and before run_frame_summary when SAGE_RUN_FRAME=1",
+    "MUST be emitted after final_result and before run_frame_summary when SAGE_RUN_FRAME=1 and oracle_enabled() is true",
     "MUST NEVER include raw final output text",
-    "MUST NEVER appear when SAGE_ORACLE is unset"
+    "MUST NEVER appear when SAGE_ORACLE is 0/false/off/no/disable/disabled (kill-switch)"
   ]
 }

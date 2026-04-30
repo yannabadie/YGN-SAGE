@@ -583,3 +583,67 @@ def test_controller_decision_payload_fields_present_in_cycle7_n50_jsonls() -> No
     assert summary.field_presence == {
         field: summary.event_count for field in CONTROLLER_DECISION_SAFE_FIELDS
     }
+
+
+def test_oracle_verdict_golden_matches_default_on_contract() -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-2 PUSH BACK sub-blocker A: the
+    oracle_verdict.json golden fixture's ``_doc`` and ``_invariants`` MUST
+    reflect the cycle-7 default-on contract, not the pre-flip opt-in one.
+    """
+    fixture = _load_fixture("oracle_verdict.json")
+    text = json.dumps(fixture)
+    assert "ONLY emitted when SAGE_ORACLE=1" not in text, (
+        "oracle_verdict.json still has pre-flip 'ONLY emitted when SAGE_ORACLE=1' "
+        "framing — update _doc to default-on contract."
+    )
+    assert "MUST NEVER appear when SAGE_ORACLE is unset" not in text, (
+        "oracle_verdict.json still has pre-flip 'MUST NEVER appear when SAGE_ORACLE "
+        "is unset' invariant — update _invariants to kill-switch suppression."
+    )
+    assert "default-on" in text or "Default-on" in text, (
+        "oracle_verdict.json must mention default-on (cycle-7 contract anchor)."
+    )
+    assert "disable" in text and "disabled" in text, (
+        "oracle_verdict.json must list `disable`/`disabled` in the kill-switch values."
+    )
+
+
+def test_no_stale_cycle7_oracle_contract_phrases() -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-2 trap-fix: prose contract drift
+    is a class. The contract docs and golden fixtures can silently diverge
+    even when the existing field-presence tests still pass. Lint a small set
+    of pre-flip phrases out of the current-state docs (NOT historical
+    evidence files in docs/benchmarks/, which are intentionally frozen).
+    """
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    scoped_paths: list[pathlib.Path] = [
+        repo_root / "README.md",
+        repo_root / "CLAUDE.md",
+        repo_root / "roadmap.md",
+        repo_root / "docs" / "contracts" / "runtime-event-log.md",
+        repo_root / "YGN-SAGE" / "00-Dashboard.md",
+    ]
+    golden_dir = repo_root / "sage-python" / "tests" / "golden" / "runtime_events"
+
+    haystack_parts: list[tuple[str, str]] = []
+    for path in scoped_paths:
+        if path.is_file():
+            haystack_parts.append((str(path), path.read_text(encoding="utf-8")))
+    for golden in sorted(golden_dir.glob("*.json")):
+        haystack_parts.append((str(golden), golden.read_text(encoding="utf-8")))
+
+    stale_phrases = [
+        "ONLY emitted when SAGE_ORACLE=1",
+        "MUST NEVER appear when SAGE_ORACLE is unset",
+        "All 4 strategic feature flags ship default-OFF",
+        "All four strategic feature flags default OFF",
+    ]
+    failures: list[str] = []
+    for phrase in stale_phrases:
+        for source, text in haystack_parts:
+            if phrase in text:
+                failures.append(f"  {source}: contains stale phrase {phrase!r}")
+    assert not failures, (
+        "Stale cycle-7 oracle contract phrases found in current-state docs:\n"
+        + "\n".join(failures)
+    )

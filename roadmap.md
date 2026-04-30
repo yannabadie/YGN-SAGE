@@ -9,12 +9,12 @@ impact-over-effort.
 
 6 cycles of cgpro-driven runtime work shipped (R0..R7 + R9 + R6.1a). ~12000+ LOC, 2484+37 regression tests, mypy 0/, ruff clean. **Gate D PASS** (SWE-bench N=10 throwaway). **Path E step 3 PASS** (BCB-Hard N=10 with bench-result feedback seam: 5 Exact pass + 5 Exact fail trainable, 0 raw leaks, event order 10/10). **A14 reset operation executed 2026-04-29** — bandit/MAP-Elites posteriors moved to `~/.sage/contaminated_pre_a14_20260429/`, fresh epoch=1 marker at `~/.sage/posterior_epoch.json`, audit dump at `.tmp/a14_reset_20260429/MANIFEST.json` (SHA256-hashed).
 
-All 4 strategic feature flags ship **default-OFF** for safety:
+Strategic runtime flags after cycle 7:
 
-- **`SAGE_STATECORE=1`** (R6) — Control/Message/State edge-channel separation.
-- **`SAGE_RUN_FRAME=1`** (R7) — typed RunFrame trailing diagnostic.
-- **`SAGE_ORACLE`** (R9 + R6.1a) — OracleStack training gate. **DEFAULT-ON since cycle-7 flip 2026-04-29** (commit `128e1b89`). Unset = ON; `SAGE_ORACLE=0` (or `false`/`off`/`no`) = kill-switch (operator escape hatch). Centralized predicate in `sage/runtime/oracle/env.py` `oracle_enabled()`. Validated by N=5 unset smoke (5/5 oracle_verdicts emitted) + N=2 kill-switch smoke (0 oracle_verdicts).
-- **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — durable JSONL sink.
+- **`SAGE_ORACLE`** (R9 + R6.1a) — OracleStack training gate. **DEFAULT-ON since cycle-7 flip 2026-04-29** (commit `128e1b89`). Unset = ON. Kill-switch (operator escape hatch): `SAGE_ORACLE=0|false|off|no|disable|disabled` (case-insensitive; `disable`/`disabled` added in cycle-7 VERIFY round-1, commit `87daf89a`). Centralized predicate in `sage/runtime/oracle/env.py` `oracle_enabled()`. Validated by N=5 unset smoke (5/5 oracle_verdicts emitted) + N=2 kill-switch smoke (0 oracle_verdicts). T4 forced `controller_decision.payload` is allowlist-only since round-1 (no free-form `reason` leak).
+- **`SAGE_STATECORE=1`** (R6) — opt-in. Control/Message/State edge-channel separation.
+- **`SAGE_RUN_FRAME=1`** (R7) — opt-in. Typed RunFrame trailing diagnostic.
+- **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — opt-in durable JSONL sink.
 
 Plus the new bench seam (R6.1a Path E):
 - **`SAGE_BENCH_ORACLE_SEAM=1`** — BCB/synchronous-eval benches feed `bench_result["passed"]` to the OracleStack BEFORE final_result/oracle_verdict/learn so Exact verdicts fire on the live trace.
@@ -43,7 +43,7 @@ Path E step 3 BCB-Hard N=10 trace analysis revealed 4 architecture-activation ga
 - **roadmap-T5 model assigner top-3 candidate logging** (codex BG): `SAGE_ASSIGNER_LOG_TOP3=1` logs per-node top-3 candidates with score components (affinity/domain/cost_norm/hint_bonus/diversity_penalty). Diagnose 75% Google skew without hard-overriding Stage 4.
 - **roadmap-T6 SAGE_BENCH_DISABLE_REPAIR flag** (codex BG): bypass repair/escalation branch for clean first-attempt measurement on tonight's BCB N=50 evidence run.
 
-The cycle-7 default-on gate post-A14-reset is: T1+T6 shipped (for Phase 2 evidence run) + tonight's BCB-Hard N=50 with `SAGE_BENCH_DISABLE_REPAIR=1 SAGE_ORACLE=1 SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1` produces ≥1 trainable Exact verdict path + ≥1 trainable formal/tool path + 0 raw leaks + official Docker re-grade per-task agreement.
+The cycle-7 default-on gate post-A14-reset was: T1+T6 shipped (for Phase 2 evidence run) + the BCB-Hard N=50 evidence run with `SAGE_BENCH_DISABLE_REPAIR=1` + `SAGE_RUN_FRAME=1` + `SAGE_BENCH_ORACLE_SEAM=1` (and `SAGE_ORACLE` **unset** for the default-on path; the cycle-7 flip itself is what enabled the oracle path). Run produced ≥1 trainable Exact verdict path + ≥1 trainable formal/tool path + 0 raw leaks + official Docker re-grade per-task agreement (49/50). Headline 30% internal / 32% Docker pass@1 — see `docs/benchmarks/2026-04-29-cycle7-evidence-bcb-N50-validation.md`.
 
 
 

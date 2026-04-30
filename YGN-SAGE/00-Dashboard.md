@@ -93,7 +93,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > - **Strategic feature flags** :
 >   - `SAGE_STATECORE=1` (R6 channel separation) — default OFF
 >   - `SAGE_RUN_FRAME=1` (R7 typed run frame + trailing diagnostic) — default OFF
->   - **`SAGE_ORACLE`** (R9 training gate) — **DEFAULT-ON since cycle-7 flip 2026-04-29 (`128e1b89`)**. Unset = ON; `SAGE_ORACLE=0`/`false`/`off`/`no` = kill-switch. Validated N=5 unset (5/5 oracle_verdicts emitted) + N=2 kill-switch (0 oracle_verdicts) — commits `a5f916ea` + `8b4b34b6`.
+>   - **`SAGE_ORACLE`** (R9 training gate) — **DEFAULT-ON since cycle-7 flip 2026-04-29 (`128e1b89`)**. Unset = ON; kill-switch via `SAGE_ORACLE=0|false|off|no|disable|disabled` (case-insensitive; `disable`/`disabled` added in cycle-7 VERIFY round-1, commit `87daf89a`). Validated N=5 unset (5/5 oracle_verdicts emitted) + N=2 kill-switch (0 oracle_verdicts) — commits `a5f916ea` + `8b4b34b6`. T4 forced `controller_decision.payload` is allowlist-only since round-1 (commit `87daf89a` writer + `f3a89631` docs).
 >   - `SAGE_TRACE_JSONL_DIR=<path>` (R5 durable JSONL sink) — Off when unset.
 >   - `SAGE_BENCH_ORACLE_SEAM=1` (Path E synchronous-eval bench feedback) — default OFF.
 
@@ -105,7 +105,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > - **`a5f916ea` N=5 SAGE_ORACLE UNSET smoke** : 5/5 oracle_verdicts emitted with no SAGE_ORACLE env var ⇒ default-on works.
 > - **`8b4b34b6` N=2 SAGE_ORACLE=0 kill-switch smoke** : 0 oracle_verdicts + 0 evidence_deltas + run_frame_summary `oracle_verdict=None` ⇒ kill-switch silences oracle.
 > - **A14 reset operation** (DONE earlier, commit `8c8a1c27`): 14 bandit_arms + 5 MAP-Elites entries → contaminated_pre_a14 archive; epoch=1 marker; SHA-256 audit dump.
-> - **Operational implication** : all future runs default to OracleStack training gate. Bandit / MAP-Elites / online-evolution / training-memory ONLY update on `verdict.trainable=True`. Posterior epoch=1 (post A14 reset). Operator escape hatch: `SAGE_ORACLE=0`.
+> - **Operational implication** : all future runs default to OracleStack training gate. Bandit / MAP-Elites / online-evolution / training-memory ONLY update on `verdict.trainable=True`. Posterior epoch=1 (post A14 reset). Operator escape hatch: `SAGE_ORACLE=0|false|off|no|disable|disabled` (case-insensitive).
 
 > [!success] Shipped (Apr 26, **CI debt closeout — 14 commits**, vert après une semaine rouge)
 > - **mypy 131→0** sans nouveau `# type: ignore` — fix forensique par root-cause: `protocols/a2a_server.py` API drift réel à 0.3.x (`context.message` vs `context.request.message`, `event_queue.enqueue_event` vs `.put`, `AgentEvent(type=, step=, timestamp=, meta=)` vs kwargs inexistants — bugs runtime que les tests ne révélaient pas) ; `bench/sprint3_evidence.py:86` dead-code qui poisonnait 12 attribute accesses ; `StreamingLLMProvider` protocol method un-`async`'d (close `Coroutine has no __aiter__` cascade) ; AgentLoop class attrs `toolforge`/`evolution_memory` ; ~30 small structural fixes (Optional defaults, Solver Union annotation, AgentEvent constructor).

@@ -10,7 +10,7 @@
 - **Official Docker pass@1 = 32%** (16/50, see `2026-04-29-cycle7-evidence-bcb-N50-official-pass-at-k.json`)
 - **Per-task agreement = 49/50 = 98%** (the single divergence is the abstain task; bench fail = direction agreement)
 - **0 raw stdout/stderr/raw_output/raw_patch leaks** across all events
-- **Event order final_result < oracle_verdict < run_frame_summary** holds on every committed run
+- **Event order `final_result < oracle_verdict < run_frame_summary`** holds on every run that emitted an `oracle_verdict` (49/50); `BigCodeBench/227` abstained and therefore has no verdict event, so the ordering is vacuously satisfied for that run.
 
 ## Honest framing locks
 
@@ -24,7 +24,7 @@
 - ``SAGE_RUN_FRAME=1``, ``SAGE_BENCH_ORACLE_SEAM=1``, ``SAGE_DIFF_VERIFIER_MODE=observe``.
 - ``SAGE_BENCH_DISABLE_REPAIR=1`` (T6) for clean first-attempt measurement.
 - ``StateCore`` OFF (``SAGE_STATECORE`` unset).
-- Throwaway bandit DB: production state moved to ``.tmp/path_e_backup/`` pre-bench, restored post-bench. Production posteriors not polluted. **A14 reset paired with the flip** — pre-existing off-policy posteriors discarded; production starts fresh at Posterior epoch=1 (commit `128e1b89` and ops runbook `docs/ops/runbooks/2026-04-29-a14-reset.md`).
+- Throwaway bandit DB: production state moved to ``.tmp/path_e_backup/`` pre-bench, restored post-bench. Production posteriors not polluted. **A14 reset paired with the flip** — pre-existing off-policy posteriors discarded; production starts fresh at Posterior epoch=1 (commit `128e1b89` and ops runbook `docs/operations/2026-04-29-a14-reset.md`).
 - SSL: ``SSL_CERT_FILE`` + ``REQUESTS_CA_BUNDLE`` + ``CURL_CA_BUNDLE`` + ``GRPC_DEFAULT_SSL_ROOTS_FILE_PATH`` set to ``C:/Code/certs/windows-full-bundle.pem``.
 - Greedy decoding: SAGE pipeline default temperature settings; not the BCB CLI ``--temp 0`` enforcement (separate from the seam contract).
 - Single entry point: ``python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 50`` — no parallel scripts.
