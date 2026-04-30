@@ -5,9 +5,17 @@
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
 
-## ⭐ Current operational gates (2026-04-30 — 6 cycles shipped + Path E + Gate D + A14 guard)
+## ⭐ Current operational gates (2026-04-30 — Cycle-8 SHIPPED + Cycle-9 DESIGN in flight)
 
-6 cycles of cgpro-driven runtime work shipped (R0..R7 + R9 + R6.1a). ~12000+ LOC, 2484+37 regression tests, mypy 0/, ruff clean. **Gate D PASS** (SWE-bench N=10 throwaway). **Path E step 3 PASS** (BCB-Hard N=10 with bench-result feedback seam: 5 Exact pass + 5 Exact fail trainable, 0 raw leaks, event order 10/10). **A14 reset operation executed 2026-04-29** — bandit/MAP-Elites posteriors moved to `~/.sage/contaminated_pre_a14_20260429/`, fresh epoch=1 marker at `~/.sage/posterior_epoch.json`, audit dump at `.tmp/a14_reset_20260429/MANIFEST.json` (SHA256-hashed).
+**Cycle-8 closed at `86681ac8`** (closeout commit). Stack: `78565578` R6.1c → `9944674e` R6.1c round-1 fixes → `49648263` R6.1c round-2 disclosure → `6b2ebcbe` A14 round-1 → `f9521616` A14 round-2 fixes → `86681ac8` closeout (status JSON + 2 contract docs + directive #9 + ALIRE3 advisory + cgpro architect review locks).
+
+**Live test counts** (canonical at `docs/status/current.json`, regenerated via `python scripts/status_snapshot.py`): **2887 Python collected** / **544 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
+
+**Cycle-9 = learning attribution + benchmark loop** (per cgpro architect review 2026-04-30 + Q1/Q2/Q3 strategy locks). DESIGN ask in flight at conv `cgpro_cycle9_a14b_design`. Scope: A14b Stage-0 `route_integrated()` repair + minimal T2 memory write paths + A2 N=10 budget-tier paired smoke + decision gate to A3 N=50.
+
+**Strategic positioning locked**: Cycle-9 = **budget tier paired ablation** (DeepSeek/Gemini Flash). Premium frontier = Cycle-12+. SWE-bench-Live (replaces SWE-bench Lite as primary public gauge) = Cycle-11 reproducibility lane. NO model hardcoding — baseline = "frontier current at eval date".
+
+**Earlier gates still locked**: R0..R7 + R9 + R6.1a (~12000+ LOC), Gate D PASS, Path E step 3 PASS, A14 reset 2026-04-29 (bandit/MAP-Elites posteriors moved to `~/.sage/contaminated_pre_a14_20260429/`, fresh epoch=1 marker, audit dump at `.tmp/a14_reset_20260429/MANIFEST.json`). **A14 fail-closed guard active** since cycle-8 step 2 (`6b2ebcbe + f9521616`) — Rust + Python defense-in-depth, `topology_state_manifest.json` provenance binding (SHA-256 over A14 state files).
 
 Strategic runtime flags after cycle 7:
 
