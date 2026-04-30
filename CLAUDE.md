@@ -13,6 +13,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 6. **SOTA minimum, AI breakthrough at least** — don't settle for "good enough"
 7. **No training-leak model hardcodes** — truth for OpenAI/Gemini/xAI/DeepSeek/Anthropic models in this repo is `sage-core/config/cards.toml`, NOT the agent's training snapshot. Before adding a `"<tag>" in model` check or a quirk branch, verify the tag hits at least one id in cards.toml AND verify the quirk itself via Context7 `/berriai/litellm` or the provider's live docs — cite the source in the code comment. See `docs/patterns/knowledge-cutoff-checks.md`. *2026-04 incident*: hardcoded `o1/o3/o4` for a temperature clamp even though cards.toml only ships `gpt-5.x`.
 8. **A14 posterior epoch guard is fail-closed** — active in Rust `load_state` and Python `boot_topology.py` since cycle-8 step 2 (`6b2ebcbe` + round-2 closure). Normal state requires `posterior_epoch.json` epoch=1 plus `topology_state_manifest.json` provenance binding over all A14 topology state files. For forensic load-only inspection, set `SAGE_BOOT_BYPASS_EPOCH_GUARD=1` with `SAGE_BOOT_BYPASS_REASON` and `SAGE_OPERATOR_ID`; bypass disables atexit save and `validate_epoch_for_save` / `ensure_clean_epoch_before_save` hard-fail. Reset command: `python -m sage.ops.a14_reset --reason "..."`.
+9. **Declared ≠ verified — runtime integrity principle** (cgpro 2026-04-30 architect review, crystallized from 3 cycle traps: cycle-7 SAGE_ORACLE doc/code drift, cycle-8 R6.1c reason raw-leak vs audit policy drift, cycle-8 A14 epoch label vs DB content drift). Any label that authorizes a side-effect or learning decision MUST be bound to verified content, schema, provenance, or executable proof. Before shipping a new "label gates side-effect" code path: register it in `docs/contracts/runtime-integrity-ledger.md` with all 4 columns (Declared label / Verified content / Side-effect blocked if invalid / Tests), and write the regression test that proves the side-effect is blocked when verification fails. See also `docs/contracts/rust-python-boundary.md` for ownership and `docs/status/current.json` for canonical test counts.
 
 ## Architecture (see .claude/rules/architecture.md for details)
 
@@ -125,6 +126,16 @@ Two complementary tools. Use deliberately, not reflexively. Different verbs.
 Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub repo URL + branch, (2) summary of what shipped + what's stuck, (3) ask "what trap am I missing?". The 2026-04-26 closeout review caught **1 real prod bug** (bandit context persistence) **+ 5 structural improvements** (RNG seam, sort arm_keys, three-layer test split, bandit Pareto contract mismatch, lockfile) — all now tracked as roadmap-A8..A13. Without the review, all 6 would have shipped silently.
 
 `advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
+
+## Current State (April 30, 2026 — post cycle-8)
+
+- **Cycle-8 R6.1c + A14 shipped + closeout in progress**. Stack:
+  - `78565578` cycle-8 R6.1c — payload schema versioning + 14 manifests + audit/strict-current modes (3285 LOC, 2-round cgpro VERIFY APPROVED at `49648263`)
+  - `6b2ebcbe` cycle-8 step 2 A14 round-1 + `f9521616` round-2 — `topology_state_manifest.json` provenance binding closes "epoch label ≠ DB content" trap (cgpro APPROVED, `_CONTAMINATED.json` written on legacy `~/.sage/contaminated_pre_a14_20260429/` 2026-04-30)
+- **Tests** (canonical at `docs/status/current.json`): **2887** Python collected / **544** Rust listed / **100** sage-discover. **+400 vs ancien claim 2484-2501** — cycle-7 + cycle-8 R6.1c (+18 tests) + cycle-8 A14 (+34 tests) + net rebase.
+- **Static analysis**: mypy 0 errors / ruff clean (verified on cycle-8 R6.1c + A14 closures).
+- **2 contract docs added** (cgpro architect review 2026-04-30): `docs/contracts/runtime-integrity-ledger.md` (5 invariants + module cross-reference) + `docs/contracts/rust-python-boundary.md` (ownership matrix Rust vs Python). No code refactor — documentary only.
+- **Cycle-9 ordering reverted from "step 3 A22"** (closed/stale per cgpro architect review) **to closeout + learning attribution loop**. Cycle-9 main = A14b `route_integrated()` Stage-0 repair + minimal T2 memory write paths + A2 N=10 BCB-Hard smoke + decision gate to A3 N=50.
 
 ## Current State (April 29, 2026)
 

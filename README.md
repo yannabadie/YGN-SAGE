@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2484%20Py%20%2B%20522%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2887%20Py%20%2B%20544%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -246,13 +246,15 @@ Each topology node can use a different provider. The policy model can express `p
 
 ### Tests
 
+Live counts canonicalized at `docs/status/current.json` (regenerated via `python scripts/status_snapshot.py`). The numbers below reflect the snapshot at last update; consult the JSON for current-run truth.
+
 | Suite | Result |
 |-------|--------|
-| Python | **2484 passing** (excluding API-key-gated files; +127 vs the 2026-04-26 closeout baseline of 2357 after the 6-cycle Apr 28-29 runtime arc + R6.1a evidence producers). 8 fail + 2 error remain in `test_e2e_*` / `test_pydantic_ai_integration.py` — pre-existing API-key-gated fixtures. |
-| Rust | **522 passing** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
-| Discovery | 95 tests |
+| Python (`sage-python`) | **2887 collected** (after cycle-7 + cycle-8 R6.1c + cycle-8 A14, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
+| Rust (`sage-core`) | **544 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
+| Discovery (`sage-discover`) | **100 collected** |
 | CI | 8 jobs (Rust, Rust features, Python Linux, Python Windows, Discover, OTel Linux, OTel Windows, Integration Smoke) |
-| Static analysis | mypy **0 errors / 204 files**; ruff clean |
+| Static analysis | mypy 0 errors; ruff clean (per cycle-8 R6.1c + A14 closure verification) |
 
 ## sage-discover — Knowledge Discovery Engine
 

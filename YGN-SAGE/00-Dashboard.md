@@ -9,13 +9,16 @@ updated: 2026-04-30
 Agent Development Kit qui **apprend** quelle topologie multi-agent utiliser pour chaque tache.
 Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-discover).
 
-## Etat du projet (26 Avril 2026)
+## Etat du projet (30 Avril 2026 — post cycle-8 R6.1c + A14)
+
+> [!info] Source canonique : `docs/status/current.json` (régénéré via `python scripts/status_snapshot.py`). Les counts ci-dessous reflètent le snapshot du 2026-04-30 16:08 UTC ; pour la vérité instantanée, consulter le JSON.
 
 | Metrique | Valeur | Notes |
 |----------|--------|-------|
-| Tests Python | **2501 passing** | 8 fail + 2 error tous dans `test_e2e_*` / `test_pydantic_ai_integration.py` (pré-existants, API-key-gated). |
-| Tests Rust | **501/501** | `--features smt`. cma_me::test_small_scale_convergence dé-flake (8×10 fitness evals au lieu de 4×5) le 2026-04-26. |
-| **Static analysis** | **mypy 0/183, ruff clean** | mypy passé de 131→0 le 2026-04-26 sans nouveau `# type: ignore`. type:ignore ceiling 44/44 inchangé. |
+| Tests Python (sage-python) | **2887 collected** | +400 vs claim ancien 2484-2501 ; cycle-7 + cycle-8 R6.1c (+18) + cycle-8 A14 (+34) plus net rebase. 8 fail + 2 error pré-existants en `test_e2e_*` / `test_pydantic_ai_integration.py` API-key-gated. |
+| Tests Rust (sage-core) | **544 listed** | `--features smt,cognitive,sandbox,cranelift,tool-executor`. +43 vs ancien 501 (cycle-8 A14 added 19 posterior_epoch tests, R6.1c added per-event schema tests, etc.). |
+| Tests Discovery (sage-discover) | **100 collected** | +5 vs claim ancien 95. |
+| **Static analysis** | **mypy 0 / ruff clean** | Vérifié sur cycle-8 R6.1c (`78565578..49648263`) + A14 (`6b2ebcbe..f9521616`) closures. |
 | kNN Routing GT | **100%** (60/60) | exact-match override (CORAL ff41e53) |
 | MASBENCH breadth | **+22pp (p=0.015)** | Seul axe statistiquement significatif |
 | MASBENCH depth/horizon | +2/+4pp | Non significatifs (p>0.05) |
