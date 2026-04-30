@@ -2,9 +2,9 @@
 
 **Status**: documentary contract (no code refactor in cycle 8 / 9). Per cgpro 2026-04-30 architect review Q-A: *"créer un registre documentaire/testable, pas un gros move"*.
 
-After cycle-7 + cycle-8 R6.1c + cycle-8 A14, YGN-SAGE has accreted 5 invariant-binding mechanisms across `sage-python/src/sage/runtime/`, `sage-python/src/sage/`, and `sage-core/src/topology/`. They are **conceptually a Runtime Integrity subsystem** but **physically distributed** to keep coupling local. This ledger is the cross-reference contract.
+After cycle-7 + cycle-8 R6.1c + cycle-8 A14 + cycle-9 A14b, YGN-SAGE has accreted 6 invariant-binding mechanisms across `sage-python/src/sage/runtime/`, `sage-python/src/sage/`, and `sage-core/src/topology/`. They are **conceptually a Runtime Integrity subsystem** but **physically distributed** to keep coupling local. This ledger is the cross-reference contract.
 
-## The 5 invariants
+## The 6 invariants
 
 Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 contract drift, cycle-8 R6.1c raw-leak vs audit policy drift, cycle-8 A14 epoch ≠ provenance): **any label that authorizes a side-effect or learning decision must be bound to verified content, schema, provenance, or executable proof.**
 
@@ -15,6 +15,7 @@ Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 con
 | **Posterior epoch** | `~/.sage/posterior_epoch.json.epoch` (integer) | `topology_state_manifest.json.state_files[].sha256` over A14 state file bytes | `TopologyEngine::load_state` / `save_state` (Rust + Python preflight) |
 | **Contaminated backup** | `_CONTAMINATED.json.contaminated=true` (operator-readable poison-pill) | `audit_dump_sha256` cross-reference to immutable audit MANIFEST.json | normal load (any contaminated marker present in active state dir = fail-closed) |
 | **RunFrame summary** | `run_frame_summary.payload.parent_event_id` | `final_result.seq` consistency (parent_event_id == final_result.seq) | diagnostic trust (downstream `path_e_validate` event-order check) |
+| **Bandit attribution** | `bandit_decision_id` from Stage-0 `SystemRouter.route_integrated()` | `SystemRouter.record_outcome_checked()` verifies pending `(model_id, template)` against executed `(model_id, template)` | bandit posterior update (mismatch emits `bandit_attribution_mismatch` and skips recording) |
 
 ## Module cross-reference
 
@@ -25,10 +26,11 @@ Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 con
 | Posterior epoch | `sage/posterior_epoch.py` | `sage-core/src/topology/posterior_epoch.rs` | `tests/test_posterior_epoch.py` (Python), Rust unit tests in `posterior_epoch.rs` |
 | Contaminated backup | `sage/ops/a14_reset.py` | n/a (Python ops surface) | `tests/test_a14_reset.py` |
 | RunFrame summary | `sage/runtime/run_frame/__init__.py` | n/a | `tests/test_run_frame.py` |
+| Bandit attribution | `sage/pipeline.py`, `sage/runtime/event_log/payload_schemas.py` | `sage-core/src/routing/system_router.rs` | `tests/test_pipeline_bandit_causality.py`, `system_router::tests::test_record_outcome_checked_*` |
 
 ## Boundary against accidental coupling
 
-These 5 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
+These 6 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
 
 > "payload_schemas.py est naturellement couplé à runtime/event_log, tandis que posterior_epoch est naturellement couplé à topology et aux fichiers bandit_state.db, archive_state.db, engine_extras.json. Un refactor physique maintenant créerait surtout churn/import risk sans benchmark gain."
 
@@ -48,7 +50,7 @@ The 3 traps cgpro found at cycle-7/8 round-1 VERIFY rounds, all in the "declared
 
 ## Maintenance discipline
 
-- When adding a new invariant: append a row to **both** tables (the 5-invariant table AND the module cross-reference). Wire a regression test that proves the side-effect is blocked when the verification fails.
+- When adding a new invariant: append a row to **both** tables (the invariant table AND the module cross-reference). Wire a regression test that proves the side-effect is blocked when the verification fails.
 - When changing an existing invariant's verified-content schema: bump the schema version (per `payload_schemas.py` discipline, e.g. `v1 → v2_X`) and provide migration/inference rules. Old traces remain readable in audit mode, new emissions strict-current.
 - This ledger is referenced from `CLAUDE.md` directive #8 (A14 guard) and should be referenced from any future directive adding a new invariant.
 

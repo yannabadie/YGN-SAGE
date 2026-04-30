@@ -290,6 +290,7 @@ def test_event_type_catalog_completeness() -> None:
     expected = {
         "task_started",
         "routing_decision",
+        "bandit_attribution_mismatch",
         "topology_selected",
         "model_assigned",
         "node_started",

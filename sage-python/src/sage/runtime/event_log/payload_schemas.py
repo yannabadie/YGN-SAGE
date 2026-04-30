@@ -242,6 +242,15 @@ _RUN_FRAME_SUMMARY_FIELDS = (
     "run_frame_hash",
 )
 
+_BANDIT_ATTRIBUTION_REASON_CODES = (
+    "router_fallback_degraded",
+    "model_mismatch",
+    "template_mismatch",
+    "multi_node_ambiguous",
+    "decision_unknown",
+    "recorder_instance_mismatch",
+)
+
 _EVIDENCE_REF_FIELDS = frozenset(
     {
         "run_id",
@@ -287,6 +296,38 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
                 "domain": _string(128),
                 "confidence": _float_or_null(),
                 "model_id": _string(256),
+            },
+            payload_kind="dict",
+            current=True,
+        )
+    },
+    "bandit_attribution_mismatch": {
+        "v1": _schema(
+            event_type="bandit_attribution_mismatch",
+            version="v1",
+            allowed_fields=(
+                "decision_id",
+                "selected_model_id",
+                "selected_template",
+                "executed_model_id",
+                "executed_template",
+                "reason_code",
+            ),
+            required_fields=(
+                "decision_id",
+                "selected_model_id",
+                "selected_template",
+                "executed_model_id",
+                "executed_template",
+                "reason_code",
+            ),
+            field_specs={
+                "decision_id": _string(),
+                "selected_model_id": _string(),
+                "selected_template": _string(),
+                "executed_model_id": _string(),
+                "executed_template": _string(),
+                "reason_code": _f("str", allowed_values=_BANDIT_ATTRIBUTION_REASON_CODES),
             },
             payload_kind="dict",
             current=True,

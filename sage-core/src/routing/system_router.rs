@@ -10,7 +10,7 @@ use pyo3::prelude::*;
 use std::collections::{HashMap, VecDeque};
 use tracing::{debug, info, info_span};
 
-use super::bandit::ContextualBandit;
+use super::bandit::{BanditError, ContextualBandit};
 use super::features::StructuralFeatures;
 use super::model_card::{CognitiveSystem, ModelCard};
 use super::model_registry::ModelRegistry;
@@ -148,15 +148,93 @@ pub struct RoutingDecision {
     /// Topology identifier (empty if not topology-routed).
     #[pyo3(get)]
     pub topology_id: String,
+    /// Selected bandit topology template, empty for non-bandit fallback decisions.
+    #[pyo3(get)]
+    pub selected_template: String,
 }
 
 #[pymethods]
 impl RoutingDecision {
     fn __repr__(&self) -> String {
         format!(
-            "RoutingDecision(id='{}', system={}, model='{}', confidence={:.2}, cost={:.4}, topology='{}')",
-            self.decision_id, self.system, self.model_id, self.confidence, self.estimated_cost, self.topology_id
+            "RoutingDecision(id='{}', system={}, model='{}', confidence={:.2}, cost={:.4}, topology='{}', template='{}')",
+            self.decision_id,
+            self.system,
+            self.model_id,
+            self.confidence,
+            self.estimated_cost,
+            self.topology_id,
+            self.selected_template
         )
+    }
+}
+
+/// Checked outcome recording result.
+#[pyclass]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecordOutcomeResult {
+    #[pyo3(get)]
+    pub status: String,
+}
+
+impl RecordOutcomeResult {
+    fn recorded() -> Self {
+        Self {
+            status: "recorded".to_string(),
+        }
+    }
+}
+
+#[pymethods]
+impl RecordOutcomeResult {
+    fn __repr__(&self) -> String {
+        format!("RecordOutcomeResult(status='{}')", self.status)
+    }
+}
+
+/// Attribution guard failures for SystemRouter-owned bandit recording.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum AttributionError {
+    #[error("decision_id '{decision_id}' is unknown to the SystemRouter bandit")]
+    DecisionUnknown { decision_id: String },
+    #[error(
+        "decision_id '{decision_id}' selected model '{selected_model_id}' but executed '{executed_model_id}'"
+    )]
+    ModelMismatch {
+        decision_id: String,
+        selected_model_id: String,
+        selected_template: String,
+        executed_model_id: String,
+        executed_template: String,
+    },
+    #[error(
+        "decision_id '{decision_id}' selected template '{selected_template}' but executed '{executed_template}'"
+    )]
+    TemplateMismatch {
+        decision_id: String,
+        selected_model_id: String,
+        selected_template: String,
+        executed_model_id: String,
+        executed_template: String,
+    },
+    #[error("SystemRouter has no internal bandit recorder for decision_id '{decision_id}'")]
+    RecorderInstanceMismatch { decision_id: String },
+}
+
+impl AttributionError {
+    pub fn reason_code(&self) -> &'static str {
+        match self {
+            Self::DecisionUnknown { .. } => "decision_unknown",
+            Self::ModelMismatch { .. } => "model_mismatch",
+            Self::TemplateMismatch { .. } => "template_mismatch",
+            Self::RecorderInstanceMismatch { .. } => "recorder_instance_mismatch",
+        }
+    }
+}
+
+impl From<AttributionError> for PyErr {
+    fn from(err: AttributionError) -> PyErr {
+        pyo3::exceptions::PyValueError::new_err(format!("{}: {}", err.reason_code(), err))
     }
 }
 
@@ -229,6 +307,7 @@ impl SystemRouter {
             confidence,
             estimated_cost,
             topology_id: String::new(),
+            selected_template: String::new(),
         };
 
         info!(
@@ -304,6 +383,7 @@ impl SystemRouter {
             confidence,
             estimated_cost,
             topology_id: String::new(),
+            selected_template: String::new(),
         };
 
         info!(
@@ -370,6 +450,28 @@ impl SystemRouter {
             .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e.to_string()))
     }
 
+    /// Record outcome only if the executed full arm matches the SystemRouter bandit decision.
+    #[pyo3(name = "record_outcome_checked")]
+    pub fn py_record_outcome_checked(
+        &mut self,
+        decision_id: String,
+        executed_model_id: String,
+        executed_template: String,
+        quality: f64,
+        cost_usd: f64,
+        latency_ms: f64,
+    ) -> PyResult<RecordOutcomeResult> {
+        self.record_outcome_checked(
+            &decision_id,
+            &executed_model_id,
+            &executed_template,
+            quality,
+            cost_usd,
+            latency_ms,
+        )
+        .map_err(Into::into)
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "SystemRouter(models={}, bandit={})",
@@ -419,50 +521,67 @@ impl SystemRouter {
         }
 
         // Step 3: Model selection — bandit or budget-constrained
-        let (model_id, estimated_cost, decision_id) = if let Some(ref mut bandit) = self.bandit {
-            match bandit.choose(constraints.exploration_budget) {
-                Ok(bd) => {
-                    // Only use bandit's model if it passed constraint filtering.
-                    // Previously returned bd.model_id unconditionally, bypassing
-                    // all constraints (cost, latency, capabilities, security).
-                    if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
-                        let est = card.estimate_cost(1000, 2000);
-                        (bd.model_id.clone(), est, bd.decision_id.clone())
-                    } else {
-                        // Bandit chose a model that doesn't pass constraints — fallback
-                        // to best candidate by domain score (already sorted in Step 2)
-                        debug!(
-                            bandit_model = %bd.model_id,
-                            "bandit_model_not_in_candidates_falling_back"
-                        );
-                        let best = &candidates[0]; // candidates guaranteed non-empty (checked above)
+        let (model_id, estimated_cost, decision_id, selected_template) =
+            if let Some(ref mut bandit) = self.bandit {
+                match bandit.choose(constraints.exploration_budget) {
+                    Ok(bd) => {
+                        // Only use bandit's model if it passed constraint filtering.
+                        // Previously returned bd.model_id unconditionally, bypassing
+                        // all constraints (cost, latency, capabilities, security).
+                        if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
+                            let est = card.estimate_cost(1000, 2000);
+                            (
+                                bd.model_id.clone(),
+                                est,
+                                bd.decision_id.clone(),
+                                bd.template.clone(),
+                            )
+                        } else {
+                            // Bandit chose a model that doesn't pass constraints — fallback
+                            // to best candidate by domain score (already sorted in Step 2)
+                            debug!(
+                                bandit_model = %bd.model_id,
+                                "bandit_model_not_in_candidates_falling_back"
+                            );
+                            let best = &candidates[0]; // candidates guaranteed non-empty (checked above)
+                            (
+                                best.id.clone(),
+                                best.estimate_cost(1000, 2000),
+                                bd.decision_id.clone(),
+                                bd.template.clone(),
+                            )
+                        }
+                    }
+                    Err(_) => {
+                        // Bandit has no arms, fall back to budget selection
+                        let budget = if constraints.max_cost_usd > 0.0 {
+                            constraints.max_cost_usd
+                        } else {
+                            f32::MAX
+                        };
+                        let (model, cost) = self.select_within_budget(&candidates, budget);
                         (
-                            best.id.clone(),
-                            best.estimate_cost(1000, 2000),
-                            bd.decision_id.clone(),
+                            model.id.clone(),
+                            cost,
+                            ulid::Ulid::new().to_string(),
+                            String::new(),
                         )
                     }
                 }
-                Err(_) => {
-                    // Bandit has no arms, fall back to budget selection
-                    let budget = if constraints.max_cost_usd > 0.0 {
-                        constraints.max_cost_usd
-                    } else {
-                        f32::MAX
-                    };
-                    let (model, cost) = self.select_within_budget(&candidates, budget);
-                    (model.id.clone(), cost, ulid::Ulid::new().to_string())
-                }
-            }
-        } else {
-            let budget = if constraints.max_cost_usd > 0.0 {
-                constraints.max_cost_usd
             } else {
-                f32::MAX
+                let budget = if constraints.max_cost_usd > 0.0 {
+                    constraints.max_cost_usd
+                } else {
+                    f32::MAX
+                };
+                let (model, cost) = self.select_within_budget(&candidates, budget);
+                (
+                    model.id.clone(),
+                    cost,
+                    ulid::Ulid::new().to_string(),
+                    String::new(),
+                )
             };
-            let (model, cost) = self.select_within_budget(&candidates, budget);
-            (model.id.clone(), cost, ulid::Ulid::new().to_string())
-        };
 
         // Step 4: Use calibrated affinity for confidence adjustment
         let calibrated = self.registry.calibrated_affinity(&model_id, system);
@@ -482,6 +601,7 @@ impl SystemRouter {
             confidence: adjusted_confidence,
             estimated_cost,
             topology_id: topology_id.to_string(),
+            selected_template,
         };
 
         // Store decision → model mapping for record_outcome telemetry
@@ -585,28 +705,44 @@ impl SystemRouter {
             None
         };
 
-        let (model_id, estimated_cost, decision_id) = if let Some(bd) = bandit_decision {
-            if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
-                let est = card.estimate_cost(1000, 2000);
-                (bd.model_id.clone(), est, bd.decision_id.clone())
-            } else {
-                if let Some(ref mut bandit) = self.bandit {
-                    let cancelled = bandit.cancel_decision(&bd.decision_id);
-                    debug!(
-                        bandit_model = %bd.model_id,
-                        bandit_template = %bd.template,
-                        decision_id = %bd.decision_id,
-                        cancelled = cancelled,
-                        "bandit_contextual_model_failed_constraints_cancelled"
-                    );
+        let (model_id, estimated_cost, decision_id, selected_template) =
+            if let Some(bd) = bandit_decision {
+                if let Some(card) = candidates.iter().find(|c| c.id == bd.model_id) {
+                    let est = card.estimate_cost(1000, 2000);
+                    (
+                        bd.model_id.clone(),
+                        est,
+                        bd.decision_id.clone(),
+                        bd.template.clone(),
+                    )
+                } else {
+                    if let Some(ref mut bandit) = self.bandit {
+                        let cancelled = bandit.cancel_decision(&bd.decision_id);
+                        debug!(
+                            bandit_model = %bd.model_id,
+                            bandit_template = %bd.template,
+                            decision_id = %bd.decision_id,
+                            cancelled = cancelled,
+                            "bandit_contextual_model_failed_constraints_cancelled"
+                        );
+                    }
+                    let (model, cost) = self.select_within_budget(&candidates, budget);
+                    (
+                        model.id.clone(),
+                        cost,
+                        ulid::Ulid::new().to_string(),
+                        String::new(),
+                    )
                 }
+            } else {
                 let (model, cost) = self.select_within_budget(&candidates, budget);
-                (model.id.clone(), cost, ulid::Ulid::new().to_string())
-            }
-        } else {
-            let (model, cost) = self.select_within_budget(&candidates, budget);
-            (model.id.clone(), cost, ulid::Ulid::new().to_string())
-        };
+                (
+                    model.id.clone(),
+                    cost,
+                    ulid::Ulid::new().to_string(),
+                    String::new(),
+                )
+            };
 
         // Step 3: Use calibrated affinity for confidence adjustment
         let calibrated = self.registry.calibrated_affinity(&model_id, system);
@@ -626,6 +762,7 @@ impl SystemRouter {
             confidence: adjusted_confidence,
             estimated_cost,
             topology_id: topology_id.to_string(),
+            selected_template,
         };
 
         // Store decision → model mapping for record_outcome telemetry
@@ -684,6 +821,95 @@ impl SystemRouter {
         }
 
         Ok(())
+    }
+
+    /// Record outcome through the same ContextualBandit instance that issued the decision.
+    pub fn record_outcome_checked(
+        &mut self,
+        decision_id: &str,
+        executed_model_id: &str,
+        executed_template: &str,
+        quality: f64,
+        cost_usd: f64,
+        latency_ms: f64,
+    ) -> Result<RecordOutcomeResult, AttributionError> {
+        let _span = info_span!(
+            "system_router.record_outcome_checked",
+            decision_id = decision_id,
+            executed_model_id = executed_model_id,
+            executed_template = executed_template,
+            quality = quality,
+            cost_usd = cost_usd,
+            latency_ms = latency_ms,
+        )
+        .entered();
+
+        let quality_f32 = quality as f32;
+        let cost_f32 = cost_usd as f32;
+        let latency_f32 = latency_ms as f32;
+
+        let bandit =
+            self.bandit
+                .as_mut()
+                .ok_or_else(|| AttributionError::RecorderInstanceMismatch {
+                    decision_id: decision_id.to_string(),
+                })?;
+
+        match bandit.record_outcome_checked(
+            decision_id,
+            executed_model_id,
+            executed_template,
+            quality_f32,
+            cost_f32,
+            latency_f32,
+        ) {
+            Ok(()) => {
+                if let Some(model_id) = self.decision_models.get(decision_id).cloned() {
+                    self.registry.record_telemetry_full(
+                        &model_id,
+                        quality_f32,
+                        cost_f32,
+                        latency_f32,
+                    );
+                } else {
+                    info!(
+                        decision_id = decision_id,
+                        "no_model_mapping_for_checked_telemetry"
+                    );
+                }
+                Ok(RecordOutcomeResult::recorded())
+            }
+            Err(BanditError::UnknownDecision(_)) | Err(BanditError::NoArms) => {
+                Err(AttributionError::DecisionUnknown {
+                    decision_id: decision_id.to_string(),
+                })
+            }
+            Err(BanditError::OffPolicyOutcome {
+                decision_id,
+                selected_model_id,
+                selected_template,
+                executed_model_id,
+                executed_template,
+            }) => {
+                if selected_model_id != executed_model_id {
+                    Err(AttributionError::ModelMismatch {
+                        decision_id,
+                        selected_model_id,
+                        selected_template,
+                        executed_model_id,
+                        executed_template,
+                    })
+                } else {
+                    Err(AttributionError::TemplateMismatch {
+                        decision_id,
+                        selected_model_id,
+                        selected_template,
+                        executed_model_id,
+                        executed_template,
+                    })
+                }
+            }
+        }
     }
 
     /// Decide cognitive system from structural features and raw task text.
@@ -1207,6 +1433,100 @@ mod tests {
         // Record outcome — should succeed if bandit has the pending decision
         let result = router.record_outcome(&decision.decision_id, 0.9, 0.01, 100.0);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_record_outcome_checked_recorded_on_match() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("fast-model", "sequential");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router.route_integrated("hello", &constraints, "").unwrap();
+
+        let result = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "fast-model",
+                "sequential",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap();
+
+        assert_eq!(result.status, "recorded");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 1);
+    }
+
+    #[test]
+    fn test_record_outcome_checked_decision_unknown() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        router.bandit = Some(ContextualBandit::create(0.995, 0.1));
+
+        let err = router
+            .record_outcome_checked("missing", "fast-model", "sequential", 0.9, 0.01, 100.0)
+            .unwrap_err();
+
+        assert_eq!(err.reason_code(), "decision_unknown");
+    }
+
+    #[test]
+    fn test_record_outcome_checked_model_mismatch() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("fast-model", "sequential");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router.route_integrated("hello", &constraints, "").unwrap();
+
+        let err = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "smart-model",
+                "sequential",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap_err();
+
+        assert_eq!(err.reason_code(), "model_mismatch");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
+    }
+
+    #[test]
+    fn test_record_outcome_checked_template_mismatch() {
+        let registry = test_registry();
+        let mut router = SystemRouter::new(registry);
+        let mut bandit = ContextualBandit::create(0.995, 0.1);
+        bandit.add_arm("fast-model", "sequential");
+        router.bandit = Some(bandit);
+
+        let constraints =
+            RoutingConstraints::new(0.0, 0.0, 0.0, vec![], String::new(), 0.0, String::new());
+        let decision = router.route_integrated("hello", &constraints, "").unwrap();
+
+        let err = router
+            .record_outcome_checked(
+                &decision.decision_id,
+                "fast-model",
+                "parallel",
+                0.9,
+                0.01,
+                100.0,
+            )
+            .unwrap_err();
+
+        assert_eq!(err.reason_code(), "template_mismatch");
+        assert_eq!(router.bandit.as_ref().unwrap().total_observations(), 0);
     }
 
     #[test]

@@ -12,7 +12,7 @@ import os
 import secrets
 import time
 from dataclasses import dataclass, field
-from typing import Any, Awaitable, Callable, Mapping
+from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from sage.contracts.cost_tracker import CostTracker
 from sage.events import (
@@ -48,6 +48,24 @@ log = logging.getLogger(__name__)
 
 BUDGET_EXCEEDED_RESULT = "[sage: budget exceeded]"
 _ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+BanditAttributionState = Literal["pending", "verified", "mismatch", "skipped"]
+BanditAttributionReasonCode = Literal[
+    "router_fallback_degraded",
+    "model_mismatch",
+    "template_mismatch",
+    "multi_node_ambiguous",
+    "decision_unknown",
+    "recorder_instance_mismatch",
+]
+_BANDIT_ATTRIBUTION_REASON_CODES: tuple[BanditAttributionReasonCode, ...] = (
+    "router_fallback_degraded",
+    "model_mismatch",
+    "template_mismatch",
+    "multi_node_ambiguous",
+    "decision_unknown",
+    "recorder_instance_mismatch",
+)
+_MULTI_NODE_ATTRIBUTION_TEMPLATES = {"parallel", "parallel_fanout", "debate"}
 
 
 def _new_runtime_run_id() -> str:
@@ -112,13 +130,14 @@ class PipelineContext:
     result: str = ""
     latency_ms: float = 0.0
     cost: float = 0.0
-    bandit_decision_id: str | None = None
+    bandit_decision_id: str = ""
     bandit_model_id: str = ""
     bandit_template: str = ""
     bandit_context: list[float] = field(default_factory=list)
     executed_model_id: str = ""
     executed_template: str = ""
-    executed_model_ids: dict[int, str] = field(default_factory=dict)
+    executed_model_ids: list[str] = field(default_factory=list)
+    bandit_attribution_state: BanditAttributionState = "skipped"
     verification_passed: bool = True
     axis_hint: str = ""  # MASBENCH axis hint for topology selection
     tool_call_count: int = 0
@@ -405,6 +424,50 @@ class CognitiveOrchestrationPipeline:
                 )
             except (ImportError, RuntimeError):
                 pass
+
+    def _emit_bandit_attribution_mismatch(
+        self,
+        ctx: PipelineContext,
+        reason_code: BanditAttributionReasonCode,
+    ) -> None:
+        payload = {
+            "decision_id": str(getattr(ctx, "bandit_decision_id", "") or ""),
+            "selected_model_id": str(getattr(ctx, "bandit_model_id", "") or ""),
+            "selected_template": str(getattr(ctx, "bandit_template", "") or ""),
+            "executed_model_id": str(getattr(ctx, "executed_model_id", "") or ""),
+            "executed_template": str(getattr(ctx, "executed_template", "") or ""),
+            "reason_code": reason_code,
+        }
+        try:
+            from sage.runtime.event_log import current_event_log
+            from sage.runtime.event_log.events import _EventCore
+
+            event_log = current_event_log()
+            if event_log is not None:
+                event_log._emit(  # noqa: SLF001 - no public generic emit exists for new event types.
+                    _EventCore,
+                    "bandit_attribution_mismatch",
+                    "pipeline",
+                    payload=payload,
+                    _force_payload=True,
+                )
+        except Exception:  # noqa: BLE001 - telemetry must not mask execution or learning.
+            pass
+        self._emit("BANDIT_ATTRIBUTION_MISMATCH", payload)
+
+    @staticmethod
+    def _bandit_reason_from_exception(exc: Exception) -> BanditAttributionReasonCode:
+        text = str(exc).lower()
+        for reason in _BANDIT_ATTRIBUTION_REASON_CODES:
+            if reason in text:
+                return reason
+        if "unknown" in text and "decision" in text:
+            return "decision_unknown"
+        if "template" in text and "mismatch" in text:
+            return "template_mismatch"
+        if "model" in text and "mismatch" in text:
+            return "model_mismatch"
+        return "recorder_instance_mismatch"
 
     @staticmethod
     def _runtime_node_count(topology: Any) -> int:
@@ -958,11 +1021,11 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
     def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 0: Classify task complexity, domain, and select a legacy routing model.
+        """Stage 0: Classify task complexity, domain, and select an integrated routing model.
 
-        Priority: Rust SystemRouter legacy route > Python kNN fallback > heuristic.
-        Bandit decisions are not made in Stage 0 on the Python pipeline path; A14 keeps
-        bandit learning causal by recording only arms that actually execute.
+        Priority: Rust SystemRouter route_integrated > Python kNN fallback > heuristic.
+        A14b makes the SystemRouter-owned bandit decision here and records it
+        only after Stage 4 proves which model/template actually executed.
 
         Returns: system (S1/S2/S3), domain, and stores RoutingDecision for
         model selection in Stage 3 (ModelAssigner) and Stage 5 telemetry.
@@ -972,9 +1035,35 @@ class CognitiveOrchestrationPipeline:
             # Priority 1: Rust SystemRouter (full integrated routing)
             if self._rust_router:
                 try:
-                    decision = self._rust_router.route(ctx.task, ctx.budget)
-                    ctx.system = int(decision.system)
                     ctx.domain = _infer_domain(ctx.task)
+                    import importlib
+
+                    RoutingConstraints = getattr(
+                        importlib.import_module("sage_core"),
+                        "RoutingConstraints",
+                    )
+
+                    constraints = RoutingConstraints(
+                        max_cost_usd=float(ctx.budget or 0.0),
+                        max_latency_ms=0.0,
+                        min_quality=0.0,
+                        required_capabilities=[],
+                        security_label="",
+                        exploration_budget=0.1,
+                        domain_hint=ctx.domain,
+                    )
+                    decision = self._rust_router.route_integrated(ctx.task, constraints, "")
+                    ctx.system = int(decision.system)
+                    ctx.bandit_decision_id = str(getattr(decision, "decision_id", "") or "")
+                    ctx.bandit_model_id = str(getattr(decision, "model_id", "") or "")
+                    ctx.bandit_template = str(
+                        getattr(decision, "selected_template", "")
+                        or getattr(decision, "template", "")
+                        or ""
+                    )
+                    ctx.bandit_attribution_state = (
+                        "pending" if ctx.bandit_decision_id else "skipped"
+                    )
                     # Store decision for model selection + telemetry
                     self._last_routing_decision = decision
                     self._last_runtime_routing_source = "rust_system_router"
@@ -991,6 +1080,8 @@ class CognitiveOrchestrationPipeline:
                     return ctx
                 except Exception as exc:
                     log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
+                    ctx.bandit_attribution_state = "skipped"
+                    self._emit_bandit_attribution_mismatch(ctx, "router_fallback_degraded")
 
             # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
             if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
@@ -1888,36 +1979,11 @@ class CognitiveOrchestrationPipeline:
         )
 
     def _clear_bandit_decision(self, ctx: PipelineContext) -> None:
-        decision_id = getattr(ctx, "bandit_decision_id", None)
-        if decision_id and self.bandit and hasattr(self.bandit, "cancel_decision"):
-            try:
-                self.bandit.cancel_decision(decision_id)
-            except (ImportError, RuntimeError, ValueError):
-                pass
-        ctx.bandit_decision_id = None
+        ctx.bandit_decision_id = ""
         ctx.bandit_model_id = ""
         ctx.bandit_template = ""
         ctx.bandit_context = []
-
-    def _select_bandit_single_agent(self, ctx: PipelineContext) -> Any | None:
-        if not self.bandit or not hasattr(self.bandit, "select_with_context_for_template"):
-            return None
-
-        task_context = self._bandit_task_context(ctx)
-        try:
-            decision = self.bandit.select_with_context_for_template(
-                0.1,
-                "single_agent",
-                task_context,
-            )
-        except (ImportError, RuntimeError, ValueError):
-            return None
-
-        ctx.bandit_decision_id = decision.decision_id
-        ctx.bandit_model_id = decision.model_id
-        ctx.bandit_template = decision.template
-        ctx.bandit_context = list(getattr(decision, "context", task_context) or task_context)
-        return decision
+        ctx.bandit_attribution_state = "skipped"
 
     def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
         if oracle_enabled():
@@ -1925,33 +1991,31 @@ class CognitiveOrchestrationPipeline:
             if verdict is None or not verdict.trainable:
                 return
 
-        if not self.bandit or not getattr(ctx, "bandit_decision_id", None):
+        if not getattr(ctx, "bandit_decision_id", ""):
             return
 
+        raw_executed_model_ids = getattr(ctx, "executed_model_ids", [])
+        if isinstance(raw_executed_model_ids, Mapping):
+            raw_executed_model_ids = raw_executed_model_ids.values()
+        executed_model_ids = [model_id for model_id in raw_executed_model_ids if model_id]
         if (
-            getattr(ctx, "executed_model_id", "") != getattr(ctx, "bandit_model_id", "")
-            or getattr(ctx, "executed_template", "") != getattr(ctx, "bandit_template", "")
+            len(set(executed_model_ids)) > 1
+            or getattr(ctx, "executed_template", "") in _MULTI_NODE_ATTRIBUTION_TEMPLATES
         ):
-            log.warning(
-                "Bandit outcome skipped: selected (%s, %s) but executed (%s, %s)",
-                getattr(ctx, "bandit_model_id", ""),
-                getattr(ctx, "bandit_template", ""),
-                getattr(ctx, "executed_model_id", ""),
-                getattr(ctx, "executed_template", ""),
-            )
-            self._clear_bandit_decision(ctx)
+            ctx.bandit_attribution_state = "skipped"
+            self._emit_bandit_attribution_mismatch(ctx, "multi_node_ambiguous")
             return
 
-        if not hasattr(self.bandit, "record_outcome_checked"):
+        if not self._rust_router or not hasattr(self._rust_router, "record_outcome_checked"):
             log.warning(
-                "Bandit outcome skipped: record_outcome_checked unavailable; "
-                "refusing unchecked attribution"
+                "Bandit outcome skipped: SystemRouter record_outcome_checked unavailable"
             )
-            self._clear_bandit_decision(ctx)
+            ctx.bandit_attribution_state = "mismatch"
+            self._emit_bandit_attribution_mismatch(ctx, "recorder_instance_mismatch")
             return
 
         try:
-            self.bandit.record_outcome_checked(
+            self._rust_router.record_outcome_checked(
                 ctx.bandit_decision_id,
                 ctx.executed_model_id,
                 ctx.executed_template,
@@ -1959,8 +2023,11 @@ class CognitiveOrchestrationPipeline:
                 ctx.cost,
                 ctx.latency_ms,
             )
-        except (ImportError, RuntimeError, ValueError):
-            self._clear_bandit_decision(ctx)
+            ctx.bandit_attribution_state = "verified"
+        except (ImportError, RuntimeError, ValueError) as exc:
+            reason_code = self._bandit_reason_from_exception(exc)
+            ctx.bandit_attribution_state = "mismatch"
+            self._emit_bandit_attribution_mismatch(ctx, reason_code)
 
     def _pick_fallback_provider(self):
         """Return (provider, config) for a healthy fallback, or (None, None).
@@ -2064,35 +2131,9 @@ class CognitiveOrchestrationPipeline:
             # Single-agent mode (no topology or single node)
             if self._is_single_agent_execution(ctx):
                 ctx.executed_template = "single_agent"
-                decision = self._select_bandit_single_agent(ctx)
+                decision = None
                 bandit_provider = None
                 bandit_config = None
-                if decision is not None:
-                    try:
-                        if not self.provider_pool or not hasattr(self.provider_pool, "resolve"):
-                            raise RuntimeError("provider_pool unavailable for bandit-selected model")
-                        if (
-                            hasattr(self.provider_pool, "is_model_available")
-                            and not self.provider_pool.is_model_available(decision.model_id)
-                        ):
-                            raise RuntimeError(
-                                f"bandit-selected model unavailable: {decision.model_id}"
-                            )
-                        bandit_provider, bandit_config = self.provider_pool.resolve(decision.model_id)
-                        if bandit_provider is None:
-                            raise RuntimeError(
-                                f"provider_pool.resolve returned no provider for {decision.model_id}"
-                            )
-                    except (ImportError, RuntimeError, ValueError, TypeError, AttributeError) as exc:
-                        log.warning(
-                            "Stage 4 single-agent bandit decision %s could not execute: %s",
-                            getattr(decision, "decision_id", ""),
-                            exc,
-                        )
-                        self._clear_bandit_decision(ctx)
-                        decision = None
-                        bandit_provider = None
-                        bandit_config = None
 
                 if self._agent_loop:
                     # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
@@ -2351,7 +2392,9 @@ class CognitiveOrchestrationPipeline:
                 return ctx
 
             # Multi-agent mode: use TopologyRunner with ProviderPool
-            ctx.executed_model_ids = dict(ctx.assignments)
+            ctx.executed_model_ids = [
+                model_id for _, model_id in sorted(ctx.assignments.items())
+            ]
             ctx.executed_template = getattr(ctx.topology, "template_type", "") or "multi_agent"
             try:
                 from sage.topology.runner import TopologyRunner
@@ -2438,7 +2481,9 @@ class CognitiveOrchestrationPipeline:
                         reason="reroute",
                     )
                     self._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
-                    ctx.executed_model_ids = dict(ctx.assignments)
+                    ctx.executed_model_ids = [
+                        model_id for _, model_id in sorted(ctx.assignments.items())
+                    ]
                     ctx.executed_template = (
                         getattr(ctx.topology, "template_type", "") or "multi_agent"
                     )

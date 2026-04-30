@@ -6,6 +6,7 @@ SCHEMA_VERSION: Literal["1.0"] = "1.0"
 EVENT_TYPES = (
     "task_started",
     "routing_decision",
+    "bandit_attribution_mismatch",
     "topology_selected",
     "model_assigned",
     "node_started",

@@ -1,0 +1,20 @@
+{
+  "_doc": "Golden fixture for bandit_attribution_mismatch event (cycle-9 A14b). Emitted when a Stage-0 SystemRouter bandit decision cannot be causally attributed to the executed model/template, or when fallback bypasses the checked recorder.",
+  "schema_version": "1.0",
+  "event_type": "bandit_attribution_mismatch",
+  "source_component": "pipeline",
+  "_required_always": [
+    "schema_version", "run_id", "trace_id", "parent_event_id", "seq",
+    "timestamp_ns", "event_type", "source_component", "task_hash",
+    "payload_hash", "redaction_state"
+  ],
+  "_required_in_payload": [
+    "decision_id", "selected_model_id", "selected_template",
+    "executed_model_id", "executed_template", "reason_code"
+  ],
+  "_invariants": [
+    "reason_code MUST be one of router_fallback_degraded/model_mismatch/template_mismatch/multi_node_ambiguous/decision_unknown/recorder_instance_mismatch",
+    "MUST be emitted before any posterior update when selected and executed attribution cannot be verified",
+    "MUST NEVER include raw task text or model output"
+  ]
+}

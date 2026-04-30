@@ -30,8 +30,8 @@ MANIFEST_DIR = (
 GOLDEN_DIR = pathlib.Path(__file__).parent / "golden" / "runtime_events"
 
 
-def test_all_13_event_types_have_schemas() -> None:
-    assert len(EVENT_TYPES) == 13
+def test_all_14_event_types_have_schemas() -> None:
+    assert len(EVENT_TYPES) == 14
     for event_type in EVENT_TYPES:
         versions = PAYLOAD_SCHEMAS.get(event_type)
         assert versions, f"{event_type} has no registered payload schema"
