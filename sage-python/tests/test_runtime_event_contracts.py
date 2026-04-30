@@ -642,6 +642,9 @@ def test_validator_reads_v1_and_v2_traces() -> None:
 
 
 def test_validator_strict_current_rejects_v1() -> None:
+    """Strict-current rejects historical inferred v1. Same case as
+    test_validator_strict_current_rejects_inferred_legacy_version below;
+    kept for backward-compatibility of test names."""
     report = _payload_schema_distribution_for_events(
         [_historical_controller_event(run_id="r1", seq=0)],
         mode="strict-current",
@@ -651,6 +654,92 @@ def test_validator_strict_current_rejects_v1() -> None:
     assert report.distribution["controller_decision"]["v1_pre_allowlist_reason"][
         "status"
     ] == "legacy_rejected_strict_current"
+
+
+def test_validator_strict_current_rejects_inferred_legacy_version() -> None:
+    """cgpro 2026-04-30 cycle-8 R6.1c VERIFY round-1, fix #2 case (c): an
+    event that resolves to a registered legacy schema by inference (missing
+    payload_schema_version + payload shape matches v1) MUST be rejected
+    under strict-current.
+    """
+    report = _payload_schema_distribution_for_events(
+        [_historical_controller_event(run_id="r-leg", seq=0)],
+        mode="strict-current",
+    )
+
+    assert report.errors, "strict-current must error on inferred legacy"
+    assert report.distribution["controller_decision"]["v1_pre_allowlist_reason"][
+        "status"
+    ] == "legacy_rejected_strict_current"
+
+
+def test_validator_strict_current_rejects_missing_version_even_if_current_shape() -> None:
+    """cgpro 2026-04-30 cycle-8 R6.1c VERIFY round-1, fix #2 case (a): an
+    event with a payload that matches the CURRENT schema shape but lacks
+    an explicit `payload_schema_version` field MUST still be rejected
+    under strict-current. Implicit-current is not allowed.
+    """
+    current_event = _current_controller_event(run_id="r-impl", seq=0)
+    current_event.pop("payload_schema_version", None)
+
+    report = _payload_schema_distribution_for_events(
+        [current_event],
+        mode="strict-current",
+    )
+
+    assert report.errors, "strict-current must error on missing payload_schema_version"
+    cdist = report.distribution["controller_decision"]["v2_allowlist_only"]
+    assert cdist["explicit_count"] == 0
+    assert cdist["inferred_count"] >= 1
+
+
+def test_validator_strict_current_rejects_explicit_non_current_version() -> None:
+    """cgpro 2026-04-30 cycle-8 R6.1c VERIFY round-1, fix #2 case (b): an
+    event that EXPLICITLY tags `payload_schema_version` with a registered
+    but non-current version MUST be rejected under strict-current.
+    """
+    legacy_event = _historical_controller_event(run_id="r-explicit", seq=0)
+    legacy_event["payload_schema_version"] = "v1_pre_allowlist_reason"
+
+    report = _payload_schema_distribution_for_events(
+        [legacy_event],
+        mode="strict-current",
+    )
+
+    assert report.errors, "strict-current must error on explicit non-current"
+    cdist = report.distribution["controller_decision"]["v1_pre_allowlist_reason"]
+    assert cdist["explicit_count"] >= 1
+    assert cdist["status"] == "legacy_rejected_strict_current"
+
+
+def test_validator_strict_current_rejects_malformed_payload_matching_no_schema() -> None:
+    """cgpro 2026-04-30 cycle-8 R6.1c VERIFY round-1, fix #2 case (d): an
+    event whose payload matches NO registered schema for its event_type
+    MUST be rejected under strict-current (and produce an unknown_rejected
+    status in the distribution).
+    """
+    malformed = _current_controller_event(run_id="r-mal", seq=0)
+    malformed.pop("payload_schema_version", None)
+    malformed["payload"] = {
+        "totally_unknown_field": "garbage",
+        "another_unknown": 42,
+    }
+
+    report = _payload_schema_distribution_for_events(
+        [malformed],
+        mode="strict-current",
+    )
+
+    assert report.errors, "strict-current must error on malformed payload"
+    # The distribution must record this as unknown_rejected for controller_decision.
+    found_unknown = any(
+        bucket.get("status") == "unknown_rejected"
+        for bucket in report.distribution.get("controller_decision", {}).values()
+    )
+    assert found_unknown, (
+        f"expected unknown_rejected bucket in distribution; got "
+        f"{report.distribution.get('controller_decision')!r}"
+    )
 
 
 def test_validator_reports_explicit_vs_inferred_counts() -> None:

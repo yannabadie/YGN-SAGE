@@ -41,18 +41,37 @@ def test_all_13_event_types_have_schemas() -> None:
 
 
 def test_payload_schema_manifests_match_python_sot() -> None:
-    expected: dict[str, dict[str, Any]] = {}
+    """Byte-exact manifest drift tripwire (cgpro 2026-04-30 cycle-8 R6.1c
+    VERIFY round-1, fix #1).
+
+    Compares raw UTF-8 bytes — not just ``json.loads(==)`` semantics — so
+    that key order, whitespace, and trailing-newline drift across OS
+    (Linux CI vs Windows local) all surface as test failures, not silent
+    schema drift.
+    """
+    from sage.runtime.event_log.payload_schemas import _schema_manifest_canonical_text
+
+    expected_text: dict[str, str] = {}
+    expected_dict: dict[str, dict[str, Any]] = {}
     for versions in PAYLOAD_SCHEMAS.values():
         for schema in versions.values():
-            expected[f"{schema.event_type}.{schema.version}.json"] = _schema_to_manifest(
-                schema
-            )
+            name = f"{schema.event_type}.{schema.version}.json"
+            expected_text[name] = _schema_manifest_canonical_text(schema)
+            expected_dict[name] = _schema_to_manifest(schema)
 
     actual_paths = sorted(MANIFEST_DIR.glob("*.json"))
-    assert {path.name for path in actual_paths} == set(expected)
+    assert {path.name for path in actual_paths} == set(expected_text)
     for path in actual_paths:
-        actual = json.loads(path.read_text(encoding="utf-8"))
-        assert actual == expected[path.name], f"manifest drift: {path.name}"
+        # Read bytes (not text) to detect any encoding or line-ending drift.
+        actual_bytes = path.read_bytes()
+        expected_bytes = expected_text[path.name].encode("utf-8")
+        assert actual_bytes == expected_bytes, (
+            f"manifest byte drift in {path.name}: "
+            f"file_len={len(actual_bytes)} expected_len={len(expected_bytes)}"
+        )
+        # Belt-and-suspenders: also assert semantic equality.
+        actual_obj = json.loads(actual_bytes.decode("utf-8"))
+        assert actual_obj == expected_dict[path.name]
 
 
 def test_current_payload_schema_versions_are_registered() -> None:

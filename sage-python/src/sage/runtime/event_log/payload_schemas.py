@@ -1273,6 +1273,23 @@ def _canonical_json_size_bytes(value: Any) -> int:
     )
 
 
+def _schema_manifest_canonical_text(schema: EventPayloadSchema) -> str:
+    """Canonical compact text representation of a manifest, OS-stable.
+
+    Used both to write committed manifests and to assert byte-exact drift
+    in the regression test. Policy locked by cgpro 2026-04-30 cycle-8 R6.1c
+    VERIFY round-1: ``sort_keys=True, ensure_ascii=False, separators=(",", ":")``
+    with no trailing newline. Single-line compact JSON avoids CRLF/LF and
+    indentation drift across Linux CI vs Windows local checkouts.
+    """
+    return json.dumps(
+        _schema_to_manifest(schema),
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
 def _schema_to_manifest(schema: EventPayloadSchema) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "event_type": schema.event_type,
