@@ -110,6 +110,11 @@ def _run_reset(state_dir: Path, reset_id: str, audit_dir: Path, reason: str) -> 
         temp_backup_dir.mkdir()
         moved_files: list[str] = []
         try:
+            _assert_same_filesystem_for_atomic_reset(
+                state_dir,
+                backup_root,
+                temp_backup_dir,
+            )
             for filename in state_files:
                 source = state_dir / filename
                 if source.exists():
@@ -273,14 +278,43 @@ def _existing_state_files(state_dir: Path) -> list[str]:
     return [filename for filename in _A14_TOPOLOGY_STATE_FILES if (state_dir / filename).exists()]
 
 
+def _assert_same_filesystem_for_atomic_reset(
+    state_dir: Path,
+    backup_root: Path,
+    temp_backup_dir: Path,
+) -> None:
+    state_dir_dev = state_dir.stat().st_dev
+    backup_root_dev = backup_root.stat().st_dev
+    temp_backup_dev = temp_backup_dir.stat().st_dev
+    if not (state_dir_dev == backup_root_dev == temp_backup_dev):
+        raise RuntimeError(
+            "a14_reset: cross-filesystem detected; "
+            f"state_dir.st_dev={state_dir_dev} backup_root.st_dev={backup_root_dev} "
+            f"temp_backup_dir.st_dev={temp_backup_dev}; "
+            "os.replace atomicity not guaranteed",
+        )
+
+
 def _write_json_atomic(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    tmp_path.write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    os.replace(tmp_path, path)
+    data = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            fd = -1
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    except Exception:
+        if fd != -1:
+            os.close(fd)
+        try:
+            tmp_path.unlink()
+        except FileNotFoundError:
+            pass
+        raise
 
 
 def _default_reset_id(mark_existing: Path | None) -> str:

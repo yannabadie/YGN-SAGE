@@ -11,6 +11,7 @@ from sage.posterior_epoch import (
     POSTERIOR_EPOCH_FILENAME,
     check_posterior_epoch_for_boot,
     ensure_clean_epoch_before_save,
+    write_topology_state_manifest,
 )
 
 
@@ -102,6 +103,29 @@ def test_post_reset_boot_fail_closed_on_restore(tmp_path: Path) -> None:
     assert "epoch_file=missing" in message
 
 
+def test_post_reset_boot_fail_closed_on_restore_over_valid_epoch(tmp_path: Path) -> None:
+    """cgpro 2026-04-30 cycle-8 step 2 A14 round-1 trap: contaminated DB
+    copied back over a valid epoch=1 marker MUST fail-closed.
+    """
+    state_dir = tmp_path / "state"
+    audit_dir = tmp_path / "audit"
+    _seed_a14_state(state_dir)
+    backup_dir = _run_reset(state_dir, audit_dir, "A14 reset under test")
+
+    # Important: DO NOT unlink posterior_epoch.json. The active marker is
+    # left in place at epoch=1 (the post-reset honest state).
+    assert json.loads((state_dir / POSTERIOR_EPOCH_FILENAME).read_text())["epoch"] == 1
+
+    # Operator copies DB-only from contaminated backup back into ~/.sage.
+    shutil.copy2(backup_dir / "bandit_state.db", state_dir / "bandit_state.db")
+
+    with pytest.raises(RuntimeError) as exc:
+        check_posterior_epoch_for_boot(state_dir)
+
+    assert str(exc.value).startswith(A14_EPOCH_GUARD_ERROR_PREFIX)
+    assert "topology_state_manifest" in str(exc.value)
+
+
 def test_post_reset_boot_fail_closed_on_whole_backup_restore(tmp_path: Path) -> None:
     state_dir = tmp_path / "state"
     audit_dir = tmp_path / "audit"
@@ -124,6 +148,7 @@ def test_fresh_install_cold_start_then_save_then_second_boot_loads(tmp_path: Pat
 
     ensure_clean_epoch_before_save(state_dir)
     _touch(state_dir / "bandit_state.db")
+    write_topology_state_manifest(state_dir, writer="test")
     second = check_posterior_epoch_for_boot(state_dir)
 
     assert second.file_epoch == 1

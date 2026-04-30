@@ -4,18 +4,21 @@ from pathlib import Path
 import pytest
 
 from sage.posterior_epoch import (
+    A14_BYPASS_ENV,
     A14_EPOCH_GUARD_ERROR_PREFIX,
     CONTAMINATED_MARKER_FILENAME,
     POSTERIOR_EPOCH_FILENAME,
     REQUIRED_POSTERIOR_EPOCH,
+    TOPOLOGY_STATE_MANIFEST_FILENAME,
     check_posterior_epoch_for_boot,
     ensure_clean_epoch_before_save,
     is_a14_epoch_guard_error,
+    write_topology_state_manifest,
 )
 
 
-def _touch(path: Path) -> None:
-    path.write_text("legacy-state", encoding="utf-8")
+def _touch(path: Path, content: str = "legacy-state") -> None:
+    path.write_text(content, encoding="utf-8")
 
 
 def _write_epoch(state_dir: Path, payload: object) -> None:
@@ -50,6 +53,43 @@ def test_python_preflight_epoch_mismatch_raises(tmp_path: Path) -> None:
 
     message = _assert_a14_error(exc_info)
     assert "epoch mismatch: file=2 required=1" in message
+
+
+def test_python_preflight_epoch_match_requires_manifest(tmp_path: Path) -> None:
+    _touch(tmp_path / "bandit_state.db")
+    _write_epoch(tmp_path, {"epoch": 1})
+
+    with pytest.raises(RuntimeError) as exc_info:
+        check_posterior_epoch_for_boot(tmp_path)
+
+    message = _assert_a14_error(exc_info)
+    assert f"{TOPOLOGY_STATE_MANIFEST_FILENAME} missing" in message
+
+
+def test_python_preflight_manifest_sha_mismatch_raises(tmp_path: Path) -> None:
+    _touch(tmp_path / "bandit_state.db", "clean")
+    _write_epoch(tmp_path, {"epoch": 1})
+    write_topology_state_manifest(tmp_path, writer="test")
+    _touch(tmp_path / "bandit_state.db", "dirty")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        check_posterior_epoch_for_boot(tmp_path)
+
+    message = _assert_a14_error(exc_info)
+    assert f"{TOPOLOGY_STATE_MANIFEST_FILENAME} sha256 mismatch on bandit_state.db" in message
+
+
+def test_python_preflight_manifest_file_set_mismatch_raises(tmp_path: Path) -> None:
+    _touch(tmp_path / "bandit_state.db")
+    _write_epoch(tmp_path, {"epoch": 1})
+    write_topology_state_manifest(tmp_path, writer="test")
+    _touch(tmp_path / "archive_state.db")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        check_posterior_epoch_for_boot(tmp_path)
+
+    message = _assert_a14_error(exc_info)
+    assert f"{TOPOLOGY_STATE_MANIFEST_FILENAME} state file set mismatch" in message
 
 
 def test_python_preflight_malformed_with_state_raises(tmp_path: Path) -> None:
@@ -114,6 +154,19 @@ def test_ensure_clean_epoch_before_save_refuses_missing_epoch_with_state(
 
     message = _assert_a14_error(exc_info)
     assert "epoch_file=missing" in message
+
+
+def test_ensure_clean_epoch_refuses_under_bypass(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(A14_BYPASS_ENV, "1")
+
+    with pytest.raises(RuntimeError) as exc_info:
+        ensure_clean_epoch_before_save(tmp_path)
+
+    message = _assert_a14_error(exc_info)
+    assert f"save disabled while {A14_BYPASS_ENV}=1" in message
 
 
 def test_ensure_clean_epoch_before_save_refuses_malformed_or_mismatched_epoch(

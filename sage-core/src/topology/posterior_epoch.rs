@@ -1,6 +1,9 @@
+use std::collections::{BTreeMap, BTreeSet};
+use std::io::{Read, Write};
 use std::path::Path;
 
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use tracing::warn;
 
 pub const REQUIRED_POSTERIOR_EPOCH: u32 = 1;
@@ -8,6 +11,8 @@ pub const A14_EPOCH_GUARD_ERROR_PREFIX: &str = "contaminated_pre_a14_state:";
 pub const A14_BYPASS_ENV: &str = "SAGE_BOOT_BYPASS_EPOCH_GUARD";
 pub const POSTERIOR_EPOCH_FILENAME: &str = "posterior_epoch.json";
 pub const CONTAMINATED_MARKER_FILENAME: &str = "_CONTAMINATED.json";
+pub const TOPOLOGY_STATE_MANIFEST_FILENAME: &str = "topology_state_manifest.json";
+pub const TOPOLOGY_STATE_MANIFEST_TYPE: &str = "YGN-SAGE_A14_ACTIVE_TOPOLOGY_STATE_MANIFEST";
 
 const A14_TOPOLOGY_STATE_FILES: [&str; 7] = [
     "bandit_state.db",
@@ -35,6 +40,23 @@ impl EpochStatus {
             Self::Malformed(_) => "malformed".to_string(),
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TopologyStateManifest {
+    pub manifest_type: String,
+    pub epoch: u32,
+    pub state_generation_id: String,
+    pub created_at_utc: String,
+    pub writer: String,
+    pub state_files: Vec<TopologyStateFileEntry>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct TopologyStateFileEntry {
+    pub name: String,
+    pub sha256: String,
+    pub size_bytes: u64,
 }
 
 pub fn validate_epoch_for_load(dir_path: &Path) -> Result<(), String> {
@@ -66,7 +88,19 @@ pub fn validate_epoch_for_load(dir_path: &Path) -> Result<(), String> {
     }
 
     match epoch_status {
-        EpochStatus::Match(REQUIRED_POSTERIOR_EPOCH) => Ok(()),
+        EpochStatus::Match(REQUIRED_POSTERIOR_EPOCH) => {
+            let manifest_result = load_topology_state_manifest(dir_path)
+                .and_then(|manifest| verify_state_files_against_manifest(dir_path, &manifest));
+            match manifest_result {
+                Ok(()) => Ok(()),
+                Err(error) => allow_bypass_or_error(
+                    dir_path,
+                    &state_files,
+                    &EpochStatus::Match(REQUIRED_POSTERIOR_EPOCH),
+                    error,
+                ),
+            }
+        }
         EpochStatus::Match(epoch) | EpochStatus::Mismatch(epoch) => allow_bypass_or_error(
             dir_path,
             &state_files,
@@ -92,13 +126,24 @@ pub fn validate_epoch_for_save(dir_path: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir_path)
         .map_err(|err| format!("create dir {}: {}", dir_path.display(), err))?;
 
+    if bypass_enabled() {
+        return Err(bypass_save_error(dir_path));
+    }
+
     let state_files = topology_state_files(dir_path);
     if dir_path.join(CONTAMINATED_MARKER_FILENAME).exists() {
         return Err(poison_pill_error(dir_path));
     }
 
     match read_epoch_status(dir_path) {
-        EpochStatus::Match(REQUIRED_POSTERIOR_EPOCH) => Ok(()),
+        EpochStatus::Match(REQUIRED_POSTERIOR_EPOCH) => {
+            if state_files.is_empty() {
+                Ok(())
+            } else {
+                load_topology_state_manifest(dir_path)
+                    .and_then(|manifest| verify_state_files_against_manifest(dir_path, &manifest))
+            }
+        }
         EpochStatus::Match(epoch) | EpochStatus::Mismatch(epoch) => {
             Err(epoch_mismatch_error(dir_path, &state_files, epoch))
         }
@@ -108,6 +153,140 @@ pub fn validate_epoch_for_save(dir_path: &Path) -> Result<(), String> {
             Err(malformed_epoch_error(dir_path, &state_files, &reason))
         }
     }
+}
+
+pub fn load_topology_state_manifest(dir_path: &Path) -> Result<TopologyStateManifest, String> {
+    let manifest_path = dir_path.join(TOPOLOGY_STATE_MANIFEST_FILENAME);
+    if !manifest_path.exists() {
+        return Err(manifest_missing_error(
+            dir_path,
+            &topology_state_files(dir_path),
+        ));
+    }
+    let raw = std::fs::read_to_string(&manifest_path)
+        .map_err(|err| manifest_malformed_error(dir_path, &format!("read error: {err}")))?;
+    serde_json::from_str(&raw).map_err(|err| manifest_malformed_error(dir_path, &err.to_string()))
+}
+
+pub fn verify_state_files_against_manifest(
+    dir_path: &Path,
+    manifest: &TopologyStateManifest,
+) -> Result<(), String> {
+    let state_files = topology_state_files(dir_path);
+
+    if manifest.manifest_type != TOPOLOGY_STATE_MANIFEST_TYPE {
+        return Err(manifest_malformed_error(
+            dir_path,
+            "manifest_type must be YGN-SAGE_A14_ACTIVE_TOPOLOGY_STATE_MANIFEST",
+        ));
+    }
+    if manifest.epoch != REQUIRED_POSTERIOR_EPOCH {
+        return Err(manifest_epoch_mismatch_error(
+            dir_path,
+            &state_files,
+            manifest.epoch,
+        ));
+    }
+
+    let allowed: BTreeSet<String> = A14_TOPOLOGY_STATE_FILES
+        .iter()
+        .map(|name| (*name).to_string())
+        .collect();
+    let mut by_name: BTreeMap<String, TopologyStateFileEntry> = BTreeMap::new();
+    for entry in manifest.state_files.iter().cloned() {
+        if !allowed.contains(&entry.name) {
+            let mut manifest_names: Vec<String> = by_name.keys().cloned().collect();
+            manifest_names.push(entry.name);
+            manifest_names.sort();
+            return Err(manifest_file_set_error(
+                dir_path,
+                &state_files,
+                &manifest_names,
+            ));
+        }
+        if by_name.contains_key(&entry.name) {
+            return Err(manifest_malformed_error(
+                dir_path,
+                &format!("duplicate state file entry: {}", entry.name),
+            ));
+        }
+        if !is_sha256_hex(&entry.sha256) {
+            return Err(manifest_malformed_error(
+                dir_path,
+                &format!("state_files[].sha256 malformed for {}", entry.name),
+            ));
+        }
+        by_name.insert(entry.name.clone(), entry);
+    }
+
+    let expected_names: BTreeSet<String> = state_files.iter().cloned().collect();
+    let manifest_names_set: BTreeSet<String> = by_name.keys().cloned().collect();
+    if expected_names != manifest_names_set {
+        let manifest_names: Vec<String> = by_name.keys().cloned().collect();
+        return Err(manifest_file_set_error(
+            dir_path,
+            &state_files,
+            &manifest_names,
+        ));
+    }
+
+    for name in &state_files {
+        let path = dir_path.join(name);
+        let metadata = std::fs::metadata(&path)
+            .map_err(|err| manifest_malformed_error(dir_path, &err.to_string()))?;
+        let entry = by_name
+            .get(name)
+            .expect("manifest set equality should guarantee an entry");
+        let actual_size = metadata.len();
+        if actual_size != entry.size_bytes {
+            return Err(manifest_size_mismatch_error(
+                dir_path,
+                name,
+                entry.size_bytes,
+                actual_size,
+            ));
+        }
+        let actual_sha256 =
+            sha256_file(&path).map_err(|err| manifest_malformed_error(dir_path, &err))?;
+        if actual_sha256 != entry.sha256 {
+            return Err(manifest_sha256_mismatch_error(
+                dir_path,
+                name,
+                &entry.sha256,
+                &actual_sha256,
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+pub fn write_topology_state_manifest(dir_path: &Path, writer: &str) -> Result<(), String> {
+    let mut entries = Vec::new();
+    for name in topology_state_files(dir_path) {
+        let path = dir_path.join(&name);
+        let size_bytes = std::fs::metadata(&path)
+            .map_err(|err| format!("stat topology state file {}: {}", path.display(), err))?
+            .len();
+        entries.push(TopologyStateFileEntry {
+            name,
+            sha256: sha256_file(&path)?,
+            size_bytes,
+        });
+    }
+
+    let manifest = TopologyStateManifest {
+        manifest_type: TOPOLOGY_STATE_MANIFEST_TYPE.to_string(),
+        epoch: REQUIRED_POSTERIOR_EPOCH,
+        state_generation_id: ulid::Ulid::new().to_string(),
+        created_at_utc: chrono::Utc::now().to_rfc3339(),
+        writer: writer.to_string(),
+        state_files: entries,
+    };
+    let mut bytes = serde_json::to_vec_pretty(&manifest)
+        .map_err(|err| format!("serialize topology state manifest: {err}"))?;
+    bytes.push(b'\n');
+    write_bytes_atomic(&dir_path.join(TOPOLOGY_STATE_MANIFEST_FILENAME), &bytes)
 }
 
 fn allow_bypass_or_error(
@@ -165,24 +344,16 @@ fn read_epoch_status(dir_path: &Path) -> EpochStatus {
 
 fn write_clean_epoch_marker(dir_path: &Path) -> Result<(), String> {
     let epoch_path = dir_path.join(POSTERIOR_EPOCH_FILENAME);
-    let tmp_path = dir_path.join(format!(
-        ".{}.{}.tmp",
-        POSTERIOR_EPOCH_FILENAME,
-        ulid::Ulid::new()
-    ));
     let payload = serde_json::json!({
         "epoch": REQUIRED_POSTERIOR_EPOCH,
         "started_utc": chrono::Utc::now().to_rfc3339(),
         "reason": "auto-created clean topology posterior epoch before first save_state",
         "policy": "all bandit/MAP-Elites updates for this state are post-A14 clean-epoch updates",
     });
-    let bytes = serde_json::to_vec_pretty(&payload)
+    let mut bytes = serde_json::to_vec_pretty(&payload)
         .map_err(|err| format!("serialize posterior epoch marker: {err}"))?;
-    std::fs::write(&tmp_path, bytes)
-        .map_err(|err| format!("write posterior epoch temp file: {err}"))?;
-    std::fs::rename(&tmp_path, &epoch_path)
-        .map_err(|err| format!("install posterior epoch marker: {err}"))?;
-    Ok(())
+    bytes.push(b'\n');
+    write_bytes_atomic(&epoch_path, &bytes)
 }
 
 fn missing_epoch_error(dir_path: &Path, state_files: &[String]) -> String {
@@ -230,8 +401,148 @@ fn poison_pill_error(dir_path: &Path) -> String {
     )
 }
 
+fn bypass_save_error(dir_path: &Path) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} save disabled while {}=1; state_dir={}",
+        A14_BYPASS_ENV,
+        dir_path.display()
+    )
+}
+
+fn manifest_missing_error(dir_path: &Path, state_files: &[String]) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} state files present but {} missing; \
+         state_dir={}; state_files={}; required_epoch={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        dir_path.display(),
+        csv(state_files),
+        REQUIRED_POSTERIOR_EPOCH,
+        A14_BYPASS_ENV
+    )
+}
+
+fn manifest_malformed_error(dir_path: &Path, reason: &str) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} {} malformed: {}; state_dir={}; \
+         required_epoch={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        short_reason(reason.to_string()),
+        dir_path.display(),
+        REQUIRED_POSTERIOR_EPOCH,
+        A14_BYPASS_ENV
+    )
+}
+
+fn manifest_epoch_mismatch_error(dir_path: &Path, state_files: &[String], epoch: u32) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} {} epoch mismatch: file={} required={}; \
+         state_dir={}; state_files={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        epoch,
+        REQUIRED_POSTERIOR_EPOCH,
+        dir_path.display(),
+        csv(state_files),
+        A14_BYPASS_ENV
+    )
+}
+
+fn manifest_file_set_error(
+    dir_path: &Path,
+    state_files: &[String],
+    manifest_names: &[String],
+) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} {} state file set mismatch; state_dir={}; \
+         state_files={}; manifest_files={}; required_epoch={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        dir_path.display(),
+        csv(state_files),
+        csv(manifest_names),
+        REQUIRED_POSTERIOR_EPOCH,
+        A14_BYPASS_ENV
+    )
+}
+
+fn manifest_size_mismatch_error(dir_path: &Path, name: &str, expected: u64, actual: u64) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} {} size_bytes mismatch on {}; \
+         expected={} actual={}; state_dir={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        name,
+        expected,
+        actual,
+        dir_path.display(),
+        A14_BYPASS_ENV
+    )
+}
+
+fn manifest_sha256_mismatch_error(
+    dir_path: &Path,
+    name: &str,
+    expected: &str,
+    actual: &str,
+) -> String {
+    format!(
+        "{A14_EPOCH_GUARD_ERROR_PREFIX} {} sha256 mismatch on {}; expected={} actual={}; \
+         state_dir={}; bypass_env={}",
+        TOPOLOGY_STATE_MANIFEST_FILENAME,
+        name,
+        expected,
+        actual,
+        dir_path.display(),
+        A14_BYPASS_ENV
+    )
+}
+
 fn csv(state_files: &[String]) -> String {
     state_files.join(",")
+}
+
+fn sha256_file(path: &Path) -> Result<String, String> {
+    let mut file =
+        std::fs::File::open(path).map_err(|err| format!("open {}: {}", path.display(), err))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0_u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|err| format!("read {}: {}", path.display(), err))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    Ok(format!("{:x}", hasher.finalize()))
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let tmp_path = path.with_file_name(format!(
+        ".{}.{}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("state"),
+        ulid::Ulid::new()
+    ));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp_path)
+        .map_err(|err| format!("create temp file {}: {}", tmp_path.display(), err))?;
+    file.write_all(bytes)
+        .map_err(|err| format!("write temp file {}: {}", tmp_path.display(), err))?;
+    file.sync_all()
+        .map_err(|err| format!("sync temp file {}: {}", tmp_path.display(), err))?;
+    drop(file);
+    std::fs::rename(&tmp_path, path)
+        .map_err(|err| format!("install {}: {}", path.display(), err))?;
+    Ok(())
+}
+
+fn is_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn short_reason(reason: String) -> String {
@@ -274,8 +585,9 @@ mod tests {
     use std::sync::{Mutex, OnceLock};
 
     use super::{
-        validate_epoch_for_load, validate_epoch_for_save, A14_BYPASS_ENV,
-        A14_EPOCH_GUARD_ERROR_PREFIX, CONTAMINATED_MARKER_FILENAME, POSTERIOR_EPOCH_FILENAME,
+        validate_epoch_for_load, validate_epoch_for_save, write_topology_state_manifest,
+        A14_BYPASS_ENV, A14_EPOCH_GUARD_ERROR_PREFIX, CONTAMINATED_MARKER_FILENAME,
+        POSTERIOR_EPOCH_FILENAME, TOPOLOGY_STATE_MANIFEST_FILENAME,
     };
 
     fn env_lock() -> std::sync::MutexGuard<'static, ()> {
@@ -369,8 +681,66 @@ mod tests {
         let dir = temp_state_dir();
         touch(&dir.join("engine_extras.json"));
         write_epoch(&dir, r#"{"epoch":1,"reason":"clean"}"#);
+        write_topology_state_manifest(&dir, "test").expect("write manifest fixture");
 
         validate_epoch_for_load(&dir).expect("matching epoch should load");
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_load_state_fails_closed_on_restore_over_valid_epoch() {
+        let _guard = env_lock();
+        let dir = temp_state_dir();
+        write_epoch(&dir, r#"{"epoch":1,"reason":"post-reset clean epoch"}"#);
+        touch(&dir.join("bandit_state.db"));
+
+        let err = assert_a14_error(validate_epoch_for_load(&dir));
+        assert!(err.contains("topology_state_manifest"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_load_state_fails_closed_on_manifest_sha_mismatch() {
+        let _guard = env_lock();
+        let dir = temp_state_dir();
+        touch(&dir.join("bandit_state.db"));
+        write_epoch(&dir, r#"{"epoch":1,"reason":"clean"}"#);
+        write_topology_state_manifest(&dir, "test").expect("write manifest fixture");
+        std::fs::write(dir.join("bandit_state.db"), b"tampered!!!!").expect("tamper state file");
+
+        let err = assert_a14_error(validate_epoch_for_load(&dir));
+        assert!(err.contains("topology_state_manifest.json sha256 mismatch on bandit_state.db"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_load_state_fails_closed_on_manifest_file_set_mismatch() {
+        let _guard = env_lock();
+        let dir = temp_state_dir();
+        touch(&dir.join("bandit_state.db"));
+        write_epoch(&dir, r#"{"epoch":1,"reason":"clean"}"#);
+        write_topology_state_manifest(&dir, "test").expect("write manifest fixture");
+        touch(&dir.join("archive_state.db"));
+
+        let err = assert_a14_error(validate_epoch_for_load(&dir));
+        assert!(err.contains("topology_state_manifest.json state file set mismatch"));
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_write_manifest_replaces_existing_manifest() {
+        let _guard = env_lock();
+        let dir = temp_state_dir();
+        touch(&dir.join("bandit_state.db"));
+
+        write_topology_state_manifest(&dir, "first").expect("write first manifest");
+        write_topology_state_manifest(&dir, "second").expect("replace manifest atomically");
+
+        validate_epoch_for_save(&dir).expect_err("epoch is still required for save");
 
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -467,7 +837,28 @@ mod tests {
             .expect("posterior epoch should be created");
         assert!(epoch.contains(r#""epoch": 1"#) || epoch.contains(r#""epoch":1"#));
         assert!(dir.join("bandit_state.db").exists());
+        assert!(dir.join(TOPOLOGY_STATE_MANIFEST_FILENAME).exists());
+        validate_epoch_for_load(&dir).expect("freshly saved state should validate");
 
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[cfg(feature = "cognitive")]
+    #[test]
+    fn test_save_state_refuses_under_bypass_with_state() {
+        let _guard = env_lock();
+        let dir = temp_state_dir();
+        touch(&dir.join("bandit_state.db"));
+        std::env::set_var(A14_BYPASS_ENV, "1");
+
+        let engine = crate::topology::engine::TopologyEngine::new();
+        let err = engine
+            .save_state(dir.to_str().expect("utf-8 temp path"))
+            .expect_err("save must be disabled under forensic bypass");
+        assert!(err.starts_with(A14_EPOCH_GUARD_ERROR_PREFIX));
+        assert!(err.contains("save disabled while SAGE_BOOT_BYPASS_EPOCH_GUARD=1"));
+
+        std::env::remove_var(A14_BYPASS_ENV);
         let _ = std::fs::remove_dir_all(dir);
     }
 

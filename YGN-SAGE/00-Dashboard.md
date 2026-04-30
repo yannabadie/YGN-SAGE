@@ -1,7 +1,7 @@
 ---
 title: YGN-SAGE Dashboard
 type: moc
-updated: 2026-04-29
+updated: 2026-04-30
 ---
 
 # YGN-SAGE — Self-Adaptive Generation Engine
@@ -96,6 +96,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 >   - **`SAGE_ORACLE`** (R9 training gate) — **DEFAULT-ON since cycle-7 flip 2026-04-29 (`128e1b89`)**. Unset = ON; kill-switch via `SAGE_ORACLE=0|false|off|no|disable|disabled` (case-insensitive; `disable`/`disabled` added in cycle-7 VERIFY round-1, commit `87daf89a`). Validated N=5 unset (5/5 oracle_verdicts emitted) + N=2 kill-switch (0 oracle_verdicts) — commits `a5f916ea` + `8b4b34b6`. T4 forced `controller_decision.payload` is allowlist-only since round-1 (commit `87daf89a` writer + `f3a89631` docs).
 >   - `SAGE_TRACE_JSONL_DIR=<path>` (R5 durable JSONL sink) — Off when unset.
 >   - `SAGE_BENCH_ORACLE_SEAM=1` (Path E synchronous-eval bench feedback) — default OFF.
+>   - `SAGE_BOOT_BYPASS_EPOCH_GUARD=1` (A14 forensic load-only bypass) — normal boot/load requires `posterior_epoch.json` epoch=1 + `topology_state_manifest.json` SHA-256/size binding for all A14 topology state files; save hard-fails under bypass.
 
 > [!success] Shipped (Apr 29 evening, **cycle 7 default-on flip + 6 commits**)
 > - **`162e82ea` Phase 2 BCB-Hard N=50 + Phase 2bis Docker re-grade** : 30%/32% calibrated (internal/official), 49/50 = 98% per-task agreement, all 9 cycle-7 pass criteria green, validator PASS.
@@ -105,6 +106,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 > - **`a5f916ea` N=5 SAGE_ORACLE UNSET smoke** : 5/5 oracle_verdicts emitted with no SAGE_ORACLE env var ⇒ default-on works.
 > - **`8b4b34b6` N=2 SAGE_ORACLE=0 kill-switch smoke** : 0 oracle_verdicts + 0 evidence_deltas + run_frame_summary `oracle_verdict=None` ⇒ kill-switch silences oracle.
 > - **A14 reset operation** (DONE earlier, commit `8c8a1c27`): 14 bandit_arms + 5 MAP-Elites entries → contaminated_pre_a14 archive; epoch=1 marker; SHA-256 audit dump.
+> - **A14 guard round-2 closure** (cycle-8 step 2, `6b2ebcbe` + closure changeset): `topology_state_manifest.json` binds active topology state bytes to epoch=1; DB-only restore over a valid epoch marker now fails closed.
 > - **Operational implication** : all future runs default to OracleStack training gate. Bandit / MAP-Elites / online-evolution / training-memory ONLY update on `verdict.trainable=True`. Posterior epoch=1 (post A14 reset). Operator escape hatch: `SAGE_ORACLE=0|false|off|no|disable|disabled` (case-insensitive).
 
 > [!success] Shipped (Apr 26, **CI debt closeout — 14 commits**, vert après une semaine rouge)

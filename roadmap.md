@@ -1,11 +1,11 @@
 # YGN-SAGE roadmap
 
-**Last updated:** 2026-04-29
+**Last updated:** 2026-04-30
 **Scope:** forward-looking work. Living backlog grouped by expected
 time horizon; priorities inside each horizon ordered by
 impact-over-effort.
 
-## ⭐ Current operational gates (2026-04-29 — 6 cycles shipped + Path E + Gate D + A14 reset)
+## ⭐ Current operational gates (2026-04-30 — 6 cycles shipped + Path E + Gate D + A14 guard)
 
 6 cycles of cgpro-driven runtime work shipped (R0..R7 + R9 + R6.1a). ~12000+ LOC, 2484+37 regression tests, mypy 0/, ruff clean. **Gate D PASS** (SWE-bench N=10 throwaway). **Path E step 3 PASS** (BCB-Hard N=10 with bench-result feedback seam: 5 Exact pass + 5 Exact fail trainable, 0 raw leaks, event order 10/10). **A14 reset operation executed 2026-04-29** — bandit/MAP-Elites posteriors moved to `~/.sage/contaminated_pre_a14_20260429/`, fresh epoch=1 marker at `~/.sage/posterior_epoch.json`, audit dump at `.tmp/a14_reset_20260429/MANIFEST.json` (SHA256-hashed).
 
@@ -15,6 +15,7 @@ Strategic runtime flags after cycle 7:
 - **`SAGE_STATECORE=1`** (R6) — opt-in. Control/Message/State edge-channel separation.
 - **`SAGE_RUN_FRAME=1`** (R7) — opt-in. Typed RunFrame trailing diagnostic.
 - **`SAGE_TRACE_JSONL_DIR=<path>`** (R5) — opt-in durable JSONL sink.
+- **A14 posterior epoch guard** (cycle-8 step 2, `6b2ebcbe` + round-2 closure) — boot/load fail-closed unless A14 topology state files match both `posterior_epoch.json` epoch=1 and `topology_state_manifest.json` SHA-256/size provenance binding. `_CONTAMINATED.json` remains a poison pill. `SAGE_BOOT_BYPASS_EPOCH_GUARD=1` is load-only forensic bypass; save hard-fails under bypass.
 
 Plus the new bench seam (R6.1a Path E):
 - **`SAGE_BENCH_ORACLE_SEAM=1`** — BCB/synchronous-eval benches feed `bench_result["passed"]` to the OracleStack BEFORE final_result/oracle_verdict/learn so Exact verdicts fire on the live trace.
@@ -24,7 +25,8 @@ Cycle sequencing post-Path-E-step3 (cgpro 2026-04-29 lock):
 ```
 Cycle 6 = R6.1a deterministic delta producers (DONE 38c0da4e..426dfb6f)
 Path E  = bench-result feedback seam (DONE c1a45213) + step 3 BCB-N10 PASS (e74289fd)
-A14     = reset to empty, epoch=1 (DONE 2026-04-29)
+A14     = reset to empty, epoch=1 (DONE 2026-04-29) + fail-closed manifest binding
+          (cycle-8 step 2 round-2 closure, 2026-04-30, commit pending after verify)
 Cycle 7 = T1-T5 diagnostic tickets (below) + tonight's BCB-Hard N=50 evidence run +
           official Docker re-grade + SAGE_ORACLE default-on flip + post-flip smoke
 Cycle 8+ = R6.1b (pytest parser anchoring + planner producer live + ToolOracle

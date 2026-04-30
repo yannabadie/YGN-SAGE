@@ -12,6 +12,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 5. **Evidence before assertions** — run tests + benchmarks before claiming completion
 6. **SOTA minimum, AI breakthrough at least** — don't settle for "good enough"
 7. **No training-leak model hardcodes** — truth for OpenAI/Gemini/xAI/DeepSeek/Anthropic models in this repo is `sage-core/config/cards.toml`, NOT the agent's training snapshot. Before adding a `"<tag>" in model` check or a quirk branch, verify the tag hits at least one id in cards.toml AND verify the quirk itself via Context7 `/berriai/litellm` or the provider's live docs — cite the source in the code comment. See `docs/patterns/knowledge-cutoff-checks.md`. *2026-04 incident*: hardcoded `o1/o3/o4` for a temperature clamp even though cards.toml only ships `gpt-5.x`.
+8. **A14 posterior epoch guard is fail-closed** — active in Rust `load_state` and Python `boot_topology.py` since cycle-8 step 2 (`6b2ebcbe` + round-2 closure). Normal state requires `posterior_epoch.json` epoch=1 plus `topology_state_manifest.json` provenance binding over all A14 topology state files. For forensic load-only inspection, set `SAGE_BOOT_BYPASS_EPOCH_GUARD=1` with `SAGE_BOOT_BYPASS_REASON` and `SAGE_OPERATOR_ID`; bypass disables atexit save and `validate_epoch_for_save` / `ensure_clean_epoch_before_save` hard-fail. Reset command: `python -m sage.ops.a14_reset --reason "..."`.
 
 ## Architecture (see .claude/rules/architecture.md for details)
 

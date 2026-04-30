@@ -1001,6 +1001,8 @@ impl TopologyEngine {
         std::fs::write(&extras_path, extras_json)
             .map_err(|e| format!("write engine extras: {}", e))?;
 
+        posterior_epoch::write_topology_state_manifest(dir_path, "TopologyEngine::save_state")?;
+
         info!(
             dir = dir,
             bandit_arms = self.bandit.arm_count(),
