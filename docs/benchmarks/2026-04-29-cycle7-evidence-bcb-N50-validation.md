@@ -33,6 +33,42 @@
 
 This N=50 evidence was produced with the **pre-allowlist** controller_decision payload writer (commit history `b6820f2b` and earlier). 157/157 events therefore carry a top-level ``payload.reason`` field; in 137/157 events it is empty (`""`), in 20/157 events it carries short non-PII ratio strings (e.g. ``"quality=0.25 < 0.3"``, ``"importance=0.09 < 0.2"``, ``"error-like output"``). cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK closed this class by tightening the writer to **allowlist-only** forced payloads (no free-form ``reason``). Future regenerated N=X evidence (post-allowlist, e.g. round-2 verify) will not contain the ``reason`` key.
 
+## Cycle-8 R6.1c re-validation disclosure — historical pre-`f6711385` oracle reason leak
+
+On 2026-04-30, the committed cycle-7 N=50 evidence directory was re-audited under Cycle-8 R6.1c payload schema validation.
+
+Schema result:
+- Total events: 948
+- Total trace files: 50
+- Payload schema errors: 0
+- Payload schema warnings: 157
+- `controller_decision` events with absent `payload_schema_version` and legacy `payload.reason`: 157
+- These resolve to `controller_decision.v1_pre_allowlist_reason` as `legacy_accepted`.
+- Other observed event types resolve to current `v1` by inference because the evidence predates the `payload_schema_version` envelope field.
+- `budget` and `state_applied` are not observed in this artifact set.
+
+Payload schema version distribution:
+
+| event_type | version | count | explicit | inferred | status |
+|---|---|---:|---:|---:|---|
+| controller_decision | v1_pre_allowlist_reason | 157 | 0 | 157 | legacy_accepted |
+| failure | v1 | 1 | 0 | 1 | current |
+| final_result | v1 | 49 | 0 | 49 | current |
+| model_assigned | v1 | 166 | 0 | 166 | current |
+| node_completed | v1 | 162 | 0 | 162 | current |
+| node_started | v1 | 164 | 0 | 164 | current |
+| oracle_verdict | v1 | 49 | 0 | 49 | current |
+| routing_decision | v1 | 50 | 0 | 50 | current |
+| run_frame_summary | v1 | 49 | 0 | 49 | current |
+| task_started | v1 | 50 | 0 | 50 | current |
+| topology_selected | v1 | 51 | 0 | 51 | current |
+
+Raw-leak re-audit disclosure:
+- The Cycle-8 validator's phrase scanner finds 56 historical raw-phrase hits in pre-`f6711385` `oracle_verdict.reason_codes` and mirrored `run_frame_summary.oracle_verdict.reason_codes`.
+- These are historical artifacts from traces generated before commit `f6711385`, which blocked raw `bench_result.reason` from entering `oracle_verdict.reason_codes`.
+- New post-fix emissions are covered by the `f6711385` structured reason-code/hash policy and the post-fix smoke at `f9305d74`, which validated zero raw leaks.
+- The committed N=50 trace files are intentionally not rewritten; SHA-256 evidence identity is preserved.
+
 ## cgpro Path E B' minimum pass criteria
 
 | # | Criterion | Result |
