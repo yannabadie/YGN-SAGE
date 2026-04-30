@@ -1,0 +1,57 @@
+{
+  "allowed_fields": [
+    "kind",
+    "budget_limit_usd",
+    "budget_remaining_usd",
+    "cost_so_far_usd"
+  ],
+  "current": true,
+  "event_type": "budget",
+  "field_specs": {
+    "budget_limit_usd": {
+      "json_type": "float",
+      "required": true
+    },
+    "budget_remaining_usd": {
+      "json_type": "float",
+      "required": true
+    },
+    "cost_so_far_usd": {
+      "json_type": "float",
+      "required": true
+    },
+    "kind": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "kind",
+    "budget_limit_usd",
+    "budget_remaining_usd",
+    "cost_so_far_usd"
+  ],
+  "top_level_field_specs": {
+    "budget_limit_usd": {
+      "json_type": "float",
+      "required": false
+    },
+    "budget_remaining_usd": {
+      "json_type": "float",
+      "required": false
+    },
+    "cost_so_far_usd": {
+      "json_type": "float",
+      "required": false
+    },
+    "kind": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": false
+    }
+  },
+  "version": "v1"
+}

@@ -47,6 +47,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from sage.runtime.event_log.payload_schemas import (
+    CURRENT_PAYLOAD_SCHEMA_VERSIONS,
+    PayloadSchemaMode,
+    _payload_schema_distribution_for_events,
+)
+
 
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
@@ -93,23 +99,6 @@ CONTROLLER_DECISION_SAFE_FIELDS: tuple[str, ...] = (
     "reason_code",
     "node_id",
 )
-
-
-# cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK: forced controller_decision
-# payloads must be allowlist-only. The previous "safe fields" set only checked
-# PRESENCE of metadata, not ABSENCE of unsafe keys (e.g. free-form ``reason``).
-# Any forced payload key outside this set is a contract violation.
-CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS: frozenset[str] = frozenset({
-    "node_id",
-    "action",
-    "target_node_id",
-    "gate_source_id",
-    "gate_target_id",
-    "quality_score",
-    "quality_source",
-    "threshold_band",
-    "reason_code",
-})
 
 
 def _summarize_controller_decision_payloads(
@@ -245,6 +234,52 @@ def _scan_payload_for_raw_leaks(payload: Any, _path: str = "") -> list[str]:
     return leaks
 
 
+def _payload_schema_policy(mode: PayloadSchemaMode) -> dict[str, Any]:
+    return {
+        "mode": mode,
+        "missing_version_resolution": "infer_by_registered_schema_shape",
+        "current_versions": dict(sorted(CURRENT_PAYLOAD_SCHEMA_VERSIONS.items())),
+        "legacy_inference_rules": {
+            "controller_decision": [
+                {
+                    "when": (
+                        "payload_schema_version absent and payload.reason present"
+                    ),
+                    "version": "v1_pre_allowlist_reason",
+                    "status": "historical_read_only",
+                }
+            ]
+        },
+    }
+
+
+def _format_payload_schema_summary(
+    distribution: dict[str, dict[str, dict[str, int | str]]],
+) -> str:
+    parts: list[str] = []
+    for event_type in sorted(distribution):
+        current = CURRENT_PAYLOAD_SCHEMA_VERSIONS.get(event_type, "<unknown>")
+        version_parts: list[str] = []
+        for version, entry in sorted(distribution[event_type].items()):
+            explicit = int(entry["explicit_count"])
+            inferred = int(entry["inferred_count"])
+            status = str(entry["status"])
+            if inferred:
+                version_parts.append(
+                    f"{version}:{entry['count']} inferred {status}"
+                )
+            elif explicit:
+                version_parts.append(f"{version}:{entry['count']}")
+            else:
+                version_parts.append(f"{version}:{entry['count']} {status}")
+        parts.append(
+            f"{event_type} current={current} counts={{"
+            + ", ".join(version_parts)
+            + "}"
+        )
+    return "Payload schema versions: " + "; ".join(parts)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--jsonl-dir", required=True, type=Path)
@@ -267,7 +302,14 @@ def main() -> int:
             "(default: %(default)s)."
         ),
     )
+    parser.add_argument(
+        "--payload-schema-mode",
+        choices=("audit", "strict-current"),
+        default="audit",
+        help="Payload schema validation mode (default: %(default)s).",
+    )
     args = parser.parse_args()
+    payload_schema_mode: PayloadSchemaMode = args.payload_schema_mode
 
     # Load all artifacts.
     bench_report = json.loads(args.bench_report.read_text(encoding="utf-8"))
@@ -283,10 +325,12 @@ def main() -> int:
     # Validate each run.
     runs: list[TaskValidation] = []
     raw_leak_findings: list[str] = []
+    all_events: list[dict[str, Any]] = []
     for jf in jsonl_files:
         events = _load_jsonl(jf)
         if not events:
             continue
+        all_events.extend(events)
         v = _validate_run(events)
         # Map the run's task by predictions order if event payload doesn't
         # carry task_id (RuntimeEventLog redacts the prompt; we walk the
@@ -304,21 +348,10 @@ def main() -> int:
                 raw_leak_findings.append(
                     f"{e.get('event_type','?')}@seq{e.get('seq','?')}:{leak}"
                 )
-            # cgpro 2026-04-30 cycle-7 VERIFY: any controller_decision
-            # payload key outside the allowlist is a contract violation,
-            # even if the value would otherwise pass the raw-leak scan.
-            if e.get("event_type") == "controller_decision":
-                payload = e.get("payload") or {}
-                if isinstance(payload, dict):
-                    extras = sorted(
-                        set(payload.keys())
-                        - CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
-                    )
-                    for k in extras:
-                        raw_leak_findings.append(
-                            f"controller_decision@seq{e.get('seq','?')}:"
-                            f"payload.{k}=non-allowlisted-key"
-                        )
+    payload_schema_report = _payload_schema_distribution_for_events(
+        all_events,
+        mode=payload_schema_mode,
+    )
 
     # Order JSONL files chronologically and zip with predictions order;
     # this is best-effort because the bench writes predictions in task-id
@@ -348,6 +381,7 @@ def main() -> int:
     )
     event_order_pass = all(r.event_order_ok for r in runs if r.seam_verdict_source)
     raw_leaks_pass = len(raw_leak_findings) == 0
+    payload_schema_pass = len(payload_schema_report.errors) == 0
 
     # Cross-check seam vs bench (escalation may diverge).
     cross_check_rows: list[dict[str, Any]] = []
@@ -404,6 +438,8 @@ def main() -> int:
         "jsonl_traces": {
             jf.name: _sha256(jf) for jf in jsonl_files
         },
+        "payload_schema_policy": _payload_schema_policy(payload_schema_mode),
+        "payload_schema_version_distribution": payload_schema_report.distribution,
     }
     args.out_manifest.write_text(
         json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8",
@@ -474,9 +510,55 @@ def main() -> int:
         f"| 4 | No raw stdout/stderr/raw_output/raw_patch leaks in any payload "
         f"| {'PASS' if raw_leaks_pass else 'FAIL'} ({len(raw_leak_findings)} leaks) |"
     )
+    md_lines.append(
+        f"| 5 | Payload schema validation ({payload_schema_mode}) | "
+        f"{'PASS' if payload_schema_pass else 'FAIL'} "
+        f"({len(payload_schema_report.errors)} errors, "
+        f"{len(payload_schema_report.warnings)} warnings) |"
+    )
 
     md_lines += [
         "",
+        "## Payload schema version distribution",
+        "",
+        "| event_type | current_version | version | count | explicit_count | "
+        "inferred_count | status |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for event_type in sorted(payload_schema_report.distribution):
+        current_version = CURRENT_PAYLOAD_SCHEMA_VERSIONS.get(event_type, "")
+        for version, entry in sorted(
+            payload_schema_report.distribution[event_type].items()
+        ):
+            md_lines.append(
+                f"| {event_type} | {current_version} | {version} | "
+                f"{entry['count']} | {entry['explicit_count']} | "
+                f"{entry['inferred_count']} | {entry['status']} |"
+            )
+
+    md_lines += [
+        "",
+        "Historical payload schema disclosure: committed cycle-7 N=50 traces "
+        "predate envelope field payload_schema_version. For audit only, "
+        "controller_decision events with absent payload_schema_version and "
+        "payload.reason are interpreted as "
+        "controller_decision.v1_pre_allowlist_reason. Current emissions are "
+        "controller_decision.v2_allowlist_only and MUST NOT emit "
+        "payload.reason. Historical trace files were not rewritten; SHA-256s "
+        "remain evidence-file hashes, while the manifest records "
+        "schema-version inference metadata.",
+        "",
+    ]
+    if payload_schema_report.errors:
+        md_lines += ["Payload schema errors:", ""]
+        md_lines.extend(f"- {error}" for error in payload_schema_report.errors)
+        md_lines.append("")
+    if payload_schema_report.warnings:
+        md_lines += ["Payload schema warnings:", ""]
+        md_lines.extend(f"- {warning}" for warning in payload_schema_report.warnings)
+        md_lines.append("")
+
+    md_lines += [
         "## Seam-vs-bench cross-check (per task)",
         "",
         "Escalation/repair may turn a first-attempt seam fail into a final bench "
@@ -553,7 +635,11 @@ def main() -> int:
 
     # Print summary to stdout for CI.
     overall_pass = (
-        has_exact_pass and has_exact_fail and event_order_pass and raw_leaks_pass
+        has_exact_pass
+        and has_exact_fail
+        and event_order_pass
+        and raw_leaks_pass
+        and payload_schema_pass
     )
     print(f"Seam Path E step 3 verdict: {'PASS' if overall_pass else 'FAIL'}")
     print(f"  Runs analyzed: {len(runs)}")
@@ -561,6 +647,8 @@ def main() -> int:
     print(f"  Seam Exact fail: {has_exact_fail}")
     print(f"  Event order pass: {event_order_pass}")
     print(f"  Raw output leaks: {len(raw_leak_findings)}")
+    print(f"  Payload schema errors: {len(payload_schema_report.errors)}")
+    print(_format_payload_schema_summary(payload_schema_report.distribution))
     print(
         "  Controller decisions: "
         f"{controller_payload_summary.event_count} events, "

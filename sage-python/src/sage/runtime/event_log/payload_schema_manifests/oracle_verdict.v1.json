@@ -1,0 +1,84 @@
+{
+  "allowed_fields": [
+    "schema_version",
+    "trainable",
+    "verdict_source",
+    "quality_label",
+    "score",
+    "confidence",
+    "reason_codes",
+    "evidence"
+  ],
+  "current": true,
+  "event_type": "oracle_verdict",
+  "field_specs": {
+    "confidence": {
+      "json_type": "float",
+      "required": true
+    },
+    "evidence": {
+      "item_type": "dict",
+      "json_type": "list",
+      "max_json_utf8_bytes": 32768,
+      "required": true
+    },
+    "quality_label": {
+      "allowed_values": [
+        "pass",
+        "fail",
+        "partial",
+        "unknown"
+      ],
+      "json_type": "str",
+      "required": true
+    },
+    "reason_codes": {
+      "item_max_utf8_bytes": 128,
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 4096,
+      "required": true
+    },
+    "schema_version": {
+      "json_type": "str",
+      "max_utf8_bytes": 32,
+      "required": true
+    },
+    "score": {
+      "json_type": [
+        "float",
+        "null"
+      ],
+      "required": true
+    },
+    "trainable": {
+      "json_type": "bool",
+      "required": true
+    },
+    "verdict_source": {
+      "allowed_values": [
+        "exact",
+        "tool",
+        "formal",
+        "spec",
+        "llm_judge",
+        "abstain"
+      ],
+      "json_type": "str",
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "schema_version",
+    "trainable",
+    "verdict_source",
+    "quality_label",
+    "score",
+    "confidence",
+    "reason_codes",
+    "evidence"
+  ],
+  "version": "v1"
+}

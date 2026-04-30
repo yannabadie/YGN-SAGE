@@ -31,6 +31,11 @@ from uuid import uuid4
 import pytest
 
 from sage.runtime.event_log import RuntimeEventLog
+from sage.runtime.event_log.errors import EventLogSchemaError
+from sage.runtime.event_log.payload_schemas import (
+    CURRENT_PAYLOAD_SCHEMA_VERSIONS,
+    _payload_schema_distribution_for_events,
+)
 
 
 GOLDEN_DIR = pathlib.Path(__file__).parent / "golden" / "runtime_events"
@@ -129,6 +134,7 @@ def test_node_started_on_mode_has_predecessors_by_channel(
     """ON mode contract: NodeStarted.payload MUST carry predecessors_by_channel
     with the 3 canonical channel keys."""
     monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    monkeypatch.setenv("SAGE_STATECORE", "1")
     fixture = _load_fixture("statecore_on_node_started.json")
 
     run_id = "01CONTRACTON0000000000001"
@@ -452,7 +458,11 @@ def test_controller_decision_forced_payload_uses_allowlist_only(
     allowlist is a contract violation, even if its value would otherwise pass
     the raw-leak scan.
     """
-    from sage.bench.path_e_validate import CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
+    from sage.runtime.event_log.payload_schemas import get_schema_for_event
+
+    controller_payload_keys = set(
+        get_schema_for_event("controller_decision").allowed_fields
+    )
 
     monkeypatch.delenv("SAGE_ORACLE", raising=False)  # default-on
     monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
@@ -480,10 +490,251 @@ def test_controller_decision_forced_payload_uses_allowlist_only(
     payload = controller["payload"]
 
     payload_keys = set(payload.keys())
-    extra_keys = payload_keys - CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
+    extra_keys = payload_keys - controller_payload_keys
     assert not extra_keys, (
         f"forced payload has keys outside allowlist: {sorted(extra_keys)!r}"
     )
+
+
+def test_new_events_write_payload_schema_version(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)
+    run_id = "01CONTRACTSCHEMAVERSION01"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.emit_task_started("task")
+    log.emit_controller_decision(node_id="n0", action="continue")
+    log.emit_final_result(
+        status="success",
+        output="ok",
+        total_cost_usd=0.0,
+        total_latency_ms=1.0,
+        node_count=1,
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    assert events
+    for event in events:
+        event_type = event["event_type"]
+        assert event["payload_schema_version"] == CURRENT_PAYLOAD_SCHEMA_VERSIONS[
+            event_type
+        ]
+
+
+def test_emission_violates_allowlist_raises_event_log_schema_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    summary = {
+        "run_frame_schema_version": "0",
+        "run_frame_hash": "h",
+        "status": "success",
+        "node_record_count": 0,
+        "final_result_seq": 1,
+        "extra_key": "must fail",
+    }
+
+    monkeypatch.setenv("SAGE_TRACE_FAIL_CLOSED", "1")
+    fail_closed = RuntimeEventLog(run_id="01SCHEMAFAILCLOSED000001", trace_dir=tmp_path)
+    with pytest.raises(EventLogSchemaError, match="extra payload field"):
+        fail_closed.emit_run_frame_summary(parent_event_id=1, summary=summary)
+
+    monkeypatch.delenv("SAGE_TRACE_FAIL_CLOSED", raising=False)
+    caplog.clear()
+    fail_open = RuntimeEventLog(run_id="01SCHEMAFAILOPEN0000001", trace_dir=tmp_path)
+    assert fail_open.emit_run_frame_summary(parent_event_id=1, summary=summary) is None
+    assert fail_open.disabled is True
+    assert "event_log_error" in caplog.text
+    assert (tmp_path / "01SCHEMAFAILOPEN0000001.jsonl").read_text(encoding="utf-8") == ""
+
+
+def test_emission_violates_required_field_raises_event_log_schema_error(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_TRACE_FAIL_CLOSED", "1")
+    log = RuntimeEventLog(run_id="01SCHEMAMISSINGFIELD0001", trace_dir=tmp_path)
+
+    with pytest.raises(EventLogSchemaError, match="missing required payload field"):
+        log.emit_run_frame_summary(
+            parent_event_id=1,
+            summary={
+                "run_frame_schema_version": "0",
+                "status": "success",
+                "node_record_count": 0,
+                "final_result_seq": 1,
+            },
+        )
+
+
+def test_emission_violates_max_length_errors_not_truncates(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_TRACE_FAIL_CLOSED", "1")
+    too_long = "x" * 1025
+    run_id = "01SCHEMAMAXLEN000000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+
+    with pytest.raises(EventLogSchemaError, match="exceeds max UTF-8 bytes"):
+        log.emit_failure(kind="provider", error_type="RuntimeError", message=too_long)
+
+    assert too_long not in (tmp_path / f"{run_id}.jsonl").read_text(encoding="utf-8")
+
+
+def test_controller_decision_current_v2_rejects_reason_under_kill_switch(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "0")
+    monkeypatch.setenv("SAGE_TRACE_RAW", "1")
+    run_id = "01CTRLV2NOREASON0000001"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.emit_controller_decision(
+        node_id="n0",
+        action="continue",
+        reason="legacy reason must not revive",
+        reason_code="quality.low",
+    )
+    log.close()
+
+    [event] = _read_events(tmp_path / f"{run_id}.jsonl")
+    assert event["payload_schema_version"] == "v2_allowlist_only"
+    assert event["payload"]["reason_code"] == "quality.low"
+    assert "reason" not in event["payload"]
+
+
+def test_controller_decision_legacy_v1_reason_accepted_in_audit() -> None:
+    event = _historical_controller_event(run_id="r1", seq=0)
+
+    report = _payload_schema_distribution_for_events(
+        [event], mode="audit"
+    )
+
+    assert report.errors == ()
+    assert report.warnings
+    assert report.distribution["controller_decision"]["v1_pre_allowlist_reason"] == {
+        "count": 1,
+        "explicit_count": 0,
+        "inferred_count": 1,
+        "status": "legacy_accepted",
+    }
+
+
+def test_validator_reads_v1_and_v2_traces() -> None:
+    events = [
+        _historical_controller_event(run_id="r1", seq=0),
+        _current_controller_event(run_id="r2", seq=0),
+    ]
+
+    report = _payload_schema_distribution_for_events(events, mode="audit")
+
+    assert report.errors == ()
+    assert report.distribution["controller_decision"]["v1_pre_allowlist_reason"][
+        "inferred_count"
+    ] == 1
+    assert report.distribution["controller_decision"]["v2_allowlist_only"][
+        "explicit_count"
+    ] == 1
+
+
+def test_validator_strict_current_rejects_v1() -> None:
+    report = _payload_schema_distribution_for_events(
+        [_historical_controller_event(run_id="r1", seq=0)],
+        mode="strict-current",
+    )
+
+    assert report.errors
+    assert report.distribution["controller_decision"]["v1_pre_allowlist_reason"][
+        "status"
+    ] == "legacy_rejected_strict_current"
+
+
+def test_validator_reports_explicit_vs_inferred_counts() -> None:
+    report = _payload_schema_distribution_for_events(
+        [
+            _historical_controller_event(run_id="r1", seq=0),
+            _current_controller_event(run_id="r2", seq=0),
+            _current_controller_event(run_id="r3", seq=0),
+        ],
+        mode="audit",
+    )
+
+    cdist = report.distribution["controller_decision"]
+    assert cdist["v1_pre_allowlist_reason"]["explicit_count"] == 0
+    assert cdist["v1_pre_allowlist_reason"]["inferred_count"] == 1
+    assert cdist["v2_allowlist_only"]["explicit_count"] == 2
+    assert cdist["v2_allowlist_only"]["inferred_count"] == 0
+
+
+def test_path_e_validate_uses_payload_schema_sot() -> None:
+    validator = (
+        pathlib.Path(__file__).resolve().parents[1]
+        / "src"
+        / "sage"
+        / "bench"
+        / "path_e_validate.py"
+    ).read_text(encoding="utf-8")
+
+    assert "sage.runtime.event_log.payload_schemas" in validator
+    assert "CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS" not in validator
+
+
+def _historical_controller_event(*, run_id: str, seq: int) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "run_id": run_id,
+        "trace_id": run_id,
+        "parent_event_id": None,
+        "seq": seq,
+        "timestamp_ns": 1,
+        "event_type": "controller_decision",
+        "source_component": "controller",
+        "task_hash": "h",
+        "payload_hash": "p",
+        "redaction_state": "raw",
+        "payload": {
+            "action": "continue",
+            "target_node_id": "n1",
+            "gate_source_id": "",
+            "gate_target_id": "",
+            "reason": "historical reason",
+        },
+        "action": "continue",
+    }
+
+
+def _current_controller_event(*, run_id: str, seq: int) -> dict[str, Any]:
+    return {
+        "schema_version": "1.0",
+        "payload_schema_version": "v2_allowlist_only",
+        "run_id": run_id,
+        "trace_id": run_id,
+        "parent_event_id": None,
+        "seq": seq,
+        "timestamp_ns": 1,
+        "event_type": "controller_decision",
+        "source_component": "controller",
+        "task_hash": "h",
+        "payload_hash": "p",
+        "redaction_state": "redacted",
+        "payload": {
+            "node_id": "n0",
+            "action": "continue",
+            "target_node_id": "",
+            "gate_source_id": "",
+            "gate_target_id": "",
+            "quality_score": None,
+            "quality_source": "abstain",
+            "threshold_band": "continue",
+            "reason_code": "abstain_no_signal",
+        },
+        "node_id": "n0",
+        "action": "continue",
+    }
 
 
 def test_controller_decision_reason_code_is_slug_constrained(

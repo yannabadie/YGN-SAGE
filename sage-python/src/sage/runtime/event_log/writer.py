@@ -9,9 +9,9 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, TextIO, get_args, cast
+from typing import Any, Literal, TextIO, get_args, cast
 
-from sage.runtime.event_log.errors import EventLogUnavailable
+from sage.runtime.event_log.errors import EventLogSchemaError, EventLogUnavailable
 from sage.runtime.event_log.events import (
     _Budget,
     ControllerAction,
@@ -37,6 +37,10 @@ from sage.runtime.event_log.redaction import (
     _redact_payload,
 )
 from sage.runtime.event_log.schema import FINAL_RESULT_STATUSES, SCHEMA_VERSION
+from sage.runtime.event_log.payload_schemas import (
+    _assert_current_payload_schema_for_emit,
+    _validate_payload_against_schema,
+)
 
 log = logging.getLogger(__name__)
 
@@ -401,40 +405,30 @@ class RuntimeEventLog:
         )
         safe_reason_code = _safe_reason_code(reason_code)
         safe_quality_score = _safe_quality_score(quality_score)
-        from sage.runtime.oracle.env import oracle_enabled as _oracle_enabled
-        force_safe_payload = _oracle_enabled()
-        if force_safe_payload:
-            payload: dict[str, Any] = {
-                "node_id": str(node_id),
-                "action": safe_action,
-                "target_node_id": str(target_node_id or ""),
-                "gate_source_id": str(gate_source_id or ""),
-                "gate_target_id": str(gate_target_id or ""),
-                "quality_score": safe_quality_score,
-                "quality_source": safe_quality_source,
-                "threshold_band": safe_threshold_band,
-                "reason_code": safe_reason_code,
-            }
-        else:
-            payload = {
-                "action": safe_action,
-                "target_node_id": target_node_id,
-                "gate_source_id": gate_source_id,
-                "gate_target_id": gate_target_id,
-                "reason": reason,
-            }
+        _ = reason  # API compatibility only; current payload schema forbids it.
+        payload: dict[str, Any] = {
+            "node_id": str(node_id),
+            "action": safe_action,
+            "target_node_id": str(target_node_id or ""),
+            "gate_source_id": str(gate_source_id or ""),
+            "gate_target_id": str(gate_target_id or ""),
+            "quality_score": safe_quality_score,
+            "quality_source": safe_quality_source,
+            "threshold_band": safe_threshold_band,
+            "reason_code": safe_reason_code,
+        }
         return self._emit(
             _ControllerDecision,
             "controller_decision",
             "controller",
             payload=payload,
-            _force_payload=force_safe_payload,
+            _force_payload=True,
             node_id=node_id,
             action=safe_action,
-            quality_score=safe_quality_score if force_safe_payload else None,
-            quality_source=safe_quality_source if force_safe_payload else None,
-            threshold_band=safe_threshold_band if force_safe_payload else None,
-            reason_code=safe_reason_code if force_safe_payload else "",
+            quality_score=safe_quality_score,
+            quality_source=safe_quality_source,
+            threshold_band=safe_threshold_band,
+            reason_code=safe_reason_code,
             target_node_id=target_node_id,
             gate_source_id=gate_source_id,
             gate_target_id=gate_target_id,
@@ -569,15 +563,38 @@ class RuntimeEventLog:
         if self.disabled or self._fh is None:
             return None
 
+        schema = _assert_current_payload_schema_for_emit(event_type)
+        statecore_profile = self._statecore_profile_for_emit(event_type)
+        try:
+            _validate_payload_against_schema(
+                payload,
+                schema,
+                top_level_event=fields,
+                allow_absent_payload=False,
+                statecore_profile=statecore_profile,
+            )
+            payload_redacted = _redact_payload(payload)
+            if self._raw_payload or _force_payload:
+                _validate_payload_against_schema(
+                    payload_redacted,
+                    schema,
+                    top_level_event=fields,
+                    allow_absent_payload=False,
+                    statecore_profile=statecore_profile,
+                )
+        except EventLogSchemaError as exc:
+            self._handle_schema_failure(exc, phase=event_type)
+            return None
+
         seq = self._seq
         self._seq += 1
         parent = self._last_event_seq if parent_event_id is None else parent_event_id
         offset: int | None = None
         try:
             offset = self._fh.tell()
-            payload_redacted = _redact_payload(payload)
             event = cls(
                 schema_version=SCHEMA_VERSION,
+                payload_schema_version=schema.version,
                 run_id=self.run_id,
                 trace_id=self.trace_id,
                 parent_event_id=parent,
@@ -620,6 +637,14 @@ class RuntimeEventLog:
             return "raw"
         return "redacted"
 
+    def _statecore_profile_for_emit(
+        self,
+        event_type: str,
+    ) -> Literal["on", "off"] | None:
+        if event_type != "node_started":
+            return None
+        return "on" if os.environ.get("SAGE_STATECORE") == "1" else "off"
+
     def _handle_sink_failure(self, exc: BaseException, *, phase: str) -> None:
         if self._fail_closed:
             self.close()
@@ -632,5 +657,18 @@ class RuntimeEventLog:
             phase,
             exc,
             self.run_id,
+        )
+        self.close()
+
+    def _handle_schema_failure(self, exc: EventLogSchemaError, *, phase: str) -> None:
+        if self._fail_closed:
+            self.close()
+            raise exc
+        log.error(
+            "event_log_error phase=%s run_id=%s error_type=EventLogSchemaError "
+            "message=%s",
+            phase,
+            self.run_id,
+            exc,
         )
         self.close()

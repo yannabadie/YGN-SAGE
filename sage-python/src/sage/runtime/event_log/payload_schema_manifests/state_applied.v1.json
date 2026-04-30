@@ -1,0 +1,110 @@
+{
+  "allowed_fields": [
+    "target_node_id",
+    "source_node_ids",
+    "before_version",
+    "after_version",
+    "delta_count",
+    "conflict_count",
+    "applied",
+    "invalidated_assumption_ids"
+  ],
+  "conditional_rules": [
+    "after_version_gte_before_version",
+    "applied_false_keeps_before_version_and_requires_conflict",
+    "source_node_ids_sorted"
+  ],
+  "current": true,
+  "event_type": "state_applied",
+  "field_specs": {
+    "after_version": {
+      "json_type": "int",
+      "required": true
+    },
+    "applied": {
+      "json_type": "bool",
+      "required": true
+    },
+    "before_version": {
+      "json_type": "int",
+      "required": true
+    },
+    "conflict_count": {
+      "json_type": "int",
+      "required": true
+    },
+    "delta_count": {
+      "json_type": "int",
+      "required": true
+    },
+    "invalidated_assumption_ids": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 8192,
+      "required": true
+    },
+    "source_node_ids": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 8192,
+      "required": true
+    },
+    "target_node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "target_node_id",
+    "source_node_ids",
+    "before_version",
+    "after_version",
+    "delta_count",
+    "conflict_count",
+    "applied",
+    "invalidated_assumption_ids"
+  ],
+  "top_level_field_specs": {
+    "after_version": {
+      "json_type": "int",
+      "required": false
+    },
+    "applied": {
+      "json_type": "bool",
+      "required": false
+    },
+    "before_version": {
+      "json_type": "int",
+      "required": false
+    },
+    "conflict_count": {
+      "json_type": "int",
+      "required": false
+    },
+    "delta_count": {
+      "json_type": "int",
+      "required": false
+    },
+    "invalidated_assumption_ids": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 8192,
+      "required": false
+    },
+    "source_node_ids": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 8192,
+      "required": false
+    },
+    "target_node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    }
+  },
+  "version": "v1"
+}

@@ -7,3 +7,7 @@ class EventLogUnavailable(RuntimeError):
     In default mode, the writer warns once and disables itself; this
     exception propagates only in fail-closed mode.
     """
+
+
+class EventLogSchemaError(RuntimeError):
+    """Raised when an event payload violates the registered payload schema."""

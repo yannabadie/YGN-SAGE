@@ -1,0 +1,163 @@
+{
+  "allowed_fields": [
+    "run_frame_schema_version",
+    "run_id",
+    "task_id",
+    "task_hash",
+    "status",
+    "topology_id",
+    "graph_digest",
+    "topology_history",
+    "node_record_count",
+    "node_records",
+    "state_frame_count",
+    "controller_decision_count",
+    "runtime_delta_count",
+    "runtime_delta_hashes",
+    "final_result_seq",
+    "failure_seqs",
+    "terminal_failure_seq",
+    "budget_snapshot",
+    "feature_flags",
+    "redacted",
+    "oracle_verdict",
+    "run_frame_hash"
+  ],
+  "current": true,
+  "event_type": "run_frame_summary",
+  "field_specs": {
+    "budget_snapshot": {
+      "json_type": [
+        "dict",
+        "null"
+      ],
+      "max_json_utf8_bytes": 4096,
+      "required": false
+    },
+    "controller_decision_count": {
+      "json_type": "int",
+      "required": false
+    },
+    "failure_seqs": {
+      "item_type": "int",
+      "json_type": "list",
+      "required": false
+    },
+    "feature_flags": {
+      "json_type": "dict",
+      "max_json_utf8_bytes": 4096,
+      "required": false
+    },
+    "final_result_seq": {
+      "json_type": "int",
+      "required": true
+    },
+    "graph_digest": {
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "node_record_count": {
+      "json_type": "int",
+      "required": true
+    },
+    "node_records": {
+      "json_type": "dict",
+      "max_json_utf8_bytes": 65536,
+      "required": false
+    },
+    "oracle_verdict": {
+      "json_type": [
+        "dict",
+        "null"
+      ],
+      "max_json_utf8_bytes": 32768,
+      "required": false
+    },
+    "redacted": {
+      "json_type": "bool",
+      "required": false
+    },
+    "run_frame_hash": {
+      "json_type": "str",
+      "required": true
+    },
+    "run_frame_schema_version": {
+      "json_type": "str",
+      "required": true
+    },
+    "run_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "runtime_delta_count": {
+      "json_type": "int",
+      "required": false
+    },
+    "runtime_delta_hashes": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 16384,
+      "required": false
+    },
+    "state_frame_count": {
+      "json_type": "int",
+      "required": false
+    },
+    "status": {
+      "allowed_values": [
+        "success",
+        "failure",
+        "budget_exceeded",
+        "unknown"
+      ],
+      "json_type": "str",
+      "required": true
+    },
+    "task_hash": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": false
+    },
+    "task_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "terminal_failure_seq": {
+      "json_type": [
+        "int",
+        "null"
+      ],
+      "required": false
+    },
+    "topology_history": {
+      "item_type": "dict",
+      "json_type": "list",
+      "max_json_utf8_bytes": 16384,
+      "required": false
+    },
+    "topology_id": {
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "max_utf8_bytes": 256,
+      "required": false
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "run_frame_schema_version",
+    "run_frame_hash",
+    "status",
+    "node_record_count",
+    "final_result_seq"
+  ],
+  "version": "v1"
+}

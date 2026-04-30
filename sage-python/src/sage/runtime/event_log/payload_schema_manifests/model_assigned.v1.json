@@ -1,0 +1,77 @@
+{
+  "allowed_fields": [
+    "node_id",
+    "node_role",
+    "model_id",
+    "provider_id",
+    "required_capabilities"
+  ],
+  "current": true,
+  "event_type": "model_assigned",
+  "field_specs": {
+    "model_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "node_role": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": true
+    },
+    "provider_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": true
+    },
+    "required_capabilities": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 4096,
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "node_id",
+    "node_role",
+    "model_id",
+    "provider_id",
+    "required_capabilities"
+  ],
+  "top_level_field_specs": {
+    "model_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "node_role": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": false
+    },
+    "provider_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": false
+    },
+    "required_capabilities": {
+      "item_type": "str",
+      "json_type": "list",
+      "max_json_utf8_bytes": 4096,
+      "required": false
+    }
+  },
+  "version": "v1"
+}

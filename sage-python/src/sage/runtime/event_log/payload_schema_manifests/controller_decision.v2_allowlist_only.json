@@ -1,0 +1,175 @@
+{
+  "allowed_fields": [
+    "node_id",
+    "action",
+    "target_node_id",
+    "gate_source_id",
+    "gate_target_id",
+    "quality_score",
+    "quality_source",
+    "threshold_band",
+    "reason_code"
+  ],
+  "current": true,
+  "event_type": "controller_decision",
+  "field_specs": {
+    "action": {
+      "allowed_values": [
+        "continue",
+        "upgrade_model",
+        "prune_node",
+        "reroute_topology",
+        "spawn_subagent",
+        "open_gate"
+      ],
+      "json_type": "str",
+      "required": true
+    },
+    "gate_source_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "gate_target_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "quality_score": {
+      "json_type": [
+        "float",
+        "null"
+      ],
+      "required": true
+    },
+    "quality_source": {
+      "allowed_values": [
+        "formal",
+        "onnx",
+        "heuristic",
+        "external",
+        "abstain"
+      ],
+      "json_type": "str",
+      "required": true
+    },
+    "reason_code": {
+      "json_type": "str",
+      "max_utf8_bytes": 80,
+      "required": true
+    },
+    "target_node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "threshold_band": {
+      "allowed_values": [
+        "critical",
+        "continue",
+        "good"
+      ],
+      "json_type": "str",
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "node_id",
+    "action",
+    "target_node_id",
+    "gate_source_id",
+    "gate_target_id",
+    "quality_score",
+    "quality_source",
+    "threshold_band",
+    "reason_code"
+  ],
+  "top_level_field_specs": {
+    "action": {
+      "allowed_values": [
+        "continue",
+        "upgrade_model",
+        "prune_node",
+        "reroute_topology",
+        "spawn_subagent",
+        "open_gate"
+      ],
+      "json_type": "str",
+      "required": false
+    },
+    "gate_source_id": {
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "gate_target_id": {
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "quality_score": {
+      "json_type": [
+        "float",
+        "null"
+      ],
+      "required": false
+    },
+    "quality_source": {
+      "allowed_values": [
+        "formal",
+        "onnx",
+        "heuristic",
+        "external",
+        "abstain",
+        null
+      ],
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "required": false
+    },
+    "reason_code": {
+      "json_type": "str",
+      "max_utf8_bytes": 80,
+      "required": false
+    },
+    "target_node_id": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "threshold_band": {
+      "allowed_values": [
+        "critical",
+        "continue",
+        "good",
+        null
+      ],
+      "json_type": [
+        "str",
+        "null"
+      ],
+      "required": false
+    }
+  },
+  "version": "v2_allowlist_only"
+}

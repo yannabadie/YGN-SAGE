@@ -1,0 +1,46 @@
+{
+  "allowed_fields": [
+    "kind",
+    "error_type",
+    "message"
+  ],
+  "current": true,
+  "event_type": "failure",
+  "field_specs": {
+    "error_type": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": true
+    },
+    "kind": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": true
+    },
+    "message": {
+      "json_type": "str",
+      "max_utf8_bytes": 1024,
+      "required": true
+    }
+  },
+  "legacy_read_only": false,
+  "payload_kind": "dict",
+  "required_fields": [
+    "kind",
+    "error_type",
+    "message"
+  ],
+  "top_level_field_specs": {
+    "error_type": {
+      "json_type": "str",
+      "max_utf8_bytes": 256,
+      "required": false
+    },
+    "kind": {
+      "json_type": "str",
+      "max_utf8_bytes": 128,
+      "required": false
+    }
+  },
+  "version": "v1"
+}

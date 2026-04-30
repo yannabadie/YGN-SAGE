@@ -19,6 +19,7 @@ ThresholdBand = Literal["critical", "continue", "good"]
 @dataclass(frozen=True)
 class _EventCore:
     schema_version: str
+    payload_schema_version: str
     run_id: str
     trace_id: str
     parent_event_id: int | None

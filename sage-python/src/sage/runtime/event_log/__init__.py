@@ -3,7 +3,17 @@
 Internal execution contract ledger for debugging and R6 StateCore prep.
 Distinct from sage.observability.spans (OTel external observability).
 """
-from sage.runtime.event_log.errors import EventLogUnavailable
+from sage.runtime.event_log.errors import EventLogSchemaError, EventLogUnavailable
+from sage.runtime.event_log.payload_schemas import (
+    CURRENT_PAYLOAD_SCHEMA_VERSIONS,
+    DEFAULT_PAYLOAD_STRING_MAX_BYTES,
+    PAYLOAD_SCHEMAS,
+    EventPayloadSchema,
+    PayloadFieldSpec,
+    PayloadSchemaVersion,
+    get_current_payload_schema_version,
+    get_schema_for_event,
+)
 from sage.runtime.event_log.schema import (
     CONTROLLER_ACTIONS,
     EVENT_TYPES,
@@ -27,4 +37,13 @@ __all__ = [
     "SOURCE_COMPONENTS",
     "CONTROLLER_ACTIONS",
     "EventLogUnavailable",
+    "EventLogSchemaError",
+    "PayloadSchemaVersion",
+    "PayloadFieldSpec",
+    "EventPayloadSchema",
+    "PAYLOAD_SCHEMAS",
+    "CURRENT_PAYLOAD_SCHEMA_VERSIONS",
+    "DEFAULT_PAYLOAD_STRING_MAX_BYTES",
+    "get_schema_for_event",
+    "get_current_payload_schema_version",
 ]
