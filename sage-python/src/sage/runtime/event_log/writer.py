@@ -4,7 +4,9 @@ from __future__ import annotations
 import contextvars
 import json
 import logging
+import math
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, TextIO, get_args, cast
@@ -67,6 +69,28 @@ def _coerce_threshold_band(value: str | None) -> ThresholdBand:
     if value in _THRESHOLD_BANDS:
         return cast(ThresholdBand, value)
     return "continue"
+
+
+_REASON_CODE_RE = re.compile(r"^[a-z0-9_.:-]{1,80}$")
+
+
+def _safe_reason_code(value: str | None) -> str:
+    text = (value or "").strip().lower()
+    if _REASON_CODE_RE.fullmatch(text):
+        return text
+    return "abstain_no_signal"
+
+
+def _safe_quality_score(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(score):
+        return None
+    return max(0.0, min(1.0, score))
 
 
 def install_event_log(log_obj: RuntimeEventLog | None) -> contextvars.Token[RuntimeEventLog | None]:
@@ -375,25 +399,30 @@ class RuntimeEventLog:
         safe_threshold_band = _coerce_threshold_band(
             threshold_band if isinstance(threshold_band, str) else None
         )
+        safe_reason_code = _safe_reason_code(reason_code)
+        safe_quality_score = _safe_quality_score(quality_score)
         from sage.runtime.oracle.env import oracle_enabled as _oracle_enabled
         force_safe_payload = _oracle_enabled()
-        payload: dict[str, Any] = {
-            "action": safe_action,
-            "target_node_id": target_node_id,
-            "gate_source_id": gate_source_id,
-            "gate_target_id": gate_target_id,
-            "reason": reason,
-        }
         if force_safe_payload:
-            payload.update(
-                {
-                    "node_id": node_id,
-                    "quality_score": quality_score,
-                    "quality_source": safe_quality_source,
-                    "threshold_band": safe_threshold_band,
-                    "reason_code": reason_code or "abstain_no_signal",
-                }
-            )
+            payload: dict[str, Any] = {
+                "node_id": str(node_id),
+                "action": safe_action,
+                "target_node_id": str(target_node_id or ""),
+                "gate_source_id": str(gate_source_id or ""),
+                "gate_target_id": str(gate_target_id or ""),
+                "quality_score": safe_quality_score,
+                "quality_source": safe_quality_source,
+                "threshold_band": safe_threshold_band,
+                "reason_code": safe_reason_code,
+            }
+        else:
+            payload = {
+                "action": safe_action,
+                "target_node_id": target_node_id,
+                "gate_source_id": gate_source_id,
+                "gate_target_id": gate_target_id,
+                "reason": reason,
+            }
         return self._emit(
             _ControllerDecision,
             "controller_decision",
@@ -402,10 +431,10 @@ class RuntimeEventLog:
             _force_payload=force_safe_payload,
             node_id=node_id,
             action=safe_action,
-            quality_score=quality_score if force_safe_payload else None,
+            quality_score=safe_quality_score if force_safe_payload else None,
             quality_source=safe_quality_source if force_safe_payload else None,
             threshold_band=safe_threshold_band if force_safe_payload else None,
-            reason_code=(reason_code or "abstain_no_signal") if force_safe_payload else "",
+            reason_code=safe_reason_code if force_safe_payload else "",
             target_node_id=target_node_id,
             gate_source_id=gate_source_id,
             gate_target_id=gate_target_id,

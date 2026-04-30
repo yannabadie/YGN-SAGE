@@ -6,10 +6,14 @@ bench (BigCodeBench Hard) WITHOUT shipping a calibrated Pass@1 claim.
 
 This module is the canonical validator for the artifacts produced by::
 
-    SAGE_ORACLE=1 SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 \
+    # cycle-7+ default-on (SAGE_ORACLE unset)
+    SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 SAGE_BENCH_DISABLE_REPAIR=1 \
     SAGE_TRACE_JSONL_DIR=<dir> \
     python -m sage.bench --type bigcodebench --subset hard --split instruct \
                          --limit N --output <report.json>
+
+The cycle/oracle-mode metadata in the generated Markdown report is parameterized
+via ``--cycle-tag`` and ``--oracle-mode`` CLI flags (defaults reflect cycle 7).
 
 It reads the RuntimeEventLog JSONL traces, the SAGE bench report, and the
 auto-emitted predictions JSONL; cross-checks the seam Exact verdict against
@@ -89,6 +93,23 @@ CONTROLLER_DECISION_SAFE_FIELDS: tuple[str, ...] = (
     "reason_code",
     "node_id",
 )
+
+
+# cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK: forced controller_decision
+# payloads must be allowlist-only. The previous "safe fields" set only checked
+# PRESENCE of metadata, not ABSENCE of unsafe keys (e.g. free-form ``reason``).
+# Any forced payload key outside this set is a contract violation.
+CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS: frozenset[str] = frozenset({
+    "node_id",
+    "action",
+    "target_node_id",
+    "gate_source_id",
+    "gate_target_id",
+    "quality_score",
+    "quality_source",
+    "threshold_band",
+    "reason_code",
+})
 
 
 def _summarize_controller_decision_payloads(
@@ -232,6 +253,20 @@ def main() -> int:
     parser.add_argument("--out-canonical-predictions", required=True, type=Path)
     parser.add_argument("--out-manifest", required=True, type=Path)
     parser.add_argument("--out-report", required=True, type=Path)
+    parser.add_argument(
+        "--cycle-tag",
+        default="cycle-7 default-on flip",
+        help="Cycle identifier for the report header (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--oracle-mode",
+        default="unset (default-on)",
+        help=(
+            "How SAGE_ORACLE was set for this run; "
+            "kill-switch is ``SAGE_ORACLE=0|false|off|no|disable|disabled`` "
+            "(default: %(default)s)."
+        ),
+    )
     args = parser.parse_args()
 
     # Load all artifacts.
@@ -269,6 +304,21 @@ def main() -> int:
                 raw_leak_findings.append(
                     f"{e.get('event_type','?')}@seq{e.get('seq','?')}:{leak}"
                 )
+            # cgpro 2026-04-30 cycle-7 VERIFY: any controller_decision
+            # payload key outside the allowlist is a contract violation,
+            # even if the value would otherwise pass the raw-leak scan.
+            if e.get("event_type") == "controller_decision":
+                payload = e.get("payload") or {}
+                if isinstance(payload, dict):
+                    extras = sorted(
+                        set(payload.keys())
+                        - CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
+                    )
+                    for k in extras:
+                        raw_leak_findings.append(
+                            f"controller_decision@seq{e.get('seq','?')}:"
+                            f"payload.{k}=non-allowlisted-key"
+                        )
 
     # Order JSONL files chronologically and zip with predictions order;
     # this is best-effort because the bench writes predictions in task-id
@@ -360,11 +410,12 @@ def main() -> int:
     )
 
     # Markdown report.
+    n_runs = len(runs)
     md_lines = [
-        "# Path E step 3 — BigCodeBench Hard Instruct N=10 seam validation",
+        f"# {args.cycle_tag} — BigCodeBench Hard Instruct N={n_runs} validation",
         "",
         "**Date**: 2026-04-29",
-        "**Cycle**: 6 R6.1a verify Path E (post Gate D)",
+        f"**Cycle**: {args.cycle_tag}",
         "**Purpose**: prove the live ``verdict_source=\"exact\", trainable=True`` "
         "contract on a synchronous-eval bench via the bench-result feedback seam.",
         "",
@@ -384,7 +435,11 @@ def main() -> int:
         "",
         "## Setup",
         "",
-        "- ``SAGE_ORACLE=1``, ``SAGE_RUN_FRAME=1``, ``SAGE_BENCH_ORACLE_SEAM=1``, ``SAGE_DIFF_VERIFIER_MODE=observe``",
+        f"- ``SAGE_ORACLE`` {args.oracle_mode}; kill-switch via "
+        "``SAGE_ORACLE=0|false|off|no|disable|disabled``.",
+        "- ``SAGE_RUN_FRAME=1``, ``SAGE_BENCH_ORACLE_SEAM=1``, "
+        "``SAGE_DIFF_VERIFIER_MODE=observe``",
+        "- ``SAGE_BENCH_DISABLE_REPAIR=1`` (T6) for clean first-attempt measurement.",
         "- ``StateCore`` OFF (``SAGE_STATECORE`` unset).",
         "- Throwaway bandit DB: production state moved to "
         "``.tmp/path_e_backup/`` pre-bench, restored post-bench. Production "
@@ -395,7 +450,7 @@ def main() -> int:
         "- Greedy decoding: SAGE pipeline default temperature settings; not "
         "the BCB CLI ``--temp 0`` enforcement (separate from the seam contract).",
         "- Single entry point: ``python -m sage.bench --type bigcodebench "
-        "--subset hard --split instruct --limit 10`` — no parallel scripts.",
+        f"--subset hard --split instruct --limit {n_runs}`` — no parallel scripts.",
         "",
         "## cgpro Path E B' minimum pass criteria",
         "",
@@ -480,10 +535,11 @@ def main() -> int:
         "- Bench command (canonical, single entry point):",
         "",
         "```bash",
-        "SAGE_ORACLE=1 SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 \\",
-        "  SAGE_TRACE_JSONL_DIR=.tmp/path_e_artifacts/jsonl_n10 \\",
+        "# default-on (cycle 7+) — SAGE_ORACLE unset",
+        "SAGE_RUN_FRAME=1 SAGE_BENCH_ORACLE_SEAM=1 SAGE_BENCH_DISABLE_REPAIR=1 \\",
+        f"  SAGE_TRACE_JSONL_DIR=.tmp/path_e_artifacts/jsonl_n{n_runs} \\",
         "  python -m sage.bench --type bigcodebench --subset hard --split instruct \\",
-        "                       --limit 10 --output report.json",
+        f"                       --limit {n_runs} --output report.json",
         "```",
         "",
         "## Manifest (SHA-256)",

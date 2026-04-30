@@ -1,5 +1,5 @@
 {
-  "_doc": "Golden fixture for controller_decision safe payload metadata. Payload is forced only when SAGE_ORACLE=1.",
+  "_doc": "Golden fixture for controller_decision allowlist-only forced payload (cycle 7+ default-on). Forced under default-on (SAGE_ORACLE unset or true-ish); falls back to legacy redacted payload only when SAGE_ORACLE kill-switch is set (0/false/off/no/disable/disabled). cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK: tightened to allowlist-only — free-form `reason` MUST NOT appear in the forced payload.",
   "schema_version": "1.0",
   "event_type": "controller_decision",
   "source_component": "controller",
@@ -9,11 +9,21 @@
     "payload_hash", "redaction_state", "node_id", "action"
   ],
   "_required_in_payload": [
-    "node_id", "quality_score", "quality_source", "threshold_band",
-    "action", "reason_code"
+    "node_id", "action", "target_node_id", "gate_source_id", "gate_target_id",
+    "quality_score", "quality_source", "threshold_band", "reason_code"
+  ],
+  "_allowed_in_forced_payload": [
+    "node_id", "action", "target_node_id", "gate_source_id", "gate_target_id",
+    "quality_score", "quality_source", "threshold_band", "reason_code"
+  ],
+  "_forbidden_in_forced_payload": [
+    "reason"
   ],
   "_invariants": [
     "MUST NEVER include raw node output text",
-    "Payload is forced for SAGE_ORACLE=1 and remains legacy-redacted when SAGE_ORACLE is unset"
+    "Forced payload (default-on) is ALLOWLIST-ONLY: any key outside _allowed_in_forced_payload is a contract violation",
+    "Free-form `reason` parameter is dropped on emission; use slug-constrained `reason_code` instead",
+    "`reason_code` is matched against `^[a-z0-9_.:-]{1,80}$`; non-matching values coerce to `abstain_no_signal`",
+    "`quality_score` is clamped to [0.0, 1.0]; non-finite (NaN, Inf) coerces to None"
   ]
 }

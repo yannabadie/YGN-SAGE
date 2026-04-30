@@ -36,7 +36,17 @@ def test_explicit_zero_is_off(monkeypatch: pytest.MonkeyPatch) -> None:
     assert oracle_enabled() is False
 
 
-@pytest.mark.parametrize("value", ["false", "False", "FALSE", "off", "OFF", "no", "NO"])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "false", "False", "FALSE",
+        "off", "OFF",
+        "no", "NO",
+        # cgpro 2026-04-30 cycle-7 VERIFY round-1: operators do type these.
+        "disable", "Disable", "DISABLE",
+        "disabled", "Disabled", "DISABLED",
+    ],
+)
 def test_alias_false_values_are_off(monkeypatch: pytest.MonkeyPatch, value: str) -> None:
     monkeypatch.setenv("SAGE_ORACLE", value)
     assert oracle_enabled() is False

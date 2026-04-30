@@ -14,6 +14,7 @@ Default semantics (post cycle-7 flip):
 - ``SAGE_ORACLE=true|on|yes``      ⇒ ON  (case-insensitive)
 - ``SAGE_ORACLE=0``                ⇒ OFF (kill-switch)
 - ``SAGE_ORACLE=false|off|no``     ⇒ OFF (case-insensitive)
+- ``SAGE_ORACLE=disable|disabled`` ⇒ OFF (operator-friendly; cgpro 2026-04-30)
 - any other value                  ⇒ ON  (treat as enabled by default)
 
 The kill-switch (``=0`` and friends) is the operator escape hatch — same
@@ -27,7 +28,9 @@ from __future__ import annotations
 
 import os
 
-_FALSE_VALUES: frozenset[str] = frozenset({"0", "false", "off", "no"})
+_FALSE_VALUES: frozenset[str] = frozenset(
+    {"0", "false", "off", "no", "disable", "disabled"}
+)
 
 
 def oracle_enabled() -> bool:

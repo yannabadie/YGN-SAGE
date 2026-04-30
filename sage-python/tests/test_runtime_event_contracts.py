@@ -398,6 +398,167 @@ def test_controller_decision_payload_populated_under_default_on(
     assert payload["reason_code"] == "quality_below_theta_critical"
 
 
+def test_controller_decision_forced_payload_excludes_freeform_reason(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-1 PUSH BACK: under default-on,
+    the forced controller_decision payload MUST NOT include the free-form
+    ``reason`` field. Even if the caller passes a ``reason`` containing a
+    Traceback or PII, neither the key ``reason`` nor any of its content
+    should leak into the emitted event.
+    """
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)  # default-on
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+
+    run_id = "01CONTRACTREASONLEAKTEST"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    log.emit_controller_decision(
+        node_id="0",
+        action="upgrade_model",
+        reason=(
+            "Traceback (most recent call last):\n"
+            "  File \"sage/topology/runner.py\", line 42\n"
+            "  email alice@example.com  AKIA1234567890ABCDEF\n"
+        ),
+        reason_code="quality_below_theta_critical",
+        quality_score=0.2,
+        quality_source="onnx",
+        threshold_band="critical",
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    controller = next(e for e in events if e["event_type"] == "controller_decision")
+    payload = controller["payload"]
+
+    assert "reason" not in payload, (
+        f"`reason` leaked into forced payload: keys={sorted(payload.keys())!r}"
+    )
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    assert "Traceback" not in payload_json
+    assert "alice@example.com" not in payload_json
+    assert "runner.py" not in payload_json
+
+
+def test_controller_decision_forced_payload_uses_allowlist_only(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-1: forced payload keys MUST be
+    a subset of CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS. Any key outside the
+    allowlist is a contract violation, even if its value would otherwise pass
+    the raw-leak scan.
+    """
+    from sage.bench.path_e_validate import CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
+
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)  # default-on
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+
+    run_id = "01CONTRACTALLOWLISTTEST0"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    log.emit_controller_decision(
+        node_id="3",
+        action="retry_node",
+        target_node_id="3",
+        gate_source_id="2",
+        gate_target_id="3",
+        reason="ignored under default-on",
+        reason_code="quality_below_theta_critical",
+        quality_score=0.15,
+        quality_source="onnx",
+        threshold_band="critical",
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    controller = next(e for e in events if e["event_type"] == "controller_decision")
+    payload = controller["payload"]
+
+    payload_keys = set(payload.keys())
+    extra_keys = payload_keys - CONTROLLER_DECISION_ALLOWED_PAYLOAD_KEYS
+    assert not extra_keys, (
+        f"forced payload has keys outside allowlist: {sorted(extra_keys)!r}"
+    )
+
+
+def test_controller_decision_reason_code_is_slug_constrained(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-1: free-form reason_code from a
+    caller (e.g. a multiline Traceback accidentally passed as reason_code)
+    must be coerced to the abstain sentinel, not surfaced verbatim.
+    """
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+
+    run_id = "01CONTRACTSLUGCOERCETEST"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    log.emit_controller_decision(
+        node_id="0",
+        action="continue",
+        reason_code="Traceback (most recent call last):\n  spaces and CAPS",
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    controller = next(e for e in events if e["event_type"] == "controller_decision")
+    payload = controller["payload"]
+
+    assert payload["reason_code"] == "abstain_no_signal"
+    payload_json = json.dumps(payload, ensure_ascii=False)
+    assert "Traceback" not in payload_json
+    assert "CAPS" not in payload_json
+
+
+def test_controller_decision_quality_score_clamps_non_finite(
+    tmp_path: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """cgpro 2026-04-30 cycle-7 VERIFY round-1: non-finite or out-of-range
+    quality_score values must be coerced (None for non-finite, clamp to
+    [0.0, 1.0] for finite) so downstream consumers never see NaN/Inf or
+    out-of-band values.
+    """
+    monkeypatch.delenv("SAGE_ORACLE", raising=False)
+    monkeypatch.delenv("SAGE_TRACE_RAW", raising=False)
+
+    run_id = "01CONTRACTQSCORECLAMPTST"
+    log = RuntimeEventLog(run_id=run_id, trace_dir=tmp_path)
+    log.set_task_text("contract test task")
+    log.emit_task_started("contract test task")
+    # NaN / Inf -> None; out-of-range -> clamped.
+    log.emit_controller_decision(
+        node_id="0",
+        action="continue",
+        quality_score=float("inf"),
+    )
+    log.emit_controller_decision(
+        node_id="1",
+        action="continue",
+        quality_score=2.5,
+    )
+    log.emit_controller_decision(
+        node_id="2",
+        action="continue",
+        quality_score=-0.5,
+    )
+    log.close()
+
+    events = _read_events(tmp_path / f"{run_id}.jsonl")
+    cdecs = [e for e in events if e["event_type"] == "controller_decision"]
+    assert cdecs[0]["payload"]["quality_score"] is None  # inf -> None
+    assert cdecs[1]["payload"]["quality_score"] == 1.0   # 2.5 -> 1.0
+    assert cdecs[2]["payload"]["quality_score"] == 0.0   # -0.5 -> 0.0
+
+
 def test_controller_decision_payload_fields_present_in_cycle7_n50_jsonls() -> None:
     """Analyzer reconciliation over the N=50 cycle-7 trace set."""
     from sage.bench.path_e_validate import (
