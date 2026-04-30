@@ -83,7 +83,7 @@ jobs:
 
       - name: Open or update dependency drift issue
         if: failure() || steps.dependency-diff.outputs.changed == 'true'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const owner = context.repo.owner;
