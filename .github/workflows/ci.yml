@@ -181,7 +181,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Download rustpython.wasm
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
           path: external/rustpython-wasm-target/wasm32-wasip1/release
@@ -270,7 +270,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Download rustpython.wasm
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
           path: external/rustpython-wasm-target/wasm32-wasip1/release
@@ -344,7 +344,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Download rustpython.wasm
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
           path: external/rustpython-wasm-target/wasm32-wasip1/release
@@ -403,7 +403,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Download rustpython.wasm
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
           path: external/rustpython-wasm-target/wasm32-wasip1/release
@@ -477,7 +477,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Download rustpython.wasm
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: rustpython-wasm-${{ needs.build-wasm-sandbox.outputs.rustpython-sha }}
           path: external/rustpython-wasm-target/wasm32-wasip1/release
