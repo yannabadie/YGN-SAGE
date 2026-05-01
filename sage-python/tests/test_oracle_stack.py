@@ -70,6 +70,43 @@ class FakeGraph:
         return []
 
 
+class _RustRouterProxy:
+    """A14b: wire _rust_router so record_outcome_checked reaches the test bandit."""
+
+    def __init__(self, bandit: Any) -> None:
+        self._bandit = bandit
+
+    def route_integrated(self, *_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            decision_id="decision-1",
+            model_id="model-a",
+            template="single_agent",
+            selected_template="single_agent",
+            system=1,
+            confidence=0.9,
+            estimated_cost=0.001,
+        )
+
+    def record_outcome_checked(
+        self,
+        decision_id: str,
+        executed_model_id: str,
+        executed_template: str,
+        quality: float,
+        cost: float,
+        latency_ms: float,
+    ) -> None:
+        if self._bandit is not None:
+            self._bandit.record_outcome_checked(
+                decision_id, executed_model_id, executed_template, quality, cost, latency_ms
+            )
+
+    def cancel_bandit_decision(self, decision_id: str) -> bool:
+        if self._bandit is not None and hasattr(self._bandit, "cancel_decision"):
+            return bool(self._bandit.cancel_decision(decision_id))
+        return True
+
+
 class RecordingBandit:
     def __init__(self) -> None:
         self.checked_records: list[tuple[str, str, str, float, float, float]] = []
@@ -194,6 +231,9 @@ def _make_pipeline(
     pipeline._stage_select_topology = _select  # type: ignore[method-assign]
     pipeline._stage_assign_models = _assign  # type: ignore[method-assign]
     pipeline._stage_execute = _execute  # type: ignore[method-assign]
+    # A14b: _rust_router handles record_outcome_checked; wire proxy to bandit.
+    if bandit is not None:
+        pipeline._rust_router = _RustRouterProxy(bandit)
     return pipeline
 
 

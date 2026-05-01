@@ -39,6 +39,13 @@ import pytest
 from sage.pipeline import CognitiveOrchestrationPipeline
 
 
+@pytest.fixture(autouse=True)
+def _legacy_oracle_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Tests exercise the legacy pipeline path. Apply SAGE_ORACLE=0 so the
+    cycle-7 default-on flip does not change expectations here."""
+    monkeypatch.setenv("SAGE_ORACLE", "0")
+
+
 # ── Minimal stage mocks (subset of test_pipeline.py — kept self-contained) ───
 
 
