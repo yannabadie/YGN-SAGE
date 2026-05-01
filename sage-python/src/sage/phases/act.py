@@ -272,6 +272,20 @@ async def act(
             if not allowed:
                 log.debug("write_gate blocked memory write: %s",
                           getattr(decision, "reason", "<no reason>"))
+                try:
+                    from sage.memory.write_gate import log_write_gate_skipped
+                    log_write_gate_skipped(
+                        reason="gate_rejected",
+                        content_len=content_len,
+                        has_tool_calls=has_tool_calls,
+                        source_tier=gate_tier,
+                        tool_call_count=tool_call_count,
+                        episodic_wired=episodic_wired,
+                        semantic_wired=semantic_wired,
+                        memory_agent_wired=memory_agent_wired,
+                    )
+                except Exception:
+                    pass  # never let logging break the write path
             return allowed
         except Exception as exc:
             log.debug("write_gate evaluate raised, allowing write: %s", exc)

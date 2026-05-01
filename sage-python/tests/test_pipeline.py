@@ -57,12 +57,32 @@ class _MockRouter:
 
     def __init__(self, system: int = 2) -> None:
         self._system = system
+        self.checked_recorded: list[tuple] = []
 
     def assess_complexity(self, task: str) -> _MockProfile:
         return _MockProfile(system=self._system)
 
     def route(self, profile: _MockProfile) -> _MockDecision:
         return _MockDecision(system=profile.system)
+
+    def route_integrated(self, task: str, constraints: Any = None, topology_id: str = "") -> "_MockBanditDecision":
+        return _MockBanditDecision()
+
+    def record_outcome_checked(
+        self,
+        decision_id: str,
+        executed_model_id: str,
+        executed_template: str,
+        quality: float,
+        cost: float,
+        latency_ms: float,
+    ) -> None:
+        self.checked_recorded.append(
+            (decision_id, executed_model_id, executed_template, quality, cost, latency_ms)
+        )
+
+    def cancel_bandit_decision(self, decision_id: str) -> bool:
+        return True
 
 
 class _MockTopology:
@@ -154,6 +174,10 @@ class _MockBanditDecision:
         self.decision_id = "mock_decision_001"
         self.model_id = "mock-model"
         self.template = "single_agent"
+        self.selected_template = "single_agent"
+        self.system = 1
+        self.confidence = 0.9
+        self.estimated_cost = 0.001
         self.context: list[float] = []
 
 
@@ -228,8 +252,9 @@ async def test_pipeline_full_run():
     single_topo = _MockTopology(n_nodes=1)
     engine = _MockEngine(_MockGenerateResult(single_topo))
 
+    router = _MockRouter(system=1)
     pipeline = CognitiveOrchestrationPipeline(
-        router=_MockRouter(system=1),
+        router=router,
         engine=engine,
         assigner=_MockAssigner(),
         provider_pool=_MockExecutionProviderPool(provider),
@@ -239,15 +264,18 @@ async def test_pipeline_full_run():
         llm_provider=provider,
         llm_config=None,
     )
+    # A14b: _rust_router is separate from router; wire the mock so the pipeline
+    # exercises the route_integrated + record_outcome_checked path.
+    pipeline._rust_router = router
 
     result = await pipeline.run("Write a function to sort a list", budget_usd=3.0)
 
     assert result == "Pipeline test response"
     # Verify events emitted for each stage
     assert event_bus.emit.call_count >= 5  # CLASSIFY, DECOMPOSE, SELECT_TOPOLOGY, ASSIGN_MODELS, LEARN
-    # Verify bandit recorded via the checked causal path.
-    assert len(bandit.recorded) == 1
-    assert bandit.recorded[0][0] == "mock_decision_001"
+    # Verify bandit recorded via the checked causal path (A14b: calls _rust_router.record_outcome_checked).
+    assert len(router.checked_recorded) == 1
+    assert router.checked_recorded[0][0] == "mock_decision_001"
 
 
 # -- H5 (2026-04-19): single-agent bypass must wire the write_gate -------------
@@ -965,8 +993,9 @@ async def test_pipeline_quality_estimator_used_in_learn():
     qe = _MockQualityEstimator()
     provider = _MockLLMProvider()
 
+    router = _MockRouter(system=1)
     pipeline = CognitiveOrchestrationPipeline(
-        router=_MockRouter(system=1),
+        router=router,
         engine=None,
         assigner=None,
         provider_pool=_MockExecutionProviderPool(provider),
@@ -974,12 +1003,13 @@ async def test_pipeline_quality_estimator_used_in_learn():
         quality_estimator=qe,
         llm_provider=provider,
     )
+    pipeline._rust_router = router
 
     await pipeline.run("Quick task")
 
-    assert len(bandit.recorded) == 1
-    # Quality estimator returns 0.85
-    assert bandit.recorded[0][3] == 0.85
+    assert len(router.checked_recorded) == 1
+    # Quality estimator returns 0.85; index 3 = quality in (decision_id, model_id, template, quality, ...)
+    assert router.checked_recorded[0][3] == 0.85
 
 
 @pytest.mark.asyncio
@@ -989,8 +1019,9 @@ async def test_pipeline_empty_result_records_zero_quality():
     qe = _MockQualityEstimator()
     provider = _MockLLMProvider(content="")
 
+    router = _MockRouter(system=1)
     pipeline = CognitiveOrchestrationPipeline(
-        router=_MockRouter(system=1),
+        router=router,
         engine=None,
         assigner=None,
         provider_pool=_MockExecutionProviderPool(provider),
@@ -998,13 +1029,14 @@ async def test_pipeline_empty_result_records_zero_quality():
         quality_estimator=qe,
         llm_provider=provider,
     )
+    pipeline._rust_router = router
 
     result = await pipeline.run("This will fail")
 
     assert result == ""
-    assert len(bandit.recorded) == 1
+    assert len(router.checked_recorded) == 1
     # Empty result => quality must be 0.0, not 0.5
-    assert bandit.recorded[0][3] == 0.0
+    assert router.checked_recorded[0][3] == 0.0
 
 
 @pytest.mark.asyncio

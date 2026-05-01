@@ -4,9 +4,14 @@ description: 27 commits closing 3 audit files; §6.4 advisor MERGE verdict; A19 
 type: project
 originSessionId: e6496ce0-f81e-4f1f-bc19-bd2fd75b67ef
 ---
-**Batch range:** `820ea3e2..39e95106` (27 commits, +10085/-100 LOC).
+**Batch range:** `820ea3e2..3546ea31` (31 commits, +10470/-100 LOC).
 **Authoritative artefact:** `docs/audits/2026-04-24-audit3-triage/AUDIT-RESOLUTION-REPORT-COMPLETE.md`.
 **Triage annex:** `docs/audits/2026-04-24-audit3-triage/AUDIT1-AUDIT2-annex.md`.
+
+**Final state:** 10/10 fixes fully wired. §6.4 advisor verdict MERGE.
+All 3 audit-file claims ("still true on main" findings from §6.4) now
+false on main via post-advisor closure commits (`03ce6c57` A19,
+`2d45b7c1` A13, `12474d39` A14).
 
 ## Shipped fixes (10 tickets, 2026-04-24)
 
@@ -19,11 +24,11 @@ originSessionId: e6496ce0-f81e-4f1f-bc19-bd2fd75b67ef
 | A16 secret redaction | `c6538a76` | AUDIT.md §6 S5 | ✅ wired | 5 regex classes × 3 consumers (events/bus, episodic, working). |
 | A17 CI supply-chain | `170710c3` | AUDIT.md §6 S8 | ✅ wired | pip-audit + cargo-audit + cargo-deny. |
 | A18 ToolForge strict | `24541dd8` | AUDIT3 #15 | ✅ wired | `SAGE_TOOLFORGE_STRICT=1` **default**. |
-| A13 prompt-injection | `19cb2271` | AUDIT3 #10 / R1 | ⚠️ library only | Regex detector. Not wired into `agent_loop.py`. Product decision needed: log-only vs refuse. |
-| A14 ToolResult validation | `ee448b76` | AUDIT3 #17 | ⚠️ library only | `output_schema` opt-in API. No tool instantiates with it yet. Product decision needed: which built-in tools declare schemas. |
+| A13 prompt-injection | `19cb2271` + `2d45b7c1` | AUDIT3 #10 / R1 | ✅ wired **after §6.4** | Regex detector called at task-ingest in `agent_loop.run`; log-only mode (user decision 1a). Emits `PROMPT_INJECTION_DETECTED` event with pattern_name + span. Upgrade to "refuse HIGH-severity" = 1-line (swap `detect` → `check`). 4 wiring tests. |
+| A14 ToolResult validation | `ee448b76` + `12474d39` | AUDIT3 #17 | ✅ wired **after §6.4** | `Tool.define` threads `output_schema` through; `call_agent` → `CallAgentResult`, `list_active_agents` → `ListActiveAgentsResult` (user decision 2c: opt-in per-tool, only JSON-returning tools). 7 tests. Free-form string tools opt-in-not-taken pending handler upgrades. |
 | A19 gateway auth | `cc9cba44`+`03ce6c57` | AUDIT.md §6 S7/S9 | ✅ wired **after §6.4 advisor callout** | `resolve_bind_host` + `warn_insecure_bind` + `BaseHTTPMiddleware(dispatch=require_bearer_middleware())` installed in both A2A app + MCP server when `SAGE_PROTOCOL_BEARER_TOKEN` set. |
 
-**Final score:** 8/10 fully-wired + 2/10 library-only (A13, A14 gated on product decisions).
+**Final score (post-A13/A14 closure):** 10/10 fully-wired. All original ⚠️ library-only rows resolved after product decisions + advisor review.
 
 ## §6.4 advisor verdict: MERGE-AVEC-RÉSERVES (defensible)
 

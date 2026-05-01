@@ -38,6 +38,16 @@ class _AllowingGate:
         )
 
 
+class _RejectingGate:
+    def evaluate(self, *_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            allowed=False,
+            salience_score=0.1,
+            signal_breakdown={},
+            reason="below_threshold",
+        )
+
+
 class _EpisodicMemory:
     def __init__(self) -> None:
         self.stored: list[dict[str, Any]] = []
@@ -122,3 +132,40 @@ async def test_skip_reason_tool_only_empty_content(
     assert "semantic_wired=true" in msg
     assert "memory_agent_wired=true" in msg
     assert "source_tier=unit" in msg
+
+
+@pytest.mark.asyncio
+async def test_gate_rejected_logs_skip_reason_without_persisting(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.INFO, logger="sage.memory.write_gate")
+    loop = _Loop()
+    loop.write_gate = _RejectingGate()
+    response = SimpleNamespace(
+        content=(
+            "This response is intentionally long enough to qualify for both "
+            "episodic and semantic write paths, but the salience gate rejects it."
+        ),
+        tool_calls=[],
+        thinking="",
+    )
+
+    await act(
+        "task",
+        response.content,
+        response,
+        False,
+        [],
+        loop,  # type: ignore[arg-type]
+    )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any(
+        "memory.write_gate.fired decision=abstain" in message
+        for message in messages
+    )
+    assert any(
+        "memory.write_gate.skipped reason=gate_rejected" in message
+        for message in messages
+    )
+    assert loop.episodic_memory.stored == []
