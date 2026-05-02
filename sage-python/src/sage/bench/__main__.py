@@ -153,6 +153,25 @@ def _print_report(report) -> None:
 
 _BOOT_TIER = "fast"  # Set by main() from --tier flag
 
+# A14 topology state files that trigger the epoch guard at boot
+_A14_STATE_FILES = ("bandit_state.db", "archive_state.db", "engine_extras.json", "topology_state_manifest.json")
+
+
+def _clear_a14_topology_state() -> None:
+    """Remove A14 topology state files before each ablation config boot.
+
+    Each ablation config must boot from a clean slate — topology posteriors
+    from config N should not influence config N+1 (that would bias the delta
+    measurement). Without cleanup the second boot hits the A14 epoch guard
+    (state files present, manifest absent) and crashes.
+    """
+    import pathlib
+    state_dir = pathlib.Path.home() / ".sage"
+    for fname in _A14_STATE_FILES:
+        p = state_dir / fname
+        if p.exists():
+            p.unlink()
+
 
 def _boot_system(tier: str | None = None):
     """Boot AgentSystem with real LLM (requires GOOGLE_API_KEY)."""
@@ -220,6 +239,7 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
               f"routing={config.routing} guardrails={config.guardrails}")
         print(f"{'#' * 60}")
 
+        _clear_a14_topology_state()
         system, bus = _boot_system()
 
         if config.label == "baseline":
