@@ -988,6 +988,14 @@ The "wire into offline evolution loop" call site remains a roadmap follow-up —
 
 **Open follow-up — A32-wire:** integrate `AdaptiveMutator` into `EvolutionEngine.evolve()` or the standalone evolution training scripts (offline only). Keep the per-task `AgentLoop` runtime path on fixed-tier. ~½ day, gated on a real benchmark to validate that bandit-driven tier selection beats fixed-tier mutation in practice.
 
+### A33. deepseek-v4-flash reasoning_content multi-turn fix — ✅ SHIPPED 2026-05-02 (commit `27770580`)
+
+**Why:** deepseek-v4-flash returns `reasoning_content` in thinking-mode responses during multi-agent topology turns. Without an `OpenAIModelProfile`, pydantic-ai omits it in subsequent requests → DeepSeek API HTTP 400 "reasoning_content must be passed back". Manifested as `Stage 4 multi-agent execution failed → falling back to single-agent` in A2 smoke. Same failure class as Kimi k2.5 (roadmap-A8 Phase 3, commit `ec5d0c98`).
+
+**Fix:** New `deepseek_openai` provider kind with `OpenAIModelProfile(supports_thinking=True, openai_chat_thinking_field='reasoning_content', openai_chat_send_back_thinking_parts='field')`. `_PROVIDER_MAP["deepseek"]` now uses this kind. `model_profiles.toml` updated: `deepseek-chat` → `deepseek-v4-flash` with corrected pricing from cards.toml A11 values.
+
+**Note:** A2 bench was running with the old code — fallbacks occurred on 2/N tasks before fix was deployed. A3 N=50 will use the fixed code.
+
 ### A31. S-MMU cold-start gap (sans-pitié audit 2026-04-27) — architectural follow-up
 
 **Why:** `MultiViewMMU` (`sage-core/src/memory/smmu.rs`) has no `save`/`load` — chunks are wholly in-memory. Path 1 of the 6-path topology generation (S-MMU similarity hit, similarity > 0.7 AND quality > 0.5) is therefore guaranteed to miss on every cold start. Falls through to Path 2 (archive, which IS persisted) so the loss is bounded — but the costly retrieval work S-MMU was doing is reset with each restart.
