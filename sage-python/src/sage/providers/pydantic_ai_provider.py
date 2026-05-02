@@ -53,7 +53,7 @@ _PROVIDER_MAP: dict[str, dict[str, Any]] = {
     "kimi": {"kind": "moonshot"},
     "openrouter": {"kind": "native_openrouter"},
     # Custom OpenAI-compat endpoints
-    "deepseek": {"kind": "custom_openai", "base_url": "https://api.deepseek.com/v1"},
+    "deepseek": {"kind": "deepseek_openai", "base_url": "https://api.deepseek.com/v1"},
     "minimax": {"kind": "custom_openai", "base_url": "https://api.minimax.io/v1"},
 }
 
@@ -141,6 +141,30 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
         from pydantic_ai.providers.openrouter import OpenRouterProvider
         return OpenRouterModel(
             model_id, provider=OpenRouterProvider(api_key=api_key or "")
+        )
+
+    if kind == "deepseek_openai":
+        # A33 (2026-05-02): deepseek-v4-flash returns reasoning_content in
+        # multi-turn tool-call responses. Without a thinking profile, the
+        # next turn omits it and DeepSeek rejects with HTTP 400
+        # "reasoning_content must be passed back". Apply the same
+        # OpenAIModelProfile fix as kimi (roadmap-A8 Phase 3).
+        # Context7 `/pydantic/pydantic-ai` docs.thinking.md, OpenAI section:
+        # openai_chat_thinking_field extracts the field into ThinkingPart;
+        # openai_chat_send_back_thinking_parts='field' re-emits it on
+        # subsequent turns. deepseek-v4-flash 1M context, tool calls, JSON.
+        from pydantic_ai.models.openai import OpenAIChatModel
+        from pydantic_ai.profiles.openai import OpenAIModelProfile
+        from pydantic_ai.providers.openai import OpenAIProvider
+        deepseek_profile = OpenAIModelProfile(
+            supports_thinking=True,
+            openai_chat_thinking_field="reasoning_content",
+            openai_chat_send_back_thinking_parts="field",
+        )
+        return OpenAIChatModel(
+            model_id,
+            provider=OpenAIProvider(base_url=cfg["base_url"], api_key=api_key or ""),
+            profile=deepseek_profile,
         )
 
     if kind == "custom_openai":

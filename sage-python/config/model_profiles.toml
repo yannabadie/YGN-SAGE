@@ -5,12 +5,12 @@
 
 [models]
 
-[models."deepseek-chat"]
+[models."deepseek-v4-flash"]
 reasoning = 0.85
 coding = 0.88
 speed = 0.95
-cost_input_per_1k = 0.00028
-cost_output_per_1k = 0.00042
+cost_input_per_1k = 0.00014  # cache-miss; $0.028/1M cache-hit
+cost_output_per_1k = 0.00028
 
 [models."gemini-3.1-pro-preview"]
 reasoning = 0.92
