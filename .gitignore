@@ -47,6 +47,10 @@ neo4j-data/
 qdrant-data/
 .qdrant_store/
 
+# Temporary working directories (cgpro/codex artifacts, pytest temp roots)
+.tmp/
+**/.tmp/
+
 # Auto-generated evolution logs (keep .md files)
 research_journal/H*.json
 
