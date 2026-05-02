@@ -86,7 +86,7 @@ Repository = "https://github.com/yannabadie/YGN-SAGE"
 Documentation = "https://github.com/yannabadie/YGN-SAGE/tree/master/docs"
 
 [project.scripts]
-sage = "sage.protocols.serve:main"
+sage = "sage.cli:main"
 
 [build-system]
 requires = ["hatchling"]
