@@ -51,6 +51,9 @@ qdrant-data/
 .tmp/
 **/.tmp/
 
+# Test zip artifacts (ToolForge / TypedRepo smoke outputs)
+sage-python/files.zip
+
 # Auto-generated evolution logs (keep .md files)
 research_journal/H*.json
 
