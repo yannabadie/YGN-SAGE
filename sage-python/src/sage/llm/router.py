@@ -23,8 +23,8 @@ _HARDCODED = {
     "fast": "gemini-3.1-flash-lite-preview",
     "mutator": "gpt-5.4-mini",
     "reasoner": "gemini-3.1-pro-preview",
-    "budget": "deepseek-chat",
-    "fallback": "deepseek-chat",
+    "budget": "deepseek-v4-flash",
+    "fallback": "deepseek-v4-flash",
 }
 
 _MAX_TOKENS = {

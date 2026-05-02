@@ -225,7 +225,7 @@ class MASBenchAblation:
             base_url=cfg["base_url"],
             provider_name=cfg["provider"],
         )
-        bare_model = cfg.get("default_model", "deepseek-chat")
+        bare_model = cfg.get("default_model", "deepseek-v4-flash")
         log.info("Bare model: %s via %s", bare_model, cfg["provider"])
 
         results = []

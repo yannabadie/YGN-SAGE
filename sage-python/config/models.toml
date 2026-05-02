@@ -8,11 +8,11 @@ mutator = "gpt-5.4-mini"                     # OpenAI — budget frontier, $0.75
 reasoner = "gemini-3.1-pro-preview"          # Google — complex evaluation, $2/$12
 codex = "gpt-5.4"                            # OpenAI — SOTA coding
 codex_max = "gpt-5.4-pro"                    # OpenAI — max quality
-budget = "deepseek-chat"                     # DeepSeek — best cost/quality, $0.28/$0.42
-fallback = "deepseek-chat"                   # DeepSeek — no rate limits, reliable
+budget = "deepseek-v4-flash"                 # DeepSeek — deepseek-chat successor (sunset 2026-07-24), 1M context
+fallback = "deepseek-v4-flash"               # DeepSeek — no rate limits, reliable
 
 # Providers available for topology multi-node execution:
-#   DeepSeek:    deepseek-chat, deepseek-reasoner
+#   DeepSeek:    deepseek-v4-flash, deepseek-v4-pro (deepseek-chat deprecated 2026-07-24)
 #   OpenAI:      gpt-5.4, gpt-5.4-mini, gpt-5.4-nano, gpt-5.4-pro
 #   Google:      gemini-3.1-pro-preview, gemini-3.1-flash-lite-preview, gemini-3-flash-preview
 #   xAI:         grok-4-1-fast-reasoning, grok-3-mini, grok-3
