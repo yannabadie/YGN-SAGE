@@ -127,6 +127,16 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 `advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
 
+## Current State (May 2, 2026 — Cycle-9 A2 smoke running)
+
+- **Tests** (canonical at `docs/status/current.json`): **2902 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
+- **Cycle-9 closed work** (HEAD `5617440e`): A14b attribution closure (commits `34e42ea5→6f23eea4`, cgpro-APPROVED), T2 memory write paths (YGN-16 tests 9/9 at `886597de`), swebench_patch_repair.py two-stage repair (18/18 tests), deepseek-chat→deepseek-v4-flash migration (3 files, `24f97f3c`), A33 deepseek reasoning_content multi-turn fix (`27770580`).
+- **A14 reset 2026-05-02**: pre-A14 bandit/MAP-Elites state moved to `~/.sage/contaminated/pre_a14_20260502`. Clean epoch=1. Audit dump at `.tmp/a14_reset_20260502/`.
+- **A2 N=10 smoke RUNNING**: `python -m sage.bench --type ablation --limit 10 --tier budget`. Paired ablation (full/baseline/no-memory/no-avr/no-routing/no-guardrails) × 10 BCB-Hard tasks with deepseek-v4-flash. Gate: ≥4/10 → A3 N=50, 3/10 → diagnostic, ≤2/10 → rollback.
+- **Budget tier**: `deepseek-v4-flash` (non-thinking successor to deprecated deepseek-chat). `models.toml` + `llm/router.py` updated. A33 adds `OpenAIModelProfile` for thinking-mode multi-turn safety.
+- **Symphony**: YGN-16 T2 tests on main. feat/symphony-dev-orchestration deferred (3 blockers; ops-only PR planned after A2 gate).
+- **Strategic positioning locked (cgpro 2026-05-02)**: Cycle-9 = budget tier paired ablation. Premium frontier = Cycle-12+. SWE-bench-Live = Cycle-11. A31 + A32-followup = Tier 2. Rust changes only if A2 proves a gap.
+
 ## Current State (April 30, 2026 — post cycle-8)
 
 - **Cycle-8 R6.1c + A14 shipped + closeout in progress**. Stack:
