@@ -16,12 +16,16 @@ We do NOT change write-gate thresholds or DB schema (per cgpro lock).
 """
 from __future__ import annotations
 
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
-from sage.agent_loop_factory import create_node_agent_loop
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from sage.agent_loop_factory import create_node_agent_loop  # noqa: E402
 
 
 @pytest.fixture
