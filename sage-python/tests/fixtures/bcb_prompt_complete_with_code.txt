@@ -10,3 +10,5 @@ def task_func(directory: str) -> list:
 
 """Download all files from FTP."""
 def task_func(...): pass
+
+OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function implementation that starts with `def task_func(`. No planning, no diffs, no explanations — just working Python code.

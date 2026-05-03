@@ -1,1 +1,3 @@
 Download all files from a specific directory on an FTP server using wget in a subprocess.
+
+OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function implementation that starts with `def task_func(`. No planning, no diffs, no explanations — just working Python code.

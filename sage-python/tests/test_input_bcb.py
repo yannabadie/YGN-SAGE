@@ -125,11 +125,14 @@ def test_normalize_bcb_falls_back_to_instruct_prompt_when_complete_missing():
     assert ti.prompt == CANONICAL_TASK["instruct_prompt"]
 
 
-def test_normalize_bcb_instructions_is_empty_string():
-    """BCB has no workflow template (unlike SWE-bench). `instructions`
-    stays empty so C4's layered builder knows to skip the workflow
-    section for this source."""
-    assert normalize_bcb(CANONICAL_TASK).instructions == ""
+def test_normalize_bcb_instructions_prevents_tool_loops():
+    """BCB tasks are self-contained — no repository to explore. instructions
+    guides direct code generation and prevents tool-search loops on multi-agent
+    bypass paths (C5, 2026-05-03)."""
+    ti = normalize_bcb(CANONICAL_TASK)
+    assert "self-contained" in ti.instructions
+    assert "Python" in ti.instructions
+    assert ti.instructions  # non-empty
 
 
 # ---------------------------------------------------------------------------
@@ -164,17 +167,19 @@ def test_render_bcb_prompt_matches_fixture_no_code():
 def test_build_prompt_delegates_to_input_layer():
     """The bench's per-task prompt matches the explicit normalize +
     render path — confirms the inline-builder swap in
-    bigcodebench_bench.py landed cleanly."""
+    bigcodebench_bench.py landed cleanly (C3). C5 adds OUTPUT REQUIREMENT."""
     from sage.input.bcb import normalize_bcb, render_bcb_prompt
 
     via_layer = render_bcb_prompt(normalize_bcb(CANONICAL_TASK, "instruct"))
-    # Reproduce the EXACT inline expression pre-C3 used. If the inline
-    # code ever comes back (regression), this diverges.
     prompt = CANONICAL_TASK["instruct_prompt"]
     code_prompt = CANONICAL_TASK["code_prompt"]
+    entry = CANONICAL_TASK["entry_point"]
     inline_equiv = (
         f"Use this function signature and imports:\n"
         f"```python\n{code_prompt}\n```\n\n{prompt}"
+        f"\n\nOUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function "
+        f"implementation that starts with `def {entry}(`. No planning, no diffs, "
+        "no explanations — just working Python code."
     )
     assert via_layer == inline_equiv
 
