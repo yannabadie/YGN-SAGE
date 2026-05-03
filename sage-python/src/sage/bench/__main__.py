@@ -266,9 +266,14 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
 
         _clear_a14_topology_state()
         # BCB tasks are self-contained function stubs with no actual
-        # repository. Repo tools (search_repo, read_file, list_files)
-        # cause agents to loop on empty codebase and hit 120s timeouts.
+        # repository. Clear ALL tools after boot — deepseek-v4-flash
+        # prefers tool calls over direct code generation whenever ANY
+        # tool is available (repo tools, meta-tools, memory tools,
+        # ExoCortex). Framework value for BCB comes from routing,
+        # topology selection, and memory CONTEXT INJECTION (automatic
+        # in perceive.py) — none of which requires tool calls.
         system, bus = _boot_system(register_repo_tools=False)
+        system.tool_registry._tools.clear()
 
         if config.label == "baseline":
             # Disable pipeline entirely — bare LLM call via legacy path
@@ -415,6 +420,7 @@ async def _run_bigcodebench(output: str | None, limit: int | None, subset: str, 
 
     if os.environ.get("GOOGLE_API_KEY"):
         system, bus = _boot_system(register_repo_tools=False)
+        system.tool_registry._tools.clear()
         bench = BigCodeBenchBench(system=system, event_bus=bus, subset=subset, split=split)
     else:
         bench = BigCodeBenchBench(subset=subset, split=split)
