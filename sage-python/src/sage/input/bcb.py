@@ -68,7 +68,17 @@ def normalize_bcb(task: dict[str, Any], split: str = "instruct") -> TaskInput:
             "libs": task.get("libs", "") or "",
             "split": split,
         },
-        instructions="",
+        # BCB tasks are self-contained function stubs — there is no repository
+        # to explore. Without this instruction, multi-agent nodes call
+        # search_repo/read_file in loops against an empty codebase and burn
+        # the full 120s task timeout. Direct code generation is both faster
+        # and correct for atomic BCB challenges.
+        instructions=(
+            "This is a self-contained coding task. Write the complete Python "
+            "function implementation directly. Do NOT call any file-search or "
+            "code-exploration tools — there is no repository to explore. "
+            "Return only the implementation code."
+        ),
         source="bcb",
     )
 
