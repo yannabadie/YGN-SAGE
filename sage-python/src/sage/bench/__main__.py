@@ -257,12 +257,27 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
 
     all_results: dict[str, dict] = {}
 
+    # Tracks the EpisodicStore from the previous config so we can close its
+    # aiosqlite connection before _clear_a14_topology_state() tries to unlink
+    # episodic.db. Windows does not set FILE_SHARE_DELETE on open SQLite files,
+    # so p.unlink() raises PermissionError [WinError 32] if the connection is
+    # still live. Must be saved BEFORE config.apply() because no-memory config
+    # sets system.agent_loop.consolidator = None, losing the reference.
+    prev_episodic = None
+
     for config in ABLATION_CONFIGS:
         print(f"\n{'#' * 60}")
         print(f"  ABLATION: {config.label}")
         print(f"  memory={config.memory} avr={config.avr} "
               f"routing={config.routing} guardrails={config.guardrails}")
         print(f"{'#' * 60}")
+
+        if prev_episodic is not None:
+            try:
+                await prev_episodic.close()
+            except Exception:
+                pass
+            prev_episodic = None
 
         _clear_a14_topology_state()
         # BCB tasks are self-contained function stubs with no actual
@@ -274,6 +289,10 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         # in perceive.py) — none of which requires tool calls.
         system, bus = _boot_system(register_repo_tools=False)
         system.tool_registry._tools.clear()
+
+        # Save episodic reference before config may null the consolidator.
+        _consolidator = getattr(getattr(system, "agent_loop", None), "consolidator", None)
+        prev_episodic = getattr(_consolidator, "episodic", None)
 
         if config.label == "baseline":
             # Disable pipeline entirely — bare LLM call via legacy path

@@ -1,11 +1,10 @@
 """BigCodeBench normalizer — BCB task dict → TaskInput → prompt string.
 
-C3 (2026-04-22): byte-identical migration of the inline prompt build
-previously living in `sage.bench.bigcodebench_bench.run()` at lines
-79-87. Pure refactor — no content change. The generic prompt builder
-that lands in C4 will replace `render_bcb_prompt` with a layered
-composition; until then this function reproduces the exact byte
-sequence the bench used to emit.
+C3 (2026-04-22): migrated the inline prompt build that previously lived
+in `sage.bench.bigcodebench_bench.run()` at lines 79-87.
+C5 (2026-05-03): `render_bcb_prompt` appends an OUTPUT REQUIREMENT so
+the synthesizer node emits Python code rather than planning summaries
+("no output" failure mode — v6 ablation, 3/10 tasks affected).
 
 BCB task dict fields consumed:
     instruct_prompt / complete_prompt : natural-language request
@@ -84,19 +83,27 @@ def normalize_bcb(task: dict[str, Any], split: str = "instruct") -> TaskInput:
 
 
 def render_bcb_prompt(task_input: TaskInput) -> str:
-    """Reproduce the pre-C3 inline prompt-build output **byte-for-byte**.
+    """Build the BCB task string that all topology nodes receive.
 
     Only responsible for BCB-shaped inputs (`task_input.source == "bcb"`
-    and hints carry `code_prompt`). The generic prompt builder that
-    lands in C4 will replace this with a layered composition; byte
-    identity is what makes this commit safe to merge without disturbing
-    the 2026-04-21 BCB smoke baseline.
+    and hints carry `code_prompt`). Appends an explicit OUTPUT REQUIREMENT
+    so that the synthesizer node produces Python code instead of echoing
+    the planner's planning text — the "no output" failure mode observed in
+    v6 ablation (3/10 tasks returned planning summaries with no
+    `def task_func(` definition).
     """
     nl_prompt = task_input.prompt
     code_prompt = (task_input.hints.get("code_prompt") or "")
     if code_prompt:
-        return (
+        base = (
             f"Use this function signature and imports:\n"
             f"```python\n{code_prompt}\n```\n\n{nl_prompt}"
         )
-    return nl_prompt
+    else:
+        base = nl_prompt
+    return (
+        f"{base}\n\n"
+        "OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function "
+        "implementation that starts with `def task_func(`. No planning, no diffs, "
+        "no explanations — just working Python code."
+    )
