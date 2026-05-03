@@ -552,7 +552,7 @@ class TopologyController:
             ctx_system = self._ctx_value(ctx, "system", None)
             task_system = ctx_system if isinstance(ctx_system, int) and ctx_system in (1, 2, 3) else None
             try:
-                return self._assigner.assign_single_node(
+                candidate = self._assigner.assign_single_node(
                     topology,
                     node_idx,
                     task_domain,
@@ -564,7 +564,7 @@ class TopologyController:
                 try:
                     # Older Rust .pyd / Python fallback that doesn't
                     # know task_system — drop it and retry.
-                    return self._assigner.assign_single_node(
+                    candidate = self._assigner.assign_single_node(
                         topology,
                         node_idx,
                         task_domain,
@@ -573,8 +573,18 @@ class TopologyController:
                     )
                 except Exception as exc:
                     log.debug("assign_single_node retry (no task_system) failed: %s", exc)
+                    candidate = None
             except Exception as exc:
                 log.debug("assign_single_node failed for node %d: %s", node_idx, exc)
+                candidate = None
+            if candidate and current_model_id and self._is_cross_provider(current_model_id, candidate):
+                log.warning(
+                    "Upgrade skipped: %s→%s is cross-provider; node stays on current endpoint",
+                    current_model_id, candidate,
+                )
+                return None
+            if candidate is not None:
+                return candidate
 
         return self._resolve_fallback_model(node, current_model_id)
 
@@ -603,6 +613,23 @@ class TopologyController:
         except Exception as exc:
             log.debug("fallback_tier resolution failed: %s", exc)
             return None
+
+    @staticmethod
+    def _is_cross_provider(model_a: str, model_b: str) -> bool:
+        """Return True if model_a and model_b belong to different API providers.
+
+        Prevents upgrade decisions that assign e.g. a gemini-* model to a node
+        already routed to api.deepseek.com — which always returns HTTP 400
+        (unsupported model name on that endpoint). Returns False when either
+        provider is unknown so we don't block upgrades on unrecognised IDs.
+        """
+        try:
+            from sage.providers.connector import get_provider_for_model
+            prov_a = get_provider_for_model(model_a)
+            prov_b = get_provider_for_model(model_b)
+            return bool(prov_a and prov_b and prov_a != prov_b)
+        except Exception:
+            return False
 
     def _infer_task_domain(self, task: str, node: Any, ctx: Any) -> str:
         domain = self._ctx_value(ctx, "domain", None)
