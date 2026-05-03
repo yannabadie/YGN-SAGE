@@ -156,18 +156,38 @@ _BOOT_TIER = "fast"  # Set by main() from --tier flag
 # A14 topology state files that trigger the epoch guard at boot
 _A14_STATE_FILES = ("bandit_state.db", "archive_state.db", "engine_extras.json", "topology_state_manifest.json")
 
+# Per-session memory files that accumulate during a bench run and must be
+# cleared between ablation configs for a controlled comparison.
+# Keeping episodic/semantic between configs biases omega estimation in the
+# TaskPlanner (more entity hits → higher omega → larger topology → more API
+# calls → cost drift → RESET_AGENT → 120s timeout).
+_BENCH_SESSION_FILES = (
+    "episodic.db", "episodic.db-shm", "episodic.db-wal",
+    "semantic.db",
+    "causal.db",
+    "shadow_traces.jsonl",
+)
+
 
 def _clear_a14_topology_state() -> None:
-    """Remove A14 topology state files before each ablation config boot.
+    """Remove A14 topology state + per-session memory files before each ablation config boot.
 
-    Each ablation config must boot from a clean slate — topology posteriors
-    from config N should not influence config N+1 (that would bias the delta
-    measurement). Without cleanup the second boot hits the A14 epoch guard
-    (state files present, manifest absent) and crashes.
+    Each ablation config must boot from an identical clean slate so that the
+    delta between configs reflects only the disabled feature, not accumulated
+    state from prior configs.
+
+    Two classes of files cleared:
+    - A14 topology state (bandit/archive/engine_extras/manifest): without
+      cleanup the second boot hits the A14 epoch guard (state present, manifest
+      absent) and raises RuntimeError.
+    - Per-session memory (episodic/semantic/causal): accumulated entity hits
+      from config N shift the TaskPlanner's omega estimate in config N+1,
+      producing larger topologies → higher per-task cost → drift detector fires
+      RESET_AGENT → 120s timeout on every task.
     """
     import pathlib
     state_dir = pathlib.Path.home() / ".sage"
-    for fname in _A14_STATE_FILES:
+    for fname in (*_A14_STATE_FILES, *_BENCH_SESSION_FILES):
         p = state_dir / fname
         if p.exists():
             p.unlink()
