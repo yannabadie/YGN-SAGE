@@ -101,9 +101,10 @@ def render_bcb_prompt(task_input: TaskInput) -> str:
         )
     else:
         base = nl_prompt
+    entry = task_input.hints.get("entry_point") or "task_func"
     return (
         f"{base}\n\n"
-        "OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function "
-        "implementation that starts with `def task_func(`. No planning, no diffs, "
+        f"OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function "
+        f"implementation that starts with `def {entry}(`. No planning, no diffs, "
         "no explanations — just working Python code."
     )

@@ -371,7 +371,9 @@ def test_resolve_upgrade_model_skips_cross_provider():
 
     result = ctrl._resolve_upgrade_model(0, "code task", topo, MagicMock())
     assert result is None, "cross-provider upgrade must be blocked (gemini→deepseek endpoint)"
-    topo.set_node_model_id.assert_not_called()
+    # Revert: topology model_id must be restored to the original (deepseek-v4-flash)
+    # because assign_single_node may have mutated the topology node as a side effect.
+    topo.set_node_model_id.assert_called_once_with(0, "deepseek-v4-flash")
 
 
 def test_agent_loop_budget_exhausted_wraps_detail():

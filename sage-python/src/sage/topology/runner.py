@@ -1718,8 +1718,16 @@ class TopologyRunner:
                 log.warning("HITL callback failed: %s, proceeding", exc)
 
         if decision.action == "upgrade_model":
-            result = await self._retry_with_upgrade(node_idx, decision, task)
-            self._node_outputs[node_idx] = result
+            if not getattr(decision, "new_model_id", None):
+                # Cross-provider guard returned None or no upgrade model found;
+                # don't waste an extra API call re-running the same model.
+                log.info(
+                    "Node %d upgrade resolved no compatible model; continuing without retry",
+                    node_idx,
+                )
+            else:
+                result = await self._retry_with_upgrade(node_idx, decision, task)
+                self._node_outputs[node_idx] = result
         elif decision.action == "spawn_subagent":
             await self._spawn_sub(node_idx, decision, task)
         elif decision.action == "reroute_topology":

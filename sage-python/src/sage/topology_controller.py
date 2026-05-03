@@ -582,6 +582,13 @@ class TopologyController:
                     "Upgrade skipped: %s→%s is cross-provider; node stays on current endpoint",
                     current_model_id, candidate,
                 )
+                # assign_single_node may have already mutated the topology node's
+                # model_id as a side effect — revert to preserve endpoint coherence.
+                try:
+                    if hasattr(topology, "set_node_model_id"):
+                        topology.set_node_model_id(node_idx, current_model_id)
+                except Exception:
+                    pass
                 return None
             if candidate is not None:
                 return candidate
