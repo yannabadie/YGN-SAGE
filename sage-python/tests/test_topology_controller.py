@@ -332,6 +332,48 @@ def test_state_equivalence_after_cascade_scenario():
     )
 
 
+def test_is_cross_provider_same_provider():
+    """Same-provider pair is NOT cross-provider."""
+    assert not TopologyController._is_cross_provider("deepseek-v4-flash", "deepseek-v4-pro")
+
+
+def test_is_cross_provider_different_providers():
+    """gemini→deepseek is cross-provider — root cause of BCB/89 HTTP 400."""
+    assert TopologyController._is_cross_provider(
+        "deepseek-v4-flash", "gemini-3.1-flash-lite-preview"
+    )
+
+
+def test_is_cross_provider_unknown_model_does_not_block():
+    """Unknown model IDs must NOT block the upgrade (fail-open to avoid silently
+    disabling upgrades for future provider additions)."""
+    assert not TopologyController._is_cross_provider("unknown-model-xyz", "deepseek-v4-flash")
+    assert not TopologyController._is_cross_provider("deepseek-v4-flash", "unknown-model-xyz")
+
+
+def test_resolve_upgrade_model_skips_cross_provider():
+    """_resolve_upgrade_model returns None when assign_single_node would cross providers."""
+    from unittest.mock import MagicMock, patch
+
+    assigner = MagicMock()
+    assigner.assign_single_node.return_value = "gemini-3.1-flash-lite-preview"
+    ctrl = TopologyController(assigner=assigner)
+
+    node = MagicMock()
+    node.model_id = "deepseek-v4-flash"
+    node.max_cost_usd = 1.0
+    node.required_capabilities = []
+    node.role = "coder"
+
+    topo = MagicMock()
+    topo.get_node.return_value = node
+    topo.set_node_model_id = MagicMock()
+
+    result = ctrl._resolve_upgrade_model(0, "code task", topo, MagicMock())
+    assert result is None, "cross-provider upgrade must be blocked (gemini→deepseek endpoint)"
+    topo.set_node_model_id.assert_not_called()
+
+
 def test_agent_loop_budget_exhausted_wraps_detail():
     """AgentLoopBudgetExhausted is a RuntimeError subclass that carries
     AgentLoopExhaustion metadata as .detail — callers can catch and
