@@ -138,6 +138,7 @@ def init_pipeline(
     semantic_memory: Any = None,
     memory_agent: Any = None,
     causal_memory: Any = None,
+    llm_tier: str = "",
 ) -> dict[str, Any]:
     """Initialize the CognitiveOrchestrationPipeline and supporting components.
 
@@ -288,6 +289,7 @@ def init_pipeline(
                 causal_memory=causal_memory,
                 tool_registry=tool_registry,
                 agent_loop=agent_loop,
+                llm_tier=llm_tier,
             )
             # Wire Rust registry for Stage 4 model selection (affinity scoring)
             if rust_registry:

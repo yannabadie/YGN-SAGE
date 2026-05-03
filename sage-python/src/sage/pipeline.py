@@ -202,6 +202,7 @@ class CognitiveOrchestrationPipeline:
         agent_loop: Any = None,
         budget_usd: float | None = None,
         oracle_config: OracleConfig | None = None,
+        llm_tier: str = "",
     ) -> None:
         self.router = router
         self.engine = engine
@@ -241,6 +242,7 @@ class CognitiveOrchestrationPipeline:
         self._agent_loop = agent_loop
         self._task_count = 0
         self.budget_usd = _resolve_task_budget_usd(budget_usd)
+        self._llm_tier = llm_tier
         self._oracle_config = oracle_config or OracleConfig()
 
         # G-series audit fix (2026-04-19 docs/audits/2026-04-18-astropy-14995-*):
@@ -2462,13 +2464,19 @@ class CognitiveOrchestrationPipeline:
                         causal_memory=self.causal_memory,
                     )
 
+                # Fix C (2026-05-03): adaptive controller adds ~30-50s overhead
+                # per task on budget tier (model upgrades + reroutes push tasks
+                # over 120s cap). v7 ablation: no-guardrails 7/10 vs full 4/10.
+                _effective_controller = (
+                    None if self._llm_tier == "budget" else self.controller
+                )
                 runner = TopologyRunner(
                     graph=ctx.topology,
                     executor=executor,
                     llm_provider=self.llm_provider,
                     llm_config=self.llm_config,
                     provider_pool=self.provider_pool,
-                    controller=self.controller,  # Phase C
+                    controller=_effective_controller,
                     axis_hint=ctx.axis_hint,
                     agent_loop_factory=_agent_loop_factory,
                     cost_tracker=getattr(ctx, "cost_tracker", None),

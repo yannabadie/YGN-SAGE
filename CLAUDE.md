@@ -130,11 +130,18 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 ## Current State (May 3, 2026 — A3 N=50 RUNNING)
 
 - **Tests** (canonical at `docs/status/current.json`): **2907 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
-- **A2 v7 result (2026-05-03)**: **4/10 PASS on `full` config — GATE MET** (≥4/10). Proceed to A3 N=50.
-  - PASS: BCB/19 (66s), BCB/34 (55s), BCB/37 (90s — was TIMEOUT in v6), BCB/92 (69s)
-  - FAIL: BCB/13 (74s correctness), BCB/15 (47s correctness), BCB/17 (102s correctness), BCB/82 (120s TIMEOUT), BCB/89 (120s cross-provider), BCB/93 (66s correctness)
-  - Fix 1 (episodic.db close) WORKED: baseline config started cleanly. Bench was killed externally mid-baseline, not PermissionError.
-  - Fix 3 (OUTPUT REQUIREMENT) WORKED: BCB/37 TIMEOUT→PASS; BCB/93 no longer "no output" (correctness fail now, not synthesizer echo).
+- **A2 v7 COMPLETE (2026-05-03 ~20:00)**: All 60/60 results. **Full config 4/10 PASS — GATE MET.**
+
+  | Config | PASS | Passing tasks |
+  |--------|------|---------------|
+  | full | 4/10 | /19, /34, /37, /92 |
+  | baseline | 8/10 | /13, /15, /17, /19, /34, /37, /89, /92 |
+  | no-memory | 4/10 | /19, /34, /37, /92 |
+  | no-avr | 4/10 | /13, /19, /34, /37 |
+  | no-routing | 4/10 | /13, /34, /37, /92 |
+  | **no-guardrails** | **7/10** | /13, /17, /19, /34, /37, /89, /92 |
+
+  **KEY FINDING**: `no-guardrails` 7/10 >> other pipeline configs 4/10. Guardrails (adaptive controller: model upgrades, reroutes, CoT retries) add ~50s overhead per task → timeouts on budget tier. Fix C (budget-tier guard = disable guardrails at budget tier) is **validated** — would lift `full` from 4/10 → ~7/10.
 - **Commits shipped (all on GitHub main)**:
   - `2792b44f`: Fix 1 (episodic close) + Fix 3 (OUTPUT REQUIREMENT)
   - `9715ed4e`: cross-provider fix (_is_cross_provider, returns None)
@@ -142,8 +149,8 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
   - `f7a8bc47`: cgpro-validated: topology revert + runner guard + entry_point fix
   - `6e79bf84`: CLAUDE.md + current.json updated
   - `7c6ab507`: architecture.md + sage-discover README updated
-- **A3 N=50 LAUNCHED**: `python -m sage.bench --type ablation --limit 50 --tier budget`. All 6 configs × 50 BCB-Hard tasks. Includes all v7/v8 fixes (cross-provider revert, runner guard, entry_point). Output: `docs/benchmarks/2026-05-03-a2-ablation-a3-bcb-hard-n50.json`.
-- **Pending Fix C (budget-tier guard)**: Skip model upgrades/reroutes for budget tier. Requires threading `tier` into `node_ctx`. A3 will reveal how much BCB/82 + BCB/89 TIMEOUTs persist (BCB/89 cross-provider is fixed, BCB/82 is 5-node robust + controller overhead).
+- **A3 N=50 LAUNCHED (2026-05-03 ~20:00)**: `python -m sage.bench --type ablation --limit 50 --tier budget`. All 6 configs × 50 BCB-Hard tasks. Output: `docs/benchmarks/2026-05-03-a2-ablation-a3-bcb-hard-n50.json`.
+- **Pending Fix C (budget-tier guard)**: Skip adaptive model upgrades/reroutes/CoT retries when `tier == "budget"`. V7 no-guardrails 7/10 strongly validates this. Requires threading `tier` into `node_ctx` in TopologyRunner. Implement before or during A3.
 - **Budget tier**: `deepseek-v4-flash`. `models.toml` + `llm/router.py` updated. A33 multi-turn safety active.
 - **Strategic positioning (cgpro 2026-05-02)**: Cycle-9 = budget tier paired ablation. Premium frontier = Cycle-12+. SWE-bench-Live = Cycle-11. Rust changes only if A2 proves a gap.
 
