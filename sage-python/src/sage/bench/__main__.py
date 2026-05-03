@@ -185,12 +185,28 @@ def _clear_a14_topology_state() -> None:
       producing larger topologies → higher per-task cost → drift detector fires
       RESET_AGENT → 120s timeout on every task.
     """
-    import pathlib
+    import pathlib, time
     state_dir = pathlib.Path.home() / ".sage"
     for fname in (*_A14_STATE_FILES, *_BENCH_SESSION_FILES):
         p = state_dir / fname
-        if p.exists():
-            p.unlink()
+        if not p.exists():
+            continue
+        # On Windows, aiosqlite may hold the file open briefly after the
+        # previous process exits. Retry up to 10s before giving up.
+        for attempt in range(10):
+            try:
+                p.unlink()
+                break
+            except PermissionError:
+                if attempt == 9:
+                    # Last resort: truncate so the next SQLite open gets a
+                    # fresh empty DB instead of stale session data.
+                    try:
+                        p.write_bytes(b"")
+                    except OSError:
+                        pass
+                else:
+                    time.sleep(1.0)
 
 
 def _boot_system(tier: str | None = None, register_repo_tools: bool = True):
