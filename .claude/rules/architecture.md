@@ -7,9 +7,9 @@ paths:
 # Architecture Quick Reference
 
 ## Project Structure
-- `sage-core/` — Rust orchestrator (PyO3). **501 tests** with `--features smt`.
-- `sage-python/` — Python SDK. **2501 passing**, 63 skipped, 8 fail + 2 error in API-key-dependent files (`test_e2e_*`, `test_pydantic_ai_integration.py`). **mypy 0 errors / 183 source files (2026-04-26).** ruff clean. Type:ignore ceiling 44/44.
-- `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). 52 tests.
+- `sage-core/` — Rust orchestrator (PyO3). **549 tests** with `--features smt` (canonical: `docs/status/current.json`).
+- `sage-python/` — Python SDK. **2903 collected** (canonical: `docs/status/current.json`). 8 fail + 2 error all in API-key-gated files (`test_e2e_*`, `test_pydantic_ai_integration.py`) — pre-existing baseline. **mypy 0 errors.** ruff clean. Type:ignore ceiling 45/45.
+- `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). **100 tests** (canonical: `docs/status/current.json`).
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.
 
@@ -41,6 +41,9 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner → DAGFeatures omega/del
 - **AgentConductor** (arXiv 2602.17100): RL topology evolution, 97.5% HumanEval with 3B model.
 
 ## Benchmarks
-- BigCodeBench Hard Instruct: SAGE 37.8% (budget model) vs leaderboard 33.1% (o3-mini, stale)
-- Leaderboard is frozen since April 2025. Frontier 2026 models (GPT-5.4, Opus 4.6) not submitted.
-- The VALUE of SAGE is the framework delta, not absolute score.
+- BigCodeBench Hard Instruct (full pipeline, fast tier): SAGE 45.9% (2026-04-26, internal eval).
+- BCB-Hard N=50 official Docker (2026-04-29): internal 30% / Docker 32% / 49/50 per-task agreement (budget tier, oracle path).
+- A2 ablation v6 (budget tier, N=10): **3/10 PASS** on `full` config (gate MISSED). v7 running.
+- SWE-bench Lite Docker-graded: 10% (1/10, 2026-04-21). Patch-generation rate 70%.
+- Leaderboard is frozen since April 2025. Frontier 2026 models not submitted.
+- The VALUE of SAGE is the framework delta (ablation study), not absolute score vs frontier.

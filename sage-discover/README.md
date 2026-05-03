@@ -8,7 +8,7 @@ Knowledge Discovery Engine for YGN-SAGE. Discovers, curates, and ingests researc
 
 ## What's real vs aspirational
 
-**Fully implemented and tested (95 tests, 0 failures):**
+**Fully implemented and tested (100 tests, canonical: `docs/status/current.json`):**
 - Discovery pipeline: arXiv + Semantic Scholar + HuggingFace APIs (real API calls, rate-limit tolerant)
 - SPECTER2 (768d) dense embeddings for scientific papers (downloaded, GPU-accelerated)
 - SPLADE sparse embeddings for hybrid search (downloaded, torch-based)
@@ -44,7 +44,7 @@ Knowledge Discovery Engine for YGN-SAGE. Discovers, curates, and ingests researc
 ```bash
 cd sage-discover
 pip install -e ".[dev]"
-python -m pytest tests/ -v    # 95 tests
+python -m pytest tests/ -v    # 100 tests (canonical: docs/status/current.json)
 ```
 
 Dependencies: qdrant-client, sentence-transformers, docling, networkx, mcp, transformers, torch.
