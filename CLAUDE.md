@@ -129,7 +129,7 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 ## Current State (May 3, 2026 — A3 N=50 RUNNING)
 
-- **Tests** (canonical at `docs/status/current.json`): **2903 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
+- **Tests** (canonical at `docs/status/current.json`): **2907 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
 - **A2 v7 result (2026-05-03)**: **4/10 PASS on `full` config — GATE MET** (≥4/10). Proceed to A3 N=50.
   - PASS: BCB/19 (66s), BCB/34 (55s), BCB/37 (90s — was TIMEOUT in v6), BCB/92 (69s)
   - FAIL: BCB/13 (74s correctness), BCB/15 (47s correctness), BCB/17 (102s correctness), BCB/82 (120s TIMEOUT), BCB/89 (120s cross-provider), BCB/93 (66s correctness)
