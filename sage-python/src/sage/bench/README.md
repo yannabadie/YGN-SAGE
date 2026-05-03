@@ -1,61 +1,89 @@
 # Benchmarks
 
-Benchmark suite for measuring YGN-SAGE agent performance across coding tasks and routing accuracy.
+Benchmark suite for measuring YGN-SAGE agent performance. **Primary benchmarks are BigCodeBench Hard and ablation study** — HumanEval+ is saturated (99%+ SOTA) and does not measure framework value.
+
+## Invocation
+
+```bash
+# Primary (use these to prove framework value)
+python -m sage.bench --type routing_gt                            # kNN routing GT (60-task, instant)
+python -m sage.bench --type bigcodebench --subset hard --split instruct --limit 20
+python -m sage.bench --type ablation --limit 10 --tier budget    # 6-config ablation (BCB-Hard)
+python -m sage.bench --type ablation --limit 50 --tier budget    # Full A3 gate run
+
+# SWE-bench (observe mode is default for every smoke)
+SAGE_DIFF_VERIFIER_MODE=observe \
+  python -m sage.bench --type swebench --dataset lite --limit 10 \
+    --output docs/benchmarks/$(date +%F)-observe.json
+
+# Optional: older benchmarks
+python -m sage.bench --type humaneval --limit 20    # HumanEval (saturated — not representative)
+python -m sage.bench --type evalplus --dataset humaneval
+python -m sage.bench --type apps --limit 10 --difficulty interview
+```
 
 ## Modules
 
-### `runner.py` -- BenchmarkRunner
+### `bigcodebench_bench.py` — BigCodeBench Benchmark
 
-Core benchmark infrastructure. Defines `BenchmarkRunner` (orchestrates benchmark execution), `BenchReport` (aggregated results with pass rate, latency, cost), and `TaskResult` (per-problem outcome). Supports baseline mode for reproducible comparisons.
+Primary benchmark. Hard split: 148 tasks, non-saturated, complex library usage. Instruct split (default): NL task description → complete function. Calls official Docker evaluation via `bigcodebench.evaluate` for verified pass@1. Internal evaluation available for fast smoke runs. Results go to `docs/benchmarks/`.
 
-### `humaneval.py` -- HumanEval Benchmark
+### `ablation.py` — Ablation Framework
 
-Implements the OpenAI HumanEval benchmark: 164 Python programming problems evaluated via pass@1. Each problem is executed in a subprocess sandbox. Results include per-problem pass/fail, latency, and cost. Problem data is bundled in `humaneval_data.json`.
+6-config ablation study over BCB-Hard tasks:
+- `full` — all cognitive pillars active (reference)
+- `baseline` — bare LLM call, pipeline disabled
+- `no-memory` — memory tier disabled
+- `no-avr` — adaptive topology disabled
+- `no-routing` — kNN/Rust router disabled (heuristic only)
+- `no-guardrails` — guardrails disabled
 
-### `routing.py` -- Routing Accuracy Benchmark
+Gate: ≥4/10 PASS on `full` config → proceed to A3 N=50. Use `--tier budget` for deepseek-v4-flash.
 
-Measures the ComplexityRouter's classification precision across 30 labeled tasks: 10 S1 (simple/fast), 10 S2 (reasoning), and 10 S3 (formal verification). Runs locally without API keys. Reports per-tier accuracy and confusion matrix.
+### `__main__.py` — CLI Entry Point
 
-### `routing_quality.py` -- Routing Quality Benchmark
+`python -m sage.bench` dispatches all bench types. Key flags:
+- `--type` — bench type (routing_gt, bigcodebench, ablation, swebench, evalplus, humaneval, apps, gaia)
+- `--limit N` — cap task count
+- `--tier budget|fast|reasoner` — model tier for bench run
+- `--output PATH` — report JSON output
+- `--subset hard|complete` — BCB subset (default: hard)
+- `--split instruct|complete` — BCB split (default: instruct)
+- `--dataset lite|verified` — SWE-bench dataset
 
-Extended routing accuracy with 45 labeled tasks for both ComplexityRouter and AdaptiveRouter ground truth evaluation.
+### `swebench_bench.py` — SWE-bench Benchmark
 
-### `routing_downstream.py` -- Downstream Quality Evaluator
+All-5-pillars benchmark. Generates patches via the full agent pipeline + pre-emission diff-context verifier (`SAGE_DIFF_VERIFIER_MODE=observe` annotates predictions.jsonl with `_diff_verifier_mismatches`). Docker evaluation via official SWE-bench harness. Gen log at `<output-stem>-gen.log`.
 
-DownstreamEvaluator: tracks tier precision, escalation rate (<20% target), routing P50/P99 latency (<50ms target), and quality metrics per routing decision.
+### `routing_gt.py` — Routing Ground Truth
 
-### `evalplus_bench.py` -- EvalPlus Adapter
+60-task stratified set (20 S1/20 S2/20 S3, human-labeled 2026-03-11). Measures kNN router accuracy (92% GT) vs Rust SystemRouter (88%) vs heuristic fallback (34%). No API keys needed. Runs in seconds.
 
-Official EvalPlus HumanEval+ (164 problems, 80x harder tests with up to 999 plus_inputs) and MBPP+ (378 problems, 35x harder). Subprocess sandbox evaluator, Windows-compatible.
+### `runner.py` — BenchmarkRunner
 
-### `ablation.py` -- Ablation Framework
+Core infrastructure: `BenchmarkRunner`, `BenchReport`, `TaskResult`. Supports `baseline_mode` for before/after comparison, `truth_pack` for JSONL traces.
 
-6-configuration ablation study: full, baseline, no-memory, no-avr, no-routing, no-guardrails. Quantifies each cognitive pillar's contribution vs bare LLM baseline.
+### `humaneval.py` / `evalplus_bench.py`
 
-### `eval_protocol.py` -- Official Evaluation Protocol
+Legacy benchmarks. HumanEval is saturated (99%+ SOTA, 0 framework signal). Use BCB Hard instead.
 
-Comprehensive benchmark evaluation with full error logging. Captures every error with traceback, phase, model ID, routing decision, and timing. Produces structured JSON reports and JSONL error logs for post-mortem analysis. Supports error replay for debugging.
+### `routing_quality.py` / `routing_downstream.py`
 
-### `truth_pack.py` -- Truth Pack
+Extended routing accuracy (45-task set) and downstream quality metrics: tier precision, escalation rate, latency P50/P99.
 
-`BenchmarkManifest` for reproducible benchmarks. Generates per-task JSONL traces with timestamps, model used, routing tier, and raw outputs. Enables before/after comparison across code changes.
+### `swebench_patch_repair.py`
 
-### `__main__.py` -- CLI Entry Point
-
-CLI interface invoked via `python -m sage.bench`. Supports `--type routing|humaneval|evalplus|ablation`, `--dataset humaneval|mbpp` (for evalplus), `--limit N` for partial runs, and `--baseline` for evidence-first comparison mode.
-
-## Usage
-
-```bash
-python -m sage.bench --type routing                        # Routing self-consistency (instant)
-python -m sage.bench --type humaneval --limit 20           # Legacy HumanEval (20 problems)
-python -m sage.bench --type evalplus --dataset humaneval   # EvalPlus HumanEval+ (80x harder)
-python -m sage.bench --type evalplus --dataset mbpp        # EvalPlus MBPP+ (35x harder)
-python -m sage.bench --type ablation --limit 20            # Ablation study (6 configs)
-python -m sage.bench.eval_protocol --suite humaneval -v    # Official evaluation protocol
-python -m sage.bench.eval_protocol --replay errors.jsonl   # Post-mortem error analysis
-```
+Two-stage patch repair for SWE-bench: (1) LLM one-shot repair of malformed hunks, (2) context-mismatch repair guided by diff-context verifier mismatches.
 
 ## Data Files
 
-- `humaneval_data.json` -- 164 HumanEval problems (prompt, entry point, test cases)
+- `humaneval_data.json` — 164 HumanEval problems (bundled; not the primary bench)
+
+## Bench Signals to Monitor
+
+```bash
+grep -c "PASS" output.log              # tasks passed
+grep -c "search_repo\|read_file" log   # tool calls (should be 0 for BCB ablation)
+grep -c "120.*timeout\|TimeoutError" log  # timeouts (should be 0 with proper boot)
+grep -c "oracle_verdict.*trainable" log   # learning signals emitted
+```

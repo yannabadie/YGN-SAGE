@@ -10,12 +10,13 @@ Built as both `cdylib` (for PyO3/maturin) and `rlib` (for Rust consumers).
 
 | Feature | Description | Default |
 |---------|-------------|---------|
-| `tool-executor` | Enables `ToolExecutor`, `ValidationResult`, `ExecResult` via tree-sitter 0.26 + process-wrap 9 | off |
-| `sandbox` | Enables `WasmSandbox` + WASI sandbox via wasmtime v36 LTS (runtime + component-model + wasmtime-wasi) | off |
-| `cranelift` | Adds JIT compilation to `sandbox` (Linux only; causes MSVC stack overflow on Windows) | off |
-| `onnx` | Enables `RustEmbedder` via ort 2.0 + tokenizers 0.21 (snowflake-arctic-embed-m, 768-dim) | off |
-| `cognitive` | Enables SQLite persistence for ContextualBandit + MapElitesArchive via rusqlite 0.33 | off |
+| `tool-executor` | Enables `ToolExecutor`, `ValidationResult`, `ExecResult` via tree-sitter 0.26 + process-wrap 9 | **on** (ADR-013 §5, 2026-04-22) |
+| `sandbox` | Enables `WasmSandbox` + WASI sandbox via wasmtime v43 (deny-by-default WASI-p1, 256 MiB cap, epoch-interrupt timeout) | **on** (ADR-013 §5, 2026-04-22) |
+| `cranelift` | Adds JIT compilation to `sandbox` (Linux + Windows both pass since cycle-8) | **on** (ADR-013 §5, 2026-04-22) |
+| `cognitive` | Enables SQLite persistence for `ContextualBandit` + `MapElitesArchive` via rusqlite 0.33 | **on** (ADR-013 §5, 2026-04-22) |
+| `onnx` | Enables `RustEmbedder` via ort 2.0 + tokenizers 0.21 (snowflake-arctic-embed-m, 768-dim) | off (requires onnxruntime DLL at runtime) |
 | `smt` | Enables OxiZ pure-Rust SMT verifier (QF_LIA) for formal verification | off |
+| `otel` | Rust OpenTelemetry span bridge; W3C traceparent across PyO3 (B1.b, 2026-04-25) | off |
 
 ## Build Commands
 

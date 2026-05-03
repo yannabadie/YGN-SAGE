@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2887%20Py%20%2B%20544%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2903%20Py%20%2B%20544%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
@@ -221,7 +221,7 @@ All provider configurations are in `sage-python/src/sage/providers/connector.py`
 
 | Provider | API URL | Default Model | Status |
 |----------|---------|---------------|--------|
-| DeepSeek | api.deepseek.com/v1 | deepseek-chat | Primary (cheapest, no rate limits) |
+| DeepSeek | api.deepseek.com/v1 | deepseek-v4-flash | Primary (cheapest, no rate limits) |
 | Google | native SDK | gemini-3.1-flash-lite | Reliable fallback |
 | OpenAI | api.openai.com/v1 | gpt-5.4 | Best quality |
 | xAI | api.x.ai/v1 | grok-4-1-fast-reasoning | Fast reasoning |
@@ -250,7 +250,7 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **2887 collected** (after cycle-7 + cycle-8 R6.1c + cycle-8 A14, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
+| Python (`sage-python`) | **2903 collected** (after cycle-9 CLI + fixes, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
 | Rust (`sage-core`) | **544 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | 8 jobs (Rust, Rust features, Python Linux, Python Windows, Discover, OTel Linux, OTel Windows, Integration Smoke) |
