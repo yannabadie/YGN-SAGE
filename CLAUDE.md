@@ -127,21 +127,23 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 `advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
 
-## Current State (May 3, 2026 — A2 v7 bench running)
+## Current State (May 3, 2026 — A3 N=50 RUNNING)
 
 - **Tests** (canonical at `docs/status/current.json`): **2903 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
-- **A2 v6 result (2026-05-03)**: **3/10 PASS on `full` config — gate MISSED** (need ≥4/10). Root causes:
-  - Failure Mode A (3/10): "no output" — synthesizer echoed planner planning text (no `def task_func(`). Fix 3 targets this.
-  - Failure Mode B (4/10): TIMEOUT 120s — adaptive controller fires model upgrades/reroutes after node completion, adding 30-60s per task. Cross-provider upgrade bug on BCB/89: gemini model sent to DeepSeek endpoint → 400 → fallback → still 120s.
-  - Crash: PermissionError WinError 32 on `episodic.db` between configs (aiosqlite lock). Only 1/6 configs ran. Fix 1 targets this.
-- **v7 fixes committed `2792b44f` + pushed to GitHub**:
-  - Fix 1 (`__main__.py`): `await prev_episodic.close()` before `_clear_a14_topology_state()` — releases Windows file lock on episodic.db. All 6 configs now run.
-  - Fix 3 (`bcb.py`): `render_bcb_prompt()` appends `OUTPUT REQUIREMENT: Return ONLY a complete, runnable Python function implementation that starts with \`def task_func(\`.`
-- **A2 v7 bench RUNNING**: `python -m sage.bench --type ablation --limit 10 --tier budget`. Gate: ≥4/10 → A3 N=50.
-- **cgpro consultation PENDING**: `cgpro_a2_v7_design` — Fix 2 strategy (controller budget guard vs raise timeout vs controller=None) + cross-provider upgrade bug location in `topology_controller.py`.
-- **Pending v7 follow-ups** (held until v7 data):
-  - Fix 2: controller budget-tier guard (skip model upgrades + reroutes for budget tier)
-  - Cross-provider upgrade bug: `_resolve_upgrade_model()` must stay within same provider
+- **A2 v7 result (2026-05-03)**: **4/10 PASS on `full` config — GATE MET** (≥4/10). Proceed to A3 N=50.
+  - PASS: BCB/19 (66s), BCB/34 (55s), BCB/37 (90s — was TIMEOUT in v6), BCB/92 (69s)
+  - FAIL: BCB/13 (74s correctness), BCB/15 (47s correctness), BCB/17 (102s correctness), BCB/82 (120s TIMEOUT), BCB/89 (120s cross-provider), BCB/93 (66s correctness)
+  - Fix 1 (episodic.db close) WORKED: baseline config started cleanly. Bench was killed externally mid-baseline, not PermissionError.
+  - Fix 3 (OUTPUT REQUIREMENT) WORKED: BCB/37 TIMEOUT→PASS; BCB/93 no longer "no output" (correctness fail now, not synthesizer echo).
+- **Commits shipped (all on GitHub main)**:
+  - `2792b44f`: Fix 1 (episodic close) + Fix 3 (OUTPUT REQUIREMENT)
+  - `9715ed4e`: cross-provider fix (_is_cross_provider, returns None)
+  - `99fd1c31`: 4 regression tests for cross-provider guard
+  - `f7a8bc47`: cgpro-validated: topology revert + runner guard + entry_point fix
+  - `6e79bf84`: CLAUDE.md + current.json updated
+  - `7c6ab507`: architecture.md + sage-discover README updated
+- **A3 N=50 LAUNCHED**: `python -m sage.bench --type ablation --limit 50 --tier budget`. All 6 configs × 50 BCB-Hard tasks. Includes all v7/v8 fixes (cross-provider revert, runner guard, entry_point). Output: `docs/benchmarks/2026-05-03-a2-ablation-a3-bcb-hard-n50.json`.
+- **Pending Fix C (budget-tier guard)**: Skip model upgrades/reroutes for budget tier. Requires threading `tier` into `node_ctx`. A3 will reveal how much BCB/82 + BCB/89 TIMEOUTs persist (BCB/89 cross-provider is fixed, BCB/82 is 5-node robust + controller overhead).
 - **Budget tier**: `deepseek-v4-flash`. `models.toml` + `llm/router.py` updated. A33 multi-turn safety active.
 - **Strategic positioning (cgpro 2026-05-02)**: Cycle-9 = budget tier paired ablation. Premium frontier = Cycle-12+. SWE-bench-Live = Cycle-11. Rust changes only if A2 proves a gap.
 

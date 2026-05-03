@@ -43,7 +43,7 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner → DAGFeatures omega/del
 ## Benchmarks
 - BigCodeBench Hard Instruct (full pipeline, fast tier): SAGE 45.9% (2026-04-26, internal eval).
 - BCB-Hard N=50 official Docker (2026-04-29): internal 30% / Docker 32% / 49/50 per-task agreement (budget tier, oracle path).
-- A2 ablation v6 (budget tier, N=10): **3/10 PASS** on `full` config (gate MISSED). v7 running.
+- A2 ablation v7 (budget tier, N=10): **4/10 PASS on `full` config — GATE MET** (2026-05-03). Fixes: episodic.db close, OUTPUT REQUIREMENT, cross-provider guard, runner guard, entry_point. A3 N=50 RUNNING.
 - SWE-bench Lite Docker-graded: 10% (1/10, 2026-04-21). Patch-generation rate 70%.
 - Leaderboard is frozen since April 2025. Frontier 2026 models not submitted.
 - The VALUE of SAGE is the framework delta (ablation study), not absolute score vs frontier.
