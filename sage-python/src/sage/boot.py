@@ -353,6 +353,7 @@ def boot_agent_system(
     llm_tier: str = "auto",
     agent_name: str = "sage-main",
     event_bus: EventBus | None = None,
+    register_repo_tools: bool = True,
 ) -> AgentSystem:
     """Initialize the complete agent stack.
 
@@ -503,8 +504,10 @@ def boot_agent_system(
 
     # Core code tools:
     # - Typed repo tools (P0.1 2026-04-22): read_file, search_repo,
-    #   list_files, run_tests, apply_patch, git_diff. Registered
-    #   ALWAYS — they're the default surface for any code/bench task.
+    #   list_files, run_tests, apply_patch, git_diff. Registered by
+    #   default; callers pass register_repo_tools=False for benchmarks
+    #   that have no actual repository (BCB, EvalPlus) — otherwise
+    #   agents enter search_repo/read_file loops on an empty codebase.
     # - Raw bash (`execute_bash`): registered only when
     #   AgentConfig.dangerous_tools is True. Off by default; bench
     #   adapters that need unconstrained shell flip the flag per
@@ -515,12 +518,15 @@ def boot_agent_system(
     from sage.tools.typed_repo import create_typed_repo_tools
     from sage.llm.base import ToolDef
 
-    for tool in create_typed_repo_tools():
-        tool_registry.register(tool)
-    _log.info(
-        "Core tools: 6 typed repo tools registered (read_file, search_repo, "
-        "list_files, run_tests, apply_patch, git_diff)"
-    )
+    if register_repo_tools:
+        for tool in create_typed_repo_tools():
+            tool_registry.register(tool)
+        _log.info(
+            "Core tools: 6 typed repo tools registered (read_file, search_repo, "
+            "list_files, run_tests, apply_patch, git_diff)"
+        )
+    else:
+        _log.info("Core tools: repo tools NOT registered (register_repo_tools=False)")
 
     # Keep a module-level thin wrapper so existing imports (boot.py
     # tests etc.) that used `_safe_subprocess_env` still work.

@@ -193,12 +193,17 @@ def _clear_a14_topology_state() -> None:
             p.unlink()
 
 
-def _boot_system(tier: str | None = None):
+def _boot_system(tier: str | None = None, register_repo_tools: bool = True):
     """Boot AgentSystem with real LLM (requires GOOGLE_API_KEY)."""
     from sage.boot import boot_agent_system
     from sage.events.bus import EventBus
     bus = EventBus()
-    system = boot_agent_system(use_mock_llm=False, llm_tier=tier or _BOOT_TIER, event_bus=bus)
+    system = boot_agent_system(
+        use_mock_llm=False,
+        llm_tier=tier or _BOOT_TIER,
+        event_bus=bus,
+        register_repo_tools=register_repo_tools,
+    )
     return system, bus
 
 
@@ -260,7 +265,10 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         print(f"{'#' * 60}")
 
         _clear_a14_topology_state()
-        system, bus = _boot_system()
+        # BCB tasks are self-contained function stubs with no actual
+        # repository. Repo tools (search_repo, read_file, list_files)
+        # cause agents to loop on empty codebase and hit 120s timeouts.
+        system, bus = _boot_system(register_repo_tools=False)
 
         if config.label == "baseline":
             # Disable pipeline entirely — bare LLM call via legacy path
@@ -406,7 +414,7 @@ async def _run_bigcodebench(output: str | None, limit: int | None, subset: str, 
     from sage.bench.bigcodebench_bench import BigCodeBenchBench
 
     if os.environ.get("GOOGLE_API_KEY"):
-        system, bus = _boot_system()
+        system, bus = _boot_system(register_repo_tools=False)
         bench = BigCodeBenchBench(system=system, event_bus=bus, subset=subset, split=split)
     else:
         bench = BigCodeBenchBench(subset=subset, split=split)
