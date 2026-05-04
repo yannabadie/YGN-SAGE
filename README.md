@@ -5,18 +5,40 @@
 <h1 align="center">YGN-SAGE</h1>
 
 <p align="center">
-  <strong>Self-Adaptive Generation Engine — Agent Development Kit</strong>
+  <strong>Verified Adaptive Orchestration Runtime</strong><br>
+  <em>Research Preview — multi-agent topology runtime with evidence-gated learning</em>
 </p>
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/tests-2940%20Py%20%2B%20549%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
   <img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="License">
 </p>
 
 ---
+
+## What this is (Research Preview)
+
+YGN-SAGE is a **verified adaptive orchestration runtime**: it routes tasks
+through cognitive systems (S1/S2/S3), constructs and executes multi-agent
+DAG topologies, and adapts at runtime. Crucially, **bandit / MAP-Elites /
+online-evolution / training-memory updates are gated by verified
+evidence**: a trainable verdict from the OracleStack (default-on since
+cycle 7) — never raw output. This is the runtime-integrity layer cycles
+5–9 built; it is the differentiating feature, not the marketing tagline.
+
+This is a **Research Preview**, not a production-ready SDK. See the
+[Capability State Table](#capability-state-table) below — every claim is
+labeled `delivered` / `default-on` / `opt-in` / `planned` / `parked`. If
+a capability is `planned`, the runtime path either abstains or falls back;
+nothing is silently fabricated.
+
+For full architectural framing see [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md)
+and the contract docs at `docs/contracts/runtime-integrity-ledger.md`
+(8 invariants binding declared labels to verified content).
 
 ## Install from source
 
@@ -50,7 +72,7 @@ system = boot_agent_system()
 print(asyncio.run(system.run("Write a Python function that checks if a number is prime")))
 ```
 
-SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a multi-agent topology, assigns models from 7 providers, executes with formal verification, and learns from every run.
+SAGE automatically routes to the right cognitive system (S1/S2/S3), builds a multi-agent topology, assigns models from 7 providers, executes with formal verification of the verifiable fragments (OxiZ SMT for bounded integer arithmetic), and learns from each run **only when the OracleStack emits a `trainable=True` verdict** — runs without verified evidence do not update bandit / MAP-Elites / online-evolution / training-memory.
 
 ---
 
@@ -111,7 +133,14 @@ If a provider fails, the circuit breaker opens and the runner falls back to the 
 - **Consolidation** transforms episodic memories into semantic knowledge (every 10 steps)
 - **Online evolution** (`should_evolve()` in Rust) triggers topology mutation when enough outcomes accumulate
 
-## 5 Cognitive Pillars
+## 5 Cognitive Pillars (architecture background)
+
+> The five-pillar framing is an **architectural decomposition**, not a
+> capability advertisement. Per-capability current state (delivered /
+> default-on / opt-in / planned / parked) is in the
+> [Capability State Table](#capability-state-table). This section
+> describes the design surface; the table tells you what is actually
+> wired in the runtime today.
 
 ### 1. Topology (Rust + Python)
 
@@ -191,6 +220,39 @@ A 7-cycle arc shipped a typed runtime layer underneath the orchestration pipelin
 Hard invariant under default-on: bandit / MAP-Elites / online-evolution / training-memory **never** update from unverified outputs (`verdict.trainable=False` blocks the learning gate). Cycle-7 default-on flip evidence: BCB-Hard N=50 internal pass@1 30% / official Docker 32% / 49/50 = 98% per-task agreement (commit `01b0bb24`); kill-switch smoke (commit `8b4b34b6`) confirms operator escape hatch silences oracle path end-to-end. A14 reset paired with the flip (Posterior epoch=1, old off-policy bandit posteriors discarded).
 
 Detail: [ADR-014..ADR-019](YGN-SAGE/Decisions/) (Obsidian vault), [docs/contracts/runtime-event-log.md](docs/contracts/runtime-event-log.md) (mode-aware contract matrix + golden fixtures).
+
+## Capability State Table
+
+Every notable capability has one of five states. This table is the
+single source of truth — section text below cross-references it. Last
+updated 2026-05-04 (cycle-10 P3, post cycle-9 closure at HEAD `97fba93f`).
+
+| Capability | State | Evidence / Notes |
+|---|---|---|
+| **Source install (`maturin develop`)** | `delivered` | Requires Rust toolchain. See [Install from source](#install-from-source). |
+| **`pip install ygn-sage` (one command)** | `planned` | Cycle-10 P5 (B4 wheels). Until then, source-only. |
+| **Cognitive routing S1/S2/S3 (kNN primary, 92% GT)** | `delivered` | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601), 60-task internal GT. Rust SystemRouter 88% GT secondary. |
+| **Topology engine 6-path (S-MMU/archive/LLM/mutation/MCTS/templates)** | `delivered` | Rust `TopologyEngine`, 11 templates fallback. |
+| **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
+| **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
+| **Runtime integrity ledger (8 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. |
+| **A14 epoch guard + `topology_state_manifest.json`** | `delivered` | Cycle-8 step 2 (`6b2ebcbe + f9521616`). Fail-closed boot if epoch ≠ DB SHA-256. |
+| **Wasm sandbox (RustPython wasm32-wasip1)** | `default-on (cycle 8)` | ADR-013 §5 flip 2026-04-22. `validate_and_execute` deny-by-default. `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC=1`. |
+| **OpenTelemetry GenAI spans (Python + Rust bridge)** | `delivered` | B1 (2026-04-25) + B1.b. `SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}`. |
+| **Cycle-9 bench infrastructure (event ledger + watchdog + keep-awake)** | `delivered` | NDJSON fsync per emit; `HostSuspendDetected` on wall-clock > timeout × grace; Windows `SetThreadExecutionState`. |
+| **`SAGE_DANGEROUS_TOOLS` (`execute_bash` register)** | `opt-in (default off, cycle 8)` | Flipped 2026-04-23. Set `SAGE_DANGEROUS_TOOLS=1` only for SWE-bench/research. |
+| **Path 6 — learned topology policy** | `opt-in / inference-only on main` | `SAGE_ENABLE_PATH6=1`. Lazy-loads HF checkpoint (`yannabadie/sage-topology-policy-local` 0.922 structural). Training code parked. |
+| **ONNX QualityEstimator (`quality_estimator_v2.onnx`)** | `planned, not shipped` | Artifact absent. `_try_load_onnx()` returns None → runtime falls back to OxiZ Z3 labeler or abstains. No invented score. |
+| **GiGPO / veRL training (Nemotron-Orchestrator-8B)** | `parked on main (since 2026-04-15)` | Code on dedicated `training` branch (`b2f59ee`, -4.3 GB). Inference-only on main via Path 6. |
+| **A3 N=50 ablation (cycle-10 cloud rerun)** | `pending` | A3 morning aborted 2026-05-04 (Modern Standby S0 DRIPS). Recovery infra (event ledger + watchdog + keep-awake) shipped cycle-9. Cycle-10 P8 cloud rerun planned. |
+| **`pip install sage-router` standalone** | `planned (decision pending)` | Lib exists at `sage-router/` (1374 LOC), NOT used by canonical runtime. Cycle-10/11 fork: B4 PyPI publish OR fold back into `sage-python/strategy/`. See [`sage-router/README.md`](sage-router/README.md). |
+| **A2A v1.0 (Google Agent-to-Agent)** | `delivered` | `a2a_server.py` with `a2a-sdk 0.3.x`. Cancellation TODO. |
+| **MCP server** | `delivered` | `mcp_server.py` exposes tool registry. |
+| **Dashboard (FastAPI + WebSocket)** | `delivered (preview)` | `ui/app.py` 876 LOC. Not in CI. |
+| **BCB Hard Instruct pass rate (full pipe, internal-tuned)** | `measured: 45.9% (68/148)` | NOT a leaderboard submission. See [Benchmark Results](#benchmark-results). |
+| **BCB Hard pass rate (budget tier, official Docker)** | `measured: 32% N=50` | Docker-graded, cycle-7 evidence at commit `01b0bb24`. |
+| **SWE-bench Lite Docker-graded** | `measured: 10% (1/10) resolved, 70% patch-emit rate` | 2026-04-21. Diff verifier observe-mode opt-in. |
+| **`pipeline.py` decomposition** | `planned (cycle 11/12)` | 2983 lines, 44 `Any`. Cycle-10 P9 ships ADR + characterization tests only; refactor deferred. |
 
 ## Formal Verification (Rust)
 
