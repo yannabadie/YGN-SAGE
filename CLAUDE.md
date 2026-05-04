@@ -129,7 +129,7 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 ## Current State (May 4, 2026 — A3 N=50 ABORTED, evidence-layer rebuild in progress)
 
-- **Tests** (canonical at `docs/status/current.json`): **2934 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean. Delta vs 2907: +24 from A.1-A.4 cycle-9 recovery (event ledger / wall-clock watchdog / Windows keep-awake), +3 from γ.2 host-suspend integration test.
+- **Tests** (canonical at `docs/status/current.json`): **2940 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean. Delta vs 2907: +24 from A.1-A.4 cycle-9 recovery (event ledger / wall-clock watchdog / Windows keep-awake), +3 from γ.2 host-suspend integration, +6 from α.1+α.2 targeted-filter tests.
 - **A2 v7 (2026-05-03)**: All 60/60 results. `full` 4/10 — gate MET on the surface, but see Fix C correction below.
 
   | Config | PASS | Passing tasks |
