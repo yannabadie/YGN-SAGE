@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2940%20Py%20%2B%20549%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2948%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -245,7 +245,7 @@ updated 2026-05-04 (cycle-10 P3, post cycle-9 closure at HEAD `97fba93f`).
 | **ONNX QualityEstimator (`quality_estimator_v2.onnx`)** | `planned, not shipped` | Artifact absent. `_try_load_onnx()` returns None → runtime falls back to OxiZ Z3 labeler or abstains. No invented score. |
 | **GiGPO / veRL training (Nemotron-Orchestrator-8B)** | `parked on main (since 2026-04-15)` | Code on dedicated `training` branch (`b2f59ee`, -4.3 GB). Inference-only on main via Path 6. |
 | **A3 N=50 ablation (cycle-10 cloud rerun)** | `pending` | A3 morning aborted 2026-05-04 (Modern Standby S0 DRIPS). Recovery infra (event ledger + watchdog + keep-awake) shipped cycle-9. Cycle-10 P8 cloud rerun planned. |
-| **`pip install sage-router` standalone** | `planned (decision pending)` | Lib exists at `sage-router/` (1374 LOC), NOT used by canonical runtime. Cycle-10/11 fork: B4 PyPI publish OR fold back into `sage-python/strategy/`. See [`sage-router/README.md`](sage-router/README.md). |
+| **`pip install sage-router` standalone** | `retired (cycle-11)` | The standalone `sage-router/` package (1374 LOC, never imported by the canonical runtime) was removed in cycle-11. Routing lives in `sage-python/src/sage/strategy/` with Rust `SystemRouter` + kNN acceleration. The cycle-10/11 fork "publish separately or fold back" was closed by deletion: maintaining a near-duplicate Python-only routing surface had no production-grade consumer. |
 | **A2A v1.0 (Google Agent-to-Agent)** | `delivered` | `a2a_server.py` with `a2a-sdk 0.3.x`. Cancellation TODO. |
 | **MCP server** | `delivered` | `mcp_server.py` exposes tool registry. |
 | **Dashboard (FastAPI + WebSocket)** | `delivered (preview)` | `ui/app.py` 876 LOC. Not in CI. |
@@ -312,8 +312,8 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **2940 collected** (cycle-9 closure + cgpro round-2 telemetry fix, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
-| Rust (`sage-core`) | **549 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
+| Python (`sage-python`) | **2948 collected** (cycle-11 P6-B AgentLoop bypass lock, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
+| Rust (`sage-core`) | **553 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | `.github/workflows/ci.yml` runs 10 jobs (`build-wasm-sandbox`, `python-constraints`, `rust`, `otel-bridge`, `otel-bridge-windows`, `rust-features`, `python-sage`, `python-discover`, `windows-pytest`, `integration-smoke`) + 3 supporting workflows (`security.yml` pip-audit/SBOM, `latest-deps.yml` weekly drift, `stochastic-empirical.yml` scheduled). |
 | Static analysis | mypy 0 errors; ruff clean (per cycle-8 R6.1c + A14 closure verification) |
@@ -412,7 +412,6 @@ YGN-SAGE/
 |       +-- boot.py      #   System bootstrap (7 providers auto-detected from .env)
 |
 |-- sage-discover/       # Knowledge pipeline: 17 modules — arXiv → ExoCortex (adjunct, depends on ygn-sage)
-|-- sage-router/         # Standalone routing-only package (1374 LOC, NOT used by sage-python runtime — see sage-router/README.md)
 |-- ui/                  # FastAPI + WebSocket dashboard (Cytoscape.js topology viz)
 |-- docs/                # 60+ specs, 15 audits, 20+ benchmark results
 +-- Researches/          # 25+ backing research papers
