@@ -1,0 +1,70 @@
+{
+  "full": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": true,
+      "label": "full"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 83668.87564659119,
+    "avg_cost_usd": 0.008004736532429326,
+    "per_task": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "no-guardrails": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": false,
+      "label": "no-guardrails"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 100205.76677322388,
+    "avg_cost_usd": 0.006958875028707646,
+    "per_task": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "_statistics": {
+    "pairwise": {
+      "full_vs_no-guardrails": {
+        "mcnemar_p": 1.0,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 0
+        }
+      }
+    }
+  }
+}
