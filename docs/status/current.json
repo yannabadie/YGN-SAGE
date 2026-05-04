@@ -1,11 +1,11 @@
 {
-  "generated_at_utc": "2026-05-04T10:30:00+00:00",
+  "generated_at_utc": "2026-05-04T12:30:00+00:00",
   "git": {
     "branch": "main",
-    "commit_sha": "43726991",
+    "commit_sha": "ea9f7837",
     "dirty": false
   },
-  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. 2026-05-04 cycle-9 closure: +33 Python tests vs 2907 baseline (A.1-A.4 cycle-9 recovery infrastructure + γ.2 host-suspend integration + α.1-α.2 targeted-filter tests). 7 new commits between 22bc9718 and 43726991.",
+  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. Re-collected at HEAD ea9f7837 during cycle-10 P0 truth-sync (2026-05-04): 2940 Python tests confirmed unchanged since 43726991 (no test additions in commits ae371202..ea9f7837 — they were docs/AI-ARCH rewrite, host-suspend integration cleanup). Cycle-9 closure brought test count from 2907 → 2940 (+33: A.1-A.4 cycle-9 recovery infrastructure +24, γ.2 host-suspend integration +3, α.1-α.2 targeted-filter tests +6).",
   "sage_core_tests": {
     "available": true,
     "features": "smt,cognitive,sandbox,cranelift,tool-executor",

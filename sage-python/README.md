@@ -33,7 +33,7 @@ sage chat           # Interactive chat (bash off by default; SAGE_CHAT_ALLOW_BAS
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # 2903 collected (source of truth: docs/status/current.json)
+python -m pytest tests/ -v             # 2940 collected (source of truth: docs/status/current.json)
 ruff check src/                        # Lint (clean)
 mypy src/sage/                         # Type check (0 errors)
 ```
