@@ -1,25 +1,35 @@
-# YGN-SAGE -- Document d'Architecture Technique
+# YGN-SAGE — Document d'Architecture Technique
 
-> **Genere le** : 2026-03-25 | **Branche** : `VeRLGIGPO` | **Commit HEAD** : `3891243`
-> **Auteur** : Claude Opus 4.6 (1M context), architecte principal
-> **Methode** : Exploration exhaustive du code source. Le code prime sur la documentation.
+> **Généré le** : 2026-05-04 | **Branche** : `main` | **Commit HEAD** : `a6f869c4`
+> **Auteurs** : Claude Opus 4.7 (1M context), architecte principal. Précédente révision Claude Opus 4.6 (2026-03-25, branche VeRLGIGPO, commit `3891243`).
+> **Méthode** : Exploration exhaustive du code source au commit HEAD. Le code prime sur la documentation.
+> **Delta vs 2026-03-25** : ~982 commits écoulés. Cycles 7 (SAGE_ORACLE flip), 8 (R6.1c + A14 epoch guard), 9 (deepseek-v4-flash migration + Fix C + recovery infrastructure). Training **parqué** depuis 2026-04-15 (`b2f59ee`, -4.3 GB). Sous-système `runtime/` (event_log + oracle + evidence + run_frame + state) ajouté. ADR-013 §5 flip (sandbox WASI par défaut). ADR-012 (TopologyController Rust-primary). ADR-014 (LtlVerifier renommage). 8 invariants dans `docs/contracts/runtime-integrity-ledger.md`.
 
 ---
 
 ## 1. Executive Summary
 
-YGN-SAGE est un **Agent Development Kit (ADK)** concu pour orchestrer des topologies multi-agents avec routage cognitif adaptatif. Le systeme est structure en 3 crates/packages : un noyau Rust (`sage-core`) expose via PyO3, un SDK Python (`sage-python`), et un pipeline de decouverte de connaissances (`sage-discover`).
+YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un noyau Rust (`sage-core`) exposé via PyO3, un SDK Python (`sage-python`), et un pipeline de découverte de connaissances (`sage-discover`). Le système orchestre des topologies multi-agents avec routage cognitif adaptatif.
 
-**Ce que le systeme fait reellement :**
-- Route les taches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (92% GT) + SystemRouter Rust + bandit contextuel Thompson.
-- Genere des topologies multi-agents (11 templates + MAP-Elites + MCTS + mutations + LLM synthesis) et les execute via un runner avec resolution per-node de providers.
-- Fournit un pipeline 5-stages (Classify -> Decompose -> Topology -> Assign -> Execute -> Learn) avec boucle d'apprentissage bandit.
-- Integre verification formelle (OxiZ SMT) et LTL (petgraph) pour topologies et contrats.
+**Ce que le système fait réellement (2026-05-04) :**
 
-**Ce que le systeme pretend mais ne fait pas encore pleinement :**
-- **Self-Adaptive a runtime** : l'adaptation est codee (TopologyController) mais non validee quantitativement. [Evidence: sage-python/src/sage/evolution/engine.py:7-9] [Statut: Observe] [Reachability: Runtime] [Validation: Aucune quantitative]
-- **GiGPO/veRL training** : l'environnement est implemente, le training n'a pas encore ete execute sur GPU (branche VeRLGIGPO prete pour RunPod). [Evidence: sage-python/src/sage/verl/] [Statut: Observe] [Reachability: Training] [Validation: Tests unitaires uniquement]
-- **ONNX Quality Estimator** : tente de charger un modele `quality_estimator_v2.onnx` qui n'existe pas dans le repo. [Evidence: sage-python/src/sage/quality_estimator.py:36-39] [Statut: Observe] [Reachability: Dead code] [Validation: Aucune]
+- Route les tâches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (92% GT) + Rust SystemRouter (88% GT) + bandit contextuel Thompson, avec **attribution causale** Stage-0 → Stage-5 (`route_integrated()` + `record_outcome_checked()` depuis cycle-9 `6f23eea4`).
+- Génère des topologies multi-agents (11 templates + MAP-Elites + MCTS + CMA-ME + LLM synthesis) et les exécute via `TopologyRunner` avec résolution per-node de providers.
+- Pipeline 5-stages (CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN) avec boucle d'apprentissage bandit, **TopologyController Rust-primary** (ADR-012, 2026-04-20).
+- Sandbox **par défaut** : tree-sitter AST + RustPython wasm32-wasip1 deny-by-default WASI-p1 (ADR-013 §5 flip 2026-04-22, `validate_and_execute` ne fall-back plus en subprocess).
+- Vérification formelle OxiZ SMT (QF_LIA) + LTL (petgraph) + HybridVerifier + Rust QualityLabeler.
+- Sous-système **runtime/ integrity** : OracleStack (default-on cycle-7, `128e1b89`) → bandit/MAP-Elites/online-evolution/training-memory ne sont mis à jour QUE sur `OracleVerdict.trainable=True`. A14 epoch guard (cycle-8, `6b2ebcbe + f9521616`) lie `posterior_epoch.json` aux SHA-256 des fichiers d'état via `topology_state_manifest.json`.
+- Cycle-9 bench infrastructure : event ledger NDJSON + wall-clock watchdog + Windows keep-awake — gate-quality crash-safe partial completion.
+- OpenTelemetry GenAI spans (B1, 2026-04-25) avec bridge Rust (B1.b) via `--features otel`.
+
+**Ce que le système prétend mais ne fait pas encore pleinement :**
+
+- **A3 N=50 ablation cloud** : aborted le 2026-05-04 03:24 (Windows Modern Standby S0 DRIPS), 34/300 tasks complétées. Recovery infrastructure shipped (commits `a56a76e2` à `c136463e`). Cycle-10 cible : full v7 N=10 counterbalanced replay puis A3 N=50 cloud.
+- **Fix C `a23e196b`** : désactive `TopologyController` quand `tier=budget`. Correctement câblé end-to-end MAIS empiriquement non-validateur du gap v7 (cgpro round-2 review 2026-05-04 : v7 4/10→7/10 gap est très probablement sample variance sur tasks borderline).
+- **Path 6 (topologie apprise)** : checkpoint Phase C (`yannabadie/sage-topology-policy-local`, 40% MASBENCH) sur HuggingFace. **Off par défaut** (`SAGE_ENABLE_PATH6=1` requis). Inférence-only (training PARKED).
+- **GiGPO V2 (Nemotron-Orchestrator-8B)** : code complet, jamais exécuté GPU sur main (parqué 2026-04-15 `b2f59ee`, -4.3 GB). Le code training, `verl/`, `scripts/`, `data/`, `models/` vit sur une branche dédiée `training`.
+- **`evolution/engine.py`** : "No quantitative evidence that evolution improves task outcomes yet" (`engine.py:7-9`).
+- **Persistence MAP-Elites + bandit** : Rust `persistence.rs` shipped + actif (default features incluent `cognitive` depuis ADR-013 §5). `restore_arm` fix `restore` `context_sum`/`context_count` (cgpro 2026-04-26).
 
 ---
 
@@ -28,60 +38,67 @@ YGN-SAGE est un **Agent Development Kit (ADK)** concu pour orchestrer des topolo
 | Attribut | Valeur |
 |---|---|
 | **Repository** | `yannabadie/YGN-SAGE` |
-| **Branche analysee** | `VeRLGIGPO` |
-| **Langages** | Rust 1.94 (sage-core), Python 3.12+ (sage-python, sage-discover) |
-| **Points d'entree runtime** | `sage.boot.boot_agent_system()`, `sage.pipeline.CognitiveOrchestrationPipeline.run()` |
-| **Points d'entree training** | `sage.verl.topology_env.SageTopologyEnv`, `sage.verl.env_package.envs.SageTopologyVerlEnv` |
-| **Tests Python** | ~1553 `def test_` dans 169 fichiers |
-| **Tests Rust** | ~649 `#[test]` dans 55 fichiers |
-| **CI** | GitHub Actions : 5 jobs (Rust, Rust-features, Python SDK, Python Discover, Python Windows) |
-| **Feature flags Rust** | `extension-module` (default), `sandbox`, `cranelift`, `onnx`, `tool-executor`, `cognitive`, `smt` |
+| **Branche analysée** | `main` |
+| **HEAD commit** | `a6f869c4` (2026-05-04) |
+| **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
+| **Tests Python collected** | **2940** (canonical : `docs/status/current.json`) |
+| **Tests Rust** | **549** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
+| **Tests sage-discover** | **100** |
+| **mypy / ruff** | mypy 0 errors / 183 files, ruff clean, type:ignore ceiling 45/45 |
+| **CI** | GitHub Actions : 11 jobs (Rust no-default, rust-features, Python SDK Linux, Python SDK Windows, Python Discover, OTel Linux, OTel Windows MSVC, integration-smoke, build-wasm-sandbox, Trap-E matrix, Security pip-audit/SBOM) |
+| **Feature flags Rust (default)** | `extension-module`, `sandbox`, `cranelift`, `tool-executor`, `cognitive` |
+| **Feature flags Rust (opt-in)** | `onnx` (ort, tokenizers, ndarray + DLL), `smt` (oxiz), `otel` (B1.b Rust span bridge) |
+| **PyPI** | `ygn-sage` v0.1.0-alpha (sage_core déclaré comme dep depuis cycle `e57ae680`) |
 | **Licence** | MIT |
-| **PyPI** | `ygn-sage` v0.1.0-alpha |
+| **Training** | PARKED sur main 2026-04-15 (`b2f59ee`). Code training sur branche `training` dédiée. Checkpoints HF : `yannabadie/sage-topology-policy-local` (Phase C, 40% MASBENCH), `yannabadie/sage-topology-policy-v2` (Nemotron, GiGPO veRL) |
+| **Points d'entrée runtime** | `sage.boot.boot_agent_system()`, `sage.pipeline.CognitiveOrchestrationPipeline.run()` |
+| **Points d'entrée bench** | `python -m sage.bench --type {bigcodebench,evalplus,ablation,routing_gt,swebench}` |
 
 ---
 
-## 3. Reading Guide -- Legende de Classification
+## 3. Reading Guide — Légende de Classification
 
 | Tag | Signification |
 |---|---|
-| **Observe** | Verifie dans le code source -- fichier + symbole + call path confirmes |
-| **Infere** | Deduit de la structure du code mais non directement prouve |
+| **Observé** | Vérifié dans le code source — fichier + symbole + call path confirmés |
+| **Inféré** | Déduit de la structure du code mais non directement prouvé |
 | **Inconclusif** | Indices contradictoires ou insuffisants |
-| **Runtime** | Atteignable dans le chemin d'execution normal (`boot.py` -> `pipeline.run()` -> ...) |
-| **Training** | Atteignable uniquement dans le chemin d'entrainement veRL/GiGPO |
-| **Experimental** | Existe derriere un feature flag ou env var optionnel |
-| **Dead code** | Fichier/symbole present mais jamais importe dans un chemin atteignable |
+| **Runtime** | Atteignable dans le chemin d'exécution normal (`boot.py` → `pipeline.run()`) |
+| **Bench** | Atteignable dans le chemin bench (`python -m sage.bench`) |
+| **Experimental** | Existe derrière un feature flag ou env var optionnel |
+| **Code mort** | Fichier/symbole présent mais jamais importé dans un chemin atteignable |
+| **Parqué** | Code complet mais non exécuté en production. Ex : training sur main. |
 
-**Classification des capacites :**
-- `Reel et valide` : fichier + call path + test
-- `Reel mais non valide` : fichier + call path, pas de test
-- `Partiellement cable` : fichier existe, call path partiel
+**Classification des capacités :**
+- `Réel et validé` : fichier + call path + tests + (idéalement) benchmark
+- `Réel mais non validé quantitativement` : fichier + call path + tests, pas de benchmark
+- `Partiellement câblé` : fichier existe, call path partiel
 - `Squelette` : fichier existe, pas de call path
-- `Code mort` : fichier existe, jamais importe
-- `Doc-only` : mentionne dans la doc, pas dans le code
+- `Doc-only` : mentionné dans la doc, pas dans le code
 
 ---
 
 ## 4. Mental Model
 
-**Phrase-systeme :** YGN-SAGE est un orchestrateur multi-agent qui route les taches via classification cognitive (S1/S2/S3), genere des topologies DAG multi-agents via un moteur evolutif, assigne des modeles LLM par noeud, execute la topologie, et apprend des resultats via un bandit contextuel Thompson.
+**Phrase-système :** YGN-SAGE est un orchestrateur multi-agent qui route les tâches via classification cognitive (S1/S2/S3), génère des topologies DAG multi-agents via un moteur évolutif Rust 6-path, assigne des modèles LLM par nœud, exécute la topologie avec adaptation runtime gérée côté Rust, et apprend des résultats via un bandit contextuel Thompson tout en émettant des évidences typées (OracleStack) qui gates les mises à jour bandit / MAP-Elites / training-memory.
 
 **Pipeline en 1 ligne :**
 ```
-CLASSIFY (kNN/SystemRouter) -> DECOMPOSE (TaskPlanner) -> SELECT TOPOLOGY (6-path engine) -> ASSIGN MODELS (ModelAssigner+Z3) -> EXECUTE (TopologyRunner) -> LEARN (Bandit+S-MMU+MAP-Elites)
+CLASSIFY (kNN/SystemRouter+bandit decision_id) → DECOMPOSE (TaskPlanner DAG features) → SELECT TOPOLOGY (6-path engine + Path 6 opt-in) → ASSIGN MODELS (Rust ModelAssigner + Z3 verify) → EXECUTE (TopologyRunner + Rust TopologyController) → LEARN (QualityEstimator + OracleStack → bandit.record_outcome_checked + MAP-Elites + S-MMU)
 ```
 
-**Sous-systemes centraux :**
+**Sous-systèmes centraux (10) :**
 
-1. **Routing** : SystemRouter (Rust) + AdaptiveRouter (Python) + kNN embeddings + bandit contextuel
+1. **Routing** : Rust SystemRouter + AdaptiveRouter (Python) + kNN embeddings + ContextualBandit
 2. **Topology Engine** : 6-path generation (S-MMU hit, archive, LLM synthesis, mutation, MCTS, template) + HybridVerifier + LTL
-3. **Execution** : TopologyRunner + TopologyExecutor (dual-mode : static DAG / dynamic gate-based) + ProviderPool
-4. **Memory** : Working (Rust) + Episodic (SQLite) + Semantic (entity graph) + Causal (directed edges) + S-MMU (4-view petgraph)
-5. **Verification** : OxiZ SMT (QF_LIA) + HybridVerifier (structural) + LTL (temporal) + ProcessRewardModel
-6. **Evolution** : MAP-Elites archive + CMA-ME emitter + MCTS search + 7 mutation operators + TopologyPopulation
-7. **Providers** : 7 providers + Codex (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex) + ProviderPool + circuit breakers
-8. **Training (experimental)** : SageTopologyEnv (GiGPO multi-step) + reward functions + edge credit + RewardFlow
+3. **Execution** : TopologyRunner + TopologyExecutor dual-mode + ProviderPool (7 providers)
+4. **Memory** : Working (Rust) + Episodic (SQLite) + Semantic (entity graph) + Causal + S-MMU (4-view) + ExoCortex RAG
+5. **Verification** : OxiZ SMT (QF_LIA) + HybridVerifier + LTL + ProcessRewardModel
+6. **Evolution** : MAP-Elites archive + CMA-ME + MCTS + 7 mutation operators + TopologyPopulation
+7. **Adaptation runtime (ADR-012, Rust-primary)** : `RustTopologyController` (Rust state machine + 5 décision paths) + Python wrapper pour embedder/SmtVerifier/topology-graph
+8. **Runtime Integrity** : OracleStack + RuntimeContracts + StateCore + RunFrame + EvidenceProducers + 8 invariants dans le ledger
+9. **Observability** : EventBus (in-process) + DriftMonitor + OpenTelemetry GenAI spans (B1) + Rust span bridge (B1.b, `--features otel`)
+10. **Bench infrastructure (cycle-9)** : Event ledger NDJSON + wall-clock watchdog + Windows keep-awake + targeted filters (`--ablation-configs`, `--task-ids`)
 
 ---
 
@@ -91,17 +108,17 @@ CLASSIFY (kNN/SystemRouter) -> DECOMPOSE (TaskPlanner) -> SELECT TOPOLOGY (6-pat
 graph TB
     USER[Utilisateur / Client]
     SAGE[YGN-SAGE ADK]
-    GOOGLE[Google GenAI<br/>Gemini 3.1]
-    OPENAI[OpenAI API<br/>GPT-5.4, Codex]
-    DEEPSEEK[DeepSeek API]
-    XAI[xAI / Grok API]
-    KIMI[Kimi API]
-    MINIMAX[MiniMax API]
-    OPENROUTER[OpenRouter<br/>Qwen3.5+]
+    GOOGLE[Google GenAI<br/>Gemini 3.1, 2.5 Flash]
+    OPENAI[OpenAI API<br/>GPT-5.4/5.5/Codex]
+    DEEPSEEK[DeepSeek API<br/>v4-flash, v4-pro, reasoner]
+    XAI[xAI / Grok API<br/>grok-4-1-fast-reasoning]
+    KIMI[Kimi API<br/>kimi-k2.6]
+    MINIMAX[MiniMax API<br/>m2.5/m2.7]
+    OPENROUTER[OpenRouter<br/>qwen3.5-plus]
     EXOCORTEX[ExoCortex<br/>Google File Search]
-    HF[HuggingFace Hub<br/>Models/Datasets]
-    DOCKER[Docker<br/>Sandbox]
-    ONNX[ONNX Runtime<br/>arctic-embed-m]
+    HF[HuggingFace Hub<br/>topology-policy + arctic-embed-m]
+    DOCKER[Docker<br/>SWE-bench eval only]
+    OTEL[OTel collector<br/>console / OTLP / Logfire]
 
     USER -->|task / API call| SAGE
     SAGE -->|LLM calls| GOOGLE
@@ -112,11 +129,13 @@ graph TB
     SAGE -->|LLM calls| MINIMAX
     SAGE -->|LLM calls| OPENROUTER
     SAGE -->|RAG queries| EXOCORTEX
-    SAGE -->|model download| HF
-    SAGE -->|code sandbox| DOCKER
-    SAGE -->|embeddings| ONNX
+    SAGE -->|model + embedder| HF
+    SAGE -->|patch eval| DOCKER
+    SAGE -->|spans| OTEL
 ```
-[Evidence: docker-compose.yml:13-18, sage-python/src/sage/providers/, sage-python/src/sage/memory/remote_rag.py] [Statut: Observe] [Reachability: Runtime] [Validation: CI + tests]
+[Evidence: `sage-core/config/cards.toml` (23 modèles), `sage-python/src/sage/providers/`, `sage-python/src/sage/observability/`, `docker-compose.yml`] [Statut: Observé] [Reachability: Runtime] [Validation: CI + tests]
+
+**Note** : le sandbox d'exécution n'utilise PLUS Docker au runtime (sauf pour SWE-bench Docker grading). Depuis ADR-013 §5 (2026-04-22), `validate_and_execute` exécute par défaut dans RustPython wasm32-wasip1 deny-by-default, embarqué dans `sage_core`.
 
 ---
 
@@ -124,32 +143,42 @@ graph TB
 
 ### 6.1 Runtime
 
-| Point d'entree | Fichier | Description | Reachability |
+| Point d'entrée | Fichier | Description | Reachability |
 |---|---|---|---|
-| `boot_agent_system()` | `sage-python/src/sage/boot.py:491` | Construit `AgentSystem` complet (router, engine, bandit, memory, pipeline) | Runtime |
-| `AgentSystem.run(task)` | `sage-python/src/sage/boot.py:150` | Chemin principal : pipeline 5-stages si cable, sinon legacy AgentLoop | Runtime |
+| `boot_agent_system()` | `sage-python/src/sage/boot.py:353` | Construit `AgentSystem` complet (router, engine, bandit, memory, pipeline, runtime/oracle) | Runtime |
+| `AgentSystem.run(task)` | `sage-python/src/sage/agent_system.py` | Chemin unifié (Phases 1-3 mergées) : `system.run()` → `pipeline.run()` | Runtime |
 | `CognitiveOrchestrationPipeline.run()` | `sage-python/src/sage/pipeline.py:122` | Pipeline 5-stages async | Runtime |
-| `AgentLoop.run(task)` | `sage-python/src/sage/agent_loop.py` | Boucle agent perceive/think/act/learn | Runtime |
-| `TopologyRunner.run(task)` | `sage-python/src/sage/topology/runner.py` | Execution multi-agent d'une topologie | Runtime |
-| `python -m sage.protocols.serve` | docker-compose.yml:22 | Serveur MCP + A2A | Runtime |
+| `AgentLoop.run(task)` | `sage-python/src/sage/agent_loop.py` | Boucle perceive/think/act/learn (par nœud topology + bypass) | Runtime |
+| `TopologyRunner.run(task)` | `sage-python/src/sage/topology/runner.py:247` | Exécution multi-agent + Rust TopologyController | Runtime |
+| `python -m sage` | `sage-python/src/sage/__main__.py` | Root CLI dispatcher (`c9448a9b`) | Runtime |
+| `python -m sage.protocols.serve` | `sage-python/src/sage/protocols/` | Serveur MCP + A2A (a2a-sdk 0.3.x) | Runtime |
+| `python -m sage.ops.a14_reset` | `sage-python/src/sage/ops/a14_reset.py` | Reset A14 state files post-poison | Ops |
 
-### 6.2 Training
+### 6.2 Bench
 
-| Point d'entree | Fichier | Description | Reachability |
-|---|---|---|---|
-| `SageTopologyEnv.reset()/.step()` | `sage-python/src/sage/verl/topology_env.py` | Env gym 4-etats pour GiGPO | Training |
-| `SageTopologyVerlEnv` | `sage-python/src/sage/verl/env_package/envs.py` | Wrapper vectorise verl-agent | Training |
-| `register_sage_topology_env()` | `sage-python/src/sage/verl/env_register.py:52` | Enregistrement dans verl-agent | Training |
-| `compute_score()` | `sage-python/src/sage/verl/reward.py` | Fonction reward veRL : format + structure + density | Training |
-| `python -m sage.bench` | `sage-python/src/sage/bench/__main__.py` | Benchmarks : BigCodeBench, EvalPlus, routing GT | Training/Eval |
+| Point d'entrée | Fichier | Description |
+|---|---|---|
+| `python -m sage.bench --type bigcodebench` | `sage-python/src/sage/bench/bigcodebench_bench.py` | BigCodeBench Hard/Full × Instruct/Complete |
+| `python -m sage.bench --type swebench` | `sage-python/src/sage/bench/swebench_bench.py` | SWE-bench Lite/Verified/Pro avec diff verifier opt-in (observe par défaut) |
+| `python -m sage.bench --type ablation` | `sage-python/src/sage/bench/__main__.py` (`_run_ablation`) | 6 configs paired ablation. Filtres `--ablation-configs` + `--task-ids` (α.1+α.2 cycle-9) |
+| `python -m sage.bench --type routing_gt` | `sage-python/src/sage/bench/routing_ground_truth.py` | 50 tasks GT (kNN 92% / SystemRouter 88% / heuristic 34%) |
+| `python -m sage.bench --type evalplus` | `sage-python/src/sage/bench/evalplus_bench.py` | EvalPlus (saturated, déprécié) |
+
+Sortie : `<output>.json` (BenchReport) + `<output>.events.jsonl` (event ledger NDJSON, depuis cycle-9 `0036217b`).
 
 ### 6.3 Tooling
 
-| Point d'entree | Fichier | Description | Reachability |
-|---|---|---|---|
-| `python -m sage.evolution` | `sage-python/src/sage/evolution/__main__.py` | CLI evolution (population, mutation, eval) | Experimental |
-| `sage-discover/` | `sage-discover/src/discover/pipeline.py` | Pipeline arXiv -> ExoCortex | Tooling |
-| `ui/app.py` | `ui/app.py` | Dashboard web | Tooling |
+| Point d'entrée | Fichier | Description |
+|---|---|---|
+| `python -m sage.evolution` | `sage-python/src/sage/evolution/__main__.py` | CLI évolution (population, mutation, eval) |
+| `sage-discover/` | `sage-discover/src/discover/pipeline.py` | Pipeline arXiv → ExoCortex |
+| `ui/app.py` | `ui/app.py` | Dashboard FastAPI + WebSocket |
+
+### 6.4 Training (PARKED sur main)
+
+Le code training (`verl/`, `scripts/training/`, `data/training_*.jsonl`, `models/`) est sur la branche dédiée `training` depuis 2026-04-15 (commit `b2f59ee`, -4.3 GB). Sur `main` :
+- Inférence Path 6 reste possible via `SAGE_ENABLE_PATH6=1` (lazy-load HF checkpoint)
+- Tous les modules `sage.verl.*` ont été retirés de `main`
 
 ---
 
@@ -158,27 +187,30 @@ graph TB
 ```mermaid
 graph LR
     subgraph "sage-core (Rust / PyO3)"
-        SC_ROUTING[routing/<br/>SystemRouter, kNN,<br/>Bandit, ModelAssigner,<br/>ModelRegistry]
-        SC_TOPO[topology/<br/>TopologyEngine,<br/>TopologyGraph, Executor,<br/>MAP-Elites, MCTS,<br/>CMA-ME, Verifier]
-        SC_MEM[memory/<br/>WorkingMemory,<br/>S-MMU, RagCache,<br/>Embedder, EntityGraph]
-        SC_VERIF[verification/<br/>SmtVerifier OxiZ,<br/>LTL, QualityLabeler]
-        SC_SANDBOX[sandbox/<br/>ToolExecutor,<br/>WasmSandbox,<br/>Validator]
+        SC_ROUTING[routing/<br/>SystemRouter, kNN,<br/>ContextualBandit, ModelAssigner,<br/>ModelRegistry, persistence]
+        SC_TOPO[topology/<br/>TopologyEngine, Graph, Executor,<br/>MAP-Elites, MCTS, CMA-ME,<br/>RustTopologyController, ADR-012,<br/>posterior_epoch]
+        SC_MEM[memory/<br/>WorkingMemory, S-MMU,<br/>RagCache, Embedder ONNX,<br/>EntityGraph, RustCompositeWriteGate]
+        SC_VERIF[verification/<br/>SmtVerifier OxiZ,<br/>LtlVerifier, HybridVerifier,<br/>QualityLabeler]
+        SC_SANDBOX[sandbox/<br/>ToolExecutor,<br/>WasmPython JIT cache,<br/>tree-sitter validator]
+        SC_OBS[observability/<br/>OTel bridge B1.b,<br/>W3C traceparent]
     end
 
     subgraph "sage-python (Python SDK)"
-        SP_BOOT[boot.py<br/>AgentSystem]
-        SP_PIPE[pipeline.py<br/>CognitiveOrchestration]
-        SP_LOOP[agent_loop.py<br/>AgentLoop]
-        SP_STRAT[strategy/<br/>AdaptiveRouter,<br/>kNN, Metacognition]
-        SP_TOPO[topology/<br/>Runner, LLM Caller,<br/>Controller, Evo]
-        SP_MEM[memory/<br/>Episodic, Semantic,<br/>Causal, S-MMU Context]
-        SP_PROV[providers/ + llm/<br/>ProviderPool,<br/>Google, OpenAI, ...]
-        SP_VERL[verl/<br/>TopologyEnv,<br/>Reward, EdgeCredit,<br/>RewardFlow]
-        SP_BENCH[bench/<br/>BigCodeBench,<br/>EvalPlus, Routing GT]
+        SP_BOOT[boot.py + boot_pipeline.py + boot_topology.py<br/>AgentSystem assembly]
+        SP_PIPE[pipeline.py 5-stages<br/>CognitiveOrchestration<br/>+ Fix C llm_tier guard]
+        SP_LOOP[agent_loop.py + phases/<br/>perceive/think/act/learn]
+        SP_STRAT[strategy/<br/>AdaptiveRouter, kNN, Metacognition]
+        SP_TOPO[topology/<br/>Runner, llm_caller,<br/>topology_controller wrapper,<br/>evo_topology]
+        SP_MEM[memory/<br/>Episodic, Semantic, Causal,<br/>S-MMU Context, Embedder]
+        SP_PROV[providers/ + llm/<br/>ProviderPool, PydanticAIProvider,<br/>7 providers]
+        SP_BENCH[bench/<br/>BigCodeBench, SWE-bench,<br/>ablation, event_ledger,<br/>watchdog, keep_awake]
+        SP_RT[runtime/<br/>oracle/, evidence/, run_frame/,<br/>state/, event_log/]
+        SP_OBS[observability/<br/>OTel GenAI spans,<br/>logfire/console/otlp_http]
+        SP_OPS[ops/<br/>a14_reset]
     end
 
     subgraph "sage-discover"
-        SD[Discovery Pipeline<br/>arXiv -> ExoCortex]
+        SD[Discovery Pipeline<br/>arXiv → ExoCortex]
     end
 
     SP_BOOT --> SC_ROUTING
@@ -189,615 +221,695 @@ graph LR
     SP_STRAT --> SC_ROUTING
     SP_TOPO --> SC_TOPO
     SP_LOOP --> SC_MEM
-    SP_VERL --> SC_TOPO
+    SP_LOOP --> SP_RT
+    SP_PIPE --> SP_RT
+    SP_BENCH --> SP_PIPE
+    SP_OBS -.->|--features otel| SC_OBS
 ```
 
 ---
 
 ## 8. Component Registry
 
-### 8.1 sage-core (Rust)
+### 8.1 sage-core (Rust) — 549 tests
 
-| Composant | Type | Responsabilite | Dependances | Reachability | Validation | Notes |
-|---|---|---|---|---|---|---|
-| `SystemRouter` | `#[pyclass]` | Route tache -> S1/S2/S3 + model_id | StructuralFeatures, ModelRegistry, Bandit | Runtime | Tests (12 #[test]) | Inclut `route_integrated()` avec bandit |
-| `ContextualBandit` | `#[pyclass]` | Thompson sampling per-arm (Beta/Gamma posteriors) | rand | Runtime | Tests (30 #[test]) | Decay temporel, Pareto front |
-| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars pre-calcules | numpy | Runtime | Tests (6 #[test]) | OOD rejection, hot-path Rust |
-| `ModelAssigner` | `#[pyclass]` | Assigne model_id par noeud topologie | ModelRegistry, ModelCard | Runtime | Tests (5 #[test]) | Domain-aware, budget-aware |
-| `ModelRegistry` | `#[pyclass]` | Catalogue TOML de 20 modeles | toml, ModelCard | Runtime | Tests (12 #[test]) | `cards.toml` |
-| `ModelCard` | `#[pyclass]` | Profil par modele (scores, couts, affinites) | serde | Runtime | Tests (14 #[test]) | s1/s2/s3 affinity + domain scores |
-| `RustQualityEstimator` | `#[pyclass]` | 5-signal quality (lexical, rapide) | - | Runtime | Tests (8 #[test]) | Port Rust du Python QualityEstimator |
-| `StructuralFeatures` | `#[pyclass]` | Extraction features structurelles d'une tache | - | Runtime | Tests (6 #[test]) | keyword complexity + uncertainty |
-| `TopologyGraph` | `#[pyclass]` | IR unifie pour topologies multi-agents | petgraph, ulid | Runtime | Tests (4+16 #[test]) | 3-flow edges (Control/Message/State), 11 templates |
-| `TopologyNode` | `#[pyclass]` | Noeud : role, model_id, system, capabilities | - | Runtime | Tests | Prompt customisable |
-| `TopologyEdge` | `#[pyclass]` | Arete : type, gate, condition | - | Runtime | Tests | Gating dynamique |
-| `TopologyEngine` (internal) | struct | Moteur 6-path : S-MMU, archive, LLM, mutation, MCTS, template | S-MMU, MAP-Elites, HybridVerifier, CMA-ME, MCTS, Bandit | Runtime | Tests (14+16 #[test]) | Expose via PyTopologyEngine |
-| `TopologyExecutor` (internal) | struct | Ordonnancement dual-mode (static/dynamic) | petgraph | Runtime | Tests (19 #[test]) | Static=Kahn, Dynamic=gate readiness |
-| `MapElitesArchive` | struct | Archive qualite-diversite 4D (108 cells) | TopologyGraph, HybridVerifier | Runtime | Tests (14 #[test]) | Pareto dominance insertion |
-| `MctsSearcher` | struct | UCB1 tree search sur espace de mutations | mutations, HybridVerifier | Runtime | Tests (9 #[test]) | Pas d'appel LLM, purement structural |
-| `CmaEmitter` | struct | Optimisation continue 3D (cout, temps, poids) | rand | Runtime | Tests (6 #[test]) | Covariance diagonale simplifiee |
-| `HybridVerifier` | `#[pyclass]` | Verification structurelle + semantique O(V+E) | petgraph, LTL | Runtime | Tests (19 #[test]) | Erreurs hard + warnings soft |
-| `LtlVerifier` | `#[pyclass]` | Model checking temporel : reachability, safety, liveness | petgraph | Runtime | Tests (17 #[test]) | BFS/DFS, pas de SMT |
-| `SmtVerifier` | `#[pyclass]` | Verification formelle QF_LIA | OxiZ | Runtime (feature `smt`) | Tests (38 #[test]) | Bounds, loops, invariants, provider SAT |
-| `QualityLabeler` | `#[pyclass]` | Label qualite via SMT + tree-sitter | SmtVerifier, Validator | Experimental (features `smt`+`tool-executor`) | Tests (16 #[test]) | Verification formelle des outputs |
-| `MultiViewMMU` (S-MMU) | `#[pyclass]` | 4 vues : temporal, semantic, causal, entity | petgraph, ulid | Runtime | Tests (17 #[test]) | ULID chunk IDs, MAX_SEMANTIC_NEIGHBORS=128 |
-| `WorkingMemory` | `#[pyclass]` | Memoire court-terme per-agent | chrono | Runtime | Tests (4 #[test]) | Fallback Python si Rust absent |
-| `RustEmbedder` | `#[pyclass]` | arctic-embed-m ONNX 768-dim | ort, tokenizers, ndarray | Runtime (feature `onnx`) | Tests (3+5 #[test]) | load-dynamic DLL |
-| `RagCache` | `#[pyclass]` | Cache LRU pour RAG | - | Runtime | Tests (5 #[test]) | - |
-| `RustRelevanceGate` | `#[pyclass]` | Filtrage CRAG threshold | - | Runtime | Tests (8 #[test]) | - |
-| `RustEntityGraph` | `#[pyclass]` | Graphe d'entites | petgraph | Runtime | Tests (12 #[test]) | - |
-| `ToolExecutor` | `#[pyclass]` | Validation tree-sitter + embedded RustPython Wasm (deny-by-default WASI-p1, ADR-013 §5 flip) | wasmtime 43, tree-sitter | Runtime (default features incl. `sandbox`+`cranelift`+`tool-executor`) | Tests (8 #[test] + 5 cache_tests) | `validate_and_execute` fails closed without Wasm; no subprocess fallback. `execute_raw` (gated by `SAGE_UNSAFE_RAW_EXEC=1`) keeps subprocess as audited escape hatch. |
-| `WasmSandbox` | `#[pyclass]` | Sandbox Wasm (wasmtime 36 LTS) | wasmtime | Experimental (feature `sandbox`) | Tests | cranelift exclu sur Windows |
-| `TopologyDensity` | `#[pyclass]` | S_complex (AgentConductor) : S_node, S_edge, S_depth | petgraph | Runtime | Tests (11 #[test]) | N_max par systeme (4/7/10) |
-| `TopologyReward` | `#[pyclass]` | Reward dense multi-signal (execution + structural + density + LTL) | HybridVerifier, TopologyDensity, LtlVerifier | Training | Tests (11 #[test]) | + resilience + cost_efficiency |
+| Composant | Type | Responsabilité | Reachability | Notes |
+|---|---|---|---|---|
+| `SystemRouter` | `#[pyclass]` | Route tâche → S1/S2/S3 + model_id, **route_integrated** + record_outcome_checked | Runtime | Bandit attribution invariant (cycle-9 `6f23eea4`) |
+| `ContextualBandit` | `#[pyclass]` | Thompson sampling per-arm Beta/Gamma, persistence SQLite (cycle `cognitive`) | Runtime | `restore_arm` corrige context_sum/count (`d9b0b659`) |
+| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | 92% GT |
+| `ModelAssigner` | `#[pyclass]` | Assigne model_id par nœud topologie | Runtime | Domain-aware, budget-aware |
+| `ModelRegistry` | `#[pyclass]` | Catalogue TOML 23 modèles | Runtime | `cards.toml` |
+| `ModelCard` | `#[pyclass]` | Profil par modèle (scores, coûts, affinités) | Runtime | s1/s2/s3 affinity + domain scores |
+| `RustCompositeWriteGate` | `#[pyclass]` | 5-signal memory write gate (cycle-8 T2) | Runtime | salience + tier + conf + nov + rel |
+| `RustQualityEstimator` | `#[pyclass]` | 5-signal quality (lexical, fast) | Runtime | Port Rust |
+| `TopologyGraph` | `#[pyclass]` | IR unifié 3-flow edges (Control/Message/State) | Runtime | 11 templates |
+| `TopologyEngine` | `#[pyclass]` | Moteur 6-path (S-MMU, archive, LLM, mutation, MCTS, template) | Runtime | + posterior_epoch guard |
+| `TopologyExecutor` | struct | Ordonnancement dual-mode (static Kahn / dynamic gate) | Runtime | |
+| **`RustTopologyController`** | `#[pyclass]` | **ADR-012 (2026-04-20)** : 5 decision paths + state machine en Rust | Runtime | Python wrappe pour embedder/SmtVerifier accès |
+| `MapElitesArchive` | struct | Archive QD 4D, persistence cycle `cognitive` | Runtime | Pareto dominance |
+| `MctsSearcher` | struct | UCB1 sur mutations | Runtime | |
+| `CmaEmitter` | struct | Optimisation continue 3D, RNG seam (`5ef1940f`) | Runtime | |
+| `HybridVerifier` | `#[pyclass]` | Vérification structurelle + sémantique O(V+E) | Runtime | |
+| `LtlVerifier` | `#[pyclass]` | Model checking temporel (ADR-014 rename) | Runtime | BFS/DFS sur petgraph |
+| `SmtVerifier` | `#[pyclass]` | Vérification formelle QF_LIA | Runtime (`smt`) | OxiZ pure Rust |
+| `QualityLabeler` | `#[pyclass]` | Label qualité via SMT + tree-sitter | Experimental (`smt`+`tool-executor`) | |
+| `MultiViewMMU` (S-MMU) | `#[pyclass]` | 4 vues : temporal, semantic, causal, entity | Runtime | ULID chunks |
+| `WorkingMemory` | `#[pyclass]` | Mémoire court-terme per-agent | Runtime | |
+| `RustEmbedder` | `#[pyclass]` | arctic-embed-m ONNX 768-dim | Runtime (`onnx`) | DLL load-dynamic |
+| `RagCache` | `#[pyclass]` | Cache LRU pour RAG | Runtime | |
+| `RustEntityGraph` | `#[pyclass]` | Graphe d'entités (sémantique) | Runtime | |
+| **`ToolExecutor`** | `#[pyclass]` | **ADR-013 §5** (2026-04-22) : tree-sitter + RustPython wasm32-wasip1 par défaut | Runtime (default) | `validate_and_execute` fail-closed sans Wasm. `execute_raw` gated par `SAGE_UNSAFE_RAW_EXEC=1` |
+| WasmPython JIT cache | mod | Précompile `.cwasm` (~30s → ~1s warm) | Runtime | `$HOME/.sage/wasm_python_cache/`, `50b4ee8` |
+| **`PosteriorEpoch`** | mod | A14 epoch guard, `topology_state_manifest.json` SHA-256 binding | Runtime | Cycle-8 invariant 3 |
+| OTel bridge | mod | W3C traceparent + Rust span exporter (B1.b) | Experimental (`otel`) | `sage-core/src/observability/` |
 
-### 8.2 sage-python
+### 8.2 sage-python (Python SDK) — 2940 tests
 
-| Composant | Type | Responsabilite | Dependances | Reachability | Validation | Notes |
-|---|---|---|---|---|---|---|
-| `boot.py` / `AgentSystem` | Module+Dataclass | Construction et assemblage de tout le systeme | Tous les modules | Runtime | Tests (3 test_boot) | Chemin primaire : pipeline; fallback : legacy |
-| `pipeline.py` / `CognitiveOrchestrationPipeline` | Classe | Pipeline 5-stages async | router, engine, assigner, pool, bandit, QE | Runtime | Tests (32 test_pipeline) | `Reel et valide` |
-| `agent_loop.py` / `AgentLoop` | Classe | Boucle perceive->think->act->learn | LLMProvider, ToolRegistry, WorkingMemory, PRM | Runtime | Tests (35+17 tests) | Circuit breakers, drift monitor |
-| `topology/runner.py` / `TopologyRunner` | Classe | Execute TopologyGraph via LLM calls per-node | TopologyExecutor, LLMProvider, ProviderPool | Runtime | Tests (5 tests) | Predecessor context, retry fallback |
-| `topology_controller.py` / `TopologyController` | Classe | Adaptation runtime (upgrade, prune, reroute, spawn) | QualityEstimator, PRM, ModelAssigner | Runtime | Tests (10 tests) | Thresholds hardcodes (THETA_GOOD=0.7, THETA_CRITICAL=0.3) |
-| `strategy/adaptive_router.py` / `AdaptiveRouter` | Classe | Router 4-stages : structural->kNN->BERT->entropy | StructuralFeatures, KnnRouter | Runtime | Tests (34 tests) | `Reel et valide` |
-| `strategy/knn_router.py` / `KnnRouter` | Classe | kNN routing sur exemplars embeddings | Embedder, numpy, RustKnnRouter | Runtime | Tests (21 tests) | 92% GT accuracy |
-| `strategy/metacognition.py` / `ComplexityRouter` | Classe | Routeur heuristique (DEAD CODE) | - | Dead code | Tests (24 tests) | 34% GT -- remplace par kNN |
-| `llm/provider_pool.py` / `ProviderPool` | Classe | Resolution model_id -> (provider, config) + circuit breakers | LLMProvider, CircuitBreaker, ModelRegistry | Runtime | Tests (4 tests) | `Reel et valide` |
-| `providers/registry.py` / `ModelRegistry` (Python) | Classe | Decouverte live + merge TOML | ProviderConnector, tomllib | Runtime | Tests (27 tests) | Distinct du Rust ModelRegistry |
-| `llm/google.py` / `GoogleProvider` | Classe | Provider Google GenAI | google-genai | Runtime | Tests | SSL patch integre |
-| `llm/codex.py` / `CodexProvider` | Classe | Provider OpenAI Codex | openai | Runtime | Tests | - |
-| `memory/episodic.py` / `EpisodicMemory` | Classe | Memoire cross-session SQLite/in-memory | aiosqlite (opt) | Runtime | Tests | WAL mode |
-| `memory/semantic.py` / `SemanticMemory` | Classe | Graphe d'entites + relations triples | MemoryAgent | Runtime | Tests (7 tests) | Adjacency index, SQLite optional |
-| `memory/causal.py` / `CausalMemory` | Classe | Graphe causal dirige | - | Runtime | Tests (16 tests) | BFS chain traversal |
-| `memory/smmu_context.py` | Module | Recuperation contexte S-MMU pour injection prompt | MultiViewMMU | Runtime | Tests (16 tests) | Best-effort, weights (1.0, 2.0, 1.5, 1.0) |
-| `memory/working.py` / `WorkingMemory` | Classe | Memoire court-terme, delegate a Rust | sage_core.WorkingMemory | Runtime | Tests (6 tests) | Fallback Python mock |
-| `memory/remote_rag.py` / `ExoCortex` | Classe | RAG via Google File Search API | google-genai | Runtime | Tests (4 tests) | Store persiste |
-| `memory/embedder.py` / `Embedder` | Classe | Wrapper embeddings (Rust ONNX ou fallback) | RustEmbedder | Runtime | Tests (15 tests) | Refuse hash embeddings pour routing |
-| `quality_estimator.py` / `QualityEstimator` | Classe | Estimation qualite (Z3 ou ONNX ou abstention) | QualityLabeler, RustLearnedQualityEstimator | Runtime | Tests (4 tests) | ONNX modele ABSENT du repo |
-| `topology/kg_rlvr.py` / `ProcessRewardModel` | Classe | PRM sur think tags + SMT | SmtVerifier | Runtime | Tests (11 tests) | Rust OxiZ prioritaire, Z3 Python deprecie |
-| `contracts/z3_verify.py` | Module | Verification formelle provider assignment | SmtVerifier (Rust) | Runtime | Tests (18 tests) | Adapters DAG/Provider |
-| `topology/llm_caller.py` | Module | Synthese topologie via LLM (Path 3) | LLMProvider | Runtime | Tests (10 tests) | JSON 2-stages (roles + structure) |
-| `topology/evo_topology.py` / `TopologyEvolver` | Classe | Evolution Python de topologies | Population, Mutator, Evaluator | Runtime | Tests (5 tests) | Distinct de MAP-Elites Rust |
-| `evolution/engine.py` / `EvolutionEngine` | Classe | Boucle evolutive : population + mutation + eval | Population, Mutator, Evaluator, SAMPO | Experimental | Tests (16 tests) | Aucune evidence quantitative d'amelioration |
-| `events/bus.py` / `EventBus` | Classe | Bus d'evenements in-process (sync + async stream) | asyncio | Runtime | Tests (17 tests) | Ring buffer 5000 |
-| `resilience.py` / `CircuitBreaker` | Classe | 3-states : CLOSED->OPEN->HALF_OPEN | - | Runtime | Tests (8 tests) | max_failures=3, cooldown=60s |
-| `monitoring/drift.py` / `DriftMonitor` | Classe | Detection de derive (latence, erreurs, cout) | constants | Runtime | Tests (8 tests) | 3 actions : CONTINUE/SWITCH/RESET |
-| `sandbox/manager.py` / `SandboxManager` | Classe | Execution isolee : Docker/Wasm/bubblewrap | sage_core.ToolExecutor, isolated_executor | Runtime | Tests (7 tests) | Fallback local si Docker absent |
-| `routing/shadow.py` / `ShadowRouter` | Classe | Dual Rust/Python routing avec traces JSONL | SystemRouter, AdaptiveRouter | Runtime | Tests (28 tests) | Gate evidence : 500/10% soft, 1000/5% hard |
-| `guardrails/` | Module | Input/output/runtime guardrails | - | Runtime | Tests (16+3 tests) | - |
+#### Pipeline / boot
 
-### 8.3 Training (verl/)
+| Composant | Fichier | Tests | Reachability | Notes |
+|---|---|---|---|---|
+| `boot_agent_system()` | `boot.py:353` | test_boot_*.py (32) | Runtime | Phases 1-3 mergées, `llm_tier` thread |
+| `init_pipeline()` | `boot_pipeline.py:141` | | Runtime | Wire pipeline + controller + tool_forge |
+| `init_topology()` | `boot_topology.py` | test_boot_topology (4) | Runtime | A14 epoch guard preflight |
+| `CognitiveOrchestrationPipeline` | `pipeline.py:122` | test_pipeline_*.py (54) | Runtime | 5 stages + Fix C `_llm_tier` guard (`a23e196b`) |
+| `AgentLoop` | `agent_loop.py` | test_agent_loop_*.py (35+) | Runtime | + phases/{perceive,think,act,learn}.py |
 
-| Composant | Type | Responsabilite | Dependances | Reachability | Validation | Notes |
-|---|---|---|---|---|---|---|
-| `topology_env.py` / `SageTopologyEnv` | Classe | Env gym 4-etats pour GiGPO multi-step | StepRewardVector, Embedder | Training | Tests (17 tests) | AWAITING_YAML->EXECUTING->AWAITING_DECISION->TERMINAL |
-| `env_package/envs.py` / `SageTopologyVerlEnv` | Classe | Wrapper vectorise verl-agent | SageTopologyEnv | Training | Tests (35 tests) | `reset(prompts)`, `step(actions)` |
-| `reward.py` / `compute_score()` | Fonction | Reward veRL : format + structure + density + edge credit | yaml, TopologyDensity | Training | Tests (20 tests) | Registre via `custom_reward_function` |
-| `edge_credit.py` / `EdgeStats` | Classe | Graph-GRPO edge-level credit (arXiv 2603.02701) | yaml | Training | Tests (12 tests) | Per-edge success rates -> advantages |
-| `rewardflow.py` / `RewardFlowPropagator` | Classe | Per-node credit via PageRank (arXiv 2603.18859) | - | Training | Tests (25 test_verl_v2) | State-graph backward propagation |
-| `step_reward.py` / `StepRewardVector` | Dataclass | Reward decompose par step pour GiGPO | - | Training | Tests | to_verl_format() |
-| `training_memory.py` / `TrainingMemory` | Classe | SQLite episodic memory pour training loop | sqlite3, numpy | Training | Tests | replay_candidate flag |
-| `env_register.py` | Module | Registration dans verl-agent | SageTopologyVerlEnv | Training | Tests | 3 strategies : env_package, patch, monkey_patch |
-| `env_package/projection.py` | Module | Projection pour verl-agent | - | Training | Infere | - |
+#### Topology
 
-### 8.4 Discovery (sage-discover)
+| Composant | Fichier | Tests | Reachability |
+|---|---|---|---|
+| `TopologyRunner` | `topology/runner.py:247` | test_topology_runner (5) | Runtime |
+| `TopologyController` (wrapper) | `topology_controller.py` | test_topology_controller (44) | Runtime |
+| `TopologyEvolver` | `topology/evo_topology.py` | test_evolution_evo_topology (5) | Experimental |
+| `llm_caller.synthesize_topology()` | `topology/llm_caller.py` | test_topology_llm_caller (10) | Runtime |
+| `ProcessRewardModel` | `topology/kg_rlvr.py` | test_topology_kg_rlvr (11) | Runtime |
+| `ToolForge` (UCT + SMITH) | `tools/forge.py` | tests forge | Runtime |
 
-| Composant | Type | Responsabilite | Dependances | Reachability | Validation | Notes |
-|---|---|---|---|---|---|---|
-| `discover/pipeline.py` | Module | arXiv -> ExoCortex ingestion | google-genai | Tooling | Tests (52) | - |
-| `mcp_gateway.py` | Module | MCP gateway pour decouverte | - | Tooling | - | - |
+#### Routing / Strategy
+
+| Composant | Fichier | Tests | Reachability |
+|---|---|---|---|
+| `AdaptiveRouter` | `strategy/adaptive_router.py` | test_strategy_adaptive (34) | Runtime |
+| `KnnRouter` | `strategy/knn_router.py` | test_strategy_knn (21) | Runtime |
+| `ComplexityRouter` | `strategy/metacognition.py` | (24) | **Emergency fallback** (Priority-3 dans `pipeline.py:477`) |
+| `ShadowRouter` | `routing/shadow.py` | test_routing_shadow (28) | Runtime |
+
+#### Memory / RAG
+
+| Composant | Fichier | Tests | Reachability |
+|---|---|---|---|
+| `EpisodicMemory` | `memory/episodic.py` | test_episodic (15+) | Runtime |
+| `SemanticMemory` | `memory/semantic.py` | test_semantic (7+) | Runtime |
+| `CausalMemory` | `memory/causal.py` | test_causal (16) | Runtime |
+| `WorkingMemory` | `memory/working.py` | test_working (6) | Runtime |
+| `smmu_context` | `memory/smmu_context.py` | test_smmu_context (16) | Runtime |
+| `Embedder` | `memory/embedder.py` | test_embedder (15) | Runtime |
+| `ExoCortex` | `memory/remote_rag.py` | test_remote_rag (4) | Runtime |
+| `consolidator` | `memory/consolidator.py` | tests | Runtime |
+| `MemoryAgent` | `memory/memory_agent.py` | (T2 cycle-9) | Runtime |
+
+#### Providers (7 actifs)
+
+| Composant | Fichier | Notes |
+|---|---|---|
+| `ProviderPool` | `llm/provider_pool.py` | TTL'd exclusion 300s + re-probe (`3148667`) |
+| `PydanticAIProvider` | `providers/pydantic_ai_provider.py` | Migration depuis LiteLLM 2026-04-18 |
+| `GoogleProvider` | `llm/google.py` | Gemini 3.1 + 2.5 Flash |
+| `CodexProvider` | `llm/codex.py` | OpenAI Codex |
+| `OpenAIProvider`, `DeepSeekProvider`, `XaiProvider`, `KimiProvider`, `MinimaxProvider`, `OpenRouterProvider` | via PydanticAI ou directs | A33 deepseek `reasoning_content` multi-turn safety (`27770580`) |
+| `ModelRegistry` (Python) | `providers/registry.py` | Discovery cache 24h, 27 tests |
+
+#### Runtime Integrity (NEW since cycle-7/8/9)
+
+| Sous-système | Fichier | Description |
+|---|---|---|
+| `runtime/event_log/` | `payload_schemas.py`, `writer.py`, `redaction.py`, `errors.py` | Event log avec payload schema versioning + 14 manifests (cycle-8 R6.1c) |
+| `runtime/oracle/` | `_oracles.py`, `stack.py`, `verdict.py`, `env.py` | OracleStack default-on (cycle-7 `128e1b89`). Kill-switch via `SAGE_ORACLE=0\|false\|off\|...` |
+| `runtime/evidence/` | `producers/*.py`, `payloads.py`, `delta.py` | EvidenceProducers (cycle-6 `25e604dd`). Trainable=True gate |
+| `runtime/run_frame/` | `builder.py`, `frame.py` | RunFrame summary avec `parent_event_id` consistency |
+| `runtime/state/` | `reducer.py`, `frame.py` | StateCore edge-channel separation (cycle-5 R6) |
+
+#### Bench infrastructure (cycle-9 NEW)
+
+| Composant | Fichier | Tests | Notes |
+|---|---|---|---|
+| `BenchEventLedger` | `bench/event_ledger.py` | test_event_ledger (11) | Append-only NDJSON + fsync per emit |
+| `run_with_wallclock_watchdog` | `bench/watchdog.py` | test_bench_watchdog (7) | `HostSuspendDetected` raise si elapsed_wall > timeout × grace |
+| `prevent_os_sleep` | `bench/keep_awake.py` | test_bench_keep_awake (6) | Windows `SetThreadExecutionState` ES_SYSTEM_REQUIRED |
+| Host-suspend integration | `tests/test_bench_host_suspend_integration.py` | (3) | E2E mock-based, simule sleep mid-task |
+| Targeted filters | `bench/__main__.py` flags | test_bench_targeted_filters (6) | `--ablation-configs`, `--task-ids` |
+
+#### Contracts
+
+| Composant | Fichier | Description |
+|---|---|---|
+| `TaskPlanner` | `contracts/planner.py` | DAG construction (`plan_static`, `plan_auto`) |
+| `DAGFeatures` | `pipeline_stages.py:80` | omega / delta / gamma (AdaptOrch arXiv 2602.16873) |
+| `select_macro_topology` | `pipeline_stages.py:159` | Mappe DAGFeatures → 11 templates |
+| `cost_tracker` | `contracts/cost_tracker.py` | Tracking cost via provider responses |
+| `policy.py` | `contracts/policy.py` | PolicyVerifier |
+| `repair.py` | `contracts/repair.py` | Two-stage SR/diff repair |
+
+#### Observability
+
+| Composant | Fichier | Notes |
+|---|---|---|
+| `EventBus` | `events/bus.py` | In-process bus, ring buffer 5000 |
+| OTel GenAI spans | `observability/otel_*.py` | B1 (2026-04-25), `SAGE_OTEL_EXPORTER` env |
+| `DriftMonitor` | `monitoring/drift.py` | 3 actions (CONTINUE/SWITCH/RESET) |
+
+#### Ops / Security / Sandbox
+
+| Composant | Fichier | Description |
+|---|---|---|
+| `a14_reset` | `ops/a14_reset.py` | Reset A14 state files post-poison (CONTAMINATED.json + audit dump) |
+| `SandboxManager` | `sandbox/manager.py` | Wrapper haut niveau Wasm/bubblewrap/local |
+| `guardrails/` | `guardrails/{input,output,runtime}.py` | Rule-based safety (skipped via `_skip_guardrails`) |
+| `security/` | `security/typed_repo.py` etc. | Path-jail (Linux backslash normalize, `9734a17d`) |
+
+### 8.3 sage-discover (100 tests)
+
+| Composant | Description |
+|---|---|
+| `discover/pipeline.py` | arXiv → ExoCortex ingestion |
+| `mcp_gateway.py` | MCP gateway pour discovery |
+| `agency_bench.py` | Smoke tests |
 
 ---
 
 ## 9. Runtime Flows
 
-### 9.1 Execution d'une tache (chemin principal)
+### 9.1 Exécution d'une tâche (chemin principal)
 
 ```
-1. boot_agent_system() construit AgentSystem avec:
-   - Rust SystemRouter + ModelRegistry (cards.toml)
-   - Rust TopologyEngine + ContextualBandit
+1. boot_agent_system(llm_tier="auto") construit AgentSystem :
+   - Rust SystemRouter + ModelRegistry (cards.toml, 23 modèles)
+   - Rust TopologyEngine + ContextualBandit + persistence (cognitive)
    - Python AdaptiveRouter (kNN + structural)
-   - CognitiveOrchestrationPipeline
-   - ProviderPool (7 providers + Codex)
+   - CognitiveOrchestrationPipeline (avec llm_tier passé pour Fix C)
+   - ProviderPool (7 providers, TTL'd exclusion)
+   - runtime/oracle (OracleStack default-on)
+   - runtime/event_log (writer + payload_schemas)
 
-2. AgentSystem.run(task) ->
-   if pipeline && !mock:
-     pipeline.run(task, budget)
-   else:
-     legacy path (ShadowRouter -> AgentLoop)
+2. AgentSystem.run(task) → pipeline.run(task, budget) (Phases 1-3 mergées)
 
-3. pipeline.run(task):
-   Stage 0: _stage_classify() -> router.assess_complexity() + route() -> system=S1/S2/S3
-   Stage 1: _stage_decompose() -> TaskPlanner.plan_auto() -> TaskDAG + DAGFeatures
-   Stage 2: _stage_select_topology() -> engine.generate() || Path 6 || template fallback
-   Stage 3: _stage_assign_models() -> assigner.assign_models() + Z3 verify (non-blocking)
-   Stage 4: _stage_execute():
-     - bandit.select_with_context() -> decision_id
-     - if single-node: LLM direct call
-     - if multi-node: TopologyRunner.run(task)
-       -> TopologyExecutor.next_ready() -> per-node LLM calls -> mark_completed()
-       -> if __REROUTE__: regenerate topology + re-execute
-       -> if quality < 0.3: FrugalGPT cascade retry
-   Stage 5: _stage_learn():
-     - QualityEstimator.estimate()
-     - PRM scoring (structured content only)
-     - bandit.record_outcome(decision_id, quality, cost, latency)
-     - engine.record_outcome() -> S-MMU + MAP-Elites
+3. pipeline.run(task) :
+   Stage 0: classify_route_and_decide():
+     - kNN router (primary, 92% GT)
+     - Rust SystemRouter.route_integrated() → bandit decision_id
+     - ComplexityRouter (heuristic 34%, emergency fallback Priority-3)
+     - Stage 0 input guardrails (perceive.py:119) — skippable via _skip_guardrails
+
+   Stage 1: decompose():
+     - TaskPlanner.plan_auto(task, llm) → TaskDAG
+     - compute_dag_features(dag) → DAGFeatures(omega, delta, gamma)
+
+   Stage 2: select_topology():
+     - select_macro_topology(features) → template name (11 options)
+     - TopologyEngine.generate() 6-path : S-MMU > archive > LLM > mutation > MCTS > template
+     - OR Path 6 (SAGE_ENABLE_PATH6=1) : Nemotron-Orchestrator-8B inference
+
+   Stage 3: assign_models():
+     - Rust ModelAssigner.assign_models() (domain + budget aware)
+     - bandit quality override pour underperformers
+     - z3_verify (non-blocking) :  provider assignment SAT
+
+   Stage 4: execute():
+     - Fix C (a23e196b) : _effective_controller = None if llm_tier=="budget"
+     - bandit.select_with_context() → decision_id
+     - if single-node: AgentLoop.run() (perceive→think→act→learn) avec guardrail_pipeline (sauf _skip_guardrails)
+     - if multi-node: TopologyRunner.run() avec _effective_controller :
+       - per-node AgentLoop via factory
+       - RustTopologyController.evaluate_and_decide() (5 paths : reroute, quality cascade, debate gate, parallel inconsistency, prune)
+       - upgrade_model / reroute / spawn_subagent / open_gate (configurable thresholds)
+     - if quality < THETA_CRITICAL: FrugalGPT cascade retry
+
+   Stage 5: learn():
+     - QualityEstimator.estimate() (Z3 → ONNX → abstain)
+     - OracleStack → EvidenceRef + OracleVerdict.trainable
+     - Trainable=True gate :
+         - SystemRouter.record_outcome_checked() (bandit attribution invariant)
+         - bandit posterior update
+         - MAP-Elites archive insert (Pareto dominance)
+         - online_evolution.maybe_evolve()
+         - training_memory.store()
+     - RunFrame summary emit (parent_event_id consistency)
 ```
-[Evidence: sage-python/src/sage/pipeline.py:122-773, sage-python/src/sage/boot.py:150-412] [Statut: Observe] [Reachability: Runtime] [Validation: Tests (32 test_pipeline)]
+[Evidence: `pipeline.py:122-2629`, `boot.py:353-679`, `boot_pipeline.py:141-292`] [Statut: Observé] [Reachability: Runtime] [Validation: 54 tests test_pipeline_*]
 
-### 9.2 Generation de topologie (6-path)
+### 9.2 Génération de topologie (6-path)
 
 ```
 TopologyEngine.generate(smmu, task, embedding, system, exploration_budget):
-  1. Bandit module l'exploration budget (arms > 3 => exploit)
-  2. Path 1: S-MMU hit (similarity > 0.7 AND quality > 0.5) -> clone
-  3. Path 2: MAP-Elites archive lookup (BehaviorDescriptor match, quality > 0.5)
-  4. Path 3: LLM synthesis (Python-side: llm_caller.synthesize_topology())
-  5. Path 4: Mutation (best-quality from archive + random mutation)
-  6. Path 5: MCTS search (UCB1 over mutation space)
-  7. Path 6: Template fallback (S1->sequential, S2->avr, S3->debate)
-  -> HybridVerifier.verify(topology) -> reject if invalid
-  -> Return GenerateResult { topology, source, confidence }
+  1. Bandit module l'exploration budget (arms > 3 → exploit)
+  2. Path 1: S-MMU hit (similarity > 0.7 AND quality > 0.5) → clone
+  3. Path 2: MAP-Elites archive lookup (BehaviorDescriptor match)
+  4. Path 3: LLM synthesis (Python llm_caller.synthesize_topology)
+  5. Path 4: Mutation (best-quality + random mutation)
+  6. Path 5: MCTS search (UCB1 sur mutation space)
+  7. Path 6: Template fallback (S1→sequential, S2→avr, S3→debate)
+  → HybridVerifier.verify(topology) — reject if invalid
+  → posterior_epoch.validate_epoch_for_save() (A14 guard)
+  → Return GenerateResult { topology, source, confidence }
 ```
-[Evidence: sage-core/src/topology/engine.rs:167-200] [Statut: Observe] [Reachability: Runtime] [Validation: Tests (14 #[test])]
 
-### 9.3 Adaptation runtime (TopologyController)
-
-```
-TopologyRunner execute chaque noeud:
-  -> TopologyController.evaluate_and_decide(node_idx, result, task, topology):
-     - QualityEstimator.estimate(task, result) -> quality
-     - if quality >= THETA_GOOD (0.7): continue
-     - if quality < THETA_CRITICAL (0.3) && retries < MAX_RETRIES: upgrade_model
-     - if quality < THETA_PRUNE (0.2): prune_node
-     - if accumulated failures > threshold: reroute_topology (__REROUTE__)
-  -> pipeline.py re-genere topologie si __REROUTE__
-```
-[Evidence: sage-python/src/sage/topology_controller.py:74-80, sage-python/src/sage/pipeline.py:601-637] [Statut: Observe] [Reachability: Runtime] [Validation: Tests (10 tests), mais pas de validation quantitative de l'amelioration]
-
-### 9.4 Systeme memoire
+### 9.3 Adaptation runtime (Rust-primary, ADR-012)
 
 ```
-Per-agent:
-  WorkingMemory (Rust) -> memoire court-terme, evenements structures
-
-Cross-session:
-  EpisodicMemory (SQLite WAL) -> keyword search, CRUD, scoped par agent_id
-  SemanticMemory (entity graph) -> triples (sujet, predicat, objet), BFS neighbourhood
-  CausalMemory (directed graph) -> edges causaux, ancestor/descendant queries
-
-Multi-view (Rust):
-  S-MMU (MultiViewMMU) -> 4 graphes : temporal, semantic, causal, entity
-  -> smmu_context.py recupere chunks pertinents pour injection dans prompts
-  -> TopologySmmuBridge stocke outcomes pour retrieval futur
-
-RAG:
-  ExoCortex -> Google File Search API (store persistant)
-  RagCache -> LRU cache Rust
+TopologyRunner per-node :
+  → RustTopologyController.evaluate_and_decide(node_idx, result, task, topology) :
+     - 5 decision paths in Rust (similarity, quality cascade, debate-gate, parallel inconsistency, prune)
+     - state machine en Rust
+     - Python wrapper expose embedder, SmtVerifier, topology graph for scoring
+  → Decision : continue / upgrade_model / reroute_topology / debate_gate / prune_node / spawn_subagent
+  → if reroute: __REROUTE__ → pipeline regenerate topology
+  → if quality cascade triggered: FrugalGPT retry stronger model
 ```
-[Evidence: sage-core/src/memory/, sage-python/src/sage/memory/] [Statut: Observe] [Reachability: Runtime] [Validation: Tests multiples]
+[Evidence: `sage-core/src/topology/controller.rs`, `sage-python/src/sage/topology_controller.py`] [Statut: Observé] [Reachability: Runtime] [Validation: 44 tests, but pas de validation quantitative cycle-9]
 
-### 9.5 Training GiGPO (experimental)
+### 9.4 Host-suspend detection (cycle-9 NEW)
 
 ```
-1. SageTopologyVerlEnv.reset(prompts) -> cree SageTopologyEnv per prompt
-2. Boucle:
-   a. Env attend YAML topologie du modele (AWAITING_YAML)
-   b. Modele genere topologie YAML -> env parse, reward structurel
-   c. Execution des noeuds (EXECUTING)
-   d. Checkpoint: modele decide continue/upgrade/reroute (AWAITING_DECISION)
-   e. Reward step-level via StepRewardVector + anchor keys
-3. Terminal: code teste en sandbox -> execution reward
-4. compute_score(): format + structure + density + edge credit
-5. RewardFlowPropagator: per-node credit via PageRank
-6. GiGPO normalise par anchor groups
+BigCodeBenchBench.run() per task :
+  → t0 = time.time()
+  → asyncio.wait_for(system.run(task), timeout=120) — peut être bypass par Modern Standby S0
+  → latency_ms = (time.time() - t0) * 1000  # wall-clock, advances during OS suspend
+  → if latency_ms > task_timeout × wallclock_grace_factor (default 2.0) :
+       - mark host_suspend_detected = True
+       - rollback passed_count if applicable
+       - emit_task_abort(reason="host_suspend_detected")
+       - exclude from gate-quality stats
+  → emit_task_end / emit_task_timeout / emit_task_abort to event_ledger NDJSON
 ```
-[Evidence: sage-python/src/sage/verl/topology_env.py, sage-python/src/sage/verl/reward.py] [Statut: Observe] [Reachability: Training] [Validation: Tests unitaires (35+20+25), pas de run GPU]
+
+### 9.5 OracleStack + EvidenceRef (cycle-7 default-on)
+
+```
+Pipeline emits *_event with payload :
+  → OracleStack._oracles[].evaluate(payload) → list[OracleVerdict]
+  → Each OracleVerdict has trainable: bool + reason_code + EvidenceRef
+  → EvidenceRef.evidence_hash : SHA-256 sur payload sanitisé (no raw stderr/secret)
+  → if not any(v.trainable): bandit.record_outcome NOT called, MAP-Elites NOT updated
+  → run_frame_summary.payload.parent_event_id = final_result.seq (RunFrame invariant)
+```
+[Evidence: `runtime/oracle/`, `runtime/evidence/`, `runtime/run_frame/`] [Statut: Observé] [Reachability: Runtime] [Validation: 100+ tests]
 
 ---
 
 ## 10. State, Data, and Memory
 
-### 10.1 Stores de donnees
+### 10.1 Stores de données
 
 | Store | Format | Localisation | Cycle de vie | Reachability |
 |---|---|---|---|---|
-| WorkingMemory | In-memory (Rust struct) | Per-agent, volatile | Duree d'un run | Runtime |
-| EpisodicMemory | SQLite (WAL) | `~/.sage/episodic.db` | Persistant cross-session | Runtime |
-| SemanticMemory | In-memory + SQLite opt | Per-agent | Session ou persistant | Runtime |
-| CausalMemory | In-memory + SQLite opt | Per-agent | Session ou persistant | Runtime |
-| S-MMU | In-memory (petgraph) | Global (TopologyEngine.bridge) | Duree du processus | Runtime |
-| MAP-Elites Archive | In-memory (HashMap) | TopologyEngine.archive | Duree du processus | Runtime |
-| Topology Cache | In-memory (HashMap, max 500) | TopologyEngine.topology_cache | Duree du processus, eviction par qualite | Runtime |
-| Bandit Posteriors | In-memory (BetaPosterior/GammaPosterior per arm) | ContextualBandit | Duree du processus, decay temporel | Runtime |
-| ModelRegistry | TOML (cards.toml) + live discovery | `sage-core/config/cards.toml` | Statique (20 modeles) | Runtime |
-| Routing Exemplars | NPZ (embeddings + labels) | `config/routing_exemplars.npz` | Statique (pre-calcule) | Runtime |
-| Training Memory | SQLite | `data/training_memory.db` | Cross-epoch | Training |
-| ExoCortex | Google File Search Store | Cloud (Google) | Persistant indefiniment | Runtime |
-| EventBus Buffer | In-memory ring buffer | Max 5000 events | Volatile | Runtime |
-| Shadow Traces | JSONL | Disque, 10MB rotation | Diagnostic | Runtime |
-| Training Data | JSONL | `sage-python/data/*.jsonl` | Statique | Training |
+| WorkingMemory | In-memory Rust | Per-agent | Volatile | Runtime |
+| EpisodicMemory | SQLite WAL | `~/.sage/episodic.db` | Persistant cross-session | Runtime |
+| SemanticMemory | SQLite + in-memory | Per-agent | Persistant | Runtime |
+| CausalMemory | SQLite + in-memory | Per-agent | Persistant | Runtime |
+| **A14 state files** | bandit_state.db, archive_state.db, engine_extras.json, **topology_state_manifest.json** | `~/.sage/` | Persistant + epoch-bound | Runtime |
+| posterior_epoch | JSON | `~/.sage/posterior_epoch.json` | Persistant | Runtime |
+| S-MMU | In-memory petgraph | Global | Process-life | Runtime |
+| MAP-Elites Archive | In-memory + SQLite (cognitive) | TopologyEngine.archive | Cross-session via persistence | Runtime |
+| Bandit Posteriors | In-memory + SQLite (cognitive) | ContextualBandit | Cross-session via persistence | Runtime |
+| ModelRegistry | TOML (cards.toml) + live discovery | `sage-core/config/cards.toml` | Statique (23 modèles) | Runtime |
+| Routing Exemplars | NPZ | `config/routing_exemplars.npz` | Statique | Runtime |
+| Wasm cache | `.cwasm` files | `$HOME/.sage/wasm_python_cache/` | Per-build, self-invalidate | Runtime |
+| ExoCortex | Google File Search | Cloud | Persistant indéfini | Runtime |
+| Event Ledger NDJSON | NDJSON append-only | `<bench_output>.events.jsonl` | Bench artifact | Bench |
+| Wasm-python module | Embedded `rustpython.wasm` | Embedded build | Statique | Runtime |
+| Discovery Cache | JSON | `~/.sage/discovery_cache/` | 24h TTL | Runtime |
+| Contaminated backup | `_CONTAMINATED.json` | `~/.sage/contaminated_*` | Persistant marker | Ops |
 
-### 10.2 Memory Reality Check
+### 10.2 Memory Reality Check (mise à jour)
 
-| Capacite | Statut | Evidence |
+| Capacité | Statut | Evidence |
 |---|---|---|
-| Episodic memory ecrite ET relue a runtime | `Reel et valide` | `agent_loop.py` injecte episodic dans prompts (sauf code tasks), tests confirment |
-| Semantic memory ecrite ET relue a runtime | `Reel et valide` | `agent_loop.py` + `semantic_wiring` tests |
-| S-MMU relue pour selection topologie | `Reel et valide` | `TopologyEngine.generate()` Path 1 (S-MMU hit), `smmu_context.py` |
-| Causal memory influence les decisions | `Partiellement cable` | Stockee via `memory_agent`, injectee via `causal_memory`, mais pas d'evidence que les decisions en dependent |
-| MAP-Elites persiste entre sessions | `Non` | In-memory seulement, perdu au redemarrage |
-| Bandit posteriors persistent | `Non` | In-memory seulement (persistence module existe dans `persistence.rs` mais feature `cognitive` requise) |
+| Episodic memory écrite ET relue à runtime | `Réel et validé` | `agent_loop.py` + `phases/perceive.py` |
+| Semantic memory écrite ET relue à runtime | `Réel et validé` | T2 cycle-9 wiring (`886597de`) |
+| Causal memory écrite via memory_agent | `Réel et validé` | T2 wiring shipped |
+| S-MMU relue pour Path 1 sélection topologie | `Réel et validé` | `TopologyEngine.generate()` |
+| MAP-Elites persiste entre sessions | `Réel et validé` (NEW) | Persistence via feature `cognitive` (default) |
+| Bandit posteriors persistent (incl. context_sum/count) | `Réel et validé` (NEW) | `restore_arm` fix (`d9b0b659`, cgpro find) |
+| A14 epoch fail-closed | `Réel et validé` (cycle-8) | `posterior_epoch.json` + manifest SHA-256 binding (`f9521616`) |
+| OracleStack gate causal learning | `Réel et validé` (cycle-7) | Default-on flip `128e1b89` |
+| Bandit attribution invariant | `Réel et validé` (cycle-9) | `record_outcome_checked` (`6f23eea4`) |
+| Cost tracking réel par token | `Partiellement câblé` | `contracts/cost_tracker.py` lit `provider.usage` mais pas appelé partout |
 
 ---
 
 ## 11. Models, Routing, and Providers
 
-### 11.1 Modeles LLM dans cards.toml
+### 11.1 Modèles LLM dans `cards.toml` (23 modèles, 8 providers)
 
-| Model ID | Provider | S1 | S2 | S3 | Cout input/M$ | Notes |
-|---|---|---|---|---|---|---|
-| gemini-3.1-pro-preview | Google | 0.10 | 0.90 | 0.90 | 2.00 | Modele principal S2/S3 |
-| gemini-3.1-flash-lite-preview | Google | 0.90 | 0.45 | 0.45 | 0.25 | Modele S1 rapide |
-| gpt-5.4-mini | OpenAI | 0.50 | 0.85 | 0.60 | 1.20 | Infere du nom |
-| gpt-5.4-nano | OpenAI | 0.85 | 0.35 | 0.25 | 0.30 | S1 ultra-rapide |
-| deepseek-v4 | DeepSeek | - | - | - | - | Infere |
-| minimax-m2.7 | MiniMax | - | - | - | - | Infere |
-| qwen3.5-plus | OpenRouter | - | - | - | - | Via OpenRouter |
+Source de vérité : `sage-core/config/cards.toml` (symlink depuis `sage-python/config/cards.toml`).
 
-[Evidence: sage-core/config/cards.toml:1-60] [Statut: Observe pour les 2 premiers, Infere pour les autres] [Reachability: Runtime] [Validation: Aucune (pas de test sur le contenu exact)]
+| Tier | Model ID | Provider | Coût input/M$ | Notes |
+|---|---|---|---|---|
+| **codex** | `gpt-5.3-codex` | OpenAI | — | SOTA coding |
+| **reasoner** | `gemini-3.1-pro-preview` | Google | $2.00 | Évaluation complexe |
+| **fast** | `gemini-3.1-flash-lite-preview` | Google | $0.25 | Low-latency S1 |
+| **budget** | **`deepseek-v4-flash`** | DeepSeek | (cycle-9 migration `24f97f3c`) | Successeur non-thinking de deepseek-chat (sunset 2026-07-24). Budget bench tier. |
+| **budget-alt** | `grok-4-1-fast-reasoning` | xAI | $0.20 | 2M context |
+| **topology-sft** | `gpt-5.4` | OpenAI | — | SFT data generation |
+| **topology-policy** | `nvidia/Nemotron-Orchestrator-8B` | veRL training | — | Qwen3 architecture, GRPO orchestrator. RunPod H100 |
+| Autres budget | `deepseek-v4-pro`, `deepseek-reasoner` | DeepSeek | — | |
+| Autres frontier | `gpt-5.4-pro`, `gpt-5.5`, `gpt-5.5-pro` | OpenAI | — | Cycle-12+ |
+| Autres frontier | `gemini-2.5-flash`, `gemini-3-flash-preview` | Google | — | |
+| Autres budget | `gpt-5.4-mini`, `gpt-5.4-nano` | OpenAI | $0.30-1.20 | |
+| Autres | `MiniMax-M2.5`, `MiniMax-M2.5-highspeed`, `minimax-m2.7` | MiniMax | $0.30/$1.20 | Self-evolving |
+| Autres | `kimi-k2.6` | Kimi/Moonshot | — | Native PydanticAI OpenAIModelProfile (cycle A8 Phase 3) |
+| Autres | `qwen/qwen3.5-plus-02-15` | OpenRouter | $0.26/$1.56 | |
+| Autres | `grok-3`, `grok-code-fast-1` | xAI | — | |
 
-### 11.2 Chaine de routage
+[Evidence: `sage-core/config/cards.toml` — 23 entrées `[[models]]`] [Statut: Observé]
+
+### 11.2 Chaîne de routage
 
 ```
-1. AdaptiveRouter.route():
-   Stage 0: StructuralFeatures.extract_from(task) -> complexity, uncertainty
-   Stage 0.5: KnnRouter.route(task) -> system (si confidence > threshold)
-   Stage 1: ONNX BERT (RustAdaptiveRouter) -- non observe comme actif en runtime
-   Stage 2: Entropy probe (logprobs diversity) -> ajustement confidence
+1. Pipeline Stage 0 (classify_route_and_decide) :
+   - kNN primary (RustKnnRouter, 92% GT) — Stage A
+   - Rust SystemRouter.route_integrated() — Stage B (88% GT)
+     - StructuralFeatures + formal keywords detection
+     - ModelRegistry.best_model_for_system(system, budget)
+     - ContextualBandit attribution decision_id
+   - ComplexityRouter heuristic — Priority-3 emergency fallback (34% GT)
+   - Stage 0 input guardrails (skippable via _skip_guardrails)
 
-2. SystemRouter.route(task, budget):
-   - StructuralFeatures + formal keywords detection
-   - ModelRegistry.best_model_for_system(system, budget)
-   - Budget constraint: downgrade si over budget
+2. ContextualBandit.select(decision_id, context_vec):
+   - Thompson sampling sur Beta posteriors per (model_id, template) arm
+   - Pareto front : qualité vs coût vs latence
+   - Restore-from-disk if persistence active (cognitive feature)
 
-3. ContextualBandit.select(exploration_budget):
-   - Thompson sampling sur Beta posteriors par arm (model_id, template)
-   - Pareto front : qualite vs cout vs latence
+3. ModelAssigner per nœud topologie (Rust) :
+   - domain_scores cards.toml (code/math/reasoning/tool_use/formal/creative/factual)
+   - budget downgrade if over budget
+   - bandit quality override pour underperformers
 ```
+[Evidence: `pipeline.py:_stage_classify`, `routing/shadow.py`, `sage-core/src/routing/`] [Statut: Observé]
 
-### 11.3 Budget et cout
+### 11.3 Budget et coût (mise à jour)
 
-- Budget par defaut : `DEFAULT_BUDGET_USD = 10.0` [Evidence: constants.py:110]
-- Exploration S1/S2 : 0.30, S3 : 0.50 [Evidence: constants.py:111-112]
-- Cout par noeud estime : `$0.001` (hardcode) [Evidence: pipeline.py:671] -- **heuristique grossiere, pas de tracking reel des tokens**
-- Guardrail max : `COST_GUARDRAIL_MAX_USD = 10.0` [Evidence: constants.py:115]
+- Budget par défaut : `DEFAULT_BUDGET_USD = 10.0`
+- Tracking coût réel : `contracts/cost_tracker.py` lit `provider.usage.input_tokens × cost_input_per_m + ...`. **Câblé partiellement** : actif sur le pipeline path principal (`pipeline.py:_stage_execute` utilise per-task pipeline ctx.cost depuis P0.3 wiring 2026-04-18).
+- Bench cost tracker : `bench/bigcodebench_bench.py` somme `r.cost_usd` des `TaskResult`s pour avg_cost_usd réel.
 
 ---
 
 ## 12. Training, Fine-Tuning, and Evaluation
 
-### 12.1 SFT (historique)
+### 12.1 Training PARKED sur main (2026-04-15 `b2f59ee`)
 
-- Modele : Phi-4-mini-instruct -> `yannabadie/sage-topology-policy` sur HuggingFace
-- Donnees : `topology_sft_combined.jsonl` (non present dans le repo actuel)
-- Statut : **V1 legacy, remplace par GiGPO**
+Le code training (`verl/`, `scripts/`, `data/`, `models/` + tests training) a été **retiré de main** (-4.3 GB) pour réduire la surface du code et concentrer main sur le runtime + bench. Le code vit sur la branche dédiée `training`.
 
-### 12.2 RL / GiGPO (branche active)
+Sur `main` :
+- Inférence Path 6 : `SAGE_ENABLE_PATH6=1` charge un checkpoint local (lazy-load HF)
+- Aucun module `sage.verl.*` actif
+- Bench infrastructure (BigCodeBench, SWE-bench, ablation) reste sur main
 
-- **Framework** : verl-agent (non installe dans le repo, dependance externe)
-- **Modele cible** : Nemotron-Orchestrator-8B (GiGPO V2) -> `yannabadie/sage-topology-policy-v2`
-- **Environnement** : `SageTopologyEnv` (4-etats, multi-step)
-- **Reward** : 4 composants (format YAML, structure, density S_complex, edge credit Graph-GRPO)
-- **Step-level** : `StepRewardVector` avec anchor keys pour GiGPO grouping
-- **Per-node credit** : `RewardFlowPropagator` (PageRank backward)
-- **Donnees** : `sage-python/data/` contient ~15 JSONL (gpt54_*, quality_triples, etc.)
-- **Statut** : **Code complet, tests passent, jamais execute sur GPU** (branche VeRLGIGPO prete pour RunPod H100)
+### 12.2 Path 6 — Topologie apprise (inference seulement sur main)
 
-### 12.3 Evaluation
+- **V1 (legacy)** : Phi-4-mini-instruct SFT, 70% YAML valid, sur HF `yannabadie/sage-topology-policy`.
+- **V2 (Phase C, best)** : `yannabadie/sage-topology-policy-local` — 40% MASBENCH.
+- **V2 (Nemotron, GiGPO)** : `yannabadie/sage-topology-policy-v2` — Nemotron-Orchestrator-8B, NVIDIA Open Model License, Qwen3 architecture, GRPO-trained orchestrator (arXiv 2511.21689).
 
-| Benchmark | Outil | Resultat | Evidence |
+Lazy-loaded sur premier appel, fallback sur templates si output invalide.
+
+### 12.3 Évaluation (benchmarks)
+
+| Benchmark | Outil | Résultat | Date |
 |---|---|---|---|
-| BigCodeBench Hard Instruct | `sage.bench.bigcodebench_bench` | 37.8% | CLAUDE.md |
-| HumanEval+ | `sage.bench.evalplus_bench` | 89.6% | CLAUDE.md |
-| Routing GT (50 tasks) | `sage.bench.routing_ground_truth` | kNN 92%, SystemRouter 86%, heuristique 34% | CLAUDE.md |
-| Ablation | `sage.bench.ablation` | Non documente | Infere |
+| BigCodeBench Hard Instruct (full pipeline, fast tier) | `sage.bench.bigcodebench_bench` | **45.9%** | 2026-04-26 |
+| BCB-Hard N=50 official Docker (budget tier, oracle) | `sage.bench.bigcodebench_bench` | internal **30%** / Docker **32%** / 49/50 per-task agreement | 2026-04-29 |
+| A2 ablation v7 (budget tier, N=10) | `sage.bench.ablation` | full **4/10**, baseline 8/10, no-grd 7/10 | 2026-05-03 |
+| A3 ablation N=50 | `sage.bench.ablation` | **ABORTED** at 34/300 (Modern Standby) | 2026-05-04 |
+| α paired diagnostic N=8 + replay N=8 | `sage.bench.ablation` --task-ids | full = no-grd = 4/8 (morn), 3/8 vs 4/8 (replay) | 2026-05-04 |
+| SWE-bench Lite Docker-graded | `sage.bench.swebench_bench` | **10%** (1/10), patch-gen 70% | 2026-04-21 |
+| Routing GT 50 tasks | `sage.bench.routing_ground_truth` | kNN 92%, SystemRouter 88%, heuristic 34% | 2026-04 |
 
-### 12.4 Training Reality Check
+**Important** : MASBENCH leaderboard frozen depuis April 2025. Frontier 2026 models pas soumis. La VALEUR de SAGE est le **framework delta** (ablation), pas l'absolu vs frontier.
 
-| Capacite | Statut | Evidence |
+### 12.4 Training Reality Check (mise à jour)
+
+| Capacité | Statut | Evidence |
 |---|---|---|
-| Environment GiGPO fonctionnel | `Reel et valide` (tests) | 35 tests env_package, 17 tests topology_env |
-| Reward function complete | `Reel et valide` (tests) | 20 tests verl_reward |
-| Edge credit (Graph-GRPO) | `Reel et valide` (tests) | 12 tests edge_credit |
-| RewardFlow (PageRank) | `Reel et valide` (tests) | 25 tests verl_v2 |
-| Training GPU execute | `Non` | Aucun log de run reussi dans le repo |
-| Modele entraine deploye | `Inconclusif` | HF model existe mais date de creation non verifiable |
-| Integration verl-agent | `Partiellement cable` | env_register existe, verl non installe |
+| Environment GiGPO fonctionnel | `Réel mais sur branche training` | Tests passent sur la branche, pas sur main |
+| Reward function complète | `Réel mais sur branche training` | |
+| Training GPU exécuté | `Inconclusif sur main` | Aucun log sur main, branche training a un H100 RunPod setup |
+| Modèle entraîné déployé | `Réel et inférable` | HF v2 existe + Phase C best |
+| Path 6 inference active runtime | `Experimental` | `SAGE_ENABLE_PATH6=1` requis |
 
 ---
 
 ## 13. Deployment, Configuration, and Feature Flags
 
-### 13.1 Variables d'environnement
+### 13.1 Variables d'environnement (mise à jour majeure)
 
-| Variable | Usage | Defaut | Requis |
-|---|---|---|---|
-| `GOOGLE_API_KEY` | Provider Google GenAI | - | Oui (pour runtime) |
-| `OPENAI_API_KEY` | Provider OpenAI | - | Non |
-| `DEEPSEEK_API_KEY` | Provider DeepSeek | - | Non |
-| `GROK_API_KEY` | Provider xAI | - | Non |
-| `KIMI_API_KEY` | Provider Kimi | - | Non |
-| `MINIMAX_API_KEY` | Provider MiniMax | - | Non |
-| `SAGE_ENABLE_PATH6` | Active Path 6 (topologie apprise) | `None` | Non |
-| `SAGE_EXOCORTEX_STORE` | Store ExoCortex | `fileSearchStores/ygnsageresearch-wii7kwkqozrd` | Non |
-| `SAGE_EXOCORTEX_MODEL` | Modele ExoCortex | `gemini-3.1-flash-lite-preview` | Non |
-| `SAGE_TRAINING_MEMORY_DB` | SQLite pour training memory | - | Non (training) |
-| `SAGE_DASHBOARD_TOKEN` | Token auth dashboard | - | Non |
-| `HF_HUB_OFFLINE` | Mode offline HuggingFace | `0` | Non (CI Windows) |
-| `ORT_DYLIB_PATH` | Chemin ONNX Runtime DLL | - | Non (auto-detect) |
-| `PYTHONIOENCODING` | Encodage console Windows | `utf-8` | Oui (Windows) |
-
-### 13.2 Feature Flags Rust
-
-| Flag | Effet | CI |
+| Variable | Usage | Default |
 |---|---|---|
-| `extension-module` (default) | PyO3 module Python | Exclu en `--no-default-features` pour tests |
-| `sandbox` | WasmSandbox (wasmtime 36) | CI Linux |
-| `cranelift` | JIT compilation Wasm | CI Linux (exclu Windows: stack overflow) |
-| `onnx` | Embedder ONNX (arctic-embed-m) | CI |
-| `tool-executor` | ToolExecutor (tree-sitter + subprocess) | CI |
-| `cognitive` | Persistence SQLite (rusqlite) | CI |
-| `smt` | SmtVerifier (OxiZ) | CI |
+| `GOOGLE_API_KEY` | Provider Google GenAI | — |
+| `OPENAI_API_KEY` | Provider OpenAI | — |
+| `DEEPSEEK_API_KEY` | Provider DeepSeek | — |
+| `GROK_API_KEY` | Provider xAI | — |
+| `KIMI_API_KEY` | Provider Kimi | — |
+| `MINIMAX_API_KEY` | Provider MiniMax | — |
+| `OPEN_ROUTER_API_KEY` | OpenRouter | — |
+| `SAGE_ENABLE_PATH6` | Active Path 6 inference | unset |
+| `SAGE_EXOCORTEX_STORE` | Store ExoCortex (multi-tenant fix 2026-04-18 `e338b7e`) | unset (no-op silent) |
+| **`SAGE_ORACLE`** | OracleStack kill-switch | **DEFAULT-ON** depuis cycle-7 (`128e1b89`). Off : `0\|false\|off\|no\|disable\|disabled` |
+| `SAGE_STATECORE` | Edge-channel separation (R6) | `0` |
+| `SAGE_RUN_FRAME` | RunFrame trailing diagnostic (R7) | `0` |
+| `SAGE_TRACE_JSONL_DIR` | JSONL sink (R5) | unset |
+| `SAGE_BOOT_BYPASS_EPOCH_GUARD` | A14 guard forensic load-only bypass | `0` (require `SAGE_BOOT_BYPASS_REASON` + `SAGE_OPERATOR_ID` if used) |
+| **`SAGE_DANGEROUS_TOOLS`** | Register `execute_bash` at boot | **`0`** (flipped from `True` 2026-04-23) |
+| **`SAGE_UNSAFE_RAW_EXEC`** | Allow `ToolExecutor.execute_raw` (bypass AST + Wasm) | unset (audited escape hatch) |
+| `SAGE_EMISSION_FORMAT` | SR-block emission for SWE-bench | `unified` |
+| `SAGE_DIFF_VERIFIER_MODE` | Pre-emission diff verifier | `off` (code) / `observe` (recommended for SWE-bench) |
+| `SAGE_PERSIST_SR_MISSING` | Persist raw response on SR failure | `0` |
+| `SAGE_OTEL_EXPORTER` | OTel sink (B1, 2026-04-25) | `none` |
+| `SAGE_OTEL_RAW_PAYLOADS` | Skip redaction + truncation | `0` (dev only) |
+| `SAGE_BENCH_LOG_FILE` | SWE-bench gen log path | derive |
+| `SAGE_WASM_CACHE_DIR` | Wasm-python cache | `$HOME/.sage/wasm_python_cache/` |
+| `SAGE_WASM_CACHE_DISABLE` | Skip cache | `0` |
+| `SAGE_REQUIRE_WASM` | **Build-time** : panic if wasm missing | `0` |
+| `SAGE_BENCH_ORACLE_SEAM` | Path E bench evaluator seam (cycle-7 R6.1a) | `0` |
+| `SAGE_BENCH_DISABLE_REPAIR` | Disable AVR + topology escalation | `0` |
+| `SAGE_SSL_VERIFY` | SSL verify control | `True` (override CLAUDE.md directive #3 — never `verify=False`) |
+| `HF_HUB_OFFLINE` / `HF_DATASETS_OFFLINE` | HF offline mode | `0` |
+
+### 13.2 Feature Flags Rust (réorganisés)
+
+| Flag | Statut | Effet |
+|---|---|---|
+| `extension-module` | default | PyO3 module |
+| **`sandbox`** | **default (ADR-013 §5)** | RustPython wasm32-wasip1 |
+| **`cranelift`** | **default (ADR-013 §5)** | Wasm JIT (excl Windows MSVC) |
+| **`tool-executor`** | **default (ADR-013 §5)** | Tree-sitter validator |
+| **`cognitive`** | **default (ADR-013 §5)** | Persistence SQLite (rusqlite) for bandit + MAP-Elites |
+| `onnx` | opt-in | Embedder ONNX (arctic-embed-m, ort, tokenizers) |
+| `smt` | opt-in | SmtVerifier (oxiz) |
+| `otel` | opt-in (B1.b) | Rust OpenTelemetry span bridge |
 
 ### 13.3 Fallbacks
 
-| Composant | Si absent | Consequence |
+| Composant | Si absent | Conséquence |
 |---|---|---|
-| sage_core (Rust) | Python fallbacks | WorkingMemory mock, pas de Rust routing/topology |
-| ONNX model | Hash embeddings interdits | kNN routing degrade |
-| Docker | bubblewrap ou local exec | Sandbox degrade |
-| GOOGLE_API_KEY | ExoCortex et GoogleProvider indisponibles | Fallback vers autre provider |
-| QualityLabeler (smt+tool-executor) | QualityEstimator abstient | Bandit ne recoit pas de feedback |
+| sage_core (Rust) | `ImportError` à `TopologyController.__init__` | **Hard fail** depuis ADR-012 |
+| `rustpython.wasm` | placeholder + runtime-fail (ou panic si `SAGE_REQUIRE_WASM=1`) | Sandbox bypassed → execute_raw audited |
+| ONNX model | Hash embeddings interdits | kNN dégradé |
+| GOOGLE_API_KEY | ExoCortex no-op silent | RAG features off |
+| QualityLabeler (smt+tool-executor) | QualityEstimator abstient | Bandit pas de feedback |
+| Live providers | TTL 300s exclusion + re-probe | Recovery automatique |
 
 ---
 
 ## 14. Security, Sandboxing, and Verification
 
-### 14.1 Sandbox
+### 14.1 Sandbox (ADR-013 §5 — 2026-04-22)
 
-- **Priorite d'execution** : Wasm WASI > subprocess timeout > Docker > bubblewrap > local (si allow_local=True)
-- **ToolExecutor** (Rust) : validation tree-sitter avant execution, timeout configurable
-- **WasmSandbox** : wasmtime 36 LTS, cranelift JIT (Linux), pre-compiled modules (Windows)
-- **SandboxManager** (Python) : Docker-based avec limites memoire/CPU/reseau
-- **`_check_sandbox_availability()`** : warning si aucun sandbox disponible au boot
+**Priorité d'exécution depuis 2026-04-22** :
+1. **`validate_and_execute`** (default) → tree-sitter AST validator + RustPython wasm32-wasip1 (deny-by-default WASI-p1, 256 MiB cap, epoch-interrupt timeout). Pas de fallback subprocess.
+2. **`execute_raw`** (gated `SAGE_UNSAFE_RAW_EXEC=1`) → bypass AST + Wasm, subprocess avec timeout. Audited escape hatch.
 
-[Evidence: sage-core/src/sandbox/tool_executor.rs:1-8, sage-python/src/sage/boot.py:80-105] [Statut: Observe] [Reachability: Runtime] [Validation: Tests (36 test_sandbox_executor)]
+**40 adversarial attacks validés** (FS/net/proc/env/clock/mem/introspection/engine).
 
-### 14.2 Verification Formelle (SMT)
+`execute_bash` n'est plus enregistré au boot par défaut (`SAGE_DANGEROUS_TOOLS` flipped 2026-04-23 `True`→`False`). Smoke SWE-bench N=10 paired (2026-04-22) : typed-only 4/10 vs bash 3/10 → critère fonctionnel rempli.
 
-- **OxiZ** (Rust, pure Rust, 0 deps C++) : QF_LIA, bounds checking, loop verification, invariant implication, provider assignment SAT
-- **SmtVerifier** : 10 methodes PyO3 (verify_bounds, verify_loop, verify_arithmetic, verify_invariant, verify_provider_assignment, verify_invariant_with_feedback, synthesize_invariant)
-- **CEGAR** : `verify_invariant_with_feedback()` + `synthesize_invariant()` (max 5 rounds)
-- **Usage runtime** : `pipeline.py:_verify_assignment_formal()` -- verification NON-BLOQUANTE de l'assignation providers
-- **Usage training** : `QualityLabeler` combine SMT + tree-sitter pour labeling qualite
+[Evidence: `sage-core/src/sandbox/`, `boot.py:80-105`, ADR-013] [Validation: 8 + 5 cache_tests Rust]
 
-[Evidence: sage-core/src/verification/smt.rs, sage-python/src/sage/contracts/z3_verify.py] [Statut: Observe] [Reachability: Runtime (feature smt)] [Validation: 38 #[test] Rust + 18 tests Python]
+### 14.2 Vérification Formelle (SMT)
 
-### 14.3 LTL Model Checking
+- **OxiZ** (Rust pur, 0 deps C++) : QF_LIA, bounds checking, loop verification, invariant implication, provider assignment SAT.
+- **SmtVerifier** : 10 méthodes PyO3, CEGAR via `verify_invariant_with_feedback()` + `synthesize_invariant()` (max 5 rounds).
+- **Usage runtime** : `pipeline.py:_verify_assignment_formal()` non-bloquant.
+- **Usage training** : `QualityLabeler` combine SMT + tree-sitter.
 
-- **LtlVerifier** (Rust, petgraph) : reachability, safety (no high->low info flow), liveness (entry reaches exit), bounded liveness (depth limit)
-- **Integration** : `HybridVerifier` appelle `LtlVerifier` sur chaque topologie generee
-- **Pas de SMT** : O(V+E) BFS/DFS
+[Evidence: `sage-core/src/verification/smt.rs`] [Validation: 38 #[test] Rust + 18 Python]
 
-[Evidence: sage-core/src/verification/ltl.rs, sage-core/src/topology/verifier.rs:7] [Statut: Observe] [Reachability: Runtime] [Validation: 17 #[test]]
+### 14.3 LTL Model Checking (ADR-014 rename 2026-04)
+
+- **`LtlVerifier`** (renommé depuis `TemporalVerifier` par ADR-014) : reachability, safety, liveness, bounded liveness.
+- **HybridVerifier** appelle `LtlVerifier` sur chaque topologie générée.
+- O(V+E) BFS/DFS sur petgraph.
+
+[Validation: 17 #[test]]
 
 ### 14.4 Trust Boundaries
 
-- Pas de `verify=False` (directive explicite CLAUDE.md)
-- CircuitBreaker per-provider (3 failures -> open, 60s cooldown)
-- Guardrails : input/output/runtime (module `guardrails/`)
-- Sandbox : code execute en isolation, jamais sur la machine hote en production
-- ExoCortex : API key Google, pas de credentials dans le code
+- Pas de `verify=False` (directive CLAUDE.md #3 — corporate proxy absent sur cette machine, aucun bypass autorisé).
+- CircuitBreaker per-provider (3 fails → open, 60s cooldown, TTL'd 300s exclusion).
+- Guardrails : input/output/runtime via `phases/{perceive,act,learn}.py:guardrail_pipeline.check_all()`.
+- Sandbox : Wasm WASI deny-by-default.
+- ExoCortex : API key Google scope-limité.
+- A14 epoch guard : fail-closed sur boot/load (ADR-018) + manifest SHA-256 binding (cycle-8 round-2).
 
 ---
 
 ## 15. Quality Attributes and Stress Scenarios
 
-### 15.1 Attributs de qualite
+### 15.1 Attributs de qualité
 
-| Attribut | Implementation | Evidence | Statut |
-|---|---|---|---|
-| **Performance** | Rust hot-paths (routing, kNN, S-MMU, executor) | `sage-core/src/` | `Reel et valide` |
-| **Resilience** | CircuitBreaker per-subsystem + per-provider | `resilience.py`, `provider_pool.py` | `Reel et valide` |
-| **Observabilite** | EventBus + AgentEvent + DriftMonitor | `events/bus.py`, `monitoring/drift.py` | `Reel et valide` |
-| **Adaptabilite** | TopologyController (upgrade/prune/reroute/spawn) | `topology_controller.py` | `Reel mais non valide quantitativement` |
-| **Verification formelle** | OxiZ SMT + LTL + HybridVerifier | `verification/`, `topology/verifier.rs` | `Reel et valide` |
-| **Evolution** | MAP-Elites + CMA-ME + MCTS + 7 mutations | `topology/` (Rust) | `Reel et valide` (tests), pas d'evidence runtime |
-| **Cout-efficacite** | FrugalGPT cascade + budget constraints + density score | `pipeline.py:640-665`, `density.rs` | `Partiellement cable` |
-| **Securite sandbox** | Wasm/Docker/bubblewrap isolation | `sandbox/` | `Reel et valide` |
+| Attribut | Implémentation | Statut |
+|---|---|---|
+| **Performance** | Rust hot-paths (routing, kNN, S-MMU, executor, controller) | `Réel et validé` |
+| **Résilience** | CircuitBreaker per-subsystem + per-provider TTL'd | `Réel et validé` |
+| **Observabilité** | EventBus + AgentEvent + DriftMonitor + OTel B1+B1.b | `Réel et validé` |
+| **Adaptabilité** | RustTopologyController (5 paths Rust-primary) | `Réel mais non validé quantitativement` |
+| **Vérification formelle** | OxiZ SMT + LTL + HybridVerifier | `Réel et validé` |
+| **Évolution** | MAP-Elites + CMA-ME + MCTS + 7 mutations + persistence | `Réel et validé` (tests + persistence) |
+| **Coût-efficacité** | FrugalGPT cascade + budget + density | `Partiellement câblé` |
+| **Sécurité sandbox** | Wasm WASI default + tree-sitter validator | `Réel et validé` (40 adversarial) |
+| **Crash-safe partial completion** | Event ledger fsync per emit (cycle-9) | `Réel et validé` (3 e2e tests) |
+| **Host-suspend detection** | Wall-clock watchdog (cycle-9) | `Réel et validé` (7 unit + 3 e2e tests) |
 
-### 15.2 Scenarios de stress
+### 15.2 Scénarios de stress
 
-**Scenario 1 : Tous les providers tombent sauf un**
-- CircuitBreaker ouvre apres 3 echecs par provider
-- ProviderPool fallback vers `default_provider`
-- TopologyRunner retry avec fallback provider per-node
-- [Evidence: sage-python/src/sage/topology/runner.py:147-179] [Statut: Observe] [Validation: Tests]
+**Scénario 1 : Tous les providers tombent sauf un** → CircuitBreaker + ProviderPool fallback + TopologyRunner per-node retry. TTL exclusion 300s + re-probe.
 
-**Scenario 2 : Topologie invalide generee par mutation**
-- HybridVerifier detecte (erreurs structurelles O(V+E))
-- MutationResult::Invalid retourne, mutation rejetee
-- Engine essaie le path suivant dans la cascade 6-path
-- [Evidence: sage-core/src/topology/mutations.rs:20-26, engine.rs] [Statut: Observe] [Validation: Tests (19 verifier)]
+**Scénario 2 : Topologie invalide générée par mutation** → HybridVerifier rejette → engine cascade vers path suivant (6-path).
 
-**Scenario 3 : Drift de performance a runtime**
-- DriftMonitor analyse window d'events (latence, erreurs, cout)
-- drift_score > 0.4 -> SWITCH_MODEL event
-- drift_score > 0.7 -> RESET_AGENT event
-- [Evidence: sage-python/src/sage/monitoring/drift.py, agent_loop.py:280-296] [Statut: Observe] [Validation: Tests (8)]
+**Scénario 3 : Drift de performance à runtime** → DriftMonitor (latence/erreurs/coût). drift_score > 0.4 → SWITCH_MODEL ; > 0.7 → RESET_AGENT.
+
+**Scénario 4 : OS suspend mi-bench (NEW cycle-9)** → wall-clock watchdog détecte elapsed > timeout × grace → `TASK_ABORT reason=host_suspend_detected` → exclu des stats gate-quality.
+
+**Scénario 5 : A14 state poisoned** → epoch guard fail-closed sur boot, `_CONTAMINATED.json` requis pour load forensic, `python -m sage.ops.a14_reset --reason "..."` pour reset clean.
 
 ---
 
 ## 16. Architecture Decisions and Trade-offs
 
+### ADRs canoniques (`docs/adr/`)
+
+- **ADR-013** : `wasm-sandbox-default.md` — §5 flip 2026-04-22 (sandbox + cranelift + tool-executor + cognitive en default features).
+- **ADR-014** : `ltl-verifier-rename.md` — `TemporalVerifier` → `LtlVerifier`.
+
+### ADRs implicites (référencés CLAUDE.md mais pas matérialisés en `docs/adr/`)
+
+- **ADR-009** : Telemetry & Routing Plumbing (2026-04-18, Obsidian vault) — 13 plumbing fixes (telemetry tool_call_count, per-model routing, quota-aware health_check, TTL exclusion, provider inference).
+- **ADR-010** : Meta-Harness migration externe (2026-04-18) — implementation in-tree retirée, vendore stanford-iris-lab/meta-harness à `external/meta-harness/`.
+- **ADR-012** : RustTopologyController primary (2026-04-20) — décision paths 1-5 + state machine en Rust. Python wrappe pour embedder/SmtVerifier/topology-graph. `sage_core` requis au runtime.
+- **ADR-018/019** : Runtime cycle 5/6 design (StateCore + RunFrame).
+
 ### ADR-1 : Rust First, Python Tolerant
-**Decision** : Hot-paths en Rust (routing, S-MMU, topologie, verification), orchestration en Python.
-**Raison** : Performance critique pour routing (< 1ms), verification (sub-0.1ms), embeddings.
-**Consequence** : Double maintenance (Rust struct + PyO3 wrapper), fallbacks Python necessaires.
-[Evidence: sage-core/Cargo.toml, sage-python/src/sage/memory/working.py:27-31] [Statut: Observe]
+Hot-paths en Rust (routing, S-MMU, topologie, vérification, controller depuis ADR-012). Orchestration en Python.
+**Conséquence** : Double maintenance, fallbacks Python pour quelques modules (WorkingMemory mock).
 
 ### ADR-2 : kNN comme routeur principal (92% GT)
-**Decision** : Remplace l'heuristique par mots-cles (34% GT) par kNN sur arctic-embed-m (92% GT).
-**Raison** : arXiv 2505.12601 montre que kNN simple surpasse MLP, GNN, attention pour le routing LLM.
-**Consequence** : Dependance a ONNX Runtime + modele arctic-embed-m. Hash embeddings interdits pour routing.
-[Evidence: sage-python/src/sage/strategy/knn_router.py:1-13] [Statut: Observe] [Validation: Benchmark]
+arXiv 2505.12601 + ETH-SRI Cascade Routing 2410.10347.
+**Conséquence** : Dépendance ONNX + arctic-embed-m. Hash embeddings interdits.
 
 ### ADR-3 : Bandit contextuel Thompson (pas LinUCB)
-**Decision** : Beta posteriors per-arm avec Thompson sampling, Gamma pour cout/latence, Pareto front.
-**Raison** : Pas besoin de features contextuelles lineaires, posteriors conjugues sont simples et efficaces.
-**Consequence** : Cold start lent (posteriors uninformatives), pas de persistence cross-session.
-[Evidence: sage-core/src/routing/bandit.rs:1-97] [Statut: Observe] [Validation: 30 tests]
-
-### ADR-4 : 11 templates de topologie + evolution
-**Decision** : Sequential, Parallel, AVR, SelfMoA, Hierarchical, Hub, Debate, Brainstorming comme primitives, enrichies par MAP-Elites/MCTS/mutations.
-**Raison** : MASFactory (2603.06007) + AgentConductor (2602.17100) patterns valides.
-**Consequence** : 6-path cascade complexe dans TopologyEngine.
-[Evidence: sage-core/src/topology/templates.rs, engine.rs] [Statut: Observe]
+Beta posteriors per-arm + Pareto front qualité/coût/latence.
+**Cycle-9** : Persistence active via feature `cognitive` (default). `restore_arm` corrige `context_sum`/`context_count` (cycle-9 cgpro find).
 
 ### ADR-5 : Three-flow edge model
-**Decision** : Control (ordering) + Message (data) + State (sync) edges sur TopologyGraph.
-**Raison** : MASFactory (2603.06007) distingue explicitement ces 3 flux.
-**Consequence** : Complexite accrue du graphe (3x plus d'aretes potentielles), mais semantique plus riche.
-[Evidence: sage-core/src/topology/topology_graph.rs:22-26] [Statut: Observe]
+Control + Message + State edges sur TopologyGraph (MASFactory 2603.06007).
 
 ### ADR-6 : OxiZ (pure Rust) au lieu de Z3 (C++)
-**Decision** : Pure Rust SMT solver via crate `oxiz`.
-**Raison** : Zero deps C++, compilation simple, performance sub-0.1ms pour QF_LIA.
-**Consequence** : Limite a QF_LIA (linear integer arithmetic). Python Z3 deprecie.
-[Evidence: sage-core/src/verification/smt.rs:1-11, sage-python/src/sage/topology/kg_rlvr.py:44-57] [Statut: Observe]
+QF_LIA. Z3 Python déprécié (`topology/kg_rlvr.py:44-57`).
 
 ### ADR-7 : Dual-mode executor (Static + Dynamic)
-**Decision** : Kahn's topological sort pour DAGs statiques, gate-based readiness pour topologies cycliques.
-**Raison** : AVR, Hub, Debate ont des boucles de feedback; sequential/parallel sont DAGs purs.
-**Consequence** : TopologyExecutor auto-detecte le mode depuis le template type.
-[Evidence: sage-core/src/topology/executor.rs:18-26] [Statut: Observe]
-
-### ADR-8 : GiGPO multi-step avec anchor keys
-**Decision** : Reward decompose par step avec anchor keys pour grouping (role:difficulty:context_hash).
-**Raison** : GiGPO (arXiv 2505.10978) normalise par anchor groups pour credit assignment step-level.
-**Consequence** : Plus fin que GRPO (episode-level), mais necessite des decisions reelles aux checkpoints.
-[Evidence: sage-python/src/sage/verl/step_reward.py, topology_env.py:96-98] [Statut: Observe] [Reachability: Training]
+Kahn pour DAGs purs, gate-based readiness pour AVR/Hub/Debate cycliques.
 
 ### ADR-9 : Shadow routing avec evidence gates
-**Decision** : ShadowRouter execute les deux routeurs (Rust + Python) et compare, avec gates evidence (500/10%, 1000/5%) avant promotion.
-**Raison** : Evidence-first : pas de promotion du Rust router sans preuve de parity.
-**Consequence** : 49.6% divergence observee (1090 traces) => gates FAIL => Python non remplace.
-[Evidence: sage-python/src/sage/routing/shadow.py, constants.py:91-96] [Statut: Observe]
+ShadowRouter compare Rust vs Python avec gates evidence (500/10% soft, 1000/5% hard).
 
-### ADR-10 : S1/S2/S3 comme systemes cognitifs (Kahneman)
-**Decision** : S1 = rapide/intuitif, S2 = delibere/analytique, S3 = formel/verification. Pas des stages pipeline.
-**Raison** : Modele cognitif issu de Kahneman, valide par la litterature routing LLM.
-**Consequence** : Chaque systeme a ses propres modeles preferes, budgets, et topologies.
-[Evidence: constants.py:13-21, sage-core/config/cards.toml (s1/s2/s3_affinity)] [Statut: Observe]
+### ADR-10 : S1/S2/S3 comme systèmes cognitifs (Kahneman)
+S1 rapide/intuitif, S2 délibéré/analytique, S3 formel/vérification.
+
+### Directive #9 (CLAUDE.md, cycle-8 architect review)
+
+**"Declared ≠ verified — runtime integrity principle"** : tout label autorisant un side-effect ou learning decision MUST être lié à verified content / schema / provenance / executable proof. **8 invariants** dans `docs/contracts/runtime-integrity-ledger.md` (cycle-9 cgpro round-2 ajout 2026-05-04).
 
 ---
 
-## 17. Known Gaps, Contradictions, and Technical Debt
+## 17. Runtime Integrity Ledger — 8 Invariants
 
-### 17.1 Contradictions docs/code
+Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émergé sur 5 cycles de "declared ≠ verified" traps.
 
-| Contradiction | Detail | Impact |
-|---|---|---|
-| **"Self-Adaptive" a 0%** | CLAUDE.md mentionne "Self-Adaptive: SA-1, SA-3, SA-4 + Path 6" mais `evolution/engine.py:7-9` dit "No quantitative evidence that evolution improves task outcomes yet" | Marketing vs realite |
-| **Cost estimation hardcodee** | `pipeline.py:671` : `ctx.cost = n_nodes * 0.001` -- pas de tracking reel des tokens | Suivi de cout fictif |
-| **ONNX Quality Estimator absent** | `quality_estimator.py:36` charge `quality_estimator_v2.onnx` qui n'existe pas | QualityEstimator abstient toujours si QualityLabeler (smt) absent |
-| **ComplexityRouter toujours importe** | `boot.py:47` importe `ComplexityRouter` (34% GT) malgre "DEAD CODE" dans CLAUDE.md | Code mort maintenu pour compat |
-| **RustLearnedQualityEstimator** | `quality_estimator.py:34` tente d'importer `RustLearnedQualityEstimator` qui n'existe pas dans `lib.rs` | ImportError silencieux |
+| # | Invariant | Declared label | Verified content | Side-effect blocked if invalid |
+|---|---|---|---|---|
+| 1 | **Event payload schema** | `event_type` + `payload_schema_version` | allowlist field_specs + canonical fixture | event emission (writer raises) |
+| 2 | **Oracle evidence** | `OracleVerdict.trainable` | `EvidenceRef.evidence_hash` SHA-256 + producer schema | bandit / MAP-Elites / online-evolution / training-memory updates |
+| 3 | **Posterior epoch** | `~/.sage/posterior_epoch.json.epoch` | `topology_state_manifest.json.state_files[].sha256` | `TopologyEngine::load_state` / `save_state` |
+| 4 | **Contaminated backup** | `_CONTAMINATED.json.contaminated=true` | `audit_dump_sha256` cross-ref to MANIFEST.json | normal load (fail-closed) |
+| 5 | **RunFrame summary** | `run_frame_summary.payload.parent_event_id` | `final_result.seq` consistency | diagnostic trust |
+| 6 | **Bandit attribution** | `bandit_decision_id` from Stage-0 | `record_outcome_checked()` verifies (model_id, template) | bandit posterior update |
+| 7 | **Timeout enforcement** (cycle-9) | per-task `timeout_s` bound to `asyncio.wait_for` | `elapsed_wall_ms ≤ timeout_s × grace_factor` (default 2.0) | pass-rate aggregation (TASK_ABORT excludes) |
+| 8 | **Control-surface completeness** (cycle-9 cgpro round-2) | `TASK_END.control_surface` claims topology mechanism | when `node_count > 0`, `executed_template` non-empty + `dag_features` present | "topology X → Y" mechanism claims |
 
-### 17.2 Modules orphelins ou partiellement cables
+### 17.1 Cross-référence des modules
 
-| Module | Statut | Detail |
-|---|---|---|
-| `sage-python/src/sage/protocols/a2a_server.py` | Squelette | `raise NotImplementedError("Task cancellation not yet supported")` line 67 |
-| `sage-python/src/sage/evolution/self_improve.py` | Partiellement cable | Auto-amelioration -- non teste en production |
-| `sage-python/src/sage/agents/handoff.py` | Squelette | Agent handoff pattern -- non cable dans pipeline |
-| `sage-python/src/sage/execution_decision.py` | Partiellement cable | Existe, usage limite |
-| `sage-core/src/routing/persistence.rs` | Code disponible mais dormant | Persistence bandit derriere feature `cognitive` |
-| `ui/app.py` | Squelette | Dashboard, non integre dans CI |
-
-### 17.3 Dette technique
-
-| Item | Severite | Detail |
-|---|---|---|
-| **Pas de persistence MAP-Elites/Bandit** | Haute | Tout l'apprentissage runtime est perdu au redemarrage. S-MMU, MAP-Elites, bandit posteriors sont in-memory. |
-| **Estimation de cout fictive** | Moyenne | `$0.001 * n_nodes` ne reflete pas les couts reels d'API |
-| **Shadow routing gates echouees** | Moyenne | 49.6% divergence (1090 traces), gates non franchies. Rust router pas promu. |
-| **Training jamais execute sur GPU** | Haute | Toute l'infra veRL/GiGPO est testee en unitaire mais pas en conditions reelles |
-| **Seuils hardcodes** | Basse | `THETA_GOOD=0.7`, `THETA_CRITICAL=0.3`, etc. dans `topology_controller.py` -- "subject to ablation" |
-| **Path 6 derriere env var** | Basse | `SAGE_ENABLE_PATH6` -- topologie apprise non activee par defaut |
-| **Pas de metriques d'evolution** | Moyenne | `evolution/engine.py` note l'absence de Wilcoxon, Cohen's d, courbes de convergence |
+| Invariant | Python | Rust | Tests |
+|---|---|---|---|
+| Event payload schema | `runtime/event_log/payload_schemas.py` | n/a | `test_payload_schemas` (18) + `test_runtime_event_contracts` |
+| Oracle evidence | `runtime/oracle/`, `runtime/evidence/producers/` | n/a | `test_oracle_*`, evidence round-trip |
+| Posterior epoch | `posterior_epoch.py` | `sage-core/src/topology/posterior_epoch.rs` | `test_posterior_epoch` + Rust unit |
+| Contaminated backup | `ops/a14_reset.py` | n/a | `test_a14_reset` |
+| RunFrame summary | `runtime/run_frame/` | n/a | `test_run_frame` |
+| Bandit attribution | `pipeline.py`, `runtime/event_log/payload_schemas.py` | `sage-core/src/routing/system_router.rs` | `test_pipeline_bandit_causality` + Rust |
+| Timeout enforcement | `bench/watchdog.py`, `bench/event_ledger.py`, `bench/bigcodebench_bench.py` | n/a | `test_bench_watchdog` (7) + `test_event_ledger` + `test_bench_host_suspend_integration` (3) |
+| Control-surface completeness | `bench/bigcodebench_bench.py:_capture_control_surface`, `pipeline.py:BenchContext` | n/a | `test_bench_host_suspend_integration::test_normal_task_emits_task_end` |
 
 ---
 
-## 18. Key Files Quick Reference
+## 18. Known Gaps, Contradictions, and Technical Debt
 
-| Fichier | Role | Importance |
+### 18.1 Résolus depuis 2026-03-25
+
+| Item résolu | Comment |
+|---|---|
+| ~~"ONNX Quality Estimator absent"~~ | Wasm sandbox + Z3 fallback couvre. ONNX optionnel via `onnx` feature. |
+| ~~"Bandit posteriors non-persistants"~~ | Persistence active via `cognitive` feature (default ADR-013 §5). |
+| ~~"MAP-Elites non-persistant"~~ | Idem. |
+| ~~"Subprocess fallback dans validate_and_execute"~~ | Retiré ADR-013 §5. |
+| ~~"`SAGE_DANGEROUS_TOOLS` default True"~~ | Flipped False 2026-04-23. |
+| ~~"`a2a-sdk` 1.0 silent breakage"~~ | Pinned `<1.0` (cycle-8 closeout). |
+| ~~"Bandit `restore_arm` perd context_sum/count"~~ | Fixé `d9b0b659` (cgpro find). |
+| ~~"`executed_template` was a ULID not template name"~~ | Fixé cycle-9 `c136463e` (cgpro round-2). |
+
+### 18.2 En cours / Tech debt actuelle
+
+| Item | Sévérité | Detail |
 |---|---|---|
-| `sage-python/src/sage/boot.py` | Point d'entree principal, assemblage systeme | Critique |
-| `sage-python/src/sage/pipeline.py` | Pipeline 5-stages | Critique |
-| `sage-python/src/sage/agent_loop.py` | Boucle agent perceive/think/act/learn | Critique |
-| `sage-python/src/sage/topology/runner.py` | Execution multi-agent | Haute |
-| `sage-python/src/sage/topology_controller.py` | Adaptation runtime | Haute |
-| `sage-python/src/sage/strategy/adaptive_router.py` | Router 4-stages | Haute |
-| `sage-python/src/sage/strategy/knn_router.py` | kNN routing (92% GT) | Haute |
-| `sage-python/src/sage/quality_estimator.py` | Estimation qualite | Haute |
-| `sage-python/src/sage/llm/provider_pool.py` | Resolution model_id -> provider | Haute |
-| `sage-python/src/sage/constants.py` | Tous les seuils et constantes | Haute |
-| `sage-python/src/sage/verl/topology_env.py` | Env GiGPO multi-step | Haute (training) |
-| `sage-python/src/sage/verl/reward.py` | Reward function veRL | Haute (training) |
-| `sage-python/src/sage/verl/edge_credit.py` | Graph-GRPO edge credit | Moyenne (training) |
-| `sage-python/src/sage/verl/rewardflow.py` | RewardFlow PageRank | Moyenne (training) |
-| `sage-python/src/sage/memory/episodic.py` | Memoire cross-session SQLite | Moyenne |
-| `sage-python/src/sage/memory/smmu_context.py` | Injection S-MMU dans prompts | Moyenne |
-| `sage-python/src/sage/events/bus.py` | EventBus observabilite | Moyenne |
-| `sage-python/src/sage/resilience.py` | Circuit breakers | Moyenne |
-| `sage-python/src/sage/monitoring/drift.py` | Detection derive | Moyenne |
-| `sage-python/src/sage/topology/llm_caller.py` | Synthese topologie via LLM | Moyenne |
-| `sage-core/src/lib.rs` | Point d'entree Rust, exports PyO3 | Critique |
-| `sage-core/src/routing/bandit.rs` | Bandit contextuel Thompson | Haute |
-| `sage-core/src/routing/system_router.rs` | SystemRouter S1/S2/S3 | Haute |
-| `sage-core/src/topology/engine.rs` | TopologyEngine 6-path | Critique |
-| `sage-core/src/topology/topology_graph.rs` | IR TopologyGraph | Critique |
-| `sage-core/src/topology/executor.rs` | TopologyExecutor dual-mode | Haute |
-| `sage-core/src/topology/map_elites.rs` | Archive MAP-Elites 4D | Haute |
-| `sage-core/src/memory/smmu.rs` | S-MMU 4-view | Haute |
-| `sage-core/src/verification/smt.rs` | SMT verification OxiZ | Haute |
-| `sage-core/src/verification/ltl.rs` | LTL model checking | Moyenne |
-| `sage-core/config/cards.toml` | 20 modeles LLM profiles | Haute |
+| **Cost tracking partiel** | Moyenne | Per-task ctx.cost OK depuis 2026-04-18 (P0.3), mais legacy AgentLoop accumulator pas remplacé partout. |
+| **Path 6 derrière env var** | Basse | Inférence Path 6 OK mais désactivée par défaut (lazy + opt-in). |
+| **Shadow routing 49.6% divergence** | Moyenne | Gates evidence pas franchies. Rust router non-promu — mais kNN reste primary. |
+| **`evolution/engine.py` quantitative validation** | Moyenne | Tests OK mais pas de Wilcoxon/Cohen's d/courbes convergence. |
+| **A3 N=50 cloud rerun** | Haute (cycle-10) | Aborted 2026-05-04 par Modern Standby. Recovery infra prête, à relancer cloud. |
+| **`runtime/integrity/` umbrella refactor** | Différé | cgpro architect review 2026-04-30 a recommandé NE PAS unifier physiquement les 8 invariants — couplage local préférable. Phase 2 / v0.2 peut ajouter re-export aliases. |
+| **Telemetry split internal_avr / bcb_repair** | Basse (cycle-10) | cgpro round-2 a flagué confusion. Cycle-10 candidate. |
+| **perceive→TaskPlanner coupling test** | Basse (cycle-10) | BCB/82+/19+/34 montrent skip_guardrails → topology shift 5→3. À tester unitaire. |
+| **A14b per-node attribution** | Différé | parallel/debate/selfmoa : per-node bandit attribution remis à cycle-10+. |
+
+### 18.3 Modules orphelins
+
+| Module | Statut |
+|---|---|
+| `sage-python/src/sage/agents/handoff.py` | Squelette. Non câblé pipeline. |
+| `sage-python/src/sage/protocols/a2a_server.py` | a2a-sdk 0.3.x API drift fixé (cycle-8 `4de2f59a`). Cancellation pas encore supportée. |
+| `ui/app.py` | FastAPI dashboard. Pas en CI. |
 
 ---
 
-## 19. Open Questions
+## 19. Open Questions (mise à jour)
 
-1. **MAP-Elites et bandit sont purement in-memory.** Que se passe-t-il en production quand le processus redemarre ? Le module `persistence.rs` existe mais est-il actif derriere `cognitive` ? Aucune evidence d'appel au runtime.
+### 19.1 Résolues
 
-2. **Le ONNX quality estimator n'existe pas dans le repo.** `quality_estimator_v2.onnx` est reference dans le code mais absent. Le `QualityLabeler` (SMT) est-il suffisant comme seul backend ?
+1. ~~Persistence MAP-Elites/bandit ?~~ → **Active via `cognitive` feature (default).**
+2. ~~ONNX quality estimator absent ?~~ → **Optionnel ; Z3 + Wasm couvrent le runtime path.**
+3. ~~Training GiGPO exécuté GPU ?~~ → **Branche dédiée `training`. Sur main, parqué.**
 
-3. **Le training GiGPO a-t-il ete execute au moins une fois sur GPU ?** Les logs `train_phase_a_v*.log` existent mais leur contenu n'a pas ete verifie (hors scope de cette analyse).
+### 19.2 Toujours ouvertes
 
-4. **Le shadow routing montre 49.6% de divergence.** Cela signifie-t-il que le Rust router est meilleur (hypothese dans MEMORY.md) ou pire ? Aucune evaluation independante du Rust router sur le GT 50 tasks n'est documentee dans le code.
-
-5. **Le cout par noeud est hardcode a $0.001.** Le tracking reel du cout par token API n'est pas implemente dans pipeline.py. Les metriques de cout sont-elles fiables ?
-
-6. **`ComplexityRouter` est importe dans boot.py mais documente comme "DEAD CODE".** Est-il utilise dans un chemin reel ou seulement comme type hint pour backward compat ?
-
-7. **L'evolution Python (`evolution/engine.py`) et l'evolution Rust (MAP-Elites + MCTS + CMA-ME) coexistent.** Quel est le chemin d'evolution actif a runtime ? Le Python semble utilise par le CLI `python -m sage.evolution`, le Rust par `TopologyEngine`.
-
-8. **Path 6 (topologie apprise) est derriere `SAGE_ENABLE_PATH6`.** Quand et comment ce flag est-il active en production ?
+1. **Shadow routing 49.6% divergence** : le Rust router est-il meilleur ou pire ? Aucun benchmark indépendant Rust-router-only sur GT 50.
+2. **A3 N=50 cloud** : quand reprendra-t-on ? Cycle-10 task #1.
+3. **v7 4/10→7/10 gap** : sample variance ou mécanisme caché ? cgpro round-2 verdict : "very likely sample variance + boundary stochasticity on /13, /82, /101". Cycle-10 full v7 N=10 counterbalanced réplay = définitif.
+4. **perceive→TaskPlanner coupling** sur BCB/82+/19+/34 : bug, feature, ou unspecified contract ? cgpro : "unknown, operationally suspected bug until tested".
+5. **`ComplexityRouter` heuristic 34%** : utile comme Priority-3 fallback ou code mort à supprimer ? AUDIT2 2026-04-24 a flaggé l'incohérence "DEAD CODE" framing.
+6. **Path 6 production rollout** : quand activer par défaut ? Manque benchmark direct comparant Path 6 vs templates.
+7. **Frontier 2026 benchmark** : Cycle-12+ planning pour tester gpt-5.5-pro, gemini-3.1-pro frontière vs SAGE delta.
 
 ---
 
@@ -805,46 +917,153 @@ RAG:
 
 ```
 PROJET: YGN-SAGE (Agent Development Kit)
-LANGAGES: Rust (sage-core) + Python (sage-python, sage-discover)
-PIPELINE: CLASSIFY -> DECOMPOSE -> TOPOLOGY -> ASSIGN -> EXECUTE -> LEARN
+LANGAGES: Rust 1.94 (sage-core, 549 tests) + Python 3.13 (sage-python, 2940 tests; sage-discover, 100 tests)
+HEAD: main @ a6f869c4 (2026-05-04). 982 commits depuis 2026-03-25.
+
+PIPELINE: CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN
+  Stage 0 attribution: route_integrated() → bandit decision_id
+  Stage 5 closure: record_outcome_checked() — bandit attribution invariant
 
 ROUTING:
-  kNN (92% GT) > SystemRouter Rust (86%) > Bandit Thompson > Heuristic (34%, dead)
-  4-stages: structural -> kNN -> BERT ONNX -> entropy
+  kNN (92% GT, primary) > Rust SystemRouter (88%) > ContextualBandit Thompson > ComplexityRouter heuristic (34%, Priority-3 fallback)
 
 TOPOLOGIE:
-  11 templates: sequential, parallel, avr, self_moa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout
-  6-path engine: S-MMU hit > archive > LLM synthesis > mutation > MCTS > template
+  11 templates: sequential, parallel, avr, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout
+  6-path engine: S-MMU > archive > LLM > mutation > MCTS > template (Rust)
+  Path 6 (learned, opt-in): SAGE_ENABLE_PATH6=1, Phase C 40% MASBENCH OR Nemotron GiGPO
   3-flow edges: control + message + state
-  Execution: static (Kahn DAG) ou dynamic (gate-based)
+  Execution dual-mode: static (Kahn DAG) ou dynamic (gate-based)
 
-PROVIDERS: Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter, Codex
-  20 modeles dans cards.toml
-  ProviderPool + CircuitBreaker per-provider
+CONTROLLER (ADR-012, Rust-primary):
+  RustTopologyController state machine + 5 paths in Rust
+  Fix C (a23e196b): _effective_controller=None when llm_tier=="budget"
 
-MEMOIRE:
-  Working (Rust, volatile) | Episodic (SQLite WAL) | Semantic (entity graph)
-  Causal (directed graph) | S-MMU (4-view petgraph) | ExoCortex (Google RAG)
+PROVIDERS: 7 actifs (Google, OpenAI, DeepSeek, xAI, Kimi, MiniMax, OpenRouter) + Codex
+  cards.toml: 23 modèles
+  Tiers: codex (gpt-5.3-codex), reasoner (gemini-3.1-pro), fast (gemini-3.1-flash-lite), budget (deepseek-v4-flash, A33 multi-turn safety)
+  ProviderPool TTL'd 300s exclusion + re-probe + CircuitBreaker
+
+MEMORY:
+  Working (Rust volatile) | Episodic (SQLite WAL persistant)
+  Semantic (entity graph) | Causal (directed)
+  S-MMU (4-view petgraph) | ExoCortex (Google File Search)
+  Persistence: bandit + MAP-Elites via cognitive feature (default)
 
 VERIFICATION:
-  OxiZ SMT (QF_LIA, feature smt) | LTL (petgraph BFS/DFS) | HybridVerifier (structural)
-  ProcessRewardModel (PRM sur <think> tags)
+  OxiZ SMT (QF_LIA, feature smt) | LtlVerifier (petgraph, ADR-014 rename)
+  HybridVerifier (structural) | ProcessRewardModel (PRM <think>)
+  8 invariants in runtime-integrity-ledger.md
 
-TRAINING (branche VeRLGIGPO, experimental):
-  GiGPO multi-step | SageTopologyEnv (4-etats) | StepRewardVector + anchor keys
-  Reward: format + structure + density + edge_credit (Graph-GRPO) + RewardFlow (PageRank)
-  Cible: Nemotron-Orchestrator-8B, RunPod H100
+SANDBOX (ADR-013 §5 flip 2026-04-22):
+  Default: tree-sitter + RustPython wasm32-wasip1 (deny-by-default WASI-p1)
+  Wasm-python JIT cache: ~30s cold → ~1s warm
+  No subprocess fallback (validate_and_execute fails closed)
+  execute_raw gated SAGE_UNSAFE_RAW_EXEC=1
+
+RUNTIME INTEGRITY (cycle 5-9):
+  StateCore (R6) | RunFrame (R7) | OracleStack (R9, default-on cycle-7)
+  EvidenceProducers (R6.1a) | A14 epoch guard (cycle-8) | Bandit attribution (cycle-9)
+  Timeout enforcement + Control-surface completeness (cycle-9 cgpro round-2)
+
+OBSERVABILITY:
+  EventBus in-process | DriftMonitor | OpenTelemetry GenAI spans (B1, 2026-04-25)
+  Rust span bridge B1.b (--features otel)
+  Sinks: SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}
+
+BENCH INFRASTRUCTURE (cycle-9):
+  Event ledger NDJSON fsync per emit | wall-clock watchdog (HostSuspendDetected)
+  Windows keep-awake (SetThreadExecutionState ES_SYSTEM_REQUIRED)
+  Targeted filters: --ablation-configs, --task-ids
+  Latest results: BCB Hard 45.9% (full pipe), BCB Hard N=50 official 32% (budget)
+                  SWE-bench Lite 10% (Docker-graded)
+                  Routing GT 92%/88%/34%
+
+TRAINING:
+  ⏸ PARKED on main since 2026-04-15 (b2f59ee, -4.3 GB)
+  Code on dedicated `training` branch
+  Path 6 inference still works on main via SAGE_ENABLE_PATH6=1
 
 BUILD:
-  Rust: maturin develop --features smt,onnx,cognitive,tool-executor
-  Python: pip install -e ".[all,dev]"
-  Test Rust: cargo test --no-default-features --features smt,tool-executor --lib
-  Test Python: python -m pytest tests/ -v
+  cd sage-core && maturin develop --features smt,onnx (default = sandbox+cranelift+tool-executor+cognitive)
+  cd sage-python && pip install -e ".[all,dev]"
 
-POINTS D'ATTENTION:
-  - MAP-Elites/Bandit non persistants (perdu au restart)
-  - Cout estime $0.001/node (pas de tracking reel)
-  - ONNX quality model absent du repo
-  - Training GiGPO jamais execute sur GPU
-  - Shadow routing: 49.6% divergence, gates non franchies
+TEST:
+  cd sage-core && cargo test --features smt --lib  # 549 tests
+  cd sage-python && python -m pytest tests/ -v    # 2940 tests
+  cd sage-python && python -m mypy src/sage/ --ignore-missing-imports  # 0 errors
+  cd sage-python && ruff check src/  # clean
+
+EXTERNAL CONSULTATION (cycle-7+):
+  cgpro (ChatGPT 5.5 Pro): cgpro ask --resume <conv> --json --background --timeout 1800
+    Strong on architecture review, methodology critique, deep root-cause
+    Active conv 2026-05-04: cgpro_a3_recovery_20260504 (UUID 69f854ed)
+  codex (GPT-5.5 xhigh): skill codex:rescue
+    Strong on second-implementation, deep file-traversal investigation
+
+POINTS D'ATTENTION (cycle-10 carry-over):
+  - A3 N=50 cloud rerun (must include /17 + /37 ; counterbalanced order ; instrumented telemetry)
+  - perceive→TaskPlanner coupling test sur BCB/82+/19+/34
+  - Telemetry split internal_avr / bcb_repair / runtime_guardrail
+  - Frontier 2026 benchmark (Cycle-12+)
+  - Shadow routing gates : 49.6% divergence non résolue
 ```
+
+---
+
+## Appendice A — Fichiers clés (mise à jour)
+
+| Fichier | Rôle | Importance |
+|---|---|---|
+| `sage-python/src/sage/boot.py` | Assemblage AgentSystem | Critique |
+| `sage-python/src/sage/boot_pipeline.py` | Wire pipeline + controller + tool_forge | Critique |
+| `sage-python/src/sage/boot_topology.py` | A14 epoch guard preflight | Critique |
+| `sage-python/src/sage/pipeline.py` | Pipeline 5-stages + Fix C | Critique |
+| `sage-python/src/sage/agent_loop.py` | Boucle perceive/think/act/learn | Critique |
+| `sage-python/src/sage/topology/runner.py` | Exécution multi-agent | Haute |
+| `sage-python/src/sage/topology_controller.py` | Wrapper Python pour RustTopologyController | Haute |
+| `sage-python/src/sage/contracts/planner.py` | TaskPlanner | Haute |
+| `sage-python/src/sage/pipeline_stages.py` | DAGFeatures + select_macro_topology | Haute |
+| `sage-python/src/sage/runtime/oracle/` | OracleStack + verdict + kill-switch | Haute |
+| `sage-python/src/sage/runtime/event_log/` | Event log + payload schemas | Haute |
+| `sage-python/src/sage/runtime/evidence/` | EvidenceProducers | Haute |
+| `sage-python/src/sage/runtime/run_frame/` | RunFrame summary | Moyenne |
+| `sage-python/src/sage/bench/event_ledger.py` | NDJSON append-only (cycle-9) | Haute |
+| `sage-python/src/sage/bench/watchdog.py` | Wall-clock host-suspend detection | Haute |
+| `sage-python/src/sage/bench/keep_awake.py` | Windows ES_SYSTEM_REQUIRED | Moyenne |
+| `sage-python/src/sage/bench/bigcodebench_bench.py` | BCB harness + control_surface telemetry | Haute |
+| `sage-python/src/sage/observability/` | OTel GenAI spans | Moyenne |
+| `sage-python/src/sage/posterior_epoch.py` | A14 epoch helpers | Haute |
+| `sage-python/src/sage/ops/a14_reset.py` | Reset A14 state post-poison | Moyenne |
+| `sage-core/src/lib.rs` | PyO3 exports | Critique |
+| `sage-core/src/routing/bandit.rs` | ContextualBandit + persistence | Haute |
+| `sage-core/src/routing/system_router.rs` | route_integrated + record_outcome_checked | Haute |
+| `sage-core/src/topology/engine.rs` | TopologyEngine 6-path | Critique |
+| `sage-core/src/topology/controller.rs` | RustTopologyController (ADR-012) | Critique |
+| `sage-core/src/topology/posterior_epoch.rs` | A14 epoch guard | Haute |
+| `sage-core/src/sandbox/` | tree-sitter + Wasm-python JIT cache | Haute |
+| `sage-core/src/observability/` | OTel bridge B1.b | Moyenne |
+| `sage-core/config/cards.toml` | 23 modèles | Haute |
+| `docs/contracts/runtime-integrity-ledger.md` | 8 invariants | **Critique** |
+| `docs/contracts/rust-python-boundary.md` | Ownership matrix | Haute |
+| `docs/contracts/runtime-event-log.md` | Event-log contract matrix | Haute |
+| `docs/adr/ADR-013-wasm-sandbox-default.md` | Sandbox flip | Haute |
+| `docs/adr/ADR-014-ltl-verifier-rename.md` | LtlVerifier rename | Moyenne |
+| `docs/status/current.json` | Test counts canoniques | Haute |
+| `CLAUDE.md` | Critical directives + current state | **Critique** |
+
+---
+
+## Appendice B — Glossaire (additions cycle 7-9)
+
+- **A14** : posterior_epoch + topology_state_manifest provenance binding (cycle-8 step 2). Fail-closed sur boot/load.
+- **A33** : DeepSeek `reasoning_content` multi-turn safety (`27770580`). Native PydanticAI OpenAIModelProfile.
+- **DRIPS** : Deepest Runtime Idle Platform State (Windows Modern Standby S0). Suspend processes en background même avec standby timeout=0. Cycle-9 trap.
+- **Fix C** : `_effective_controller = None if llm_tier=="budget"` (`a23e196b`). Désactive RustTopologyController pour budget tier.
+- **OracleStack** : runtime/oracle. Default-on cycle-7. Trainable=True gate sur évidences typées.
+- **Path E** : opt-in bench-result feedback seam (R6.1a). `SAGE_BENCH_ORACLE_SEAM=1`.
+- **R0..R9** : runtime integrity arcs (cycle 5-7). RuntimeContracts → StateCore → RunFrame → OracleStack → EvidenceProducers.
+- **R6.1c** : payload schema versioning + 14 manifests (cycle-8, `78565578`).
+
+---
+
+*Document généré sur la base d'une exploration du commit `a6f869c4`. Pour les claims spécifiques, voir les `[Evidence: ...]` ou `git show <sha>` pour vérifier au commit cité.*
