@@ -349,8 +349,8 @@ YGN-SAGE/
 |       |-- pipeline.py  #   5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)
 |       +-- boot.py      #   System bootstrap (7 providers auto-detected from .env)
 |
-|-- sage-discover/       # Knowledge pipeline: 17 modules — arXiv → ExoCortex
-|-- sage-router/         # Standalone routing module
+|-- sage-discover/       # Knowledge pipeline: 17 modules — arXiv → ExoCortex (adjunct, depends on ygn-sage)
+|-- sage-router/         # Standalone routing-only package (1374 LOC, NOT used by sage-python runtime — see sage-router/README.md)
 |-- ui/                  # FastAPI + WebSocket dashboard (Cytoscape.js topology viz)
 |-- docs/                # 60+ specs, 15 audits, 20+ benchmark results
 +-- Researches/          # 25+ backing research papers
