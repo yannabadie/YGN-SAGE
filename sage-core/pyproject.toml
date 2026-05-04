@@ -1,0 +1,77 @@
+[build-system]
+requires = ["maturin>=1.5,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "sage-core"
+version = "0.1.0"
+description = "Rust runtime core for YGN-SAGE: TopologyEngine (6-path), SystemRouter, ContextualBandit, MAP-Elites, S-MMU, OxiZ SmtVerifier, RustPython wasm32-wasip1 sandbox"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Yann Abadie" }]
+keywords = [
+    "agents",
+    "llm",
+    "routing",
+    "topology",
+    "multi-agent",
+    "wasm-sandbox",
+    "smt-verification",
+    "map-elites",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.12"
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/yannabadie/YGN-SAGE"
+Repository = "https://github.com/yannabadie/YGN-SAGE"
+Issues = "https://github.com/yannabadie/YGN-SAGE/issues"
+
+[tool.maturin]
+# Cargo lib name is `sage_core` (snake_case); the wheel exposes it as
+# the importable Python module of the same name.
+module-name = "sage_core"
+# Bind to the parent workspace's Cargo.toml so feature flags resolve
+# the same way as the local `maturin develop` path documented in CLAUDE.md.
+manifest-path = "Cargo.toml"
+# Default features for **published wheels** are kept conservative:
+# sandbox + cranelift + tool-executor + cognitive (the post-ADR-013-§5
+# defaults) are part of the published surface. `smt` and `onnx` stay
+# opt-in because they pull heavy native deps (oxiz / onnxruntime) that
+# bloat the wheel and are not required for the runtime-integrity layer.
+# Operators who need formal SMT or ONNX embedder install from source.
+# This decision is documented in cycle-10 P5 (B4 wheels) and revisitable
+# once the cibuildwheel matrix observes whether `smt`/`onnx` builds
+# survive on all 3 OSes.
+features = ["sandbox", "cranelift", "tool-executor", "cognitive"]
+# Strip debug symbols to keep wheel under PyPI 100 MB limit. The
+# embedded RustPython wasm artifact (~37 MB after build.rs) plus
+# cranelift JIT compiler (~15 MB) means full debug-symbols would push
+# the wheel over PyPI's hard cap on Linux x86_64.
+strip = true
+
+[tool.maturin.target.aarch64-apple-darwin]
+# Apple Silicon: same default features. Cranelift supports aarch64 since
+# wasmtime 12+; we ship wasmtime 44 (Cargo.toml).
+
+[tool.maturin.target.x86_64-pc-windows-msvc]
+# Windows MSVC: cranelift is EXCLUDED at the Cargo.toml level (causes
+# STATUS_STACK_BUFFER_OVERRUN during compilation, see Cargo.toml
+# wasmtime feature notes). Wheels rely on pre-compiled wasm modules +
+# `Module::deserialize`. Keep the override empty so it inherits the
+# tool.maturin.features list above; the Cargo features filter at build
+# time strips cranelift on Windows.

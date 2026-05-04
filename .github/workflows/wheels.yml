@@ -1,0 +1,190 @@
+name: Build wheels (B4)
+
+# Cycle-10 P5 (B4) — multi-OS wheel build matrix for sage-core. Draft
+# state: workflow_dispatch only, no push/release triggers, no PyPI
+# upload step. The first dispatch run produces artifacts that confirm
+# the matrix works; PyPI publish is a follow-up commit gated by:
+#   - Operator review of the artifact size + import smoke
+#   - TestPyPI dry-run
+#   - Real PyPI release
+# See `.claude/plans/2026-05-04-cycle-10-verified-runtime-release-preview.md`
+# task P5 and `sage-core/pyproject.toml` `[tool.maturin]` section for
+# the canonical default-feature set this workflow ships.
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this dispatch (audit trail)"
+        required: true
+        type: string
+      include_smt_onnx:
+        description: "Build with --features smt,onnx (heavier wheel, opt-in)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-wheels:
+    name: Build wheel ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            python: "3.12"
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            python: "3.13"
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            python: "3.12"
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            python: "3.13"
+          - target: aarch64-apple-darwin
+            runner: macos-14  # Apple Silicon (M1/M2)
+            python: "3.12"
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            python: "3.13"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive  # external/rustpython-wasm-target
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Rust (matches Cargo.toml edition 2021 / pyo3 0.25)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo + maturin target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sage-core/target
+            external/rustpython-wasm-target
+          key: wheels-${{ matrix.target }}-${{ matrix.python }}-${{ hashFiles('sage-core/Cargo.lock', 'sage-core/Cargo.toml') }}
+          restore-keys: |
+            wheels-${{ matrix.target }}-${{ matrix.python }}-
+
+      - name: Build embedded RustPython wasm artifact (cached via cargo target)
+        # build.rs in sage-core looks for external/rustpython-wasm-target/.../rustpython.wasm.
+        # First-time build is ~10-15 min; the cargo target cache above amortises
+        # subsequent runs to under 1 min on the wasm artefact + ~5 min on the
+        # PyO3 cdylib link.
+        shell: bash
+        run: |
+          if [ ! -f external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm ]; then
+            rustup target add wasm32-wasip1
+            if [ ! -d external/rustpython ]; then
+              git clone --depth=1 https://github.com/RustPython/RustPython external/rustpython
+            fi
+            cd external/rustpython && CARGO_TARGET_DIR=../rustpython-wasm-target \
+              cargo build --release --target wasm32-wasip1 --features freeze-stdlib
+          else
+            echo "rustpython.wasm cached, skipping rebuild"
+          fi
+
+      - name: Build wheel (default features only)
+        if: ${{ !inputs.include_smt_onnx }}
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: sage-core
+          target: ${{ matrix.target }}
+          args: --release --strip --out dist
+          # Default features come from sage-core/pyproject.toml
+          # [tool.maturin].features = ["sandbox", "cranelift", "tool-executor",
+          # "cognitive"]. The maturin-action invocation does not append
+          # extra --features so the pyproject defaults apply verbatim.
+
+      - name: Build wheel (with smt + onnx, heavier)
+        if: ${{ inputs.include_smt_onnx }}
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: sage-core
+          target: ${{ matrix.target }}
+          args: --release --strip --out dist --features smt,onnx,sandbox,cranelift,tool-executor,cognitive
+
+      - name: List artifacts
+        shell: bash
+        run: |
+          echo "Built wheels:"
+          ls -la sage-core/dist/
+          echo ""
+          echo "Wheel sizes:"
+          du -h sage-core/dist/*.whl
+
+      - name: Smoke test — import in fresh venv
+        shell: bash
+        run: |
+          python -m venv /tmp/smoke-venv-${{ matrix.python }}
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            VENV_BIN="/tmp/smoke-venv-${{ matrix.python }}/Scripts"
+          else
+            VENV_BIN="/tmp/smoke-venv-${{ matrix.python }}/bin"
+          fi
+          "$VENV_BIN/python" -m pip install --upgrade pip
+          "$VENV_BIN/python" -m pip install sage-core/dist/*.whl
+          "$VENV_BIN/python" -c "
+          import sage_core
+          # Cycle-10 P5 smoke: assert the public PyO3 surface is importable
+          # without ygn-sage glue. If sage_core.* fails here, the wheel
+          # is broken regardless of how the matrix labels its result.
+          #
+          # Symbols required for the DEFAULT wheel (per
+          # sage-core/pyproject.toml [tool.maturin].features =
+          # sandbox + cranelift + tool-executor + cognitive):
+          default_required = [
+              'TopologyEngine', 'SystemRouter', 'ContextualBandit',
+              'ModelAssigner', 'ModelRegistry', 'MultiViewMMU',
+              'WorkingMemory', 'ToolExecutor',
+          ]
+          missing = [s for s in default_required if not hasattr(sage_core, s)]
+          assert not missing, f'sage_core wheel missing default symbols: {missing}'
+          # 'smt'-gated symbols (oxiz dep, opt-in): HybridVerifier, LtlVerifier
+          # In the default wheel they MUST be absent. In the inputs.include_smt_onnx
+          # variant they MUST be present.
+          smt_symbols = ['HybridVerifier', 'LtlVerifier']
+          present_smt = [s for s in smt_symbols if hasattr(sage_core, s)]
+          want_smt = '${{ inputs.include_smt_onnx }}' == 'true'
+          if want_smt and len(present_smt) != len(smt_symbols):
+              raise AssertionError(f'smt-build wheel missing {set(smt_symbols)-set(present_smt)}')
+          if not want_smt and present_smt:
+              raise AssertionError(f'default wheel must NOT carry smt symbols, got {present_smt}')
+          print('sage_core wheel smoke OK on ${{ matrix.target }} py${{ matrix.python }}')
+          print(f'  default symbols: {len(default_required)}/{len(default_required)}')
+          print(f'  smt symbols: {len(present_smt)}/{len(smt_symbols)} (want={want_smt})')
+          "
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sage-core-${{ matrix.target }}-py${{ matrix.python }}${{ inputs.include_smt_onnx && '-smt-onnx' || '' }}
+          path: sage-core/dist/*.whl
+          retention-days: 30
+
+  # PyPI publish step deliberately omitted in the cycle-10 P5 draft.
+  # Acceptance gate before adding it (per cycle-10 plan + advisor 2026-05-04):
+  #   1. Successful workflow_dispatch run on all 6 matrix entries
+  #      (Linux 3.12 + 3.13, Windows 3.12 + 3.13, macOS arm64 3.12 + 3.13)
+  #   2. Smoke test passing on at least Linux + Windows in the matrix run
+  #   3. Operator review of artifact sizes (PyPI 100 MB hard cap; smt+onnx
+  #      wheels may exceed that)
+  #   4. TestPyPI dry-run via a separate `release-test` workflow
+  #   5. Real PyPI publish via tag-triggered release workflow
+  # Track this gate in the cycle-10 plan task P5 and the cycle-11 followup
+  # ticket once the first dispatch run produces evidence.
