@@ -127,10 +127,10 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
 
 `advisor` is the third option — sees this conversation's full transcript automatically. Use for in-flight strategy checks ("am I about to make a mistake?"). Different audience from cgpro (which sees only what you write into the prompt).
 
-## Current State (May 3, 2026 — A3 N=50 RUNNING)
+## Current State (May 4, 2026 — A3 N=50 ABORTED, evidence-layer rebuild in progress)
 
 - **Tests** (canonical at `docs/status/current.json`): **2907 Python collected** / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
-- **A2 v7 COMPLETE (2026-05-03 ~20:00)**: All 60/60 results. **Full config 4/10 PASS — GATE MET.**
+- **A2 v7 (2026-05-03)**: All 60/60 results. `full` 4/10 — gate MET on the surface, but see Fix C correction below.
 
   | Config | PASS | Passing tasks |
   |--------|------|---------------|
@@ -141,7 +141,8 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
   | no-routing | 4/10 | /13, /34, /37, /92 |
   | **no-guardrails** | **7/10** | /13, /17, /19, /34, /37, /89, /92 |
 
-  **KEY FINDING**: `no-guardrails` 7/10 >> other pipeline configs 4/10. Guardrails (adaptive controller: model upgrades, reroutes, CoT retries) add ~50s overhead per task → timeouts on budget tier. Fix C (budget-tier guard = disable guardrails at budget tier) is **validated** — would lift `full` from 4/10 → ~7/10.
+  **CORRECTED FINDING (cgpro 2026-05-04)**: `no-guardrails` ablation flag (`AblationConfig(guardrails=False)`) sets `loop._skip_guardrails=True`, which short-circuits ONLY the `guardrail_pipeline` rule-based checks inside `phases/{act,learn,perceive}.py`. It does **NOT** disable the `TopologyController` (Phase C runtime adaptation: model upgrades, reroutes, debate-gate, prune). The two are orthogonal control surfaces. The previous "Guardrails (adaptive controller: model upgrades…)" framing in this doc and in `project_may03_a2_bench_debug.md` was a methodology error — the v7 4/10 vs 7/10 gap is the effect of `guardrail_pipeline` (rule-based input/output safety), not the TopologyController. Fix C (`a23e196b`) disables the TopologyController for budget tier; that is a different lever and its empirical validation is **still pending**.
+- **A3 N=50 ABORTED (2026-05-03 19:58 → 2026-05-04 03:24)**: Windows Modern Standby (S0 DRIPS) suspended PID 34004 overnight despite "Performances élevées" scheme + standby-timeout=0. `asyncio.wait_for(timeout=120)` does not enforce wall-clock under host suspend (asyncio loop frozen alongside the process). BCB/273 reported 20278211ms (5h 38min) of poisoned wall-clock; only 34/300 tasks completed, all in `full` config. Pass rate 11/33 = 33% (BCB/273 excluded), within sampling noise of v7 `full` 4/10 = 40%.
 - **Commits shipped (all on GitHub main)**:
   - `2792b44f`: Fix 1 (episodic close) + Fix 3 (OUTPUT REQUIREMENT)
   - `9715ed4e`: cross-provider fix (_is_cross_provider, returns None)
@@ -149,10 +150,18 @@ Before declaring CI green / closing a multi-commit cycle, give cgpro: (1) GitHub
   - `f7a8bc47`: cgpro-validated: topology revert + runner guard + entry_point fix
   - `6e79bf84`: CLAUDE.md + current.json updated
   - `7c6ab507`: architecture.md + sage-discover README updated
-- **A3 N=50 LAUNCHED (2026-05-03 ~20:00)**: `python -m sage.bench --type ablation --limit 50 --tier budget`. All 6 configs × 50 BCB-Hard tasks. Output: `docs/benchmarks/2026-05-03-a2-ablation-a3-bcb-hard-n50.json`.
-- **Pending Fix C (budget-tier guard)**: Skip adaptive model upgrades/reroutes/CoT retries when `tier == "budget"`. V7 no-guardrails 7/10 strongly validates this. Requires threading `tier` into `node_ctx` in TopologyRunner. Implement before or during A3.
+  - `a23e196b`: Fix C — disable TopologyController in TopologyRunner when tier=budget (still empirically unvalidated, see correction above)
+  - `05e4a7c5`: retry+truncate fallback for episodic.db unlink on Windows PermissionError (10×1s + write_bytes(b"") last resort) — **cgpro flagged truncate as risky for SQLite/WAL; per-run state directories preferred long-term**
+- **Cycle-9 recovery plan (cgpro-validated 2026-05-04, conv `cgpro_a3_recovery_20260504`)**:
+  1. Append-only event ledger (RUN_START / CONFIG_START / TASK_START / TASK_END / TASK_TIMEOUT / TASK_ABORT / CONFIG_END / RUN_END) with fsync after every event. Final report reducible from ledger.
+  2. Per-task control-surface telemetry: `controller_attached`, `executed_template`, `node_count`, `skip_guardrails`/`skip_avr`/`skip_memory`, `frugal_cascade_attempted`, `controller_decision_count`. Answers "what mechanism caused the v7 gap?".
+  3. Wall-clock watchdog: `elapsed_wall_ms <= timeout_ms + grace_ms` invariant; tasks with `host_suspend_or_event_loop_stall=true` excluded from pass/fail and run flagged non-gate-quality.
+  4. Windows hardening: `SetThreadExecutionState(ES_CONTINUOUS | ES_SYSTEM_REQUIRED)` + `powercfg /change standby-timeout-ac 0 /change hibernate-timeout-ac 0`. **Diagnostic-grade only** — gate-quality A3 should run on cloud VM.
+  5. Tiny paired diagnostic (N=8-12, full vs no-guardrails, same tasks/order) to do **path attribution**, not pass-rate. Decides whether Fix C target is right.
+  6. Then A3 N=50 clean.
 - **Budget tier**: `deepseek-v4-flash`. `models.toml` + `llm/router.py` updated. A33 multi-turn safety active.
 - **Strategic positioning (cgpro 2026-05-02)**: Cycle-9 = budget tier paired ablation. Premium frontier = Cycle-12+. SWE-bench-Live = Cycle-11. Rust changes only if A2 proves a gap.
+- **Proposed new directive #9 invariant** (cgpro 2026-05-04, pending addition to `docs/contracts/runtime-integrity-ledger.md`): **Timeout Enforcement Invariant** — for each task, `elapsed_wall_ms <= timeout_ms + grace_ms` unless `host_suspend_or_event_loop_stall=true`; any task with that flag is excluded from pass/fail statistics and the run is marked non-gate-quality.
 
 ## Current State (May 2, 2026 — Cycle-9 A2 smoke running)
 
