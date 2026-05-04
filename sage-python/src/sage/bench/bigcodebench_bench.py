@@ -46,6 +46,18 @@ class BigCodeBenchBench:
         split: "instruct" (NL) or "complete" (docstring).
         task_timeout: Max seconds for LLM generation.
         eval_timeout: Max seconds for test evaluation.
+        event_ledger: Optional ``BenchEventLedger`` for append-only
+            crash-safe per-task events (Step 1 of the cycle-9 recovery
+            plan). When provided, every task emits TASK_START / TASK_END
+            / TASK_TIMEOUT / TASK_ABORT to the ledger with full
+            control-surface telemetry.
+        config_label: Ablation config label for ledger events. Pass
+            "single" for non-ablation runs.
+        wallclock_grace_factor: Multiplier on ``task_timeout`` past
+            which a task is treated as host-suspended (cycle-9 Step 2).
+            Default 2.0; lower for tighter diagnostic; raise for noisy
+            environments. Tasks above this threshold emit TASK_ABORT
+            and are excluded from gate-quality stats.
     """
 
     def __init__(
@@ -56,6 +68,9 @@ class BigCodeBenchBench:
         split: str = "instruct",
         task_timeout: float = 120.0,
         eval_timeout: float = 30.0,
+        event_ledger: Any = None,
+        config_label: str = "single",
+        wallclock_grace_factor: float = 2.0,
     ):
         self.system = system
         self.event_bus = event_bus
@@ -63,6 +78,52 @@ class BigCodeBenchBench:
         self.split = split
         self.task_timeout = task_timeout
         self.eval_timeout = eval_timeout
+        self._ledger = event_ledger
+        self._config_label = config_label
+        self._wallclock_grace = wallclock_grace_factor
+
+    def _capture_control_surface(self, trace: dict) -> dict:
+        """Read live system flags + pipeline state for control-surface telemetry.
+
+        Cycle-9 recovery Step 2 (cgpro 2026-05-04). Records the actual
+        runtime configuration so post-hoc analysis can answer "what
+        mechanism caused the v7 full→no-guardrails gap?". Reads from:
+
+        - ``system.agent_loop._skip_*`` flags (set by AblationConfig.apply)
+        - ``system.pipeline._llm_tier`` (Fix C input)
+        - ``system.pipeline._effective_controller`` (Fix C output, derived)
+        - ``trace`` (already-populated ctx fields from this task)
+        """
+        cs: dict[str, Any] = {}
+        loop = getattr(self.system, "agent_loop", None)
+        if loop is not None:
+            cs["skip_memory"] = bool(getattr(loop, "_skip_memory", False))
+            cs["skip_avr"] = bool(getattr(loop, "_skip_avr", False))
+            cs["skip_routing"] = bool(getattr(loop, "_skip_routing", False))
+            cs["skip_guardrails"] = bool(getattr(loop, "_skip_guardrails", False))
+        pipe = getattr(self.system, "pipeline", None)
+        if pipe is not None:
+            tier = getattr(pipe, "_llm_tier", "")
+            cs["llm_tier"] = tier
+            # Fix C derivation: when tier=="budget", controller is
+            # masked at TopologyRunner construction time. We mirror
+            # that logic here for telemetry without re-reading the
+            # actual mask (which is local to _stage_execute).
+            cs["controller_attached"] = bool(
+                getattr(pipe, "controller", None) is not None and tier != "budget",
+            )
+            cs["router_active"] = bool(getattr(pipe, "router", None) is not None)
+        else:
+            cs["controller_attached"] = False
+            cs["router_active"] = False
+            cs["llm_tier"] = ""
+        # Already-captured fields from trace
+        cs["executed_template"] = trace.get("topology_id", "")
+        cs["node_count"] = int(trace.get("topology_nodes", 0) or 0)
+        cs["was_bypassed"] = cs["node_count"] == 0
+        cs["domain"] = trace.get("domain", "")
+        cs["system_routing"] = trace.get("system", 0)
+        return cs
 
     async def run(self, limit: int | None = None) -> BenchReport:
         """Run BigCodeBench benchmark."""
@@ -74,6 +135,7 @@ class BigCodeBenchBench:
         results: list[TaskResult] = []
         self._predictions: list[dict[str, Any]] = []
         passed_count = 0
+        aborted_count = 0
         disable_repair = os.environ.get("SAGE_BENCH_DISABLE_REPAIR") == "1"
 
         from sage.input.bcb import normalize_bcb
@@ -86,6 +148,21 @@ class BigCodeBenchBench:
 
             entry = task["entry_point"]
             tid = task_id
+
+            # Cycle-9 recovery Step 1: TASK_START emitted before any
+            # async wait, so a process death between TASK_START and
+            # TASK_END is recoverable from the ledger as "task in
+            # flight at crash time".
+            if self._ledger is not None:
+                try:
+                    self._ledger.emit_task_start(
+                        config_label=self._config_label,
+                        idx=i + 1,
+                        task_id=tid,
+                        timeout_s=self.task_timeout,
+                    )
+                except Exception as _le:  # noqa: BLE001
+                    log.warning("event_ledger.emit_task_start failed: %s", _le)
 
             t0 = time.time()
             solution = ""
@@ -392,6 +469,70 @@ class BigCodeBenchBench:
                 "_trace": trace,
             })
 
+            # Cycle-9 recovery Step 2: wall-clock host-suspend detection.
+            # asyncio.wait_for() does NOT enforce timeout when the event
+            # loop is suspended (Windows Modern Standby S0 DRIPS).
+            # latency_ms here is wall-clock from time.time() so it
+            # captures suspend correctly. If the wall elapsed exceeds
+            # task_timeout * grace_factor, the asyncio.wait_for above
+            # was bypassed by suspend; the result is suspect and we
+            # mark the task aborted, NOT FAIL.
+            host_suspend_detected = (
+                latency_ms / 1000.0 > self.task_timeout * self._wallclock_grace
+            )
+            if host_suspend_detected:
+                aborted_count += 1
+                # Roll back the passed_count increment if applicable —
+                # an "aborted" task does not count toward pass-rate.
+                if task_passed:
+                    passed_count -= 1
+                    task_passed = False
+                error = "host_suspend_detected"
+
+            # Cycle-9 recovery Step 1+2: emit TASK_END (or TASK_ABORT
+            # for sleep-poisoned tasks) with full control-surface
+            # telemetry so post-hoc analysis can attribute pass/fail
+            # to specific control-surface mechanisms.
+            if self._ledger is not None:
+                control_surface = self._capture_control_surface(trace)
+                control_surface["error"] = error or ""
+                control_surface["avr_attempted"] = bool(trace.get("avr_attempted"))
+                control_surface["avr_repaired"] = bool(trace.get("avr_repaired"))
+                control_surface["pipeline_cost"] = float(trace.get("pipeline_cost") or 0.0)
+                try:
+                    if host_suspend_detected:
+                        self._ledger.emit_task_abort(
+                            config_label=self._config_label,
+                            idx=i + 1,
+                            task_id=tid,
+                            reason="host_suspend_detected",
+                            elapsed_wall_ms=latency_ms,
+                            control_surface=control_surface,
+                            grace_factor=self._wallclock_grace,
+                            timeout_s=self.task_timeout,
+                        )
+                    elif error == "TIMEOUT":
+                        self._ledger.emit_task_timeout(
+                            config_label=self._config_label,
+                            idx=i + 1,
+                            task_id=tid,
+                            elapsed_wall_ms=latency_ms,
+                            control_surface=control_surface,
+                        )
+                    else:
+                        self._ledger.emit_task_end(
+                            config_label=self._config_label,
+                            idx=i + 1,
+                            task_id=tid,
+                            status="PASS" if task_passed else "FAIL",
+                            elapsed_wall_ms=latency_ms,
+                            passed=bool(task_passed),
+                            control_surface=control_surface,
+                            host_suspend_or_event_loop_stall=False,
+                        )
+                except Exception as _le:  # noqa: BLE001
+                    log.warning("event_ledger emit failed: %s", _le)
+
             results.append(TaskResult(
                 task_id=task_id,
                 passed=task_passed,
@@ -401,8 +542,16 @@ class BigCodeBenchBench:
                 error=error,
             ))
 
-            status = "PASS" if task_passed else "FAIL"
-            log.info("[%d/%d] %s %s (%.0fms)", i + 1, len(task_ids), status, task_id, latency_ms)
+            if host_suspend_detected:
+                status = "ABORT"
+                log.warning(
+                    "[%d/%d] ABORT %s (%.0fms > %.0fms*%.1f) host_suspend_detected",
+                    i + 1, len(task_ids), task_id, latency_ms,
+                    self.task_timeout * 1000, self._wallclock_grace,
+                )
+            else:
+                status = "PASS" if task_passed else "FAIL"
+                log.info("[%d/%d] %s %s (%.0fms)", i + 1, len(task_ids), status, task_id, latency_ms)
 
         total = len(results)
         # Aggregate cost from per-task results. Reading agent_loop.total_cost_usd

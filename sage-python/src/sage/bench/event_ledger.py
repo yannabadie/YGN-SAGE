@@ -47,10 +47,14 @@ import platform
 import socket
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from typing import Any
 
-import ulid
+try:  # ulid-py: ulid.new() returns a ULID. Keep as preferred path.
+    import ulid as _ulid_module
+except ImportError:  # pragma: no cover - ulid is a project dep, but defensive
+    _ulid_module = None  # type: ignore[assignment]
 
 __all__ = [
     "BenchEventLedger",
@@ -160,7 +164,14 @@ class BenchEventLedger:
         self._path = Path(output_path)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._run_meta = dict(run_meta)
-        self._run_id = str(ulid.new()) if hasattr(ulid, "new") else str(ulid.ULID())
+        # ulid-py preferred (lexicographically sortable, monotonically
+        # increasing, embeds creation time). uuid4 fallback only if the
+        # ulid module is unavailable; both are 26+ chars so downstream
+        # consumers don't need to know which was emitted.
+        if _ulid_module is not None and hasattr(_ulid_module, "new"):
+            self._run_id = str(_ulid_module.new())
+        else:
+            self._run_id = str(uuid.uuid4())
         self._fp: Any = open(self._path, "a", encoding="utf-8", buffering=1)
         self._closed = False
 

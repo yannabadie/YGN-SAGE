@@ -270,6 +270,33 @@ async def _run_evalplus(
 async def _run_ablation(output: str | None, limit: int | None) -> None:
     from sage.bench.ablation import ABLATION_CONFIGS
     from sage.bench.bigcodebench_bench import BigCodeBenchBench
+    from sage.bench.event_ledger import BenchEventLedger, build_run_meta
+    from sage.bench.keep_awake import prevent_os_sleep
+
+    # Cycle-9 recovery Step 1: append-only event ledger, written
+    # alongside the final report JSON. Path is computed early so the
+    # ledger file lands in the same directory the user expects.
+    if output is None:
+        repo = _repo_root()
+        bench_dir = repo / "docs" / "benchmarks"
+        bench_dir.mkdir(parents=True, exist_ok=True)
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        output = str(bench_dir / f"{date_str}-ablation-study.json")
+    out_path = Path(output)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path = out_path.with_suffix(".events.jsonl")
+
+    run_meta = build_run_meta(
+        bench_type="ablation",
+        tier=_BOOT_TIER,
+        timeout_s=120.0,
+        limit=limit,
+        extra={
+            "subset": "hard",
+            "split": "instruct",
+            "configs": [c.label for c in ABLATION_CONFIGS],
+        },
+    )
 
     all_results: dict[str, dict] = {}
 
@@ -281,62 +308,83 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
     # sets system.agent_loop.consolidator = None, losing the reference.
     prev_episodic = None
 
-    for config in ABLATION_CONFIGS:
-        print(f"\n{'#' * 60}")
-        print(f"  ABLATION: {config.label}")
-        print(f"  memory={config.memory} avr={config.avr} "
-              f"routing={config.routing} guardrails={config.guardrails}")
-        print(f"{'#' * 60}")
+    # Cycle-9 recovery Step 4: ask Windows not to suspend the process
+    # mid-run. No-op on non-Windows, best-effort on Windows. Cloud VM
+    # remains the gate-quality answer.
+    with prevent_os_sleep() as keep_awake_issued:
+        with BenchEventLedger(ledger_path, run_meta) as ledger:
+            ledger.emit_run_start(keep_awake_issued=bool(keep_awake_issued))
 
-        if prev_episodic is not None:
-            try:
-                await prev_episodic.close()
-            except Exception:
-                pass
-            prev_episodic = None
+            for config in ABLATION_CONFIGS:
+                print(f"\n{'#' * 60}")
+                print(f"  ABLATION: {config.label}")
+                print(f"  memory={config.memory} avr={config.avr} "
+                      f"routing={config.routing} guardrails={config.guardrails}")
+                print(f"{'#' * 60}")
 
-        _clear_a14_topology_state()
-        # BCB tasks are self-contained function stubs with no actual
-        # repository. Clear ALL tools after boot — deepseek-v4-flash
-        # prefers tool calls over direct code generation whenever ANY
-        # tool is available (repo tools, meta-tools, memory tools,
-        # ExoCortex). Framework value for BCB comes from routing,
-        # topology selection, and memory CONTEXT INJECTION (automatic
-        # in perceive.py) — none of which requires tool calls.
-        system, bus = _boot_system(register_repo_tools=False)
-        system.tool_registry._tools.clear()
+                ledger.emit_config_start(
+                    config_label=config.label,
+                    config_dict=dataclasses.asdict(config),
+                )
 
-        # Save episodic reference before config may null the consolidator.
-        _consolidator = getattr(getattr(system, "agent_loop", None), "consolidator", None)
-        prev_episodic = getattr(_consolidator, "episodic", None)
+                if prev_episodic is not None:
+                    try:
+                        await prev_episodic.close()
+                    except Exception:
+                        pass
+                    prev_episodic = None
 
-        if config.label == "baseline":
-            # Disable pipeline entirely — bare LLM call via legacy path
-            system.pipeline = None
-        else:
-            # Apply skip flags to agent_loop AND disable pipeline components
-            config.apply(system)
-            if not config.routing and system.pipeline:
-                system.pipeline.router = None  # Skip classify stage
-            if not config.memory:
-                system.agent_loop.consolidator = None
+                _clear_a14_topology_state()
+                # BCB tasks are self-contained function stubs with no actual
+                # repository. Clear ALL tools after boot — deepseek-v4-flash
+                # prefers tool calls over direct code generation whenever ANY
+                # tool is available (repo tools, meta-tools, memory tools,
+                # ExoCortex). Framework value for BCB comes from routing,
+                # topology selection, and memory CONTEXT INJECTION (automatic
+                # in perceive.py) — none of which requires tool calls.
+                system, bus = _boot_system(register_repo_tools=False)
+                system.tool_registry._tools.clear()
 
-        bench = BigCodeBenchBench(
-            system=system, event_bus=bus, subset="hard", split="instruct",
-        )
+                # Save episodic reference before config may null the consolidator.
+                _consolidator = getattr(getattr(system, "agent_loop", None), "consolidator", None)
+                prev_episodic = getattr(_consolidator, "episodic", None)
 
-        report = await bench.run(limit=limit)
-        _print_report(report)
+                if config.label == "baseline":
+                    # Disable pipeline entirely — bare LLM call via legacy path
+                    system.pipeline = None
+                else:
+                    # Apply skip flags to agent_loop AND disable pipeline components
+                    config.apply(system)
+                    if not config.routing and system.pipeline:
+                        system.pipeline.router = None  # Skip classify stage
+                    if not config.memory:
+                        system.agent_loop.consolidator = None
 
-        all_results[config.label] = {
-            "config": dataclasses.asdict(config),
-            "pass_rate": report.pass_rate,
-            "passed": report.passed,
-            "total": report.total,
-            "avg_latency_ms": report.avg_latency_ms,
-            "avg_cost_usd": report.avg_cost_usd,
-            "per_task": [r.passed for r in report.results],  # binary outcomes for stats
-        }
+                bench = BigCodeBenchBench(
+                    system=system, event_bus=bus, subset="hard", split="instruct",
+                    event_ledger=ledger, config_label=config.label,
+                )
+
+                report = await bench.run(limit=limit)
+                _print_report(report)
+
+                all_results[config.label] = {
+                    "config": dataclasses.asdict(config),
+                    "pass_rate": report.pass_rate,
+                    "passed": report.passed,
+                    "total": report.total,
+                    "avg_latency_ms": report.avg_latency_ms,
+                    "avg_cost_usd": report.avg_cost_usd,
+                    "per_task": [r.passed for r in report.results],  # binary outcomes for stats
+                }
+
+                ledger.emit_config_end(
+                    config_label=config.label,
+                    passed=report.passed,
+                    total=report.total,
+                )
+
+            ledger.emit_run_end()
 
     # Print ablation comparison table
     print(f"\n{'=' * 60}")
@@ -366,16 +414,8 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
             print(f"  {pair:<30} p={s['mcnemar_p']:.4f} {sig}  d={s['cohens_d']:+.3f}  CI={s['bootstrap_ci_95']}")
         print()
 
-    # Save combined results
-    if output is None:
-        repo = _repo_root()
-        bench_dir = repo / "docs" / "benchmarks"
-        bench_dir.mkdir(parents=True, exist_ok=True)
-        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        output = str(bench_dir / f"{date_str}-ablation-study.json")
-
-    out_path = Path(output)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
+    # Save combined results. ``out_path`` was resolved earlier so the
+    # event ledger could land alongside it (cycle-9 recovery Step 1).
     out_path.write_text(json.dumps(all_results, indent=2), encoding="utf-8")
     print(f"  Ablation report saved to: {out_path}")
 
