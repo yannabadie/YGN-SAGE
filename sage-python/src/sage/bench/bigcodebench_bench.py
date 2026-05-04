@@ -125,10 +125,39 @@ class BigCodeBenchBench:
         cs["system_routing"] = trace.get("system", 0)
         return cs
 
-    async def run(self, limit: int | None = None) -> BenchReport:
-        """Run BigCodeBench benchmark."""
+    async def run(
+        self,
+        limit: int | None = None,
+        task_ids_filter: list[str] | None = None,
+    ) -> BenchReport:
+        """Run BigCodeBench benchmark.
+
+        Args:
+            limit: Cap number of tasks to run (after task_ids_filter).
+            task_ids_filter: When non-None, run ONLY these task IDs in
+                the dataset's natural order. IDs not present in the
+                dataset are warned and skipped. Cycle-9 recovery α.2:
+                replaces the older --offset/--limit replay pattern for
+                targeted diagnostic experiments.
+        """
         problems = _load_dataset(self.subset)
         task_ids = list(problems.keys())
+        # α.2: filter by explicit task_ids before applying --limit.
+        if task_ids_filter:
+            requested = set(task_ids_filter)
+            kept = [t for t in task_ids if t in requested]
+            missing = [t for t in task_ids_filter if t not in problems]
+            if missing:
+                log.warning(
+                    "task_ids_filter: %d ID(s) not in dataset, skipping: %s",
+                    len(missing), missing,
+                )
+            if not kept:
+                log.warning(
+                    "task_ids_filter: NO matching tasks found in dataset; "
+                    "report will be empty",
+                )
+            task_ids = kept
         if limit:
             task_ids = task_ids[:limit]
 

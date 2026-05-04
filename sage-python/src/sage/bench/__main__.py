@@ -185,7 +185,8 @@ def _clear_a14_topology_state() -> None:
       producing larger topologies → higher per-task cost → drift detector fires
       RESET_AGENT → 120s timeout on every task.
     """
-    import pathlib, time
+    import pathlib
+    import time
     state_dir = pathlib.Path.home() / ".sage"
     for fname in (*_A14_STATE_FILES, *_BENCH_SESSION_FILES):
         p = state_dir / fname
@@ -267,11 +268,30 @@ async def _run_evalplus(
         _save_report(report, bench, output, f"evalplus-{dataset}")
 
 
-async def _run_ablation(output: str | None, limit: int | None) -> None:
+async def _run_ablation(
+    output: str | None,
+    limit: int | None,
+    ablation_configs_filter: list[str] | None = None,
+    task_ids_filter: list[str] | None = None,
+) -> None:
     from sage.bench.ablation import ABLATION_CONFIGS
     from sage.bench.bigcodebench_bench import BigCodeBenchBench
     from sage.bench.event_ledger import BenchEventLedger, build_run_meta
     from sage.bench.keep_awake import prevent_os_sleep
+
+    # Cycle-9 recovery α.1: filter ABLATION_CONFIGS by label for
+    # targeted paired diagnostics. None = all 6, no breaking change.
+    if ablation_configs_filter:
+        known = {c.label for c in ABLATION_CONFIGS}
+        unknown = [lbl for lbl in ablation_configs_filter if lbl not in known]
+        if unknown:
+            raise ValueError(
+                f"--ablation-configs unknown labels: {unknown}; "
+                f"known: {sorted(known)}",
+            )
+        configs_to_run = [c for c in ABLATION_CONFIGS if c.label in ablation_configs_filter]
+    else:
+        configs_to_run = list(ABLATION_CONFIGS)
 
     # Cycle-9 recovery Step 1: append-only event ledger, written
     # alongside the final report JSON. Path is computed early so the
@@ -294,7 +314,9 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         extra={
             "subset": "hard",
             "split": "instruct",
-            "configs": [c.label for c in ABLATION_CONFIGS],
+            "configs": [c.label for c in configs_to_run],
+            "task_ids_filter": task_ids_filter,
+            "ablation_configs_filter": ablation_configs_filter,
         },
     )
 
@@ -315,7 +337,7 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
         with BenchEventLedger(ledger_path, run_meta) as ledger:
             ledger.emit_run_start(keep_awake_issued=bool(keep_awake_issued))
 
-            for config in ABLATION_CONFIGS:
+            for config in configs_to_run:
                 print(f"\n{'#' * 60}")
                 print(f"  ABLATION: {config.label}")
                 print(f"  memory={config.memory} avr={config.avr} "
@@ -365,7 +387,7 @@ async def _run_ablation(output: str | None, limit: int | None) -> None:
                     event_ledger=ledger, config_label=config.label,
                 )
 
-                report = await bench.run(limit=limit)
+                report = await bench.run(limit=limit, task_ids_filter=task_ids_filter)
                 _print_report(report)
 
                 all_results[config.label] = {
@@ -639,6 +661,34 @@ def main() -> None:
         default="fast",
         help="LLM tier for default provider (default: fast). 'reasoner' uses gemini-3.1-pro-preview.",
     )
+    # Cycle-9 recovery α.1: filter ablation configs for targeted
+    # paired diagnostics (e.g. full vs no-guardrails on the same N
+    # tasks). Default None = all 6 configs (no breaking change).
+    parser.add_argument(
+        "--ablation-configs",
+        type=str,
+        default=None,
+        help=(
+            "Ablation: comma-separated list of config labels to run "
+            "(default: all). Choices: full,baseline,no-memory,no-avr,"
+            "no-routing,no-guardrails. Example: --ablation-configs "
+            "full,no-guardrails for path-attribution diagnostic."
+        ),
+    )
+    # Cycle-9 recovery α.2: filter dataset tasks by task_id for
+    # replay/diagnostic experiments. Useful with --type ablation +
+    # --type bigcodebench. Default None = use --limit logic.
+    parser.add_argument(
+        "--task-ids",
+        type=str,
+        default=None,
+        help=(
+            "BigCodeBench/Ablation: comma-separated task IDs to run "
+            "(default: all from --limit). Example: --task-ids "
+            "'BigCodeBench/82,BigCodeBench/89'. IDs not present in "
+            "dataset are warned and skipped."
+        ),
+    )
     args = parser.parse_args()
 
     _load_env()
@@ -675,7 +725,21 @@ def main() -> None:
         asyncio.run(_run_evalplus(args.output, args.limit, args.dataset, args.official))
 
     if args.type == "ablation":
-        asyncio.run(_run_ablation(args.output, args.limit))
+        # Cycle-9 recovery α: parse comma-separated --ablation-configs and
+        # --task-ids into lists; pass-through (None) preserves prior behavior.
+        _abl_filter = (
+            [s.strip() for s in args.ablation_configs.split(",") if s.strip()]
+            if args.ablation_configs else None
+        )
+        _tid_filter = (
+            [s.strip() for s in args.task_ids.split(",") if s.strip()]
+            if args.task_ids else None
+        )
+        asyncio.run(_run_ablation(
+            args.output, args.limit,
+            ablation_configs_filter=_abl_filter,
+            task_ids_filter=_tid_filter,
+        ))
 
     if args.type == "routing_gt":
         from sage.bench.routing_ground_truth import run_routing_gt
