@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-2948%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-2953%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -312,7 +312,7 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **2948 collected** (cycle-11 P6-B AgentLoop bypass lock, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
+| Python (`sage-python`) | **2953 collected** (cycle-11 P4 coupling test + P6-B bypass lock, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
 | Rust (`sage-core`) | **553 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | `.github/workflows/ci.yml` runs 10 jobs (`build-wasm-sandbox`, `python-constraints`, `rust`, `otel-bridge`, `otel-bridge-windows`, `rust-features`, `python-sage`, `python-discover`, `windows-pytest`, `integration-smoke`) + 3 supporting workflows (`security.yml` pip-audit/SBOM, `latest-deps.yml` weekly drift, `stochastic-empirical.yml` scheduled). |

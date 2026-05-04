@@ -1,12 +1,12 @@
 {
-  "generated_at_utc": "2026-05-04T19:30:00+00:00",
+  "generated_at_utc": "2026-05-04T20:00:00+00:00",
   "git": {
     "branch": "main",
-    "commit_sha": "3c6df4b2",
-    "dirty": false,
-    "note": "Re-stamped at HEAD 3c6df4b2 (cycle-11 Phase 2 sage-router retire). Counts unchanged from P6-B collection at 450786a5: sage-router/ deletion is a non-test repo cleanup (the package was never part of pytest discovery rooted at sage-python/tests/). The previous lag where commit_sha=450786a5 vs HEAD=31dc2607 was flagged by cgpro round-5; closed here in the same forward direction (commit_sha bumped to current HEAD)."
+    "commit_sha": "PENDING_P4_COUPLING_COMMIT",
+    "dirty": true,
+    "note": "Pre-stamp before cycle-11 P4 coupling unit test commit. Working tree dirty: tests/test_pipeline_topology_skip_guardrails_decoupling.py (NEW, 4 tests) + this file. Will be bumped to the actual commit_sha at push."
   },
-  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. Cycle-11 Phase 2 (sage-router retire, commit 3c6df4b2): 2948 Python tests, 553 Rust tests, 100 sage-discover tests — all unchanged from the cycle-11 P6-B collection at 450786a5 because sage-router/ never registered with pytest. Cycle-11 P6-B (450786a5): +5 Python over cycle-10 closure 2943 (1e19bfae). Cycle-10 closure brought 2940 → 2943 (+3 P7 SAGE_QUALITY_ONNX gate). Cycle-9 closure brought 2907 → 2940 (+33).",
+  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. Cycle-11 P4 coupling test (this commit): +5 Python over Phase 2 closure 2948 (3c6df4b2). New file test_pipeline_topology_skip_guardrails_decoupling.py (5 tests including a source-inspection guard added per cgpro VERIFY round) locks the code-level invariant that _stage_select_topology and _is_single_agent_execution are deterministic functions of (dag_features, system, domain, ctx.topology shape) — independent of skip_guardrails. Refutes the morning N=8 'topology coupling' narrative at the code level. Cycle-11 Phase 2 (3c6df4b2): -1503 LOC sage-router/, no test count change. Cycle-11 P6-B (450786a5): +5 Python over cycle-10 closure 2943 (1e19bfae). Cycle-10 closure brought 2940 → 2943 (+3 P7 SAGE_QUALITY_ONNX gate). Cycle-9 closure brought 2907 → 2940 (+33). Open follow-up (cgpro VERIFY 2026-05-04 Q3): A14 posterior-state test isolation — `test_pipeline.py + test_pipeline_bypass.py + test_pipeline_stages.py` together leak A14 state files without a matching posterior_epoch.json, causing 2 test_system_run_* failures under multi-file runs (passes 9/9 in isolation). Tracked but NOT blocking P4.",
   "sage_core_tests": {
     "available": true,
     "features": "smt,cognitive,sandbox,cranelift,tool-executor",
@@ -19,7 +19,7 @@
   },
   "sage_python_tests": {
     "available": true,
-    "total": 2948
+    "total": 2953
   },
   "schema_version": "v1"
 }
