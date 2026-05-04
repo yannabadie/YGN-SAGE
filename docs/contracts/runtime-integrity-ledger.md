@@ -4,9 +4,9 @@
 
 After cycle-7 + cycle-8 R6.1c + cycle-8 A14 + cycle-9 A14b, YGN-SAGE has accreted 6 invariant-binding mechanisms across `sage-python/src/sage/runtime/`, `sage-python/src/sage/`, and `sage-core/src/topology/`. They are **conceptually a Runtime Integrity subsystem** but **physically distributed** to keep coupling local. This ledger is the cross-reference contract.
 
-## The 6 invariants
+## The 7 invariants
 
-Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 contract drift, cycle-8 R6.1c raw-leak vs audit policy drift, cycle-8 A14 epoch ≠ provenance): **any label that authorizes a side-effect or learning decision must be bound to verified content, schema, provenance, or executable proof.**
+Pattern that emerged from 4 cycles of "declared ≠ verified" traps (cycle-7 contract drift, cycle-8 R6.1c raw-leak vs audit policy drift, cycle-8 A14 epoch ≠ provenance, cycle-9 A3 timeout enforcement under host suspend): **any label that authorizes a side-effect or learning decision must be bound to verified content, schema, provenance, or executable proof.**
 
 | Invariant | Declared label | Verified content | Side-effect blocked if invalid |
 |---|---|---|---|
@@ -16,6 +16,7 @@ Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 con
 | **Contaminated backup** | `_CONTAMINATED.json.contaminated=true` (operator-readable poison-pill) | `audit_dump_sha256` cross-reference to immutable audit MANIFEST.json | normal load (any contaminated marker present in active state dir = fail-closed) |
 | **RunFrame summary** | `run_frame_summary.payload.parent_event_id` | `final_result.seq` consistency (parent_event_id == final_result.seq) | diagnostic trust (downstream `path_e_validate` event-order check) |
 | **Bandit attribution** | `bandit_decision_id` from Stage-0 `SystemRouter.route_integrated()` | `SystemRouter.record_outcome_checked()` verifies pending `(model_id, template)` against executed `(model_id, template)` | bandit posterior update (mismatch emits `bandit_attribution_mismatch` and skips recording) |
+| **Timeout enforcement** | per-task `timeout_s` declared at bench config + bound to `asyncio.wait_for(timeout=...)` | `elapsed_wall_ms <= timeout_s × grace_factor` (wall-clock measured via `time.time()`, which advances during OS suspend; default `grace_factor=2.0`) | pass-rate aggregation (tasks with `host_suspend_or_event_loop_stall=true` emit `TASK_ABORT reason=host_suspend_detected` and are excluded from gate-quality stats); the run is marked non-gate-quality |
 
 ## Module cross-reference
 
@@ -27,10 +28,11 @@ Pattern that emerged from 3 cycles of "declared ≠ verified" traps (cycle-7 con
 | Contaminated backup | `sage/ops/a14_reset.py` | n/a (Python ops surface) | `tests/test_a14_reset.py` |
 | RunFrame summary | `sage/runtime/run_frame/__init__.py` | n/a | `tests/test_run_frame.py` |
 | Bandit attribution | `sage/pipeline.py`, `sage/runtime/event_log/payload_schemas.py` | `sage-core/src/routing/system_router.rs` | `tests/test_pipeline_bandit_causality.py`, `system_router::tests::test_record_outcome_checked_*` |
+| Timeout enforcement | `sage/bench/watchdog.py`, `sage/bench/event_ledger.py`, `sage/bench/bigcodebench_bench.py:run` | n/a (suspend is host-OS, not Rust; `sage/bench/keep_awake.py` is the Windows-side mitigation) | `tests/test_bench_watchdog.py` (7), `tests/test_event_ledger.py::test_task_abort_event_marks_excluded`, `tests/test_bench_host_suspend_integration.py` (end-to-end, γ.2) |
 
 ## Boundary against accidental coupling
 
-These 6 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
+These 7 invariants are **conceptually a family** but **physically deliberately not consolidated** under a single `sage/runtime/integrity/` umbrella. Reason (cgpro Q-A verdict 2026-04-30):
 
 > "payload_schemas.py est naturellement couplé à runtime/event_log, tandis que posterior_epoch est naturellement couplé à topology et aux fichiers bandit_state.db, archive_state.db, engine_extras.json. Un refactor physique maintenant créerait surtout churn/import risk sans benchmark gain."
 
@@ -38,11 +40,12 @@ Phase 2 / v0.2 may add re-export aliases (`sage.runtime.integrity.epoch`, `sage.
 
 ## Adversarial threats this ledger defends against
 
-The 3 traps cgpro found at cycle-7/8 round-1 VERIFY rounds, all in the "declared ≠ verified" class:
+The 4 traps surfaced by cgpro across cycle-7 / cycle-8 / cycle-9 VERIFY rounds, all in the "declared ≠ verified" class:
 
 1. **Cycle-7**: `SAGE_ORACLE` declared default-on in code, but `runtime-event-log.md` contract docs still said "ONLY emitted when SAGE_ORACLE=1" (closed at `f3a89631` via stale-phrase lint test).
 2. **Cycle-8 R6.1c round-1**: `controller_decision.payload.reason` declared "safe" (forced under default-on), but redaction layer was credential-only — no allowlist, no PII ban. Audit mode accepts legacy `reason` while raw-leak scanner hard-rejects it (closed at `9944674e + 49648263` via allowlist + Option A doc disclosure).
 3. **Cycle-8 A14 round-1**: `posterior_epoch.json.epoch=1` declared "fresh epoch", but no binding to the actual DB bytes. Operator copy-restoring `bandit_state.db` from contaminated backup left the epoch label valid while the content was poisoned (closed at `f9521616` via `topology_state_manifest.json` SHA-256 binding).
+4. **Cycle-9 A3 N=50 abort 2026-05-04**: per-task `task_timeout=120s` declared and bound to `asyncio.wait_for(timeout=120)`, but Windows Modern Standby S0 DRIPS suspended the asyncio loop along with the process. On wake, BCB/273 reported `elapsed_wall_ms=20278211` (5h 38min) without firing the timeout — the loop's internal timer counts loop ticks, not wall-clock. Closed at commits `b44156e7` (wall-clock watchdog using `time.time()` which advances during suspend) + `0036217b` (per-task `TASK_ABORT reason=host_suspend_detected` event in the bench ledger; tasks above `timeout × grace_factor` are excluded from gate-quality pass-rate). cgpro recovery analysis 2026-05-04 (conv `cgpro_a3_recovery_20260504`).
 
 **Cycle-9+ design principle**: any new "label authorizes side-effect" code path MUST register here with all 4 columns filled BEFORE the side-effect ships. This is the architectural pattern (cgpro 2026-04-30):
 
