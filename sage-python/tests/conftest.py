@@ -97,6 +97,44 @@ def _restore_windows_proactor_policy():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_sage_state_dir():
+    """Wipe ``<HOME>/.sage/`` before each test to prevent A14 cross-test pollution.
+
+    Cycle-11 follow-up to cgpro VERIFY round 2026-05-04 Q3 (commit
+    147ce18e). Tests that boot a real SAGE Pipeline (via ``sage.boot``
+    or directly via ``CognitiveOrchestrationPipeline``) trigger
+    ``pipeline.py:3075`` periodic ``engine.save_state(Path.home() /
+    ".sage")`` on every ``BANDIT_FLUSH_INTERVAL=10`` pipeline.run()
+    call. Without isolation, state files leak into the per-pid
+    ``_PYTEST_HOME`` (set above at conftest module load), so a
+    downstream test's boot sees ``bandit_state.db / archive_state.db /
+    engine_extras.json`` without a matching ``posterior_epoch.json``
+    and fail-closes on the A14 epoch guard (CLAUDE.md directive #8,
+    invariant 3 in ``docs/contracts/runtime-integrity-ledger.md``).
+
+    The fixture is fixture-driven cleanup (per cgpro acceptance
+    criteria), NOT an env-var bypass: ``SAGE_BOOT_BYPASS_EPOCH_GUARD``
+    is and stays explicitly forensic-only per directive #8 — silently
+    flipping it suite-wide would re-introduce the exact "declared
+    label vs verified content" drift directive #9 was written for.
+
+    Tests that legitimately need pre-populated state (e.g.
+    ``test_engine_persistence``, ``test_a14_reset``,
+    ``test_posterior_epoch``, ``test_boot_topology_epoch_guard``)
+    already use their own ``tmp_path`` state dir and are unaffected
+    by this wipe.
+    """
+    sage_dir = Path(os.environ["HOME"]) / ".sage"
+    if sage_dir.exists():
+        shutil.rmtree(sage_dir, ignore_errors=True)
+    yield
+    # Post-test cleanup: leave inspection-friendly state for the very
+    # last test of the session (atexit handler may also write here),
+    # but wipe any residual files BEFORE the next test starts via the
+    # pre-yield branch above. No post-yield cleanup needed.
+
+
 @pytest.fixture
 def tmp_path() -> Path:
     """Repo-local tmp_path replacement for Windows ACL-restricted sandboxes."""
