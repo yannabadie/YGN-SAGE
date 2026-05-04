@@ -137,6 +137,15 @@ async def test_normal_task_emits_task_end(tmp_path: Path) -> None:
     assert end["status"] == "PASS"
     assert end["passed"] is True
     assert end["host_suspend_or_event_loop_stall"] is False
+    # Cycle-9 α post-mortem: control_surface must carry omega/delta/gamma
+    # so future replays can diagnose BCB/82-style topology coupling
+    # (5-node robust → 3-node sequential when _skip_guardrails toggled)
+    # without re-running the whole ablation. Fields can be None when no
+    # pipeline ctx (e.g. mock system here) — but they MUST be present.
+    cs = end["control_surface"]
+    assert "dag_omega" in cs, "control_surface must include AdaptOrch dag_omega"
+    assert "dag_delta" in cs, "control_surface must include AdaptOrch dag_delta"
+    assert "dag_gamma" in cs, "control_surface must include AdaptOrch dag_gamma"
 
 
 @pytest.mark.asyncio

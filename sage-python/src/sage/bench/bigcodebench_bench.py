@@ -123,6 +123,15 @@ class BigCodeBenchBench:
         cs["was_bypassed"] = cs["node_count"] == 0
         cs["domain"] = trace.get("domain", "")
         cs["system_routing"] = trace.get("system", 0)
+        # AdaptOrch DAG features (omega/delta/gamma). Cycle-9 α post-mortem
+        # 2026-05-04 found BCB/82 topology shifts 5→3 nodes when
+        # _skip_guardrails=True; the immediate next question is "which of
+        # omega/delta/gamma diverges?". Capturing them per task makes
+        # future replays diagnose the coupling without rerunning.
+        dag_feats = trace.get("dag_features") or {}
+        cs["dag_omega"] = dag_feats.get("omega")
+        cs["dag_delta"] = dag_feats.get("delta")
+        cs["dag_gamma"] = dag_feats.get("gamma")
         return cs
 
     async def run(
