@@ -188,11 +188,29 @@ impl MutationResult {
         matches!(self, Self::Invalid(_))
     }
 
-    /// Unwrap the successful topology, panicking if invalid.
-    pub fn unwrap(self) -> TopologyGraph {
+    /// Convert into the successful topology, returning `Err(reason)` if invalid.
+    ///
+    /// Cycle-10 P1 (cgpro+advisor 2026-05-04): replaces the prior
+    /// `unwrap()` API which panicked on `Invalid`. Production call sites
+    /// in `engine.rs` and `mcts.rs` already match `Invalid(_)` cleanly,
+    /// so the panic was never reachable there — but `MutationResult::unwrap`
+    /// is an anti-pattern Rust API and was a foot-gun for any new caller.
+    pub fn try_into_graph(self) -> Result<TopologyGraph, String> {
+        match self {
+            Self::Success(g) => Ok(g),
+            Self::Invalid(msg) => Err(msg),
+        }
+    }
+
+    /// Test-only helper that panics on `Invalid`. Same semantics as the
+    /// previous `unwrap()` API; kept for ergonomics in unit tests where
+    /// failure should abort the test, not be propagated. Do NOT call
+    /// from runtime code — use `try_into_graph()` instead.
+    #[cfg(test)]
+    pub fn expect_valid(self) -> TopologyGraph {
         match self {
             Self::Success(g) => g,
-            Self::Invalid(msg) => panic!("called unwrap on Invalid: {}", msg),
+            Self::Invalid(msg) => panic!("expect_valid called on Invalid: {}", msg),
         }
     }
 }
@@ -1063,7 +1081,7 @@ mod tests {
         // model_id "test" to pass capability check
         let result = add_node(graph, "aggregator", "test", 1);
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
-        let new_graph = result.unwrap();
+        let new_graph = result.expect_valid();
         assert_eq!(new_graph.node_count(), original_count + 1);
     }
 
@@ -1073,7 +1091,7 @@ mod tests {
         assert_eq!(graph.node_count(), 3);
         let result = remove_node(graph, 1); // remove middle node
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
-        let new_graph = result.unwrap();
+        let new_graph = result.expect_valid();
         assert_eq!(new_graph.node_count(), 2);
     }
 
@@ -1082,7 +1100,7 @@ mod tests {
         let graph = make_sequential();
         let result = swap_model(graph, 0, "gpt-5.3-codex");
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
-        let new_graph = result.unwrap();
+        let new_graph = result.expect_valid();
         let node = new_graph.try_get_node(0).unwrap();
         assert_eq!(node.model_id, "gpt-5.3-codex");
     }
@@ -1092,7 +1110,7 @@ mod tests {
         let graph = make_sequential();
         let result = mutate_prompt(graph, 0, "super_coder");
         assert!(result.is_success(), "Expected Success, got: {:?}", result);
-        let new_graph = result.unwrap();
+        let new_graph = result.expect_valid();
         let node = new_graph.try_get_node(0).unwrap();
         assert_eq!(node.role, "super_coder");
     }
@@ -1104,5 +1122,39 @@ mod tests {
         let result = apply_random_mutation(graph, &mut rng);
         // Either Success or Invalid — should not panic.
         assert!(result.is_success() || result.is_invalid());
+    }
+
+    /// Cycle-10 P1 regression (cgpro+advisor 2026-05-04): the previous
+    /// `MutationResult::unwrap()` API panicked on `Invalid`. Production
+    /// callers in `engine.rs` and `mcts.rs` use `match` so they were
+    /// not affected, but the panic-on-Invalid was a foot-gun for any
+    /// new caller. The replacement `try_into_graph()` returns
+    /// `Err(reason)` instead of panicking.
+    #[test]
+    fn test_invalid_mutation_does_not_panic_in_runtime_path() {
+        // Build an Invalid result directly (no need to trigger via
+        // mutation engine — we're testing the result type contract).
+        let invalid: MutationResult = MutationResult::Invalid(
+            "synthetic invalid for runtime-path regression test".to_string(),
+        );
+        // Runtime API: try_into_graph returns Err, never panics.
+        let outcome = invalid.try_into_graph();
+        assert!(outcome.is_err());
+        assert!(
+            outcome.unwrap_err().contains("synthetic invalid"),
+            "error message should propagate the validation reason",
+        );
+    }
+
+    /// Cycle-10 P1 regression: verify `try_into_graph()` succeeds on
+    /// `Success` and yields the wrapped graph (no behavioral change vs
+    /// the legacy `expect_valid()` for the success path).
+    #[test]
+    fn test_try_into_graph_success_path() {
+        let graph = make_sequential();
+        let original_count = graph.node_count();
+        let success: MutationResult = MutationResult::Success(graph);
+        let g = success.try_into_graph().expect("Success path must yield graph");
+        assert_eq!(g.node_count(), original_count);
     }
 }

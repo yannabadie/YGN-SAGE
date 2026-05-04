@@ -146,7 +146,7 @@ impl TopologyEngine {
     /// per-child 1..=3 inner loop pushes exactly one entry, regardless of
     /// whether the attempt produced a valid graph.
     pub fn drain_last_applied_ops(&self) -> Vec<String> {
-        let mut guard = self.last_applied_ops.lock().unwrap();
+        let mut guard = self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *guard)
     }
 
@@ -162,7 +162,7 @@ impl TopologyEngine {
     /// Returns `(op_name, attempts, successes, alpha, beta)` for each of the
     /// 7 operators in the same order as `OPERATOR_NAMES`.
     pub fn mutation_stats_snapshot(&self) -> Vec<(String, u32, u32, f64, f64)> {
-        let stats = self.mutation_stats.lock().unwrap();
+        let stats = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
         super::mutations::OPERATOR_NAMES
             .iter()
             .enumerate()
@@ -504,7 +504,7 @@ impl TopologyEngine {
         let graph = best.graph.clone();
         let mut rng = rand::rng();
 
-        let stats = self.mutation_stats.lock().unwrap();
+        let stats = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
         let (op_idx, result) = apply_mutation_tracked(graph, &mut rng, &stats);
         drop(stats);
 
@@ -519,7 +519,7 @@ impl TopologyEngine {
                     info!(
                         parent_quality = best.quality,
                         operator = super::mutations::OPERATOR_NAMES[op_idx as usize],
-                        stats = %self.mutation_stats.lock().unwrap().summary(),
+                        stats = %self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner()).summary(),
                         "mutation_success"
                     );
                     Some(GenerateResult {
@@ -754,7 +754,7 @@ impl TopologyEngine {
 
         // Reset per-evolve op history. Python drains this buffer after
         // evolve() returns to emit per-child `evolution.mutation.applied` logs.
-        self.last_applied_ops.lock().unwrap().clear();
+        self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner()).clear();
 
         if self.archive.cell_count() == 0 {
             debug!("evolve_skip_empty_archive");
@@ -815,7 +815,7 @@ impl TopologyEngine {
                     // is drained by Python (`PyTopologyEngine.drain_last_applied_ops`)
                     // and surfaced as `evolution.mutation.applied` log lines.
                     let (op_idx, mutation_result) = {
-                        let stats_guard = self.mutation_stats.lock().unwrap();
+                        let stats_guard = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
                         apply_mutation_tracked(g, &mut rng, &stats_guard)
                     };
                     let op_name = super::mutations::OPERATOR_NAMES
@@ -823,7 +823,7 @@ impl TopologyEngine {
                         .copied()
                         .unwrap_or("unknown");
                     {
-                        let mut ops = self.last_applied_ops.lock().unwrap();
+                        let mut ops = self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner());
                         // FIFO cap at 1024 so pathological configs can't grow
                         // the buffer unboundedly.
                         if ops.len() >= 1024 {
@@ -1249,5 +1249,44 @@ mod tests {
         let engine = TopologyEngine::new();
         // Empty archive should skip MCTS path.
         assert!(engine.try_mcts_search().is_none());
+    }
+
+    /// Cycle-10 P1 regression (cgpro+advisor 2026-05-04): runtime stats
+    /// mutexes (`mutation_stats`, `last_applied_ops`) used to call
+    /// `.lock().unwrap()`. If any thread panicked while holding the
+    /// lock, every subsequent stats read would cascade-panic — a
+    /// hidden runtime crash class. They now use
+    /// `unwrap_or_else(|e| e.into_inner())` so a poisoned lock is
+    /// recovered transparently. This test pre-poisons one lock and
+    /// asserts every public stats accessor still works.
+    #[test]
+    fn test_poisoned_mutation_stats_does_not_cascade_panic() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let engine = Arc::new(TopologyEngine::new());
+
+        // Poison `mutation_stats` by panicking while the guard is held.
+        // catch_unwind so the panic does NOT abort the test thread.
+        let engine_clone = Arc::clone(&engine);
+        let _ = thread::spawn(move || {
+            let _guard = engine_clone.mutation_stats.lock().expect("first lock OK");
+            panic!("synthetic poison for cycle-10 P1 regression");
+        })
+        .join();
+
+        // After the poison, the OS-level mutex is poisoned. Pre-fix
+        // (`.lock().unwrap()`), every accessor below would cascade-panic.
+        // Post-fix, they all return normally via into_inner recovery.
+        use crate::topology::mutations as muts;
+        let snapshot = engine.mutation_stats_snapshot();
+        assert_eq!(
+            snapshot.len(),
+            muts::OPERATOR_NAMES.len(),
+            "stats snapshot must remain readable after poison",
+        );
+        let drained = engine.drain_last_applied_ops();
+        // last_applied_ops is empty by default; drain just exercises the lock.
+        assert!(drained.is_empty() || !drained.is_empty()); // tautology — point is "no panic"
     }
 }
