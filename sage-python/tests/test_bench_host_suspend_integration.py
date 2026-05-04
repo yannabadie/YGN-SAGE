@@ -146,6 +146,13 @@ async def test_normal_task_emits_task_end(tmp_path: Path) -> None:
     assert "dag_omega" in cs, "control_surface must include AdaptOrch dag_omega"
     assert "dag_delta" in cs, "control_surface must include AdaptOrch dag_delta"
     assert "dag_gamma" in cs, "control_surface must include AdaptOrch dag_gamma"
+    # Cycle-9 α post-mortem 2026-05-04 (cgpro): the executed_template field
+    # used to be the ULID topology_id, not the template name. Pin the
+    # contract: control_surface MUST have separate topology_id + selected_template
+    # + executed_template fields (values may be empty when no pipeline ctx).
+    assert "topology_id" in cs, "control_surface must include ULID topology_id"
+    assert "selected_template" in cs, "control_surface must include selected_template"
+    assert "executed_template" in cs, "control_surface must include executed_template"
 
 
 @pytest.mark.asyncio

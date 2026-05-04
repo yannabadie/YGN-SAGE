@@ -4,9 +4,9 @@
 
 After cycle-7 + cycle-8 R6.1c + cycle-8 A14 + cycle-9 A14b, YGN-SAGE has accreted 6 invariant-binding mechanisms across `sage-python/src/sage/runtime/`, `sage-python/src/sage/`, and `sage-core/src/topology/`. They are **conceptually a Runtime Integrity subsystem** but **physically distributed** to keep coupling local. This ledger is the cross-reference contract.
 
-## The 7 invariants
+## The 8 invariants
 
-Pattern that emerged from 4 cycles of "declared ≠ verified" traps (cycle-7 contract drift, cycle-8 R6.1c raw-leak vs audit policy drift, cycle-8 A14 epoch ≠ provenance, cycle-9 A3 timeout enforcement under host suspend): **any label that authorizes a side-effect or learning decision must be bound to verified content, schema, provenance, or executable proof.**
+Pattern that emerged from 5 cycles of "declared ≠ verified" traps (cycle-7 contract drift, cycle-8 R6.1c raw-leak vs audit policy drift, cycle-8 A14 epoch ≠ provenance, cycle-9 A3 timeout enforcement under host suspend, cycle-9 α telemetry blank-field self-deception): **any label that authorizes a side-effect or learning decision must be bound to verified content, schema, provenance, or executable proof.**
 
 | Invariant | Declared label | Verified content | Side-effect blocked if invalid |
 |---|---|---|---|
@@ -17,6 +17,7 @@ Pattern that emerged from 4 cycles of "declared ≠ verified" traps (cycle-7 con
 | **RunFrame summary** | `run_frame_summary.payload.parent_event_id` | `final_result.seq` consistency (parent_event_id == final_result.seq) | diagnostic trust (downstream `path_e_validate` event-order check) |
 | **Bandit attribution** | `bandit_decision_id` from Stage-0 `SystemRouter.route_integrated()` | `SystemRouter.record_outcome_checked()` verifies pending `(model_id, template)` against executed `(model_id, template)` | bandit posterior update (mismatch emits `bandit_attribution_mismatch` and skips recording) |
 | **Timeout enforcement** | per-task `timeout_s` declared at bench config + bound to `asyncio.wait_for(timeout=...)` | `elapsed_wall_ms <= timeout_s × grace_factor` (wall-clock measured via `time.time()`, which advances during OS suspend; default `grace_factor=2.0`) | pass-rate aggregation (tasks with `host_suspend_or_event_loop_stall=true` emit `TASK_ABORT reason=host_suspend_detected` and are excluded from gate-quality stats); the run is marked non-gate-quality |
+| **Control-surface completeness** | bench `TASK_END.control_surface` claims topology mechanism (`executed_template`, `node_count`, `selected_template`) | when `node_count > 0`, `executed_template` MUST be non-empty AND `dag_features.{omega,delta,gamma}` MUST be present | "topology X → topology Y" mechanism claims (a blank `executed_template` invalidates any robust-vs-sequential narrative); downstream replay analysis must reject ledger entries failing this contract |
 
 ## Module cross-reference
 
@@ -29,6 +30,7 @@ Pattern that emerged from 4 cycles of "declared ≠ verified" traps (cycle-7 con
 | RunFrame summary | `sage/runtime/run_frame/__init__.py` | n/a | `tests/test_run_frame.py` |
 | Bandit attribution | `sage/pipeline.py`, `sage/runtime/event_log/payload_schemas.py` | `sage-core/src/routing/system_router.rs` | `tests/test_pipeline_bandit_causality.py`, `system_router::tests::test_record_outcome_checked_*` |
 | Timeout enforcement | `sage/bench/watchdog.py`, `sage/bench/event_ledger.py`, `sage/bench/bigcodebench_bench.py:run` | n/a (suspend is host-OS, not Rust; `sage/bench/keep_awake.py` is the Windows-side mitigation) | `tests/test_bench_watchdog.py` (7), `tests/test_event_ledger.py::test_task_abort_event_marks_excluded`, `tests/test_bench_host_suspend_integration.py` (end-to-end, γ.2) |
+| Control-surface completeness | `sage/bench/bigcodebench_bench.py:_capture_control_surface` (consumer), `sage/pipeline.py` `BenchContext.executed_template` / `bandit_template` / `topology_id` / `dag_features` (producer) | n/a (bench-layer contract; pipeline ctx fields are populated by Stage 2/3) | `tests/test_bench_host_suspend_integration.py::test_normal_task_emits_task_end` (asserts `topology_id` / `selected_template` / `executed_template` / `dag_omega/delta/gamma` are present in `control_surface`) |
 
 ## Boundary against accidental coupling
 
@@ -46,6 +48,7 @@ The 4 traps surfaced by cgpro across cycle-7 / cycle-8 / cycle-9 VERIFY rounds, 
 2. **Cycle-8 R6.1c round-1**: `controller_decision.payload.reason` declared "safe" (forced under default-on), but redaction layer was credential-only — no allowlist, no PII ban. Audit mode accepts legacy `reason` while raw-leak scanner hard-rejects it (closed at `9944674e + 49648263` via allowlist + Option A doc disclosure).
 3. **Cycle-8 A14 round-1**: `posterior_epoch.json.epoch=1` declared "fresh epoch", but no binding to the actual DB bytes. Operator copy-restoring `bandit_state.db` from contaminated backup left the epoch label valid while the content was poisoned (closed at `f9521616` via `topology_state_manifest.json` SHA-256 binding).
 4. **Cycle-9 A3 N=50 abort 2026-05-04**: per-task `task_timeout=120s` declared and bound to `asyncio.wait_for(timeout=120)`, but Windows Modern Standby S0 DRIPS suspended the asyncio loop along with the process. On wake, BCB/273 reported `elapsed_wall_ms=20278211` (5h 38min) without firing the timeout — the loop's internal timer counts loop ticks, not wall-clock. Closed at commits `b44156e7` (wall-clock watchdog using `time.time()` which advances during suspend) + `0036217b` (per-task `TASK_ABORT reason=host_suspend_detected` event in the bench ledger; tasks above `timeout × grace_factor` are excluded from gate-quality pass-rate). cgpro recovery analysis 2026-05-04 (conv `cgpro_a3_recovery_20260504`).
+5. **Cycle-9 α telemetry self-deception 2026-05-04**: bench `control_surface.executed_template` was sourced from `trace.topology_id` (which is a ULID, e.g. `01KQQM93`) instead of the actual template name from `BenchContext.executed_template` / `bandit_template`. The α paired diagnostic ledger reported `node_count: 5 → 3` for BCB/82 between configs (true), then the post-hoc analysis claimed `robust → sequential` (NOT supported by the ledger because `executed_template` was always empty). cgpro round-2 review 2026-05-04 caught this: "executed_template is empty in both records. The data supports '5-node topology → 3-node topology', not specifically 'robust → sequential' unless you have a second source outside this NDJSON." Closed at commit (this PR) by routing `bigcodebench_bench.py` `trace` capture to `ctx.executed_template` and `ctx.bandit_template` directly + adding the `Control-surface completeness` invariant above. The α post-mortem analysis at `.tmp/paired_diagnostic_n8_analysis.md` was relabeled non-gate.
 
 **Cycle-9+ design principle**: any new "label authorizes side-effect" code path MUST register here with all 4 columns filled BEFORE the side-effect ships. This is the architectural pattern (cgpro 2026-04-30):
 

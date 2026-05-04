@@ -117,8 +117,16 @@ class BigCodeBenchBench:
             cs["controller_attached"] = False
             cs["router_active"] = False
             cs["llm_tier"] = ""
-        # Already-captured fields from trace
-        cs["executed_template"] = trace.get("topology_id", "")
+        # Already-captured fields from trace.
+        # Cycle-9 α post-mortem 2026-05-04 (cgpro): the prior code mapped
+        # control_surface.executed_template ← trace.topology_id (a ULID
+        # like "01KQQM93") which made the field useless for any
+        # "robust → sequential" claim. Now we propagate the actual
+        # template-name fields plus keep topology_id as a separate field
+        # for trace correlation.
+        cs["topology_id"] = trace.get("topology_id", "")  # ULID for correlation
+        cs["selected_template"] = trace.get("selected_template", "")  # bandit pick
+        cs["executed_template"] = trace.get("executed_template", "")  # actual run
         cs["node_count"] = int(trace.get("topology_nodes", 0) or 0)
         cs["was_bypassed"] = cs["node_count"] == 0
         cs["domain"] = trace.get("domain", "")
@@ -346,7 +354,14 @@ class BigCodeBenchBench:
                         trace = {
                             "system": ctx.system,
                             "domain": ctx.domain,
-                            "topology_id": ctx.topology_id,
+                            "topology_id": ctx.topology_id,  # ULID (e.g. "01KQQM93")
+                            # Cycle-9 α post-mortem 2026-05-04 (cgpro):
+                            # bigcodebench bench was capturing topology_id (ULID)
+                            # then storing it under control_surface.executed_template,
+                            # which made the field useless for "which template ran"
+                            # claims. Capture the actual template name fields too.
+                            "selected_template": str(getattr(ctx, "bandit_template", "") or ""),
+                            "executed_template": str(getattr(ctx, "executed_template", "") or ""),
                             "topology_nodes": (
                                 ctx.topology.node_count()
                                 if ctx.topology and hasattr(ctx.topology, "node_count")
