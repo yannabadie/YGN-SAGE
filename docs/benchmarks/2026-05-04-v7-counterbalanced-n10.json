@@ -66,5 +66,13 @@
         }
       }
     }
+  },
+  "_methodology": {
+    "paired": true,
+    "counterbalanced": false,
+    "config_order": ["full", "no-guardrails"],
+    "task_set_label": "v7_n10_reference",
+    "caveat": "Filename retains 'counterbalanced' from cycle-10 P4 plan, but the actual run executed configs sequentially (full first, then no-guardrails) — NOT alternated per-task. True per-task counterbalancing is cycle-11 work (modify bench/__main__.py:_run_ablation to support a mirror-mode pass). The result is sufficient for the binary 'did the v7 4/10→7/10 gap reproduce?' question (it did not), but is not gate-quality for asserting order-effects are absent.",
+    "added_by": "cycle-10 closure hot-fix per cgpro 2026-05-04 round-3 review (Q6 drift #3 on filename)"
   }
 }

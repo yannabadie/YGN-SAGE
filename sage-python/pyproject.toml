@@ -1,11 +1,21 @@
 [project]
 name = "ygn-sage"
 version = "0.1.0"
-description = "Agent Development Kit with 5 cognitive pillars: Topology, Tools, Memory, Evolution, Strategy"
+description = "Verified Adaptive Orchestration Runtime — Research Preview multi-agent topology runtime with evidence-gated learning (OracleStack default-on, runtime integrity ledger)"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "Yann Abadie" }]
-keywords = ["agents", "llm", "routing", "topology", "multi-agent"]
+keywords = [
+    "agents",
+    "llm",
+    "routing",
+    "topology",
+    "multi-agent",
+    "verified-runtime",
+    "oracle-gated-learning",
+    "evidence-producers",
+    "runtime-integrity",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",

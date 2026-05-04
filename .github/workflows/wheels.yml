@@ -38,21 +38,27 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             python: "3.12"
+            manylinux: "2014"
           - target: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
             python: "3.13"
+            manylinux: "2014"
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             python: "3.12"
+            manylinux: "auto"
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
             python: "3.13"
+            manylinux: "auto"
           - target: aarch64-apple-darwin
             runner: macos-14  # Apple Silicon (M1/M2)
             python: "3.12"
+            manylinux: "auto"
           - target: aarch64-apple-darwin
             runner: macos-14
             python: "3.13"
+            manylinux: "auto"
 
     steps:
       - uses: actions/checkout@v4
@@ -105,11 +111,21 @@ jobs:
         with:
           working-directory: sage-core
           target: ${{ matrix.target }}
-          args: --release --strip --out dist
+          # cycle-10 hot-fix (cgpro 2026-05-04 closure review):
+          # manylinux2014 must be explicit on Linux runs or the Linux
+          # wheel gets tagged `linux_x86_64` (rejected by PyPI for
+          # broad install) instead of `manylinux2014_x86_64`. On
+          # Windows/macOS, `manylinux: auto` is a no-op (maturin
+          # ignores it for non-Linux targets).
+          manylinux: ${{ matrix.manylinux }}
+          # `-i python${{ matrix.python }}` forces maturin to target
+          # the matrix-specified interpreter inside the manylinux
+          # container (where actions/setup-python doesn't apply).
           # Default features come from sage-core/pyproject.toml
           # [tool.maturin].features = ["sandbox", "cranelift", "tool-executor",
           # "cognitive"]. The maturin-action invocation does not append
           # extra --features so the pyproject defaults apply verbatim.
+          args: --release --strip --out dist -i python${{ matrix.python }}
 
       - name: Build wheel (with smt + onnx, heavier)
         if: ${{ inputs.include_smt_onnx }}
@@ -117,7 +133,8 @@ jobs:
         with:
           working-directory: sage-core
           target: ${{ matrix.target }}
-          args: --release --strip --out dist --features smt,onnx,sandbox,cranelift,tool-executor,cognitive
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --strip --out dist -i python${{ matrix.python }} --features smt,onnx,sandbox,cranelift,tool-executor,cognitive
 
       - name: List artifacts
         shell: bash
@@ -141,10 +158,21 @@ jobs:
           "$VENV_BIN/python" -m pip install sage-core/dist/*.whl
           "$VENV_BIN/python" -c "
           import sage_core
-          # Cycle-10 P5 smoke: assert the public PyO3 surface is importable
-          # without ygn-sage glue. If sage_core.* fails here, the wheel
-          # is broken regardless of how the matrix labels its result.
+          # Cycle-10 P5 smoke (cgpro 2026-05-04 closure hot-fix #3):
+          # the previous smoke list used HybridVerifier/LtlVerifier as
+          # smt-gated probes — both wrong:
+          # - The Rust pyclass is `PyHybridVerifier` (no #[pyclass(name =)]
+          #   rename), so 'HybridVerifier' was always-absent regardless
+          #   of features.
+          # - LtlVerifier doesn't exist; the Rust types are LtlResult and
+          #   GraphPropertyChecker (renamed per ADR-014), both always-on
+          #   (NOT smt-gated).
+          # Real smt-gated pyclasses: SmtVerifier, SmtVerificationResult,
+          # QualityLabeler, QualityLabel.
           #
+          # Verified against sage-core/src/lib.rs (m.add_class lines 84,
+          # 103, 104, 113, 114, 115) at HEAD post-cycle-10.
+
           # Symbols required for the DEFAULT wheel (per
           # sage-core/pyproject.toml [tool.maturin].features =
           # sandbox + cranelift + tool-executor + cognitive):
@@ -152,22 +180,38 @@ jobs:
               'TopologyEngine', 'SystemRouter', 'ContextualBandit',
               'ModelAssigner', 'ModelRegistry', 'MultiViewMMU',
               'WorkingMemory', 'ToolExecutor',
+              # Verifiers (always-on, no smt feature required)
+              'PyHybridVerifier',     # raw pyclass name; not aliased
+              'VerificationResult',
+              'GraphPropertyChecker', # renamed from LtlVerifier per ADR-014
+              'LtlResult',
           ]
           missing = [s for s in default_required if not hasattr(sage_core, s)]
           assert not missing, f'sage_core wheel missing default symbols: {missing}'
-          # 'smt'-gated symbols (oxiz dep, opt-in): HybridVerifier, LtlVerifier
-          # In the default wheel they MUST be absent. In the inputs.include_smt_onnx
-          # variant they MUST be present.
-          smt_symbols = ['HybridVerifier', 'LtlVerifier']
-          present_smt = [s for s in smt_symbols if hasattr(sage_core, s)]
+          # smt-gated pyclasses (oxiz dep). In default wheel they MUST be
+          # absent. In include_smt_onnx variant they MUST be present.
+          smt_symbols = ['SmtVerifier', 'SmtVerificationResult']
+          # smt + tool-executor gated (always-on tool-executor, so
+          # quality_labeler activates with smt only on default wheel
+          # which already has tool-executor):
+          smt_te_symbols = ['QualityLabeler', 'QualityLabel']
           want_smt = '${{ inputs.include_smt_onnx }}' == 'true'
-          if want_smt and len(present_smt) != len(smt_symbols):
-              raise AssertionError(f'smt-build wheel missing {set(smt_symbols)-set(present_smt)}')
-          if not want_smt and present_smt:
-              raise AssertionError(f'default wheel must NOT carry smt symbols, got {present_smt}')
+          present_smt = [s for s in smt_symbols if hasattr(sage_core, s)]
+          present_smt_te = [s for s in smt_te_symbols if hasattr(sage_core, s)]
+          if want_smt:
+              if len(present_smt) != len(smt_symbols):
+                  raise AssertionError(f'smt wheel missing {set(smt_symbols)-set(present_smt)}')
+              if len(present_smt_te) != len(smt_te_symbols):
+                  raise AssertionError(f'smt+tool-executor wheel missing {set(smt_te_symbols)-set(present_smt_te)}')
+          else:
+              if present_smt:
+                  raise AssertionError(f'default wheel must NOT carry smt symbols, got {present_smt}')
+              if present_smt_te:
+                  raise AssertionError(f'default wheel must NOT carry quality_labeler symbols, got {present_smt_te}')
           print('sage_core wheel smoke OK on ${{ matrix.target }} py${{ matrix.python }}')
           print(f'  default symbols: {len(default_required)}/{len(default_required)}')
           print(f'  smt symbols: {len(present_smt)}/{len(smt_symbols)} (want={want_smt})')
+          print(f'  qual_labeler: {len(present_smt_te)}/{len(smt_te_symbols)} (want={want_smt})')
           "
 
       - name: Upload wheel artifact

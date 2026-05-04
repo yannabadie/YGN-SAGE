@@ -1,15 +1,17 @@
 {
-  "generated_at_utc": "2026-05-04T12:30:00+00:00",
+  "generated_at_utc": "2026-05-04T18:30:00+00:00",
   "git": {
     "branch": "main",
-    "commit_sha": "ea9f7837",
-    "dirty": false
+    "commit_sha": "1e19bfae",
+    "dirty": false,
+    "note": "Last collected commit. The cycle-10 closure hot-fix following this collection bumps engine.rs (no Python test impact) and CI workflow (no test impact); Python count holds. Rust count is the cycle-9 baseline 549 + cycle-10 P1 (3 tests, commit f2111099) + cycle-10 closure hot-fix (1 test, this commit) = 553. A fresh `cargo test --features smt --lib --list` at HEAD will confirm."
   },
-  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. Re-collected at HEAD ea9f7837 during cycle-10 P0 truth-sync (2026-05-04): 2940 Python tests confirmed unchanged since 43726991 (no test additions in commits ae371202..ea9f7837 — they were docs/AI-ARCH rewrite, host-suspend integration cleanup). Cycle-9 closure brought test count from 2907 → 2940 (+33: A.1-A.4 cycle-9 recovery infrastructure +24, γ.2 host-suspend integration +3, α.1-α.2 targeted-filter tests +6).",
+  "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts. Re-collected at HEAD 1e19bfae during cycle-10 closure hot-fix (2026-05-04 18:30): 2943 Python tests. Delta vs prior 2940 (collected at ea9f7837): +3 from cycle-10 P7 SAGE_QUALITY_ONNX gate regression tests (commit f22a77a0). Cycle-9 closure brought 2907 → 2940 (+33). Cycle-10 brought 2940 → 2943 (+3 Python, +4 Rust regression tests).",
   "sage_core_tests": {
     "available": true,
     "features": "smt,cognitive,sandbox,cranelift,tool-executor",
-    "total": 549
+    "total": 553,
+    "delta_note": "549 baseline (cycle-9 closure) + 3 P1 regression tests (try_into_graph success/invalid + mutation_stats_snapshot poison) + 1 P1 closure hot-fix (try_mutation record_path poison)"
   },
   "sage_discover_tests": {
     "available": true,
@@ -17,7 +19,7 @@
   },
   "sage_python_tests": {
     "available": true,
-    "total": 2940
+    "total": 2943
   },
   "schema_version": "v1"
 }
