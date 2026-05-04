@@ -13,7 +13,6 @@ separate refactor (B9); this is the targeted fix.
 """
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -97,6 +96,11 @@ async def test_bypass_path_restores_all_mutated_fields():
     # single-agent bypass block. Everything else short-circuits.
     pipeline = Pipeline.__new__(Pipeline)
     pipeline._agent_loop = _make_loop_with_prior_state()
+    # P6-B (cycle-11) instance state — `Pipeline.__new__` bypasses
+    # `__init__`, so the lazy lock attrs never get set. Inject them so
+    # `_get_agent_loop_bypass_lock` can find the slots and lazily build.
+    pipeline._agent_loop_bypass_lock = None
+    pipeline._agent_loop_bypass_lock_loop = None
     pipeline.bandit = None  # skip bandit arm-selection in _stage_execute
     pipeline.write_gate = _SENTINEL_WRITE_GATE  # matches existing field
     pipeline.provider_pool = None
@@ -148,6 +152,11 @@ async def test_bypass_path_actually_mutates_during_run():
 
     pipeline = Pipeline.__new__(Pipeline)
     pipeline._agent_loop = _make_loop_with_prior_state()
+    # P6-B (cycle-11) instance state — `Pipeline.__new__` bypasses
+    # `__init__`, so the lazy lock attrs never get set. Inject them so
+    # `_get_agent_loop_bypass_lock` can find the slots and lazily build.
+    pipeline._agent_loop_bypass_lock = None
+    pipeline._agent_loop_bypass_lock_loop = None
     pipeline.bandit = None
     pipeline.write_gate = "pipeline-gate-sentinel"
     pipeline.provider_pool = None
@@ -229,6 +238,11 @@ async def test_bypass_path_restores_even_on_exception():
 
     pipeline = Pipeline.__new__(Pipeline)
     pipeline._agent_loop = _make_loop_with_prior_state()
+    # P6-B (cycle-11) instance state — `Pipeline.__new__` bypasses
+    # `__init__`, so the lazy lock attrs never get set. Inject them so
+    # `_get_agent_loop_bypass_lock` can find the slots and lazily build.
+    pipeline._agent_loop_bypass_lock = None
+    pipeline._agent_loop_bypass_lock_loop = None
     pipeline.bandit = None  # skip bandit arm-selection in _stage_execute
     pipeline._agent_loop.run = AsyncMock(side_effect=RuntimeError("boom"))
     pipeline.write_gate = _SENTINEL_WRITE_GATE
