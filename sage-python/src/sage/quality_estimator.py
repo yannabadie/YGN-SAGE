@@ -4,10 +4,20 @@ Quality is either formally verified (Z3 QualityLabeler), model-predicted
 (ONNX, not yet shipped), or unknown (None — bandit abstains from recording).
 When no backend is available, returns None. The controller uses a 0.5 default
 for decision-making (tracked via abstain_count).
+
+Cycle-10 P7 (cgpro_kimi_audit_response_20260504, 2026-05-04): the ONNX
+load path is now gated by ``SAGE_QUALITY_ONNX=1`` to prevent accidental
+activation if someone drops a stray ``quality_estimator_v2.onnx`` file
+into ``models/`` without the corresponding training/runtime contract.
+Default off → runtime always falls through to the Z3 ``QualityLabeler``
+or abstains. Once the ONNX artifact is officially trained and shipped,
+the gate flips to opt-out (or removed). Capability state in root README:
+``planned, not shipped``.
 """
 from __future__ import annotations
 
 import logging
+import os
 
 log = logging.getLogger(__name__)
 
@@ -43,17 +53,31 @@ class QualityEstimator:
     def _try_load_onnx():  # type: ignore[return]
         # Future capability: RustLearnedQualityEstimator from sage_core.
         # ONNX model not shipped; QualityLabeler (SMT) is the active backend.
+        #
+        # Cycle-10 P7 gate: only attempt the ONNX path when the operator
+        # explicitly opts in via SAGE_QUALITY_ONNX=1. This prevents an
+        # accidentally-dropped quality_estimator_v2.onnx from silently
+        # flipping the runtime onto a learned-model path that has not
+        # been validated. Default off → runtime falls through to the
+        # Z3 QualityLabeler or abstains.
+        if os.environ.get("SAGE_QUALITY_ONNX", "").strip().lower() not in ("1", "true", "yes", "on"):
+            return None
         try:
             from sage_core import RustLearnedQualityEstimator  # noqa: F401 — future capability
             from pathlib import Path
             # ONNX model not shipped; QualityLabeler (SMT) is the active backend.
             # When quality_estimator_v2.onnx is trained and placed in models/,
-            # this path will activate automatically.
+            # this path will activate (only with SAGE_QUALITY_ONNX=1 set).
             model_path = Path(__file__).parent.parent.parent / "models" / "quality_estimator_v2.onnx"
             tok_path = Path(__file__).parent.parent.parent / "models" / "tokenizer.json"
             if model_path.exists() and tok_path.exists():
                 return RustLearnedQualityEstimator(str(model_path), str(tok_path))
-        except (ImportError, Exception) as exc:
+            log.info(
+                "QualityEstimator: SAGE_QUALITY_ONNX=1 set but artifact "
+                "missing at %s — falling through to Z3 labeler/abstain",
+                model_path,
+            )
+        except (ImportError, Exception) as exc:  # noqa: BLE001
             log.debug("ONNX quality model not available: %s", exc)
         return None
 

@@ -70,6 +70,7 @@ SAGE_DIFF_VERIFIER_MODE=observe \
 | `SAGE_WASM_CACHE_DIR` | `$HOME/.sage/wasm_python_cache/` | Where the precompiled `.cwasm` artefact lands. |
 | `SAGE_WASM_CACHE_DISABLE` | `0` | When `1`, skip the cache entirely (always recompile, never write). |
 | `SAGE_REQUIRE_WASM` | `0` | **Build-time** flag. When `1`, missing `rustpython.wasm` is a `panic!` instead of a placeholder warning. Set in release/CI builds. |
+| `SAGE_QUALITY_ONNX` | `0` | Cycle-10 P7 (2026-05-04): explicit gate for the `RustLearnedQualityEstimator` ONNX path in `sage-python/src/sage/quality_estimator.py`. Default off → runtime falls through to Z3 `QualityLabeler` or abstains. With `1`, the runtime *attempts* to load `models/quality_estimator_v2.onnx`; if absent, still falls through (no invented score). The gate exists to prevent an accidentally-dropped artifact from silently flipping the runtime onto a learned-model path that has not been validated. ONNX QualityEstimator capability state: `planned, not shipped` (see root README capability table). |
 
 ## DO NOT USE for proving SAGE value
 - HumanEval+ — saturated (99%+ SOTA), measures LLM not framework
