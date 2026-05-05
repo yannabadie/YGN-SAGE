@@ -3066,13 +3066,44 @@ class CognitiveOrchestrationPipeline:
                     pass  # Best-effort, never blocks pipeline
 
             # Bandit + MAP-Elites state persistence (crash-safe, WAL write ~5ms)
+            #
+            # Cycle-11 follow-up (2026-05-05, advisor-flagged 2026-05-04):
+            # symmetric with the atexit handler at boot_topology.py:185.
+            # Both call sites preflight epoch consistency before writing
+            # state so directive #8 (A14 posterior epoch guard is fail-
+            # closed) holds across the run lifecycle, not just at session
+            # boundaries. Without this preflight, the periodic flush
+            # would (a) keep writing state under SAGE_BOOT_BYPASS_EPOCH_GUARD=1
+            # while atexit correctly skips, (b) overwrite a contaminated
+            # marker and erase forensic evidence, (c) deepen a manifest-
+            # less state dir making the next boot fail-close.
             from sage.constants import BANDIT_FLUSH_INTERVAL
             if (self._task_count % BANDIT_FLUSH_INTERVAL == 0
                     and self.engine and hasattr(self.engine, 'save_state')):
                 try:
                     from pathlib import Path
-                    state_dir = str(Path.home() / ".sage")
-                    self.engine.save_state(state_dir)
+                    from sage.posterior_epoch import (
+                        ensure_clean_epoch_before_save,
+                        is_a14_epoch_guard_error,
+                    )
+                    state_dir = Path.home() / ".sage"
+                    # Preflight: matches boot_topology.py:185 atexit
+                    # handler ordering. Raises on bypass active /
+                    # contaminated marker / missing manifest / mismatch.
+                    ensure_clean_epoch_before_save(state_dir)
+                    self.engine.save_state(str(state_dir))
                     log.debug("Periodic state flush (%d tasks)", self._task_count)
-                except (RuntimeError, IOError):
-                    pass  # Best-effort, never blocks pipeline
+                except (RuntimeError, IOError) as exc:
+                    if is_a14_epoch_guard_error(exc):
+                        # Visible warning: A14 guard fired. Operator
+                        # needs this signal to know periodic saves are
+                        # skipping. Atexit logs at .info; periodic at
+                        # .warning since it can recur many times in a
+                        # session and ops should investigate sooner.
+                        log.warning(
+                            "Periodic state flush blocked by A14 epoch "
+                            "guard: %s", exc,
+                        )
+                    # else: silent best-effort behaviour preserved
+                    # (e.g. transient I/O errors, manifest verification
+                    # failures, malformed state on disk).
