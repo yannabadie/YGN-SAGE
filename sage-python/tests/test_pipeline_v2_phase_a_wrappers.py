@@ -204,18 +204,32 @@ def test_select_topology_wrapper_delegates_to_pipeline_stage_select_topology() -
     assert result is sentinel_out
 
 
-def test_assign_models_wrapper_delegates_to_pipeline_stage_assign_models() -> None:
+def test_assign_models_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
+    """Phase B inverted the direction (same as decompose / classify).
+
+    The wrapper now CONTAINS the body. Tests the early-exit path:
+    `ctx.topology is None` short-circuits to `return ctx` without
+    touching the assigner. Both direct call and round-trip through
+    `pipeline._stage_assign_models` produce the same identity result.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import assign_models as am_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage3_input")
-    sentinel_out = SimpleNamespace(tag="stage3_output")
-    pipeline._stage_assign_models = MagicMock(return_value=sentinel_out)
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.assigner = None  # forces early exit at line 2 of the body
+    pipeline.provider_pool = None
 
-    result = am_mod.assign_models(pipeline, sentinel_ctx)
+    # Direct call:
+    ctx_direct = PipelineContext(task="assign direct task")
+    ctx_direct.topology = None  # forces early exit
+    out_direct = am_mod.assign_models(pipeline, ctx_direct)
+    assert out_direct is ctx_direct
 
-    pipeline._stage_assign_models.assert_called_once_with(sentinel_ctx)
-    assert result is sentinel_out
+    # Round-trip through legacy delegator:
+    ctx_round = PipelineContext(task="assign roundtrip task")
+    ctx_round.topology = None
+    out_round = pipeline._stage_assign_models(ctx_round)
+    assert out_round is ctx_round
 
 
 @pytest.mark.asyncio
