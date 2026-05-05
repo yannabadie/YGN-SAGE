@@ -253,6 +253,7 @@ updated 2026-05-04 (cycle-10 P3, post cycle-9 closure at HEAD `97fba93f`).
 | **BCB Hard pass rate (budget tier, official Docker)** | `measured: 32% N=50` | Docker-graded, cycle-7 evidence at commit `01b0bb24`. |
 | **SWE-bench Lite Docker-graded** | `measured: 10% (1/10) resolved, 70% patch-emit rate` | 2026-04-21. Diff verifier observe-mode opt-in. |
 | **`pipeline.py` decomposition** | `planned (cycle 11/12)` | 2983 lines, 44 `Any`. Cycle-10 P9 ships ADR + characterization tests only; refactor deferred. |
+| **CLI agent (`sage run --jsonl` + pi-mono adapter)** | `prelude shipped (cycle-12), adapter planned (cycle-13)` | Cycle-12 prelude (2026-05-05): `docs/contracts/SAGE_CLI_PROTOCOL.md` + `sage run --jsonl` backend + 16 unit tests. Cycle-13: `clients/pi-ygn-sage/` npm package wrapping pi-mono TUI around the JSONL backend. Acceptance gate cycle-13: SWE-bench Pro 4-arm ablation ≥5pp pass@1 lift over Claude Code (plan: `docs/benchmarks/2026-05-05-cli-baseline-plan.md`). |
 
 ## Formal Verification (Rust)
 

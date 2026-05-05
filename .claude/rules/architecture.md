@@ -29,6 +29,22 @@ CLASSIFY (kNN/SystemRouter) → DECOMPOSE (TaskPlanner → DAGFeatures omega/del
 → LEARN (QualityEstimator Z3 → Bandit + MAP-Elites archive, persisted to SQLite)
 ```
 
+## CLI surface (cycle-12 prelude, 2026-05-05)
+
+`sage run --jsonl <task>` — machine-readable backend for pi-mono / TUI / IDE
+front-ends. Implements the v0 protocol at `docs/contracts/SAGE_CLI_PROTOCOL.md`:
+14 inherited `RuntimeEventLog` events tee'd to stdout + 4 CLI-shell envelope
+events (`cli_started`, `cli_progress`, `cli_tool_request`, `cli_complete`) +
+5 inbound commands (`prompt`, `approve_tool_call`, `deny_tool_call`, `cancel`,
+`set_budget`). Strict JSONL with LF-only delimiters (NOT Node `readline`-
+compatible — pi-mono RPC spec). The CLI is the runtime contract's public
+surface; cycle-13 wraps it in a TypeScript `clients/pi-ygn-sage/` npm package
+running pi-mono as the TUI shell. Frontend MUST NOT decide model / topology
+/ learning gate — those stay in YGN-SAGE backend per cgpro pivot review
+2026-05-05 ("YGN-SAGE should not become another coding agent CLI; it should
+become the verified adaptive orchestration layer that a coding agent CLI
+finally makes usable").
+
 ## Self-Adaptive Engine
 - **SA-1**: Runtime Agent Factory — custom TopologyNode prompts, LLM-generated agent specs. Done.
 - **SA-3**: Online Evolution — _auto_evolve=True, pipeline records outcomes to archive. Done.
