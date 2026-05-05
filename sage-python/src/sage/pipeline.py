@@ -25,7 +25,6 @@ from sage.events import (
 
 from sage.pipeline_stages import (
     _infer_domain,
-    compute_dag_features,
     select_macro_topology,
     DAGFeatures,
 )
@@ -1196,29 +1195,17 @@ class CognitiveOrchestrationPipeline:
     # ── Stage 1: Decompose ──────────────────────────────────────────────────
 
     async def _stage_decompose(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 1: Decompose task into sub-tasks (S2/S3 only)."""
-        from sage.observability.spans import sage_span
-        with sage_span("sage.decompose", op="sage.decompose"):
-            if ctx.system == 1:
-                ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-                return ctx
+        """Stage 1: Decompose task into sub-tasks (S2/S3 only).
 
-            # Try LLM decomposition via TaskPlanner if available
-            try:
-                from sage.contracts.planner import TaskPlanner
-
-                planner = TaskPlanner()
-                if self.llm_provider and hasattr(planner, "plan_auto"):
-                    result = await planner.plan_auto(ctx.task, self.llm_provider)
-                    ctx.task_dag = result.dag
-                    ctx.dag_features = compute_dag_features(result.dag)
-                else:
-                    ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-            except (RuntimeError, TimeoutError) as exc:
-                log.warning("Stage 1 decompose failed: %s, using single-node DAG", exc)
-                ctx.dag_features = DAGFeatures(omega=1, delta=1, gamma=0.0)
-
-            return ctx
+        Cycle-12 Phase B (2026-05-05): body moved to
+        `sage.pipeline_v2.decompose.decompose`. This is now a 1-line
+        delegator. LOCAL import (NOT top-level) to avoid the
+        circular-init partial-load risk: `pipeline.py` is loaded
+        before `pipeline_v2/` in many call paths. See
+        `cgpro_pi_mono_pivot_20260505` DESIGN lock trap #4.
+        """
+        from sage.pipeline_v2.decompose import decompose as _v2_decompose
+        return await _v2_decompose(self, ctx)
 
     # ── Structure-driven topology selection ──────────────────────────────
 

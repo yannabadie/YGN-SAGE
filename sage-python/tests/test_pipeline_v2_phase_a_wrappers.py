@@ -121,21 +121,43 @@ async def test_classify_wrapper_delegates_to_pipeline_stage_classify() -> None:
 
 
 @pytest.mark.asyncio
-async def test_decompose_wrapper_delegates_to_pipeline_stage_decompose() -> None:
+async def test_decompose_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
+    """Phase B inverted the direction: the wrapper now CONTAINS the body, and
+    `pipeline._stage_decompose` is a 1-line delegator that awaits this
+    function.
+
+    The Phase A version of this test asserted the wrapper delegated TO the
+    legacy method. After the body move, the legacy method delegates TO the
+    wrapper. This test proves both:
+      1. Calling `decompose(pipeline, ctx)` directly executes the body
+         (S1 short-circuit).
+      2. Calling `pipeline._stage_decompose(ctx)` reaches this wrapper
+         (round-trip through the delegator).
+
+    Uses a real `Pipeline.__new__(Pipeline)` instance with `llm_provider=None`
+    to force the trivial-DAG fallback path (no LLM call).
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import decompose as decompose_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage1_input")
-    sentinel_out = SimpleNamespace(tag="stage1_output")
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.llm_provider = None  # forces the trivial-DAG short-circuit
 
-    async def _fake_stage_decompose(ctx: Any) -> Any:
-        assert ctx is sentinel_ctx
-        return sentinel_out
+    # Direct call to the wrapper:
+    ctx_direct = PipelineContext(task="x")
+    ctx_direct.system = 1
+    out_direct = await decompose_mod.decompose(pipeline, ctx_direct)
+    assert out_direct is ctx_direct  # mutates in place
+    assert out_direct.dag_features is not None
+    assert out_direct.dag_features.omega == 1
 
-    pipeline._stage_decompose = _fake_stage_decompose
-
-    result = await decompose_mod.decompose(pipeline, sentinel_ctx)
-    assert result is sentinel_out
+    # Round-trip through the legacy delegator:
+    ctx_round = PipelineContext(task="x")
+    ctx_round.system = 1
+    out_round = await pipeline._stage_decompose(ctx_round)
+    assert out_round is ctx_round
+    assert out_round.dag_features is not None
+    assert out_round.dag_features.omega == 1
 
 
 def test_select_topology_wrapper_delegates_to_pipeline_stage_select_topology() -> None:
