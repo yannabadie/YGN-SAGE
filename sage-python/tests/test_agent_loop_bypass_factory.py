@@ -45,6 +45,10 @@ def _build_singleton() -> AgentLoop:
         tools=None,             # all tools available
         validation_level=1,
         stall_after_tool_steps=0,
+        # Cycle-12 P6-A Phase B prep: dangerous_tools is per-process
+        # at boot. Set True here so the propagation test below has a
+        # signal to assert against (default False would be tautological).
+        dangerous_tools=True,
     )
     singleton = AgentLoop(
         config=config,
@@ -66,6 +70,13 @@ def _build_singleton() -> AgentLoop:
     singleton.agent_pool = MagicMock(name="agent-pool")
     singleton.metacognition = MagicMock(name="metacognition")
     singleton.topology_population = MagicMock(name="topology-population")
+    # Cycle-12 P6-A Phase B prep (cgpro DESIGN trap Q7): boot wires
+    # `toolforge` and `evolution_memory` onto the singleton AgentLoop.
+    # The factory must propagate both to the per-run instance —
+    # otherwise post-swap autonomous-synthesis paths see
+    # `loop.toolforge=None` and silently degrade.
+    singleton.toolforge = MagicMock(name="toolforge")
+    singleton.evolution_memory = MagicMock(name="evolution-memory")
     # Ablation flags (set by AblationConfig.apply at boot).
     singleton._skip_memory = False
     singleton._skip_avr = False
@@ -395,3 +406,107 @@ def test_factory_does_not_mutate_singleton() -> None:
             f"P6-A structural-isolation guarantee is BROKEN — the "
             f"P6-B lock would still be needed."
         )
+
+
+# ────────────────────────────────────────────────────────────────────
+# 8-10. Cycle-12 P6-A Phase B prep — factory field-sync (cgpro DESIGN
+# 2026-05-05 trap Q7). The pre-swap bypass path used the singleton
+# AgentLoop directly, so `singleton.toolforge`, `singleton.evolution_memory`,
+# and `singleton.config.dangerous_tools` were implicitly available. The
+# post-swap per-run AgentLoop MUST carry them too — otherwise:
+#   - `loop.toolforge=None` → autonomous-synthesis paths silently
+#     break (`AgentLoop._execute_tool_call` reads it via `getattr` and
+#     falls back to "unknown tool").
+#   - `loop.evolution_memory=None` → cycle-7 evolution gate degrades
+#     to "no feedback" silently on every bypass run.
+#   - `dangerous_tools=False` (default) → `execute_bash` blocked on
+#     bench paths that need it (SAGE_DANGEROUS_TOOLS=1 paths).
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_factory_propagates_toolforge_from_singleton() -> None:
+    """`singleton.toolforge` is reference-copied to the per-run loop.
+
+    cgpro DESIGN trap Q7: pre-swap bypass used the singleton directly
+    so toolforge was implicitly available. Post-swap, the per-run
+    instance MUST carry the same `toolforge` attribute or autonomous
+    synthesis silently breaks.
+    """
+    singleton = _build_singleton()
+    bypass_loop = create_bypass_agent_loop(
+        singleton=singleton,
+        llm_provider=MagicMock(),
+        llm_config=LLMConfig(provider="x", model="x-model"),
+        system_level=2,
+    )
+
+    assert bypass_loop.toolforge is singleton.toolforge, (
+        "Factory did not propagate `toolforge` from the singleton. "
+        "Post P6-A Phase B swap, autonomous-synthesis paths will read "
+        "loop.toolforge=None and silently degrade. See cgpro DESIGN "
+        "trap Q7 (`cgpro_pi_mono_pivot_20260505`)."
+    )
+
+
+def test_factory_propagates_evolution_memory_from_singleton() -> None:
+    """`singleton.evolution_memory` is reference-copied to the per-run loop.
+
+    cgpro DESIGN trap Q7: cycle-7 evolution gate reads
+    `loop.evolution_memory` per turn. Without this propagation,
+    bypass runs silently lose the evolution feedback channel.
+    """
+    singleton = _build_singleton()
+    bypass_loop = create_bypass_agent_loop(
+        singleton=singleton,
+        llm_provider=MagicMock(),
+        llm_config=LLMConfig(provider="x", model="x-model"),
+        system_level=2,
+    )
+
+    assert bypass_loop.evolution_memory is singleton.evolution_memory, (
+        "Factory did not propagate `evolution_memory` from the "
+        "singleton. Bypass runs would silently degrade to no-feedback "
+        "evolution gate. See cgpro DESIGN trap Q7."
+    )
+
+
+def test_factory_propagates_dangerous_tools_from_singleton_config() -> None:
+    """`singleton.config.dangerous_tools` is preserved in the per-run config.
+
+    cgpro DESIGN trap Q7: `dangerous_tools` is a per-process flag
+    (toggled by `SAGE_DANGEROUS_TOOLS=1` for SWE-bench / advanced
+    research paths). The factory builds a fresh `AgentConfig`; without
+    explicitly copying this field, the new config would default to
+    `dangerous_tools=False`, silently blocking `execute_bash` on bench
+    paths.
+    """
+    singleton = _build_singleton()
+    # Sanity: the test fixture sets dangerous_tools=True on the singleton
+    # (otherwise this test would be tautological with default False).
+    assert singleton.config.dangerous_tools is True
+
+    bypass_loop = create_bypass_agent_loop(
+        singleton=singleton,
+        llm_provider=MagicMock(),
+        llm_config=LLMConfig(provider="x", model="x-model"),
+        system_level=3,
+    )
+
+    assert bypass_loop.config.dangerous_tools is True, (
+        "Factory built a per-run config with default "
+        "`dangerous_tools=False` instead of copying the singleton's "
+        "value. Bench paths that need raw shell access (SWE-bench, "
+        "advanced research) would silently lose `execute_bash`. "
+        "See cgpro DESIGN trap Q7."
+    )
+
+    # Defensive: also verify dangerous_tools=False propagates
+    # (otherwise the test would only catch the True direction).
+    singleton.config.dangerous_tools = False
+    bypass_loop_false = create_bypass_agent_loop(
+        singleton=singleton,
+        llm_provider=MagicMock(),
+        llm_config=LLMConfig(provider="x", model="x-model"),
+        system_level=2,
+    )
+    assert bypass_loop_false.config.dangerous_tools is False

@@ -329,6 +329,14 @@ def create_bypass_agent_loop(
         validation_level=validation_level,
         raise_on_exhaustion=base_config.raise_on_exhaustion,
         stall_after_tool_steps=stall_after_tool_steps,
+        # Cycle-12 P6-A Phase B prep (cgpro DESIGN 2026-05-05 trap Q7):
+        # `dangerous_tools` is a per-process flag (toggled by
+        # `SAGE_DANGEROUS_TOOLS=1` for SWE-bench / advanced research
+        # paths). The singleton inherits it from boot; the factory must
+        # propagate it so post-swap bypass runs preserve the same
+        # tool-registration semantics. Default-False would silently
+        # block `execute_bash` on bench paths that need it.
+        dangerous_tools=base_config.dangerous_tools,
     )
 
     loop = AgentLoop(
@@ -353,6 +361,20 @@ def create_bypass_agent_loop(
     loop.agent_pool = singleton.agent_pool
     loop.metacognition = singleton.metacognition
     loop.topology_population = singleton.topology_population
+    # Cycle-12 P6-A Phase B prep (cgpro DESIGN 2026-05-05 trap Q7):
+    # `toolforge` is wired by boot onto the singleton AgentLoop; pre-swap
+    # the bypass path was using the singleton directly so this attribute
+    # was implicitly available. Post-swap the per-run instance MUST
+    # carry it too — `AgentLoop._execute_tool_call` reads
+    # `getattr(self, "toolforge", None)` and falls back to "unknown
+    # tool" when absent, which silently breaks autonomous-synthesis
+    # paths.
+    loop.toolforge = getattr(singleton, "toolforge", None)
+    # Same logic for `evolution_memory`: cycle-7 wiring on the singleton
+    # exposes `loop.evolution_memory` to the per-turn evolution gate.
+    # Without this propagation the bypass path would silently degrade
+    # to "no evolution feedback" on every bypass run.
+    loop.evolution_memory = getattr(singleton, "evolution_memory", None)
 
     # Ablation flags — set at boot via AblationConfig.apply, shared
     # across all runs in a process (NOT per-task ablation).
