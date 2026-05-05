@@ -52,6 +52,7 @@ cancel that mutated state). The invariant is on the latter.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -545,3 +546,261 @@ async def test_invariant_singleton_settle_per_decision_id_across_all_paths(
         f"{capture.pending_decisions!r}. Every path must leave its "
         f"decision_id settled."
     )
+
+
+# ─────────────────────────────────────────────────────────────────
+# Cycle-11 cgpro VERIFY follow-up: explicit FrugalGPT cascade +
+# multi-agent error-fallback path coverage.
+#
+# Original argument: cascade and error-fallback produce the same
+# Stage-5 ctx state as plain topology-runner (executed_template +
+# multi-node executed_model_ids stay set), so the multi_node_ambiguous
+# trip-wire fires and cancels. cgpro VERIFY 2026-05-05 disagreed:
+# "FrugalGPT can reassign and rerun models after the initial multi-
+# agent runner, and the multi-agent error fallback generates a single-
+# agent result after the topology path has already populated multi-
+# agent attribution fields. Those are not safely equivalent to the
+# plain topology-runner state."
+#
+# These two tests drive _stage_execute through those branches and
+# then _stage_learn, asserting the singleton-settle invariant holds.
+# They prove the contract empirically rather than by theoretical
+# equivalence to the plain topology-runner ctx.
+# ─────────────────────────────────────────────────────────────────
+
+
+def _stub_topology_runner_for_execute(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    run_outcome: str | type[BaseException] = "stub multi-agent output",
+    runner_instances: list[Any] | None = None,
+) -> None:
+    """Patch ``TopologyRunner`` so multi-agent _stage_execute returns or raises.
+
+    ``run_outcome`` is either a string returned from .run() or an
+    exception class to raise (used for the error-fallback test).
+    """
+    captured = runner_instances if runner_instances is not None else []
+
+    class _StubRunner:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.append(self)
+            self.tool_call_count = 0
+            self.tool_turn_count = 0
+            self.executed_commands: list[str] = []
+            self.total_cost_usd = 0.0
+            self._kwargs = kwargs
+
+        async def run(self, task: str) -> str:
+            if isinstance(run_outcome, type) and issubclass(run_outcome, BaseException):
+                raise run_outcome("stub topology runner failure")
+            return str(run_outcome)
+
+    import sage.topology.runner as runner_mod
+
+    monkeypatch.setattr(runner_mod, "TopologyRunner", _StubRunner)
+
+    import sys
+
+    class _StubExecutor:
+        def __init__(self, graph: Any) -> None:
+            self.graph = graph
+
+    existing = sys.modules.get("sage_core")
+    sage_core_attrs: dict[str, Any] = {"TopologyExecutor": _StubExecutor}
+    # Keep RoutingConstraints if a previous test put it there; needed
+    # by Stage 0 if the test reaches it (these don't, but be safe).
+    if existing is not None and hasattr(existing, "RoutingConstraints"):
+        sage_core_attrs["RoutingConstraints"] = existing.RoutingConstraints
+    if existing is not None:
+        for attr, val in sage_core_attrs.items():
+            monkeypatch.setattr(existing, attr, val, raising=False)
+    else:
+        from types import SimpleNamespace as SN
+        monkeypatch.setitem(sys.modules, "sage_core", SN(**sage_core_attrs))
+
+
+def _make_multi_agent_ctx(decision_id: str) -> PipelineContext:
+    """Multi-agent ctx that triggers _stage_execute multi-agent branch."""
+    topology = MagicMock()
+    topology.id = "topology-cascade-test"
+    topology.template_type = "sequential"
+    topology.node_count = MagicMock(return_value=2)
+    topology.get_node = MagicMock(return_value=MagicMock(model_id="model-a", max_cost_usd=0.0))
+
+    ctx = PipelineContext(task="multi-agent path test")
+    ctx.system = 2
+    ctx.domain = "code"
+    ctx.topology = topology  # type: ignore[assignment]
+    ctx.assignments = {0: "model-a", 1: "model-b"}
+    ctx.bandit_decision_id = decision_id
+    ctx.bandit_model_id = "model-a"
+    ctx.bandit_template = "sequential"
+    ctx.verification_passed = True
+    return ctx
+
+
+@pytest.mark.asyncio
+async def test_path_frugalgpt_cascade_settles_decision_id_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """FrugalGPT cascade fires (quality < 0.3) → decision_id settled exactly once.
+
+    Drives ``_stage_execute`` through the cascade branch
+    (pipeline.py:2647-2729): runner1 runs → quality_estimator returns
+    < 0.3 → assigner.assign_single_node reassigns → runner3 retries.
+    After the cascade, ``ctx.executed_template`` and
+    ``ctx.executed_model_ids`` remain populated from the original
+    multi-agent assignments (per cgpro VERIFY observation: cascade
+    does NOT refresh attribution fields). Stage 5 sees a multi-node
+    state and cancels via ``multi_node_ambiguous``.
+
+    Asserts:
+      1. Two TopologyRunner instances were constructed (initial + retry).
+      2. Pipeline result is from the retry, not the initial low-quality
+         run.
+      3. Decision_id settled exactly once via cancel.
+    """
+    pipeline, capture = _build_pipeline_for_learn(monkeypatch)
+
+    # Override quality_estimator to force cascade (< 0.3 threshold).
+    pipeline.quality_estimator = MagicMock()
+    pipeline.quality_estimator.estimate = MagicMock(return_value=0.1)
+
+    # Provide an assigner stub for the cascade re-assignment path.
+    pipeline.assigner = MagicMock()
+    pipeline.assigner.assign_single_node = MagicMock()
+
+    # Provide llm_provider/config and provider_pool for runner config.
+    pipeline.llm_provider = MagicMock()
+    pipeline.llm_config = MagicMock()
+    pipeline.provider_pool = MagicMock()
+    pipeline.provider_pool.is_model_available = MagicMock(return_value=True)
+
+    runner_instances: list[Any] = []
+    _stub_topology_runner_for_execute(
+        monkeypatch,
+        run_outcome="cascade retry output",
+        runner_instances=runner_instances,
+    )
+
+    capture.issue("d-cascade")
+    ctx = _make_multi_agent_ctx("d-cascade")
+
+    ctx = await pipeline._stage_execute(ctx)
+    await pipeline._stage_learn(ctx)
+
+    # Cascade fired: 2 runner instances (initial + cascade retry).
+    assert len(runner_instances) >= 2, (
+        f"FrugalGPT cascade did not fire — only {len(runner_instances)} "
+        f"TopologyRunner instance(s) constructed. Expected 2 (initial "
+        f"+ cascade retry). Check that quality_estimator stub returns "
+        f"< 0.3 and assigner.assign_single_node is wired."
+    )
+
+    # Cascade retry result took precedence over initial low-quality run.
+    assert ctx.result == "cascade retry output", (
+        f"ctx.result is not the cascade retry output: {ctx.result!r}. "
+        f"Expected 'cascade retry output' from runner3 retry."
+    )
+
+    # Singleton-settle invariant holds: cancel exactly once via
+    # multi_node_ambiguous trip-wire (executed_model_ids has 2 distinct
+    # entries from original assignments — not refreshed by cascade).
+    _assert_settled_exactly_once(capture, "d-cascade", expected="cancel")
+
+
+@pytest.mark.asyncio
+async def test_path_multi_agent_error_fallback_settles_decision_id_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Multi-agent runner raises → fallback provider runs → decision_id cancelled.
+
+    Drives ``_stage_execute`` through the error-fallback branch
+    (pipeline.py:2768-2805): TopologyRunner.run() raises RuntimeError
+    → except handler picks fallback_provider via
+    ``_pick_fallback_provider`` → fallback.generate() produces result.
+
+    cgpro VERIFY observation: the fallback path does NOT clear
+    ``ctx.executed_template`` ("sequential" from line 2519) or
+    ``ctx.executed_model_ids`` (multi-model from line 2516). So the
+    bench attribution sees "multi-agent + 2 models" even though the
+    actual run was a single fallback provider call. Stage 5 cancels
+    via the multi_node_ambiguous trip-wire — this preserves the
+    singleton-settle invariant but the SEMANTIC mismatch is itself a
+    finding worth surfacing.
+
+    Asserts:
+      1. Fallback provider was actually called (not topology runner).
+      2. Pipeline result is from the fallback provider.
+      3. Decision_id settled exactly once via cancel.
+    """
+    pipeline, capture = _build_pipeline_for_learn(monkeypatch)
+    pipeline.llm_provider = MagicMock()
+    pipeline.llm_config = MagicMock()
+    pipeline.provider_pool = MagicMock()
+
+    # Stub TopologyRunner.run() to raise; this triggers the fallback path.
+    runner_instances: list[Any] = []
+    _stub_topology_runner_for_execute(
+        monkeypatch,
+        run_outcome=RuntimeError,
+        runner_instances=runner_instances,
+    )
+
+    # Stub _pick_fallback_provider to return a deterministic fake.
+    fallback_calls: list[Any] = []
+
+    async def _fallback_generate(messages: Any, config: Any = None, **kwargs: Any) -> Any:
+        fallback_calls.append((messages, config))
+        return SimpleNamespace(content="fallback provider output")
+
+    fallback_provider = SimpleNamespace(
+        generate=_fallback_generate,
+        name="stub-fallback-provider",
+    )
+    pipeline._pick_fallback_provider = MagicMock(
+        return_value=(fallback_provider, MagicMock()),
+    )
+
+    capture.issue("d-fallback")
+    ctx = _make_multi_agent_ctx("d-fallback")
+
+    ctx = await pipeline._stage_execute(ctx)
+    await pipeline._stage_learn(ctx)
+
+    # Multi-agent runner attempted exactly once before raising.
+    assert len(runner_instances) == 1, (
+        f"Expected exactly 1 multi-agent runner attempt before "
+        f"fallback, got {len(runner_instances)}."
+    )
+
+    # Fallback provider was invoked.
+    assert len(fallback_calls) == 1, (
+        f"Fallback provider was not invoked — got "
+        f"{len(fallback_calls)} call(s). Expected 1."
+    )
+
+    # Pipeline result is from the fallback provider.
+    assert ctx.result == "fallback provider output", (
+        f"ctx.result is not the fallback output: {ctx.result!r}. "
+        f"Expected 'fallback provider output'."
+    )
+
+    # ctx.executed_template + ctx.executed_model_ids stay populated
+    # from line 2516/2519 (NOT cleared by fallback handler) — this is
+    # the cgpro VERIFY semantic mismatch finding. The trip-wire still
+    # catches it.
+    assert ctx.executed_template == "sequential", (
+        f"ctx.executed_template should remain 'sequential' (set "
+        f"before fallback) — got {ctx.executed_template!r}. The "
+        f"fallback handler does NOT clear it; cgpro VERIFY flagged "
+        f"this as a semantic mismatch worth tracking."
+    )
+    assert len(set(ctx.executed_model_ids)) >= 2, (
+        f"ctx.executed_model_ids should have 2 distinct entries "
+        f"(set before fallback): {ctx.executed_model_ids!r}."
+    )
+
+    # Singleton-settle invariant holds: cancel via multi_node_ambiguous.
+    _assert_settled_exactly_once(capture, "d-fallback", expected="cancel")
