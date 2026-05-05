@@ -85,6 +85,8 @@ certs/
 
 # Data blobs (regenerate via scripts/)
 sage-python/data/*.log
+# SWE-bench Pro task metadata cache (regenerate via swebench_pro_fetch.py)
+sage-python/data/swebench_pro/
 
 # Benchmark runtime artifacts
 sage-python/astropy/

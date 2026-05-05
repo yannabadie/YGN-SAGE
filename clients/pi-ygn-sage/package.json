@@ -1,0 +1,33 @@
+{
+  "name": "@ygn-sage/pi-adapter",
+  "version": "0.0.1-pre",
+  "private": true,
+  "description": "pi-mono ↔ YGN-SAGE subprocess + JSONL bridge (cycle-13 scaffolding — implementation NYI).",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.73.0",
+    "@mariozechner/pi-ai": "0.73.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.11.0",
+    "typescript": "5.4.5"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependenciesMeta": {},
+  "publishConfig": {
+    "access": "restricted"
+  }
+}
