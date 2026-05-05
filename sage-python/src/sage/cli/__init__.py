@@ -11,12 +11,15 @@ _HELP = """YGN-SAGE root CLI
 Usage:
   sage serve [serve-options]
   sage bench [bench-options]
+  sage run --jsonl [run-options] [TASK]
   sage chat
 
 Notes:
   - `sage serve` runs MCP and/or A2A protocol surfaces.
   - `sage bench` runs benchmark and evaluation flows.
-  - `sage chat` is reserved for the future pi-mono-derived chat interface.
+  - `sage run --jsonl` is the machine-readable backend for pi-mono / TUI / IDE
+    front-ends. See docs/contracts/SAGE_CLI_PROTOCOL.md for the v0 protocol.
+  - `sage chat` is reserved for the future pi-mono-derived interactive interface.
 """
 
 
@@ -40,9 +43,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         _dispatch_with_argv("sage bench", args[1:], bench_main.main)
         return 0
 
+    if args[0] == "run":
+        # Cycle-12 prelude (2026-05-05): machine-readable backend for the
+        # pi-mono pivot. See docs/contracts/SAGE_CLI_PROTOCOL.md.
+        from sage.cli import run as run_mod
+
+        return run_mod.main(args[1:])
+
     if args[0] == "chat":
         print(
-            "`sage chat` is reserved for the future pi-mono-derived chat interface.",
+            "`sage chat` is reserved for the future pi-mono-derived interactive interface.",
             file=sys.stderr,
         )
         return 2

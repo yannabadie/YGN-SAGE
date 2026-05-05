@@ -68,7 +68,10 @@ def test_root_cli_reserves_chat(capsys):
     captured = capsys.readouterr()
 
     assert rc == 2
-    assert "pi-mono-derived chat interface" in captured.err
+    # Reword tolerated 2026-05-05 cycle-12 prelude (sage run --jsonl is now the
+    # protocol surface; chat retains the "reserved interactive" framing).
+    assert "reserved" in captured.err
+    assert "pi-mono" in captured.err
 
 
 def test_root_cli_help(capsys):
