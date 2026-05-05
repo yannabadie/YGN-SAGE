@@ -46,6 +46,31 @@ on flip means oracle path is active by default; the kill-switch
 explicitly bypasses the gate (legacy quality_estimator path takes
 over). The test runs with ``SAGE_ORACLE=1`` explicitly to be
 defensive against future default flips.
+
+Scope of "training-memory" (cgpro VERIFY follow-up 2026-05-05)
+==============================================================
+ADR-015 #2 says the gate blocks "training_memory" updates. There is
+no explicit ``training_memory.store`` symbol in pipeline.py today —
+the closest match is the inter-tier consolidation step that this
+test covers via ``consolidator.consolidate()``. cgpro VERIFY noted
+this terminology should be made explicit:
+
+  - ``consolidator.consolidate()`` (inter-tier semantic/causal
+    promotion) IS gated by ``allow_training_updates`` and IS what
+    this test checks.
+
+  - Working/episodic trace memory writes (e.g. via
+    ``_record_to_memory(...)`` BEFORE ``_stage_learn``) are tagged
+    with ``is_training_evidence=verdict.trainable`` metadata but
+    are NOT blocked under ``trainable=False`` — they're audit /
+    provenance storage, not training updates. This test does NOT
+    assert anything about those calls; doing so would be incorrect
+    per the ledger's distinction between "trace memory writes" and
+    "training-memory updates".
+
+If a future commit introduces a real ``training_memory.store``
+component (separate from consolidation), this test must be extended
+to cover it as a 5th side-effect.
 """
 from __future__ import annotations
 

@@ -35,11 +35,20 @@ Across the public surface, byte-identical means:
 
 - ``result``: string-equal. The user-visible final output must be
   the same character sequence for identical inputs + stubs.
-- ``ctx`` fields: dataclass fields listed below have specific
-  literal expected values. Non-deterministic fields (
-  ``ctx.bandit_decision_id`` is a stub-supplied literal,
-  ``ctx.cost`` / ``ctx.latency_ms`` come from deterministic stubs
-  too).
+- ``ctx`` **semantic** fields: dataclass fields listed below have
+  specific literal expected values for fields that are deterministic
+  given the stubs (``system``, ``domain``, ``topology_id``,
+  ``bandit_template`` / ``executed_template``, ``bandit_decision_id``,
+  ``executed_model_id``, ``bandit_attribution_state``,
+  ``dag_features.{omega,delta,gamma}``).
+- ``ctx.cost`` / ``ctx.latency_ms``: scoped to "non-negative finite",
+  NOT a specific numeric value. They come from ``time.monotonic()``
+  differences and stub interactions, so a hardware-variance run
+  would not produce byte-identical floats. Per cgpro VERIFY follow-up
+  2026-05-05: the "byte-identical" claim applies to semantic fields
+  + result + event sequence + decision_id, NOT timing/cost numbers.
+  If cycle-12 phase 2 wants byte-identical timing, it would need to
+  freeze ``time.monotonic()`` — out of scope for this test.
 - Event ledger: ``event_type`` list AND order. New event types
   added during cycle-12 are an ADR-015 contract change requiring
   this test to be updated alongside the change.
