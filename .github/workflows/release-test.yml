@@ -1,0 +1,318 @@
+name: Release dry-run (TestPyPI)
+
+# Cycle-11 P5 follow-up (2026-05-05) — TestPyPI dry-run for the wheels
+# matrix. Workflow_dispatch only; never auto-runs on push or tag. Step 4
+# of the cycle-10 P5 acceptance gate (see wheels.yml comment block at
+# lines 224-234):
+#   1. ✅ Multi-OS workflow_dispatch matrix (wheels.yml, cycle-10)
+#   2. ⏳ Successful matrix run on all 6 entries (operator action)
+#   3. ⏳ Smoke test passing on Linux + Windows (operator-observable)
+#   4. ⏳ Operator review of artifact sizes (PyPI 100 MB hard cap)
+#   5. ⏳ TestPyPI dry-run ← THIS WORKFLOW
+#   6. ⏳ Real PyPI publish via tag-triggered release workflow (NOT yet
+#         shipped; gated by successful TestPyPI dry-run + smoke install
+#         from TestPyPI in a fresh venv)
+#
+# This workflow does NOT publish to real PyPI. It builds the matrix
+# wheels (re-running wheels.yml's logic for completeness), then uploads
+# to test.pypi.org via OIDC trusted publisher. After upload, a smoke
+# job installs from test.pypi.org and runs the same import checks as
+# wheels.yml's smoke step — ensuring the dry-run round-trip works
+# before we wire real PyPI.
+#
+# Operator setup required BEFORE first run (one-time):
+#   1. On test.pypi.org, configure a "Trusted publisher" for
+#      yannabadie/YGN-SAGE pointing at this workflow file. PyPA docs:
+#      https://docs.pypi.org/trusted-publishers/
+#   2. (No GitHub secret needed — OIDC token authenticates the upload.)
+#
+# After successful dry-run, the follow-up commit adds release.yml with
+# tag-triggered real-PyPI publish. That commit also flips the gate
+# from "draft only" to "shipped".
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Why this dispatch (audit trail)"
+        required: true
+        type: string
+      version_suffix:
+        description: "Version suffix for TestPyPI (e.g. .dev1, rc0). Empty = pyproject version verbatim."
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  # Required for OIDC trusted publisher upload to test.pypi.org.
+  id-token: write
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────
+  # Phase 1: build the matrix wheels (mirrors wheels.yml).
+  # ─────────────────────────────────────────────────────────────────
+  build-matrix:
+    name: Build wheel ${{ matrix.target }} py${{ matrix.python }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            python: "3.12"
+            manylinux: "2014"
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            python: "3.13"
+            manylinux: "2014"
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            python: "3.12"
+            manylinux: "auto"
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            python: "3.13"
+            manylinux: "auto"
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            python: "3.12"
+            manylinux: "auto"
+          - target: aarch64-apple-darwin
+            runner: macos-14
+            python: "3.13"
+            manylinux: "auto"
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo + maturin target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            sage-core/target
+            external/rustpython-wasm-target
+          key: release-test-${{ matrix.target }}-${{ matrix.python }}-${{ hashFiles('sage-core/Cargo.lock', 'sage-core/Cargo.toml') }}
+          restore-keys: |
+            release-test-${{ matrix.target }}-${{ matrix.python }}-
+            wheels-${{ matrix.target }}-${{ matrix.python }}-
+
+      - name: Build embedded RustPython wasm artifact
+        shell: bash
+        run: |
+          if [ ! -f external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm ]; then
+            rustup target add wasm32-wasip1
+            if [ ! -d external/rustpython ]; then
+              git clone --depth=1 https://github.com/RustPython/RustPython external/rustpython
+            fi
+            cd external/rustpython && CARGO_TARGET_DIR=../rustpython-wasm-target \
+              cargo build --release --target wasm32-wasip1 --features freeze-stdlib
+          else
+            echo "rustpython.wasm cached, skipping rebuild"
+          fi
+
+      - name: Apply optional version suffix
+        if: ${{ inputs.version_suffix != '' }}
+        shell: bash
+        run: |
+          # TestPyPI doesn't allow re-uploading the same version — bump
+          # via inline sed if the operator passed a suffix. Restored on
+          # workflow exit (ephemeral runner; no need to revert manually).
+          PYPROJECT="sage-core/pyproject.toml"
+          ORIG=$(grep -E '^version\s*=' "$PYPROJECT" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          NEW="${ORIG}${{ inputs.version_suffix }}"
+          sed -i.bak "s/^version = \"${ORIG}\"/version = \"${NEW}\"/" "$PYPROJECT"
+          echo "Bumped version: ${ORIG} → ${NEW}"
+
+      - name: Build wheel (default features)
+        uses: PyO3/maturin-action@v1
+        with:
+          working-directory: sage-core
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release --strip --out dist -i python${{ matrix.python }}
+
+      - name: Upload wheel artifact (collected for publish job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.target }}-py${{ matrix.python }}
+          path: sage-core/dist/*.whl
+          retention-days: 7
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # Phase 2: build sdist (one entry, Linux 3.12 — sdist is OS-neutral).
+  # ─────────────────────────────────────────────────────────────────
+  build-sdist:
+    name: Build sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Apply optional version suffix
+        if: ${{ inputs.version_suffix != '' }}
+        run: |
+          PYPROJECT="sage-core/pyproject.toml"
+          ORIG=$(grep -E '^version\s*=' "$PYPROJECT" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          NEW="${ORIG}${{ inputs.version_suffix }}"
+          sed -i.bak "s/^version = \"${ORIG}\"/version = \"${NEW}\"/" "$PYPROJECT"
+          echo "Bumped version: ${ORIG} → ${NEW}"
+
+      - name: Build sdist
+        working-directory: sage-core
+        run: maturin sdist --out dist
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: sage-core/dist/*.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  # ─────────────────────────────────────────────────────────────────
+  # Phase 3: collect all artifacts and publish to TestPyPI via OIDC.
+  # ─────────────────────────────────────────────────────────────────
+  publish-test-pypi:
+    name: Publish to TestPyPI (dry-run)
+    runs-on: ubuntu-latest
+    needs: [build-matrix, build-sdist]
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/sage-core
+    steps:
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: "wheel-*"
+          merge-multiple: true
+
+      - name: Download sdist
+        uses: actions/download-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+      - name: List artifacts before upload
+        run: |
+          echo "Artifacts to publish:"
+          ls -la dist/
+          echo ""
+          echo "Sizes:"
+          du -h dist/*
+
+      - name: Publish package distributions to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          # OIDC trusted publisher: no API token needed.
+          # Uploaded files become publicly downloadable from
+          # https://test.pypi.org/project/sage-core/.
+          # `skip-existing: true` lets the workflow be re-run without
+          # bumping version each time during early bring-up — TestPyPI's
+          # version-uniqueness rule still applies, but a duplicate
+          # upload won't fail the workflow.
+          skip-existing: true
+
+  # ─────────────────────────────────────────────────────────────────
+  # Phase 4: smoke install from TestPyPI on Linux + Windows.
+  # Confirms the round-trip works end-to-end (build → publish → install
+  # → import). Without this, "TestPyPI publish succeeded" only proves
+  # the upload completed — not that an end user could install + use it.
+  # ─────────────────────────────────────────────────────────────────
+  smoke-install-from-test-pypi:
+    name: Smoke install ${{ matrix.runner }} py${{ matrix.python }}
+    runs-on: ${{ matrix.runner }}
+    needs: publish-test-pypi
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            python: "3.12"
+          - runner: ubuntu-latest
+            python: "3.13"
+          - runner: windows-latest
+            python: "3.12"
+          - runner: windows-latest
+            python: "3.13"
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Wait for TestPyPI propagation
+        # TestPyPI's CDN can take 30-60s after upload before installs
+        # see the new version. Sleep before the install retry loop.
+        shell: bash
+        run: sleep 30
+
+      - name: Install sage-core from TestPyPI
+        shell: bash
+        run: |
+          # `--index-url` points pip at TestPyPI for sage-core itself,
+          # while `--extra-index-url` lets transitive deps come from
+          # real PyPI (TestPyPI doesn't mirror most packages). Without
+          # the extra-index, all deps would 404.
+          #
+          # Retry up to 5 times with 30s backoff — TestPyPI CDN
+          # occasionally serves stale 404 for ~1-2 min after upload.
+          for attempt in 1 2 3 4 5; do
+            if python -m pip install \
+                --index-url https://test.pypi.org/simple/ \
+                --extra-index-url https://pypi.org/simple/ \
+                sage-core; then
+              echo "Install succeeded on attempt $attempt"
+              break
+            fi
+            echo "Attempt $attempt failed, sleeping 30s..."
+            sleep 30
+          done
+
+      - name: Smoke import
+        shell: bash
+        run: |
+          python -c "
+          import sage_core
+          # Mirror the wheels.yml smoke list. Default-feature wheels
+          # carry these symbols; any drift is the same kind of bug
+          # ADR-014 / cycle-10 P5 hot-fix #3 was written for.
+          required = [
+              'TopologyEngine', 'SystemRouter', 'ContextualBandit',
+              'ModelAssigner', 'ModelRegistry', 'MultiViewMMU',
+              'WorkingMemory', 'ToolExecutor',
+              'PyHybridVerifier', 'VerificationResult',
+              'GraphPropertyChecker', 'LtlResult',
+          ]
+          missing = [s for s in required if not hasattr(sage_core, s)]
+          assert not missing, f'TestPyPI install missing: {missing}'
+          print('TestPyPI install + import OK on ${{ matrix.runner }} py${{ matrix.python }}')
+          print(f'  default symbols present: {len(required)}/{len(required)}')
+          "
