@@ -146,7 +146,10 @@ impl TopologyEngine {
     /// per-child 1..=3 inner loop pushes exactly one entry, regardless of
     /// whether the attempt produced a valid graph.
     pub fn drain_last_applied_ops(&self) -> Vec<String> {
-        let mut guard = self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = self
+            .last_applied_ops
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         std::mem::take(&mut *guard)
     }
 
@@ -162,7 +165,10 @@ impl TopologyEngine {
     /// Returns `(op_name, attempts, successes, alpha, beta)` for each of the
     /// 7 operators in the same order as `OPERATOR_NAMES`.
     pub fn mutation_stats_snapshot(&self) -> Vec<(String, u32, u32, f64, f64)> {
-        let stats = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
+        let stats = self
+            .mutation_stats
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         super::mutations::OPERATOR_NAMES
             .iter()
             .enumerate()
@@ -504,7 +510,10 @@ impl TopologyEngine {
         let graph = best.graph.clone();
         let mut rng = rand::rng();
 
-        let stats = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
+        let stats = self
+            .mutation_stats
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let (op_idx, result) = apply_mutation_tracked(graph, &mut rng, &stats);
         drop(stats);
 
@@ -754,7 +763,10 @@ impl TopologyEngine {
 
         // Reset per-evolve op history. Python drains this buffer after
         // evolve() returns to emit per-child `evolution.mutation.applied` logs.
-        self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.last_applied_ops
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
 
         if self.archive.cell_count() == 0 {
             debug!("evolve_skip_empty_archive");
@@ -815,7 +827,10 @@ impl TopologyEngine {
                     // is drained by Python (`PyTopologyEngine.drain_last_applied_ops`)
                     // and surfaced as `evolution.mutation.applied` log lines.
                     let (op_idx, mutation_result) = {
-                        let stats_guard = self.mutation_stats.lock().unwrap_or_else(|e| e.into_inner());
+                        let stats_guard = self
+                            .mutation_stats
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
                         apply_mutation_tracked(g, &mut rng, &stats_guard)
                     };
                     let op_name = super::mutations::OPERATOR_NAMES
@@ -823,7 +838,10 @@ impl TopologyEngine {
                         .copied()
                         .unwrap_or("unknown");
                     {
-                        let mut ops = self.last_applied_ops.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut ops = self
+                            .last_applied_ops
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
                         // FIFO cap at 1024 so pathological configs can't grow
                         // the buffer unboundedly.
                         if ops.len() >= 1024 {

@@ -1154,7 +1154,9 @@ mod tests {
         let graph = make_sequential();
         let original_count = graph.node_count();
         let success: MutationResult = MutationResult::Success(graph);
-        let g = success.try_into_graph().expect("Success path must yield graph");
+        let g = success
+            .try_into_graph()
+            .expect("Success path must yield graph");
         assert_eq!(g.node_count(), original_count);
     }
 }
