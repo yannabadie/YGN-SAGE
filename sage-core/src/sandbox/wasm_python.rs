@@ -144,6 +144,18 @@ pub struct WasmPythonExecutor {
 /// `Module::new` cranelift compilation path. Used by the cache_tests
 /// module to deterministically assert warm-hit behaviour without relying
 /// on wall-clock timing.
+///
+/// **DEPRECATED for per-call observation in cache_tests** — this static
+/// is process-global; concurrent constructors in unrelated test modules
+/// (the wasm-execution tests at lines 610-720+ which call `new()`
+/// without holding `CACHE_TEST_LOCK`) overwrite this flag between a
+/// cache test's constructor return and its `LAST_NEW_USED_CACHE.load()`
+/// → CI flake on the
+/// `corrupt_cache_is_self_healing` test (cycle-11 CI debug 2026-05-05,
+/// cgpro VERIFY conv `cgpro_ci_debug_20260505`). Pass
+/// `CacheOverrides.probe = Some(Arc::clone(&local))` and read from
+/// `local` instead. The global is preserved for back-compat with any
+/// test that hasn't migrated yet.
 #[cfg(test)]
 pub(crate) static LAST_NEW_USED_CACHE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -161,6 +173,14 @@ pub(crate) struct CacheOverrides {
     /// If `true`, skip the cache entirely (always compile, never read
     /// or write). Equivalent to `SAGE_WASM_CACHE_DISABLE=1`.
     pub disabled: bool,
+    /// Per-call cache-decision probe. When `Some`, the constructor
+    /// writes the cache outcome (`true` = deserialize hit, `false` =
+    /// recompile path) into this `Arc<AtomicBool>` instead of the
+    /// global `LAST_NEW_USED_CACHE`. Tests use this to avoid the
+    /// process-wide race where another test's `new()` call resets
+    /// the flag between constructor return and the assert. Cycle-11
+    /// CI debug 2026-05-05.
+    pub probe: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl WasmPythonExecutor {
@@ -181,7 +201,15 @@ impl WasmPythonExecutor {
             .map(|v| v != "0" && !v.is_empty())
             .unwrap_or(false);
         let cache_dir = std::env::var_os("SAGE_WASM_CACHE_DIR").map(PathBuf::from);
-        Self::new_inner(cache_dir.as_deref(), disabled)
+        // Production path: no probe (test-only feature).
+        Self::new_inner(
+            cache_dir.as_deref(),
+            disabled,
+            #[cfg(test)]
+            None,
+            #[cfg(not(test))]
+            (),
+        )
     }
 
     /// Crate-private constructor used by tests to pass explicit cache
@@ -189,20 +217,36 @@ impl WasmPythonExecutor {
     /// `cargo test`'s default multi-thread runner.
     #[cfg(test)]
     pub(crate) fn new_with_overrides(o: &CacheOverrides) -> Result<Self, WasmPythonInitError> {
-        Self::new_inner(o.cache_dir.as_deref(), o.disabled)
+        Self::new_inner(o.cache_dir.as_deref(), o.disabled, o.probe.clone())
     }
 
     fn new_inner(
         cache_dir_override: Option<&Path>,
         disabled: bool,
+        #[cfg(test)] probe: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
+        #[cfg(not(test))] _probe: (),
     ) -> Result<Self, WasmPythonInitError> {
         if RUSTPYTHON_WASM.is_empty() {
             return Err(WasmPythonInitError::BytesMissing);
         }
         let engine = Self::build_engine()?;
 
+        // Cycle-11 CI debug 2026-05-05: per-call probe takes
+        // precedence over the global. When a test passes
+        // `CacheOverrides.probe = Some(local)`, we write only to
+        // `local`. When `probe.is_none()`, we keep the legacy global
+        // write so non-migrated tests still observe their own
+        // call's outcome (subject to the cross-test race the probe
+        // pattern is designed to eliminate).
         #[cfg(test)]
-        LAST_NEW_USED_CACHE.store(false, Ordering::SeqCst);
+        let _set_cache_flag = |hit: bool| {
+            match &probe {
+                Some(p) => p.store(hit, Ordering::SeqCst),
+                None => LAST_NEW_USED_CACHE.store(hit, Ordering::SeqCst),
+            }
+        };
+        #[cfg(test)]
+        _set_cache_flag(false); // reset at top of every constructor
 
         if disabled {
             let module = Module::new(&engine, RUSTPYTHON_WASM)
@@ -225,8 +269,11 @@ impl WasmPythonExecutor {
             match std::fs::read(path) {
                 Ok(bytes) => match load_cached_module(&engine, &bytes) {
                     Ok(module) => {
+                        // Cycle-11 CI debug 2026-05-05: route through
+                        // the per-call probe (preferred) or the legacy
+                        // global. See `_set_cache_flag` closure above.
                         #[cfg(test)]
-                        LAST_NEW_USED_CACHE.store(true, Ordering::SeqCst);
+                        _set_cache_flag(true);
                         return Ok(Self::from_module(engine, module));
                     }
                     Err(e) => {
@@ -551,14 +598,32 @@ fn load_cached_module(engine: &Engine, bytes: &[u8]) -> wasmtime::Result<Module>
 /// race to rename; the loser's rename either succeeds (clobbering the
 /// winner's byte-for-byte identical bytes) or fails and leaves the
 /// winner's file — both fine.
+///
+/// Cycle-11 CI debug 2026-05-05 (cgpro VERIFY conv `cgpro_ci_debug_20260505`):
+/// the temp filename now includes pid + thread-id + a process-wide
+/// monotonic counter, so two threads in the same process racing on
+/// the same cache key cannot collide on the temp path. The previous
+/// `cwasm.tmp.{pid}` was unique only across processes, not threads.
 fn write_cache_atomic(module: &Module, path: &Path) -> std::io::Result<()> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static TEMP_NONCE: AtomicU64 = AtomicU64::new(0);
+
     let serialized = module
         .serialize()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    let tmp = path.with_extension(format!("cwasm.tmp.{}", std::process::id()));
+    let nonce = TEMP_NONCE.fetch_add(1, Ordering::Relaxed);
+    let thread_id = format!("{:?}", std::thread::current().id())
+        .replace("ThreadId(", "")
+        .replace(')', "");
+    let tmp = path.with_extension(format!(
+        "cwasm.tmp.{}.{}.{}",
+        std::process::id(),
+        thread_id,
+        nonce
+    ));
     {
         let mut f = std::fs::File::create(&tmp)?;
         f.write_all(&serialized)?;
@@ -739,16 +804,27 @@ print("env:", v)
 #[cfg(test)]
 mod cache_tests {
     use super::*;
-    use std::sync::atomic::Ordering;
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Arc, Mutex};
 
     /// Process-wide mutex that serialises every cache-test's
-    /// `new_with_overrides` → `LAST_NEW_USED_CACHE` read pair. The flag
-    /// is a single AtomicBool; without this lock, a parallel test's
-    /// flip could race between our flip and our assertion.
-    /// `parking_lot`-style poisoning on panic is not a concern — we
-    /// just need serialisation, not integrity.
+    /// `new_with_overrides` → probe-read pair. Each test now uses a
+    /// LOCAL `Arc<AtomicBool>` probe (cycle-11 CI debug 2026-05-05),
+    /// so the lock is no longer strictly necessary for correctness;
+    /// kept anyway because the cache tests share the same tempdir
+    /// pattern and serialisation simplifies the wasm cranelift cold
+    /// build (parallelising 5 ~30-second compiles would TIMEOUT the
+    /// whole job on CI).
     static CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Build a fresh per-call cache-decision probe. Tests use this
+    /// instead of reading the process-global `LAST_NEW_USED_CACHE`
+    /// (which is mutated by every parallel `new()` in the sibling
+    /// `tests` module — pre-cycle-11 CI flake on
+    /// `corrupt_cache_is_self_healing`).
+    fn fresh_probe() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
+    }
 
     /// Returns `None` when the rustpython.wasm bytes aren't embedded
     /// (fresh worktree, no build). Matches the `skip_if_no_runtime`
@@ -784,13 +860,15 @@ mod cache_tests {
             list_cwasm_files(tmp.path()).is_empty(),
             "tempdir should be empty before the cold call"
         );
+        let probe = fresh_probe();
         let opts = CacheOverrides {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: false,
+            probe: Some(Arc::clone(&probe)),
         };
         let _exec = WasmPythonExecutor::new_with_overrides(&opts).expect("cold new should succeed");
         assert!(
-            !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            !probe.load(Ordering::SeqCst),
             "cold miss should NOT load from cache"
         );
         let files = list_cwasm_files(tmp.path());
@@ -812,22 +890,26 @@ mod cache_tests {
         }
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("mk tempdir");
+        let probe = fresh_probe();
         let opts = CacheOverrides {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: false,
+            probe: Some(Arc::clone(&probe)),
         };
 
         // Cold — populate the cache.
         let _a = WasmPythonExecutor::new_with_overrides(&opts).expect("cold new should succeed");
         assert!(
-            !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            !probe.load(Ordering::SeqCst),
             "first call should be a cold miss"
         );
 
-        // Warm — deserialize path.
+        // Warm — deserialize path. Same probe handle observes the
+        // second call's outcome (the constructor resets the probe to
+        // false at top, then sets it to true on cache hit).
         let _b = WasmPythonExecutor::new_with_overrides(&opts).expect("warm new should succeed");
         assert!(
-            LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            probe.load(Ordering::SeqCst),
             "second call should load the cached .cwasm"
         );
     }
@@ -857,15 +939,21 @@ mod cache_tests {
             "corrupt plant is 128 bytes"
         );
 
+        let probe = fresh_probe();
         let opts = CacheOverrides {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: false,
+            probe: Some(Arc::clone(&probe)),
         };
         let exec = WasmPythonExecutor::new_with_overrides(&opts)
             .expect("new should self-heal past a corrupt cache");
-        // The deserialize failed → we took the recompile path.
+        // The deserialize failed → we took the recompile path. Per-call
+        // probe (cycle-11 CI debug 2026-05-05) — process-global
+        // LAST_NEW_USED_CACHE was racy under parallel cargo test
+        // (sibling tests' `new()` calls reset the flag between this
+        // test's constructor return and the load).
         assert!(
-            !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            !probe.load(Ordering::SeqCst),
             "corrupt cache should NOT be reported as a cache hit"
         );
 
@@ -892,16 +980,18 @@ mod cache_tests {
         }
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("mk tempdir");
+        let probe = fresh_probe();
         let opts = CacheOverrides {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: true,
+            probe: Some(Arc::clone(&probe)),
         };
         let _a =
             WasmPythonExecutor::new_with_overrides(&opts).expect("disabled new should succeed");
         let _b = WasmPythonExecutor::new_with_overrides(&opts)
             .expect("second disabled new should succeed");
         assert!(
-            !LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            !probe.load(Ordering::SeqCst),
             "disabled path should never report a cache hit"
         );
         assert!(
@@ -918,9 +1008,11 @@ mod cache_tests {
         }
         let _guard = CACHE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().expect("mk tempdir");
+        let probe = fresh_probe();
         let opts = CacheOverrides {
             cache_dir: Some(tmp.path().to_path_buf()),
             disabled: false,
+            probe: Some(Arc::clone(&probe)),
         };
 
         // Cold → populate.
@@ -928,7 +1020,7 @@ mod cache_tests {
         // Warm → deserialize.
         let exec = WasmPythonExecutor::new_with_overrides(&opts).expect("warm new should succeed");
         assert!(
-            LAST_NEW_USED_CACHE.load(Ordering::SeqCst),
+            probe.load(Ordering::SeqCst),
             "expected this call to be served from cache"
         );
         let r = exec.execute("print(40 + 2)", "{}", 10);
