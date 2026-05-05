@@ -210,3 +210,175 @@ def create_node_agent_loop(
     loop._current_topology = None
 
     return loop
+
+
+def create_bypass_agent_loop(
+    *,
+    singleton: AgentLoop,
+    llm_provider: LLMProvider,
+    llm_config: LLMConfig,
+    system_level: int,
+    write_gate: Any | None = None,
+    task_text: str = "",
+    on_drift: Any = None,
+    run_frame_builder: Any | None = None,
+    runtime_node_run_id: str | None = None,
+) -> AgentLoop:
+    """Per-run AgentLoop for the single-agent bypass path (P6-A Phase A).
+
+    Replaces the ~150-line snapshot/restore mutation block at
+    ``pipeline.py:_stage_execute`` (lines 2300-2465) with a fresh
+    AgentLoop instance carrying all per-ctx state from the start.
+    See ``docs/adr/ADR-016-agent-loop-bypass-factory.md`` for the
+    full design + migration plan.
+
+    Cycle-11 Phase A: this function is callable but not yet wired
+    into ``pipeline.py``. Phase B (cycle-12, behind cgpro DESIGN
+    review) swaps the bypass mutation block for a single call to
+    this factory, then removes the P6-B lock + ContextVar reentry
+    guard. All 25 cycle-11 P9 phase 1 tests must pass byte-identically
+    against the post-swap pipeline.
+
+    Field ownership matrix
+    ======================
+    Per-run (factory args, never copied from singleton):
+      - ``llm_provider`` / ``config.llm``
+      - ``write_gate`` / ``gate_current_task`` / ``gate_source_tier``
+      - ``_on_drift``
+      - ``_run_frame_builder`` / ``_runtime_node_run_id``
+
+    Derived from ``system_level`` (parametric, matches the existing
+    bypass mutation block at pipeline.py:2356-2386):
+      - ``config.validation_level`` (1/2/3 + sandbox-aware on S2)
+      - ``config.max_steps`` ({1: 5, 2: 10, 3: 20})
+      - ``config.stall_after_tool_steps`` (max-1 if max>5 else 0)
+
+    Per-run constants for bypass path:
+      - ``_skip_routing = True`` (H1: routing was Stage 0)
+      - ``_current_topology = None`` (H4: bypass = no topology)
+
+    Shared with singleton (copied by reference):
+      - ``_tools`` (ToolRegistry)
+      - ``sandbox_manager`` / ``exocortex`` / ``guardrail_pipeline``
+      - ``episodic_memory`` / ``semantic_memory`` / ``memory_agent``
+      - ``causal_memory`` / ``consolidator``
+      - ``tool_executor`` / ``topology_engine``
+      - ``agent_pool`` / ``metacognition`` / ``topology_population``
+      - Ablation flags (``_skip_memory`` / ``_skip_avr`` /
+        ``_skip_guardrails`` / ``_auto_evolve``) — set at boot,
+        same across all runs in a process.
+
+    Per-instance fresh (via ``AgentLoop.__init__`` defaults):
+      - ``working_memory`` (new WorkingMemory(agent_id=config.name))
+      - ``prm`` (new ProcessRewardModel)
+      - All stats fields zeroed
+        (``step_count``, ``total_inference_time``, ``total_cost_usd``,
+        ``tool_call_count``, ``tool_turn_count``, ``executed_commands``)
+
+    Args:
+        singleton: The boot AgentLoop singleton (source of injected
+            deps: sandbox, memory backends, tool_registry, etc.).
+        llm_provider: Per-run LLM provider (bandit-selected or
+            default routing).
+        llm_config: Per-run LLM config matching the provider.
+        system_level: 1/2/3 — drives max_steps + validation_level.
+        write_gate: Per-task write gate (built by pipeline). None
+            preserves "ungated, no-op" behavior.
+        task_text: Task text for write_gate dedup. "" if no gate.
+        on_drift: Drift callback (forwards to ProviderPool.record_failure).
+        run_frame_builder: Per-run RunFrame builder.
+        runtime_node_run_id: Per-run/per-node run id.
+
+    Returns:
+        Fresh AgentLoop ready for ``await loop.run(task)``. The
+        instance is independent of the singleton: mutations to the
+        returned loop do NOT affect the singleton or any concurrent
+        bypass loop.
+    """
+    # config.validation_level scaling matches pipeline.py:2356-2361.
+    # On S2 the singleton checks ``self._agent_loop.sandbox_manager``
+    # — we mirror that here using the singleton's sandbox_manager
+    # (since it's the field we copy from).
+    if system_level >= 3:
+        validation_level = 3
+    elif system_level >= 2 and singleton.sandbox_manager is not None:
+        validation_level = 2
+    else:
+        validation_level = 1
+
+    # max_steps scaling matches pipeline.py:2372 (singleton mutation)
+    # AND agent_loop_factory.py:136-141 (per-node factory). They are
+    # the same formula by design.
+    max_steps = {1: 5, 2: 10, 3: 20}.get(system_level, 10)
+
+    # D8 stall cap mirrors agent_loop_factory.py:155-158.
+    stall_after_tool_steps = max_steps - 1 if max_steps > 5 else 0
+
+    # Build a config that copies stable fields from the singleton's
+    # config (name, system_prompt, tools list, sandbox/exhaustion
+    # flags) and overrides the per-run fields.
+    base_config = singleton.config
+    config = AgentConfig(
+        name=base_config.name,
+        llm=llm_config,
+        system_prompt=base_config.system_prompt,
+        max_steps=max_steps,
+        tools=base_config.tools,  # tool name list, shared
+        use_docker_sandbox=base_config.use_docker_sandbox,
+        snapshot_to_restore=base_config.snapshot_to_restore,
+        validation_level=validation_level,
+        raise_on_exhaustion=base_config.raise_on_exhaustion,
+        stall_after_tool_steps=stall_after_tool_steps,
+    )
+
+    loop = AgentLoop(
+        config=config,
+        llm_provider=llm_provider,
+        tool_registry=singleton._tools,  # shared
+        memory_compressor=singleton.memory_compressor,
+        on_event=singleton._on_event,
+    )
+
+    # Shared injected deps — copy by reference from singleton.
+    loop.sandbox_manager = singleton.sandbox_manager
+    loop.exocortex = singleton.exocortex
+    loop.guardrail_pipeline = singleton.guardrail_pipeline
+    loop.episodic_memory = singleton.episodic_memory
+    loop.semantic_memory = singleton.semantic_memory
+    loop.memory_agent = singleton.memory_agent
+    loop.causal_memory = singleton.causal_memory
+    loop.consolidator = singleton.consolidator
+    loop.tool_executor = singleton.tool_executor
+    loop.topology_engine = singleton.topology_engine
+    loop.agent_pool = singleton.agent_pool
+    loop.metacognition = singleton.metacognition
+    loop.topology_population = singleton.topology_population
+
+    # Ablation flags — set at boot via AblationConfig.apply, shared
+    # across all runs in a process (NOT per-task ablation).
+    loop._skip_memory = singleton._skip_memory
+    loop._skip_avr = singleton._skip_avr
+    loop._skip_guardrails = singleton._skip_guardrails
+    loop._auto_evolve = singleton._auto_evolve
+
+    # Per-run state for the bypass path (H1: routing already done in
+    # Stage 0; H4: bypass means no topology was selected).
+    loop._skip_routing = True
+    loop._current_topology = None
+
+    # Per-run write gate + drift callback. These are the cycle-7+
+    # G-series + H6 wiring carried from the singleton mutation block.
+    loop.write_gate = write_gate
+    loop.gate_current_task = task_text
+    if llm_config and getattr(llm_config, "model", None):
+        from sage.memory.write_gate import infer_source_tier
+        loop.gate_source_tier = infer_source_tier(llm_config.model)
+    if on_drift is not None:
+        loop._on_drift = on_drift
+
+    # RunFrame correlation IDs — per-run, set by pipeline.run() before
+    # this factory is called.
+    loop._run_frame_builder = run_frame_builder
+    loop._runtime_node_run_id = runtime_node_run_id
+
+    return loop
