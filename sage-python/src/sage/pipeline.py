@@ -755,12 +755,26 @@ class CognitiveOrchestrationPipeline:
         from sage.runtime.event_log import (
             EventLogUnavailable,
             RuntimeEventLog,
+            current_event_log,
             install_event_log,
         )
         from sage.runtime.event_log.redaction import _hash_text
         from sage.runtime.run_frame.builder import _RunFrameBuilder
 
-        event_log = RuntimeEventLog(run_id=_new_runtime_run_id())
+        # Cycle-13 E Tier 2.1 smoke discovery 2026-05-05: when called via
+        # `sage run --jsonl` (cycle-12 prelude `d09bed4d`), the CLI installs
+        # its own RuntimeEventLog with a stdout-mirror tee BEFORE calling
+        # pipeline.run(). The previous unconditional construction here
+        # shadowed the CLI's eventlog with a fresh-disabled one (no
+        # trace_dir kwarg + SAGE_TRACE_JSONL_DIR env unset =>
+        # writer.py:162 sets disabled=True, all emit_* become no-ops),
+        # so no runtime events ever reached the CLI's stdout. Prefer
+        # the externally-installed eventlog when present; fall back to
+        # creating a fresh one for direct-Python callers (the
+        # historical default).
+        event_log = current_event_log()
+        if event_log is None:
+            event_log = RuntimeEventLog(run_id=_new_runtime_run_id())
         run_frame_builder = _RunFrameBuilder(
             run_id=event_log.run_id,
             task_id=event_log.run_id,

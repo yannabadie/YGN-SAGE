@@ -7,7 +7,9 @@ hold. Tests for the oracle path live in test_oracle_stack.py.
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, AsyncMock, patch
 
@@ -1098,6 +1100,84 @@ async def test_pipeline_context_preserves_budget():
     # Internal check: PipelineContext budget propagation
     ctx = PipelineContext(task="test", budget=7.5)
     assert ctx.budget == 7.5
+
+
+@pytest.mark.asyncio
+async def test_pipeline_run_respects_installed_event_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Cycle-13 E Tier 2.1 smoke discovery 2026-05-05 regression.
+
+    Pre-fix: pipeline.py:763 unconditionally constructed
+    ``RuntimeEventLog(run_id=_new_runtime_run_id())``. With no
+    ``trace_dir`` kwarg AND no ``SAGE_TRACE_JSONL_DIR`` env var, the
+    constructor sets ``self.disabled=True`` (writer.py:162) and all
+    ``emit_*`` methods become no-ops. ``install_event_log(event_log)``
+    on line 770 then SHADOWS any previously-installed eventlog (e.g.
+    by ``sage run --jsonl`` setting up a stdout-mirror tee).
+
+    Result: telemetry-blind in CLI mode. Cycle-13 dry-run would
+    produce predictions with no observability, defeating cgpro DESIGN E
+    secondary metrics (oracle.trainable rate,
+    bandit_attribution_mismatch rate, controller_decision distribution).
+
+    Post-fix: pipeline.run() calls ``current_event_log()`` first; if
+    an eventlog is already installed, reuses it. Falls back to
+    constructing a fresh one for direct-Python callers (preserves
+    historical default).
+
+    This test proves the contract: install an eventlog, run the
+    pipeline, assert the eventlog received at least the
+    ``task_started`` event.
+    """
+    from sage.runtime.event_log import RuntimeEventLog, install_event_log
+
+    monkeypatch.setenv("SAGE_ORACLE", "0")
+    monkeypatch.delenv("SAGE_TRACE_JSONL_DIR", raising=False)
+
+    trace_dir = tmp_path / "ext_eventlog"
+    external_log = RuntimeEventLog(run_id="external-run-id", trace_dir=trace_dir)
+    assert not external_log.disabled, (
+        "external eventlog must be enabled (trace_dir provided) — test "
+        "premise broken if disabled"
+    )
+    install_event_log(external_log)
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_MockRouter(system=1),
+        engine=None,
+        assigner=None,
+        provider_pool=MagicMock(),
+        llm_provider=_MockLLMProvider(),
+    )
+
+    await pipeline.run("simple smoke task", budget_usd=0.1)
+
+    # Assert task_started landed in the EXTERNAL eventlog file.
+    # Pre-fix: the file was empty because pipeline created a disabled
+    # internal eventlog and shadowed the external one.
+    log_path = external_log._path  # noqa: SLF001 — test reads internal path
+    assert log_path is not None, "external eventlog file path missing"
+    assert log_path.exists(), f"external eventlog file missing at {log_path}"
+
+    raw = log_path.read_text(encoding="utf-8")
+    assert raw.strip(), (
+        "external eventlog received zero events — pipeline.run did not "
+        "respect the installed eventlog. Regression of the cycle-13 E "
+        "Tier 2.1 smoke fix at pipeline.py:763."
+    )
+    # task_started must be the FIRST event the pipeline emits.
+    first_event = json.loads(raw.splitlines()[0])
+    assert first_event["event_type"] == "task_started", (
+        f"first event must be task_started; got {first_event!r}"
+    )
+    assert first_event["run_id"] == external_log.run_id, (
+        "pipeline must use the installed eventlog's run_id "
+        "(`external-run-id`), not generate a new one. Without this, "
+        "cli_started's run_id (set by the CLI before pipeline.run) and "
+        "the runtime events' run_id would diverge — frontend frame "
+        "stitching would break."
+    )
 
 
 # ── Pipeline stages unit tests ──────────────────────────────────────────────
