@@ -46,6 +46,46 @@ def _legacy_oracle_off(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SAGE_ORACLE", "0")
 
 
+@pytest.fixture(autouse=True)
+def _spy_loop_passthrough_factory(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cycle-12 P6-A Phase B (commit 7e20372e): the bypass path now calls
+    `create_bypass_agent_loop(singleton=...)` to build a fresh AgentLoop
+    from the singleton's deps. _SpyAgentLoop is a hand-rolled spy with
+    only the attrs needed to exercise pillar logging — the real factory
+    fails on it (`_tools` etc. missing).
+
+    Patch the factory to a passthrough that injects per-run write_gate /
+    task / source_tier into the spy and returns the spy itself. The spy's
+    .run() then fires pillar logging as designed.
+    """
+    from sage.memory.write_gate import infer_source_tier
+    from sage.pipeline_v2 import execute as _execute_module
+
+    def _spy_passthrough(
+        singleton,
+        llm_provider,
+        llm_config,
+        system_level,
+        write_gate,
+        task_text,
+        on_drift,
+        run_frame_builder,
+        runtime_node_run_id,
+    ):
+        singleton.write_gate = write_gate
+        singleton.gate_current_task = task_text
+        try:
+            model = getattr(getattr(singleton.config, "llm", None), "model", None)
+            singleton.gate_source_tier = infer_source_tier(model)
+        except (ImportError, AttributeError):
+            singleton.gate_source_tier = "unknown"
+        return singleton
+
+    monkeypatch.setattr(
+        _execute_module, "create_bypass_agent_loop", _spy_passthrough
+    )
+
+
 # ── Minimal stage mocks (subset of test_pipeline.py — kept self-contained) ───
 
 
