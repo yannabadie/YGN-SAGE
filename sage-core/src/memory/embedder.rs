@@ -71,6 +71,14 @@ pub fn resolve_ort_dylib_once(
 ///
 /// Search order: sibling of model > sys.prefix > VIRTUAL_ENV >
 /// user site-packages (%APPDATA%) > system Python (C:\Python3*).
+// Cycle-11 CI debug 2026-05-05: `sys_prefix` is consumed only inside
+// the `#[cfg(target_os = "windows")]` block at line 104 below — on
+// Linux / macOS the param is unused and `unused_variables` warns.
+// The function signature is shared cross-platform so callers can
+// pass `Python::sys.prefix` uniformly; the param IS load-bearing
+// on Windows. Targeted allow keeps Linux + macOS warning-clean
+// without masking real unused-variable bugs on Windows.
+#[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
 pub(crate) fn discover_ort_dylib(
     model_path: &str,
     sys_prefix: Option<&str>,
