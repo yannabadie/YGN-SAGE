@@ -190,18 +190,38 @@ async def test_decompose_wrapper_runs_body_and_legacy_method_delegates_to_it() -
     assert out_round.dag_features.omega == 1
 
 
-def test_select_topology_wrapper_delegates_to_pipeline_stage_select_topology() -> None:
+def test_select_topology_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
+    """Phase B inverted the direction (same as decompose / classify).
+
+    The wrapper now CONTAINS the body. Tests the S1 fast-path early
+    exit: `system=1`, `domain="general"`, and no DAG features set
+    `ctx.topology=None` and return ctx. Both direct call and
+    round-trip through `pipeline._stage_select_topology` produce the
+    same identity result.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import select_topology as st_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage2_input")
-    sentinel_out = SimpleNamespace(tag="stage2_output")
-    pipeline._stage_select_topology = MagicMock(return_value=sentinel_out)
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.engine = None  # skip DynamicTopologyEngine path
 
-    result = st_mod.select_topology(pipeline, sentinel_ctx)
+    # Direct call:
+    ctx_direct = PipelineContext(task="select topology direct task")
+    ctx_direct.system = 1
+    ctx_direct.domain = "general"
+    ctx_direct.dag_features = None
+    out_direct = st_mod.select_topology(pipeline, ctx_direct)
+    assert out_direct is ctx_direct
+    assert out_direct.topology is None
 
-    pipeline._stage_select_topology.assert_called_once_with(sentinel_ctx)
-    assert result is sentinel_out
+    # Round-trip through legacy delegator:
+    ctx_round = PipelineContext(task="select topology roundtrip task")
+    ctx_round.system = 1
+    ctx_round.domain = "general"
+    ctx_round.dag_features = None
+    out_round = pipeline._stage_select_topology(ctx_round)
+    assert out_round is ctx_round
+    assert out_round.topology is None
 
 
 def test_assign_models_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
