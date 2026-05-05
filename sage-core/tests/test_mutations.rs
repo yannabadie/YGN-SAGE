@@ -104,7 +104,7 @@ fn test_add_node_increases_count() {
     // count-grew assertion.
     let result = add_node(graph, "aggregator", "gemini-2.5-flash", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     assert_eq!(new_graph.node_count(), 4);
 }
 
@@ -119,7 +119,7 @@ fn test_add_node_on_single_node_graph() {
 
     let result = add_node(graph, "helper", "gemini-2.5-flash", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     assert_eq!(new_graph.node_count(), 2);
     // The new node should be connected to the exit (originally the single node).
     assert!(new_graph.edge_count() >= 1);
@@ -136,7 +136,7 @@ fn test_remove_node_decreases_count() {
 
     let result = remove_node(graph, 1); // remove middle node
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     assert_eq!(new_graph.node_count(), 2);
     // Rewiring: predecessor of 1 (node 0) should connect to successor of 1 (node 2).
     assert!(new_graph.edge_count() >= 1);
@@ -170,7 +170,7 @@ fn test_swap_model_changes_model_id() {
 
     let result = swap_model(graph, 0, "gpt-5.3-codex");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     let node = new_graph.try_get_node(0).unwrap();
     assert_eq!(node.model_id, "gpt-5.3-codex");
 }
@@ -187,7 +187,7 @@ fn test_rewire_edge_adds_edge() {
     // Add edge from 0 directly to 2 (skipping 1).
     let result = rewire_edge(graph, 0, 2);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     assert_eq!(new_graph.edge_count(), original_edges + 1);
 }
 
@@ -226,7 +226,7 @@ fn test_split_node_increases_count_by_one() {
         "gemini-2.5-flash",
     );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     // Original 3 - 1 removed + 2 new = 4.
     assert_eq!(new_graph.node_count(), 4);
 }
@@ -243,7 +243,7 @@ fn test_merge_nodes_decreases_count_by_one() {
     // Merge adjacent nodes 0 and 1.
     let result = merge_nodes(graph, 0, 1, "merged_worker", "gemini-2.5-flash");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     // Original 3 - 2 merged + 1 new = 2.
     assert_eq!(new_graph.node_count(), 2);
 }
@@ -262,7 +262,7 @@ fn test_mutate_prompt_changes_role() {
 
     let result = mutate_prompt(graph, 0, "super_coder");
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     let node = new_graph.try_get_node(0).unwrap();
     assert_eq!(node.role, "super_coder");
 }
@@ -399,7 +399,7 @@ fn test_split_node_preserves_connectivity() {
         "gemini-2.5-flash",
     );
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
 
     // Should be acyclic (sequential was acyclic and split maintains DAG structure).
     assert!(new_graph.is_acyclic(), "Split graph should remain acyclic");
@@ -423,6 +423,6 @@ fn test_add_node_on_empty_graph() {
 
     let result = add_node(graph, "first", "gemini-2.5-flash", 1);
     assert!(result.is_success(), "Expected Success, got: {:?}", result);
-    let new_graph = result.unwrap();
+    let new_graph = result.try_into_graph().unwrap();
     assert_eq!(new_graph.node_count(), 1);
 }

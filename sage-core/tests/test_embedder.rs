@@ -35,7 +35,7 @@ mod onnx_embedder_tests {
         }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
-            let vec = emb.embed("Hello world").unwrap();
+            let vec = emb.embed(py, "Hello world").unwrap();
             assert_eq!(vec.len(), 384);
             let norm: f32 = vec.iter().map(|x| x * x).sum::<f32>().sqrt();
             assert!((norm - 1.0).abs() < 0.01);
@@ -52,7 +52,7 @@ mod onnx_embedder_tests {
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let vecs = emb
-                .embed_batch(vec!["Hello".into(), "World".into(), "Rust is fast".into()])
+                .embed_batch(py, vec!["Hello".into(), "World".into(), "Rust is fast".into()])
                 .unwrap();
             assert_eq!(vecs.len(), 3);
             assert!(vecs.iter().all(|v| v.len() == 384));
@@ -68,8 +68,8 @@ mod onnx_embedder_tests {
         }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
-            let v1 = emb.embed("deterministic test").unwrap();
-            let v2 = emb.embed("deterministic test").unwrap();
+            let v1 = emb.embed(py, "deterministic test").unwrap();
+            let v2 = emb.embed(py, "deterministic test").unwrap();
             assert_eq!(v1, v2);
         });
     }
@@ -83,7 +83,7 @@ mod onnx_embedder_tests {
         }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
-            let vecs = emb.embed_batch(vec![]).unwrap();
+            let vecs = emb.embed_batch(py, vec![]).unwrap();
             assert!(vecs.is_empty());
         });
     }
@@ -97,9 +97,9 @@ mod onnx_embedder_tests {
         }
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
-            let cat = emb.embed("I love cats").unwrap();
-            let dog = emb.embed("I love dogs").unwrap();
-            let code = emb.embed("fn main() { println!(\"hello\"); }").unwrap();
+            let cat = emb.embed(py, "I love cats").unwrap();
+            let dog = emb.embed(py, "I love dogs").unwrap();
+            let code = emb.embed(py, "fn main() { println!(\"hello\"); }").unwrap();
 
             let sim_cat_dog: f32 = cat.iter().zip(&dog).map(|(a, b)| a * b).sum();
             let sim_cat_code: f32 = cat.iter().zip(&code).map(|(a, b)| a * b).sum();
