@@ -79,6 +79,22 @@ def _fake_dataset() -> dict[str, dict]:
     }
 
 
+import time as _stdlib_time
+
+# Cycle-11 cgpro VERIFY follow-up (2026-05-05): capture the real
+# ``time.time`` FUNCTION REFERENCE at module-import time, NOT the
+# ``time`` module. The previous implementation captured the module
+# inside ``_make_time_seq``; ``monkeypatch.setattr("sage.bench.
+# bigcodebench_bench.time.time", fake_time)`` patches the same
+# module-level binding (``time`` is a singleton), so when the
+# fake_time fallback called ``_real_time.time()`` it re-entered
+# the patched fake_time → infinite recursion → RecursionError on
+# Windows where one extra ``time.time()`` call exhausts the seq.
+# Linux passed by accident because the seq sized exactly to its
+# call count.
+_REAL_TIME_FUNC = _stdlib_time.time
+
+
 def _make_time_seq(values: list[float]):
     """Return a fake_time() that yields ``values`` then falls back to real time().
 
@@ -86,13 +102,15 @@ def _make_time_seq(values: list[float]):
     subprocess evaluator may call ``time.time()`` more than twice
     (e.g. inside the eval subprocess timeout machinery).
     """
-    import time as _real_time
     seq = list(values)
 
     def fake_time() -> float:
         if seq:
             return seq.pop(0)
-        return _real_time.time()
+        # Use the captured function reference so this never
+        # re-enters fake_time even if ``time.time`` is monkey-
+        # patched module-wide.
+        return _REAL_TIME_FUNC()
 
     return fake_time
 
