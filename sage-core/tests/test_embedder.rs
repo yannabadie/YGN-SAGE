@@ -52,7 +52,10 @@ mod onnx_embedder_tests {
         pyo3::Python::with_gil(|py| {
             let mut emb = RustEmbedder::new(py, model_path(), tokenizer_path()).unwrap();
             let vecs = emb
-                .embed_batch(py, vec!["Hello".into(), "World".into(), "Rust is fast".into()])
+                .embed_batch(
+                    py,
+                    vec!["Hello".into(), "World".into(), "Rust is fast".into()],
+                )
                 .unwrap();
             assert_eq!(vecs.len(), 3);
             assert!(vecs.iter().all(|v| v.len() == 384));

@@ -239,11 +239,9 @@ impl WasmPythonExecutor {
         // call's outcome (subject to the cross-test race the probe
         // pattern is designed to eliminate).
         #[cfg(test)]
-        let _set_cache_flag = |hit: bool| {
-            match &probe {
-                Some(p) => p.store(hit, Ordering::SeqCst),
-                None => LAST_NEW_USED_CACHE.store(hit, Ordering::SeqCst),
-            }
+        let _set_cache_flag = |hit: bool| match &probe {
+            Some(p) => p.store(hit, Ordering::SeqCst),
+            None => LAST_NEW_USED_CACHE.store(hit, Ordering::SeqCst),
         };
         #[cfg(test)]
         _set_cache_flag(false); // reset at top of every constructor
