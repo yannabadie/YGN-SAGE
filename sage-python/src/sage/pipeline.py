@@ -5,8 +5,6 @@ with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 """
 from __future__ import annotations
 
-import asyncio
-import contextvars
 import hashlib
 import json
 import logging
@@ -63,33 +61,6 @@ _BANDIT_ATTRIBUTION_REASON_CODES: tuple[BanditAttributionReasonCode, ...] = (
     "recorder_instance_mismatch",
 )
 _MULTI_NODE_ATTRIBUTION_TEMPLATES = {"parallel", "parallel_fanout", "debate"}
-
-# P6-B (cycle-11 entry, cgpro round-4 review 2026-05-04): re-entry guard
-# for the AgentLoop bypass singleton mutation block. The bypass path
-# (CognitiveOrchestrationPipeline._stage_execute, around the historical
-# "B9 deferred" comment) snapshots+mutates 12 fields on the boot
-# singleton AgentLoop, runs `await self._agent_loop.run(...)`, then
-# restores from the snapshot. Two same-event-loop concurrent runs would
-# clobber each other's mutations because the snapshot is per-call but
-# the singleton is shared.
-#
-# A naive asyncio.Lock around the block would fix the basic race but
-# would deadlock on `sage_recurse` — a tool registered at boot
-# (sage/boot.py) that re-invokes `system.run` from inside an AgentLoop
-# step. Re-entering pipeline.run() while the bypass lock is already held
-# in the same task would attempt to re-acquire the lock and never
-# return.
-#
-# This ContextVar is set inside the lock and checked at the head of the
-# bypass path. Nested entry fails fast with a controlled RuntimeError
-# instead of silent deadlock. The ContextVar is task-local, so two
-# unrelated concurrent runs each see their own False default and
-# serialize cleanly through the lock.
-_BYPASS_AGENT_LOOP_ACTIVE: contextvars.ContextVar[bool] = contextvars.ContextVar(
-    "sage_pipeline_bypass_agent_loop_active",
-    default=False,
-)
-
 
 def _new_runtime_run_id() -> str:
     """Return a canonical 26-char uppercase ULID, with a local fallback."""
@@ -263,19 +234,6 @@ class CognitiveOrchestrationPipeline:
             except ImportError:
                 log.debug("meta_harness module not available, skipping harness config")
         self._agent_loop = agent_loop
-        # P6-B (cycle-11, cgpro round-4 review 2026-05-04): the boot
-        # singleton AgentLoop is shared across all pipeline runs that
-        # reach the bypass-mutation block. We serialize concurrent
-        # bypass entries on a per-event-loop asyncio.Lock to prevent
-        # snapshot/restore interleaving from clobbering the singleton's
-        # config across overlapping tasks. Lazy because asyncio.Lock()
-        # binds to the running loop on first await; constructing it in
-        # __init__ would bind to whatever loop (if any) builds the
-        # pipeline. The _loop tracker rebuilds the lock if a fresh
-        # event loop is observed (e.g. between two pytest cases that
-        # each create-and-tear-down a loop).
-        self._agent_loop_bypass_lock: asyncio.Lock | None = None
-        self._agent_loop_bypass_lock_loop: asyncio.AbstractEventLoop | None = None
         self._task_count = 0
         self.budget_usd = _resolve_task_budget_usd(budget_usd)
         self._llm_tier = llm_tier
@@ -341,24 +299,6 @@ class CognitiveOrchestrationPipeline:
                 raise
             log.debug("CompositeWriteGate init failed, memory writes ungated: %s", exc)
             return None
-
-    def _get_agent_loop_bypass_lock(self) -> asyncio.Lock:
-        """Return the per-event-loop asyncio.Lock guarding the bypass mutation block.
-
-        P6-B (cycle-11, cgpro round-4 review 2026-05-04). Constructed on first
-        use because asyncio.Lock() binds to the running loop. Reconstructed if a
-        different running loop is observed — pytest-asyncio creates a fresh loop
-        per test, and a stale lock from a closed loop would either deadlock or
-        raise. Single-task per pipeline = no race here; the rebuild only happens
-        between tests.
-        """
-        loop = asyncio.get_running_loop()
-        lock = self._agent_loop_bypass_lock
-        if lock is None or self._agent_loop_bypass_lock_loop is not loop:
-            lock = asyncio.Lock()
-            self._agent_loop_bypass_lock = lock
-            self._agent_loop_bypass_lock_loop = loop
-        return lock
 
     def _record_to_memory(
         self,

@@ -7,10 +7,9 @@ hold. Tests for the oracle path live in test_oracle_stack.py.
 """
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass
 from typing import Any
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock, AsyncMock, patch
 
 import pytest
 
@@ -360,39 +359,41 @@ async def test_pipeline_single_agent_wires_write_gate_onto_agent_loop():
         "bypass-fix loop is broken at the root"
     )
 
-    result = await pipeline.run("fix astropy units bug", budget_usd=3.0)
+    bypass_loop = MagicMock()
+    bypass_loop.run = AsyncMock(return_value="single-agent test response")
+    bypass_loop.total_cost_usd = 0.0
+    bypass_loop.tool_call_count = 0
+    bypass_loop.tool_turn_count = 0
+    bypass_loop.executed_commands = []
+    with patch(
+        "sage.pipeline_v2.execute.create_bypass_agent_loop",
+        return_value=bypass_loop,
+    ) as factory:
+        result = await pipeline.run("fix astropy units bug", budget_usd=3.0)
 
-    # Sanity: spy_loop.run() was actually called (otherwise the test proves nothing)
+    # Sanity: the per-run loop was actually called (otherwise the test proves nothing)
     assert result == "single-agent test response", (
-        f"expected spy_loop.run() to be the LLM path, got result={result!r}. "
+        f"expected bypass_loop.run() to be the LLM path, got result={result!r}. "
         "If this is 'Pipeline test response', stage_execute fell through to the "
         "llm_provider fallback instead of the agent_loop path — test setup is wrong."
     )
 
-    # Bypass path must have wired the gate onto the shared agent loop
-    # *during* the run — A0a correctly restores it to None post-run.
-    during = spy_loop.during_run_snapshot
-    assert during, "spy_loop.run() was never called — pipeline took the wrong branch"
-    assert during["write_gate"] is pipeline.write_gate, (
-        "single-agent path must assign pipeline.write_gate → agent_loop.write_gate "
-        "DURING the run; without it, phases/act.py sees loop.write_gate=None and "
-        "memory writes silently skip the 5-signal gate"
+    kwargs = factory.call_args.kwargs
+    assert kwargs["write_gate"] is pipeline.write_gate, (
+        "single-agent path must pass pipeline.write_gate to the bypass factory; "
+        "without it, phases/act.py sees loop.write_gate=None and memory writes "
+        "silently skip the 5-signal gate"
     )
-    assert during["gate_current_task"] == "fix astropy units bug", (
+    assert kwargs["task_text"] == "fix astropy units bug", (
         "single-agent path must forward ctx.task into the loop for the "
         "gate's relevance signal"
     )
-    assert during["gate_source_tier"] in {"reasoner", "fast", "budget", "unknown"}, (
-        f"gate_source_tier should be resolved from cards.toml via "
-        f"infer_source_tier, got: {during['gate_source_tier']!r}"
+    assert kwargs["singleton"] is spy_loop, (
+        "single-agent path must build the per-run loop from the boot singleton"
     )
-
-    # A0a restoration contract: write_gate is returned to pre-bypass value
-    # (None for this spy) after the run so concurrent callers don't see
-    # stale state.
     assert spy_loop.write_gate is None, (
-        "A0a: write_gate must be restored to pre-bypass value after run. "
-        f"Got {spy_loop.write_gate!r} — restoration is leaking."
+        "P6-A: singleton write_gate must remain untouched; per-run factory "
+        "owns write_gate injection now."
     )
 
 
@@ -461,12 +462,22 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
         agent_loop=spy_loop,
     )
 
-    await pipeline.run("investigate provider drift", budget_usd=3.0)
+    bypass_loop = MagicMock()
+    bypass_loop.run = AsyncMock(return_value="single-agent test response")
+    bypass_loop.total_cost_usd = 0.0
+    bypass_loop.tool_call_count = 0
+    bypass_loop.tool_turn_count = 0
+    bypass_loop.executed_commands = []
+    with patch(
+        "sage.pipeline_v2.execute.create_bypass_agent_loop",
+        return_value=bypass_loop,
+    ) as factory:
+        await pipeline.run("investigate provider drift", budget_usd=3.0)
 
-    # Bypass path must have wired the callback during the run
-    wired = spy_loop.during_run_on_drift
+    # Bypass path must pass the callback into the per-run loop factory.
+    wired = factory.call_args.kwargs["on_drift"]
     assert wired is not None, (
-        "single-agent path must set loop._on_drift DURING the run so drift "
+        "single-agent path must pass on_drift to the factory so drift "
         "events propagate to ProviderPool.record_failure — same pattern as "
         "H5 (write_gate). Without it, drift on S1/bypass paths is silent."
     )
@@ -485,11 +496,9 @@ async def test_pipeline_single_agent_wires_on_drift_onto_agent_loop():
         "LOG_ONLY drift must not trip record_failure (only SWITCH_MODEL / RESET_AGENT)"
     )
 
-    # A0a restoration contract: _on_drift is returned to pre-bypass None
-    # after run — enforces no state leakage.
     assert spy_loop._on_drift is None, (
-        "A0a: _on_drift must be restored to pre-bypass value (None) after run. "
-        f"Got {spy_loop._on_drift!r} — restoration is leaking."
+        "P6-A: singleton _on_drift must remain untouched; per-run factory "
+        "owns drift callback injection now."
     )
 
 
@@ -560,14 +569,22 @@ async def test_pipeline_single_agent_scales_max_steps_by_system(monkeypatch):
             agent_loop=spy_loop,
         )
 
-        await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
+        bypass_loop = MagicMock()
+        bypass_loop.run = AsyncMock(return_value="single-agent test response")
+        bypass_loop.total_cost_usd = 0.0
+        bypass_loop.tool_call_count = 0
+        bypass_loop.tool_turn_count = 0
+        bypass_loop.executed_commands = []
+        with patch(
+            "sage.pipeline_v2.execute.create_bypass_agent_loop",
+            return_value=bypass_loop,
+        ) as factory:
+            await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
 
-        assert spy_loop.during_run_max_steps == expected_max_steps, (
-            f"system={system_level} expected max_steps={expected_max_steps} "
-            f"during run, got {spy_loop.during_run_max_steps!r}. Bypass "
-            f"path must mirror agent_loop_factory.py:132-137 scaling to "
-            f"prevent S1 tasks from running at 4x the factory-intended "
-            f"step budget."
+        assert factory.call_args.kwargs["system_level"] == system_level, (
+            f"expected system_level={system_level} to be forwarded to "
+            "create_bypass_agent_loop so the factory applies "
+            f"max_steps={expected_max_steps}."
         )
 
 
@@ -640,16 +657,22 @@ async def test_pipeline_single_agent_sets_stall_cap_matching_factory(monkeypatch
             agent_loop=spy_loop,
         )
 
-        await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
+        bypass_loop = MagicMock()
+        bypass_loop.run = AsyncMock(return_value="single-agent test response")
+        bypass_loop.total_cost_usd = 0.0
+        bypass_loop.tool_call_count = 0
+        bypass_loop.tool_turn_count = 0
+        bypass_loop.executed_commands = []
+        with patch(
+            "sage.pipeline_v2.execute.create_bypass_agent_loop",
+            return_value=bypass_loop,
+        ) as factory:
+            await pipeline.run(f"task at S{system_level}", budget_usd=3.0)
 
-        assert spy_loop.during_run_max_steps == expected_max, (
-            f"system={system_level} max_steps prerequisite (from 1.1) not met: "
-            f"expected {expected_max} during run, got {spy_loop.during_run_max_steps!r}"
-        )
-        assert spy_loop.during_run_stall == expected_stall, (
-            f"system={system_level} stall_cap expected {expected_stall} during run, "
-            f"got {spy_loop.during_run_stall!r}. Bypass path "
-            f"must mirror agent_loop_factory.py:151-154 formula."
+        assert factory.call_args.kwargs["system_level"] == system_level, (
+            f"expected system_level={system_level} to be forwarded to "
+            "create_bypass_agent_loop so the factory applies "
+            f"max_steps={expected_max} and stall_cap={expected_stall}."
         )
 
 
@@ -1063,7 +1086,8 @@ async def test_pipeline_no_estimator_abstains():
 @pytest.mark.asyncio
 async def test_pipeline_context_preserves_budget():
     """Budget parameter flows through the context."""
-    pipeline = CognitiveOrchestrationPipeline(
+    # Smoke: constructor still accepts the legacy kwargs surface.
+    _ = CognitiveOrchestrationPipeline(
         router=_MockRouter(system=1),
         engine=None,
         assigner=None,

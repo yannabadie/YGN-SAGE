@@ -9,22 +9,16 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any
 
+from sage.agent_loop_factory import create_bypass_agent_loop
+
 # Module-level imports for the moved Stage 4 body. cgpro DESIGN trap #2:
 # unqualified names in the moved body resolve in THIS module's namespace.
-# `_BYPASS_AGENT_LOOP_ACTIVE` is the SAME ContextVar object as in
-# `sage.pipeline` because Python imports return the same identity — so a
-# writer here and a reader elsewhere see the same context state. The
-# `BUDGET_EXCEEDED_RESULT` / `EXECUTE_*` constants and
-# `_is_strict_governance()` helper are likewise imported by reference.
-# The `asyncio` and `os` modules are NOT used at module scope here:
-# the bypass lock is created via `self._get_agent_loop_bypass_lock()`
-# which stays on the pipeline class, and `_is_strict_governance` does
-# its own `os.environ.get()` internally.
+# The `BUDGET_EXCEEDED_RESULT` / `EXECUTE_*` constants and
+# `_is_strict_governance()` helper are imported by reference.
 from sage.pipeline import (
     BUDGET_EXCEEDED_RESULT,
     EXECUTE_HALTED_UNVERIFIED,
     EXECUTE_UNVERIFIED,
-    _BYPASS_AGENT_LOOP_ACTIVE,
     _is_strict_governance,
 )
 
@@ -32,6 +26,101 @@ if TYPE_CHECKING:
     from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
 
 log = logging.getLogger("sage.pipeline")
+
+
+def _select_bypass_model(
+    pipeline: Any,
+    decision: Any,
+    bandit_provider: Any,
+    bandit_config: Any,
+) -> tuple[Any, Any, str]:
+    """Select (provider, config, active_model_id) for the bypass path.
+
+    Priority order MUST match the legacy mutation block:
+      1. bandit_provider + decision (when both present)
+      2. Rust routing decision via provider_pool.resolve()
+      3. Fallback: singleton AgentLoop's _llm + config.llm
+
+    Per cgpro DESIGN Q1: the fallback default comes from the SINGLETON,
+    not from pipeline.llm_provider - preserves the legacy semantics
+    where the bypass mutated `self._agent_loop._llm` and ran on it.
+    """
+    singleton = pipeline._agent_loop
+    selected_provider = singleton._llm
+    selected_config = singleton.config.llm
+    active_model_id = ""
+
+    if decision is not None and bandit_provider is not None:
+        selected_provider = bandit_provider
+        selected_config = bandit_config
+        active_model_id = decision.model_id
+        log.info(
+            "Stage 4 bypass: agent_loop using bandit-selected %s",
+            decision.model_id,
+        )
+    else:
+        routing_decision = getattr(pipeline, "_last_routing_decision", None)
+        if routing_decision and routing_decision.model_id and pipeline.provider_pool:
+            try:
+                if pipeline.provider_pool.is_model_available(routing_decision.model_id):
+                    selected_provider, selected_config = pipeline.provider_pool.resolve(
+                        routing_decision.model_id
+                    )
+                    active_model_id = routing_decision.model_id
+                    log.info(
+                        "Stage 4 bypass: agent_loop using Rust-selected %s",
+                        routing_decision.model_id,
+                    )
+            except Exception:
+                pass  # Keep default provider.
+
+    if not active_model_id:
+        active_model_id = (
+            getattr(selected_config, "model", "")
+            or getattr(selected_provider, "model_id", "")
+            or getattr(selected_provider, "model_string", "")
+            or getattr(selected_provider, "name", "")
+        )
+    return selected_provider, selected_config, active_model_id
+
+
+def _make_bypass_drift_callback(provider_pool: Any, model_id: str) -> Any | None:
+    """Build the H6 drift callback closure for the bypass path.
+
+    Returns None when provider_pool is None or doesn't have
+    record_failure (no callback is wired).
+
+    Per cgpro DESIGN Q2: closure captures pool + model_id at build
+    time (NOT lazy-resolved on every callback - same semantics as
+    the legacy code).
+    """
+    if provider_pool is None or not hasattr(provider_pool, "record_failure"):
+        return None
+
+    pool_ref = provider_pool
+    bypass_model_id = model_id or "default"
+
+    def _on_drift_bypass(
+        provider_hint: str,
+        action: str,
+        details: dict[str, Any],
+        _pool: Any = pool_ref,
+        _model: str = bypass_model_id,
+    ) -> None:
+        if action not in ("SWITCH_MODEL", "RESET_AGENT"):
+            return
+        key = provider_hint or _model or "unknown"
+        try:
+            _pool.record_failure(
+                key,
+                RuntimeError(
+                    f"drift_{action.lower()} latency={details.get('latency', '?')}"
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    return _on_drift_bypass
 
 
 async def execute(
@@ -80,249 +169,46 @@ async def execute(
             bandit_config = None
 
             if self._agent_loop:
-                # P6-B (cycle-11, cgpro round-4 review 2026-05-04):
-                # serialize concurrent bypass entries on the boot
-                # singleton AgentLoop and fail fast on re-entry. The
-                # snapshot/mutate/run/restore block below mutates 12
-                # fields on the shared singleton; two same-event-loop
-                # concurrent calls would interleave and clobber each
-                # other's restoration. The reentry guard catches the
-                # `sage_recurse` deadlock case (a tool registered at
-                # boot can call back into pipeline.run from inside
-                # this very block — re-acquiring the lock from the
-                # same task hangs forever). Per-run AgentLoop factory
-                # (P6-A) is the structural fix and is deferred to a
-                # later cycle (ADR-015 characterization tests first).
-                if _BYPASS_AGENT_LOOP_ACTIVE.get():
-                    raise RuntimeError(
-                        "Recursive AgentLoop bypass disabled: "
-                        "pipeline.run() was re-entered from inside the "
-                        "single-agent bypass mutation block (likely "
-                        "via the sage_recurse tool). The shared "
-                        "singleton AgentLoop cannot be safely re-used "
-                        "while its config snapshot is held — use the "
-                        "topology path or the per-run AgentLoop "
-                        "factory (P6-A, deferred)."
-                    )
+                # Model selection: bandit > Rust routing > singleton default.
+                # Helper preserves the EXACT priority order of the legacy
+                # mutation block (cgpro DESIGN Q1).
+                selected_provider, selected_config, active_model_id = _select_bypass_model(
+                    pipeline=self,
+                    decision=decision,
+                    bandit_provider=bandit_provider,
+                    bandit_config=bandit_config,
+                )
 
-                bypass_lock = self._get_agent_loop_bypass_lock()
-                async with bypass_lock:
-                    _bypass_token = _BYPASS_AGENT_LOOP_ACTIVE.set(True)
-                    try:
-                        # Phase 1: agent_loop.run() provides tools + S2/S3 validation +
-                        # guardrails + memory. Replaces the raw provider.generate() loop.
+                # H6 drift callback - built AFTER active_model_id is finalized
+                # (legacy code captured _bypass_model_id BEFORE the bandit/Rust
+                # selection took effect; that was a latent bug).
+                on_drift_bypass = _make_bypass_drift_callback(
+                    provider_pool=self.provider_pool,
+                    model_id=active_model_id,
+                )
 
-                        # A0a (2026-04-23, ALIRE2 §4 "shared mutable state"):
-                        # snapshot EVERY field we are about to mutate before touching
-                        # any of them. The prior code snapshotted only `_llm` and
-                        # `config.llm`, leaving 8 others (write_gate, gate_*, _on_drift,
-                        # validation_level, max_steps, stall_after_tool_steps,
-                        # _current_topology) dirty for the next caller after this
-                        # bypass path returned. The `finally` block below restores
-                        # every one of these; concurrency-safe restoration is now
-                        # handled by P6-B (lock + ContextVar reentry guard above).
-                        _orig_bypass_state = {
-                            "_skip_routing": getattr(self._agent_loop, "_skip_routing", False),
-                            "_current_topology": self._agent_loop._current_topology,
-                            "write_gate": getattr(self._agent_loop, "write_gate", None),
-                            "gate_current_task": getattr(self._agent_loop, "gate_current_task", None),
-                            "gate_source_tier": getattr(self._agent_loop, "gate_source_tier", None),
-                            "_on_drift": getattr(self._agent_loop, "_on_drift", None),
-                            "_run_frame_builder": getattr(
-                                self._agent_loop,
-                                "_run_frame_builder",
-                                None,
-                            ),
-                            "_runtime_node_run_id": getattr(
-                                self._agent_loop,
-                                "_runtime_node_run_id",
-                                None,
-                            ),
-                            "validation_level": self._agent_loop.config.validation_level,
-                            "max_steps": self._agent_loop.config.max_steps,
-                            "stall_after_tool_steps": self._agent_loop.config.stall_after_tool_steps,
-                        }
+                # Per-run AgentLoop instance - no shared mutable state. The
+                # factory propagates toolforge / evolution_memory /
+                # dangerous_tools (commit 9f7783cc).
+                bypass_loop = create_bypass_agent_loop(
+                    singleton=self._agent_loop,
+                    llm_provider=selected_provider,
+                    llm_config=selected_config,
+                    system_level=ctx.system,
+                    write_gate=self.write_gate,
+                    task_text=ctx.task,
+                    on_drift=on_drift_bypass,
+                    run_frame_builder=run_frame_builder,
+                    runtime_node_run_id=None,
+                )
 
-                        # H1: Skip routing in agent_loop (pipeline already routed in Stage 0)
-                        self._agent_loop._skip_routing = True
-                        # H4: Clear topology (pipeline owns topology, not agent_loop)
-                        self._agent_loop._current_topology = None
-
-                        # H5 audit fix (2026-04-19): wire the pipeline-scoped write gate
-                        # onto the shared AgentLoop for the single-agent bypass path.
-                        # The G-series fix (commit c905d06) only wired the gate through
-                        # `agent_loop_factory.create_node_agent_loop` for multi-node
-                        # topology traversal. This code path reuses a pre-existing
-                        # `self._agent_loop` singleton built at boot — it never saw the
-                        # factory wiring, so `loop.write_gate is None` and phases/act.py
-                        # fell through to ungated writes. Same silent-bypass class as
-                        # H4 (cache_topology) — fix perfectly wired, never fires.
-                        self._agent_loop.write_gate = self.write_gate
-                        self._agent_loop.gate_current_task = ctx.task
-                        self._agent_loop._run_frame_builder = run_frame_builder
-                        self._agent_loop._runtime_node_run_id = None
-                        try:
-                            from sage.memory.write_gate import infer_source_tier
-                            model_id = getattr(
-                                getattr(self._agent_loop.config, "llm", None),
-                                "model", None,
-                            )
-                            self._agent_loop.gate_source_tier = infer_source_tier(model_id)
-                        except (ImportError, AttributeError):
-                            self._agent_loop.gate_source_tier = "unknown"
-
-                        # H6 audit fix (2026-04-19): wire the drift callback on the
-                        # bypass path. The multi-node path sets `_on_drift` via the
-                        # factory (topology/runner.py:502-521) so SWITCH_MODEL /
-                        # RESET_AGENT classifications forward to
-                        # `ProviderPool.record_failure` — tripping the provider's
-                        # circuit breaker so subsequent resolve() picks a different
-                        # provider. On the bypass path this was never wired; drift
-                        # events on S1 tasks logged but had zero effect on routing.
-                        # Same silent-bypass class as H5 (write_gate).
-                        if (self.provider_pool is not None
-                                and hasattr(self.provider_pool, "record_failure")):
-                            _pool_ref = self.provider_pool
-                            _bypass_model_id = getattr(
-                                getattr(self._agent_loop.config, "llm", None),
-                                "model", "",
-                            ) or "default"
-
-                            def _on_drift_bypass(
-                                provider_hint: str,
-                                action: str,
-                                details: dict[str, Any],
-                                _pool: Any = _pool_ref,
-                                _model: str = _bypass_model_id,
-                            ) -> None:
-                                if action not in ("SWITCH_MODEL", "RESET_AGENT"):
-                                    return
-                                _key = (provider_hint or _model or "unknown")
-                                try:
-                                    _pool.record_failure(
-                                        _key,
-                                        RuntimeError(
-                                            f"drift_{action.lower()} "
-                                            f"latency={details.get('latency', '?')}"
-                                        ),
-                                    )
-                                except Exception:  # noqa: BLE001
-                                    pass
-
-                            self._agent_loop._on_drift = _on_drift_bypass
-
-                        # Set validation level from system classification
-                        if ctx.system >= 3:
-                            self._agent_loop.config.validation_level = 3
-                        elif ctx.system >= 2 and self._agent_loop.sandbox_manager:
-                            self._agent_loop.config.validation_level = 2
-                        else:
-                            self._agent_loop.config.validation_level = 1
-
-                        # Plan item 1.1 (2026-04-20): scale singleton max_steps by
-                        # ctx.system — close the H5-class bypass extending the
-                        # singleton-vs-factory asymmetry. boot.py:279 built the
-                        # singleton with max_steps=MAX_AGENT_STEPS=20; the factory
-                        # (agent_loop_factory.py:132-137) scales 5/10/20 per system
-                        # tier for per-node AgentLoops. Without this line, S1 tasks
-                        # on the bypass path run at 4x the factory-intended budget.
-                        # agent_loop.py:424 reads self.config.max_steps directly in
-                        # the step loop — mutation takes effect on the next .run().
-                        self._agent_loop.config.max_steps = {1: 5, 2: 10, 3: 20}.get(ctx.system, 10)
-
-                        # Plan item 1.2 (2026-04-20): scale singleton D8 stall cap
-                        # to match the factory (agent_loop_factory.py:151-154).
-                        # AgentConfig.stall_after_tool_steps defaults to 0 (D8
-                        # disabled), so the singleton never broke out of a tool-step
-                        # thrash on S2/S3 bypass. Factory formula:
-                        #   stall_cap = (max_steps - 1) if max_steps > 5 else 0
-                        # (S1 budget too tight for any window — D8 off; S2→9, S3→19.)
-                        # agent_loop.py:511 live-reads config.stall_after_tool_steps
-                        # each step → mutation takes effect on next .run().
-                        _new_max = self._agent_loop.config.max_steps
-                        self._agent_loop.config.stall_after_tool_steps = (
-                            _new_max - 1 if _new_max > 5 else 0
-                        )
-
-                        _original_llm = self._agent_loop._llm
-                        _original_config = self._agent_loop.config.llm
-                        active_model_id = ""
-                        if decision is not None and bandit_provider is not None:
-                            self._agent_loop._llm = bandit_provider
-                            self._agent_loop.config.llm = bandit_config
-                            active_model_id = decision.model_id
-                            log.info(
-                                "Stage 4 bypass: agent_loop using bandit-selected %s (S%d)",
-                                decision.model_id, ctx.system,
-                            )
-                        else:
-                            # Resolve model from Rust routing decision (preserve legacy selection)
-                            routing_decision = getattr(self, '_last_routing_decision', None)
-                            if routing_decision and routing_decision.model_id and self.provider_pool:
-                                try:
-                                    if self.provider_pool.is_model_available(routing_decision.model_id):
-                                        resolved_provider, resolved_config = self.provider_pool.resolve(
-                                            routing_decision.model_id
-                                        )
-                                        self._agent_loop._llm = resolved_provider
-                                        self._agent_loop.config.llm = resolved_config
-                                        active_model_id = routing_decision.model_id
-                                        log.info(
-                                            "Stage 4 bypass: agent_loop using Rust-selected %s (S%d)",
-                                            routing_decision.model_id, ctx.system,
-                                        )
-                                except Exception:
-                                    pass  # Keep default provider
-                        if not active_model_id:
-                            active_model_id = (
-                                getattr(self._agent_loop.config.llm, "model", "")
-                                or getattr(self._agent_loop._llm, "model_id", "")
-                                or getattr(self._agent_loop._llm, "model_string", "")
-                                or getattr(self._agent_loop._llm, "name", "")
-                            )
-                        ctx.executed_model_id = active_model_id
-                        ctx.executed_template = "single_agent"
-
-                        try:
-                            ctx.result = await self._agent_loop.run(ctx.task)
-                            ctx.cost = self._agent_loop.total_cost_usd
-                            # Forward tool-use telemetry from the agent loop so bench
-                            # manifests reflect actual usage, not dead zeros.
-                            ctx.tool_call_count = getattr(self._agent_loop, "tool_call_count", 0)
-                            ctx.tool_turn_count = getattr(self._agent_loop, "tool_turn_count", 0)
-                            ctx.executed_commands = list(getattr(self._agent_loop, "executed_commands", []))
-                        finally:
-                            # A0a restoration — complete (12 fields, matches the
-                            # snapshot taken before the first mutation above).
-                            # Prior to 2026-04-23 this restored only 3 of the 10
-                            # mutated fields, leaving write_gate / _on_drift /
-                            # validation_level / max_steps / stall_after_tool_steps
-                            # / _current_topology dirty for the next caller.
-                            # P6-B (2026-05-04) wraps this entire block in a
-                            # serializing lock — restoration still runs on
-                            # exception/cancellation paths because the outer
-                            # try/finally below releases the lock and the
-                            # ContextVar token regardless of how we exit.
-                            self._agent_loop._skip_routing = _orig_bypass_state["_skip_routing"]
-                            self._agent_loop._current_topology = _orig_bypass_state["_current_topology"]
-                            self._agent_loop.write_gate = _orig_bypass_state["write_gate"]
-                            self._agent_loop.gate_current_task = _orig_bypass_state["gate_current_task"]
-                            self._agent_loop.gate_source_tier = _orig_bypass_state["gate_source_tier"]
-                            self._agent_loop._on_drift = _orig_bypass_state["_on_drift"]
-                            self._agent_loop._run_frame_builder = _orig_bypass_state[
-                                "_run_frame_builder"
-                            ]
-                            self._agent_loop._runtime_node_run_id = _orig_bypass_state[
-                                "_runtime_node_run_id"
-                            ]
-                            self._agent_loop.config.validation_level = _orig_bypass_state["validation_level"]
-                            self._agent_loop.config.max_steps = _orig_bypass_state["max_steps"]
-                            self._agent_loop.config.stall_after_tool_steps = _orig_bypass_state["stall_after_tool_steps"]
-                            self._agent_loop._llm = _original_llm
-                            self._agent_loop.config.llm = _original_config
-                    finally:
-                        _BYPASS_AGENT_LOOP_ACTIVE.reset(_bypass_token)
-
+                ctx.executed_model_id = active_model_id
+                ctx.executed_template = "single_agent"
+                ctx.result = await bypass_loop.run(ctx.task)
+                ctx.cost = bypass_loop.total_cost_usd
+                ctx.tool_call_count = getattr(bypass_loop, "tool_call_count", 0)
+                ctx.tool_turn_count = getattr(bypass_loop, "tool_turn_count", 0)
+                ctx.executed_commands = list(getattr(bypass_loop, "executed_commands", []))
             elif self.llm_provider or bandit_provider is not None:
                 # Simple fallback: single provider.generate() call (no tool loop).
                 # Used only when pipeline is created without agent_loop (e.g., tests).
