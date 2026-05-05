@@ -1268,6 +1268,13 @@ class CognitiveOrchestrationPipeline:
                     topo = self._build_topology_from_hint("formal_solver")
                     if topo:
                         ctx.topology = topo
+                        # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
+                        # bench `_capture_control_surface` reads
+                        # `ctx.topology_id` directly, NOT the disjunction
+                        # at pipeline.py:648. Setting it here keeps the
+                        # bench-visible topology id consistent across all
+                        # branches that build a topology.
+                        ctx.topology_id = getattr(topo, "id", "") or ""
                         log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
                         self._log_topology_structure(topo, source="dag_template", confidence=None)
                         self._apply_topology_budget_and_cache(ctx)
@@ -1316,6 +1323,16 @@ class CognitiveOrchestrationPipeline:
                 topo = self._build_topology_from_hint(hint)
                 if topo:
                     ctx.topology = topo
+                    # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
+                    # bench `_capture_control_surface` reads
+                    # `ctx.topology_id` directly, NOT the disjunction
+                    # at pipeline.py:648. Setting it here keeps the
+                    # bench-visible topology id consistent across all
+                    # branches that build a topology — was previously
+                    # missing on the DAG-template branch (the common
+                    # case for budget-tier S2), causing blank topology
+                    # IDs in BCB control-surface telemetry.
+                    ctx.topology_id = getattr(topo, "id", "") or ""
                     log.info(
                         "Stage 2: DAG-driven template=%s (%d nodes, omega=%s delta=%s gamma=%s)",
                         hint, topo.node_count(),
@@ -1365,6 +1382,11 @@ class CognitiveOrchestrationPipeline:
                         ctx.topology_id = getattr(ctx.topology, "id", "")
                     elif result:
                         ctx.topology = result
+                        # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
+                        # symmetric with the result.topology branch above —
+                        # set ctx.topology_id so bench control-surface
+                        # telemetry sees the right value.
+                        ctx.topology_id = getattr(result, "id", "") or ""
 
                     # Gap 1+2 (2026-04-21): log DAG edges + 6-path source
                     # (smmu_hit / archive_hit / llm_synthesis / mutation /

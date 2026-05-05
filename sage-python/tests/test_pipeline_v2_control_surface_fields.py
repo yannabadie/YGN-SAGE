@@ -191,7 +191,12 @@ async def test_stage_decompose_populates_dag_features() -> None:
         "elsewhere."
     )
 
-    await pipeline._stage_decompose(ctx)
+    # Cycle-11 cgpro VERIFY follow-up: use returned-ctx pattern,
+    # NOT inspection of the original ctx. ADR-015 says
+    # PipelineContext becomes an immutable per-stage clone in cycle-12;
+    # the test must assert on what the stage returns so an immutable
+    # refactor doesn't false-fail this test.
+    ctx = await pipeline._stage_decompose(ctx)
 
     assert ctx.dag_features is not None, (
         "_stage_decompose did not populate ctx.dag_features. "
@@ -282,7 +287,8 @@ def test_stage_classify_populates_bandit_template_from_router_decision(
         "before the stage runs."
     )
 
-    pipeline._stage_classify(ctx)
+    # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
+    ctx = pipeline._stage_classify(ctx)
 
     assert ctx.bandit_template == "sequential", (
         f"_stage_classify did not set ctx.bandit_template from the "
@@ -298,25 +304,26 @@ def test_stage_classify_populates_bandit_template_from_router_decision(
 # ─────────────────────────────────────────────────────────────────
 
 
-def test_stage_select_topology_dag_template_branch_produces_topology_with_id() -> None:
-    """The DAG-template branch builds ``ctx.topology`` with an ``id`` attr.
+def test_stage_select_topology_dag_template_branch_sets_ctx_topology_id() -> None:
+    """The DAG-template branch sets ``ctx.topology_id`` directly.
 
-    Asymmetry note (cycle-11 P9 finding): only the
-    ``engine.generate()`` branch (line 1365) sets ``ctx.topology_id``
-    *explicitly*. The DAG-template branch (line 1316-1331, the
-    common case for budget-tier S2 tasks) leaves ``ctx.topology_id``
-    as the empty default. The bench reader at ``pipeline.py:648``
-    falls back via ``ctx.topology_id or getattr(ctx.topology, "id", "")``.
+    Cycle-11 cgpro VERIFY follow-up (2026-05-05): the original test
+    asserted only the disjunction ``ctx.topology_id or ctx.topology.id``
+    because the DAG-template branch (the common case for budget-tier
+    S2 tasks) was leaving ``ctx.topology_id`` blank. cgpro pointed out
+    that the bench layer's ``_capture_control_surface`` at
+    ``bench/bigcodebench_bench.py`` reads ``ctx.topology_id`` DIRECTLY
+    (not via the disjunction at ``pipeline.py:648``, which is a
+    different consumer — the runtime event log).
 
-    This test locks the disjunction the bench reader actually checks.
-    cycle-12 phase 2 may choose to:
-      (a) Keep the asymmetry — both branches stay as-is, readers use
-          the disjunction. (Current behavior.)
-      (b) Add ``ctx.topology_id = topo.id`` to the DAG-template
-          branch so both branches populate the field uniformly.
-    Either is acceptable to this test. The contract is "the bench
-    can read a non-empty topology id post-Stage-2", not "the
-    specific field path".
+    Production fix: the DAG-template branch (and the engine.generate
+    "elif result" fallback branch) now both set
+    ``ctx.topology_id = getattr(topo, "id", "") or ""`` immediately
+    after ``ctx.topology = topo`` — symmetric with the original
+    engine.generate top-level branch. This test now asserts the
+    direct field, not the disjunction, so a future regression that
+    drops the explicit assignment will fail this test instead of
+    silently breaking BCB control-surface telemetry.
     """
     pipeline = _build_minimal_pipeline()
     ctx = PipelineContext(task="def add(a, b):\n    return a + b")
@@ -324,7 +331,8 @@ def test_stage_select_topology_dag_template_branch_produces_topology_with_id() -
     ctx.domain = "code"
     ctx.dag_features = DAGFeatures(omega=2, delta=2, gamma=0.4)
 
-    pipeline._stage_select_topology(ctx)
+    # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
+    ctx = pipeline._stage_select_topology(ctx)
 
     assert ctx.topology is not None, (
         "_stage_select_topology did not produce a topology — check "
@@ -332,15 +340,24 @@ def test_stage_select_topology_dag_template_branch_produces_topology_with_id() -
         "(omega/delta/gamma chosen above force select_macro_topology "
         "to a non-bypass template)."
     )
-    # The bench reader's actual lookup pattern:
-    bench_visible_id = ctx.topology_id or getattr(ctx.topology, "id", "") or ""
-    assert bench_visible_id, (
-        f"Bench-visible topology id is empty after Stage 2: "
-        f"ctx.topology_id={ctx.topology_id!r}, "
-        f"ctx.topology.id={getattr(ctx.topology, 'id', None)!r}. "
-        f"Either the DAG-template branch must set ctx.topology_id "
-        f"explicitly OR ctx.topology must expose .id; one of the two "
-        f"is required for invariant 8 to hold."
+    # Tightened assertion: ctx.topology_id must be set DIRECTLY. The
+    # bench reader does not use the runtime-event-log disjunction.
+    assert ctx.topology_id, (
+        f"ctx.topology_id is empty after Stage 2 DAG-template branch: "
+        f"{ctx.topology_id!r}. The bench layer "
+        f"`_capture_control_surface` reads this field directly; an "
+        f"empty value means BCB control-surface telemetry sees blank "
+        f"topology IDs and downstream replay analysis cannot attribute "
+        f"runs by topology. Production fix landed cycle-11 (2026-05-05)."
+    )
+    # Sanity: the field was set from ctx.topology.id (the canonical
+    # ULID per ADR-015 plan item 1.4a, not the descriptor-keyed
+    # semantic id from result.topology_id() that broke engine cache
+    # lookups in the H4 incident).
+    assert ctx.topology_id == getattr(ctx.topology, "id", ""), (
+        f"ctx.topology_id ({ctx.topology_id!r}) does not match "
+        f"ctx.topology.id ({getattr(ctx.topology, 'id', None)!r}). "
+        f"They must be the same ULID — see plan item 1.4a (2026-04-20)."
     )
 
 
@@ -417,7 +434,8 @@ async def test_stage_execute_multi_agent_populates_executed_template(
         "before the stage runs."
     )
 
-    await pipeline._stage_execute(ctx)
+    # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
+    ctx = await pipeline._stage_execute(ctx)
 
     assert ctx.executed_template, (
         "_stage_execute multi-agent branch did not populate "
@@ -476,7 +494,8 @@ async def test_stage_execute_single_agent_bypass_marks_executed_template_single_
     ctx.domain = "code"
     ctx.verification_passed = True
 
-    await pipeline._stage_execute(ctx)
+    # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
+    ctx = await pipeline._stage_execute(ctx)
 
     assert ctx.executed_template == "single_agent", (
         f"Single-agent bypass did not set ctx.executed_template to "
