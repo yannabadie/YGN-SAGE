@@ -105,19 +105,49 @@ def test_pipeline_v2_context_module_reexports_only() -> None:
 # ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.asyncio
-async def test_classify_wrapper_delegates_to_pipeline_stage_classify() -> None:
+def test_classify_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
+    """Phase B inverted the direction (same as decompose): the wrapper
+    now CONTAINS the body and `pipeline._stage_classify` delegates to
+    it. Tests the AdaptiveRouter Priority-3 path (`_rust_router=None`,
+    `router._knn=None`) — the simplest deterministic path through
+    the body.
+
+    Both direct-wrapper and legacy-delegator calls must produce the
+    same `ctx.system` (driven by router.route(profile)) and the same
+    `_last_runtime_routing_*` accessors.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import classify as classify_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage0_input")
-    sentinel_out = SimpleNamespace(tag="stage0_output")
-    pipeline._stage_classify = MagicMock(return_value=sentinel_out)
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._rust_router = None  # skip Priority 1
+    # Priority 2 (kNN): router has no _knn attribute → falls through
+    # to Priority 3 (AdaptiveRouter heuristic).
+    pipeline.router = MagicMock()
+    pipeline.router._knn = None
+    pipeline.router.assess_complexity = MagicMock(return_value=SimpleNamespace(system=2))
+    pipeline.router.route = MagicMock(
+        return_value=SimpleNamespace(system=2, confidence=0.5, model_id="adaptive-test"),
+    )
+    pipeline._last_routing_decision = None
+    pipeline._last_runtime_routing_source = ""
+    pipeline._last_runtime_routing_confidence = None
+    pipeline._last_runtime_routing_model_id = ""
 
-    result = classify_mod.classify(pipeline, sentinel_ctx)
+    # Direct call to the wrapper:
+    ctx_direct = PipelineContext(task="classify direct task")
+    out_direct = classify_mod.classify(pipeline, ctx_direct)
+    assert out_direct is ctx_direct
+    assert out_direct.system == 2
+    assert pipeline._last_runtime_routing_source == "adaptive_router"
 
-    pipeline._stage_classify.assert_called_once_with(sentinel_ctx)
-    assert result is sentinel_out
+    # Round-trip through the legacy delegator:
+    pipeline._last_runtime_routing_source = ""  # reset
+    ctx_round = PipelineContext(task="classify roundtrip task")
+    out_round = pipeline._stage_classify(ctx_round)
+    assert out_round is ctx_round
+    assert out_round.system == 2
+    assert pipeline._last_runtime_routing_source == "adaptive_router"
 
 
 @pytest.mark.asyncio
