@@ -317,24 +317,52 @@ async def test_execute_wrapper_defaults_kwargs_to_none() -> None:
 
 
 @pytest.mark.asyncio
-async def test_learn_wrapper_delegates_to_pipeline_stage_learn_returns_none() -> None:
-    """Stage 5 returns None per the legacy contract."""
+async def test_learn_wrapper_runs_body_and_legacy_method_delegates_to_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Phase B inverted the direction (same as decompose / classify).
+
+    The wrapper now CONTAINS the body. Tests the empty-result quality=0.0
+    path with oracle disabled. Both direct call and round-trip through
+    `pipeline._stage_learn` return None.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import learn as learn_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage5_input")
-    captured: dict[str, Any] = {}
+    monkeypatch.setenv("SAGE_ORACLE", "0")
 
-    async def _fake_stage_learn(ctx: Any) -> None:
-        captured["ctx"] = ctx
-        return None
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.quality_estimator = None
+    pipeline.engine = None
+    pipeline.consolidator = None
+    pipeline._rust_router = None
+    pipeline.bandit = None
+    pipeline.prm = None
+    pipeline._task_count = 0
+    pipeline._record_bandit_outcome_checked = MagicMock()
+    pipeline._cancel_bandit_decision = MagicMock()
+    pipeline._clear_bandit_decision = MagicMock()
 
-    pipeline._stage_learn = _fake_stage_learn
+    async def _legacy_sentinel(_ctx: PipelineContext) -> None:
+        raise AssertionError("pipeline_v2.learn must not delegate to legacy stage")
 
-    result = await learn_mod.learn(pipeline, sentinel_ctx)
+    # Direct call to the wrapper: instance-level sabotage proves the wrapper
+    # owns the body instead of delegating back to `pipeline._stage_learn`.
+    pipeline._stage_learn = _legacy_sentinel
+    ctx_direct = PipelineContext(task="learn direct task")
+    ctx_direct.result = ""
+    out_direct = await learn_mod.learn(pipeline, ctx_direct)
+    assert out_direct is None
+    pipeline._record_bandit_outcome_checked.assert_called_once_with(ctx_direct, 0.0)
 
-    assert result is None
-    assert captured["ctx"] is sentinel_ctx
+    # Round-trip through the legacy delegator:
+    delattr(pipeline, "_stage_learn")
+    pipeline._record_bandit_outcome_checked.reset_mock()
+    ctx_round = PipelineContext(task="learn roundtrip task")
+    ctx_round.result = ""
+    out_round = await pipeline._stage_learn(ctx_round)
+    assert out_round is None
+    pipeline._record_bandit_outcome_checked.assert_called_once_with(ctx_round, 0.0)
 
 
 # ────────────────────────────────────────────────────────────────────
