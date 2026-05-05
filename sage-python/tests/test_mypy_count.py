@@ -80,7 +80,32 @@ from pathlib import Path
 # All three are in skip categories (Windows-only attr / optional dep
 # fallback). No new ignores from cycle-11 P9 phase 1 work or this
 # session's CI repair commits.
-_MAX_TYPE_IGNORES = 48
+# Raised from 48 to 51 (2026-05-05, cycle-12 prelude — pi-mono pivot
+# `sage run --jsonl` backend). Three legitimate ignores in
+# `sage-python/src/sage/cli/run.py` for the RuntimeEventLog tee
+# integration, all in skip categories:
+#   +1 cli/run.py:399 `if eventlog._fh is not None: # type: ignore[attr-defined]`
+#     — `_fh` is private API of RuntimeEventLog (writer.py:155),
+#     accessed here to splice in the stdout-mirror tee. Public
+#     "set sink" API doesn't exist; switching to one is cycle-12
+#     Phase B work.
+#   +1 cli/run.py:400 `eventlog._fh = _CliMirrorSinkHandle(...) # type: ignore[assignment]`
+#     — `_CliMirrorSinkHandle` is a structural subtype of `_SinkHandle`
+#     (write/flush/close/closed/fileno/tell/truncate match) but
+#     `_SinkHandle` is a concrete class, not a `typing.Protocol`.
+#     Switching to a Protocol would surface this assignment without
+#     the ignore; tracked for cycle-12 Phase B.
+#   +1 cli/run.py:524 `install_event_log(None) # type: ignore[arg-type]`
+#     — `install_event_log` is typed to require a `RuntimeEventLog`
+#     instance, but the writer's contextvar default IS `None` (so
+#     resetting to None is correct semantics). The signature
+#     could be widened to `RuntimeEventLog | None`; tracked for
+#     cycle-12 Phase B alongside the Protocol switch.
+# All three are localized to the cycle-12 prelude CLI bridge code
+# at the boundary between RuntimeEventLog (existing) and the new
+# CLI tee (new). Resolution path is documented above (Protocol +
+# signature widening); the cycle-12 Phase B refactor will close them.
+_MAX_TYPE_IGNORES = 51
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")

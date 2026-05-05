@@ -387,8 +387,18 @@ async def run_jsonl_async(
     # If the writer initialized successfully (sink is open), splice in
     # the stdout-mirror tee. If the writer is disabled (e.g. permissions),
     # we still emit cli_started/cli_complete but no runtime events.
+    #
+    # Cycle-12 prelude (cgpro CI debug 2026-05-05): the assignment line
+    # carries `[assignment]` (not `[attr-defined]`) because mypy sees the
+    # type drift `_SinkHandle | None` → `_CliMirrorSinkHandle`. The
+    # `_CliMirrorSinkHandle` IS a structural subtype of `_SinkHandle`
+    # (matching write/flush/close/closed/fileno/tell/truncate), but
+    # since `_SinkHandle` is a concrete class not a Protocol, mypy
+    # requires the assignment cast. Switching `_SinkHandle` to a
+    # `typing.Protocol` is an option for cycle-12 Phase B; for now
+    # the targeted ignore narrows the type-safety escape to one site.
     if eventlog._fh is not None:  # type: ignore[attr-defined]
-        eventlog._fh = _CliMirrorSinkHandle(eventlog._fh, stdout)  # type: ignore[attr-defined]
+        eventlog._fh = _CliMirrorSinkHandle(eventlog._fh, stdout)  # type: ignore[assignment]
 
     log_token = install_event_log(eventlog)
 
