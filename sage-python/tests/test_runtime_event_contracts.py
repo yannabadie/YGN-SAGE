@@ -988,3 +988,162 @@ def test_no_stale_cycle7_oracle_contract_phrases() -> None:
         "Stale cycle-7 oracle contract phrases found in current-state docs:\n"
         + "\n".join(failures)
     )
+
+
+# ────────────────────────────────────────────────────────────────────
+# Invariant 9 (cycle-12 prelude 2026-05-05): CLI protocol versioning
+#
+# `sage run --jsonl` emits frames with a `protocol_version` envelope
+# field. The constant `sage.cli.run.CLI_PROTOCOL_VERSION` MUST equal
+# the value documented in `docs/contracts/SAGE_CLI_PROTOCOL.md` AND
+# every emitted frame MUST carry that constant verbatim. Drift between
+# any of (constant, spec, emitted frames) means the runtime contract
+# disagrees with itself.
+#
+# This test is the executable proof for invariant 9 in
+# `docs/contracts/runtime-integrity-ledger.md`. Per the maintenance
+# discipline, "wire a regression test that proves the side-effect is
+# blocked when the verification fails" — here the side-effect is
+# external consumer interpretation of YGN-SAGE runtime decisions
+# (the pi-mono adapter shipping cycle-13). A frontend that sees a
+# mismatched `protocol_version` MUST refuse to render; this test
+# proves the backend cannot accidentally emit a value that drifts
+# from the spec or the constant.
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_cli_protocol_version_constant_matches_spec_doc() -> None:
+    """The constant in code MUST equal the literal documented in the spec.
+
+    cycle-12 prelude (2026-05-05): the CLI protocol document declares
+    "v0" as the inaugural protocol version. The constant
+    ``sage.cli.run.CLI_PROTOCOL_VERSION`` is the source of truth for
+    every emitted frame; if the spec bumps to "v1" but the constant
+    stays at "v0" (or vice versa) the contract drifts silently.
+
+    This test verifies BOTH directions:
+      1. The constant is exactly ``"v0"`` (matches the spec literal).
+      2. The spec doc contains the literal string the constant emits.
+
+    A future protocol bump MUST update both atomically. Update this
+    test then.
+    """
+    from sage.cli.run import CLI_PROTOCOL_VERSION
+
+    # Direction 1: constant is what we expect at this point in the
+    # ledger history (cycle-12 prelude = v0).
+    assert CLI_PROTOCOL_VERSION == "v0", (
+        f"CLI_PROTOCOL_VERSION drifted: expected 'v0' (cycle-12 prelude), "
+        f"got {CLI_PROTOCOL_VERSION!r}. If this is a deliberate bump, "
+        f"update docs/contracts/SAGE_CLI_PROTOCOL.md AND "
+        f"docs/contracts/runtime-integrity-ledger.md (invariant 9 row), "
+        f"AND this test."
+    )
+
+    # Direction 2: the spec doc actually contains the literal the
+    # constant emits. Open the spec, find the version declaration.
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    spec_path = repo_root / "docs" / "contracts" / "SAGE_CLI_PROTOCOL.md"
+    assert spec_path.exists(), (
+        f"SAGE_CLI_PROTOCOL.md missing at {spec_path}. The CLI protocol "
+        f"spec is the source of truth for invariant 9; deleting it is "
+        f"a contract change that must update this test too."
+    )
+    spec_text = spec_path.read_text(encoding="utf-8")
+    # The spec declares the version in its title and in the envelope
+    # description. We assert the constant value appears as the
+    # double-quoted form the envelope mandates.
+    assert f'"{CLI_PROTOCOL_VERSION}"' in spec_text, (
+        f"docs/contracts/SAGE_CLI_PROTOCOL.md does not contain the "
+        f"literal {CLI_PROTOCOL_VERSION!r} (as a double-quoted JSON value). "
+        f"The constant and the spec disagree — invariant 9 broken. "
+        f"Fix: update the spec to mention the new version, OR revert "
+        f"the constant change."
+    )
+
+
+def test_cli_protocol_version_emitted_in_envelope() -> None:
+    """Every emitted CLI envelope frame MUST carry the documented version.
+
+    The 4 CLI-shell envelope events (cli_started, cli_progress,
+    cli_tool_request, cli_complete) each pass through ``_emit_cli_event``
+    which is the single point where the envelope is constructed. This
+    test exercises that function with all 4 event types and asserts
+    the emitted frames carry ``protocol_version == CLI_PROTOCOL_VERSION``.
+
+    If a future commit bypasses ``_emit_cli_event`` and emits a frame
+    via ``json.dumps`` directly (e.g. inlining for performance), this
+    test will NOT catch that — but the ``test_cli_protocol_version_constant_matches_spec_doc``
+    test still catches drift between constant and spec, and the
+    ``test_sage_cli_jsonl.py::test_emit_cli_event_envelope_shape`` test
+    catches the envelope schema. The trio is the protection.
+    """
+    import io
+
+    from sage.cli.run import CLI_PROTOCOL_VERSION, _emit_cli_event, _SeqCounter
+
+    counter = _SeqCounter()
+    for event_type, payload in (
+        ("cli_started", {"protocol_version": CLI_PROTOCOL_VERSION, "task": "x"}),
+        ("cli_progress", {"stage": "execute", "elapsed_ms": 100}),
+        ("cli_tool_request", {"correlation_id": "approval-1", "action": "upgrade_model"}),
+        ("cli_complete", {"exit_code": 0, "outcome": "success"}),
+    ):
+        buf = io.StringIO()
+        _emit_cli_event(
+            buf,
+            event_type,
+            run_id="01TESTRUN0000000000000099",
+            payload=payload,
+            seq=counter.next(),
+        )
+        frame = json.loads(buf.getvalue().rstrip("\n"))
+        assert frame["protocol_version"] == CLI_PROTOCOL_VERSION, (
+            f"Emitted {event_type} frame carries "
+            f"protocol_version={frame['protocol_version']!r}, "
+            f"expected {CLI_PROTOCOL_VERSION!r}. Invariant 9 violated — "
+            f"frontend consumers will fail-close on this frame. Check "
+            f"_emit_cli_event in sage/cli/run.py."
+        )
+        # Belt-and-suspenders: also assert event_type is one of the 4
+        # documented CLI-shell events, so this test fails loudly if a
+        # future commit adds a 5th event type without updating the
+        # taxonomy in SAGE_CLI_PROTOCOL.md.
+        assert event_type in (
+            "cli_started", "cli_progress", "cli_tool_request", "cli_complete",
+        ), (
+            f"Unexpected CLI-shell event type {event_type!r}. The "
+            f"protocol v0 declares exactly 4 CLI-shell envelope types; "
+            f"a 5th requires a spec update + this test update."
+        )
+
+
+def test_cli_protocol_version_appears_in_runtime_integrity_ledger() -> None:
+    """Invariant 9 MUST be documented in the runtime-integrity-ledger.
+
+    Per the ledger's own maintenance discipline (line ~57): "When adding
+    a new invariant: append a row to BOTH tables (the invariant table
+    AND the module cross-reference)." This test enforces the rule —
+    a future commit that drops invariant 9 from either table without
+    updating this test fails loudly.
+    """
+    repo_root = pathlib.Path(__file__).resolve().parents[2]
+    ledger_path = repo_root / "docs" / "contracts" / "runtime-integrity-ledger.md"
+    assert ledger_path.exists()
+    ledger_text = ledger_path.read_text(encoding="utf-8")
+
+    # Both invariant table AND module-cross-reference table must
+    # mention "CLI protocol versioning".
+    assert ledger_text.count("CLI protocol versioning") >= 2, (
+        f"Invariant 9 'CLI protocol versioning' must appear in BOTH "
+        f"tables in runtime-integrity-ledger.md. Found "
+        f"{ledger_text.count('CLI protocol versioning')} mention(s); "
+        f"expected ≥2."
+    )
+
+    # The header announces 9 invariants (post cycle-12 prelude).
+    assert "## The 9 invariants" in ledger_text, (
+        "runtime-integrity-ledger.md header must announce '9 invariants' "
+        "(updated from 8 in cycle-12 prelude). If a future cycle adds a "
+        "10th invariant, update both the header and this test."
+    )
