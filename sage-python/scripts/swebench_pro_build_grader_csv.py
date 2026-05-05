@@ -3,13 +3,13 @@
 
 Per `swe_bench_pro_eval.py` in scaleapi/SWE-bench_Pro-os: the grader
 expects a CSV with columns:
-    instance_id, before_repo_set_cmd, selected_test_files_to_run,
-    base_commit, FAIL_TO_PASS, PASS_TO_PASS
+    instance_id, repo, before_repo_set_cmd, selected_test_files_to_run,
+    base_commit, fail_to_pass, pass_to_pass, FAIL_TO_PASS, PASS_TO_PASS
 
 The HuggingFace dataset (`ScaleAI/SWE-bench_Pro` test split) provides
-these columns under lowercase names (`fail_to_pass`, `pass_to_pass`).
-This script renames them to uppercase to match the grader's CSV
-expectations.
+the test sets under lowercase names (`fail_to_pass`, `pass_to_pass`).
+The grader code is inconsistent: comments mention uppercase columns,
+while the scoring path reads lowercase. This script writes both.
 
 `base_dockerfile` and `instance_dockerfile` columns are NOT required
 in the CSV — the grader loads them from
@@ -33,9 +33,12 @@ log = logging.getLogger("sage.bench.swebench_pro_build_grader_csv")
 
 _GRADER_COLUMNS = (
     "instance_id",
+    "repo",
     "before_repo_set_cmd",
     "selected_test_files_to_run",
     "base_commit",
+    "fail_to_pass",
+    "pass_to_pass",
     "FAIL_TO_PASS",
     "PASS_TO_PASS",
 )
@@ -57,10 +60,15 @@ def build_csv(instance_ids: Iterable[str], output: Path) -> None:
         if iid in target_ids:
             found[iid] = {
                 "instance_id": iid,
+                # Required by helper_code/image_uri.py to resolve
+                # jefzda/sweap-images:<repo-derived-tag>.
+                "repo": row["repo"],
                 "before_repo_set_cmd": row["before_repo_set_cmd"],
                 "selected_test_files_to_run": row["selected_test_files_to_run"],
                 "base_commit": row["base_commit"],
-                # HF dataset uses lowercase; grader CSV expects uppercase.
+                "fail_to_pass": row["fail_to_pass"],
+                "pass_to_pass": row["pass_to_pass"],
+                # Compatibility with grader comments / auxiliary tooling.
                 "FAIL_TO_PASS": row["fail_to_pass"],
                 "PASS_TO_PASS": row["pass_to_pass"],
             }
