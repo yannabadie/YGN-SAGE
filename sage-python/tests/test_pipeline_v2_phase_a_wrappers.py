@@ -253,67 +253,51 @@ def test_assign_models_wrapper_runs_body_and_legacy_method_delegates_to_it() -> 
 
 
 @pytest.mark.asyncio
-async def test_execute_wrapper_delegates_to_pipeline_stage_execute_with_kwargs() -> None:
-    """The execute wrapper takes optional event_log + run_frame_builder
-    kwargs and forwards them. cgpro 2026-05-05 DESIGN lock: signature
-    matches the legacy method (`async def _stage_execute(self, ctx,
-    event_log=None, run_frame_builder=None)`)."""
+async def test_execute_wrapper_runs_body_and_legacy_method_delegates_to_it() -> None:
+    """Phase B inverted the direction (same as assign_models / learn).
+
+    The wrapper now CONTAINS the body. Tests the deterministic no-provider
+    single-agent path. Both direct call and round-trip through
+    `pipeline._stage_execute` mark the same template.
+    """
+    from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
     from sage.pipeline_v2 import execute as exec_mod
 
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage4_input")
-    sentinel_out = SimpleNamespace(tag="stage4_output")
-    sentinel_eventlog = SimpleNamespace(tag="event_log")
-    sentinel_builder = SimpleNamespace(tag="run_frame_builder")
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._agent_loop = None
+    pipeline.llm_provider = None
+    pipeline.bandit = None
+    pipeline.provider_pool = None
 
-    captured: dict[str, Any] = {}
+    async def _legacy_sentinel(
+        _ctx: PipelineContext,
+        event_log: Any | None = None,
+        run_frame_builder: Any | None = None,
+    ) -> PipelineContext:
+        raise AssertionError("pipeline_v2.execute must not delegate to legacy stage")
 
-    async def _fake_stage_execute(
-        ctx: Any, event_log: Any | None = None, run_frame_builder: Any | None = None,
-    ) -> Any:
-        captured["ctx"] = ctx
-        captured["event_log"] = event_log
-        captured["run_frame_builder"] = run_frame_builder
-        return sentinel_out
+    # Direct call to the wrapper: instance-level sabotage proves the wrapper
+    # owns the body instead of delegating back to `pipeline._stage_execute`.
+    pipeline._stage_execute = _legacy_sentinel
+    ctx_direct = PipelineContext(task="execute direct task")
+    ctx_direct.topology = None
+    ctx_direct.cost_tracker = None
+    ctx_direct.verification_passed = True
+    out_direct = await exec_mod.execute(pipeline, ctx_direct)
+    assert out_direct is ctx_direct
+    assert out_direct.executed_template == "single_agent"
+    assert out_direct.result == ""
 
-    pipeline._stage_execute = _fake_stage_execute
-
-    result = await exec_mod.execute(
-        pipeline,
-        sentinel_ctx,
-        event_log=sentinel_eventlog,
-        run_frame_builder=sentinel_builder,
-    )
-
-    assert result is sentinel_out
-    assert captured["ctx"] is sentinel_ctx
-    assert captured["event_log"] is sentinel_eventlog
-    assert captured["run_frame_builder"] is sentinel_builder
-
-
-@pytest.mark.asyncio
-async def test_execute_wrapper_defaults_kwargs_to_none() -> None:
-    """Defaults match the legacy method when caller omits the optional kwargs."""
-    from sage.pipeline_v2 import execute as exec_mod
-
-    pipeline = MagicMock()
-    sentinel_ctx = SimpleNamespace(tag="stage4_input_defaults")
-    captured: dict[str, Any] = {}
-
-    async def _fake_stage_execute(
-        ctx: Any, event_log: Any | None = None, run_frame_builder: Any | None = None,
-    ) -> Any:
-        captured["event_log"] = event_log
-        captured["run_frame_builder"] = run_frame_builder
-        return ctx
-
-    pipeline._stage_execute = _fake_stage_execute
-
-    result = await exec_mod.execute(pipeline, sentinel_ctx)
-
-    assert result is sentinel_ctx
-    assert captured["event_log"] is None
-    assert captured["run_frame_builder"] is None
+    # Round-trip through the legacy delegator:
+    delattr(pipeline, "_stage_execute")
+    ctx_round = PipelineContext(task="execute roundtrip task")
+    ctx_round.topology = None
+    ctx_round.cost_tracker = None
+    ctx_round.verification_passed = True
+    out_round = await pipeline._stage_execute(ctx_round)
+    assert out_round is ctx_round
+    assert out_round.executed_template == "single_agent"
+    assert out_round.result == ""
 
 
 @pytest.mark.asyncio
