@@ -1225,7 +1225,7 @@ mod tests {
         if role == "verifier" {
             return template == "robust";
         }
-        TOOL_FREE_SINK_ROLES.iter().any(|&r| r == role)
+        TOOL_FREE_SINK_ROLES.contains(&role)
     }
 
     fn assert_tools_policy(template_name: &str, g: &TopologyGraph) {

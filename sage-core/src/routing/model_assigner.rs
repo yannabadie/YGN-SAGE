@@ -783,7 +783,7 @@ mod tests {
             1,
             "math",
             10.0,
-            Some(&[first_model.clone()]),
+            Some(std::slice::from_ref(&first_model)),
             None,
         );
         if let Some(ref m) = model_id2 {

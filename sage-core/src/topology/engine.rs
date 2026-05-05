@@ -25,6 +25,15 @@ use super::llm_synthesis::TopologySynthesizer;
 use super::map_elites::{BehaviorDescriptor, MapElitesArchive};
 use super::mcts::MctsSearcher;
 use super::mutations::{apply_mutation_tracked, MutationResult, MutationStats};
+// Cycle-11 CI debug 2026-05-05: clippy --fix incorrectly removed
+// this import as "unused" — it's not used in default-features
+// builds, but `save_state` / `load_state` (lines ~989/1021/1041)
+// reach into `posterior_epoch::{validate_epoch_for_save,
+// write_topology_state_manifest, validate_epoch_for_load}`.
+// Those methods only compile under specific feature combos which
+// clippy didn't see. `#[allow(unused_imports)]` keeps the default-
+// features clippy clean while preserving the cognitive-feature build.
+#[allow(unused_imports)]
 use super::posterior_epoch;
 use super::smmu_bridge::{TopologyOutcome, TopologySmmuBridge};
 use super::templates;

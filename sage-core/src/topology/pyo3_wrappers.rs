@@ -549,7 +549,7 @@ mod tests {
         let confidence = result.confidence();
 
         assert_eq!(source, "template_fallback");
-        assert!(confidence >= 0.0 && confidence <= 1.0);
+        assert!((0.0..=1.0).contains(&confidence));
 
         // __repr__ should contain the source and template.
         let repr = result.__repr__();

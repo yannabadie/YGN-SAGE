@@ -584,6 +584,13 @@ mod tests {
     use std::path::{Path, PathBuf};
     use std::sync::{Mutex, OnceLock};
 
+    // Cycle-11 CI debug 2026-05-05: TOPOLOGY_STATE_MANIFEST_FILENAME
+    // is used at line 840 inside `#[cfg(feature = "cognitive")]` test
+    // — clippy --fix wrongly removed it on a default-features build
+    // where the cognitive test isn't compiled. `#[allow(unused_imports)]`
+    // keeps the default clippy clean while preserving the cognitive
+    // build.
+    #[allow(unused_imports)]
     use super::{
         validate_epoch_for_load, validate_epoch_for_save, write_topology_state_manifest,
         A14_BYPASS_ENV, A14_EPOCH_GUARD_ERROR_PREFIX, CONTAMINATED_MARKER_FILENAME,

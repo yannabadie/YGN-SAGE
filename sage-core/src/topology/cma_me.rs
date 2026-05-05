@@ -315,9 +315,9 @@ mod tests {
 
         e.tell(&samples, &fitnesses);
 
-        assert_close(e.mean[0], 1.64439030009577003, "mean[0]");
+        assert_close(e.mean[0], 1.644_390_300_095_77, "mean[0]");
         assert_close(e.sigma, 1.0, "sigma");
-        assert_close(e.cov_diag[0], 0.58182936732858193, "cov_diag[0]");
+        assert_close(e.cov_diag[0], 0.581_829_367_328_581_9, "cov_diag[0]");
     }
 
     #[test]
@@ -332,8 +332,8 @@ mod tests {
             e.tell(&samples, &fitnesses);
         }
 
-        assert_close(e.mean[0], 1.64492369682609296, "mean[0]");
-        assert_close(e.sigma, 0.94119199999999992, "sigma");
+        assert_close(e.mean[0], 1.644_923_696_826_093, "mean[0]");
+        assert_close(e.sigma, 0.941_191_999_999_999_9, "sigma");
         assert_close(e.cov_diag[0], 0.00453737301757347, "cov_diag[0]");
     }
 

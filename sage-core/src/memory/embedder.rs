@@ -38,6 +38,12 @@ impl SendSessionPtr {
     /// # Safety
     /// The caller must guarantee exclusive access to the session.
     #[allow(unsafe_code)]
+    // Cycle-11 CI debug 2026-05-05: clippy::mut_from_ref is correctly
+    // suspicious that we return `&mut` from `&self`. The contract is
+    // explicit in the `# Safety` doc above — the caller guarantees
+    // exclusive access. The unsafe marker is the type-system handle
+    // for that contract.
+    #[allow(clippy::mut_from_ref)]
     unsafe fn as_mut(&self) -> &mut Session {
         unsafe { &mut *self.0 }
     }

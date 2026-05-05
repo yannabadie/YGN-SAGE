@@ -215,6 +215,14 @@ impl ToolExecutor {
     /// bypasses BOTH AST validation AND the Wasm sandbox.
     ///
     /// Raises ValueError if AST validation fails.
+    // Cycle-11 CI debug 2026-05-05: `py` and `args_json` are used only
+    // inside `#[cfg(feature = "sandbox")]` blocks below. On a build
+    // without `sandbox` (tool-executor only), they're unused. Suppress
+    // the lint at the function level rather than renaming with a
+    // leading underscore — the public param names appear in docs and
+    // IDE hints, and renaming would mask future legitimate
+    // unused-variable bugs in the function body.
+    #[allow(unused_variables)]
     pub fn validate_and_execute(
         &self,
         py: Python<'_>,

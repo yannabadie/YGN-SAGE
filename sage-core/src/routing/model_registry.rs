@@ -290,6 +290,23 @@ impl ModelRegistry {
     }
 }
 
+/// Cost-adjusted affinity score: penalizes expensive models.
+/// Free function (not in #[pymethods]) to avoid PyO3 trait bound issues.
+fn cost_adjusted_score(
+    card: &ModelCard,
+    system: CognitiveSystem,
+    median_cost: f32,
+    alpha: f32,
+    est_input: u32,
+    est_output: u32,
+) -> f32 {
+    let affinity = card.affinity_for(system);
+    let cost = card.estimate_cost(est_input, est_output);
+    let cost_ratio = cost / median_cost;
+    // (1 + cost_ratio)^alpha penalizes above-median cost models
+    affinity / (1.0 + cost_ratio).powf(alpha)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -482,21 +499,4 @@ mod tests {
         assert!(best.is_some());
         assert_eq!(best.unwrap().id, "math-model");
     }
-}
-
-/// Cost-adjusted affinity score: penalizes expensive models.
-/// Free function (not in #[pymethods]) to avoid PyO3 trait bound issues.
-fn cost_adjusted_score(
-    card: &ModelCard,
-    system: CognitiveSystem,
-    median_cost: f32,
-    alpha: f32,
-    est_input: u32,
-    est_output: u32,
-) -> f32 {
-    let affinity = card.affinity_for(system);
-    let cost = card.estimate_cost(est_input, est_output);
-    let cost_ratio = cost / median_cost;
-    // (1 + cost_ratio)^alpha penalizes above-median cost models
-    affinity / (1.0 + cost_ratio).powf(alpha)
 }

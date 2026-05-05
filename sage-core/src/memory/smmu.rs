@@ -699,6 +699,13 @@ mod tests {
 
     /// Verify that the constant MAX_SEMANTIC_NEIGHBORS is accessible and
     /// reasonable.
+    // Cycle-11 CI debug 2026-05-05: clippy::assertions_on_constants
+    // is technically right that these are const comparisons, but the
+    // test's intent is to document the operating range and fire if
+    // someone changes the constant out of bounds. const_assert! would
+    // be a marginally better encoding but adds a compile-time-only
+    // dep; this allow keeps the runtime test as-documented.
+    #[allow(clippy::assertions_on_constants)]
     #[test]
     fn test_max_semantic_neighbors_constant() {
         assert!(
@@ -746,7 +753,7 @@ mod tests {
         // The 2 lexicographically smallest IDs should be gone
         for id in &expected_evicted {
             assert!(
-                smmu.chunk_map.get(*id).is_none(),
+                !smmu.chunk_map.contains_key(*id),
                 "Expected evicted ID {id} to be absent from chunk_map"
             );
         }
@@ -754,7 +761,7 @@ mod tests {
         // The remaining 3 should still be present
         for id in &expected_remaining {
             assert!(
-                smmu.chunk_map.get(*id).is_some(),
+                smmu.chunk_map.contains_key(*id),
                 "Expected remaining ID {id} to be present in chunk_map"
             );
         }

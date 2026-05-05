@@ -246,7 +246,7 @@ fn test_generate_result_getters() {
     assert!(!s.is_empty());
 
     let c = result.confidence();
-    assert!(c >= 0.0 && c <= 1.0);
+    assert!((0.0..=1.0).contains(&c));
 }
 
 #[test]

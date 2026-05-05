@@ -11,6 +11,7 @@
 //! Lifetime: the returned `RustSpanHandle` owns
 //! - an `EnteredSpan` (RAII guard for the tracing span)
 //! - a `ContextGuard` (RAII guard for the OTel context attach)
+//!
 //! Both drop in reverse-construction order on close.
 //!
 //! ### Belt-and-suspenders parent linkage
@@ -23,6 +24,7 @@
 //! - `set_parent()` ensures the tracing span's `parent_cx` is the
 //!   bridged context even if a stray tracing span is somehow current
 //!   (otherwise tracing's contextual parent lookup would beat us).
+//!
 //! Removing either is a regression hazard. Keep both.
 //!
 //! ### Static span name + dynamic field

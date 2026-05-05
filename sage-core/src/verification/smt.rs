@@ -1240,9 +1240,17 @@ mod tests {
 
     #[test]
     fn test_provider_assignment_no_providers_with_reqs() {
+        // Cycle-11 CI debug 2026-05-05: clippy::type_complexity flags
+        // the `Vec<(String, Vec<String>, Vec<(String, String)>)>`
+        // annotation. The complex shape comes from the
+        // `verify_provider_assignment` method signature itself; this
+        // test passes an empty vec of that shape. A type alias would
+        // be redundant for a single test-side use site.
+        #[allow(clippy::type_complexity)]
+        let providers: Vec<(String, Vec<String>, Vec<(String, String)>)> = vec![];
+
         let v = SmtVerifier::new();
         let nodes = vec![("n1".into(), vec!["code".into()])];
-        let providers: Vec<(String, Vec<String>, Vec<(String, String)>)> = vec![];
         let (sat, _) = v.verify_provider_assignment(nodes, providers);
         assert!(!sat);
     }
