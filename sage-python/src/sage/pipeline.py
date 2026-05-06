@@ -1060,15 +1060,18 @@ class CognitiveOrchestrationPipeline:
     def _build_topology_from_hint(self, hint: str) -> Any | None:
         """Create a topology from a template hint using Rust TemplateStore.
 
-        No hardcoded prompts — nodes use their role-based defaults.
-        The runner builds system prompts from each node's role field.
+        Cycle-13 K Phase 2.1 Step A1 (2026-05-06): body moved to
+        `sage.pipeline_v2.topology_helpers.build_topology_from_hint`.
+        This is now a 1-line delegator. The method form is preserved
+        on the class so existing callers (`pipeline_v2/select_topology.py`
+        invoking `self._build_topology_from_hint(...)`) continue to
+        function AND so the ~6 test files that mock this method via
+        `pipeline._build_topology_from_hint = MagicMock(...)` keep
+        working byte-identical. LOCAL import per cgpro DESIGN trap
+        on circular-import risk in pipeline_v2 package.
         """
-        try:
-            from sage_core import PyTemplateStore  # type: ignore[import-not-found]
-            store = PyTemplateStore()
-            return store.create(hint, "")
-        except (ImportError, ValueError):
-            return None
+        from sage.pipeline_v2.topology_helpers import build_topology_from_hint
+        return build_topology_from_hint(hint)
 
     # ── Stage 2: Select Topology ────────────────────────────────────────────
 
