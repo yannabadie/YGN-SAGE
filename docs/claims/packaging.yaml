@@ -1,0 +1,19 @@
+# Packaging claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: packaging.pip_install_works
+    status: planned
+    description: "`pip install ygn-sage` from PyPI installs sage_core wheel + sage-python and runs without source build."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      README is explicit (line 62-63): "One-command pip install ygn-sage is
+      intentionally not advertised until the sage_core runtime wheel is
+      published or bundled". Cycle-13 B Q2 (db304bc6) shipped wheel_smoke
+      module + workflow wiring; release-gating + multi-arch matrix completion
+      (Linux aarch64, macOS x86_64, TestPyPI dry-run, post-publish sentinel)
+      remain in Phase 1.1 of cycle-13 K queue. Until then this claim stays
+      `planned` and the README reflects that.

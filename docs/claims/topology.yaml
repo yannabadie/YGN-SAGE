@@ -1,0 +1,34 @@
+# Topology claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: topology.engine_6_paths
+    status: delivered
+    description: "TopologyEngine generates topologies via 6 paths: S-MMU hit, archive, LLM synthesis, mutation, MCTS, template (11 templates)."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+
+  - id: topology.path6_learned
+    status: opt-in
+    description: "Path 6 = learned topology policy (Phi-4-mini SFT or Nemotron-Orchestrator-8B GiGPO). Inference-only on `main`. Default-off; opt-in via SAGE_ENABLE_PATH6=1."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Per cgpro 2026-05-06 ALIRE.md review: keeping in main requires (1) explicit
+      feature flag, (2) default-off, (3) claim opt-in/experimental in registry
+      (this entry), (4) non-regression test asserting path6_usage_count == 0 in
+      default config. (4) is owned by Phase 0.5 (cycle-13 K).
+
+  - id: topology.adaptive_runtime_controller
+    status: delivered
+    description: "Rust-primary RustTopologyController (ADR-012, 2026-04-20) drives 5 adaptation decision paths + state machine; Python wraps for embedder/SmtVerifier/topology-graph access."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"

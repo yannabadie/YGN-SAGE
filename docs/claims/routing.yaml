@@ -1,0 +1,58 @@
+# Routing claims — single-source-of-truth for status of routing capabilities.
+#
+# This file is consumed by `python -m sage.ops.claims_audit` and aggregated
+# into `docs/CLAIMS.yaml` by `scripts/regenerate_claims_index.py`.
+#
+# DO NOT edit `docs/CLAIMS.yaml` directly — edits there are overwritten.
+# Edit the per-category file (this one) instead.
+#
+# Status vocabulary:
+#   delivered        : capability shipped + has evidence_test + evidence_commit
+#   default-on       : delivered + active in default boot path (no env-var opt-in)
+#   opt-in           : delivered, gated by env-var or config flag (default off)
+#   planned          : capability designed (spec / ADR / roadmap entry) but NOT shipped
+#   parked           : code exists but explicitly not executed on `main` (e.g. training)
+#   retired          : capability deliberately removed / superseded
+#   evidence_pending : status delivered/default-on but evidence_test or evidence_commit
+#                      not yet pinned. Phase 0.4 of cycle-13 K closes by either pinning
+#                      OR flipping to a more truthful status.
+
+claims:
+  - id: routing.knn_92pct
+    status: delivered
+    description: "kNN router on arctic-embed-m embeddings achieves ~92% GT accuracy on the in-house routing benchmark."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Cited across README, AI-ARCHITECTURE.md, and CLAUDE.md. Phase 0.4 of
+      cycle-13 K is responsible for pinning evidence_test (a unit/integration
+      test that runs `--type routing_gt` and asserts >= some threshold) +
+      evidence_benchmark (a `docs/benchmarks/<date>-routing-gt.json` artefact)
+      OR flipping the status to `evidence_pending` if neither can be located.
+
+  - id: routing.system_router_88pct
+    status: delivered
+    description: "Rust SystemRouter achieves ~88% GT accuracy via domain scoring from cards.toml."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+
+  - id: routing.complexity_heuristic_emergency_only
+    status: retired
+    description: "Heuristic ComplexityRouter (~34% GT) — fallback only, never primary. Wired at pipeline.py Priority-3 after Rust SystemRouter + kNN."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Per CLAUDE.md directive #4: never test/benchmark/optimize. Status `retired`
+      is the right tag here — capability remains as emergency fallback, but no
+      claim of value is made. AUDIT2 2026-04-24 flagged "DEAD CODE" framing as
+      contradicted by the live fallback path; this claim records the corrected
+      framing.

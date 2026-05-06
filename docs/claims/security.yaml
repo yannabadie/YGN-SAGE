@@ -1,0 +1,46 @@
+# Security claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: security.prompt_injection_detection
+    status: opt-in
+    description: "PromptInjectionDetector module exists at sage-python/src/sage/security/prompt_injection.py. Wired at AgentLoop.run() task-ingest boundary. NOT wired in pipeline.py."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      cgpro 2026-05-06 GitHub-verified: pipeline.py contains zero
+      prompt_injection / PROMPT_INJECTION matches. AgentLoop.run() calls
+      `_pi_detect(task)` at task ingest. Pipeline path therefore has no
+      prompt-injection check unless the task happens to flow through an
+      AgentLoop. Status `opt-in` is the truthful tag — propagating the wiring
+      to pipeline.py + TopologyRunner + bench harness is Phase 2.2 of
+      cycle-13 K queue.
+
+  - id: security.sandbox_default_wasi
+    status: default-on
+    description: "Tool execution sandboxed by default via embedded RustPython wasm32-wasip1 deny-by-default WASI-p1 (ADR-013 §5 flip 2026-04-22). validate_and_execute does NOT fall back to subprocess."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      `execute_raw` (which bypasses both AST validation AND the sandbox)
+      remains gated by SAGE_UNSAFE_RAW_EXEC=1. SAGE_UNSAFE_UNSANDBOXED gate
+      removed in §5 flip. CI sandbox build job exists since A23
+      (build-wasm-sandbox + Trap E matrix Windows cranelift Py 3.12+3.13).
+
+  - id: security.dangerous_tools_default_off
+    status: default-on
+    description: "AgentConfig.dangerous_tools defaults to False. execute_bash NOT registered at boot. Opt-in via SAGE_DANGEROUS_TOOLS=1."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Per CLAUDE.md (2026-04-23 flip). SWE-bench N=10 paired smoke showed
+      typed-only produces 4/10 patches vs bash 3/10 — functional criterion met
+      before the flip.

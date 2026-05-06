@@ -1,0 +1,43 @@
+# Benchmark claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: benchmarks.bcb_hard_45_9
+    status: delivered
+    description: "BigCodeBench Hard Instruct: SAGE 45.9% pass rate (full pipeline, fast tier), 2026-04-26 internal eval."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "evidence_pending"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Cited in README headline. Phase 0.4 of cycle-13 K either pins a
+      `docs/benchmarks/<date>-bcb-hard-result.json` artefact with the
+      full per_task vector + provider mix + commit OR flips status to
+      `evidence_pending` and removes the headline number from README.
+
+  - id: benchmarks.masbench_breadth_22pp
+    status: delivered
+    description: "sage-mas-bench breadth axis: +22pp gain over single-agent baseline (p=0.015, N=50). Other axes p>0.05, not significant."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "docs/audits/2026-04-22-audit-verification-master.md"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Earlier "+27pp" / "+30pp" headlines retracted (commit 796af27 + the
+      audit doc above). The +22pp/breadth claim is the only one that survived.
+      Phase 0.4 verifies the audit doc actually contains the per-task numbers
+      and the test command that reproduces it.
+
+  - id: benchmarks.swebench_lite_10pct
+    status: delivered
+    description: "SWE-bench Lite Docker-graded: 10% (1/10 resolved) on 2026-04-21 after 3-fix chain (Directive #3 gating, CRLF, UTF-8)."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "docs/benchmarks/2026-04-21-swebench-v15-eval-results.md"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      First real Docker-graded pass-rate (older 70% number is generation rate,
+      not pass rate). Patch-generation rate stays at 70% average. Phase 0.4
+      verifies the bench doc points at a reproducible JSONL.

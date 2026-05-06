@@ -1,0 +1,20 @@
+# Memory claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: memory.smmu_persistence
+    status: planned
+    description: "MultiViewMMU (S-MMU) save/load: register chunks, save state, reload, retrieve_similar() returns the same entries."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      cgpro 2026-05-06 trap #3: TopologyEngine.save_state/load_state persists
+      bandit + archive + engine_extras only. `smmu.rs` and `smmu_bridge.rs`
+      have NO save_state / load_state. A run's S-MMU graph is rebuilt from
+      working memory on each cold start — fine if explicitly documented as
+      volatile, NOT fine if the runtime narrative implies durability.
+      Phase 2.5 (cycle-13 K queue) decides: implement Rust persistence OR
+      explicitly document the volatile-cache contract in
+      runtime-integrity-ledger + rust-python-boundary.

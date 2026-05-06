@@ -1,0 +1,72 @@
+# Runtime claims — see docs/claims/routing.yaml for schema documentation.
+
+claims:
+  - id: runtime.invariants_ledger
+    status: delivered
+    description: "9 runtime-integrity invariants binding declared labels to verified content. Source-of-truth: docs/contracts/runtime-integrity-ledger.md."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "evidence_pending"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Count was 8 through cycle-11; cycle-12 commit f647c5ae backported
+      invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md still
+      said "8" at db304bc6 (cgpro 2026-05-06 trap #2). Phase 0.3 of cycle-13 K
+      makes the ledger the single source-of-truth + adds a CI gate that fails
+      if any other doc cites a non-matching count.
+
+  - id: runtime.oracle_default_on
+    status: default-on
+    description: "OracleStack is default-on since cycle-7 (commit 128e1b89). Bandit / MAP-Elites / online-evolution / training-memory updates require verdict.trainable=True."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "128e1b89"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Kill-switch via SAGE_ORACLE=0|false|off|no|disable|disabled
+      (case-insensitive). Predicate centralised in
+      sage/runtime/oracle/env.py:oracle_enabled().
+
+  - id: runtime.a14_epoch_guard
+    status: delivered
+    description: "A14 posterior epoch guard: posterior_epoch.json + topology_state_manifest.json bind declared epoch label to SHA-256 of all topology-state files. Fail-closed at boot."
+    evidence_test: "sage-python/tests/test_save_state_manifest_contract.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "f9521616"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Round-2 closure 2026-04-30. Forensic load-only bypass via
+      SAGE_BOOT_BYPASS_EPOCH_GUARD=1 + SAGE_BOOT_BYPASS_REASON +
+      SAGE_OPERATOR_ID. atexit save disabled when bypass is active.
+      Reset command: `python -m sage.ops.a14_reset --reason "..."`.
+
+  - id: runtime.bandit_attribution
+    status: delivered
+    description: "Bandit posterior updates attributed to the FINALIZED model_id + executed template via route_integrated() + record_outcome_checked() (cycle-9 6f23eea4)."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "6f23eea4"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Closes the 2026-04-26 cgpro find: pre-cycle-9 pipeline called legacy
+      `_rust_router.route()` (bandit not consulted), then
+      `bandit.select_with_context()` separately, dropping decision.model_id /
+      decision.template, recording outcome against an orphan ID. Bandit
+      posteriors updated for arms whose model never executed.
+
+  - id: runtime.cli_protocol_v0
+    status: delivered
+    description: "sage run --jsonl: 14 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
+    evidence_test: "evidence_pending"
+    evidence_benchmark: "n/a"
+    evidence_commit: "f647c5ae"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat, set_budget
+      mid-run, cancel cancellation token, cli_complete.payload.final_seq.
+      Phase 1.2 of cycle-13 K queue closes these and bumps protocol_version.
