@@ -147,3 +147,80 @@ def test_real_repo_after_sync_has_zero_drift() -> None:
     sync_mod = _load_sync_module()
     ok, drifts = sync_mod.sync(repo_root, check_only=True)
     assert ok, f"Real repo has counter drift after Phase 0.2 sync: {drifts}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 0.3 — invariant count from runtime-integrity-ledger.md
+# ---------------------------------------------------------------------------
+
+
+def _build_repo_with_ledger(
+    tmp_path: Path, *, heading_count: int, table_rows: int,
+) -> Path:
+    """Lay out a minimal repo with current.json + a fake ledger.
+
+    `heading_count` populates the `## The N invariants` heading line,
+    `table_rows` controls how many `| **Label** | ... |` rows follow.
+    """
+    repo = _build_repo(tmp_path, py=100, rust=10, disc=5)
+    ledger_dir = repo / "docs" / "contracts"
+    ledger_dir.mkdir(parents=True)
+    body_rows = "\n".join(
+        f"| **Invariant {i + 1}** | declared | verified | side-effect |"
+        for i in range(table_rows)
+    )
+    (ledger_dir / "runtime-integrity-ledger.md").write_text(
+        f"# Runtime Integrity Ledger\n\n"
+        f"## The {heading_count} invariants\n\n"
+        f"| Invariant | Declared label | Verified content | Side-effect |\n"
+        f"|---|---|---|---|\n"
+        f"{body_rows}\n\n"
+        f"## Module cross-reference\n\n"
+        f"placeholder\n",
+        encoding="utf-8",
+    )
+    return repo
+
+
+def test_load_invariant_count_reads_ledger_heading(tmp_path: Path) -> None:
+    repo = _build_repo_with_ledger(tmp_path, heading_count=9, table_rows=9)
+    sync_mod = _load_sync_module()
+    assert sync_mod.load_invariant_count(repo) == 9
+
+
+def test_load_invariant_count_raises_on_heading_table_mismatch(tmp_path: Path) -> None:
+    repo = _build_repo_with_ledger(tmp_path, heading_count=9, table_rows=8)
+    sync_mod = _load_sync_module()
+    with pytest.raises(ValueError, match="9 invariants but section"):
+        sync_mod.load_invariant_count(repo)
+
+
+def test_invariant_count_propagates_into_readme(tmp_path: Path) -> None:
+    repo = _build_repo_with_ledger(tmp_path, heading_count=9, table_rows=9)
+    # README pre-state: says "8 invariants" — sync should bump to 9.
+    (repo / "README.md").write_text(
+        "Some text\n8 invariants in the ledger.\nOther text.\n",
+        encoding="utf-8",
+    )
+    sync_mod = _load_sync_module()
+    sync_mod.main(["--repo-root", str(repo)])
+    out = (repo / "README.md").read_text(encoding="utf-8")
+    assert "9 invariants" in out
+    assert "8 invariants" not in out
+
+
+def test_invariant_count_does_not_touch_claude_md(tmp_path: Path) -> None:
+    """CLAUDE.md is INTENTIONALLY excluded — historical references like
+    `5 invariants at cycle-8 closure` must NOT be rewritten."""
+    repo = _build_repo_with_ledger(tmp_path, heading_count=9, table_rows=9)
+    claude_text = (
+        "Pre-cycle-8 had 5 invariants.\n"
+        "Cycle-9 added the 7th.\n"
+        "Current ledger total is 9.\n"
+    )
+    (repo / "CLAUDE.md").write_text(claude_text, encoding="utf-8")
+    sync_mod = _load_sync_module()
+    sync_mod.main(["--repo-root", str(repo)])
+    after = (repo / "CLAUDE.md").read_text(encoding="utf-8")
+    # Bytes-identical: CLAUDE.md isn't in _DOC_TARGETS so it MUST be untouched.
+    assert after == claude_text

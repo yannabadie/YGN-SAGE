@@ -3,7 +3,7 @@
 > **Généré le** : 2026-05-04 | **Branche** : `main` | **Commit HEAD** : `a6f869c4`
 > **Auteurs** : Claude Opus 4.7 (1M context), architecte principal. Précédente révision Claude Opus 4.6 (2026-03-25, branche VeRLGIGPO, commit `3891243`).
 > **Méthode** : Exploration exhaustive du code source au commit HEAD. Le code prime sur la documentation.
-> **Delta vs 2026-03-25** : ~982 commits écoulés. Cycles 7 (SAGE_ORACLE flip), 8 (R6.1c + A14 epoch guard), 9 (deepseek-v4-flash migration + Fix C + recovery infrastructure). Training **parqué** depuis 2026-04-15 (`b2f59ee`, -4.3 GB). Sous-système `runtime/` (event_log + oracle + evidence + run_frame + state) ajouté. ADR-013 §5 flip (sandbox WASI par défaut). ADR-012 (TopologyController Rust-primary). ADR-014 (LtlVerifier renommage). 8 invariants dans `docs/contracts/runtime-integrity-ledger.md`.
+> **Delta vs 2026-03-25** : ~982 commits écoulés. Cycles 7 (SAGE_ORACLE flip), 8 (R6.1c + A14 epoch guard), 9 (deepseek-v4-flash migration + Fix C + recovery infrastructure). Training **parqué** depuis 2026-04-15 (`b2f59ee`, -4.3 GB). Sous-système `runtime/` (event_log + oracle + evidence + run_frame + state) ajouté. ADR-013 §5 flip (sandbox WASI par défaut). ADR-012 (TopologyController Rust-primary). ADR-014 (LtlVerifier renommage). 9 invariants dans `docs/contracts/runtime-integrity-ledger.md`.
 
 ---
 
@@ -41,7 +41,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3121** (canonical : `docs/status/current.json`) |
+| **Tests Python collected** | **3125** (canonical : `docs/status/current.json`) |
 | **Tests Rust** | **553** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
 | **mypy / ruff** | mypy 0 errors / 183 files, ruff clean, type:ignore ceiling 45/45 |
@@ -96,7 +96,7 @@ CLASSIFY (kNN/SystemRouter+bandit decision_id) → DECOMPOSE (TaskPlanner DAG fe
 5. **Verification** : OxiZ SMT (QF_LIA) + HybridVerifier + LTL + ProcessRewardModel
 6. **Evolution** : MAP-Elites archive + CMA-ME + MCTS + 7 mutation operators + TopologyPopulation
 7. **Adaptation runtime (ADR-012, Rust-primary)** : `RustTopologyController` (Rust state machine + 5 décision paths) + Python wrapper pour embedder/SmtVerifier/topology-graph
-8. **Runtime Integrity** : OracleStack + RuntimeContracts + StateCore + RunFrame + EvidenceProducers + 8 invariants dans le ledger
+8. **Runtime Integrity** : OracleStack + RuntimeContracts + StateCore + RunFrame + EvidenceProducers + 9 invariants dans le ledger
 9. **Observability** : EventBus (in-process) + DriftMonitor + OpenTelemetry GenAI spans (B1) + Rust span bridge (B1.b, `--features otel`)
 10. **Bench infrastructure (cycle-9)** : Event ledger NDJSON + wall-clock watchdog + Windows keep-awake + targeted filters (`--ablation-configs`, `--task-ids`)
 
@@ -820,7 +820,7 @@ S1 rapide/intuitif, S2 délibéré/analytique, S3 formel/vérification.
 
 ### Directive #9 (CLAUDE.md, cycle-8 architect review)
 
-**"Declared ≠ verified — runtime integrity principle"** : tout label autorisant un side-effect ou learning decision MUST être lié à verified content / schema / provenance / executable proof. **8 invariants** dans `docs/contracts/runtime-integrity-ledger.md` (cycle-9 cgpro round-2 ajout 2026-05-04).
+**"Declared ≠ verified — runtime integrity principle"** : tout label autorisant un side-effect ou learning decision MUST être lié à verified content / schema / provenance / executable proof. **9 invariants** dans `docs/contracts/runtime-integrity-ledger.md` (cycle-9 cgpro round-2 ajout 2026-05-04).
 
 ---
 
@@ -878,7 +878,7 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 | **Shadow routing 49.6% divergence** | Moyenne | Gates evidence pas franchies. Rust router non-promu — mais kNN reste primary. |
 | **`evolution/engine.py` quantitative validation** | Moyenne | Tests OK mais pas de Wilcoxon/Cohen's d/courbes convergence. |
 | **A3 N=50 cloud rerun** | Haute (cycle-10) | Aborted 2026-05-04 par Modern Standby. Recovery infra prête, à relancer cloud. |
-| **`runtime/integrity/` umbrella refactor** | Différé | cgpro architect review 2026-04-30 a recommandé NE PAS unifier physiquement les 8 invariants — couplage local préférable. Phase 2 / v0.2 peut ajouter re-export aliases. |
+| **`runtime/integrity/` umbrella refactor** | Différé | cgpro architect review 2026-04-30 a recommandé NE PAS unifier physiquement les 9 invariants — couplage local préférable. Phase 2 / v0.2 peut ajouter re-export aliases. |
 | **Telemetry split internal_avr / bcb_repair** | Basse (cycle-10) | cgpro round-2 a flagué confusion. Cycle-10 candidate. |
 | **perceive→TaskPlanner coupling test** | Basse (cycle-10) | BCB/82+/19+/34 montrent skip_guardrails → topology shift 5→3. À tester unitaire. |
 | **A14b per-node attribution** | Différé | parallel/debate/selfmoa : per-node bandit attribution remis à cycle-10+. |
@@ -952,7 +952,7 @@ MEMORY:
 VERIFICATION:
   OxiZ SMT (QF_LIA, feature smt) | LtlVerifier (petgraph, ADR-014 rename)
   HybridVerifier (structural) | ProcessRewardModel (PRM <think>)
-  8 invariants in runtime-integrity-ledger.md
+  9 invariants in runtime-integrity-ledger.md
 
 SANDBOX (ADR-013 §5 flip 2026-04-22):
   Default: tree-sitter + RustPython wasm32-wasip1 (deny-by-default WASI-p1)
@@ -1043,7 +1043,7 @@ POINTS D'ATTENTION (cycle-10 carry-over):
 | `sage-core/src/sandbox/` | tree-sitter + Wasm-python JIT cache | Haute |
 | `sage-core/src/observability/` | OTel bridge B1.b | Moyenne |
 | `sage-core/config/cards.toml` | 23 modèles | Haute |
-| `docs/contracts/runtime-integrity-ledger.md` | 8 invariants | **Critique** |
+| `docs/contracts/runtime-integrity-ledger.md` | 9 invariants | **Critique** |
 | `docs/contracts/rust-python-boundary.md` | Ownership matrix | Haute |
 | `docs/contracts/runtime-event-log.md` | Event-log contract matrix | Haute |
 | `docs/adr/ADR-013-wasm-sandbox-default.md` | Sandbox flip | Haute |

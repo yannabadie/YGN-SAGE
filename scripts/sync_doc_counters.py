@@ -47,6 +47,7 @@ class Counters:
     python: int
     rust: int
     discover: int
+    invariants: int = 0  # populated from the runtime-integrity-ledger heading
 
     @classmethod
     def from_current_json(cls, payload: dict[str, Any]) -> "Counters":
@@ -55,6 +56,48 @@ class Counters:
             rust=int(payload["sage_core_tests"]["total"]),
             discover=int(payload["sage_discover_tests"]["total"]),
         )
+
+
+_LEDGER_HEADING_RE = re.compile(r"^##\s+The\s+(\d+)\s+invariants\s*$", re.MULTILINE)
+_LEDGER_TABLE_ROW_RE = re.compile(r"^\|\s*\*\*[^|]+\*\*\s*\|", re.MULTILINE)
+
+
+def load_invariant_count(repo_root: Path) -> int:
+    """Read `## The N invariants` heading from the runtime-integrity-ledger.
+
+    Source-of-truth for the invariant count: cgpro 2026-05-06 confirmed
+    `runtime-integrity-ledger.md` is the authoritative number. This
+    function ALSO counts the table rows under that heading and asserts
+    the heading agrees with them — a mismatch is itself a drift signal
+    and raises ValueError.
+
+    Returns 0 if the ledger file doesn't exist (test fixtures may omit it);
+    invariant propagation then becomes a no-op for that run.
+    """
+    ledger_path = repo_root / "docs" / "contracts" / "runtime-integrity-ledger.md"
+    if not ledger_path.is_file():
+        return 0
+    text = ledger_path.read_text(encoding="utf-8")
+
+    heading_match = _LEDGER_HEADING_RE.search(text)
+    if not heading_match:
+        raise ValueError(
+            f"Cannot find `## The N invariants` heading in {ledger_path}"
+        )
+    heading_count = int(heading_match.group(1))
+
+    # Count table rows from the heading to the next top-level "##" heading.
+    after_heading = text[heading_match.end():]
+    next_heading = re.search(r"^##\s", after_heading, re.MULTILINE)
+    section = after_heading[: next_heading.start()] if next_heading else after_heading
+    table_row_count = len(_LEDGER_TABLE_ROW_RE.findall(section))
+
+    if heading_count != table_row_count:
+        raise ValueError(
+            f"Ledger heading claims {heading_count} invariants but section "
+            f"has {table_row_count} table rows. Fix the ledger before syncing."
+        )
+    return heading_count
 
 
 @dataclass
@@ -160,9 +203,61 @@ def update_rules_architecture(text: str, c: Counters) -> tuple[str, list[Drift]]
     return text, drifts
 
 
+_INVARIANT_COUNT_RE = re.compile(r"(\b)(\d+)(\s+invariants\b)")
+
+
+def update_invariant_count_in_readme(text: str, c: Counters) -> tuple[str, list[Drift]]:
+    """README.md mentions invariant count in two places (line 41 + capability table).
+
+    Both references describe the running ledger count and are safe to rewrite.
+    """
+    if c.invariants <= 0:
+        return text, []
+    drifts: list[Drift] = []
+
+    def _sub(m: re.Match[str]) -> str:
+        existing = int(m.group(2))
+        if existing != c.invariants:
+            drifts.append(Drift("README.md", "invariants", c.invariants, m.group(0)))
+        return f"{m.group(1)}{c.invariants}{m.group(3)}"
+
+    return _INVARIANT_COUNT_RE.sub(_sub, text), drifts
+
+
+def update_invariant_count_in_ai_architecture(text: str, c: Counters) -> tuple[str, list[Drift]]:
+    """AI-ARCHITECTURE.md has 6 mentions of `<N> invariants` — all reference the
+    running ledger count, all safe to rewrite. CLAUDE.md is NOT covered here
+    because it contains historical timeline references like "5 invariants at
+    cycle-8 closure" that must NOT be rewritten.
+    """
+    if c.invariants <= 0:
+        return text, []
+    drifts: list[Drift] = []
+
+    def _sub(m: re.Match[str]) -> str:
+        existing = int(m.group(2))
+        if existing != c.invariants:
+            drifts.append(Drift("AI-ARCHITECTURE.md", "invariants", c.invariants, m.group(0)))
+        return f"{m.group(1)}{c.invariants}{m.group(3)}"
+
+    return _INVARIANT_COUNT_RE.sub(_sub, text), drifts
+
+
+def _compose_readme(text: str, c: Counters) -> tuple[str, list[Drift]]:
+    text, d1 = update_readme(text, c)
+    text, d2 = update_invariant_count_in_readme(text, c)
+    return text, d1 + d2
+
+
+def _compose_ai_arch(text: str, c: Counters) -> tuple[str, list[Drift]]:
+    text, d1 = update_ai_architecture(text, c)
+    text, d2 = update_invariant_count_in_ai_architecture(text, c)
+    return text, d1 + d2
+
+
 _DOC_TARGETS: list[tuple[str, Any]] = [
-    ("README.md", update_readme),
-    ("AI-ARCHITECTURE.md", update_ai_architecture),
+    ("README.md", _compose_readme),
+    ("AI-ARCHITECTURE.md", _compose_ai_arch),
     (".claude/rules/architecture.md", update_rules_architecture),
 ]
 
@@ -176,6 +271,7 @@ def sync(repo_root: Path, check_only: bool) -> tuple[bool, list[Drift]]:
         found during the propagation pass.
     """
     counters = Counters.from_current_json(load_current_json(repo_root))
+    counters.invariants = load_invariant_count(repo_root)
     all_drifts: list[Drift] = []
 
     for rel_path, updater in _DOC_TARGETS:
