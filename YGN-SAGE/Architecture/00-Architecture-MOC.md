@@ -20,7 +20,7 @@ updated: 2026-04-07
 2. [[Pillar-2-Tools|Tools]] — Sandbox 3 couches (tree-sitter → Wasm WASI → subprocess), ToolForge
 3. [[Pillar-3-Memory|Memory]] — 4 tiers (Arrow STM → SQLite Episodic → Semantic → ExoCortex)
 4. [[Pillar-4-Evolution|Evolution]] — MAP-Elites + CMA-ME, 7 operateurs mutation, LLM-as-mutator
-5. [[Pillar-5-Strategy|Strategy]] — S1/S2/S3 routing Kahneman, kNN 92%, bandit Thompson
+5. [[Pillar-5-Strategy|Strategy]] — S1/S2/S3 routing Kahneman, kNN primary (`routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`), bandit Thompson
 
 ## Pipeline
 
@@ -55,7 +55,7 @@ sage-core/          sage-python/              sage-discover/
 | Composant | Documente | Implemente | Integre pipeline |
 |-----------|-----------|------------|-----------------|
 | TopologyEngine 6-path | oui | oui | oui |
-| kNN Router 93.3% | oui | oui | oui |
+| kNN Router (`routing.knn_92pct` `evidence_pending`; historic 93.3%) | oui | oui | oui |
 | SystemRouter Rust | oui | oui | oui |
 | Memory 4-tier | oui | oui | **partiel** (consolidation incomplete) |
 | Evolution online | oui | oui | **opt-in** (pas defaut) |

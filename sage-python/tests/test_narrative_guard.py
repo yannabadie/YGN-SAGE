@@ -44,6 +44,15 @@ _GUARDED_DOCS: tuple[str, ...] = (
     "AI-ARCHITECTURE.md",
     "CLAUDE.md",
     ".claude/rules/architecture.md",
+    # Phase 0.6c (cgpro post-Phase-0.6b EDIT_REQUIRED): extend to additional
+    # agent-facing / user-facing surfaces flagged on conv 'Analyse approfondie
+    # de repo' (id 69fb0d11). The guard now spans 10 narrative-grade docs.
+    ".claude/rules/critical-directives.md",
+    ".claude/rules/research-decisions.md",
+    "ui/README.md",
+    "ui/app.py",
+    "sage-python/src/sage/routing/README.md",
+    "sage-core/src/README.md",
 )
 
 # Each pattern below is a (label, regex, allow_substrings) tuple.
@@ -93,6 +102,21 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         "or-path6",
         r"\bOR\s+Path\s*6\b",
         (),
+    ),
+    # Phase 0.6c additions
+    (
+        "bare-93p3-GT",
+        r"\b93\.3%\s*GT\b",
+        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative"),
+    ),
+    (
+        "dead-code-routing-framing",
+        r"\bDEAD CODE\b",
+        # AUDIT2 2026-04-24 corrected this framing to "Priority-3 emergency
+        # fallback only". The original "DEAD CODE" framing was technically
+        # contradicted by the live fallback path. Allow the phrase only when
+        # the same line acknowledges the correction.
+        ("Priority-3", "emergency fallback", "AUDIT2", "corrected", "non-autoritative", "NOT dead code"),
     ),
 )
 

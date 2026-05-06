@@ -63,7 +63,7 @@ python ui/app.py    # Starts on http://localhost:8000
 - **3-flow edge model**: MASFactory (arXiv 2603.06007) — Control + Message + State edge types
 - **ELK Sugiyama layout**: Hierarchical DAG rendering for agent pipelines
 - **Causal event tracing**: AgentTrace (arXiv 2603.14688) — event linking in stream
-- **kNN routing visualization**: arXiv 2505.12601 — 92% GT accuracy, 4-stage pipeline
+- **kNN routing visualization**: arXiv 2505.12601 — accuracy claim `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`, 4-stage pipeline
 - **Streaming-first**: Vercel AI SDK 6 pattern — SSE for chat, WebSocket for events
 
 ## Authentication

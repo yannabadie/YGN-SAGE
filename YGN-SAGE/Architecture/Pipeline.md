@@ -17,10 +17,10 @@ CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN
 ## Stage 1 — CLASSIFY
 
 **Composant** : kNN Router (Rust, arctic-embed-m 768-dim)
-**Precision** : 93.3% GT (56/60) — [[kNN-Routing|arXiv 2505.12601]]
+**Precision** (Obsidian vault archive — non-autoritative): historical 93.3% GT (56/60) — [[kNN-Routing|arXiv 2505.12601]]. Current authoritative status: `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`.
 **Sortie** : S1 (simple) / S2 (moderate) / S3 (complexe)
 
-Le ComplexityRouter heuristic est **dead code** (34% GT). Ne pas utiliser.
+Le ComplexityRouter heuristic est **Priority-3 emergency fallback only** (NOT dead code — AUDIT2 2026-04-24 a corrigé le framing). Historical accuracy ~34% est `evidence_pending` dans `docs/CLAIMS.yaml`.
 
 ## Stage 2 — DECOMPOSE
 

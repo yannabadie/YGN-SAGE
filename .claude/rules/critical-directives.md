@@ -37,9 +37,9 @@ Direct HTTPS works. If SSL errors occur, the problem is elsewhere.
 SSL bypass is controlled by `SAGE_SSL_VERIFY=false` env var (default: verify=True).
 
 ## 4. kNN Router is Primary
-- KnnRouter (92% GT accuracy) — real router, arXiv 2505.12601
-- Rust SystemRouter (88% GT) — domain scoring from cards.toml
-- ComplexityRouter heuristic (34% GT) — DEAD CODE, emergency fallback only
+- KnnRouter — real router (arXiv 2505.12601). Accuracy claim `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`.
+- Rust SystemRouter — domain scoring from cards.toml. Accuracy claim `routing.system_router_88pct` is `evidence_pending` in `docs/CLAIMS.yaml`.
+- ComplexityRouter heuristic — Priority-3 emergency fallback only (NOT dead code; AUDIT2 2026-04-24 corrected the prior "DEAD CODE" framing). Historical accuracy figure also `evidence_pending`.
 - NEVER test/benchmark/optimize the heuristic router
 
 ## 5. Evidence Before Assertions

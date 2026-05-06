@@ -50,7 +50,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3141** (canonical : `docs/status/current.json`) |
+| **Tests Python collected** | **3147** (canonical : `docs/status/current.json`) |
 | **Tests Rust** | **553** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
 | **mypy / ruff** | mypy 0 errors / 183 files, ruff clean, type:ignore ceiling 45/45 |
@@ -240,7 +240,7 @@ graph LR
 
 ## 8. Component Registry
 
-### 8.1 sage-core (Rust) — 549 tests
+### 8.1 sage-core (Rust) — test count: see `docs/status/current.json`
 
 | Composant | Type | Responsabilité | Reachability | Notes |
 |---|---|---|---|---|
@@ -273,7 +273,7 @@ graph LR
 | **`PosteriorEpoch`** | mod | A14 epoch guard, `topology_state_manifest.json` SHA-256 binding | Runtime | Cycle-8 invariant 3 |
 | OTel bridge | mod | W3C traceparent + Rust span exporter (B1.b) | Experimental (`otel`) | `sage-core/src/observability/` |
 
-### 8.2 sage-python (Python SDK) — 2940 tests
+### 8.2 sage-python (Python SDK) — test count: see `docs/status/current.json`
 
 #### Pipeline / boot
 
@@ -926,7 +926,7 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 
 ```
 PROJET: YGN-SAGE (Agent Development Kit)
-LANGAGES: Rust 1.94 (sage-core, 549 tests) + Python 3.13 (sage-python, 2940 tests; sage-discover, 100 tests)
+LANGAGES: Rust 1.94 (sage-core) + Python 3.13 (sage-python + sage-discover). Test counts: see docs/status/current.json (canonical SoT — sync_doc_counters propagates to README/AI-ARCHITECTURE/.claude/rules).
 HEAD: main @ a6f869c4 (2026-05-04). 982 commits depuis 2026-03-25.
 
 PIPELINE: CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN
@@ -997,8 +997,8 @@ BUILD:
   cd sage-python && pip install -e ".[all,dev]"
 
 TEST:
-  cd sage-core && cargo test --features smt --lib  # 549 tests
-  cd sage-python && python -m pytest tests/ -v    # 2940 tests
+  cd sage-core && cargo test --features smt --lib  # see docs/status/current.json
+  cd sage-python && python -m pytest tests/ -v    # see docs/status/current.json
   cd sage-python && python -m mypy src/sage/ --ignore-missing-imports  # 0 errors
   cd sage-python && ruff check src/  # clean
 

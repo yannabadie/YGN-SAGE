@@ -11,6 +11,15 @@ updated: 2026-04-07
 
 # Pilier 5 — Strategy (Cognitive Routing)
 
+> **⚠ Non-autoritative / archive (cycle-13 K Phase 0.6c, 2026-05-06)**
+> This Obsidian-vault snapshot is **historical reference only**. Capability and
+> metric claims herein (kNN 93.3%/92%, SystemRouter 88%, ComplexityRouter 34%,
+> "DEAD CODE" framing) are NOT current — see `docs/CLAIMS.yaml` for the
+> authoritative status. Routing accuracy claims are `evidence_pending`;
+> ComplexityRouter is "Priority-3 emergency fallback only", not dead code
+> (AUDIT2 2026-04-24 corrected). Do not cite numbers from this file as
+> evidence of capability.
+
 ## S1/S2/S3 — Dual-Process (Kahneman)
 
 | Systeme | Type | Exemple |
