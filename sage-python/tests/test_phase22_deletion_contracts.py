@@ -50,15 +50,6 @@ STAGE_METHODS_TO_DELETE: tuple[str, ...] = (
 
 
 @pytest.mark.parametrize("method_name", STAGE_METHODS_TO_DELETE)
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Phase 2.2 Stage A — seams still present on the class. "
-        "Contract goes green at Stage C (atomic orchestrator rewrite "
-        "+ _stage_* deletion). Drop this xfail in the same Stage C "
-        "commit that deletes the methods."
-    ),
-)
 def test_stage_method_deleted_from_class(method_name: str) -> None:
     """Stage method must be absent at class level after Stage C."""
     assert not hasattr(CognitiveOrchestrationPipeline, method_name), (

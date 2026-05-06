@@ -23,18 +23,21 @@ Pattern:
 
     async def run_internal(pipeline, task, ...):
         from sage import pipeline as pipeline_mod
-        # ALL references via pipeline_mod for monkeypatch correctness:
+        from sage.pipeline_v2.classify import classify
+        # ... other 5 stage module imports ...
+        # ALL references to legacy module-level symbols via pipeline_mod
+        # for monkeypatch correctness:
         run_id = pipeline_mod._new_runtime_run_id()
         budget = pipeline_mod._resolve_task_budget_usd(...)
         ctx = pipeline_mod.PipelineContext(...)
         t0 = pipeline_mod.time.monotonic()
-        # Stage seams stay on the pipeline instance — the 27-file test
-        # interception contract is unchanged:
-        ctx = pipeline._stage_classify(ctx)
+        # Stage entry points are module functions called with the pipeline
+        # instance as first argument (Phase 2.2 Stage C 2026-05-06):
+        ctx = classify(pipeline, ctx)
         ...
 
 The thin `_run_internal` method on `CognitiveOrchestrationPipeline`
-collapses to a 1-line LOCAL-import delegator that calls `run_internal`,
+collapses to a 1-line LOCAL-import wrapper that calls `run_internal`,
 preserving subclass overridability (a few benchmark adapters override
 the private method).
 
@@ -66,7 +69,7 @@ async def run_internal(
     emit_run_frame_summary: bool = False,
     bench_evaluator: Any = None,
 ) -> "tuple[str, RunFrame]":
-    """Execute the full 5-stage pipeline.
+    """Execute the full 6-stage pipeline.
 
     Body moved from `CognitiveOrchestrationPipeline._run_internal`
     (cycle-13 K Phase 2.1 Step D) per cgpro round-4 OPTION_3 garde-fou:
@@ -75,10 +78,10 @@ async def run_internal(
         `_resolve_task_budget_usd`, `PipelineContext`, `time.monotonic`)
         go through `pipeline_mod.<X>` so test monkeypatches on
         `sage.pipeline.*` keep firing.
-      - Calls to the 6 stage entry points stay as
-        `pipeline._stage_<X>(ctx)` so the 27-file test-seam contract is
-        unchanged. Phase 2.2 will reclassify those into module-function
-        calls + rewrite the tests.
+      - The 6 stage entry points are module functions in
+        `sage.pipeline_v2.<stage>`, locally imported and called with the
+        pipeline instance as first argument (Phase 2.2 Stage C
+        2026-05-06).
       - Order final_result -> oracle_verdict -> learn -> run_frame_summary
         is preserved byte-identical.
 
@@ -103,6 +106,12 @@ async def run_internal(
     from sage import pipeline as pipeline_mod
     from sage.contracts.cost_tracker import CostTracker
     from sage.observability.spans import sage_span
+    from sage.pipeline_v2.assign_models import assign_models
+    from sage.pipeline_v2.classify import classify
+    from sage.pipeline_v2.decompose import decompose
+    from sage.pipeline_v2.execute import execute
+    from sage.pipeline_v2.learn import learn
+    from sage.pipeline_v2.select_topology import select_topology
     from sage.runtime.event_log import (
         EventLogUnavailable,
         RuntimeEventLog,
@@ -160,9 +169,8 @@ async def run_internal(
             # on content in THIS task. Rust gate has no in-place reset yet.
             pipeline.write_gate = pipeline._build_write_gate()
 
-            # Stage 0: CLASSIFY — seam stays on pipeline instance per
-            # cgpro round-4 OPTION_3 (27-file test-seam contract).
-            ctx = pipeline._stage_classify(ctx)
+            # Stage 0: CLASSIFY
+            ctx = classify(pipeline, ctx)
             if system_hint in (1, 2, 3) and ctx.system != system_hint:
                 log.info(
                     "Stage 0: system_hint=S%d overrides router S%d",
@@ -190,7 +198,7 @@ async def run_internal(
             pipeline._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
             # Stage 1: DECOMPOSE (S2/S3 only)
-            ctx = await pipeline._stage_decompose(ctx)
+            ctx = await decompose(pipeline, ctx)
             dag_node_count = 0
             if ctx.task_dag is not None:
                 if hasattr(ctx.task_dag, "node_count"):
@@ -214,7 +222,7 @@ async def run_internal(
             )
 
             # Stage 2: SELECT TOPOLOGY
-            ctx = pipeline._stage_select_topology(ctx)
+            ctx = select_topology(pipeline, ctx)
             topo_nodes = (
                 ctx.topology.node_count()
                 if ctx.topology and hasattr(ctx.topology, "node_count")
@@ -229,14 +237,15 @@ async def run_internal(
             pipeline._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
 
             # Stage 3: ASSIGN MODELS
-            ctx = pipeline._stage_assign_models(ctx)
+            ctx = assign_models(pipeline, ctx)
             pipeline._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
             pipeline._emit(
                 "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
             )
 
             # Stage 4: EXECUTE
-            ctx = await pipeline._stage_execute(
+            ctx = await execute(
+                pipeline,
                 ctx,
                 event_log=event_log,
                 run_frame_builder=run_frame_builder,
@@ -320,12 +329,12 @@ async def run_internal(
                     ctx,
                     is_training_evidence=verdict.trainable,
                 )
-                await pipeline._stage_learn(ctx)
+                await learn(pipeline, ctx)
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
             else:
                 # Legacy OFF mode: keep the R7 execution/learn/final order.
                 pipeline._record_to_memory(ctx)
-                await pipeline._stage_learn(ctx)
+                await learn(pipeline, ctx)
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
 
                 # Expose full context before final_result, preserving R7 order.

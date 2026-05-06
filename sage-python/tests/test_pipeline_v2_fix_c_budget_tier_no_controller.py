@@ -335,15 +335,11 @@ async def test_budget_tier_with_no_controller_is_safe(
     assert capture.captured_kwargs["controller"] is None
 
 
-def test_stage_execute_source_contains_fix_c_budget_check() -> None:
-    """Source-contract guard: `_stage_execute` references the literal "budget" check.
+def test_execute_source_contains_fix_c_budget_check() -> None:
+    """Source-contract guard: `pipeline_v2.execute.execute` references the literal "budget" check.
 
-    Cycle-11 backstop. The behavioral tests above exercise the
-    invariant against the current monolith. When cycle-12 phase 2
-    moves ``_stage_execute`` into ``pipeline_v2/execute.py``, this
-    test will need to be updated to inspect the new module's source
-    instead. Until then, it locks the literal pattern that the cgpro
-    2026-05-04 round-2 review confirmed is the correct knob:
+    Locks the literal pattern that the cgpro 2026-05-04 round-2 review
+    confirmed is the correct knob:
 
         _effective_controller = (
             None if self._llm_tier == "budget" else self.controller
@@ -353,20 +349,22 @@ def test_stage_execute_source_contains_fix_c_budget_check() -> None:
     to a helper without preserving the conditional must either justify
     the contract change in a follow-up ADR or update this test.
     """
-    source = inspect.getsource(Pipeline._stage_execute)
+    from sage.pipeline_v2.execute import execute as _execute_fn
+
+    source = inspect.getsource(_execute_fn)
 
     # The two load-bearing tokens. Either reordering would still match,
     # but rewriting `"budget"` to a constant or moving the check to a
     # helper would break this test (intentional — that's an ADR-015
     # contract change, not a refactor).
     assert "_llm_tier" in source, (
-        "_stage_execute source no longer references self._llm_tier — "
+        "pipeline_v2.execute.execute source no longer references self._llm_tier — "
         "Fix C (ADR-015 contract #4) requires this check. If the "
         "logic moved to a helper, update this test to inspect the "
-        "new module per the cycle-12 phase 2 plan."
+        "new symbol explicitly."
     )
     assert '"budget"' in source, (
-        '_stage_execute source no longer contains the literal "budget" '
+        'pipeline_v2.execute.execute source no longer contains the literal "budget" '
         "string — Fix C (ADR-015 contract #4) checks `_llm_tier == "
         '"budget"` to gate the controller. Replacing the literal with '
         "a named constant is fine, but this test must then be updated "

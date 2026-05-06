@@ -226,8 +226,8 @@ async def test_topology_signature_invariant_across_skip_guardrails_states():
     ctx_full = _make_ctx_with_dag_features()
     ctx_no_grd = _make_ctx_with_dag_features()
 
-    pipeline_full._stage_select_topology(ctx_full)
-    pipeline_no_grd._stage_select_topology(ctx_no_grd)
+    select_topology(pipeline_full, ctx_full)
+    select_topology(pipeline_no_grd, ctx_no_grd)
 
     sig_full = _topology_signature(ctx_full)
     sig_no_grd = _topology_signature(ctx_no_grd)
@@ -299,9 +299,10 @@ def test_stage_select_topology_source_has_no_skip_guardrails_reference():
     read in this method has to either justify breaking the contract
     or update this test.
     """
-    source = inspect.getsource(Pipeline._stage_select_topology)
+    from sage.pipeline_v2.select_topology import select_topology as _select_fn
+    source = inspect.getsource(_select_fn)
     assert "_skip_guardrails" not in source, (
-        "_stage_select_topology source contains a `_skip_guardrails` "
+        "pipeline_v2.select_topology.select_topology source contains a `_skip_guardrails` "
         "reference. The P4 decoupling invariant requires topology "
         "selection to be a function of (dag_features, system, domain) "
         "only. If a new branch genuinely needs to read the flag, the "

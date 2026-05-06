@@ -1,12 +1,11 @@
-"""CognitiveOrchestrationPipeline — 5-stage cognitive orchestration façade.
+"""CognitiveOrchestrationPipeline — 6-stage cognitive orchestration façade.
 
 Replaces the inline routing+topology+execution logic in AgentSystem.run()
 with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 
-Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
-2026-05-06): this module is now a thin façade. The 6 stage bodies +
-the orchestrator + the helper modules + the `PipelineContext`
-dataclass live in `sage.pipeline_v2`. What remains here:
+The 6 stage bodies + the orchestrator + the helper modules + the
+`PipelineContext` dataclass live in `sage.pipeline_v2`. What remains
+here:
 
   - public entry points (`run`, `run_with_frame`, `run_with_bench_evaluator`)
   - the `CognitiveOrchestrationPipeline.__init__` constructor
@@ -14,19 +13,18 @@ dataclass live in `sage.pipeline_v2`. What remains here:
     (`_new_runtime_run_id`, `_resolve_task_budget_usd`,
     `_is_strict_governance`, `BUDGET_EXCEEDED_RESULT`,
     `_BANDIT_ATTRIBUTION_REASON_CODES`)
-  - 6 `_stage_*` 1-line delegator methods + ~22 `_<helper>` 1-line
-    delegator methods. These are RETAINED on the class as
-    transitional runtime test seams: 27 test files mock
-    `pipeline._stage_<X> = <fake>` as the canonical interception
-    point for fast unit isolation, oracle gate setup, bypass /
-    topology controller scenarios, observability isolation, and
-    E2E injection. cgpro Phase 2.1 round-4 OPTION_3 verdict
-    explicitly preserves this seam contract; Phase 2.2 DESIGN_LOCK
-    will rewrite the 27 test files + purge the delegators + reach
-    the architectural target `pipeline.py < 300 LOC`.
+  - `_run_internal` private façade method (subclass override seam)
+    + `_emit` event-bus seam
+  - helper instance methods that touch self-state and are retained
+    until cycle-13 K Phase 2.2 Stage D
   - `PipelineContext` re-export from `sage.pipeline_v2.context`
-    (cgpro round-3 Q4 backward-compat lock — `from sage.pipeline
-    import PipelineContext` continues to resolve).
+    (`from sage.pipeline import PipelineContext` continues to resolve).
+
+Cycle-13 K Phase 2.2 Stage C (cgpro `cgpro_phase22_test_rewrite_20260506`,
+2026-05-06): the 6 `_stage_*` methods that previously lived on this
+class were deleted. Stage entry points are now module functions in
+`sage.pipeline_v2.<stage>`, called by the orchestrator with the
+pipeline instance as first positional argument.
 """
 from __future__ import annotations
 
@@ -138,7 +136,7 @@ from sage.pipeline_v2.context import PipelineContext  # noqa: E402
 
 
 class CognitiveOrchestrationPipeline:
-    """5-stage pipeline: Classify -> Decompose -> Select Topology -> Assign Models -> Execute.
+    """6-stage pipeline: Classify -> Decompose -> Select Topology -> Assign Models -> Execute -> Learn.
 
     Parameters
     ----------
@@ -397,7 +395,7 @@ class CognitiveOrchestrationPipeline:
         budget_usd: float | None = None,
         system_hint: int | None = None,
     ) -> str:
-        """Execute the full 5-stage pipeline and return only the output string."""
+        """Execute the full 6-stage pipeline and return only the output string."""
         result, _frame = await self._run_internal(
             task,
             budget_usd=budget_usd,
@@ -479,12 +477,11 @@ class CognitiveOrchestrationPipeline:
             "Callable[[str], Mapping[str, Any] | Awaitable[Mapping[str, Any]]] | None"
         ) = None,
     ) -> tuple[str, RunFrame]:
-        """Execute the full 5-stage pipeline.
+        """Execute the full 6-stage pipeline.
 
-        Cycle-13 K Phase 2.1 Step D (2026-05-06): body moved to
-        `sage.pipeline_v2.orchestrator.run_internal`. Method preserved
-        as a 1-line LOCAL-import delegator so subclass overrides and
-        any direct method patches keep working.
+        Body lives in `sage.pipeline_v2.orchestrator.run_internal`. The
+        method is preserved as a 1-line LOCAL-import wrapper so subclass
+        overrides and any direct method patches keep working.
         """
         from sage.pipeline_v2.orchestrator import run_internal
         return await run_internal(
@@ -495,33 +492,6 @@ class CognitiveOrchestrationPipeline:
             emit_run_frame_summary=emit_run_frame_summary,
             bench_evaluator=bench_evaluator,
         )
-
-    # ── Stage 0: Classify ───────────────────────────────────────────────────
-
-    def _stage_classify(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 0: Classify task complexity, domain, and select integrated routing.
-
-        Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.classify.classify`. This is now a 1-line
-        delegator. LOCAL import per cgpro DESIGN trap #4.
-        """
-        from sage.pipeline_v2.classify import classify as _v2_classify
-        return _v2_classify(self, ctx)
-
-    # ── Stage 1: Decompose ──────────────────────────────────────────────────
-
-    async def _stage_decompose(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 1: Decompose task into sub-tasks (S2/S3 only).
-
-        Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.decompose.decompose`. This is now a 1-line
-        delegator. LOCAL import (NOT top-level) to avoid the
-        circular-init partial-load risk: `pipeline.py` is loaded
-        before `pipeline_v2/` in many call paths. See
-        `cgpro_pi_mono_pivot_20260505` DESIGN lock trap #4.
-        """
-        from sage.pipeline_v2.decompose import decompose as _v2_decompose
-        return await _v2_decompose(self, ctx)
 
     # ── Structure-driven topology selection ──────────────────────────────
 
@@ -541,22 +511,6 @@ class CognitiveOrchestrationPipeline:
         from sage.pipeline_v2.topology_helpers import build_topology_from_hint
         return build_topology_from_hint(hint)
 
-    # ── Stage 2: Select Topology ────────────────────────────────────────────
-
-    def _stage_select_topology(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 2: Select optimal topology.
-
-        Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.select_topology.select_topology`. This is a
-        1-line LOCAL-import delegator. Cycle-13 K Phase 2.1 Step B5
-        (2026-05-06) also moved the topology helpers to
-        `pipeline_v2.topology_helpers` + `pipeline_v2.costing` ; the
-        method form is retained on the class as a transitional runtime
-        test seam used by ~10 test files. Phase 2.2 DESIGN_LOCK will
-        rewrite those tests + retire this delegator.
-        """
-        from sage.pipeline_v2.select_topology import select_topology as _v2_select_topology
-        return _v2_select_topology(self, ctx)
 
     # ── Topology helpers (Phase 2.1 Step B5, 2026-05-06) ───────────────────
     # Bodies in `sage.pipeline_v2.topology_helpers`. Methods preserved as
@@ -626,23 +580,6 @@ class CognitiveOrchestrationPipeline:
         from sage.pipeline_v2.costing import load_model_catalog
         return load_model_catalog(self)
 
-    # ── Stage 3: Assign Models ──────────────────────────────────────────────
-
-    def _stage_assign_models(self, ctx: PipelineContext) -> PipelineContext:
-        """Stage 3: Assign model_id to each topology node.
-
-        Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.assign_models.assign_models` as a 1-line
-        LOCAL-import delegator. Cycle-13 K Phase 2.1 Step B2 (2026-05-06)
-        also moved `log_model_assigner_chosen_fallback` and
-        `verify_assignment_formal` into the same module; the
-        `_<helper>` method form is retained on the class as a
-        transitional runtime test seam. Phase 2.2 DESIGN_LOCK will
-        rewrite the mock-using tests + retire those delegators.
-        """
-        from sage.pipeline_v2.assign_models import assign_models as _v2_assign_models
-        return _v2_assign_models(self, ctx)
-
     # ── Assign-side helpers (Phase 2.1 Step B2, 2026-05-06) ────────────────
     # Bodies live in `sage.pipeline_v2.assign_models`. Methods preserved as
     # delegators for mockability. LOCAL imports.
@@ -700,39 +637,3 @@ class CognitiveOrchestrationPipeline:
         from sage.pipeline_v2.execute import pick_fallback_provider
         return pick_fallback_provider(self)
 
-    async def _stage_execute(
-        self,
-        ctx: PipelineContext,
-        event_log: Any | None = None,
-        run_frame_builder: Any | None = None,
-    ) -> PipelineContext:
-        """Stage 4 execution moved to ``sage.pipeline_v2.execute``."""
-        # Fix C moved with the body:
-        # _effective_controller = (
-        #     None if self._llm_tier == "budget" else self.controller
-        # )
-        from sage.pipeline_v2.execute import execute as _v2_execute
-
-        return await _v2_execute(
-            self,
-            ctx,
-            event_log=event_log,
-            run_frame_builder=run_frame_builder,
-        )
-
-    # ── Stage 5: Learn ──────────────────────────────────────────────────────
-
-    async def _stage_learn(self, ctx: PipelineContext) -> None:
-        """Stage 5: Record outcome for learning.
-
-        Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.learn.learn` as a 1-line LOCAL-import async
-        delegator. Cycle-13 K Phase 2.1 Steps A2 + B4 (2026-05-06) also
-        moved the bandit + runtime-event helpers consumed here into
-        `pipeline_v2.bandit_attribution` + `pipeline_v2.runtime_events` ;
-        the `_<helper>` method form is retained on the class as a
-        transitional runtime test seam. Phase 2.2 DESIGN_LOCK will
-        rewrite the mock-using tests + retire those delegators.
-        """
-        from sage.pipeline_v2.learn import learn as _v2_learn
-        return await _v2_learn(self, ctx)
