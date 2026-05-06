@@ -33,10 +33,104 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR"));
     let out_wasm = out_dir.join("rustpython.wasm");
+
+    // Cycle-13 B Q1 (cgpro post-push 2026-05-06 NEXT_BLOCK_ID=G):
+    // expose `sage_core.__commit_sha__` / `__build_timestamp__` /
+    // `__build_profile__` so Python can detect a stale Rust binary
+    // (the operationally-observed gap that wasted operator cycles
+    // until commit `32d39bdf` shipped the regression test).
+    //
+    // `git rev-parse HEAD` runs at build time relative to the
+    // sage-core manifest dir; an override env var
+    // `SAGE_CORE_COMMIT_SHA_OVERRIDE` lets CI inject a known SHA
+    // when building outside a git checkout (PyPI wheel build, etc).
+    // Falls back to "unknown" gracefully when git is absent.
+    let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("manifest"));
+    let commit_sha = env::var("SAGE_CORE_COMMIT_SHA_OVERRIDE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(&manifest_dir)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| {
+                    let raw = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if raw.is_empty() {
+                        None
+                    } else {
+                        Some(raw)
+                    }
+                })
+        })
+        .unwrap_or_else(|| "unknown".to_string());
+    println!("cargo:rustc-env=SAGE_CORE_BUILD_COMMIT_SHA={commit_sha}");
+
+    let build_ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string());
+    println!("cargo:rustc-env=SAGE_CORE_BUILD_TIMESTAMP={build_ts}");
+
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "unknown".to_string());
+    println!("cargo:rustc-env=SAGE_CORE_BUILD_PROFILE={profile}");
+
+    // Re-run build.rs when HEAD moves so the embedded SHA stays
+    // current. Per cgpro HARD_STOP 2026-05-06 (conv
+    // `cgpro_pi_mono_pivot_20260505`): hard-coding `../.git/HEAD` was
+    // wrong for two edge cases:
+    //   (1) PyPI / sdist source builds where .git is absent (Cargo
+    //       treats a non-existent rerun-trigger as "rebuild every
+    //       time", which destroys cache discipline).
+    //   (2) Git worktrees where the .git is a file pointing at the
+    //       real git-dir, not a directory at the conventional path.
+    //
+    // Fix: use `git rev-parse --git-path <sub>` to resolve each path
+    // through git's own logic (handles worktrees + non-default
+    // git-dir layouts), and emit `cargo:rerun-if-changed` ONLY for
+    // paths that actually exist at build-script-run time.
+    fn git_path(cwd: &PathBuf, sub: &str) -> Option<PathBuf> {
+        Command::new("git")
+            .args(["rev-parse", "--git-path", sub])
+            .current_dir(cwd)
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                let raw = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                if raw.is_empty() {
+                    None
+                } else {
+                    Some(PathBuf::from(raw))
+                }
+            })
+    }
+
+    for sub in ["HEAD", "refs/heads", "packed-refs"] {
+        if let Some(path) = git_path(&manifest_dir, sub) {
+            // git rev-parse --git-path returns paths relative to cwd
+            // (the manifest dir we passed in). Resolve to absolute
+            // before existence-check so the rerun trigger points at
+            // the right file regardless of cargo's cwd at build time.
+            let absolute = if path.is_absolute() {
+                path.clone()
+            } else {
+                manifest_dir.join(&path)
+            };
+            if absolute.exists() {
+                println!("cargo:rerun-if-changed={}", absolute.display());
+            }
+        }
+    }
+    println!("cargo:rerun-if-env-changed=SAGE_CORE_COMMIT_SHA_OVERRIDE");
 
     // Always emit a placeholder so include_bytes! compiles regardless
     // of the sandbox feature state. sage-core/src/sandbox/wasm_python.rs

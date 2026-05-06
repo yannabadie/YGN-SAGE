@@ -15,6 +15,28 @@ pub mod verification;
 
 #[pymodule]
 fn sage_core(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Cycle-13 B Q1 (cgpro post-push 2026-05-06 NEXT_BLOCK_ID=G):
+    // build-info exposure for Python-side stale-binary detection.
+    // The 2026-04-27 -> 2026-04-30 manifest-write gap (closed by
+    // commit `32d39bdf` regression test) wasted operator cycles
+    // because the installed `.pyd` predated the source fix and
+    // there was no way to know without running the test. With
+    // these 4 attributes, `python -m sage.ops.sage_core_version`
+    // can compare the installed binary against `git rev-parse HEAD`
+    // and exit 1 if drift is detected.
+    //
+    // `__commit_sha__`: set by build.rs from `git rev-parse HEAD`
+    //   in the sage-core manifest dir, OR overridden by
+    //   `SAGE_CORE_COMMIT_SHA_OVERRIDE` env var (CI / PyPI wheel
+    //   builds), OR "unknown" when git is absent.
+    // `__build_timestamp__`: UNIX seconds at compile time.
+    // `__build_profile__`: cargo profile (`debug` / `release`).
+    // `__version__`: matches `Cargo.toml [package].version`.
+    m.add("__commit_sha__", env!("SAGE_CORE_BUILD_COMMIT_SHA"))?;
+    m.add("__build_timestamp__", env!("SAGE_CORE_BUILD_TIMESTAMP"))?;
+    m.add("__build_profile__", env!("SAGE_CORE_BUILD_PROFILE"))?;
+    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+
     m.add_class::<types::AgentConfig>()?;
     m.add_class::<types::ToolSpec>()?;
     m.add_class::<types::MemoryScope>()?;
