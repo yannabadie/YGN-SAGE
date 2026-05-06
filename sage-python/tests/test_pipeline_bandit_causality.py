@@ -12,6 +12,7 @@ import pytest
 
 from sage.llm.base import LLMConfig, LLMResponse
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.execute import execute
 from sage.runtime.event_log import RuntimeEventLog, install_event_log
 
 
@@ -585,7 +586,7 @@ async def test_multi_agent_path_does_not_select_or_record_standalone_bandit(
         result="",
     )
 
-    ctx = await pipeline._stage_execute(ctx)
+    ctx = await execute(pipeline, ctx)
     await pipeline._stage_learn(ctx)
 
     assert ctx.result == "multi-agent output"

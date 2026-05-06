@@ -40,6 +40,7 @@ from sage.agent_loop import AgentLoop
 from sage.llm.base import LLMConfig, LLMResponse
 from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline
 from sage.pipeline import PipelineContext
+from sage.pipeline_v2.execute import execute
 
 
 @pytest.fixture(autouse=True)
@@ -172,7 +173,7 @@ async def test_singleton_unchanged_after_successful_bypass() -> None:
         return_value=bypass_loop,
         create=True,
     ) as factory:
-        result_ctx = await pipeline._stage_execute(ctx)
+        result_ctx = await execute(pipeline, ctx)
 
     assert result_ctx.result == "per-run-output"
     assert _singleton_state(singleton) == before
@@ -196,7 +197,7 @@ async def test_singleton_unchanged_after_bypass_raises() -> None:
         create=True,
     ) as factory:
         with pytest.raises(RuntimeError, match="bypass boom"):
-            await pipeline._stage_execute(_make_ctx("raise-task"))
+            await execute(pipeline, _make_ctx("raise-task"))
 
     assert _singleton_state(singleton) == before
     factory.assert_called_once()
@@ -226,7 +227,7 @@ async def test_concurrent_bypass_calls_create_independent_loops() -> None:
         create=True,
     ) as factory:
         ctxs = [_make_ctx(f"task-{idx}") for idx in range(5)]
-        results = await asyncio.gather(*(pipeline._stage_execute(ctx) for ctx in ctxs))
+        results = await asyncio.gather(*(execute(pipeline, ctx) for ctx in ctxs))
 
     assert factory.call_count == 5
     assert len(loops) == 5

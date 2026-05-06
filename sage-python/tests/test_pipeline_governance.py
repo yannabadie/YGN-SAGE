@@ -19,6 +19,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from sage.pipeline_v2.execute import execute
+
 
 def _build_stub_pipeline(emit_mock):
     """Construct a minimally-viable Pipeline for _stage_execute bypass testing."""
@@ -66,7 +68,7 @@ async def test_verification_fail_default_continues():
     with patch.dict("os.environ", {}, clear=False):
         import os
         os.environ.pop("SAGE_STRICT_GOVERNANCE", None)
-        await pipeline._stage_execute(ctx)
+        await execute(pipeline, ctx)
 
     kinds = [call.args[0] for call in emit.call_args_list]
     assert "EXECUTE_UNVERIFIED" in kinds, (
@@ -98,7 +100,7 @@ async def test_verification_fail_strict_mode_aborts():
 
     with patch.dict("os.environ", {"SAGE_STRICT_GOVERNANCE": "1"}, clear=False):
         with pytest.raises(RuntimeError, match="SAGE_STRICT_GOVERNANCE"):
-            await pipeline._stage_execute(ctx)
+            await execute(pipeline, ctx)
 
     kinds = [call.args[0] for call in emit.call_args_list]
     assert "EXECUTE_HALTED_UNVERIFIED" in kinds

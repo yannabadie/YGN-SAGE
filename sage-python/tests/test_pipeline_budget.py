@@ -9,6 +9,7 @@ import pytest
 
 from sage.contracts.cost_tracker import CostTracker
 from sage.pipeline import EXECUTE_BUDGET_EXCEEDED, CognitiveOrchestrationPipeline
+from sage.pipeline_v2.execute import execute
 
 
 BUDGET_SENTINEL = "[sage: budget exceeded]"
@@ -280,7 +281,7 @@ async def test_budget_wins_before_strict_governance_verification(
         new_callable=PropertyMock,
         return_value=True,
     ):
-        result_ctx = await pipeline._stage_execute(ctx)
+        result_ctx = await execute(pipeline, ctx)
 
     assert result_ctx.result == BUDGET_SENTINEL
     assert EXECUTE_BUDGET_EXCEEDED in bus.stages
