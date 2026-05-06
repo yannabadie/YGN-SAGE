@@ -36,9 +36,23 @@ sage-discover/ — Knowledge Pipeline (arXiv → ExoCortex)
 # Add `--features otel` (B1.b, 2026-04-25) when you want Rust hot-path
 # spans bridged to OpenTelemetry alongside Python — see
 # docs/observability/otel-genai-spans.md "Rust spans" section.
+# REBUILD AFTER PULLING RUST SOURCE CHANGES (cycle-13 B 2026-05-06):
+# the installed `sage_core.cp313-*.pyd` is what Python actually runs;
+# pulling new commits in `sage-core/src/` does NOT update the binary.
+# Stale binaries cause silent contract violations — most recently the
+# 2026-04-30 fix at engine.rs:1031 (write_topology_state_manifest)
+# was missed by 4-day-old wheels, leaving ~/.sage/ without a manifest
+# and breaking directive #8 fail-closed boot guard. Regression test
+# `tests/test_save_state_manifest_contract.py` catches this at the
+# Python boundary on local dev. Always re-run `maturin develop` after
+# `git pull` if `sage-core/` changed:
 cd sage-core && maturin develop --features smt,onnx
 # With Rust OTel:
 cd sage-core && maturin develop --features otel,smt,onnx
+# Workaround if `maturin develop` fails with "--include-debuginfo cannot
+# be used with --strip" (pyproject.toml has strip=true for wheel size):
+#   cd sage-core && maturin build --release --features smt,onnx --out target/wheels
+#   pip install target/wheels/sage_core-0.1.0-cp313-*.whl --force-reinstall --no-deps
 cd sage-python && pip install -e ".[all,dev]"
 
 # Build recipe for the embedded RustPython wasm (one-time, cached):
