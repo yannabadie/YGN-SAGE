@@ -523,19 +523,43 @@ fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> Result<(), String> {
             .unwrap_or("state"),
         ulid::Ulid::new()
     ));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&tmp_path)
-        .map_err(|err| format!("create temp file {}: {}", tmp_path.display(), err))?;
-    file.write_all(bytes)
-        .map_err(|err| format!("write temp file {}: {}", tmp_path.display(), err))?;
-    file.sync_all()
-        .map_err(|err| format!("sync temp file {}: {}", tmp_path.display(), err))?;
-    drop(file);
-    std::fs::rename(&tmp_path, path)
-        .map_err(|err| format!("install {}: {}", path.display(), err))?;
-    Ok(())
+
+    // Inner closure: if anything fails, the outer cleanup-on-failure
+    // block below removes the .tmp file before propagating. Cycle-13
+    // B Q4 follow-up (cgpro deep VERIFY 2026-05-06): pre-fix, a
+    // failure on rename (e.g. EACCES on Windows AV scanner, EXDEV
+    // cross-device, ENOSPC parent dir) propagated the error but
+    // left `.<name>.<ulid>.tmp` on disk forever. Each retry gets a
+    // fresh ulid suffix, so the leak grows monotonically. Clean up
+    // best-effort to keep state dirs tidy.
+    let result: Result<(), String> = (|| {
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&tmp_path)
+            .map_err(|err| format!("create temp file {}: {}", tmp_path.display(), err))?;
+        file.write_all(bytes)
+            .map_err(|err| format!("write temp file {}: {}", tmp_path.display(), err))?;
+        file.sync_all()
+            .map_err(|err| format!("sync temp file {}: {}", tmp_path.display(), err))?;
+        drop(file);
+        std::fs::rename(&tmp_path, path)
+            .map_err(|err| format!("install {}: {}", path.display(), err))?;
+        Ok(())
+    })();
+
+    // Best-effort cleanup on failure path. On rename success the
+    // .tmp no longer exists (rename moved it); remove_file returns
+    // NotFound which we swallow. On any earlier failure the .tmp
+    // does exist and remove_file should clear it. We swallow this
+    // error too because the original failure is what callers need
+    // to see — a leaked .tmp is recoverable; a misleading error
+    // message is not.
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp_path);
+    }
+
+    result
 }
 
 fn is_sha256_hex(value: &str) -> bool {
@@ -901,5 +925,83 @@ mod tests {
 
         let _ = std::fs::remove_dir_all(malformed);
         let _ = std::fs::remove_dir_all(mismatched);
+    }
+
+    // Cycle-13 B Q4 follow-up (cgpro deep VERIFY 2026-05-06):
+    // `write_bytes_atomic` previously leaked `.<name>.<ulid>.tmp` on
+    // the rename-failure path. Validate the cleanup-on-failure
+    // behaviour here.
+    #[test]
+    fn test_write_bytes_atomic_success_no_tmp_file_left() {
+        let dir = temp_state_dir();
+        let target = dir.join("target.json");
+
+        super::write_bytes_atomic(&target, b"{\"hello\":\"world\"}\n").expect("write succeeds");
+
+        assert!(target.exists(), "target file should exist after success");
+        assert_eq!(
+            std::fs::read(&target).unwrap(),
+            b"{\"hello\":\"world\"}\n",
+            "target bytes match"
+        );
+
+        // No leftover .tmp files in the dir on success.
+        let leftover_tmps: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .map(|s| s.ends_with(".tmp"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        assert!(
+            leftover_tmps.is_empty(),
+            "no .tmp files should remain on success path; found: {:?}",
+            leftover_tmps
+                .iter()
+                .map(|e| e.file_name())
+                .collect::<Vec<_>>()
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn test_write_bytes_atomic_cleans_tmp_on_rename_failure() {
+        // We force a rename failure by making the destination a
+        // directory: `std::fs::rename(file, dir)` fails on every OS
+        // we care about (EISDIR-class on Linux/macOS,
+        // ERROR_ACCESS_DENIED on Windows). Pre-fix the .tmp would
+        // leak; post-fix the cleanup block removes it.
+        let dir = temp_state_dir();
+        let blocker_dir = dir.join("blocked_path");
+        std::fs::create_dir(&blocker_dir).expect("create blocker dir");
+
+        let result = super::write_bytes_atomic(&blocker_dir, b"any bytes");
+        assert!(result.is_err(), "rename onto a directory must fail");
+
+        // No `.tmp` file should remain in the parent dir.
+        let leftover_tmps: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().to_str()?.to_string();
+                if name.ends_with(".tmp") {
+                    Some(name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert!(
+            leftover_tmps.is_empty(),
+            "rename failure must clean up .tmp; leaked: {:?}",
+            leftover_tmps
+        );
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
