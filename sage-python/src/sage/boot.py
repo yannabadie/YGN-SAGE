@@ -362,6 +362,19 @@ def boot_agent_system(
                   available provider: Codex CLI if installed, else Google
                   Gemini if GOOGLE_API_KEY is set, else raises.
     """
+    # 0. ToolPolicy — Phase 1.5 (cycle-13 K, cgpro DESIGN_LOCKED 2026-05-06)
+    #
+    # Compose the effective grant set from {pure} ∪ TOML ∪ env ∪ none-here.
+    # Programmatic grants are the caller's responsibility post-boot via
+    # `policy.grant("network")` etc. ContextVar propagation means every
+    # AgentLoop, every bypass loop spun up by `pipeline_v2/execute.py
+    # create_bypass_agent_loop`, and every `Tool.execute` call in this
+    # process inherits the same effective policy without explicit
+    # plumbing. cgpro DESIGN T14 covers the bypass-inheritance contract.
+    from sage.policy import ToolPolicy, set_current_tool_policy
+
+    set_current_tool_policy(ToolPolicy.from_environment())
+
     # 1. LLM provider
     provider, llm_config = init_llm_provider(use_mock_llm, llm_tier)
 
