@@ -1,22 +1,33 @@
 """Built-in tool capability manifest + resolver.
 
-Phase 1.5 cycle-13 K (cgpro DESIGN_LOCKED 2026-05-06): per the migration
-strategy, built-in tools that predate the `capability=` parameter are
-declared in this internal manifest. External / new tools that don't pass
-an explicit `capability=` MUST fail registration with
-`ToolPolicyDeclarationError` — no default-tag-dangerous fallback (cgpro
-trap: that creates an illusion of security).
+Phase 1.5c cycle-13 K (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the
+built-in manifest is DOCUMENTATION / AUDIT ONLY since Phase 1.5c.
+Python documents `function.__module__` and `function.__qualname__` as
+WRITABLE attributes of user-defined functions, so any handler-metadata-
+based trust anchor is forgeable: an attacker can mutate
+`fake._handler.__module__` and `fake._handler.__qualname__` to mimic a
+trusted factory's signature exactly. Phase 1.5c resolves this by
+removing the manifest from the runtime path entirely.
+
+The runtime resolver `resolve_tool_capability` chain (Phase 1.5c):
+  1. Explicit `tool.capability` set by constructor
+     (`Tool(capability=...)`) or `@Tool.define(capability=...)` —
+     this is REQUIRED for every built-in factory at the construction
+     site (see `sage.tools.{typed_repo, exocortex_tools, context7_tools,
+     memory_tools, agent_mgmt, builtin, sage_recurse, meta}` post-1.5c).
+  2. Class-level default in `_CLASS_CAPABILITY_DEFAULTS` — covers
+     dynamic-class cases (e.g. `AgentTool` defaults to `dangerous`).
+  3. None of the above → raise `ToolPolicyDeclarationError`.
 
 This module is INTERNAL — do not import from outside `sage.policy`.
 
-Resolution order (per `resolve_tool_capability`):
-  1. Explicit `tool.capability` set by constructor (`Tool(capability=...)`)
-     or `Tool.define(capability=...)` — wins.
-  2. Spec-name lookup in `_BUILTIN_TOOL_CAPABILITIES` — covers the 13
-     built-in modules at Phase 1.5 ship time.
-  3. Class-level default in `_CLASS_CAPABILITY_DEFAULTS` — covers
-     dynamic-class cases (e.g. `AgentTool` defaults to `dangerous`).
-  4. None of the above → raise `ToolPolicyDeclarationError`.
+The `_BUILTIN_TOOL_CAPABILITIES` dict below is the authoritative
+documentation of what capability each built-in tool name carries; the
+audit CLI (`sage.ops.toolpolicy_audit`) reads it for inventory. To
+change a built-in's capability you MUST update both:
+  - the `capability=...` argument at the factory call site, AND
+  - the corresponding entry in `_BUILTIN_TOOL_CAPABILITIES`,
+so the audit CLI and the runtime resolver stay aligned.
 """
 from __future__ import annotations
 

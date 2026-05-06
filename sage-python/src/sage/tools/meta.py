@@ -311,7 +311,21 @@ def _register_generated_tool(
             "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
         },
     )
-    new_tool = Tool(spec=tool_spec, handler=handler)
+    # Phase 1.5d (cgpro VERIFY 2026-05-06): generated Python tools
+    # carry capability=PURE because the wrapper executes code inside
+    # the sandboxed validator (sage_core.ToolExecutor + RustPython
+    # WASI / subprocess sandbox per ADR-013 §5). The ToolForge prompt
+    # already forbids `os`, `sys`, `subprocess`, `socket`, network/
+    # filesystem modules; the validator AST-rejects any survival of
+    # those imports. The meta-tool `create_python_tool` is itself
+    # DANGEROUS (it writes code AND registers a tool dynamically),
+    # but the resulting tool can be PURE because its execution is
+    # confined and emits no host I/O.
+    new_tool = Tool(
+        spec=tool_spec,
+        handler=handler,
+        capability=ToolCapability.PURE,
+    )
     registry.register(new_tool)
 
     logger.info("Registered sandboxed tool '%s' (saved to %s)", name, file_path)
@@ -390,7 +404,19 @@ async def create_bash_tool(name: str, description: str, script: str, registry: T
             "properties": {"_": {"type": "string", "description": "Unused. Pass empty string."}},
         },
     )
-    new_tool = Tool(spec=tool_spec, handler=_bash_handler)
+    # Phase 1.5d: generated bash tools carry capability=DANGEROUS.
+    # Even with subprocess isolation, the spawned shell can read/write
+    # the local filesystem and run any binary the operator's PATH
+    # exposes. Per cgpro DESIGN classification rule "single label =
+    # max-safe summary, multi-effect classifies as dangerous", a
+    # generated bash tool gets the strictest tier. The meta-tool
+    # `create_bash_tool` itself is also DANGEROUS for the same reason
+    # as `create_python_tool` (it writes + registers).
+    new_tool = Tool(
+        spec=tool_spec,
+        handler=_bash_handler,
+        capability=ToolCapability.DANGEROUS,
+    )
     registry.register(new_tool)
 
     logger.info("Registered bash tool '%s' (subprocess-isolated)", name)

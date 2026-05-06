@@ -86,13 +86,16 @@ class Tool:
     can invoke `result.validate_output(tool.output_schema)` to get a
     typed Pydantic instance. Leaving it None preserves free-form output.
 
-    `capability` (Phase 1.5 cycle-13 K, cgpro DESIGN_LOCKED 2026-05-06):
+    `capability` (Phase 1.5c cycle-13 K, cgpro VERIFY 2026-05-06):
     declared ToolCapability tier (`pure` / `read_local` / `write_local` /
     `network` / `subprocess` / `dangerous`). Single label per tool;
     multi-effect tools classify as `dangerous`. Resolved by
-    `sage.policy.manifest.resolve_tool_capability()` at registration:
-    explicit kwarg wins, then built-in manifest, then class default,
-    else `ToolPolicyDeclarationError`.
+    `sage.policy.manifest.resolve_tool_capability()` at registration.
+    Phase 1.5c collapsed the resolution chain to: explicit kwarg ->
+    class default -> raise. Built-ins MUST declare `capability=`
+    inline at the factory call site (the manifest is documentation/
+    audit only, not a runtime trust anchor — `function.__module__`
+    is writable in Python and cannot anchor trust).
     """
 
     def __init__(
@@ -229,12 +232,13 @@ class Tool:
         emits valid JSON — free-form string handlers should leave it
         at None (opt-in per-tool policy, 2026-04-24).
 
-        ``capability`` (Phase 1.5 cycle-13 K) declares the
-        ToolCapability tier for this tool. Required for new tools at
-        external integration sites (built-ins resolve via
-        sage.policy.manifest); raises ToolPolicyDeclarationError at
-        Registry.register if neither this kwarg, the manifest, nor a
-        class default supplies one.
+        ``capability`` (Phase 1.5c cycle-13 K) declares the
+        ToolCapability tier for this tool. Required for ALL tools
+        post-Phase-1.5c — built-ins must declare `capability=` inline
+        at the factory call site (the built-in manifest is doc/audit
+        only, not a runtime trust anchor). Class-level defaults still
+        apply (e.g. `AgentTool` -> dangerous); otherwise
+        `Registry.register` raises `ToolPolicyDeclarationError`.
         """
 
         def decorator(func: Callable[..., Awaitable[str]]) -> Tool:
