@@ -83,6 +83,7 @@ from sage.pipeline import (
 )
 from sage.pipeline_stages import DAGFeatures
 from sage.pipeline_v2.classify import classify
+from sage.pipeline_v2.decompose import decompose
 from sage.pipeline_v2.select_topology import select_topology
 
 
@@ -198,7 +199,7 @@ async def test_stage_decompose_populates_dag_features() -> None:
     # PipelineContext becomes an immutable per-stage clone in cycle-12;
     # the test must assert on what the stage returns so an immutable
     # refactor doesn't false-fail this test.
-    ctx = await pipeline._stage_decompose(ctx)
+    ctx = await decompose(pipeline, ctx)
 
     assert ctx.dag_features is not None, (
         "_stage_decompose did not populate ctx.dag_features. "

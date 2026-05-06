@@ -120,6 +120,7 @@ class TestC2MultiModelAssignment:
         from sage.pipeline import PipelineContext
         from sage.pipeline_v2.assign_models import assign_models
         from sage.pipeline_v2.classify import classify
+        from sage.pipeline_v2.decompose import decompose
         from sage.pipeline_v2.select_topology import select_topology
 
         ctx = PipelineContext(
@@ -136,8 +137,8 @@ class TestC2MultiModelAssignment:
         assert ctx.system in (1, 2, 3), f"Invalid system: {ctx.system}"
         assert ctx.domain != "", "Domain should be inferred"
 
-        # Stage 1: Decompose (async) — async batch B1.2-async will rewrite this
-        ctx = _run_async(pipeline._stage_decompose(ctx))
+        # Stage 1: Decompose (async)
+        ctx = _run_async(decompose(pipeline, ctx))
 
         # Stage 2: Select topology
         ctx = select_topology(pipeline, ctx)
