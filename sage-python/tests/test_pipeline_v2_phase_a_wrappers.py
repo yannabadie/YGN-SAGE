@@ -397,17 +397,27 @@ def test_sync_wrappers_are_not_coroutine_functions() -> None:
 # ────────────────────────────────────────────────────────────────────
 
 
-def test_pipeline_does_not_top_level_import_pipeline_v2() -> None:
-    """`sage.pipeline` MUST NOT import `sage.pipeline_v2` at module scope.
+def test_pipeline_top_level_pipeline_v2_imports_are_allowlisted() -> None:
+    """`sage.pipeline` may only top-level import the `pipeline_v2.context` module.
 
-    cgpro DESIGN trap #4: top-level circular import =
-    partial-initialization risk. Phase B delegators MUST use local
-    imports (`from sage.pipeline_v2.<x> import <fn>` inside the
+    Cycle-13 K Phase 2.1 Step E1 (cgpro `cgpro_phase21_facade_rewrite_20260506`
+    round-3 Q5 + round-4 OPTION_3, 2026-05-06): Phase 2.1 deliberately
+    introduces a single top-level re-export
+    ``from sage.pipeline_v2.context import PipelineContext`` so the
+    canonical dataclass body lives in `sage.pipeline_v2.context` and the
+    legacy ``from sage.pipeline import PipelineContext`` still resolves
+    (cgpro round-3 Q4 backward-compat lock).
+
+    All OTHER `pipeline_v2` symbols (the 6 stage modules, the
+    orchestrator, the helper modules) MUST remain LOCAL imports inside
+    delegator method bodies. The PEP 562 lazy re-export in
+    `pipeline_v2/__init__.py` (Step E0) keeps the dependency graph
+    acyclic at module-load time.
+
+    cgpro DESIGN trap #4 (Phase A/B): top-level circular import =
+    partial-initialization risk; Phase B delegators MUST use local
+    imports (``from sage.pipeline_v2.<x> import <fn>`` inside the
     method body), not top-level.
-
-    This test grep-asserts the source. A future Phase C façade
-    rewrite may legitimately need this import to flip — that's an
-    ADR change that will require updating this test.
     """
     import pathlib
 
@@ -418,20 +428,44 @@ def test_pipeline_does_not_top_level_import_pipeline_v2() -> None:
     assert pipeline_path.exists()
     text = pipeline_path.read_text(encoding="utf-8")
 
-    # Forbidden patterns (top-level imports of pipeline_v2):
-    forbidden_patterns = [
-        "\nimport sage.pipeline_v2",
-        "\nfrom sage.pipeline_v2",
-    ]
-    for pattern in forbidden_patterns:
-        # Allow the pattern inside function/method bodies (indented),
-        # but NOT at column zero (top level).
-        assert pattern not in text, (
-            f"Forbidden top-level import {pattern!r} found in pipeline.py. "
-            f"Phase B delegator stubs MUST use LOCAL imports inside the "
-            f"method body to avoid circular-import partial-initialization. "
-            f"See cgpro 2026-05-05 DESIGN lock trap #4."
-        )
+    # Allowlisted top-level pipeline_v2 imports (Phase 2.1 Step E1):
+    allowlist_top_level = (
+        "\nfrom sage.pipeline_v2.context import PipelineContext  # noqa: E402",
+    )
+
+    # Forbidden top-level patterns. Walk each occurrence and assert
+    # it matches the allowlist exactly. Any non-allowlisted top-level
+    # `\nfrom sage.pipeline_v2` is a partial-init risk regression.
+    forbidden_prefixes = ("\nimport sage.pipeline_v2", "\nfrom sage.pipeline_v2")
+    pos = 0
+    while True:
+        next_idx = -1
+        matched_prefix: str | None = None
+        for prefix in forbidden_prefixes:
+            idx = text.find(prefix, pos)
+            if idx != -1 and (next_idx == -1 or idx < next_idx):
+                next_idx = idx
+                matched_prefix = prefix
+        if next_idx == -1:
+            break
+        # Extract the full line starting at `next_idx + 1` (skip the
+        # leading newline) up to the next newline.
+        line_end = text.find("\n", next_idx + 1)
+        if line_end == -1:
+            line_end = len(text)
+        offending_line = text[next_idx:line_end]  # includes leading '\n'
+        if not any(offending_line.startswith(allowed) for allowed in allowlist_top_level):
+            raise AssertionError(
+                f"Disallowed top-level pipeline_v2 import in pipeline.py:\n"
+                f"  {offending_line.lstrip()!r}\n"
+                f"Phase 2.1 Step E1 allowlist (cgpro round-3 Q5 + round-4 "
+                f"OPTION_3) permits only `from sage.pipeline_v2.context "
+                f"import PipelineContext # noqa: E402` at top level. All "
+                f"other pipeline_v2 symbols must use LOCAL imports inside "
+                f"delegator method bodies (cgpro DESIGN trap #4)."
+            )
+        assert matched_prefix is not None
+        pos = next_idx + len(matched_prefix)
 
 
 # ────────────────────────────────────────────────────────────────────

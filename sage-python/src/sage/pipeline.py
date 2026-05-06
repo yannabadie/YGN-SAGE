@@ -9,7 +9,6 @@ import logging
 import os
 import secrets
 import time
-from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from sage.events import (
@@ -18,8 +17,7 @@ from sage.events import (
     EXECUTE_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
 )
 
-from sage.pipeline_stages import DAGFeatures
-from sage.runtime.oracle import OracleConfig, OracleVerdict
+from sage.runtime.oracle import OracleConfig
 from sage.runtime.run_frame import RunFrame, RunStatus
 
 # OxiZ formal verification — imported lazily to allow graceful fallback.
@@ -103,40 +101,15 @@ def _resolve_task_budget_usd(budget_usd: float | None) -> float:
         return 0.0
 
 
-@dataclass
-class PipelineContext:
-    """State that flows through the 5 pipeline stages."""
-
-    task: str
-    budget: float = 5.0
-    domain: str = ""
-    system: int = 0
-    task_dag: Any = None
-    dag_features: DAGFeatures | None = None
-    topology: Any = None
-    topology_id: str = ""
-    assignments: dict[int, str] = field(default_factory=dict)
-    provider_hints: dict[int, str] = field(default_factory=dict)  # node_idx -> provider_name
-    result: str = ""
-    latency_ms: float = 0.0
-    cost: float = 0.0
-    bandit_decision_id: str = ""
-    bandit_model_id: str = ""
-    bandit_template: str = ""
-    bandit_context: list[float] = field(default_factory=list)
-    executed_model_id: str = ""
-    executed_template: str = ""
-    executed_model_ids: list[str] = field(default_factory=list)
-    bandit_attribution_state: BanditAttributionState = "skipped"
-    verification_passed: bool = True
-    axis_hint: str = ""  # MASBENCH axis hint for topology selection
-    tool_call_count: int = 0
-    tool_turn_count: int = 0
-    executed_commands: list[str] = field(default_factory=list)
-    executed_tools: list[str] = field(default_factory=list)
-    cost_tracker: Any = None
-    oracle_verdict: OracleVerdict | None = None
-    bench_result: Mapping[str, Any] | None = None
+# Cycle-13 K Phase 2.1 Step E1 (2026-05-06): the canonical
+# PipelineContext dataclass body lives in
+# `sage.pipeline_v2.context`. The re-export below preserves
+# `from sage.pipeline import PipelineContext` for backward
+# compatibility (cgpro round-3 Q4 backward-compat lock) AND
+# `PipelineContext.__module__ == "sage.pipeline"` (cgpro round-3
+# garde-fou: tests / bench / dashboards depend on this literal
+# module-path).
+from sage.pipeline_v2.context import PipelineContext  # noqa: E402
 
 
 class CognitiveOrchestrationPipeline:
