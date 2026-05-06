@@ -12,7 +12,6 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Literal, Mapping
 
-from sage.contracts.cost_tracker import CostTracker
 from sage.events import (
     EXECUTE_BUDGET_EXCEEDED,  # noqa: F401 - re-exported for tests/test_pipeline_budget.py + pipeline_v2.memory_gate uses sage.events directly
     EXECUTE_HALTED_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
@@ -20,7 +19,7 @@ from sage.events import (
 )
 
 from sage.pipeline_stages import DAGFeatures
-from sage.runtime.oracle import EvidenceRef, OracleConfig, OracleVerdict, oracle_enabled
+from sage.runtime.oracle import OracleConfig, OracleVerdict
 from sage.runtime.run_frame import RunFrame, RunStatus
 
 # OxiZ formal verification — imported lazily to allow graceful fallback.
@@ -165,7 +164,17 @@ class CognitiveOrchestrationPipeline:
         Default config.
     """
 
+    # Class-level attribute declarations for transient runtime state.
+    # Cycle-13 K Phase 2.1 Step D (2026-05-06): now that `_run_internal`
+    # body lives in `pipeline_v2/orchestrator.py`, mypy needs these
+    # declared on the class so the orchestrator's `pipeline.<attr> = X`
+    # assignments are type-clean.
     _model_catalog: Any = None
+    _last_routing_decision: Any = None
+    _last_runtime_routing_source: str = "default"
+    _last_runtime_routing_confidence: float | None = None
+    _last_runtime_routing_model_id: str = ""
+    last_context: "PipelineContext | None" = None
 
     def __init__(
         self,
@@ -474,293 +483,20 @@ class CognitiveOrchestrationPipeline:
     ) -> tuple[str, RunFrame]:
         """Execute the full 5-stage pipeline.
 
-        Args:
-            task: The user's task.
-            budget_usd: Task-level spend cap for the run. ``None`` uses the
-                constructor/env value; ``0`` means unlimited.
-            system_hint: Optional override for Stage 0 routing (1, 2, or 3).
-                Benchmark adapters use this when they already know the task
-                complexity (e.g. SWE-bench tasks are always S3). When set,
-                the Rust SystemRouter still runs (so we keep the model
-                assignment + bandit posteriors), but `ctx.system` is forced
-                to the hint afterwards.
+        Cycle-13 K Phase 2.1 Step D (2026-05-06): body moved to
+        `sage.pipeline_v2.orchestrator.run_internal`. Method preserved
+        as a 1-line LOCAL-import delegator so subclass overrides and
+        any direct method patches keep working.
         """
-        from sage.observability.spans import sage_span
-        from sage.runtime.event_log import (
-            EventLogUnavailable,
-            RuntimeEventLog,
-            current_event_log,
-            install_event_log,
+        from sage.pipeline_v2.orchestrator import run_internal
+        return await run_internal(
+            self,
+            task,
+            budget_usd=budget_usd,
+            system_hint=system_hint,
+            emit_run_frame_summary=emit_run_frame_summary,
+            bench_evaluator=bench_evaluator,
         )
-        from sage.runtime.event_log.redaction import _hash_text
-        from sage.runtime.run_frame.builder import _RunFrameBuilder
-
-        # Cycle-13 E Tier 2.1 smoke discovery 2026-05-05: when called via
-        # `sage run --jsonl` (cycle-12 prelude `d09bed4d`), the CLI installs
-        # its own RuntimeEventLog with a stdout-mirror tee BEFORE calling
-        # pipeline.run(). The previous unconditional construction here
-        # shadowed the CLI's eventlog with a fresh-disabled one (no
-        # trace_dir kwarg + SAGE_TRACE_JSONL_DIR env unset =>
-        # writer.py:162 sets disabled=True, all emit_* become no-ops),
-        # so no runtime events ever reached the CLI's stdout. Prefer
-        # the externally-installed eventlog when present; fall back to
-        # creating a fresh one for direct-Python callers (the
-        # historical default).
-        event_log = current_event_log()
-        if event_log is None:
-            event_log = RuntimeEventLog(run_id=_new_runtime_run_id())
-        run_frame_builder = _RunFrameBuilder(
-            run_id=event_log.run_id,
-            task_id=event_log.run_id,
-            task_hash=_hash_text(task),
-        )
-        run_frame_builder.capture_feature_flags()
-        token = install_event_log(event_log)
-        final_emitted = False
-        ctx: PipelineContext | None = None
-        t0 = time.monotonic()
-        _span_attrs: dict[str, Any] = {"gen_ai.request.model": ""}
-        try:
-            with sage_span("sage.pipeline.run", op="invoke_agent", **_span_attrs):
-                effective_budget_usd = (
-                    self.budget_usd
-                    if budget_usd is None
-                    else _resolve_task_budget_usd(budget_usd)
-                )
-                ctx = PipelineContext(task=task, budget=effective_budget_usd)
-                if effective_budget_usd > 0:
-                    ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
-
-                self._last_routing_decision = None
-                self._last_runtime_routing_source = "default"
-                self._last_runtime_routing_confidence = None
-                self._last_runtime_routing_model_id = ""
-                event_log.emit_task_started(ctx.task)
-
-                # G-series (2026-04-19): rebuild write gate per task so entries from a
-                # previous task don't persist as novelty penalties or exact-dedup hits
-                # on content in THIS task. Rust gate has no in-place reset yet.
-                self.write_gate = self._build_write_gate()
-
-                # Stage 0: CLASSIFY
-                ctx = self._stage_classify(ctx)
-                if system_hint in (1, 2, 3) and ctx.system != system_hint:
-                    log.info(
-                        "Stage 0: system_hint=S%d overrides router S%d",
-                        system_hint, ctx.system,
-                    )
-                    ctx.system = system_hint
-                routing_source = getattr(self, "_last_runtime_routing_source", "default")
-                routing_confidence = getattr(self, "_last_runtime_routing_confidence", None)
-                routing_model_id = getattr(self, "_last_runtime_routing_model_id", "")
-                routing_seq = event_log.emit_routing_decision(
-                    routing_source=routing_source,
-                    system=ctx.system,
-                    domain=ctx.domain,
-                    confidence=routing_confidence,
-                    model_id=routing_model_id,
-                )
-                run_frame_builder.record_routing_decision(
-                    seq=routing_seq,
-                    routing_source=routing_source,
-                    system=ctx.system,
-                    domain=ctx.domain,
-                    confidence=routing_confidence,
-                    model_id=routing_model_id,
-                )
-                self._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
-
-                # Stage 1: DECOMPOSE (S2/S3 only)
-                ctx = await self._stage_decompose(ctx)
-                dag_node_count = 0
-                if ctx.task_dag is not None:
-                    if hasattr(ctx.task_dag, "node_count"):
-                        dag_node_count = ctx.task_dag.node_count
-                    elif hasattr(ctx.task_dag, "node_ids"):
-                        dag_node_count = len(list(ctx.task_dag.node_ids))
-                self._emit(
-                    "DECOMPOSE",
-                    {
-                        "dag_nodes": dag_node_count,
-                        "features": (
-                            {
-                                "omega": ctx.dag_features.omega,
-                                "delta": ctx.dag_features.delta,
-                                "gamma": ctx.dag_features.gamma,
-                            }
-                            if ctx.dag_features
-                            else {}
-                        ),
-                    },
-                )
-
-                # Stage 2: SELECT TOPOLOGY
-                ctx = self._stage_select_topology(ctx)
-                topo_nodes = (
-                    ctx.topology.node_count()
-                    if ctx.topology and hasattr(ctx.topology, "node_count")
-                    else 0
-                )
-                self._runtime_emit_topology_selected(
-                    ctx,
-                    event_log,
-                    run_frame_builder,
-                    reason="initial",
-                )
-                self._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
-
-                # Stage 3: ASSIGN MODELS
-                ctx = self._stage_assign_models(ctx)
-                self._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
-                self._emit(
-                    "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
-                )
-
-                # Stage 4: EXECUTE
-                ctx = await self._stage_execute(
-                    ctx,
-                    event_log=event_log,
-                    run_frame_builder=run_frame_builder,
-                )
-                ctx.latency_ms = (time.monotonic() - t0) * 1000
-
-                # cgpro 2026-04-29 R6.1a verify Path E: bench-result feedback
-                # seam. Synchronous-eval benches (BigCodeBench, EvalPlus, etc.)
-                # attach an evaluator via run_with_bench_evaluator(); we call
-                # it on the executed output BEFORE final_result + oracle so
-                # _exact_oracle has bench_result["passed"] available. Fail-
-                # closed: any exception leaves ctx.bench_result=None and the
-                # oracle abstains via _exact_oracle's None-guard.
-                if bench_evaluator is not None and ctx.bench_result is None:
-                    try:
-                        candidate = bench_evaluator(ctx.result or "")
-                        import inspect as _inspect
-                        if _inspect.isawaitable(candidate):
-                            candidate = await candidate
-                        if isinstance(candidate, Mapping):
-                            ctx.bench_result = candidate
-                        else:
-                            log.warning(
-                                "bench_evaluator returned %r; expected Mapping. "
-                                "Oracle will abstain.",
-                                type(candidate).__name__,
-                            )
-                    except Exception as _eval_exc:  # noqa: BLE001 - fail-closed
-                        log.warning(
-                            "bench_evaluator raised %s: %s; oracle will abstain.",
-                            type(_eval_exc).__name__,
-                            _eval_exc,
-                        )
-
-                oracle_on = oracle_enabled()
-                final_status = self._runtime_final_status(ctx)
-
-                if oracle_on:
-                    final_seq = event_log.emit_final_result(
-                        status=final_status,
-                        output=ctx.result or "",
-                        total_cost_usd=float(ctx.cost or 0.0),
-                        total_latency_ms=ctx.latency_ms,
-                        node_count=self._runtime_final_node_count(ctx),
-                    )
-                    run_frame_builder.record_final_result(
-                        seq=final_seq,
-                        status=final_status,
-                    )
-                    final_emitted = True
-                    try:
-                        from sage.runtime import oracle as oracle_stack
-
-                        verdict = oracle_stack.evaluate(
-                            run_frame_builder.snapshot_view(),
-                            final_output=ctx.result or "",
-                            bench_result=ctx.bench_result,
-                            config=self._oracle_config,
-                        )
-                    except Exception as exc:  # noqa: BLE001 - oracle must fail closed
-                        log.warning("OracleStack failed; collapsing to Abstain: %s", exc)
-                        verdict = OracleVerdict(
-                            trainable=False,
-                            verdict_source="abstain",
-                            quality_label="unknown",
-                            score=None,
-                            confidence=1.0,
-                            reason_codes=("oracle_exception", type(exc).__name__),
-                            evidence=(EvidenceRef(run_id=event_log.run_id),),
-                        )
-                    oracle_seq = event_log.emit_oracle_verdict(
-                        parent_event_id=final_seq,
-                        verdict=verdict,
-                    )
-                    run_frame_builder.record_oracle_verdict(
-                        seq=oracle_seq,
-                        verdict=verdict,
-                    )
-                    ctx.oracle_verdict = verdict
-
-                    self._record_to_memory(
-                        ctx,
-                        is_training_evidence=verdict.trainable,
-                    )
-                    await self._stage_learn(ctx)
-                    self._emit("LEARN", {"latency_ms": ctx.latency_ms})
-                else:
-                    # Legacy OFF mode: keep the R7 execution/learn/final order.
-                    self._record_to_memory(ctx)
-                    await self._stage_learn(ctx)
-                    self._emit("LEARN", {"latency_ms": ctx.latency_ms})
-
-                    # Expose full context before final_result, preserving R7 order.
-                    self.last_context = ctx
-
-                    if self._agent_loop is not None and ctx.cost:
-                        self._agent_loop.total_cost_usd = float(ctx.cost)
-
-                    final_seq = event_log.emit_final_result(
-                        status=final_status,
-                        output=ctx.result or "",
-                        total_cost_usd=float(ctx.cost or 0.0),
-                        total_latency_ms=ctx.latency_ms,
-                        node_count=self._runtime_final_node_count(ctx),
-                    )
-                    run_frame_builder.record_final_result(
-                        seq=final_seq,
-                        status=final_status,
-                    )
-                    final_emitted = True
-
-                if oracle_on:
-                    self.last_context = ctx
-                    if self._agent_loop is not None and ctx.cost:
-                        self._agent_loop.total_cost_usd = float(ctx.cost)
-
-                frame = run_frame_builder.finalize()
-                if emit_run_frame_summary and frame.final_result_seq is not None:
-                    try:
-                        event_log.emit_run_frame_summary(
-                            parent_event_id=frame.final_result_seq,
-                            summary=frame.to_summary_dict(redacted=True),
-                        )
-                    except (EventLogUnavailable, OSError, IOError, ValueError):
-                        pass
-                return ctx.result, frame
-        except Exception:
-            if not final_emitted:
-                latency_ms = (time.monotonic() - t0) * 1000
-                if ctx is not None:
-                    ctx.latency_ms = latency_ms
-                final_seq = event_log.emit_final_result(
-                    status="failure",
-                    output=(ctx.result if ctx is not None else "") or "",
-                    total_cost_usd=float((ctx.cost if ctx is not None else 0.0) or 0.0),
-                    total_latency_ms=latency_ms,
-                    node_count=self._runtime_final_node_count(ctx),
-                )
-                run_frame_builder.record_final_result(seq=final_seq, status="failure")
-            raise
-        finally:
-            token.var.reset(token)
-            event_log.close()
 
     # ── Stage 0: Classify ───────────────────────────────────────────────────
 
