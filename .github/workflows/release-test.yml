@@ -263,6 +263,12 @@ jobs:
           - runner: windows-latest
             python: "3.13"
     steps:
+      - uses: actions/checkout@v4
+        # Cycle-13 B Q2 follow-up: the manifest-contract smoke step
+        # below runs `pip install --no-deps -e sage-python` to make
+        # `python -m sage.ops.wheel_smoke` available. That requires
+        # the source tree to be present.
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -316,3 +322,22 @@ jobs:
           print('TestPyPI install + import OK on ${{ matrix.runner }} py${{ matrix.python }}')
           print(f'  default symbols present: {len(required)}/{len(required)}')
           "
+
+      - name: Manifest contract smoke (cycle-13 B Q2)
+        # Cycle-13 B Q2 follow-up (cgpro 2026-05-06 NEXT_BLOCK_ID=H):
+        # the symbols smoke above only checks "is the symbol exposed".
+        # `python -m sage.ops.wheel_smoke` carries the runtime
+        # manifest contract (engine.save_state writes
+        # topology_state_manifest.json with byte-exact SHA256 binding)
+        # — the gap that wasted operator cycles on the 2026-04-27 ->
+        # 2026-04-30 stale-binary class. The wheel from TestPyPI
+        # MUST satisfy this contract or it cannot graduate to real
+        # PyPI publish.
+        # Source: sage-python/src/sage/ops/wheel_smoke.py.
+        shell: bash
+        run: |
+          # Install the SDK (--no-deps so it doesn't pull pydantic etc.;
+          # the smoke module itself is stdlib-only past sage_core +
+          # sage.posterior_epoch).
+          python -m pip install --no-deps -e sage-python
+          python -m sage.ops.wheel_smoke
