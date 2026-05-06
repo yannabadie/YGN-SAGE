@@ -1,36 +1,50 @@
-"""Phase A — additive wrappers in `sage.pipeline_v2/`.
+"""`pipeline_v2` stage ownership + legacy seam compatibility tests.
 
-Per cgpro 2026-05-05 DESIGN lock (`cgpro_pi_mono_pivot_20260505`):
-ADR-015 + ADR-016 cycle-12 Phase A creates a `pipeline_v2/` package
-with stage-function wrappers that delegate to the legacy
-`pipeline._stage_<X>` methods. NO body movement in this commit.
+Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
+2026-05-06): this file was originally written for cycle-12 Phase A
+("additive wrappers, NO body movement"); Phase B then moved the
+bodies and Phase 2.1 finished the façade extraction. The filename
+is preserved to avoid test-rename churn, but the conceptual scope
+has migrated to **stage-module ownership + transitional seam
+compatibility**:
 
-Tests in this file prove the package layout, the wrapper contract,
-and the absence of circular imports — without exercising any
-production logic. The 25 P9 phase 1 acceptance-gate tests
-(test_pipeline_v2_*.py) provide the byte-identical guarantee.
-
-What this file proves
-=====================
+What this file proves NOW
+=========================
 1. The 6 stage modules exist and expose a callable named after the
    stage (`classify`, `decompose`, `select_topology`,
-   `assign_models`, `execute`, `learn`).
-2. Each wrapper delegates to the corresponding `pipeline._stage_<X>`
-   — verified via a stub `Pipeline` whose stage method records the
-   call and returns a sentinel.
-3. `PipelineContext` re-exported from `pipeline_v2.context` is the
-   SAME class object as `sage.pipeline.PipelineContext` (identity,
-   not equality — moving the dataclass would change `__module__`,
-   repr, and pickle behavior, which downstream consumers compare
-   against).
-4. `pipeline_v2/__init__.py` does not trigger circular import — the
-   package can be imported standalone AND from inside a fresh
-   sub-process where `sage.pipeline` hasn't been touched yet.
-5. The async wrappers (`decompose`, `execute`, `learn`) are coroutine
-   functions, not regular functions returning coroutines. Important
-   because Phase B delegators must `await`; if the wrapper signature
-   drifts, the easiest codex mistake (missing `await`) compiles
-   silently but returns a coroutine.
+   `assign_models`, `execute`, `learn`). The bodies live there
+   post-Phase-B; `pipeline._stage_<X>` is a 1-line LOCAL-import
+   delegator.
+2. The legacy `pipeline._stage_<X>` method seams remain on
+   `CognitiveOrchestrationPipeline` post-Phase-2.1 as the
+   monkey-patch-able runtime test seam used by 27 test files
+   (`pipeline._stage_<X> = <fake>`). cgpro round-4 OPTION_3
+   verdict: this contract stays intact in Phase 2.1; Phase 2.2
+   DESIGN_LOCK rewrites the 27 tests + retires the seams.
+3. `PipelineContext` is the SAME class object whether imported as
+   `from sage.pipeline import PipelineContext`,
+   `from sage.pipeline_v2 import PipelineContext`, or
+   `from sage.pipeline_v2.context import PipelineContext`. Since
+   Phase 2.1 Step E1 the dataclass body lives in
+   `pipeline_v2/context.py`, with explicit
+   `PipelineContext.__module__ = "sage.pipeline"` so existing
+   tests / bench / dashboards / observability assertions on the
+   legacy module path keep passing byte-identical.
+4. `pipeline_v2/__init__.py` uses PEP 562 module-level
+   `__getattr__` (Step E0) to defer `from sage.pipeline import …`
+   to attribute-access time — breaks the otherwise-circular
+   dependency once `pipeline.py` itself imports
+   `pipeline_v2.context`.
+5. The async stage callables (`decompose`, `execute`, `learn`) are
+   true coroutine functions, not regular functions returning
+   coroutines. Important because the orchestrator (Phase 2.1
+   Step D) must `await` them ; signature drift would compile
+   silently and break event ordering at runtime.
+6. The top-level pipeline_v2 import allowlist on `sage.pipeline`:
+   only `from sage.pipeline_v2.context import PipelineContext` is
+   permitted at module scope; every other `pipeline_v2` symbol
+   must be a LOCAL import inside a delegator method body
+   (cgpro DESIGN trap #4 — partial-init avoidance).
 """
 from __future__ import annotations
 

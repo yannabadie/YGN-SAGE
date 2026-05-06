@@ -1,9 +1,11 @@
 # ADR-015 — `pipeline.py` decomposition into stage modules
 
-**Status:** Proposed — 2026-05-04 (cycle-10 P9). Implementation deferred to cycle-11/12.
+**Status:** Implemented for Phase 2.1 (cycle-13 K, 2026-05-06); Phase 2.2 Proposed.
 **Related:** cgpro_kimi_audit_response_20260504, cycle-10 plan
 (`.claude/plans/2026-05-04-cycle-10-verified-runtime-release-preview.md`),
-runtime-integrity-ledger.md (8 invariants).
+runtime-integrity-ledger.md (10 invariants), cgpro
+`cgpro_phase21_facade_rewrite_20260506` round-1 DESIGN_LOCKED →
+round-4 OPTION_3 → round-5 SHIP_PHASE_2_1.
 
 ## Context
 

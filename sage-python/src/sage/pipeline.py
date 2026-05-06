@@ -547,9 +547,13 @@ class CognitiveOrchestrationPipeline:
         """Stage 2: Select optimal topology.
 
         Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.select_topology.select_topology`. This is now a
-        1-line LOCAL-import delegator. Topology helper methods stay on
-        this class per cgpro DESIGN (helper ownership migration is Phase C).
+        `sage.pipeline_v2.select_topology.select_topology`. This is a
+        1-line LOCAL-import delegator. Cycle-13 K Phase 2.1 Step B5
+        (2026-05-06) also moved the topology helpers to
+        `pipeline_v2.topology_helpers` + `pipeline_v2.costing` ; the
+        method form is retained on the class as a transitional runtime
+        test seam used by ~10 test files. Phase 2.2 DESIGN_LOCK will
+        rewrite those tests + retire this delegator.
         """
         from sage.pipeline_v2.select_topology import select_topology as _v2_select_topology
         return _v2_select_topology(self, ctx)
@@ -628,10 +632,13 @@ class CognitiveOrchestrationPipeline:
         """Stage 3: Assign model_id to each topology node.
 
         Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.assign_models.assign_models`. 1-line LOCAL-import
-        delegator. Helpers `_log_model_assigner_chosen_fallback` and
-        `_verify_assignment_formal` STAY on this class per cgpro DESIGN
-        trap #6 (helper ownership migration is Phase C).
+        `sage.pipeline_v2.assign_models.assign_models` as a 1-line
+        LOCAL-import delegator. Cycle-13 K Phase 2.1 Step B2 (2026-05-06)
+        also moved `log_model_assigner_chosen_fallback` and
+        `verify_assignment_formal` into the same module; the
+        `_<helper>` method form is retained on the class as a
+        transitional runtime test seam. Phase 2.2 DESIGN_LOCK will
+        rewrite the mock-using tests + retire those delegators.
         """
         from sage.pipeline_v2.assign_models import assign_models as _v2_assign_models
         return _v2_assign_models(self, ctx)
@@ -719,9 +726,13 @@ class CognitiveOrchestrationPipeline:
         """Stage 5: Record outcome for learning.
 
         Cycle-12 Phase B (2026-05-05): body moved to
-        `sage.pipeline_v2.learn.learn`. This is now a 1-line
-        LOCAL-import async delegator. Learning helper methods stay on
-        this class per cgpro DESIGN (helper ownership migration is Phase C).
+        `sage.pipeline_v2.learn.learn` as a 1-line LOCAL-import async
+        delegator. Cycle-13 K Phase 2.1 Steps A2 + B4 (2026-05-06) also
+        moved the bandit + runtime-event helpers consumed here into
+        `pipeline_v2.bandit_attribution` + `pipeline_v2.runtime_events` ;
+        the `_<helper>` method form is retained on the class as a
+        transitional runtime test seam. Phase 2.2 DESIGN_LOCK will
+        rewrite the mock-using tests + retire those delegators.
         """
         from sage.pipeline_v2.learn import learn as _v2_learn
         return await _v2_learn(self, ctx)
