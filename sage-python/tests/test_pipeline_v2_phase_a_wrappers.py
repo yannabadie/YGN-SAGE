@@ -57,23 +57,41 @@ import pytest
 
 
 # ────────────────────────────────────────────────────────────────────
-# 1. Package structure: 6 stage modules + 3 helpers + __init__
+# 1. Package structure: stage modules + orchestrator + helper modules
 # ────────────────────────────────────────────────────────────────────
 
 
 def test_pipeline_v2_package_exposes_expected_modules() -> None:
-    """All 9 modules + __init__ exist and import without error."""
+    """Representative pipeline_v2 modules import without error.
+
+    Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
+    2026-05-06): the package now hosts:
+      - 6 stage bodies (classify / decompose / select_topology /
+        assign_models / execute / learn)
+      - the orchestrator (run_internal body, Step D)
+      - the PipelineContext dataclass body (context, Step E1)
+      - 5 helper modules (bandit_attribution / runtime_events /
+        memory_gate / topology_helpers / costing)
+
+    None of these are "placeholder" any more — every module owns
+    real production code that `pipeline.py` LOCAL-imports through
+    its delegators.
+    """
     # Each import is the assertion; F401 noqa makes ruff happy.
     import sage.pipeline_v2  # noqa: F401
     import sage.pipeline_v2.assign_models  # noqa: F401
-    import sage.pipeline_v2.bandit_attribution  # noqa: F401  (placeholder)
+    import sage.pipeline_v2.bandit_attribution  # noqa: F401
     import sage.pipeline_v2.classify  # noqa: F401
     import sage.pipeline_v2.context  # noqa: F401
+    import sage.pipeline_v2.costing  # noqa: F401
     import sage.pipeline_v2.decompose  # noqa: F401
     import sage.pipeline_v2.execute  # noqa: F401
     import sage.pipeline_v2.learn  # noqa: F401
-    import sage.pipeline_v2.runtime_events  # noqa: F401  (placeholder)
+    import sage.pipeline_v2.memory_gate  # noqa: F401
+    import sage.pipeline_v2.orchestrator  # noqa: F401
+    import sage.pipeline_v2.runtime_events  # noqa: F401
     import sage.pipeline_v2.select_topology  # noqa: F401
+    import sage.pipeline_v2.topology_helpers  # noqa: F401
 
 
 def test_pipeline_v2_init_reexports_pipeline_class_and_context() -> None:

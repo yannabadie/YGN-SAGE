@@ -270,7 +270,7 @@ conservative" by cgpro+plan agreement. Cycle-11 is the right place.
   **round-4 OPTION_3** (the empirical 27-file `pipeline._stage_*` mock
   contract was incompatible with cgpro round-3's "delete delegators in
   C2" plan). Final Phase 2.1 acceptance amended:
-    - pipeline.py 1800 LOC → ~702 LOC (1098 LOC migrated; **landing
+    - pipeline.py 1800 LOC → 727 LOC (1073 LOC migrated; **landing
       inside cgpro round-4 amended target 650-800 LOC**).
     - 5 stage bodies + orchestrator + 5 helper modules + PipelineContext
       dataclass all moved to pipeline_v2/.
