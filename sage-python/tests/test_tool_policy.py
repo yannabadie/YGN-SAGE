@@ -504,8 +504,10 @@ def test_t15_toolpolicy_audit_cli_lists_capabilities_and_effective_grants(
     assert "by_capability" in payload
 
     # At least one entry is read_file (manifest entry, READ_LOCAL).
-    # Phase 1.5b: the source string now embeds the trusted module
-    # prefix because the manifest is keyed by (name, module).
+    # Phase 1.5c+: the audit source string embeds the documented
+    # canonical factory module from the manifest. This is inventory/
+    # audit metadata only; the runtime gate does NOT trust handler
+    # module metadata (function.__module__ is writable in Python).
     read_file = next(
         (e for e in payload["entries"] if e["name"] == "read_file"),
         None,

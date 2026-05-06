@@ -14,16 +14,21 @@ class ToolRegistry:
     def register(self, tool: Tool, *, replace: bool = False) -> None:
         """Register a tool.
 
-        Phase 1.5 cycle-13 K (cgpro DESIGN_LOCKED 2026-05-06):
-        registration MUST resolve the tool's ToolCapability via
-        `sage.policy.manifest.resolve_tool_capability`. If unresolved
-        (no explicit kwarg, no built-in manifest entry, no class
-        default), `ToolPolicyDeclarationError` is raised — there is
-        intentionally NO default-tag-dangerous fallback per cgpro
-        DESIGN trap "creates an illusion of security". The resolved
-        capability is normalised back onto `tool.capability` so
-        downstream consumers (Tool.execute, audit CLI) can rely on
-        a non-None, enum-valued attribute.
+        Phase 1.5c+ cycle-13 K (cgpro VERIFY 2026-05-06): registration
+        resolves the tool's ToolCapability via
+        `sage.policy.manifest.resolve_tool_capability`, whose runtime
+        chain is:
+
+            explicit `tool.capability` -> class default -> raise
+
+        The built-in manifest is documentation/audit only and is NOT
+        consulted at runtime to accept unlabeled tools. If the chain
+        falls through to "raise", `ToolPolicyDeclarationError` is
+        raised — there is intentionally NO default-tag-dangerous
+        fallback per cgpro DESIGN trap "creates an illusion of
+        security". The resolved capability is normalised back onto
+        `tool.capability` so downstream consumers (Tool.execute,
+        audit CLI) can rely on a non-None, enum-valued attribute.
 
         Phase 1.5b (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): adds a
         duplicate-name guard. Registering a tool whose name is already
@@ -42,8 +47,9 @@ class ToolRegistry:
         # an unresolvable tool — propagate so the boot path fails fast.
         resolved = resolve_tool_capability(tool)
         # Normalise the resolved enum back onto the Tool so all later
-        # code paths see the same authoritative value (manifest hits
-        # would otherwise leave `tool.capability=None` in place).
+        # code paths (Tool.execute, audit CLI) see the same value even
+        # when the tool was originally constructed with `capability=None`
+        # and the class default supplied the resolution.
         tool.capability = resolved
 
         if not replace and tool.spec.name in self._tools:
