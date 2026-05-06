@@ -1,0 +1,47 @@
+name: Doc counters coherence
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+# Cycle-13 K Phase 0.2: enforce that the test-counter values cited in
+# README.md, AI-ARCHITECTURE.md, and .claude/rules/architecture.md match
+# the canonical values in docs/status/current.json. Phase 0.1b adds a
+# strict commit_sha gate; Phase 0.2 covers test counts only.
+#
+# This workflow only RUNS scripts/sync_doc_counters.py --check. It does
+# not run pytest / cargo because resolving "did the counters drift in
+# this commit?" requires the same machine that booted current.json,
+# which is the developer's box. The next two layers close that loop:
+#   - The doc-sync skill (sync-docs:sync-docs) bumps current.json on each
+#     commit that adds tests.
+#   - The strict-current-json-coherence gate (Phase 0.1b) refuses any
+#     PR where current.json's commit_sha does not match github.sha.
+#
+# So this gate is narrow on purpose: "the four docs cited the same
+# numbers when this commit was made". A separate gate covers "those
+# numbers reflect the actual test surface".
+
+jobs:
+  doc-counters-coherence:
+    name: Sync check (current.json -> docs)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install pyyaml
+        run: python -m pip install --upgrade "pyyaml>=6.0"
+
+      - name: Run sync_doc_counters --check
+        run: python scripts/sync_doc_counters.py --check
+
+      - name: Run regenerate_claims_index --check
+        run: python scripts/regenerate_claims_index.py --check
