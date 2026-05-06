@@ -14,6 +14,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.classify import classify
 
 
 def _install_fake_sage_core(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,7 +94,7 @@ def test_system_hint_overrides_router_classification(monkeypatch: pytest.MonkeyP
     _install_fake_sage_core(monkeypatch)
     pipeline = _mk_pipeline(rust_router_system=2)
     ctx = PipelineContext(task="write a patch for astropy#12907", budget=1.0)
-    ctx = pipeline._stage_classify(ctx)
+    ctx = classify(pipeline, ctx)
     assert ctx.system == 2
 
     # Simulate run() override logic
@@ -109,7 +110,7 @@ def test_system_hint_noop_when_matches_router(monkeypatch: pytest.MonkeyPatch):
     _install_fake_sage_core(monkeypatch)
     pipeline = _mk_pipeline(rust_router_system=3)
     ctx = PipelineContext(task="prove a theorem", budget=1.0)
-    ctx = pipeline._stage_classify(ctx)
+    ctx = classify(pipeline, ctx)
     assert ctx.system == 3
 
     hint = 3
@@ -122,7 +123,7 @@ def test_system_hint_ignores_invalid_values(monkeypatch: pytest.MonkeyPatch):
     _install_fake_sage_core(monkeypatch)
     pipeline = _mk_pipeline(rust_router_system=2)
     ctx = PipelineContext(task="simple math", budget=1.0)
-    ctx = pipeline._stage_classify(ctx)
+    ctx = classify(pipeline, ctx)
 
     for bad in (0, 4, 99, -1):
         applied = bad in (1, 2, 3) and ctx.system != bad
@@ -136,32 +137,34 @@ async def test_pipeline_run_applies_hint(monkeypatch: pytest.MonkeyPatch):
     pipeline = _mk_pipeline(rust_router_system=2)
 
     # Short-circuit decompose/topology/execute/learn so we only validate classify.
-    async def _fake_decompose(ctx):
+    async def _fake_decompose(_pipeline, ctx):
         return ctx
 
-    def _fake_select(ctx):
+    def _fake_select(_pipeline, ctx):
         return ctx
 
-    def _fake_assign(ctx):
+    def _fake_assign(_pipeline, ctx):
         return ctx
 
-    async def _fake_execute(ctx, **_kwargs):
+    async def _fake_execute(_pipeline, ctx, **_kwargs):
         ctx.result = "ok"
         return ctx
 
-    async def _fake_learn(ctx):
+    async def _fake_learn(_pipeline, ctx):
         return None
 
-    pipeline._stage_decompose = _fake_decompose
-    pipeline._stage_select_topology = _fake_select
-    pipeline._stage_assign_models = _fake_assign
-    pipeline._stage_execute = _fake_execute
-    pipeline._stage_learn = _fake_learn
+    monkeypatch.setattr("sage.pipeline_v2.decompose.decompose", _fake_decompose)
+    monkeypatch.setattr("sage.pipeline_v2.select_topology.select_topology", _fake_select)
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _fake_assign)
+    monkeypatch.setattr("sage.pipeline_v2.execute.execute", _fake_execute)
+    monkeypatch.setattr("sage.pipeline_v2.learn.learn", _fake_learn)
     # Cycle-11 cgpro VERIFY follow-up: production calls
     # `_record_to_memory(ctx, *, is_training_evidence=...)` (cycle-5 R9
     # OracleStack v0). The previous lambda accepted only `_ctx` and
     # raised TypeError on the kwarg. Use **kwargs so any future kwargs
     # land cleanly without re-breaking the test.
+    # B->D boundary: _record_to_memory is a helper delegator; instance
+    # setattr preserved for now per cgpro scope (helper purge = Stage D).
     pipeline._record_to_memory = lambda *_args, **_kwargs: None
 
     await pipeline.run("patch the bug", budget_usd=1.0, system_hint=3)
@@ -174,27 +177,29 @@ async def test_pipeline_run_without_hint_keeps_router_choice(monkeypatch: pytest
     _install_fake_sage_core(monkeypatch)
     pipeline = _mk_pipeline(rust_router_system=2)
 
-    async def _fake_decompose(ctx):
+    async def _fake_decompose(_pipeline, ctx):
         return ctx
 
-    def _fake_select(ctx):
+    def _fake_select(_pipeline, ctx):
         return ctx
 
-    def _fake_assign(ctx):
+    def _fake_assign(_pipeline, ctx):
         return ctx
 
-    async def _fake_execute(ctx, **_kwargs):
+    async def _fake_execute(_pipeline, ctx, **_kwargs):
         ctx.result = "ok"
         return ctx
 
-    async def _fake_learn(ctx):
+    async def _fake_learn(_pipeline, ctx):
         return None
 
-    pipeline._stage_decompose = _fake_decompose
-    pipeline._stage_select_topology = _fake_select
-    pipeline._stage_assign_models = _fake_assign
-    pipeline._stage_execute = _fake_execute
-    pipeline._stage_learn = _fake_learn
+    monkeypatch.setattr("sage.pipeline_v2.decompose.decompose", _fake_decompose)
+    monkeypatch.setattr("sage.pipeline_v2.select_topology.select_topology", _fake_select)
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _fake_assign)
+    monkeypatch.setattr("sage.pipeline_v2.execute.execute", _fake_execute)
+    monkeypatch.setattr("sage.pipeline_v2.learn.learn", _fake_learn)
+    # B->D boundary: _record_to_memory helper instance setattr preserved
+    # (helper purge = Stage D scope).
     pipeline._record_to_memory = lambda *_args, **_kwargs: None
 
     await pipeline.run("do something", budget_usd=1.0)
