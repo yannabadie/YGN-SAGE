@@ -176,6 +176,7 @@ def _read_events(path: pathlib.Path) -> list[dict[str, Any]]:
 
 
 def _make_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
     *,
     output: str = "oracle output",
     bench_result: Mapping[str, Any] | None = None,
@@ -197,20 +198,20 @@ def _make_pipeline(
         consolidator=consolidator,
     )
 
-    def _classify(ctx: Any) -> Any:
+    def _classify(_pipeline: Any, ctx: Any) -> Any:
         ctx.system = 1
         ctx.domain = "code"
         return ctx
 
-    async def _decompose(ctx: Any) -> Any:
+    async def _decompose(_pipeline: Any, ctx: Any) -> Any:
         return ctx
 
-    def _select(ctx: Any) -> Any:
+    def _select(_pipeline: Any, ctx: Any) -> Any:
         ctx.topology = FakeGraph()
         ctx.topology_id = "oracle-topology"
         return ctx
 
-    def _assign(ctx: Any) -> Any:
+    def _assign(_pipeline: Any, ctx: Any) -> Any:
         ctx.assignments = {0: "model-a"}
         ctx.provider_hints = {0: "provider-a"}
         ctx.bandit_decision_id = "decision-1"
@@ -218,7 +219,7 @@ def _make_pipeline(
         ctx.bandit_template = "single_agent"
         return ctx
 
-    async def _execute(ctx: Any, **_kwargs: Any) -> Any:
+    async def _execute(_pipeline: Any, ctx: Any, **_kwargs: Any) -> Any:
         ctx.result = output
         ctx.cost = 0.25
         ctx.executed_model_id = "model-a"
@@ -226,11 +227,11 @@ def _make_pipeline(
         ctx.bench_result = bench_result
         return ctx
 
-    pipeline._stage_classify = _classify  # type: ignore[method-assign]
-    pipeline._stage_decompose = _decompose  # type: ignore[method-assign]
-    pipeline._stage_select_topology = _select  # type: ignore[method-assign]
-    pipeline._stage_assign_models = _assign  # type: ignore[method-assign]
-    pipeline._stage_execute = _execute  # type: ignore[method-assign]
+    monkeypatch.setattr("sage.pipeline_v2.classify.classify", _classify)
+    monkeypatch.setattr("sage.pipeline_v2.decompose.decompose", _decompose)
+    monkeypatch.setattr("sage.pipeline_v2.select_topology.select_topology", _select)
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _assign)
+    monkeypatch.setattr("sage.pipeline_v2.execute.execute", _execute)
     # A14b: _rust_router handles record_outcome_checked; wire proxy to bandit.
     if bandit is not None:
         pipeline._rust_router = _RustRouterProxy(bandit)
@@ -406,6 +407,7 @@ async def test_abstain_blocks_bandit_update(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("SAGE_ORACLE", "1")
     bandit = RecordingBandit()
     pipeline = _make_pipeline(
+        monkeypatch,
         output="non-verifiable output",
         bandit=bandit,
         quality_estimator=MagicMock(),
@@ -421,6 +423,7 @@ async def test_exact_pass_triggers_bandit_update(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("SAGE_ORACLE", "1")
     bandit = RecordingBandit()
     pipeline = _make_pipeline(
+        monkeypatch,
         bench_result={"passed": True, "score": 1.0},
         bandit=bandit,
     )
@@ -437,6 +440,7 @@ async def test_exact_fail_triggers_bandit_update_with_zero_reward(
     monkeypatch.setenv("SAGE_ORACLE", "1")
     bandit = RecordingBandit()
     pipeline = _make_pipeline(
+        monkeypatch,
         bench_result={"passed": False, "score": 0.0},
         bandit=bandit,
     )
@@ -458,7 +462,7 @@ async def test_oracle_exception_returns_abstain_does_not_change_output(
         "evaluate",
         MagicMock(side_effect=RuntimeError("oracle unavailable")),
     )
-    result, frame = await _make_pipeline(output="final answer").run_with_frame("task")
+    result, frame = await _make_pipeline(monkeypatch, output="final answer").run_with_frame("task")
 
     assert result == "final answer"
     assert frame.oracle_verdict is not None
@@ -646,7 +650,8 @@ async def test_oracle_verdict_event_emitted_with_parent_seq(
     monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: run_id)
 
     result, frame = await _make_pipeline(
-        bench_result={"passed": True, "score": 1.0}
+        monkeypatch,
+        bench_result={"passed": True, "score": 1.0},
     ).run_with_frame("task")
 
     events = _read_events(tmp_path / f"{run_id}.jsonl")
@@ -704,6 +709,7 @@ async def test_oracle_off_via_killswitch_preserves_legacy_behavior(
     bandit = RecordingBandit()
 
     result, frame = await _make_pipeline(
+        monkeypatch,
         output="legacy output",
         bandit=bandit,
         quality_estimator=MagicMock(return_value=None),
@@ -747,6 +753,7 @@ async def test_episodic_memory_records_abstain_with_training_flag_false(
     episodic = RecordingEpisodicMemory()
 
     await _make_pipeline(
+        monkeypatch,
         output="unverified output",
         episodic_memory=episodic,
     ).run("task")
@@ -850,6 +857,7 @@ async def test_abstain_blocks_all_training_sinks(monkeypatch: pytest.MonkeyPatch
     engine = RecordingEngine(should_evolve=True)
     consolidator = SimpleNamespace(consolidate=AsyncMock())
     pipeline = _make_pipeline(
+        monkeypatch,
         output="unverified output",
         bandit=bandit,
         engine=engine,
