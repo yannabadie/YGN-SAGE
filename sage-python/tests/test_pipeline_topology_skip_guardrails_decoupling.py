@@ -71,6 +71,7 @@ from sage.pipeline import (
     PipelineContext,
 )
 from sage.pipeline_stages import DAGFeatures
+from sage.pipeline_v2.select_topology import select_topology
 
 
 class _SkipGuardrailsAccessCounter:
@@ -201,7 +202,7 @@ async def test_stage_select_topology_does_not_read_skip_guardrails():
     pipeline, counter = _make_pipeline_for_topology_select(skip_guardrails=True)
     ctx = _make_ctx_with_dag_features()
 
-    pipeline._stage_select_topology(ctx)
+    select_topology(pipeline, ctx)
 
     assert counter.read_count == 0, (
         f"_stage_select_topology read AgentLoop._skip_guardrails "
@@ -268,8 +269,8 @@ async def test_topology_signature_stable_under_repeated_calls():
 
     ctx_a = _make_ctx_with_dag_features()
     ctx_b = _make_ctx_with_dag_features()
-    pipeline._stage_select_topology(ctx_a)
-    pipeline._stage_select_topology(ctx_b)
+    select_topology(pipeline, ctx_a)
+    select_topology(pipeline, ctx_b)
 
     sig_a = _topology_signature(ctx_a)
     sig_b = _topology_signature(ctx_b)

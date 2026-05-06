@@ -82,6 +82,8 @@ from sage.pipeline import (
     PipelineContext,
 )
 from sage.pipeline_stages import DAGFeatures
+from sage.pipeline_v2.classify import classify
+from sage.pipeline_v2.select_topology import select_topology
 
 
 # Known template strings that ``executed_template`` may equal.
@@ -288,7 +290,7 @@ def test_stage_classify_populates_bandit_template_from_router_decision(
     )
 
     # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
-    ctx = pipeline._stage_classify(ctx)
+    ctx = classify(pipeline, ctx)
 
     assert ctx.bandit_template == "sequential", (
         f"_stage_classify did not set ctx.bandit_template from the "
@@ -332,7 +334,7 @@ def test_stage_select_topology_dag_template_branch_sets_ctx_topology_id() -> Non
     ctx.dag_features = DAGFeatures(omega=2, delta=2, gamma=0.4)
 
     # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
-    ctx = pipeline._stage_select_topology(ctx)
+    ctx = select_topology(pipeline, ctx)
 
     assert ctx.topology is not None, (
         "_stage_select_topology did not produce a topology — check "

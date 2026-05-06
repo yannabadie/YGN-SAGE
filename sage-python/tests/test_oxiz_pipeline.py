@@ -5,6 +5,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.assign_models import assign_models
 
 
 # ── Helper mocks ─────────────────────────────────────────────────────────────
@@ -81,7 +82,7 @@ def test_verify_assignment_called_after_assign() -> None:
         original(c)
 
     pipeline._verify_assignment_formal = _spy  # type: ignore[method-assign]
-    pipeline._stage_assign_models(ctx)
+    assign_models(pipeline, ctx)
 
     assert called, "_verify_assignment_formal was not called after model assignment"
 
@@ -110,7 +111,7 @@ def test_verify_assignment_fail_non_blocking() -> None:
     pipeline._verify_assignment_formal = _always_raise  # type: ignore[method-assign]
 
     # Must not raise — verification is non-blocking
-    result_ctx = pipeline._stage_assign_models(ctx)
+    result_ctx = assign_models(pipeline, ctx)
     assert result_ctx is ctx  # context returned unchanged
 
 
@@ -137,7 +138,7 @@ def test_verify_assignment_skipped_without_oxiz() -> None:
         side_effect=ImportError("No SMT backend: install sage_core[smt] or z3-solver"),
     ):
         # Should not raise — import errors are caught gracefully
-        result_ctx = pipeline._stage_assign_models(ctx)
+        result_ctx = assign_models(pipeline, ctx)
         assert result_ctx is ctx
 
 
@@ -159,7 +160,7 @@ def test_verify_assignment_skipped_no_topology() -> None:
         called.append(True)
 
     pipeline._verify_assignment_formal = _spy  # type: ignore[method-assign]
-    pipeline._stage_assign_models(ctx)
+    assign_models(pipeline, ctx)
 
     # No topology → early return → verify not called
     assert not called, "_verify_assignment_formal should not be called when topology is None"

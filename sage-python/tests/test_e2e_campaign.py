@@ -118,6 +118,9 @@ class TestC2MultiModelAssignment:
 
     def test_c2_multi_model_assignment(self, system) -> None:
         from sage.pipeline import PipelineContext
+        from sage.pipeline_v2.assign_models import assign_models
+        from sage.pipeline_v2.classify import classify
+        from sage.pipeline_v2.select_topology import select_topology
 
         ctx = PipelineContext(
             task="Implement a binary search tree with insert and delete operations",
@@ -129,18 +132,18 @@ class TestC2MultiModelAssignment:
         if pipeline is None:
             pytest.skip("Pipeline not wired in this boot configuration")
 
-        ctx = pipeline._stage_classify(ctx)
+        ctx = classify(pipeline, ctx)
         assert ctx.system in (1, 2, 3), f"Invalid system: {ctx.system}"
         assert ctx.domain != "", "Domain should be inferred"
 
-        # Stage 1: Decompose (async)
+        # Stage 1: Decompose (async) — async batch B1.2-async will rewrite this
         ctx = _run_async(pipeline._stage_decompose(ctx))
 
         # Stage 2: Select topology
-        ctx = pipeline._stage_select_topology(ctx)
+        ctx = select_topology(pipeline, ctx)
 
         # Stage 3: Assign models
-        ctx = pipeline._stage_assign_models(ctx)
+        ctx = assign_models(pipeline, ctx)
 
         # Hard assertions — proves the stage actually did its job.
         # Skip only if the orchestration stack isn't wired (no Rust topology + no assigner).

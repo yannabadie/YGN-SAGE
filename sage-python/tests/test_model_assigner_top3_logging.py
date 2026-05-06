@@ -6,6 +6,7 @@ import math
 from sage.llm.model_assigner import ModelAssigner
 from sage.llm.model_registry import ModelRegistry
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.assign_models import assign_models
 
 
 _CATALOG_TOML = """
@@ -178,7 +179,7 @@ def test_pipeline_logs_chosen_model_when_top3_not_derivable(monkeypatch, caplog)
         topology=_Graph(),
     )
 
-    pipeline._stage_assign_models(ctx)
+    assign_models(pipeline, ctx)
 
     lines = [
         record.getMessage()

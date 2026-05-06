@@ -22,6 +22,8 @@ from sage.pipeline_stages import (
     select_macro_topology,
     DAGFeatures,
 )
+from sage.pipeline_v2.assign_models import assign_models
+from sage.pipeline_v2.classify import classify
 
 
 @pytest.fixture(autouse=True)
@@ -916,7 +918,7 @@ async def test_pipeline_no_router_defaults_to_s2():
 
     # Access internal classify to verify
     ctx = PipelineContext(task="Some task")
-    ctx = pipeline._stage_classify(ctx)
+    ctx = classify(pipeline, ctx)
     assert ctx.system == 2
 
 
@@ -1003,7 +1005,7 @@ async def test_pipeline_assigns_models_to_topology():
 
     # Test just the assign stage
     ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
 
     assert len(ctx.assignments) == 3
     assert ctx.assignments[0] == "model-0"
@@ -1317,7 +1319,7 @@ class TestCircuitBreakerFiltering:
         )
 
         ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
-        ctx = pipeline._stage_assign_models(ctx)
+        ctx = assign_models(pipeline, ctx)
 
         # Node 0 should be reassigned to the default model
         assert ctx.assignments[0] == "gemini-2.5-flash"
@@ -1346,7 +1348,7 @@ class TestCircuitBreakerFiltering:
         )
 
         ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
-        ctx = pipeline._stage_assign_models(ctx)
+        ctx = assign_models(pipeline, ctx)
 
         # Original assignments preserved (model-0, model-1 from _MockTopology)
         assert ctx.assignments[0] == "model-0"
@@ -1365,7 +1367,7 @@ class TestCircuitBreakerFiltering:
         )
 
         ctx = PipelineContext(task="test", topology=topo, domain="code", budget=5.0)
-        ctx = pipeline._stage_assign_models(ctx)
+        ctx = assign_models(pipeline, ctx)
 
         assert ctx.assignments[0] == "model-0"
 
