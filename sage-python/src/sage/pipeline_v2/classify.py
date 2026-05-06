@@ -124,7 +124,8 @@ def classify(
                 log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
                 self._cancel_bandit_decision(ctx, force=True)
                 ctx.bandit_attribution_state = "skipped"
-                self._emit_bandit_attribution_mismatch(ctx, "router_fallback_degraded")
+                from sage.pipeline_v2 import runtime_events as runtime_events_mod
+                runtime_events_mod.emit_bandit_attribution_mismatch(self, ctx, "router_fallback_degraded")
                 self._clear_bandit_decision(ctx)
 
         # Priority 2: Python kNN — Rust-accelerated embedding (accuracy claim

@@ -278,7 +278,9 @@ def _build_learn_stage_pipeline(monkeypatch: pytest.MonkeyPatch) -> Pipeline:
     pipeline.causal_memory = None
     pipeline._emit = MagicMock()
     monkeypatch.setattr("sage.pipeline_v2.memory_gate.emit_budget_exceeded", MagicMock())
-    pipeline._emit_bandit_attribution_mismatch = MagicMock()
+    monkeypatch.setattr(
+        "sage.pipeline_v2.runtime_events.emit_bandit_attribution_mismatch", MagicMock()
+    )
     pipeline._on_topology_evolve = None
     pipeline.harness_config = None
     pipeline._harness_patcher = None

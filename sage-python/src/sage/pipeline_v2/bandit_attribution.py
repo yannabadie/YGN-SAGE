@@ -163,7 +163,8 @@ def record_bandit_outcome_checked(
     ):
         ctx.bandit_attribution_state = "skipped"
         pipeline._cancel_bandit_decision(ctx)
-        pipeline._emit_bandit_attribution_mismatch(ctx, "multi_node_ambiguous")
+        from sage.pipeline_v2 import runtime_events as runtime_events_mod
+        runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "multi_node_ambiguous")
         pipeline._clear_bandit_decision(ctx)
         return
 
@@ -174,7 +175,8 @@ def record_bandit_outcome_checked(
         )
         ctx.bandit_attribution_state = "mismatch"
         pipeline._cancel_bandit_decision(ctx)
-        pipeline._emit_bandit_attribution_mismatch(ctx, "recorder_instance_mismatch")
+        from sage.pipeline_v2 import runtime_events as runtime_events_mod
+        runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "recorder_instance_mismatch")
         return
 
     try:
@@ -188,10 +190,11 @@ def record_bandit_outcome_checked(
         )
         ctx.bandit_attribution_state = "verified"
     except (ImportError, RuntimeError, ValueError) as exc:
-        reason_code = pipeline._bandit_reason_from_exception(exc)
+        from sage.pipeline_v2 import runtime_events as runtime_events_mod
+        reason_code = runtime_events_mod.bandit_reason_from_exception(exc)
         ctx.bandit_attribution_state = "mismatch"
         pipeline._cancel_bandit_decision(ctx)
-        pipeline._emit_bandit_attribution_mismatch(ctx, reason_code)
+        runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, reason_code)
 
 
 __all__ = [

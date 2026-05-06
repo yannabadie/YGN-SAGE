@@ -107,6 +107,7 @@ async def run_internal(
     from sage.contracts.cost_tracker import CostTracker
     from sage.observability.spans import sage_span
     from sage.pipeline_v2 import memory_gate as memory_gate_mod
+    from sage.pipeline_v2 import runtime_events as runtime_events_mod
     from sage.pipeline_v2.assign_models import assign_models
     from sage.pipeline_v2.classify import classify
     from sage.pipeline_v2.decompose import decompose
@@ -229,7 +230,8 @@ async def run_internal(
                 if ctx.topology and hasattr(ctx.topology, "node_count")
                 else 0
             )
-            pipeline._runtime_emit_topology_selected(
+            runtime_events_mod.runtime_emit_topology_selected(
+                pipeline,
                 ctx,
                 event_log,
                 run_frame_builder,
@@ -239,7 +241,7 @@ async def run_internal(
 
             # Stage 3: ASSIGN MODELS
             ctx = assign_models(pipeline, ctx)
-            pipeline._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
+            runtime_events_mod.runtime_emit_model_assigned(pipeline, ctx, event_log, run_frame_builder)
             pipeline._emit(
                 "ASSIGN_MODELS", {"assignments": ctx.assignments, "domain": ctx.domain}
             )
@@ -281,7 +283,7 @@ async def run_internal(
                     )
 
             oracle_on = oracle_enabled()
-            final_status = pipeline._runtime_final_status(ctx)
+            final_status = runtime_events_mod.runtime_final_status(pipeline, ctx)
 
             if oracle_on:
                 final_seq = event_log.emit_final_result(
@@ -289,7 +291,7 @@ async def run_internal(
                     output=ctx.result or "",
                     total_cost_usd=float(ctx.cost or 0.0),
                     total_latency_ms=ctx.latency_ms,
-                    node_count=pipeline._runtime_final_node_count(ctx),
+                    node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
                 )
                 run_frame_builder.record_final_result(
                     seq=final_seq,
@@ -350,7 +352,7 @@ async def run_internal(
                     output=ctx.result or "",
                     total_cost_usd=float(ctx.cost or 0.0),
                     total_latency_ms=ctx.latency_ms,
-                    node_count=pipeline._runtime_final_node_count(ctx),
+                    node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
                 )
                 run_frame_builder.record_final_result(
                     seq=final_seq,
@@ -383,7 +385,7 @@ async def run_internal(
                 output=(ctx.result if ctx is not None else "") or "",
                 total_cost_usd=float((ctx.cost if ctx is not None else 0.0) or 0.0),
                 total_latency_ms=latency_ms,
-                node_count=pipeline._runtime_final_node_count(ctx),
+                node_count=runtime_events_mod.runtime_final_node_count(pipeline, ctx),
             )
             run_frame_builder.record_final_result(seq=final_seq, status="failure")
         raise

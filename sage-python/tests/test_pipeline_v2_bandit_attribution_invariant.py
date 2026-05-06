@@ -164,7 +164,14 @@ def _build_pipeline_for_learn(
     pipeline.causal_memory = None
     pipeline._emit = MagicMock()
     monkeypatch.setattr("sage.pipeline_v2.memory_gate.emit_budget_exceeded", MagicMock())
-    pipeline._emit_bandit_attribution_mismatch = MagicMock()
+    # Phase 2.2 D1.b: monkeypatch the runtime_events module function and stash
+    # the mock on the pipeline instance so test assertions can introspect it.
+    _emit_mismatch_mock = MagicMock()
+    monkeypatch.setattr(
+        "sage.pipeline_v2.runtime_events.emit_bandit_attribution_mismatch",
+        _emit_mismatch_mock,
+    )
+    pipeline._test_emit_mismatch_mock = _emit_mismatch_mock
     pipeline._on_topology_evolve = None
     pipeline.engine = None
     pipeline.harness_config = None
@@ -405,10 +412,13 @@ async def test_path_topology_runner_multi_node_template_cancels_once(
     await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-parallel", expected="cancel")
-    pipeline._emit_bandit_attribution_mismatch.assert_called_once()
-    args = pipeline._emit_bandit_attribution_mismatch.call_args
-    assert args.args[1] == "multi_node_ambiguous", (
-        f"Expected reason_code='multi_node_ambiguous', got {args.args[1]!r}."
+    pipeline._test_emit_mismatch_mock.assert_called_once()
+    args = pipeline._test_emit_mismatch_mock.call_args
+    # Module function signature: emit_bandit_attribution_mismatch(pipeline, ctx, reason_code)
+    # so reason_code is positional arg[2], not arg[1] as it was on the
+    # legacy bound-method form (where self was implicit).
+    assert args.args[2] == "multi_node_ambiguous", (
+        f"Expected reason_code='multi_node_ambiguous', got {args.args[2]!r}."
     )
 
 

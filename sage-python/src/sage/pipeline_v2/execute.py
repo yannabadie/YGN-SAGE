@@ -25,11 +25,12 @@ from sage.pipeline import (
     EXECUTE_UNVERIFIED,
     _is_strict_governance,
 )
-# Phase 2.2 Stage D1.a (cgpro lock 2026-05-06): import the memory_gate
-# module itself, not aliases to its functions, so production calls
-# resolve `memory_gate_mod.<fn>` at call time and pick up
-# monkeypatch.setattr("sage.pipeline_v2.memory_gate.<fn>", ...) from tests.
+# Phase 2.2 Stage D1.a/b (cgpro lock 2026-05-06): import the helper
+# modules themselves, not aliases to their functions, so production
+# calls resolve `<mod>_mod.<fn>` at call time and pick up
+# monkeypatch.setattr("sage.pipeline_v2.<mod>.<fn>", ...) from tests.
 from sage.pipeline_v2 import memory_gate as memory_gate_mod
+from sage.pipeline_v2 import runtime_events as runtime_events_mod
 
 if TYPE_CHECKING:
     from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
@@ -361,13 +362,14 @@ async def execute(
                 from sage.pipeline_v2.select_topology import select_topology
                 ctx = select_topology(self, ctx)  # new topology
                 ctx = assign_models(self, ctx)    # re-assign models
-                self._runtime_emit_topology_selected(
+                runtime_events_mod.runtime_emit_topology_selected(
+                    self,
                     ctx,
                     event_log,
                     run_frame_builder,
                     reason="reroute",
                 )
-                self._runtime_emit_model_assigned(ctx, event_log, run_frame_builder)
+                runtime_events_mod.runtime_emit_model_assigned(self, ctx, event_log, run_frame_builder)
                 ctx.executed_model_ids = [
                     model_id for _, model_id in sorted(ctx.assignments.items())
                 ]
@@ -462,7 +464,8 @@ async def execute(
                                             ctx.topology.set_node_model_id(i, default_model)
                                             log.debug("FrugalGPT: reverted node %d %s -> %s (provider dead)", i, new_model, default_model)
                         # Re-execute with upgraded models
-                        self._runtime_emit_model_assigned(
+                        runtime_events_mod.runtime_emit_model_assigned(
+                            self,
                             ctx,
                             event_log,
                             run_frame_builder,
