@@ -405,21 +405,19 @@ class CognitiveOrchestrationPipeline:
                 log.debug("Memory write (Tier 1) failed: %s", exc)
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
-        """Emit a PIPELINE event on EventBus if available."""
-        if self.event_bus and hasattr(self.event_bus, "emit"):
-            try:
-                from sage.agent_loop import AgentEvent
+        """Emit a PIPELINE event on EventBus if available.
 
-                self.event_bus.emit(
-                    AgentEvent(
-                        type="PIPELINE",
-                        step=0,
-                        timestamp=time.time(),
-                        meta={"stage": stage, **data},
-                    )
-                )
-            except (ImportError, RuntimeError):
-                pass
+        Cycle-13 K Phase 2.1 Step A3 (2026-05-06): body moved to
+        `sage.pipeline_v2.runtime_events.emit`. This is now a 1-line
+        delegator. The method form is preserved so:
+          - existing call sites in pipeline_v2/execute.py:{153,162,346}
+            (`self._emit(stage, data)` where self is the pipeline)
+            continue working unchanged
+          - internal pipeline.py call sites continue byte-identical
+        LOCAL import per cgpro DESIGN trap on circular-import risk.
+        """
+        from sage.pipeline_v2.runtime_events import emit as _v2_emit
+        _v2_emit(self, stage, data)
 
     def _emit_bandit_attribution_mismatch(
         self,
