@@ -15,7 +15,7 @@ updated: 2026-04-23
 |-----------|-------|-------|
 | [[MASBENCH-2026-04\|MASBENCH]] | +27pp delta (non-pondere) | Regression parallel -6pp |
 | [[BigCodeBench-Hard\|BigCodeBench Hard]] | v1: 37.2%, **v4: 45.9%** (+8.7pp) | Repair + escalation + model selection |
-| [[Routing-GT\|Routing GT]] | **93.3%** (56/60) | kNN primary |
+| [[Routing-GT\|Routing GT]] | historic 93.3% (56/60) — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml` | kNN primary |
 | [[TopologyBench\|TopologyBench]] | 94.0% mean (9/9) | 4.3pp spread |
 | SWE-bench Lite (Docker-graded) | **10%** (1/10) v15 Apr 21 | +40% patch-gen rate. Blocker bottleneck = diff-emission quality, pas tool-set (voir 2026-04-22 parity smoke) |
 | Diff-context verifier observe-smoke Apr 23 | N=10, 2 PATCH / 8 EMPTY, 2/2 content_mismatch post-fix | `docs/benchmarks/2026-04-23-diff-verifier-observe-smoke/findings.md`. Parser false-negative corrigé par `711008a`. |

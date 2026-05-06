@@ -71,9 +71,9 @@ SAGE_DIFF_VERIFIER_MODE=observe \
 | `sage/runtime/` | Typed runtime spine: event_log, state, run_frame, oracle (default-on since cycle-7) |
 | `sage/routing/` | ShadowRouter (dual Rust/Python traces) |
 | `sage/sandbox/` | Sandbox manager (subprocess isolation) |
-| `sage/strategy/` | AdaptiveRouter: kNN (92% GT), ComplexityRouter (heuristic fallback) |
+| `sage/strategy/` | AdaptiveRouter: kNN primary (`routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`), ComplexityRouter heuristic — Priority-3 emergency fallback only, NOT dead code (AUDIT2 corrected) |
 | `sage/tools/` | ToolForge, AgentTool, typed repo tools, memory tools, ExoCortex tools |
-| `sage/topology/` | TopologyRunner (code node dispatch), LLM caller (Path 6 V1/V2), controller |
+| `sage/topology/` | TopologyRunner (code node dispatch), LLM caller (optional learned-policy path V1/V2 — legacy SAGE_ENABLE_PATH6, sibling-of-6, NOT engine path 6), controller |
 | `sage/verl/` | Training: topology_env, reward, manifest, cascaded_eval (training branch only) |
 
 ## Environment Variables

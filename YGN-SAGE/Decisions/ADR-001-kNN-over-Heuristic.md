@@ -20,22 +20,24 @@ Deux approches de routing S1/S2/S3 etaient en competition :
 
 kNN Router est le routeur principal. ComplexityRouter est dead code.
 
-## Alternatives considerees
+> **⚠ Non-autoritative / archive** — Obsidian-vault decision record (snapshot). Authoritative current capability status: `docs/CLAIMS.yaml`. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) are `evidence_pending`.
 
-| Option | Accuracy GT | Pour | Contre |
+## Alternatives considerees (historic / non-autoritative)
+
+| Option | Accuracy GT (historic) | Pour | Contre |
 |--------|------------|------|--------|
-| **kNN Router** | **93.3%** (56/60) | Simple, empiriquement superieur | Necessite embeddings (latence boot) |
-| ComplexityRouter | 45% (27/60) | Zero-cost, pas d'embeddings | Precision catastrophique |
-| SystemRouter (Rust) | 88% | Natif Rust, rapide | 5pp inferieur au kNN |
+| **kNN Router** | historic 93.3% (56/60) — non-autoritative; `routing.knn_92pct` `evidence_pending` | Simple, empiriquement superieur | Necessite embeddings (latence boot) |
+| ComplexityRouter | historic 45% (27/60) — non-autoritative; `evidence_pending` | Zero-cost, pas d'embeddings | Priority-3 emergency fallback only, NOT dead code (AUDIT2 2026-04-24 corrected) |
+| SystemRouter (Rust) | historic 88% — non-autoritative; `routing.system_router_88pct` `evidence_pending` | Natif Rust, rapide | 5pp inferieur au kNN historic |
 
 ## Consequences
 
-- Positives : +48pp de precision par rapport a l'heuristic
+- Positives : +48pp de precision par rapport a l'heuristic (historic, non-autoritative; voir `docs/CLAIMS.yaml`)
 - Negatives : Dependance aux embeddings arctic-embed-m au boot
 - Risques residuels : 60 exemplaires seulement — fragile si distribution des taches change
 
-## Evidence
+## Evidence (historic / non-autoritative)
 
-- Benchmark routing_gt : 56/60 = 93.3% (avril 7 2026)
+- Benchmark routing_gt : historic 56/60 = 93.3% (avril 7 2026) — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`
 - Paper : [[kNN-Routing|arXiv 2505.12601]]
-- ComplexityRouter garde dans le code mais jamais appele en prod
+- ComplexityRouter is Priority-3 emergency fallback only (NOT dead code; AUDIT2 corrected); kept in the code as the live fallback path

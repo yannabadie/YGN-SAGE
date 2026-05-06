@@ -57,7 +57,7 @@ All-5-pillars benchmark. Generates patches via the full agent pipeline + pre-emi
 
 ### `routing_gt.py` — Routing Ground Truth
 
-60-task stratified set (20 S1/20 S2/20 S3, human-labeled 2026-03-11). Measures kNN router accuracy (92% GT) vs Rust SystemRouter (88%) vs heuristic fallback (34%). No API keys needed. Runs in seconds.
+60-task stratified set (20 S1/20 S2/20 S3, human-labeled 2026-03-11). Measures kNN router accuracy vs Rust SystemRouter vs heuristic fallback — historic figures (kNN ~92%, SystemRouter ~88%, heuristic ~34%) are non-autoritative; current authoritative status: `routing.knn_92pct` / `routing.system_router_88pct` `evidence_pending` in `docs/CLAIMS.yaml`. No API keys needed. Runs in seconds.
 
 ### `runner.py` — BenchmarkRunner
 

@@ -30,26 +30,27 @@ Approche simple mais tres efficace pour classifier la complexite cognitive.
 
 ## Ce qui est utilise dans SAGE
 
+> **⚠ Non-autoritative / archive** — Obsidian-vault snapshot, historic reference only. See `docs/CLAIMS.yaml` for the authoritative status. Routing accuracy claims are `evidence_pending`.
+
 | Claim | Feature SAGE | Fichier | Statut |
 |-------|-------------|---------|--------|
-| kNN routing | Routeur principal | sage-core/src/routing/ | integre |
+| kNN routing | Routeur principal | sage-core/src/routing/ | integre (`routing.knn_92pct` `evidence_pending`) |
 | arctic-embed-m | Embeddings 768-dim | kNN implementation | integre |
-| 93.3% GT | 56/60 sur ground truth | benchmark routing_gt | verifie |
+| Historic 93.3% GT (56/60) — `evidence_pending` | non-autoritative | benchmark routing_gt | see `docs/CLAIMS.yaml` |
 
 ## Ce qui n'a PAS ete retenu
 
 - Rien — implementation fidele au paper
 
-## Metriques
+## Metriques (historic / non-autoritative)
 
-| Benchmark | Score paper | Score SAGE | Delta |
+| Benchmark | Score paper | Score SAGE (historic, `evidence_pending`) | Delta |
 |-----------|-----------|-----------|-------|
-| GT accuracy | reference | 93.3% (56/60) | — |
-| vs ComplexityRouter | — | 45% (27/60) | +48pp |
-| vs SystemRouter | — | 88% | +5pp |
+| GT accuracy | reference | historic 93.3% (56/60) — non-autoritative | — |
+| vs ComplexityRouter | — | historic 45% (27/60) — non-autoritative | +48pp |
+| vs SystemRouter | — | historic 88% — non-autoritative | +5pp |
 
 ## Notes personnelles
 
-60 exemplaires etiquetes suffisent pour 93.3%. C'est la decision architecturale
-la plus impactante du projet — simple, efficace, et validee empiriquement.
-Le ComplexityRouter heuristic a 34% est officiellement dead code.
+60 exemplaires etiquetes suffisent pour la performance historique 93.3% (non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`). C'est la decision architecturale la plus impactante du projet — simple, efficace, et validee empiriquement.
+Le ComplexityRouter heuristic est Priority-3 emergency fallback only, NOT dead code (AUDIT2 2026-04-24 corrected); historic ~34% non-autoritative, see `docs/CLAIMS.yaml`.

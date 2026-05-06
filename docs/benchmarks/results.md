@@ -1,5 +1,7 @@
 # Benchmark Results
 
+> **⚠ Non-autoritative / archive snapshot (March 2026)** — historic figures only. Current authoritative status: `docs/CLAIMS.yaml`. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) are `evidence_pending`.
+
 All results as of March 13, 2026. Tests run using the YGN-SAGE framework with budget-tier Gemini 2.5 Flash unless otherwise noted.
 
 ---
@@ -124,13 +126,15 @@ Framework adds **+15 percentage points** over the bare LLM baseline. On the 20-t
 
 50 human-labeled tasks (10 S1 + 20 S2 + 20 S3). Labels assigned by domain expertise, NOT reverse-engineered from the heuristic.
 
-| Router | Accuracy | S1 | S2 | S3 |
+(Historic / non-autoritative table — `evidence_pending` in `docs/CLAIMS.yaml`. Do not cite as current capability.)
+
+| Router | Accuracy (historic) | S1 | S2 | S3 |
 |--------|----------|----|----|-----|
-| **kNN (arctic-embed-m)** | **92%** (46/50) | 70% | 95% | 100% |
-| Rust SystemRouter | 88% (44/50) | 80% | 95% | 85% |
-| Heuristic (ComplexityRouter) | 52% (26/50) | 80% | 50% | 40% |
-| DeBERTa zero-shot (NVIDIA) | 52% (26/50) | -- | -- | S3=0% |
-| Python AdaptiveRouter | 44% (22/50) | -- | -- | S3=0% |
+| **kNN (arctic-embed-m)** | historic **92%** (46/50) — non-autoritative; `routing.knn_92pct` `evidence_pending` | 70% | 95% | 100% |
+| Rust SystemRouter | historic 88% (44/50) — non-autoritative; `routing.system_router_88pct` `evidence_pending` | 80% | 95% | 85% |
+| Heuristic (ComplexityRouter) | historic 52% (26/50) — non-autoritative; Priority-3 emergency fallback only, NOT dead code (AUDIT2 corrected) | 80% | 50% | 40% |
+| DeBERTa zero-shot (NVIDIA) | historic 52% (26/50) — non-autoritative | -- | -- | S3=0% |
+| Python AdaptiveRouter | historic 44% (22/50) — non-autoritative | -- | -- | S3=0% |
 
 The kNN router (arXiv 2505.12601) using snowflake-arctic-embed-m embeddings is the best-performing router, with particular strength on S3 formal verification tasks (100% vs 40% for the keyword heuristic). Leave-one-out cross-validation: 80%.
 

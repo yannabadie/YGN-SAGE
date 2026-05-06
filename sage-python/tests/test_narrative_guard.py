@@ -60,6 +60,22 @@ _GUARDED_DOCS: tuple[str, ...] = (
     "YGN-SAGE/Architecture/Pillar-5-Strategy.md",
     "YGN-SAGE/Architecture/Pipeline.md",
     "YGN-SAGE/Architecture/00-Architecture-MOC.md",
+    # Phase 0.6e (cgpro post-Phase-0.6d EDIT_REQUIRED): long-tail Papers /
+    # Benchmarks / Decisions docs and one code-side docstring still cited
+    # routing percentages as authoritative without registry anchors.
+    "YGN-SAGE/Papers/kNN-Routing.md",
+    "YGN-SAGE/Benchmarks/Routing-GT.md",
+    "YGN-SAGE/Decisions/ADR-001-kNN-over-Heuristic.md",
+    "YGN-SAGE/Decisions/00-Decisions-MOC.md",
+    "YGN-SAGE/Papers/00-Papers-MOC.md",
+    "YGN-SAGE/Benchmarks/00-Benchmarks-MOC.md",
+    "docs/papers/paper1_knn_routing.md",
+    "docs/papers/paper2_sage_system.md",
+    "docs/benchmarks/results.md",
+    "sage-python/src/sage/pipeline_v2/classify.py",
+    # Phase 0.6e closeout: 2 additional READMEs caught by repo-wide grep.
+    "sage-python/README.md",
+    "sage-python/src/sage/bench/README.md",
 )
 
 # Each pattern below is a (label, regex, allow_substrings) tuple.
@@ -142,6 +158,40 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "bare-complexityrouter-paren-34",
         r"\bComplexityRouter\b[^\n]*?\(\s*34%",
+        ("evidence_pending", "CLAIMS.yaml", "historic", "non-autoritative", "historically", "Priority-3", "emergency fallback"),
+    ),
+    # Phase 0.6e additions (cgpro round-6): the paren-attribution patterns
+    # of Phase 0.6d caught `kNN (92%)` but missed table-row / paper-prose
+    # forms like `kNN (arctic-embed-m) | **92%** (46/50)` and `kNN routing
+    # achieves 92% accuracy`. The broader "kNN within 160 chars of any
+    # XX%" pattern closes the long-tail surface while keeping the same-
+    # line caveat allowance.
+    (
+        "bare-knn-near-92",
+        r"\bkNN\b[^\n]{0,160}\b92%",
+        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+    ),
+    (
+        "bare-knn-near-93p3",
+        r"\bkNN\b[^\n]{0,160}\b93\.3%",
+        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+    ),
+    (
+        "bare-systemrouter-near-88",
+        r"\bSystemRouter\b[^\n]{0,160}\b88%",
+        ("evidence_pending", "CLAIMS.yaml", "routing.system_router_88pct", "historic", "non-autoritative", "historically"),
+    ),
+    (
+        "bare-routing-sample-sizes",
+        # Two routing-GT sample-size signatures: 56/60 (60-task GT) and
+        # 46/50 (legacy 50-task subset). Banning the bare form forces
+        # any future citation to come with a registry anchor.
+        r"\b56/60\b|\b46/50\b",
+        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+    ),
+    (
+        "bare-complexityrouter-near-45",
+        r"\bComplexityRouter\b[^\n]{0,160}\b45%",
         ("evidence_pending", "CLAIMS.yaml", "historic", "non-autoritative", "historically", "Priority-3", "emergency fallback"),
     ),
 )

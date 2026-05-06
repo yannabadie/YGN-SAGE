@@ -13,11 +13,13 @@ Stage 0 contract preserved:
     `ctx.bandit_attribution_state`, plus the
     `_last_routing_decision` / `_last_runtime_routing_*` accessors
     that downstream stages + telemetry read).
-  - Priority 2: Python kNN fallback (93.3% accuracy, Rust-accelerated
-    embedding).
-  - Priority 3: AdaptiveRouter heuristic (legacy — DEAD CODE per
-    CLAUDE.md directive #4 but still wired as the emergency
-    fallback).
+  - Priority 2: Python kNN fallback (Rust-accelerated embedding).
+    Accuracy claim `routing.knn_92pct` is `evidence_pending` in
+    `docs/CLAIMS.yaml` — figure historically cited as ~92%/93.3% GT.
+  - Priority 3: AdaptiveRouter heuristic — Priority-3 emergency
+    fallback only, NOT dead code (AUDIT2 2026-04-24 corrected the
+    prior framing). Historical accuracy figures `evidence_pending`
+    in `docs/CLAIMS.yaml`.
   - Same `sage.observability.spans.sage_span` instrumentation under
     `op="sage.classify"`.
   - Same exception strategy: bare `except Exception` for Rust router
@@ -120,7 +122,9 @@ def classify(
                 self._emit_bandit_attribution_mismatch(ctx, "router_fallback_degraded")
                 self._clear_bandit_decision(ctx)
 
-        # Priority 2: Python kNN (93.3% accuracy, Rust-accelerated embedding)
+        # Priority 2: Python kNN — Rust-accelerated embedding (accuracy claim
+        # `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`;
+        # figure historically cited as ~92%/93.3% GT).
         if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
             try:
                 knn_result = self.router._knn.route(ctx.task)

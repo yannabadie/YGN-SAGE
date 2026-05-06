@@ -26,7 +26,7 @@ updated: 2026-04-07
 
 | Paper | arXiv | Venue | Feature SAGE | Status |
 |-------|-------|-------|-------------|--------|
-| [[kNN-Routing]] | 2505.12601 | 2025 | kNN router 93.3% GT | integre |
+| [[kNN-Routing]] | 2505.12601 | 2025 | kNN router (historic 93.3% GT — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`) | integre |
 | [[CascadeRouting]] | 2410.10347 | ICML 2025 | 4-stage cascade | integre |
 | [[PILOT]] | 2508.21141 | EMNLP 2025 | Bandit Thompson sampling | integre |
 | [[Routing-Survey]] | 2603.04445 | 2026 | 6 paradigmes routing | reference |
