@@ -60,7 +60,6 @@ _BANDIT_ATTRIBUTION_REASON_CODES: tuple[BanditAttributionReasonCode, ...] = (
     "decision_unknown",
     "recorder_instance_mismatch",
 )
-_MULTI_NODE_ATTRIBUTION_TEMPLATES = {"parallel", "parallel_fanout", "debate"}
 
 def _new_runtime_run_id() -> str:
     """Return a canonical 26-char uppercase ULID, with a local fallback."""
