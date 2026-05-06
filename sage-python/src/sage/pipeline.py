@@ -16,7 +16,7 @@ from typing import Any, Awaitable, Callable, Literal, Mapping
 
 from sage.contracts.cost_tracker import CostTracker
 from sage.events import (
-    EXECUTE_BUDGET_EXCEEDED,
+    EXECUTE_BUDGET_EXCEEDED,  # noqa: F401 - re-exported for tests/test_pipeline_budget.py + pipeline_v2.memory_gate uses sage.events directly
     EXECUTE_HALTED_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
     EXECUTE_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
 )
@@ -265,39 +265,17 @@ class CognitiveOrchestrationPipeline:
         )
         self.write_gate = self._build_write_gate()
 
+    # ── Memory gate + budget emit (Phase 2.1 Step B1, 2026-05-06) ──────────
+    # Bodies live in `sage.pipeline_v2.memory_gate`. Methods preserved as
+    # delegators for mockability (~10 test files). LOCAL imports.
+
     def _emit_budget_exceeded(self, ctx: PipelineContext) -> None:
-        cost_tracker = getattr(ctx, "cost_tracker", None)
-        data: dict[str, Any] = {"reason": "task budget exceeded"}
-        if cost_tracker is not None and hasattr(cost_tracker, "stats"):
-            try:
-                data.update(cost_tracker.stats())
-            except Exception:  # noqa: BLE001 - telemetry must not mask abort
-                pass
-        self._emit(EXECUTE_BUDGET_EXCEEDED, data)
+        from sage.pipeline_v2.memory_gate import emit_budget_exceeded
+        emit_budget_exceeded(self, ctx)
 
     def _build_write_gate(self) -> Any:
-        """Construct a fresh CompositeWriteGate (Rust if available, Python fallback).
-
-        Governance (A0b, 2026-04-23, ALIRE2 §6): in normal mode a failure
-        here logs-and-returns-None (memory writes continue ungated — the
-        pre-A0b default that keeps dev smoke runs resilient to a broken
-        Rust build). Under ``SAGE_STRICT_GOVERNANCE=1`` the failure is
-        re-raised so the caller aborts the pipeline — the posture we
-        want in production / audit runs where "continuing ungated"
-        silently falsifies the governance claim.
-        """
-        from sage.memory.write_gate import create_composite_write_gate
-        try:
-            return create_composite_write_gate(**self._gate_config)
-        except Exception as exc:
-            if _is_strict_governance():
-                log.error(
-                    "CompositeWriteGate init failed under SAGE_STRICT_GOVERNANCE=1; "
-                    "aborting pipeline: %s", exc,
-                )
-                raise
-            log.debug("CompositeWriteGate init failed, memory writes ungated: %s", exc)
-            return None
+        from sage.pipeline_v2.memory_gate import build_write_gate
+        return build_write_gate(self)
 
     def _record_to_memory(
         self,
@@ -305,103 +283,8 @@ class CognitiveOrchestrationPipeline:
         *,
         is_training_evidence: bool | None = None,
     ) -> None:
-        """Write execution trace to Tier 0 (working memory) and Tier 1 (episodic).
-
-        This closes the gap where the pipeline bypassed memory entirely.
-        The consolidator (Stage 5) then migrates episodic→semantic→causal.
-        """
-        # Tier 0: Working memory S-MMU events
-        if self.working_memory:
-            try:
-                self.working_memory.add_event("TASK", ctx.task[:500])
-                self.working_memory.add_event(
-                    "TOPOLOGY",
-                    f"system=S{ctx.system}, nodes={ctx.topology.node_count() if ctx.topology and hasattr(ctx.topology, 'node_count') else 0}, "
-                    f"assignments={ctx.assignments}",
-                )
-                self.working_memory.add_event(
-                    "RESULT",
-                    ctx.result[:500] if ctx.result else "empty",
-                )
-                self.working_memory.add_event(
-                    "METRICS",
-                    f"latency={ctx.latency_ms:.0f}ms, cost={ctx.cost:.4f}, path={getattr(self, '_last_path', 'pipeline')}",
-                )
-                # Compact to Arrow chunk for S-MMU graph storage
-                # In-run observability: log the STM → Arrow tier transition so
-                # smoke runs can track S-MMU paging frequency per task. The 4
-                # events added above (TASK/TOPOLOGY/RESULT/METRICS) guarantee
-                # the threshold is met on every pipeline.run().
-                events_before = self.working_memory.event_count()
-                if events_before >= 4:
-                    self.working_memory.compact_to_arrow()
-                    log.info(
-                        "memory.smmu.tier_transition from=stm to=arrow "
-                        "events=%d task_id=%s",
-                        events_before, self._task_count,
-                    )
-            except (RuntimeError, IOError) as exc:
-                log.debug("Memory write (Tier 0) failed: %s", exc)
-
-        # Tier 1: Episodic memory (persistent SQLite)
-        if self.episodic_memory:
-            try:
-                entry = {
-                    "task": ctx.task[:200],
-                    "system": ctx.system,
-                    "topology_nodes": ctx.topology.node_count() if ctx.topology and hasattr(ctx.topology, 'node_count') else 0,
-                    "assignments": str(ctx.assignments),
-                    "result_len": len(ctx.result) if ctx.result else 0,
-                    "latency_ms": ctx.latency_ms,
-                    "cost": ctx.cost,
-                }
-                metadata: dict[str, Any] = {}
-                if is_training_evidence is not None:
-                    entry["is_training_evidence"] = is_training_evidence
-                    metadata["is_training_evidence"] = is_training_evidence
-                    if ctx.oracle_verdict is not None:
-                        metadata["oracle_verdict"] = ctx.oracle_verdict.to_dict()
-                import json
-                content = json.dumps(entry, default=str)
-                # Use sync add if available, else async
-                if hasattr(self.episodic_memory, 'add'):
-                    try:
-                        if metadata:
-                            self.episodic_memory.add(
-                                key=f"pipeline-{self._task_count}",
-                                content=content,
-                                metadata=metadata,
-                            )
-                        else:
-                            self.episodic_memory.add(
-                                key=f"pipeline-{self._task_count}",
-                                content=content,
-                            )
-                    except TypeError:
-                        self.episodic_memory.add(
-                            key=f"pipeline-{self._task_count}",
-                            content=content,
-                        )
-                elif hasattr(self.episodic_memory, 'add_episode'):
-                    try:
-                        if metadata:
-                            self.episodic_memory.add_episode(
-                                key=f"pipeline-{self._task_count}",
-                                content=content,
-                                metadata=metadata,
-                            )
-                        else:
-                            self.episodic_memory.add_episode(
-                                key=f"pipeline-{self._task_count}",
-                                content=content,
-                            )
-                    except TypeError:
-                        self.episodic_memory.add_episode(
-                            key=f"pipeline-{self._task_count}",
-                            content=content,
-                        )
-            except (RuntimeError, IOError) as exc:
-                log.debug("Memory write (Tier 1) failed: %s", exc)
+        from sage.pipeline_v2.memory_gate import record_to_memory
+        record_to_memory(self, ctx, is_training_evidence=is_training_evidence)
 
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
         """Emit a PIPELINE event on EventBus if available.
