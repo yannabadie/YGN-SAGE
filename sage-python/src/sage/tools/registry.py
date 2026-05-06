@@ -11,7 +11,7 @@ class ToolRegistry:
         self._tools: dict[str, Tool] = {}
         self._usage: dict[str, dict] = {}  # name -> {usage_count, success_count, source}
 
-    def register(self, tool: Tool) -> None:
+    def register(self, tool: Tool, *, replace: bool = False) -> None:
         """Register a tool.
 
         Phase 1.5 cycle-13 K (cgpro DESIGN_LOCKED 2026-05-06):
@@ -24,7 +24,18 @@ class ToolRegistry:
         capability is normalised back onto `tool.capability` so
         downstream consumers (Tool.execute, audit CLI) can rely on
         a non-None, enum-valued attribute.
+
+        Phase 1.5b (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): adds a
+        duplicate-name guard. Registering a tool whose name is already
+        taken raises `ToolPolicyDeclarationError` unless the caller
+        passes `replace=True`. Closes the silent-overwrite vector
+        where an external impostor could replace a trusted built-in
+        (e.g. `read_file`) with its own handler AFTER the trusted
+        version had been registered. Tests / forge paths that want
+        to swap a tool by name pass `replace=True` to make the intent
+        visible at the call site.
         """
+        from sage.policy.errors import ToolPolicyDeclarationError
         from sage.policy.manifest import resolve_tool_capability
 
         # `resolve_tool_capability` raises ToolPolicyDeclarationError on
@@ -34,6 +45,16 @@ class ToolRegistry:
         # code paths see the same authoritative value (manifest hits
         # would otherwise leave `tool.capability=None` in place).
         tool.capability = resolved
+
+        if not replace and tool.spec.name in self._tools:
+            raise ToolPolicyDeclarationError(
+                f"Tool {tool.spec.name!r} is already registered. Refusing "
+                f"silent overwrite: pass `replace=True` to swap an existing "
+                f"registration explicitly. Phase 1.5b anti-spoof guard: "
+                f"this prevents an external impostor from quietly replacing "
+                f"a trusted built-in after boot."
+            )
+
         self._tools[tool.spec.name] = tool
 
     def get(self, name: str) -> Tool | None:

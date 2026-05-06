@@ -25,13 +25,11 @@ import sys
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from sage.policy.errors import ToolPolicyDeclarationError
 from sage.policy.manifest import (
     _BUILTIN_TOOL_CAPABILITIES,
     _CLASS_CAPABILITY_DEFAULTS,
 )
 from sage.policy.tool_policy import (
-    ToolCapability,
     ToolPolicy,
     get_effective_tool_policy,
 )
@@ -86,13 +84,17 @@ def build_report(policy: ToolPolicy | None = None) -> _AuditReport:
     by_capability: dict[str, int] = {}
     unresolved: list[str] = []
 
-    # Built-in name → capability map.
-    for name, cap in sorted(_BUILTIN_TOOL_CAPABILITIES.items()):
+    # Built-in name × handler-module → capability map.
+    # Phase 1.5b (cgpro 2026-05-06 EDIT_REQUIRED): the manifest now
+    # keys by `(name, expected_handler_module_prefix)`, so the CLI
+    # report includes both the LLM-facing name and the trusted module
+    # prefix that the runtime gate requires the handler to live under.
+    for (name, expected_module), cap in sorted(_BUILTIN_TOOL_CAPABILITIES.items()):
         entries.append(
             _ToolAuditEntry(
                 name=name,
                 capability=cap.value,
-                source="manifest",
+                source=f"manifest({expected_module})",
                 allowed=policy.allows(cap),
             )
         )

@@ -27,67 +27,84 @@ from sage.policy.tool_policy import ToolCapability
 
 
 # ---------------------------------------------------------------------------
-# Built-in manifest — by spec.name (the LLM-facing tool name).
+# Built-in manifest — keyed by (spec.name, expected handler module prefix).
 # ---------------------------------------------------------------------------
 #
 # Phase 1.5 ship-time inventory. New tools added to the codebase MUST
-# either pass `capability=...` at construction or be added here. cgpro
-# DESIGN trap: AgentTool defaults to `dangerous` because it delegates
-# to arbitrary `agent.run(...)` — its concrete instances inherit the
-# class default unless they pass an explicit override.
+# either pass `capability=...` at construction or be added here.
+#
+# Phase 1.5b (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the manifest is
+# keyed BOTH by `spec.name` AND by the trusted `handler.__module__`
+# prefix the handler MUST originate from. Without the module check, an
+# external tool could spoof a built-in name (e.g. construct a
+# `Tool(name="read_file", handler=untrusted_callable)`) and inherit
+# the built-in's READ_LOCAL capability. The module check anchors the
+# manifest hit to the trusted tool factory's module surface — an
+# external impostor whose handler lives in `__main__` or some
+# unrelated module fails resolution and is rejected at registration.
+#
+# Map shape: `(spec.name, expected_handler_module_prefix) -> ToolCapability`.
+# A handler at `<expected_prefix>` OR `<expected_prefix>.<sub>` matches.
+# A handler from an unrelated module does NOT match — even if the
+# `spec.name` is identical.
 
-_BUILTIN_TOOL_CAPABILITIES: dict[str, ToolCapability] = {
-    # File-system reads (typed_repo.py + memory_tools.py).
-    "read_file": ToolCapability.READ_LOCAL,
-    "list_files": ToolCapability.READ_LOCAL,
-    "search_files": ToolCapability.READ_LOCAL,
-    "search_repo": ToolCapability.READ_LOCAL,
-    "git_diff": ToolCapability.READ_LOCAL,
+_BUILTIN_TOOL_CAPABILITIES: dict[tuple[str, str], ToolCapability] = {
+    # File-system reads (typed_repo.py).
+    ("read_file", "sage.tools.typed_repo"): ToolCapability.READ_LOCAL,
+    ("list_files", "sage.tools.typed_repo"): ToolCapability.READ_LOCAL,
+    ("search_repo", "sage.tools.typed_repo"): ToolCapability.READ_LOCAL,
+    ("git_diff", "sage.tools.typed_repo"): ToolCapability.READ_LOCAL,
     # File-system writes (typed_repo.py).
-    "write_file": ToolCapability.WRITE_LOCAL,
-    "edit_file": ToolCapability.WRITE_LOCAL,
-    "create_file": ToolCapability.WRITE_LOCAL,
-    "delete_file": ToolCapability.WRITE_LOCAL,
-    "apply_patch": ToolCapability.WRITE_LOCAL,
+    ("apply_patch", "sage.tools.typed_repo"): ToolCapability.WRITE_LOCAL,
     # Subprocess (typed_repo.py: pytest invocation under sandbox).
-    "run_tests": ToolCapability.SUBPROCESS,
+    ("run_tests", "sage.tools.typed_repo"): ToolCapability.SUBPROCESS,
     # Network / remote (exocortex_tools.py + context7_tools.py).
-    "search_exocortex": ToolCapability.NETWORK,
-    "refresh_knowledge": ToolCapability.NETWORK,
-    "lookup_library_docs": ToolCapability.NETWORK,
-    "context7_query": ToolCapability.NETWORK,
-    "web_search": ToolCapability.NETWORK,
-    "web_fetch": ToolCapability.NETWORK,
+    ("search_exocortex", "sage.tools.exocortex_tools"): ToolCapability.NETWORK,
+    ("refresh_knowledge", "sage.tools.exocortex_tools"): ToolCapability.NETWORK,
+    ("lookup_library_docs", "sage.tools.context7_tools"): ToolCapability.NETWORK,
+    ("context7_query", "sage.tools.context7_tools"): ToolCapability.NETWORK,
     # Memory tools (memory_tools.py) — read/write within local SQLite
     # tier. Treated as read_local for retrieval, write_local for store/
     # update/delete.
-    "search_memory": ToolCapability.READ_LOCAL,
-    "retrieve_context": ToolCapability.READ_LOCAL,
-    "summarize_context": ToolCapability.READ_LOCAL,
-    "filter_context": ToolCapability.READ_LOCAL,
-    "search_causal_chain": ToolCapability.READ_LOCAL,
-    "store_memory": ToolCapability.WRITE_LOCAL,
-    "update_memory": ToolCapability.WRITE_LOCAL,
-    "delete_memory": ToolCapability.WRITE_LOCAL,
-    # Subprocess / sandboxed exec.
-    "execute_python": ToolCapability.SUBPROCESS,
-    "execute_code": ToolCapability.SUBPROCESS,
+    ("search_memory", "sage.tools.memory_tools"): ToolCapability.READ_LOCAL,
+    ("retrieve_context", "sage.tools.memory_tools"): ToolCapability.READ_LOCAL,
+    ("summarize_context", "sage.tools.memory_tools"): ToolCapability.READ_LOCAL,
+    ("filter_context", "sage.tools.memory_tools"): ToolCapability.READ_LOCAL,
+    ("search_causal_chain", "sage.tools.memory_tools"): ToolCapability.READ_LOCAL,
+    ("store_memory", "sage.tools.memory_tools"): ToolCapability.WRITE_LOCAL,
+    ("update_memory", "sage.tools.memory_tools"): ToolCapability.WRITE_LOCAL,
+    ("delete_memory", "sage.tools.memory_tools"): ToolCapability.WRITE_LOCAL,
     # Agent management (agent_mgmt.py): creating / calling sub-agents
     # delegates to arbitrary `agent.run(...)` — class-default-dangerous
     # for AgentTool concretes; the create/call wrappers themselves are
     # also dangerous because they enable that delegation.
-    "create_agent": ToolCapability.DANGEROUS,
-    "call_agent": ToolCapability.DANGEROUS,
-    "list_active_agents": ToolCapability.READ_LOCAL,
+    ("create_agent", "sage.tools.agent_mgmt"): ToolCapability.DANGEROUS,
+    ("call_agent", "sage.tools.agent_mgmt"): ToolCapability.DANGEROUS,
+    ("list_active_agents", "sage.tools.agent_mgmt"): ToolCapability.READ_LOCAL,
     # ToolForge / dynamic tool synthesis.
-    "create_python_tool": ToolCapability.DANGEROUS,
-    "create_bash_tool": ToolCapability.DANGEROUS,
-    # Dangerous: raw shell, agent recursion, raw exec.
-    "bash": ToolCapability.DANGEROUS,
-    "execute_bash": ToolCapability.DANGEROUS,
-    "execute_raw": ToolCapability.DANGEROUS,
-    "sage_recurse": ToolCapability.DANGEROUS,
+    ("create_python_tool", "sage.tools.forge"): ToolCapability.DANGEROUS,
+    ("create_bash_tool", "sage.tools.forge"): ToolCapability.DANGEROUS,
+    # Dangerous: raw shell, agent recursion.
+    ("bash", "sage.tools.builtin"): ToolCapability.DANGEROUS,
+    ("execute_bash", "sage.tools.builtin"): ToolCapability.DANGEROUS,
+    ("sage_recurse", "sage.tools.sage_recurse"): ToolCapability.DANGEROUS,
 }
+
+
+def _module_matches(handler_module: str, expected_prefix: str) -> bool:
+    """Trusted-module match: exact, or `expected_prefix` + dot-submodule.
+
+    Examples:
+        _module_matches("sage.tools.typed_repo", "sage.tools.typed_repo")  # True
+        _module_matches("sage.tools.typed_repo.helpers", "sage.tools.typed_repo")  # True
+        _module_matches("__main__", "sage.tools.typed_repo")  # False  (spoof)
+        _module_matches("sage.tools.typed_repo_evil", "sage.tools.typed_repo")  # False
+    """
+    if not handler_module:
+        return False
+    if handler_module == expected_prefix:
+        return True
+    return handler_module.startswith(expected_prefix + ".")
 
 
 # ---------------------------------------------------------------------------
@@ -133,8 +150,23 @@ def resolve_tool_capability(tool: Any) -> ToolCapability:
                 ) from exc
 
     spec_name = _safe_spec_name(tool)
-    if spec_name and spec_name in _BUILTIN_TOOL_CAPABILITIES:
-        return _BUILTIN_TOOL_CAPABILITIES[spec_name]
+    if spec_name:
+        # Phase 1.5b anti-spoof: the manifest hit requires BOTH the
+        # spec.name AND the handler's `__module__` to match a trusted
+        # entry. A tool whose spec.name happens to match `read_file`
+        # but whose handler lives in `__main__` (or any other module)
+        # is NOT a manifest hit — it falls through to class default
+        # then raises ToolPolicyDeclarationError if unresolved.
+        handler = getattr(tool, "_handler", None)
+        handler_module = getattr(handler, "__module__", "") if handler else ""
+        for (entry_name, expected_prefix), capability in _BUILTIN_TOOL_CAPABILITIES.items():
+            if entry_name != spec_name:
+                continue
+            if _module_matches(handler_module, expected_prefix):
+                return capability
+            # Name match but module mismatch — possible spoof attempt.
+            # Don't return early; let the class-default / raise paths
+            # handle it. A future iteration could log a warning here.
 
     class_name = type(tool).__name__
     if class_name in _CLASS_CAPABILITY_DEFAULTS:
@@ -145,7 +177,9 @@ def resolve_tool_capability(tool: Any) -> ToolCapability:
         f"Pass `capability=` at construction (e.g. `Tool(spec=..., capability="
         f"\"pure\")`), add a built-in manifest entry, or set a class default. "
         f"There is intentionally no default-tag-dangerous fallback (per cgpro "
-        f"DESIGN: that creates an illusion of security)."
+        f"DESIGN: that creates an illusion of security). NB: the manifest "
+        f"now requires BOTH spec.name AND the handler's __module__ to match "
+        f"a trusted entry (Phase 1.5b anti-spoof, cgpro 2026-05-06)."
     )
 
 
