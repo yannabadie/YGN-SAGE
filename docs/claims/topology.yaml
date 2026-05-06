@@ -2,33 +2,47 @@
 
 claims:
   - id: topology.engine_6_paths
-    status: delivered
+    status: evidence_pending
     description: "TopologyEngine generates topologies via 6 paths: S-MMU hit, archive, LLM synthesis, mutation, MCTS, template (11 templates)."
     evidence_test: "evidence_pending"
     evidence_benchmark: "evidence_pending"
     evidence_commit: "evidence_pending"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
+    notes: |
+      Capability lives in `sage-core/src/topology/engine.rs`. Phase 0.4
+      could not identify a single end-to-end Python or Rust test that
+      exercises ALL 6 paths in one assertion (individual paths have
+      coverage in scattered Rust unit tests). Follow-up: ship
+      `tests/test_topology_engine_six_paths.py` with one assertion per
+      path verifying the path emits a non-empty graph in deterministic
+      conditions.
 
   - id: topology.path6_learned
     status: opt-in
     description: "Path 6 = learned topology policy (Phi-4-mini SFT or Nemotron-Orchestrator-8B GiGPO). Inference-only on `main`. Default-off; opt-in via SAGE_ENABLE_PATH6=1."
-    evidence_test: "evidence_pending"
-    evidence_benchmark: "evidence_pending"
-    evidence_commit: "evidence_pending"
+    evidence_test: "n/a"
+    evidence_benchmark: "n/a"
+    evidence_commit: "n/a"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Per cgpro 2026-05-06 ALIRE.md review: keeping in main requires (1) explicit
-      feature flag, (2) default-off, (3) claim opt-in/experimental in registry
-      (this entry), (4) non-regression test asserting path6_usage_count == 0 in
-      default config. (4) is owned by Phase 0.5 (cycle-13 K).
+      Per cgpro 2026-05-06 ALIRE.md review: keeping in main requires
+      (1) explicit feature flag, (2) default-off, (3) claim
+      opt-in/experimental in registry (this entry), (4) non-regression
+      test asserting `path6_usage_count == 0` in default config. (4)
+      is owned by Phase 0.5 (cycle-13 K).
 
   - id: topology.adaptive_runtime_controller
-    status: delivered
+    status: evidence_pending
     description: "Rust-primary RustTopologyController (ADR-012, 2026-04-20) drives 5 adaptation decision paths + state machine; Python wraps for embedder/SmtVerifier/topology-graph access."
     evidence_test: "evidence_pending"
     evidence_benchmark: "evidence_pending"
     evidence_commit: "evidence_pending"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
+    notes: |
+      ADR-012 documents the contract; per-path coverage exists in
+      `sage-core/tests/topology_controller.rs` but Phase 0.4 did not
+      pin one specific test as the canonical anchor. Follow-up: pin
+      `tests/test_topology_controller_5_paths.py` end-to-end harness.

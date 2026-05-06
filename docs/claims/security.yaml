@@ -4,9 +4,9 @@ claims:
   - id: security.prompt_injection_detection
     status: opt-in
     description: "PromptInjectionDetector module exists at sage-python/src/sage/security/prompt_injection.py. Wired at AgentLoop.run() task-ingest boundary. NOT wired in pipeline.py."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/security/test_prompt_injection.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
@@ -14,33 +14,38 @@ claims:
       prompt_injection / PROMPT_INJECTION matches. AgentLoop.run() calls
       `_pi_detect(task)` at task ingest. Pipeline path therefore has no
       prompt-injection check unless the task happens to flow through an
-      AgentLoop. Status `opt-in` is the truthful tag — propagating the wiring
-      to pipeline.py + TopologyRunner + bench harness is Phase 2.2 of
-      cycle-13 K queue.
+      AgentLoop. Status `opt-in` is the truthful tag — propagating the
+      wiring to pipeline.py + TopologyRunner + bench harness is Phase
+      2.2 of cycle-13 K queue. Companion test
+      `tests/security/test_prompt_injection_wiring.py` covers the
+      integration path.
 
   - id: security.sandbox_default_wasi
     status: default-on
     description: "Tool execution sandboxed by default via embedded RustPython wasm32-wasip1 deny-by-default WASI-p1 (ADR-013 §5 flip 2026-04-22). validate_and_execute does NOT fall back to subprocess."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_wasm_sandbox_ci_contract.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
       `execute_raw` (which bypasses both AST validation AND the sandbox)
-      remains gated by SAGE_UNSAFE_RAW_EXEC=1. SAGE_UNSAFE_UNSANDBOXED gate
-      removed in §5 flip. CI sandbox build job exists since A23
-      (build-wasm-sandbox + Trap E matrix Windows cranelift Py 3.12+3.13).
+      remains gated by SAGE_UNSAFE_RAW_EXEC=1. SAGE_UNSAFE_UNSANDBOXED
+      gate removed in §5 flip. Companion tests
+      `test_wasm_sandbox_redteam.py` (40-attack matrix) and
+      `test_sandbox_fail_closed.py`.
 
   - id: security.dangerous_tools_default_off
     status: default-on
     description: "AgentConfig.dangerous_tools defaults to False. execute_bash NOT registered at boot. Opt-in via SAGE_DANGEROUS_TOOLS=1."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_boot_sandbox_warning.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
       Per CLAUDE.md (2026-04-23 flip). SWE-bench N=10 paired smoke showed
-      typed-only produces 4/10 patches vs bash 3/10 — functional criterion met
-      before the flip.
+      typed-only produces 4/10 patches vs bash 3/10 — functional criterion
+      met before the flip. Companion test
+      `test_boot_sandbox_warning.py` verifies the boot path emits the
+      warning when SAGE_DANGEROUS_TOOLS=1 is set.

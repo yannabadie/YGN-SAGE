@@ -238,26 +238,52 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
         )
 
     # Evidence contract (only enforced for delivered / default-on).
+    #
+    # Phase 0.4 (cgpro 2026-05-06): the contract is a LOOSE-OR. A delivered
+    # claim must have AT LEAST ONE of {evidence_test, evidence_benchmark}
+    # pointing at a real file, AND evidence_commit must be a well-formed SHA.
+    # This accommodates benchmark claims (the .json/.md artefact IS the
+    # evidence, no separate test exists) without forcing them to flip to
+    # `evidence_pending`. If neither evidence_test nor evidence_benchmark is
+    # populated, a single `evidence_anchor` error is raised — clearer than
+    # two separate "missing X" errors.
     if status in _EVIDENCE_REQUIRED_STATUSES:
         ev_test = claim.get("evidence_test", "")
+        ev_bench = claim.get("evidence_benchmark", "")
         ev_commit = claim.get("evidence_commit", "")
 
-        if _is_placeholder(ev_test):
+        test_pinned = (not _is_placeholder(ev_test)) and ev_test != "n/a"
+        bench_pinned = (not _is_placeholder(ev_bench)) and ev_bench != "n/a"
+
+        if not (test_pinned or bench_pinned):
             out.append(
                 Violation(
                     cid,
                     "error",
-                    "evidence_test",
-                    f"status={status} requires a non-placeholder evidence_test (got `{ev_test!r}`)",
+                    "evidence_anchor",
+                    f"status={status} requires at least one of evidence_test "
+                    f"or evidence_benchmark to be a real file path (both "
+                    f"placeholders: ev_test={ev_test!r}, ev_bench={ev_bench!r})",
                 )
             )
-        elif not _evidence_test_resolves(repo_root, ev_test):
+
+        if test_pinned and not _evidence_test_resolves(repo_root, ev_test):
             out.append(
                 Violation(
                     cid,
                     "error",
                     "evidence_test",
                     f"evidence_test path `{ev_test}` does not exist on disk",
+                )
+            )
+
+        if bench_pinned and not _evidence_benchmark_resolves(repo_root, ev_bench):
+            out.append(
+                Violation(
+                    cid,
+                    "error",
+                    "evidence_benchmark",
+                    f"evidence_benchmark path `{ev_bench}` does not exist on disk",
                 )
             )
 
@@ -279,19 +305,6 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
                     f"evidence_commit `{ev_commit}` is not a 7-40 char hex SHA",
                 )
             )
-
-        # evidence_benchmark is a SHOULD, never an error.
-        ev_bench = claim.get("evidence_benchmark", "")
-        if not _is_placeholder(ev_bench) and ev_bench != "n/a":
-            if not _evidence_benchmark_resolves(repo_root, ev_bench):
-                out.append(
-                    Violation(
-                        cid,
-                        "warning",
-                        "evidence_benchmark",
-                        f"evidence_benchmark `{ev_bench}` does not exist on disk",
-                    )
-                )
 
     # Stale verification timestamp (warning only).
     last_verified = claim.get("last_verified_utc", "")

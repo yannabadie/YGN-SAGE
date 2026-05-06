@@ -140,10 +140,33 @@ def test_audit_claim_flags_invalid_status(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_delivered_with_placeholder_evidence_test_is_error(tmp_path: Path) -> None:
+def test_delivered_with_both_anchors_placeholder_is_error(tmp_path: Path) -> None:
+    """Phase 0.4 loose-OR contract: a delivered claim with placeholder
+    evidence_test AND placeholder evidence_benchmark fails with a single
+    `evidence_anchor` error (not two separate field errors)."""
     repo = _make_repo_root(tmp_path)
-    violations = claims_audit.audit_claim(repo, _full_claim(evidence_test="evidence_pending"))
-    assert any(v.field_name == "evidence_test" and v.severity == "error" for v in violations)
+    violations = claims_audit.audit_claim(
+        repo,
+        _full_claim(evidence_test="evidence_pending", evidence_benchmark="n/a"),
+    )
+    anchor_errors = [v for v in violations if v.field_name == "evidence_anchor"]
+    assert len(anchor_errors) == 1
+    assert anchor_errors[0].severity == "error"
+
+
+def test_delivered_with_only_benchmark_anchor_passes(tmp_path: Path) -> None:
+    """Phase 0.4 loose-OR: pinning evidence_benchmark alone is sufficient.
+    Required for benchmark claims where the JSON/MD artefact IS the evidence."""
+    repo = _make_repo_root(tmp_path)
+    _seed_evidence_benchmark(repo, "docs/benchmarks/anchor.json")
+    violations = claims_audit.audit_claim(
+        repo,
+        _full_claim(
+            evidence_test="evidence_pending",
+            evidence_benchmark="docs/benchmarks/anchor.json",
+        ),
+    )
+    assert all(v.severity != "error" for v in violations)
 
 
 def test_planned_with_placeholder_evidence_test_is_ok(tmp_path: Path) -> None:
@@ -172,16 +195,23 @@ def test_delivered_with_malformed_commit_sha_is_error(tmp_path: Path) -> None:
     assert any(v.field_name == "evidence_commit" and v.severity == "error" for v in violations)
 
 
-def test_evidence_benchmark_missing_file_is_warning_not_error(tmp_path: Path) -> None:
+def test_evidence_benchmark_missing_file_is_error_when_pinned(tmp_path: Path) -> None:
+    """Phase 0.4: if a claim explicitly pins evidence_benchmark to a path,
+    that path must exist (otherwise the registry is lying about the anchor).
+    Pre-Phase-0.4 this was a warning; loose-OR contract upgraded it to error
+    because evidence_benchmark is now a load-bearing anchor for benchmark
+    claims, not a SHOULD."""
     repo = _make_repo_root(tmp_path)
     _seed_evidence_test(repo, "sage-python/tests/test_example.py")
     violations = claims_audit.audit_claim(
         repo,
         _full_claim(evidence_benchmark="docs/benchmarks/missing.json"),
     )
-    bench_violations = [v for v in violations if v.field_name == "evidence_benchmark"]
-    assert bench_violations
-    assert all(v.severity == "warning" for v in bench_violations)
+    bench_errors = [
+        v for v in violations
+        if v.field_name == "evidence_benchmark" and v.severity == "error"
+    ]
+    assert bench_errors
 
 
 def test_stale_last_verified_is_warning(tmp_path: Path) -> None:

@@ -3,41 +3,50 @@
 claims:
   - id: benchmarks.bcb_hard_45_9
     status: delivered
-    description: "BigCodeBench Hard Instruct: SAGE 45.9% pass rate (full pipeline, fast tier), 2026-04-26 internal eval."
-    evidence_test: "evidence_pending"
-    evidence_benchmark: "evidence_pending"
-    evidence_commit: "evidence_pending"
+    description: "BigCodeBench Hard Instruct: SAGE 45.9% pass rate (full pipeline). Internal eval 2026-04-08 / re-confirmed 2026-04-26. NOT a leaderboard submission."
+    evidence_test: "n/a"
+    evidence_benchmark: "docs/benchmarks/2026-04-08-bigcodebench-hard-instruct.json"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Cited in README headline. Phase 0.4 of cycle-13 K either pins a
-      `docs/benchmarks/<date>-bcb-hard-result.json` artefact with the
-      full per_task vector + provider mix + commit OR flips status to
-      `evidence_pending` and removes the headline number from README.
+      Phase 0.4 anchored the claim to the JSON artefact. The artefact
+      is the contract: a follow-up cycle that re-runs BCB Hard Instruct
+      MUST update `evidence_benchmark` to the new file and bump
+      `evidence_commit`. Note that the README and AI-ARCHITECTURE.md
+      already disclaim "NOT a leaderboard submission" + "internal
+      tuned run, not a calibrated Pass@1 following the leaderboard
+      protocol". AUDIT2 2026-04-24 flagged "above SOTA" framing as
+      unsupported; that framing was retracted.
 
   - id: benchmarks.masbench_breadth_22pp
     status: delivered
     description: "sage-mas-bench breadth axis: +22pp gain over single-agent baseline (p=0.015, N=50). Other axes p>0.05, not significant."
-    evidence_test: "evidence_pending"
+    evidence_test: "n/a"
     evidence_benchmark: "docs/audits/2026-04-22-audit-verification-master.md"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Earlier "+27pp" / "+30pp" headlines retracted (commit 796af27 + the
-      audit doc above). The +22pp/breadth claim is the only one that survived.
-      Phase 0.4 verifies the audit doc actually contains the per-task numbers
-      and the test command that reproduces it.
+      Earlier "+27pp" / "+30pp" headlines retracted (commit 796af27 +
+      the audit doc above). The +22pp/breadth claim is the only one
+      that survived the audit. The audit doc itself contains the
+      per-task numbers; a future test that re-runs MASBENCH and
+      asserts the +22pp differential under fixed seeds would let us
+      flip evidence_test from "n/a" to a real test path.
 
   - id: benchmarks.swebench_lite_10pct
     status: delivered
-    description: "SWE-bench Lite Docker-graded: 10% (1/10 resolved) on 2026-04-21 after 3-fix chain (Directive #3 gating, CRLF, UTF-8)."
-    evidence_test: "evidence_pending"
+    description: "SWE-bench Lite Docker-graded: 10% (1/10 resolved) on 2026-04-21 after 3-fix chain (Directive #3 gating, CRLF, UTF-8). First real Docker-graded pass-rate (older 70% number is generation rate, not pass rate)."
+    evidence_test: "n/a"
     evidence_benchmark: "docs/benchmarks/2026-04-21-swebench-v15-eval-results.md"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "5619b3cf"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      First real Docker-graded pass-rate (older 70% number is generation rate,
-      not pass rate). Patch-generation rate stays at 70% average. Phase 0.4
-      verifies the bench doc points at a reproducible JSONL.
+      Patch-generation rate stays at 70% average. Phase 0.4 anchored
+      the result to the markdown report. SWE-bench Lite is being
+      retired in favor of SWE-bench Pro (cycle-13 prelude scaffolded
+      the 4-arm ablation harness); a future cycle drops this claim
+      and replaces it with `bench.swebench_pro_4arms` once N>=50
+      results are in.

@@ -6,25 +6,33 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-06T10:19:40+00:00'
+_generated_at_utc: '2026-05-06T10:38:44+00:00'
 _total_claims: 19
 claims:
 - id: benchmarks.bcb_hard_45_9
   status: delivered
-  description: 'BigCodeBench Hard Instruct: SAGE 45.9% pass rate (full pipeline, fast tier), 2026-04-26
-    internal eval.'
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
-  evidence_commit: evidence_pending
+  description: 'BigCodeBench Hard Instruct: SAGE 45.9% pass rate (full pipeline). Internal eval 2026-04-08
+    / re-confirmed 2026-04-26. NOT a leaderboard submission.'
+  evidence_test: n/a
+  evidence_benchmark: docs/benchmarks/2026-04-08-bigcodebench-hard-instruct.json
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Cited in README headline. Phase 0.4 of cycle-13 K either pins a
+  notes: 'Phase 0.4 anchored the claim to the JSON artefact. The artefact
 
-    `docs/benchmarks/<date>-bcb-hard-result.json` artefact with the
+    is the contract: a follow-up cycle that re-runs BCB Hard Instruct
 
-    full per_task vector + provider mix + commit OR flips status to
+    MUST update `evidence_benchmark` to the new file and bump
 
-    `evidence_pending` and removes the headline number from README.
+    `evidence_commit`. Note that the README and AI-ARCHITECTURE.md
+
+    already disclaim "NOT a leaderboard submission" + "internal
+
+    tuned run, not a calibrated Pass@1 following the leaderboard
+
+    protocol". AUDIT2 2026-04-24 flagged "above SOTA" framing as
+
+    unsupported; that framing was retracted.
 
     '
   _source_file: docs/claims/benchmarks.yaml
@@ -32,35 +40,46 @@ claims:
   status: delivered
   description: 'sage-mas-bench breadth axis: +22pp gain over single-agent baseline (p=0.015, N=50). Other
     axes p>0.05, not significant.'
-  evidence_test: evidence_pending
+  evidence_test: n/a
   evidence_benchmark: docs/audits/2026-04-22-audit-verification-master.md
-  evidence_commit: evidence_pending
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Earlier "+27pp" / "+30pp" headlines retracted (commit 796af27 + the
+  notes: 'Earlier "+27pp" / "+30pp" headlines retracted (commit 796af27 +
 
-    audit doc above). The +22pp/breadth claim is the only one that survived.
+    the audit doc above). The +22pp/breadth claim is the only one
 
-    Phase 0.4 verifies the audit doc actually contains the per-task numbers
+    that survived the audit. The audit doc itself contains the
 
-    and the test command that reproduces it.
+    per-task numbers; a future test that re-runs MASBENCH and
+
+    asserts the +22pp differential under fixed seeds would let us
+
+    flip evidence_test from "n/a" to a real test path.
 
     '
   _source_file: docs/claims/benchmarks.yaml
 - id: benchmarks.swebench_lite_10pct
   status: delivered
   description: 'SWE-bench Lite Docker-graded: 10% (1/10 resolved) on 2026-04-21 after 3-fix chain (Directive
-    #3 gating, CRLF, UTF-8).'
-  evidence_test: evidence_pending
+    #3 gating, CRLF, UTF-8). First real Docker-graded pass-rate (older 70% number is generation rate,
+    not pass rate).'
+  evidence_test: n/a
   evidence_benchmark: docs/benchmarks/2026-04-21-swebench-v15-eval-results.md
-  evidence_commit: evidence_pending
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'First real Docker-graded pass-rate (older 70% number is generation rate,
+  notes: 'Patch-generation rate stays at 70% average. Phase 0.4 anchored
 
-    not pass rate). Patch-generation rate stays at 70% average. Phase 0.4
+    the result to the markdown report. SWE-bench Lite is being
 
-    verifies the bench doc points at a reproducible JSONL.
+    retired in favor of SWE-bench Pro (cycle-13 prelude scaffolded
+
+    the 4-arm ablation harness); a future cycle drops this claim
+
+    and replaces it with `bench.swebench_pro_4arms` once N>=50
+
+    results are in.
 
     '
   _source_file: docs/claims/benchmarks.yaml
@@ -120,25 +139,25 @@ claims:
   status: retired
   description: Heuristic ComplexityRouter (~34% GT) — fallback only, never primary. Wired at pipeline.py
     Priority-3 after Rust SystemRouter + kNN.
-  evidence_test: evidence_pending
+  evidence_test: n/a
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: n/a
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Per CLAUDE.md directive #4: never test/benchmark/optimize. Status `retired`
+  notes: 'Per CLAUDE.md directive #4: never test/benchmark/optimize. Status
 
-    is the right tag here — capability remains as emergency fallback, but no
+    `retired` reflects the runtime stance (capability remains as
 
-    claim of value is made. AUDIT2 2026-04-24 flagged "DEAD CODE" framing as
+    emergency fallback, but no claim of value is made). AUDIT2
 
-    contradicted by the live fallback path; this claim records the corrected
+    2026-04-24 flagged "DEAD CODE" framing as contradicted by the
 
-    framing.
+    live fallback path; this entry records the corrected framing.
 
     '
   _source_file: docs/claims/routing.yaml
 - id: routing.knn_92pct
-  status: delivered
+  status: evidence_pending
   description: kNN router on arctic-embed-m embeddings achieves ~92% GT accuracy on the in-house routing
     benchmark.
   evidence_test: evidence_pending
@@ -146,26 +165,39 @@ claims:
   evidence_commit: evidence_pending
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Cited across README, AI-ARCHITECTURE.md, and CLAUDE.md. Phase 0.4 of
+  notes: 'Cited across README, AI-ARCHITECTURE.md, and CLAUDE.md. Phase 0.4
 
-    cycle-13 K is responsible for pinning evidence_test (a unit/integration
+    could not pin a bench artefact OR a unit test that asserts the
 
-    test that runs `--type routing_gt` and asserts >= some threshold) +
+    92% figure specifically. The 60-task internal GT set lives at
 
-    evidence_benchmark (a `docs/benchmarks/<date>-routing-gt.json` artefact)
+    `sage-python/config/routing_ground_truth.json`; a follow-up cycle
 
-    OR flipping the status to `evidence_pending` if neither can be located.
+    should ship a `tests/test_routing_gt_invariant.py` that runs the
+
+    kNN router over the GT set in CI and asserts >= a threshold (with
+
+    seed pinned for reproducibility). Until that ships, the claim
+
+    stays `evidence_pending` and README must not headline the 92%
+
+    figure unanchored.
 
     '
   _source_file: docs/claims/routing.yaml
 - id: routing.system_router_88pct
-  status: delivered
+  status: evidence_pending
   description: Rust SystemRouter achieves ~88% GT accuracy via domain scoring from cards.toml.
   evidence_test: evidence_pending
   evidence_benchmark: evidence_pending
   evidence_commit: evidence_pending
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
+  notes: 'Same status as `routing.knn_92pct`: the figure is documented but
+
+    not pinned to a CI-runnable artefact. Same follow-up applies.
+
+    '
   _source_file: docs/claims/routing.yaml
 - id: runtime.a14_epoch_guard
   status: delivered
@@ -190,20 +222,22 @@ claims:
   status: delivered
   description: Bandit posterior updates attributed to the FINALIZED model_id + executed template via route_integrated()
     + record_outcome_checked() (cycle-9 6f23eea4).
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_pipeline_v2_bandit_attribution_invariant.py
   evidence_benchmark: n/a
   evidence_commit: 6f23eea4
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Closes the 2026-04-26 cgpro find: pre-cycle-9 pipeline called legacy
+  notes: 'Closes the 2026-04-26 cgpro find: pre-cycle-9 pipeline called
 
-    `_rust_router.route()` (bandit not consulted), then
+    legacy `_rust_router.route()` (bandit not consulted), then
 
-    `bandit.select_with_context()` separately, dropping decision.model_id /
+    `bandit.select_with_context()` separately, dropping
 
-    decision.template, recording outcome against an orphan ID. Bandit
+    decision.model_id / decision.template, recording outcome against
 
-    posteriors updated for arms whose model never executed.
+    an orphan ID. Bandit posteriors updated for arms whose model
+
+    never executed.
 
     '
   _source_file: docs/claims/runtime.yaml
@@ -211,16 +245,18 @@ claims:
   status: delivered
   description: 'sage run --jsonl: 14 RuntimeEventLog events tee''d + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete)
     + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md.'
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_runtime_event_contracts.py
   evidence_benchmark: n/a
   evidence_commit: f647c5ae
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat, set_budget
+  notes: 'Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat,
 
-    mid-run, cancel cancellation token, cli_complete.payload.final_seq.
+    set_budget mid-run, cancel cancellation token,
 
-    Phase 1.2 of cycle-13 K queue closes these and bumps protocol_version.
+    cli_complete.payload.final_seq. Phase 1.2 of cycle-13 K queue
+
+    closes these and bumps protocol_version.
 
     '
   _source_file: docs/claims/runtime.yaml
@@ -228,20 +264,22 @@ claims:
   status: delivered
   description: '9 runtime-integrity invariants binding declared labels to verified content. Source-of-truth:
     docs/contracts/runtime-integrity-ledger.md.'
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_runtime_event_contracts.py
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: f647c5ae
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
   notes: 'Count was 8 through cycle-11; cycle-12 commit f647c5ae backported
 
-    invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md still
+    invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md
 
-    said "8" at db304bc6 (cgpro 2026-05-06 trap #2). Phase 0.3 of cycle-13 K
+    drift was closed in Phase 0.3 of cycle-13 K (8 -> 9).
 
-    makes the ledger the single source-of-truth + adds a CI gate that fails
+    `scripts/sync_doc_counters.py:load_invariant_count()` parses the
 
-    if any other doc cites a non-matching count.
+    `## The N invariants` heading from the ledger AND counts table
+
+    rows underneath, raising on heading/table mismatch.
 
     '
   _source_file: docs/claims/runtime.yaml
@@ -249,7 +287,7 @@ claims:
   status: default-on
   description: OracleStack is default-on since cycle-7 (commit 128e1b89). Bandit / MAP-Elites / online-evolution
     / training-memory updates require verdict.trainable=True.
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_oracle_stack.py
   evidence_benchmark: n/a
   evidence_commit: 128e1b89
   last_verified_utc: '2026-05-06T00:00:00Z'
@@ -258,7 +296,9 @@ claims:
 
     (case-insensitive). Predicate centralised in
 
-    sage/runtime/oracle/env.py:oracle_enabled().
+    sage/runtime/oracle/env.py:oracle_enabled(). Companion test
+
+    `test_oracle_env_predicate.py` covers the kill-switch matrix.
 
     '
   _source_file: docs/claims/runtime.yaml
@@ -266,16 +306,20 @@ claims:
   status: default-on
   description: AgentConfig.dangerous_tools defaults to False. execute_bash NOT registered at boot. Opt-in
     via SAGE_DANGEROUS_TOOLS=1.
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_boot_sandbox_warning.py
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
   notes: 'Per CLAUDE.md (2026-04-23 flip). SWE-bench N=10 paired smoke showed
 
-    typed-only produces 4/10 patches vs bash 3/10 — functional criterion met
+    typed-only produces 4/10 patches vs bash 3/10 — functional criterion
 
-    before the flip.
+    met before the flip. Companion test
+
+    `test_boot_sandbox_warning.py` verifies the boot path emits the
+
+    warning when SAGE_DANGEROUS_TOOLS=1 is set.
 
     '
   _source_file: docs/claims/security.yaml
@@ -283,9 +327,9 @@ claims:
   status: opt-in
   description: PromptInjectionDetector module exists at sage-python/src/sage/security/prompt_injection.py.
     Wired at AgentLoop.run() task-ingest boundary. NOT wired in pipeline.py.
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/security/test_prompt_injection.py
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
   notes: 'cgpro 2026-05-06 GitHub-verified: pipeline.py contains zero
@@ -296,11 +340,15 @@ claims:
 
     prompt-injection check unless the task happens to flow through an
 
-    AgentLoop. Status `opt-in` is the truthful tag — propagating the wiring
+    AgentLoop. Status `opt-in` is the truthful tag — propagating the
 
-    to pipeline.py + TopologyRunner + bench harness is Phase 2.2 of
+    wiring to pipeline.py + TopologyRunner + bench harness is Phase
 
-    cycle-13 K queue.
+    2.2 of cycle-13 K queue. Companion test
+
+    `tests/security/test_prompt_injection_wiring.py` covers the
+
+    integration path.
 
     '
   _source_file: docs/claims/security.yaml
@@ -308,23 +356,25 @@ claims:
   status: default-on
   description: Tool execution sandboxed by default via embedded RustPython wasm32-wasip1 deny-by-default
     WASI-p1 (ADR-013 §5 flip 2026-04-22). validate_and_execute does NOT fall back to subprocess.
-  evidence_test: evidence_pending
+  evidence_test: sage-python/tests/test_wasm_sandbox_ci_contract.py
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: 5619b3cf
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
   notes: '`execute_raw` (which bypasses both AST validation AND the sandbox)
 
-    remains gated by SAGE_UNSAFE_RAW_EXEC=1. SAGE_UNSAFE_UNSANDBOXED gate
+    remains gated by SAGE_UNSAFE_RAW_EXEC=1. SAGE_UNSAFE_UNSANDBOXED
 
-    removed in §5 flip. CI sandbox build job exists since A23
+    gate removed in §5 flip. Companion tests
 
-    (build-wasm-sandbox + Trap E matrix Windows cranelift Py 3.12+3.13).
+    `test_wasm_sandbox_redteam.py` (40-attack matrix) and
+
+    `test_sandbox_fail_closed.py`.
 
     '
   _source_file: docs/claims/security.yaml
 - id: topology.adaptive_runtime_controller
-  status: delivered
+  status: evidence_pending
   description: Rust-primary RustTopologyController (ADR-012, 2026-04-20) drives 5 adaptation decision
     paths + state machine; Python wraps for embedder/SmtVerifier/topology-graph access.
   evidence_test: evidence_pending
@@ -332,9 +382,18 @@ claims:
   evidence_commit: evidence_pending
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
+  notes: 'ADR-012 documents the contract; per-path coverage exists in
+
+    `sage-core/tests/topology_controller.rs` but Phase 0.4 did not
+
+    pin one specific test as the canonical anchor. Follow-up: pin
+
+    `tests/test_topology_controller_5_paths.py` end-to-end harness.
+
+    '
   _source_file: docs/claims/topology.yaml
 - id: topology.engine_6_paths
-  status: delivered
+  status: evidence_pending
   description: 'TopologyEngine generates topologies via 6 paths: S-MMU hit, archive, LLM synthesis, mutation,
     MCTS, template (11 templates).'
   evidence_test: evidence_pending
@@ -342,23 +401,40 @@ claims:
   evidence_commit: evidence_pending
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
+  notes: 'Capability lives in `sage-core/src/topology/engine.rs`. Phase 0.4
+
+    could not identify a single end-to-end Python or Rust test that
+
+    exercises ALL 6 paths in one assertion (individual paths have
+
+    coverage in scattered Rust unit tests). Follow-up: ship
+
+    `tests/test_topology_engine_six_paths.py` with one assertion per
+
+    path verifying the path emits a non-empty graph in deterministic
+
+    conditions.
+
+    '
   _source_file: docs/claims/topology.yaml
 - id: topology.path6_learned
   status: opt-in
   description: Path 6 = learned topology policy (Phi-4-mini SFT or Nemotron-Orchestrator-8B GiGPO). Inference-only
     on `main`. Default-off; opt-in via SAGE_ENABLE_PATH6=1.
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
-  evidence_commit: evidence_pending
+  evidence_test: n/a
+  evidence_benchmark: n/a
+  evidence_commit: n/a
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Per cgpro 2026-05-06 ALIRE.md review: keeping in main requires (1) explicit
+  notes: 'Per cgpro 2026-05-06 ALIRE.md review: keeping in main requires
 
-    feature flag, (2) default-off, (3) claim opt-in/experimental in registry
+    (1) explicit feature flag, (2) default-off, (3) claim
 
-    (this entry), (4) non-regression test asserting path6_usage_count == 0 in
+    opt-in/experimental in registry (this entry), (4) non-regression
 
-    default config. (4) is owned by Phase 0.5 (cycle-13 K).
+    test asserting `path6_usage_count == 0` in default config. (4)
+
+    is owned by Phase 0.5 (cycle-13 K).
 
     '
   _source_file: docs/claims/topology.yaml

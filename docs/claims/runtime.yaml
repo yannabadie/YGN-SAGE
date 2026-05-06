@@ -4,22 +4,23 @@ claims:
   - id: runtime.invariants_ledger
     status: delivered
     description: "9 runtime-integrity invariants binding declared labels to verified content. Source-of-truth: docs/contracts/runtime-integrity-ledger.md."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_runtime_event_contracts.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "f647c5ae"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
       Count was 8 through cycle-11; cycle-12 commit f647c5ae backported
-      invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md still
-      said "8" at db304bc6 (cgpro 2026-05-06 trap #2). Phase 0.3 of cycle-13 K
-      makes the ledger the single source-of-truth + adds a CI gate that fails
-      if any other doc cites a non-matching count.
+      invariant 9 (CLI protocol versioning). README + AI-ARCHITECTURE.md
+      drift was closed in Phase 0.3 of cycle-13 K (8 -> 9).
+      `scripts/sync_doc_counters.py:load_invariant_count()` parses the
+      `## The N invariants` heading from the ledger AND counts table
+      rows underneath, raising on heading/table mismatch.
 
   - id: runtime.oracle_default_on
     status: default-on
     description: "OracleStack is default-on since cycle-7 (commit 128e1b89). Bandit / MAP-Elites / online-evolution / training-memory updates require verdict.trainable=True."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_oracle_stack.py"
     evidence_benchmark: "n/a"
     evidence_commit: "128e1b89"
     last_verified_utc: "2026-05-06T00:00:00Z"
@@ -27,7 +28,8 @@ claims:
     notes: |
       Kill-switch via SAGE_ORACLE=0|false|off|no|disable|disabled
       (case-insensitive). Predicate centralised in
-      sage/runtime/oracle/env.py:oracle_enabled().
+      sage/runtime/oracle/env.py:oracle_enabled(). Companion test
+      `test_oracle_env_predicate.py` covers the kill-switch matrix.
 
   - id: runtime.a14_epoch_guard
     status: delivered
@@ -46,27 +48,29 @@ claims:
   - id: runtime.bandit_attribution
     status: delivered
     description: "Bandit posterior updates attributed to the FINALIZED model_id + executed template via route_integrated() + record_outcome_checked() (cycle-9 6f23eea4)."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_pipeline_v2_bandit_attribution_invariant.py"
     evidence_benchmark: "n/a"
     evidence_commit: "6f23eea4"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Closes the 2026-04-26 cgpro find: pre-cycle-9 pipeline called legacy
-      `_rust_router.route()` (bandit not consulted), then
-      `bandit.select_with_context()` separately, dropping decision.model_id /
-      decision.template, recording outcome against an orphan ID. Bandit
-      posteriors updated for arms whose model never executed.
+      Closes the 2026-04-26 cgpro find: pre-cycle-9 pipeline called
+      legacy `_rust_router.route()` (bandit not consulted), then
+      `bandit.select_with_context()` separately, dropping
+      decision.model_id / decision.template, recording outcome against
+      an orphan ID. Bandit posteriors updated for arms whose model
+      never executed.
 
   - id: runtime.cli_protocol_v0
     status: delivered
     description: "sage run --jsonl: 14 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
-    evidence_test: "evidence_pending"
+    evidence_test: "sage-python/tests/test_runtime_event_contracts.py"
     evidence_benchmark: "n/a"
     evidence_commit: "f647c5ae"
     last_verified_utc: "2026-05-06T00:00:00Z"
     owner: "yann"
     notes: |
-      Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat, set_budget
-      mid-run, cancel cancellation token, cli_complete.payload.final_seq.
-      Phase 1.2 of cycle-13 K queue closes these and bumps protocol_version.
+      Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat,
+      set_budget mid-run, cancel cancellation token,
+      cli_complete.payload.final_seq. Phase 1.2 of cycle-13 K queue
+      closes these and bumps protocol_version.
