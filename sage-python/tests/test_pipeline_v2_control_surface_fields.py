@@ -84,6 +84,7 @@ from sage.pipeline import (
 from sage.pipeline_stages import DAGFeatures
 from sage.pipeline_v2.classify import classify
 from sage.pipeline_v2.decompose import decompose
+from sage.pipeline_v2.execute import execute
 from sage.pipeline_v2.select_topology import select_topology
 
 
@@ -438,7 +439,7 @@ async def test_stage_execute_multi_agent_populates_executed_template(
     )
 
     # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
-    ctx = await pipeline._stage_execute(ctx)
+    ctx = await execute(pipeline, ctx)
 
     assert ctx.executed_template, (
         "_stage_execute multi-agent branch did not populate "
@@ -498,7 +499,7 @@ async def test_stage_execute_single_agent_bypass_marks_executed_template_single_
     ctx.verification_passed = True
 
     # Cycle-11 cgpro VERIFY follow-up: returned-ctx pattern.
-    ctx = await pipeline._stage_execute(ctx)
+    ctx = await execute(pipeline, ctx)
 
     assert ctx.executed_template == "single_agent", (
         f"Single-agent bypass did not set ctx.executed_template to "

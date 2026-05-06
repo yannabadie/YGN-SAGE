@@ -60,6 +60,7 @@ from sage.pipeline import (
     CognitiveOrchestrationPipeline as Pipeline,
     PipelineContext,
 )
+from sage.pipeline_v2.execute import execute
 
 
 class _MultiNodeTopology:
@@ -237,7 +238,7 @@ async def test_fix_c_budget_tier_passes_none_controller(
     capture = _RunnerCapture()
     capture.install(monkeypatch)
 
-    await pipeline._stage_execute(ctx)
+    await execute(pipeline, ctx)
 
     assert capture.captured_kwargs is not None, (
         "TopologyRunner was never constructed — _stage_execute did not "
@@ -271,7 +272,7 @@ async def test_non_budget_tier_preserves_controller(
     capture = _RunnerCapture()
     capture.install(monkeypatch)
 
-    await pipeline._stage_execute(ctx)
+    await execute(pipeline, ctx)
 
     assert capture.captured_kwargs is not None
     assert capture.captured_kwargs["controller"] is sentinel_controller, (
@@ -302,7 +303,7 @@ async def test_unset_tier_preserves_controller(
     capture = _RunnerCapture()
     capture.install(monkeypatch)
 
-    await pipeline._stage_execute(ctx)
+    await execute(pipeline, ctx)
 
     assert capture.captured_kwargs is not None
     assert capture.captured_kwargs["controller"] is sentinel_controller, (
@@ -328,7 +329,7 @@ async def test_budget_tier_with_no_controller_is_safe(
     capture = _RunnerCapture()
     capture.install(monkeypatch)
 
-    await pipeline._stage_execute(ctx)
+    await execute(pipeline, ctx)
 
     assert capture.captured_kwargs is not None
     assert capture.captured_kwargs["controller"] is None

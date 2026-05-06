@@ -62,6 +62,7 @@ from sage.pipeline import (
     CognitiveOrchestrationPipeline as Pipeline,
     PipelineContext,
 )
+from sage.pipeline_v2.execute import execute
 from sage.runtime.oracle.verdict import OracleVerdict
 
 
@@ -687,7 +688,7 @@ async def test_path_frugalgpt_cascade_settles_decision_id_once(
     capture.issue("d-cascade")
     ctx = _make_multi_agent_ctx("d-cascade")
 
-    ctx = await pipeline._stage_execute(ctx)
+    ctx = await execute(pipeline, ctx)
     await pipeline._stage_learn(ctx)
 
     # Cascade fired: 2 runner instances (initial + cascade retry).
@@ -766,7 +767,7 @@ async def test_path_multi_agent_error_fallback_settles_decision_id_once(
     capture.issue("d-fallback")
     ctx = _make_multi_agent_ctx("d-fallback")
 
-    ctx = await pipeline._stage_execute(ctx)
+    ctx = await execute(pipeline, ctx)
     await pipeline._stage_learn(ctx)
 
     # Multi-agent runner attempted exactly once before raising.
