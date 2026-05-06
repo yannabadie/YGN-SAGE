@@ -261,6 +261,38 @@ def test_t12_registry_resolution_via_explicit_capability_and_rejects_unknown(mon
     assert reg.get("unknown_xyz_t12") is None
 
 
+def test_t17_audit_manifest_meta_entries_match_factory_module():
+    """Phase 1.5e (cgpro VERIFY 2026-05-06 round-3 EDIT_REQUIRED): the
+    audit inventory's `expected_module` for `create_python_tool` and
+    `create_bash_tool` must point at `sage.tools.meta` (where the
+    factories actually live), NOT `sage.tools.forge` (where the build
+    loop orchestrates).
+
+    Closes the documentation drift cgpro flagged in 1.5e: the manifest
+    audit-inventory is the canonical source of truth for "what module
+    declares the canonical factory for tool name X" — a stale entry
+    would mislead operators auditing the registry.
+    """
+    from sage.ops import toolpolicy_audit
+
+    report = toolpolicy_audit.build_report()
+    by_name = {entry.name: entry for entry in report.entries}
+
+    create_python = by_name.get("create_python_tool")
+    assert create_python is not None
+    assert "sage.tools.meta" in create_python.source, (
+        f"create_python_tool source should contain 'sage.tools.meta', got "
+        f"{create_python.source!r}"
+    )
+
+    create_bash = by_name.get("create_bash_tool")
+    assert create_bash is not None
+    assert "sage.tools.meta" in create_bash.source, (
+        f"create_bash_tool source should contain 'sage.tools.meta', got "
+        f"{create_bash.source!r}"
+    )
+
+
 def test_t16_generated_python_tool_registers_with_explicit_pure_capability(monkeypatch):
     """Phase 1.5d (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the
     ToolForge `_register_generated_tool` path constructs a generated

@@ -97,9 +97,12 @@ _BUILTIN_TOOL_CAPABILITIES: dict[tuple[str, str], ToolCapability] = {
     ("create_agent", "sage.tools.agent_mgmt"): ToolCapability.DANGEROUS,
     ("call_agent", "sage.tools.agent_mgmt"): ToolCapability.DANGEROUS,
     ("list_active_agents", "sage.tools.agent_mgmt"): ToolCapability.READ_LOCAL,
-    # ToolForge / dynamic tool synthesis.
-    ("create_python_tool", "sage.tools.forge"): ToolCapability.DANGEROUS,
-    ("create_bash_tool", "sage.tools.forge"): ToolCapability.DANGEROUS,
+    # ToolForge / dynamic tool synthesis. The factories live in
+    # `sage.tools.meta`; `sage.tools.forge` orchestrates the build
+    # loop but does not declare these tools. (Earlier 1.5b draft
+    # incorrectly attributed these to `sage.tools.forge`.)
+    ("create_python_tool", "sage.tools.meta"): ToolCapability.DANGEROUS,
+    ("create_bash_tool", "sage.tools.meta"): ToolCapability.DANGEROUS,
     # Dangerous: raw shell, agent recursion.
     ("bash", "sage.tools.builtin"): ToolCapability.DANGEROUS,
     ("execute_bash", "sage.tools.builtin"): ToolCapability.DANGEROUS,
@@ -141,11 +144,17 @@ _CLASS_CAPABILITY_DEFAULTS: dict[str, ToolCapability] = {
 def resolve_tool_capability(tool: Any) -> ToolCapability:
     """Resolve a `Tool`-like instance to its declared capability.
 
-    Resolution order:
-      1. `tool.capability` if set and not None.
-      2. Built-in manifest lookup by `tool.spec.name`.
-      3. Class-level default by `type(tool).__name__`.
-      4. Raise `ToolPolicyDeclarationError`.
+    Runtime resolution order (Phase 1.5c+):
+      1. Explicit `tool.capability` if set and not None.
+      2. Class-level default by `type(tool).__name__` (e.g. AgentTool
+         -> DANGEROUS via `_CLASS_CAPABILITY_DEFAULTS`).
+      3. Raise `ToolPolicyDeclarationError`.
+
+    The built-in manifest `_BUILTIN_TOOL_CAPABILITIES` is documentation
+    /audit only and is intentionally NOT consulted for runtime
+    resolution (Phase 1.5c, cgpro VERIFY 2026-05-06): Python documents
+    `function.__module__` and `function.__qualname__` as writable, so
+    handler-metadata-based lookups cannot anchor trust.
 
     The function is duck-typed (operates on any object exposing the
     expected attributes) so it can be used both by `Registry.register`

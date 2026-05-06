@@ -84,11 +84,15 @@ def build_report(policy: ToolPolicy | None = None) -> _AuditReport:
     by_capability: dict[str, int] = {}
     unresolved: list[str] = []
 
-    # Built-in name × handler-module → capability map.
-    # Phase 1.5b (cgpro 2026-05-06 EDIT_REQUIRED): the manifest now
-    # keys by `(name, expected_handler_module_prefix)`, so the CLI
-    # report includes both the LLM-facing name and the trusted module
-    # prefix that the runtime gate requires the handler to live under.
+    # Built-in name × expected handler module → capability map.
+    # Phase 1.5c+ (cgpro VERIFY 2026-05-06): the manifest is
+    # documentation/audit inventory only. The runtime gate does NOT
+    # trust handler module metadata; runtime capability resolution is
+    # explicit `tool.capability` -> class default -> raise. The
+    # `expected_module` shown here documents WHERE the canonical
+    # factory lives, so an operator auditing the inventory can find
+    # the source of truth — but it is never consulted to blanche an
+    # unlabeled tool at registration.
     for (name, expected_module), cap in sorted(_BUILTIN_TOOL_CAPABILITIES.items()):
         entries.append(
             _ToolAuditEntry(
