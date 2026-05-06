@@ -95,22 +95,37 @@ def test_pipeline_v2_init_reexports_pipeline_class_and_context() -> None:
     assert PipelineContext is LegacyCtx
 
 
-def test_pipeline_v2_context_module_reexports_only() -> None:
-    """`sage.pipeline_v2.context.PipelineContext` is the SAME class object
-    as `sage.pipeline.PipelineContext`.
+def test_pipeline_v2_context_module_preserves_legacy_identity() -> None:
+    """`pipeline_v2.context` owns the dataclass body while preserving legacy identity.
 
-    cgpro 2026-05-05 DESIGN lock: do NOT move the dataclass. Re-export
-    only. Bench / dashboards compare against `__module__ ==
-    "sage.pipeline"`; a true move would silently break those
-    consumers.
+    Cycle-13 K Phase 2.1 Step E1 (cgpro
+    `cgpro_phase21_facade_rewrite_20260506` round-3 Q4 + round-4
+    OPTION_3, 2026-05-06) moved the canonical `PipelineContext`
+    dataclass body to `sage.pipeline_v2.context`. Backward
+    compatibility is preserved on three fronts:
+
+      - `from sage.pipeline import PipelineContext` (legacy) and
+        `from sage.pipeline_v2.context import PipelineContext`
+        (canonical) reference the SAME class object (identity, not
+        equality).
+      - `PipelineContext.__module__ == "sage.pipeline"` is preserved
+        via an explicit `setattr` in `pipeline_v2/context.py` so
+        `repr(ctx)` still renders the legacy module path and bench /
+        dashboard / observability consumers comparing the literal
+        path keep matching.
+      - Pickle support against the legacy module path is unchanged —
+        consumers that pickled `PipelineContext` instances pre-Phase-2.1
+        keep deserialising correctly.
+
+    A future regression of any of those three contracts is
+    deliberately a loud failure here: bench/dashboards depend on the
+    legacy module-path string, and the cgpro round-3 Q4 backward-
+    compat lock was the explicit precondition for this move.
     """
     from sage.pipeline import PipelineContext as LegacyCtx
     from sage.pipeline_v2.context import PipelineContext as V2Ctx
 
     assert V2Ctx is LegacyCtx
-    # Sanity: __module__ is the legacy path. If a future Phase C
-    # session moves the dataclass, this assertion intentionally
-    # breaks loudly to force an ADR + bench-consumer audit.
     assert LegacyCtx.__module__ == "sage.pipeline"
 
 

@@ -5,7 +5,7 @@
 (`.claude/plans/2026-05-04-cycle-10-verified-runtime-release-preview.md`),
 runtime-integrity-ledger.md (10 invariants), cgpro
 `cgpro_phase21_facade_rewrite_20260506` round-1 DESIGN_LOCKED →
-round-4 OPTION_3 → round-5 SHIP_PHASE_2_1.
+round-4 OPTION_3 → round-5 EDIT_REQUIRED → round-6 POST-F2 VERIFY.
 
 ## Context
 
