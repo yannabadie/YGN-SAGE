@@ -5,8 +5,6 @@ with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 """
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 import os
 import secrets
@@ -301,137 +299,49 @@ class CognitiveOrchestrationPipeline:
         from sage.pipeline_v2.runtime_events import emit as _v2_emit
         _v2_emit(self, stage, data)
 
+    # ── Runtime-event helpers (Phase 2.1 Step B4, 2026-05-06) ──────────────
+    # Bodies in `sage.pipeline_v2.runtime_events`. Methods preserved as
+    # delegators for mockability. LOCAL imports.
+
     def _emit_bandit_attribution_mismatch(
         self,
         ctx: PipelineContext,
         reason_code: BanditAttributionReasonCode,
     ) -> None:
-        payload = {
-            "decision_id": str(getattr(ctx, "bandit_decision_id", "") or ""),
-            "selected_model_id": str(getattr(ctx, "bandit_model_id", "") or ""),
-            "selected_template": str(getattr(ctx, "bandit_template", "") or ""),
-            "executed_model_id": str(getattr(ctx, "executed_model_id", "") or ""),
-            "executed_template": str(getattr(ctx, "executed_template", "") or ""),
-            "reason_code": reason_code,
-        }
-        try:
-            from sage.runtime.event_log import current_event_log
-            from sage.runtime.event_log.events import _EventCore
-
-            event_log = current_event_log()
-            if event_log is not None:
-                event_log._emit(  # noqa: SLF001 - no public generic emit exists for new event types.
-                    _EventCore,
-                    "bandit_attribution_mismatch",
-                    "pipeline",
-                    payload=payload,
-                    _force_payload=True,
-                )
-        except Exception:  # noqa: BLE001 - telemetry must not mask execution or learning.
-            pass
-        self._emit("BANDIT_ATTRIBUTION_MISMATCH", payload)
+        from sage.pipeline_v2.runtime_events import emit_bandit_attribution_mismatch
+        emit_bandit_attribution_mismatch(self, ctx, reason_code)
 
     @staticmethod
     def _bandit_reason_from_exception(exc: Exception) -> BanditAttributionReasonCode:
-        text = str(exc).lower()
-        for reason in _BANDIT_ATTRIBUTION_REASON_CODES:
-            if reason in text:
-                return reason
-        if "unknown" in text and "decision" in text:
-            return "decision_unknown"
-        if "template" in text and "mismatch" in text:
-            return "template_mismatch"
-        if "model" in text and "mismatch" in text:
-            return "model_mismatch"
-        return "recorder_instance_mismatch"
+        from sage.pipeline_v2.runtime_events import bandit_reason_from_exception
+        return bandit_reason_from_exception(exc)
 
     @staticmethod
     def _runtime_node_count(topology: Any) -> int:
-        if topology is None or not hasattr(topology, "node_count"):
-            return 0
-        try:
-            node_count = topology.node_count()
-            return int(node_count() if callable(node_count) else node_count)
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            return 0
+        from sage.pipeline_v2.runtime_events import runtime_node_count
+        return runtime_node_count(topology)
 
     @staticmethod
     def _runtime_edge_type(value: Any) -> str:
-        if value == 0:
-            return "control"
-        if value == 1:
-            return "message"
-        if value == 2:
-            return "state"
-        return str(value or "")
+        from sage.pipeline_v2.runtime_events import runtime_edge_type
+        return runtime_edge_type(value)
 
     def _runtime_edge_summary(self, topology: Any) -> tuple[int, list[dict[str, Any]]]:
-        if topology is None:
-            return 0, []
-        try:
-            if hasattr(topology, "get_edges"):
-                raw_edges = list(topology.get_edges() or [])
-                summaries: list[dict[str, Any]] = []
-                for idx, edge in enumerate(raw_edges):
-                    source_id = edge[0] if len(edge) > 0 else ""
-                    target_id = edge[1] if len(edge) > 1 else ""
-                    edge_type = self._runtime_edge_type(edge[2] if len(edge) > 2 else "")
-                    summaries.append(
-                        {
-                            "edge_id": f"{source_id}->{target_id}:{idx}",
-                            "source_id": str(source_id),
-                            "target_id": str(target_id),
-                            "edge_type": edge_type,
-                            "channel": edge_type,
-                        }
-                    )
-                return len(raw_edges), summaries
-            if hasattr(topology, "edge_count"):
-                edge_count = topology.edge_count()
-                return int(edge_count() if callable(edge_count) else edge_count), []
-        except (AttributeError, RuntimeError, TypeError, ValueError):
-            return 0, []
-        return 0, []
+        from sage.pipeline_v2.runtime_events import runtime_edge_summary
+        return runtime_edge_summary(self, topology)
 
     def _runtime_node_summary(self, ctx: PipelineContext) -> list[dict[str, Any]]:
-        topology = ctx.topology
-        summaries: list[dict[str, Any]] = []
-        for idx in range(self._runtime_node_count(topology)):
-            try:
-                node = topology.get_node(idx)
-            except (AttributeError, RuntimeError, TypeError):
-                continue
-            summaries.append(
-                {
-                    "node_id": str(idx),
-                    "node_role": getattr(node, "role", "") or f"node-{idx}",
-                    "node_type": getattr(node, "node_type", "") or "",
-                    "model_id": getattr(node, "model_id", "") or "",
-                    "provider_hint": ctx.provider_hints.get(idx, ""),
-                }
-            )
-        return summaries
+        from sage.pipeline_v2.runtime_events import runtime_node_summary
+        return runtime_node_summary(self, ctx)
 
     def _runtime_provider_id_for_model(self, model_id: str, ctx: PipelineContext) -> str:
-        for node_idx, assigned_model in ctx.assignments.items():
-            if assigned_model == model_id and node_idx in ctx.provider_hints:
-                return str(ctx.provider_hints[node_idx])
-        if self.provider_pool is not None and hasattr(self.provider_pool, "infer_provider"):
-            try:
-                provider_id = self.provider_pool.infer_provider(model_id)
-                if provider_id:
-                    return str(provider_id)
-            except (AttributeError, RuntimeError, TypeError, ValueError):
-                pass
-        return str(getattr(self.llm_config, "provider", "") if self.llm_config else "")
+        from sage.pipeline_v2.runtime_events import runtime_provider_id_for_model
+        return runtime_provider_id_for_model(self, model_id, ctx)
 
     @staticmethod
     def _runtime_node_capabilities(node: Any) -> tuple[str, ...]:
-        for attr in ("required_capabilities", "capabilities_required", "capabilities"):
-            raw = getattr(node, attr, None)
-            if raw:
-                return tuple(str(item) for item in raw)
-        return ()
+        from sage.pipeline_v2.runtime_events import runtime_node_capabilities
+        return runtime_node_capabilities(node)
 
     def _runtime_graph_digest(
         self,
@@ -439,14 +349,10 @@ class CognitiveOrchestrationPipeline:
         nodes_summary: list[dict[str, Any]],
         edges_summary: list[dict[str, Any]],
     ) -> str:
-        canonical = json.dumps(
-            {"nodes": nodes_summary, "edges": edges_summary},
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-            default=str,
-        ).encode("utf-8")
-        return hashlib.sha256(canonical).hexdigest()
+        from sage.pipeline_v2.runtime_events import runtime_graph_digest
+        return runtime_graph_digest(
+            nodes_summary=nodes_summary, edges_summary=edges_summary
+        )
 
     def _runtime_emit_topology_selected(
         self,
@@ -456,31 +362,10 @@ class CognitiveOrchestrationPipeline:
         *,
         reason: str = "initial",
     ) -> None:
-        if ctx.topology is None:
-            return
-        edge_count, edges_summary = self._runtime_edge_summary(ctx.topology)
-        nodes_summary = self._runtime_node_summary(ctx)
-        topology_id = ctx.topology_id or getattr(ctx.topology, "id", "") or ""
-        seq = None
-        if event_log is not None:
-            seq = event_log.emit_topology_selected(
-                topology_id=topology_id,
-                template_type=getattr(ctx.topology, "template_type", "") or "",
-                node_count=self._runtime_node_count(ctx.topology),
-                edge_count=edge_count,
-                nodes_summary=nodes_summary,
-                edges_summary=edges_summary,
-            )
-        if run_frame_builder is not None:
-            run_frame_builder.record_topology_selected(
-                seq=seq,
-                topology_id=topology_id,
-                graph_digest=self._runtime_graph_digest(
-                    nodes_summary=nodes_summary,
-                    edges_summary=edges_summary,
-                ),
-                reason=reason,
-            )
+        from sage.pipeline_v2.runtime_events import runtime_emit_topology_selected
+        runtime_emit_topology_selected(
+            self, ctx, event_log, run_frame_builder, reason=reason
+        )
 
     def _runtime_emit_model_assigned(
         self,
@@ -488,47 +373,16 @@ class CognitiveOrchestrationPipeline:
         event_log: Any,
         run_frame_builder: Any | None = None,
     ) -> None:
-        if ctx.topology is None:
-            return
-        for idx in range(self._runtime_node_count(ctx.topology)):
-            try:
-                node = ctx.topology.get_node(idx)
-            except (AttributeError, RuntimeError, TypeError):
-                continue
-            model_id = ctx.assignments.get(idx, getattr(node, "model_id", "") or "")
-            node_role = getattr(node, "role", "") or f"node-{idx}"
-            provider_id = self._runtime_provider_id_for_model(model_id, ctx)
-            capabilities = self._runtime_node_capabilities(node)
-            seq = None
-            if event_log is not None:
-                seq = event_log.emit_model_assigned(
-                    node_id=str(idx),
-                    node_role=node_role,
-                    model_id=model_id,
-                    provider_id=provider_id,
-                    required_capabilities=capabilities,
-                )
-            if run_frame_builder is not None:
-                run_frame_builder.record_model_assigned(
-                    seq=seq,
-                    node_id=str(idx),
-                    node_role=node_role,
-                    model_id=model_id,
-                    provider_id=provider_id,
-                    required_capabilities=capabilities,
-                )
+        from sage.pipeline_v2.runtime_events import runtime_emit_model_assigned
+        runtime_emit_model_assigned(self, ctx, event_log, run_frame_builder)
 
     def _runtime_final_status(self, ctx: PipelineContext | None) -> RunStatus:
-        if ctx is None:
-            return "failure"
-        if ctx.result == BUDGET_EXCEEDED_RESULT:
-            return "budget_exceeded"
-        return "success" if ctx.result else "failure"
+        from sage.pipeline_v2.runtime_events import runtime_final_status
+        return runtime_final_status(self, ctx)
 
     def _runtime_final_node_count(self, ctx: PipelineContext | None) -> int:
-        if ctx is None or ctx.topology is None:
-            return 0
-        return self._runtime_node_count(ctx.topology)
+        from sage.pipeline_v2.runtime_events import runtime_final_node_count
+        return runtime_final_node_count(self, ctx)
 
     async def run(
         self,
