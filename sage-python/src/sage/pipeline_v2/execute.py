@@ -25,6 +25,11 @@ from sage.pipeline import (
     EXECUTE_UNVERIFIED,
     _is_strict_governance,
 )
+# Phase 2.2 Stage D1.a (cgpro lock 2026-05-06): import the memory_gate
+# module itself, not aliases to its functions, so production calls
+# resolve `memory_gate_mod.<fn>` at call time and pick up
+# monkeypatch.setattr("sage.pipeline_v2.memory_gate.<fn>", ...) from tests.
+from sage.pipeline_v2 import memory_gate as memory_gate_mod
 
 if TYPE_CHECKING:
     from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
@@ -139,7 +144,7 @@ async def execute(
     with sage_span("sage.execute", op="sage.execute"):
         cost_tracker = getattr(ctx, "cost_tracker", None)
         if cost_tracker is not None and cost_tracker.is_over_budget:
-            self._emit_budget_exceeded(ctx)
+            memory_gate_mod.emit_budget_exceeded(self, ctx)
             ctx.result = BUDGET_EXCEEDED_RESULT
             return ctx
 
@@ -342,7 +347,7 @@ async def execute(
             # reported _cost_usd=0 even when each node had metered cost.
             ctx.cost = float(getattr(runner, "total_cost_usd", 0.0) or 0.0)
             if result == BUDGET_EXCEEDED_RESULT:
-                self._emit_budget_exceeded(ctx)
+                memory_gate_mod.emit_budget_exceeded(self, ctx)
                 ctx.result = result
                 return ctx
             if result == "__REROUTE__" and self.engine:
@@ -394,7 +399,7 @@ async def execute(
                 ctx.executed_commands = list(getattr(runner2, "executed_commands", []))
                 ctx.cost = float(getattr(runner2, "total_cost_usd", 0.0) or 0.0)
                 if result == BUDGET_EXCEEDED_RESULT:
-                    self._emit_budget_exceeded(ctx)
+                    memory_gate_mod.emit_budget_exceeded(self, ctx)
                     ctx.result = result
                     return ctx
 
@@ -484,7 +489,7 @@ async def execute(
                         log.debug("Stage 4: FrugalGPT cascade retry failed: %s", exc)
 
             if result == BUDGET_EXCEEDED_RESULT:
-                self._emit_budget_exceeded(ctx)
+                memory_gate_mod.emit_budget_exceeded(self, ctx)
                 ctx.result = result
                 return ctx
 

@@ -105,7 +105,7 @@ def _build_pipeline_for_periodic_save(
     pipeline.memory_agent = None
     pipeline.causal_memory = None
     pipeline._emit = MagicMock()
-    pipeline._emit_budget_exceeded = MagicMock()
+    monkeypatch.setattr("sage.pipeline_v2.memory_gate.emit_budget_exceeded", MagicMock())
     pipeline._emit_bandit_attribution_mismatch = MagicMock()
     pipeline._on_topology_evolve = None
     pipeline.harness_config = None

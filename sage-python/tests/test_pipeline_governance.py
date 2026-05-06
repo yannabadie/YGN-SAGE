@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from sage.pipeline_v2.execute import execute
+from sage.pipeline_v2.memory_gate import build_write_gate
 
 
 def _build_stub_pipeline(emit_mock):
@@ -128,7 +129,7 @@ def test_write_gate_init_failure_default_returns_none():
     ):
         import os
         os.environ.pop("SAGE_STRICT_GOVERNANCE", None)
-        result = pipeline._build_write_gate()
+        result = build_write_gate(pipeline)
 
     assert result is None, "default mode should return None on init failure"
 
@@ -150,7 +151,7 @@ def test_write_gate_init_failure_strict_mode_raises():
             "os.environ", {"SAGE_STRICT_GOVERNANCE": "1"}, clear=False
         ):
             with pytest.raises(RuntimeError, match="simulated init failure"):
-                pipeline._build_write_gate()
+                build_write_gate(pipeline)
 
 
 # ---------------------------------------------------------------------------

@@ -124,7 +124,7 @@ class _MultiNodeTopology:
         return MagicMock(model_id=f"model-{idx}", max_cost_usd=0.0)
 
 
-def _build_minimal_pipeline() -> Pipeline:
+def _build_minimal_pipeline(monkeypatch: pytest.MonkeyPatch) -> Pipeline:
     """Surgical Pipeline stub for direct stage calls.
 
     Mirrors the P4 pattern. Per-test customizations (set
@@ -147,7 +147,7 @@ def _build_minimal_pipeline() -> Pipeline:
     pipeline.memory_agent = None
     pipeline.causal_memory = None
     pipeline._emit = MagicMock()
-    pipeline._emit_budget_exceeded = MagicMock()
+    monkeypatch.setattr("sage.pipeline_v2.memory_gate.emit_budget_exceeded", MagicMock())
     pipeline._on_topology_evolve = None
     pipeline.engine = None
     pipeline.harness_config = None
@@ -175,7 +175,9 @@ def _build_minimal_pipeline() -> Pipeline:
 
 
 @pytest.mark.asyncio
-async def test_stage_decompose_populates_dag_features() -> None:
+async def test_stage_decompose_populates_dag_features(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """``ctx.dag_features`` is non-None with ``omega``/``delta``/``gamma``.
 
     The S1 short-circuit (``ctx.system == 1``) sets the trivial
@@ -184,7 +186,7 @@ async def test_stage_decompose_populates_dag_features() -> None:
     field — the contract is "non-None after the stage runs", not
     "specific values".
     """
-    pipeline = _build_minimal_pipeline()
+    pipeline = _build_minimal_pipeline(monkeypatch)
     ctx = PipelineContext(task="def add(a, b):\n    return a + b")
     ctx.system = 1  # forces the trivial-DAG short-circuit path
 
@@ -282,7 +284,7 @@ def test_stage_classify_populates_bandit_template_from_router_decision(
     Rust router returns a non-empty template.
     """
     _install_fake_sage_core_for_classify(monkeypatch)
-    pipeline = _build_minimal_pipeline()
+    pipeline = _build_minimal_pipeline(monkeypatch)
     pipeline._rust_router = _StubRustRouter(selected_template="sequential")
     ctx = PipelineContext(task="def add(a, b):\n    return a + b")
 
@@ -308,7 +310,9 @@ def test_stage_classify_populates_bandit_template_from_router_decision(
 # ─────────────────────────────────────────────────────────────────
 
 
-def test_stage_select_topology_dag_template_branch_sets_ctx_topology_id() -> None:
+def test_stage_select_topology_dag_template_branch_sets_ctx_topology_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The DAG-template branch sets ``ctx.topology_id`` directly.
 
     Cycle-11 cgpro VERIFY follow-up (2026-05-05): the original test
@@ -329,7 +333,7 @@ def test_stage_select_topology_dag_template_branch_sets_ctx_topology_id() -> Non
     drops the explicit assignment will fail this test instead of
     silently breaking BCB control-surface telemetry.
     """
-    pipeline = _build_minimal_pipeline()
+    pipeline = _build_minimal_pipeline(monkeypatch)
     ctx = PipelineContext(task="def add(a, b):\n    return a + b")
     ctx.system = 2
     ctx.domain = "code"
@@ -418,7 +422,7 @@ async def test_stage_execute_multi_agent_populates_executed_template(
     Test asserts both **non-empty** AND **a known template string**
     to prevent the inverse mistake on the producer side.
     """
-    pipeline = _build_minimal_pipeline()
+    pipeline = _build_minimal_pipeline(monkeypatch)
     pipeline.llm_provider = MagicMock()  # multi-agent branch needs a provider
     pipeline.llm_config = MagicMock()
     pipeline.provider_pool = MagicMock()
@@ -481,7 +485,7 @@ async def test_stage_execute_single_agent_bypass_marks_executed_template_single_
     fallback ``provider.generate()`` block (no agent_loop), but sets
     ``ctx.executed_template = "single_agent"`` first regardless.
     """
-    pipeline = _build_minimal_pipeline()
+    pipeline = _build_minimal_pipeline(monkeypatch)
 
     # Provide a stub provider so the fallback block at line 2467 fires.
     # Otherwise _stage_execute returns early without any side-effect

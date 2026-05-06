@@ -82,7 +82,7 @@ class _MultiNodeTopology:
         return MagicMock(model_id=f"model-{idx}", max_cost_usd=0.0)
 
 
-def _build_pipeline(*, llm_tier: str, controller: Any) -> Pipeline:
+def _build_pipeline(monkeypatch: pytest.MonkeyPatch, *, llm_tier: str, controller: Any) -> Pipeline:
     """Surgical stub of ``Pipeline`` exposing only what ``_stage_execute``'s
     multi-agent branch reaches.
 
@@ -108,7 +108,7 @@ def _build_pipeline(*, llm_tier: str, controller: Any) -> Pipeline:
     pipeline.memory_agent = None
     pipeline.causal_memory = None
     pipeline._emit = MagicMock()
-    pipeline._emit_budget_exceeded = MagicMock()
+    monkeypatch.setattr("sage.pipeline_v2.memory_gate.emit_budget_exceeded", MagicMock())
     pipeline._on_topology_evolve = None
     pipeline.engine = None
     pipeline.harness_config = None
@@ -232,7 +232,7 @@ async def test_fix_c_budget_tier_passes_none_controller(
     """
     sentinel_controller = MagicMock(name="TopologyController-sentinel")
     pipeline = _build_pipeline(
-        llm_tier="budget", controller=sentinel_controller
+        monkeypatch, llm_tier="budget", controller=sentinel_controller
     )
     ctx = _build_ctx()
     capture = _RunnerCapture()
@@ -266,7 +266,7 @@ async def test_non_budget_tier_preserves_controller(
     """
     sentinel_controller = MagicMock(name="TopologyController-sentinel")
     pipeline = _build_pipeline(
-        llm_tier="reasoner", controller=sentinel_controller
+        monkeypatch, llm_tier="reasoner", controller=sentinel_controller
     )
     ctx = _build_ctx()
     capture = _RunnerCapture()
@@ -297,7 +297,7 @@ async def test_unset_tier_preserves_controller(
     """
     sentinel_controller = MagicMock(name="TopologyController-sentinel")
     pipeline = _build_pipeline(
-        llm_tier="", controller=sentinel_controller
+        monkeypatch, llm_tier="", controller=sentinel_controller
     )
     ctx = _build_ctx()
     capture = _RunnerCapture()
@@ -324,7 +324,7 @@ async def test_budget_tier_with_no_controller_is_safe(
     short-circuit something that's already None. Asserts the branch
     is well-formed regardless of input combination.
     """
-    pipeline = _build_pipeline(llm_tier="budget", controller=None)
+    pipeline = _build_pipeline(monkeypatch, llm_tier="budget", controller=None)
     ctx = _build_ctx()
     capture = _RunnerCapture()
     capture.install(monkeypatch)

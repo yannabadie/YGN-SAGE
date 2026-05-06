@@ -163,9 +163,10 @@ async def test_pipeline_run_applies_hint(monkeypatch: pytest.MonkeyPatch):
     # OracleStack v0). The previous lambda accepted only `_ctx` and
     # raised TypeError on the kwarg. Use **kwargs so any future kwargs
     # land cleanly without re-breaking the test.
-    # B->D boundary: _record_to_memory is a helper delegator; instance
-    # setattr preserved for now per cgpro scope (helper purge = Stage D).
-    pipeline._record_to_memory = lambda *_args, **_kwargs: None
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.record_to_memory",
+        lambda *_args, **_kwargs: None,
+    )
 
     await pipeline.run("patch the bug", budget_usd=1.0, system_hint=3)
     assert pipeline.last_context.system == 3
@@ -198,9 +199,10 @@ async def test_pipeline_run_without_hint_keeps_router_choice(monkeypatch: pytest
     monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _fake_assign)
     monkeypatch.setattr("sage.pipeline_v2.execute.execute", _fake_execute)
     monkeypatch.setattr("sage.pipeline_v2.learn.learn", _fake_learn)
-    # B->D boundary: _record_to_memory helper instance setattr preserved
-    # (helper purge = Stage D scope).
-    pipeline._record_to_memory = lambda *_args, **_kwargs: None
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.record_to_memory",
+        lambda *_args, **_kwargs: None,
+    )
 
     await pipeline.run("do something", budget_usd=1.0)
     assert pipeline.last_context.system == 2

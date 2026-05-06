@@ -106,6 +106,7 @@ async def run_internal(
     from sage import pipeline as pipeline_mod
     from sage.contracts.cost_tracker import CostTracker
     from sage.observability.spans import sage_span
+    from sage.pipeline_v2 import memory_gate as memory_gate_mod
     from sage.pipeline_v2.assign_models import assign_models
     from sage.pipeline_v2.classify import classify
     from sage.pipeline_v2.decompose import decompose
@@ -167,7 +168,7 @@ async def run_internal(
             # G-series (2026-04-19): rebuild write gate per task so entries from a
             # previous task don't persist as novelty penalties or exact-dedup hits
             # on content in THIS task. Rust gate has no in-place reset yet.
-            pipeline.write_gate = pipeline._build_write_gate()
+            pipeline.write_gate = memory_gate_mod.build_write_gate(pipeline)
 
             # Stage 0: CLASSIFY
             ctx = classify(pipeline, ctx)
@@ -325,7 +326,8 @@ async def run_internal(
                 )
                 ctx.oracle_verdict = verdict
 
-                pipeline._record_to_memory(
+                memory_gate_mod.record_to_memory(
+                    pipeline,
                     ctx,
                     is_training_evidence=verdict.trainable,
                 )
@@ -333,7 +335,7 @@ async def run_internal(
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
             else:
                 # Legacy OFF mode: keep the R7 execution/learn/final order.
-                pipeline._record_to_memory(ctx)
+                memory_gate_mod.record_to_memory(pipeline, ctx)
                 await learn(pipeline, ctx)
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
 

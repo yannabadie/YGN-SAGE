@@ -202,9 +202,10 @@ def _make_pipeline(
     monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _assign)
     monkeypatch.setattr("sage.pipeline_v2.execute.execute", _execute)
     monkeypatch.setattr("sage.pipeline_v2.learn.learn", _learn)
-    # B->D boundary: _record_to_memory helper delegator instance setattr
-    # preserved for now per cgpro scope (helper purge = Stage D).
-    pipeline._record_to_memory = lambda _ctx, **_kw: None
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.record_to_memory",
+        lambda _pipeline, _ctx, **_kw: None,
+    )
     return pipeline
 
 
