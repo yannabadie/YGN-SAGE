@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-3164%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-3179%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -38,7 +38,7 @@ nothing is silently fabricated.
 
 For full architectural framing see [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md)
 and the contract docs at `docs/contracts/runtime-integrity-ledger.md`
-(9 invariants binding declared labels to verified content).
+(10 invariants binding declared labels to verified content).
 
 ## Install from source
 
@@ -254,7 +254,7 @@ proof of capability.
 | **All 6 engine paths proven end-to-end in CI** | `evidence_pending` | Per-path coverage exists in scattered Rust unit tests but no single end-to-end test exercises every path. Follow-up: ship `tests/test_topology_engine_six_paths.py`, pin in `docs/claims/topology.yaml`. |
 | **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
 | **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
-| **Runtime integrity ledger (9 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
+| **Runtime integrity ledger (10 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
 | **A14 epoch guard + `topology_state_manifest.json`** | `delivered` | Cycle-8 step 2 (`6b2ebcbe + f9521616`). Fail-closed boot if epoch ≠ DB SHA-256. |
 | **Wasm sandbox (RustPython wasm32-wasip1)** | `default-on (cycle 8)` | ADR-013 §5 flip 2026-04-22. `validate_and_execute` deny-by-default. `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC=1`. |
 | **OpenTelemetry GenAI spans (Python + Rust bridge)** | `delivered` | B1 (2026-04-25) + B1.b. `SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}`. |

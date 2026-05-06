@@ -49,3 +49,27 @@ claims:
       met before the flip. Companion test
       `test_boot_sandbox_warning.py` verifies the boot path emits the
       warning when SAGE_DANGEROUS_TOOLS=1 is set.
+
+  - id: security.tool_policy_default_deny
+    status: default-on
+    description: "Phase 1.5 (cycle-13 K) ToolPolicy capability manifest: every tool declares one of 6 capability tiers (pure/read_local/write_local/network/subprocess/dangerous). Default effective policy is `{pure}` only — every other tier requires an explicit grant via SAGE_TOOL_GRANTS env, ~/.sage/tool_policy.toml, or programmatic policy.grant()."
+    evidence_test: "sage-python/tests/test_tool_policy.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "5a4cfd1e"
+    last_verified_utc: "2026-05-06T00:00:00Z"
+    owner: "yann"
+    notes: |
+      Per cgpro DESIGN_LOCKED 2026-05-06 conv `cgpro_phase15_toolpolicy_20260506`
+      (in YGN-SAGE project). 4-commit chain: feat(policy) schema, feat(tools)
+      enforcement + Tool.execute last-resort gate, feat(agent) boot ContextVar
+      propagation, test(docs) 15 tests + audit CLI + ledger invariant 10 +
+      docs. Phase 1.5 is declarative gate at registration + runtime — NOT
+      behavior verification. A `pure` tool can still lie at runtime; the
+      contract is "declared capability is the maximum-safe summary, gates
+      block at registration and at Tool.execute boundary".
+
+      No hierarchical implicit closure: granting `dangerous` does NOT also
+      grant `network`. Each tier is granted exactly. Built-in tool manifest
+      at `sage-python/src/sage/policy/manifest.py` covers 31 tools at ship
+      time; AgentTool defaults to `dangerous` via class-level default
+      because it delegates to arbitrary agent.run().
