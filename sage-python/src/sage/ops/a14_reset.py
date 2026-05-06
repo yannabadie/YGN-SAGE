@@ -19,6 +19,7 @@ from sage.posterior_epoch import (
     CONTAMINATED_MARKER_FILENAME,
     POSTERIOR_EPOCH_FILENAME,
     REQUIRED_POSTERIOR_EPOCH,
+    TOPOLOGY_STATE_MANIFEST_FILENAME,
 )
 
 _A14_TOPOLOGY_STATE_FILES: tuple[str, ...] = (
@@ -30,6 +31,27 @@ _A14_TOPOLOGY_STATE_FILES: tuple[str, ...] = (
     "archive_state.db-shm",
     "engine_extras.json",
 )
+
+# Cycle-13 B Q4-bis (cgpro post-push 2026-05-06 NEXT_BLOCK_ID=I):
+# files written through atomic-rename (`write_bytes_atomic` in Rust at
+# `sage-core/src/topology/posterior_epoch.rs` + `_write_json_atomic`
+# in this module) leave `.<name>.<id>.tmp` files behind on rename
+# failure. Pre `bc662d9a` Rust fix the .tmp was leaked; pre this
+# Python fix nothing cleaned them up. Operators on long-lived state
+# dirs can accumulate stale tmps. List the files YGN-SAGE writes
+# atomically; the cleanup glob `.<name>.*.tmp` matches both ulid
+# (Rust write_bytes_atomic) and uuid4-hex (Python _write_json_atomic)
+# id formats — both are alphanumeric and the trailing `.tmp` is
+# unambiguous. Source of truth for the contaminated marker filename
+# is `sage.posterior_epoch.CONTAMINATED_MARKER_FILENAME`; it is
+# imported above and reused here so a future rename only happens in
+# one place.
+_ATOMIC_WRITTEN_NAMES: tuple[str, ...] = (
+    POSTERIOR_EPOCH_FILENAME,
+    TOPOLOGY_STATE_MANIFEST_FILENAME,
+    CONTAMINATED_MARKER_FILENAME,
+)
+
 _RESET_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _RESTORE_POLICY = (
     "forensic-only; do not copy into ~/.sage; load only with "
@@ -65,6 +87,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "reset_id": reset_id,
                 "audit_dir": str(audit_dir),
                 "state_files": _existing_state_files(state_dir),
+                "orphan_tmp_files_to_clean": _orphan_tmp_files(state_dir),
             },
         )
         return 0
@@ -95,9 +118,27 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
 def _run_reset(state_dir: Path, reset_id: str, audit_dir: Path, reason: str) -> None:
     state_dir.mkdir(parents=True, exist_ok=True)
     with _ResetLock(state_dir):
+        # Cycle-13 B Q4-bis: clean up orphaned `.<name>.<id>.tmp` files
+        # left by pre-`bc662d9a` atomic-rename failures BEFORE we
+        # gather the canonical state file list. The cleanup is
+        # idempotent + best-effort; the resulting list is recorded in
+        # the audit manifest for forensic tracking. Cleaning at this
+        # point (post-lock, pre-state-gather) means concurrent reset
+        # attempts can't race over the same orphans, and operators
+        # can audit which orphan files this reset removed via the
+        # manifest's `cleaned_orphan_tmp_files` field.
+        cleaned_orphans = _cleanup_orphaned_tmp_files(state_dir)
+
         state_files = _existing_state_files(state_dir)
         commit = _git_commit()
-        manifest_path = _write_audit_manifest(state_dir, audit_dir, reset_id, reason, commit)
+        manifest_path = _write_audit_manifest(
+            state_dir,
+            audit_dir,
+            reset_id,
+            reason,
+            commit,
+            cleaned_orphan_tmp_files=cleaned_orphans,
+        )
         manifest_sha = sha256_file(manifest_path)
 
         backup_root = state_dir / "contaminated"
@@ -144,6 +185,7 @@ def _write_audit_manifest(
     reset_id: str,
     reason: str,
     commit: str,
+    cleaned_orphan_tmp_files: list[str] | None = None,
 ) -> Path:
     audit_dir.mkdir(parents=True, exist_ok=True)
     artifacts_dir = audit_dir / "artifacts"
@@ -165,7 +207,7 @@ def _write_audit_manifest(
         )
 
     manifest_path = audit_dir / "MANIFEST.json"
-    manifest = {
+    manifest: dict[str, object] = {
         "reset_id": reset_id,
         "created_at_utc": _utc_now(),
         "reason": reason,
@@ -175,6 +217,11 @@ def _write_audit_manifest(
         "target_epoch": REQUIRED_POSTERIOR_EPOCH,
         "commit_at_reset": commit,
         "artifacts": artifacts,
+        # Cycle-13 B Q4-bis: forensic record of orphaned .tmp files
+        # this reset cleaned. Empty list when none were present (the
+        # common case post-bc662d9a Rust fix). Pre-fix dirs may show
+        # `.posterior_epoch.json.<ulid>.tmp` and similar.
+        "cleaned_orphan_tmp_files": list(cleaned_orphan_tmp_files or []),
     }
     _write_json_atomic(manifest_path, manifest)
     return manifest_path
@@ -276,6 +323,63 @@ def _contaminated_marker_payload(
 
 def _existing_state_files(state_dir: Path) -> list[str]:
     return [filename for filename in _A14_TOPOLOGY_STATE_FILES if (state_dir / filename).exists()]
+
+
+def _orphan_tmp_files(state_dir: Path) -> list[str]:
+    """List orphaned `.<name>.<id>.tmp` files in `state_dir`.
+
+    Cycle-13 B Q4-bis (cgpro post-push 2026-05-06 NEXT_BLOCK_ID=I).
+    Files in `_ATOMIC_WRITTEN_NAMES` are written via atomic-rename
+    (`.<name>.<id>.tmp` -> rename -> `<name>`); a rename failure pre
+    `bc662d9a` left the `.tmp` behind. This helper finds them so
+    `_cleanup_orphaned_tmp_files` can remove them or `--dry-run` can
+    list them without acting.
+
+    Glob pattern: `.<name>.*.tmp`. The dot prefix + `.tmp` suffix
+    bracket is unambiguous; `*` matches both ulid (26-char Crockford
+    base32 uppercase, written by Rust `write_bytes_atomic`) and
+    uuid4-hex (32-char lowercase, written by Python
+    `_write_json_atomic`) id shapes. Returns sorted basenames
+    relative to `state_dir`. Non-existent state_dir or non-directory
+    inputs return [].
+    """
+    if not state_dir.is_dir():
+        return []
+    found: list[str] = []
+    for name in _ATOMIC_WRITTEN_NAMES:
+        for orphan in state_dir.glob(f".{name}.*.tmp"):
+            if orphan.is_file():
+                found.append(orphan.name)
+    return sorted(found)
+
+
+def _cleanup_orphaned_tmp_files(state_dir: Path) -> list[str]:
+    """Best-effort cleanup of orphaned `.<name>.<id>.tmp` files.
+
+    Cycle-13 B Q4-bis follow-up to Rust commit `bc662d9a` (closure-
+    wrapped `write_bytes_atomic` cleanup): the Rust fix prevents
+    future leaks; this Python ops cleanup removes PRE-FIX artifacts
+    already present in operator state dirs.
+
+    Each `unlink()` failure is silently swallowed (permission error /
+    in-use file / TOCTOU race) — the primary reset operation must
+    not be blocked by best-effort cleanup of pre-existing artifacts.
+    Per cgpro deep VERIFY 2026-05-06 Q2: cleanup failures are
+    secondary; the primary error (or success) is what callers need
+    to see.
+
+    Returns: sorted list of basenames actually removed.
+    """
+    removed: list[str] = []
+    for orphan_name in _orphan_tmp_files(state_dir):
+        orphan_path = state_dir / orphan_name
+        try:
+            orphan_path.unlink()
+            removed.append(orphan_name)
+        except OSError:
+            # Best-effort: silently swallow per Q2 verdict.
+            pass
+    return removed
 
 
 def _assert_same_filesystem_for_atomic_reset(
