@@ -344,8 +344,14 @@ async def execute(
             if result == "__REROUTE__" and self.engine:
                 log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
                 self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
-                ctx = self._stage_select_topology(ctx)  # new topology
-                ctx = self._stage_assign_models(ctx)    # re-assign models
+                # Phase 2.1 Step C0 (cgpro round-3 garde-fou) : direct module
+                # function calls replace the legacy self._stage_* delegators
+                # that Step C2 will retire. LOCAL imports per circular-import
+                # discipline.
+                from sage.pipeline_v2.assign_models import assign_models
+                from sage.pipeline_v2.select_topology import select_topology
+                ctx = select_topology(self, ctx)  # new topology
+                ctx = assign_models(self, ctx)    # re-assign models
                 self._runtime_emit_topology_selected(
                     ctx,
                     event_log,
