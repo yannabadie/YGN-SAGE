@@ -1620,92 +1620,37 @@ class CognitiveOrchestrationPipeline:
             )
 
     # ── Stage 4: Execute ────────────────────────────────────────────────────
+    #
+    # Cycle-13 K Phase 2.1 Step A2 (2026-05-06): the 5 bandit-attribution
+    # lifecycle helpers below now delegate their bodies to
+    # `sage.pipeline_v2.bandit_attribution`. Method form preserved so:
+    #   - existing call sites in pipeline_v2/{learn,execute,classify}.py
+    #     calling `self._<method>(ctx)` continue working unchanged
+    #   - test mocks (`pipeline._record_bandit_outcome_checked = MagicMock(...)`,
+    #     direct calls `pipeline._is_single_agent_execution(ctx)` in
+    #     test_pipeline_topology_skip_guardrails_decoupling, etc.) keep
+    #     working byte-identical
+    # LOCAL imports per cgpro DESIGN trap on circular-import risk.
 
     def _bandit_task_context(self, ctx: PipelineContext) -> list[float]:
-        return [
-            float(ctx.system),
-            float(len(ctx.task)),
-            float(
-                ctx.topology.node_count()
-                if ctx.topology and hasattr(ctx.topology, "node_count")
-                else 0
-            ),
-        ]
+        from sage.pipeline_v2.bandit_attribution import bandit_task_context
+        return bandit_task_context(self, ctx)
 
     def _is_single_agent_execution(self, ctx: PipelineContext) -> bool:
-        return ctx.topology is None or (
-            hasattr(ctx.topology, "node_count") and ctx.topology.node_count() <= 1
-        )
+        from sage.pipeline_v2.bandit_attribution import is_single_agent_execution
+        return is_single_agent_execution(self, ctx)
 
     def _clear_bandit_decision(self, ctx: PipelineContext) -> None:
-        ctx.bandit_decision_id = ""
-        ctx.bandit_model_id = ""
-        ctx.bandit_template = ""
-        ctx.bandit_context = []
-        ctx.bandit_attribution_state = "skipped"
+        from sage.pipeline_v2.bandit_attribution import clear_bandit_decision
+        clear_bandit_decision(self, ctx)
 
     def _cancel_bandit_decision(self, ctx: PipelineContext, *, force: bool = False) -> bool:
-        decision_id = str(getattr(ctx, "bandit_decision_id", "") or "")
-        if not decision_id and not force:
-            return False
-        if self._rust_router and hasattr(self._rust_router, "cancel_bandit_decision"):
-            try:
-                return bool(self._rust_router.cancel_bandit_decision(decision_id))
-            except (ImportError, RuntimeError, ValueError) as exc:
-                log.warning("Bandit decision cancel failed: %s", exc)
-                return False
-        log.warning("Bandit decision cancel unavailable: SystemRouter wrapper missing")
-        return False
+        from sage.pipeline_v2.bandit_attribution import cancel_bandit_decision
+        return cancel_bandit_decision(self, ctx, force=force)
 
     def _record_bandit_outcome_checked(self, ctx: PipelineContext, quality: float) -> None:
-        if oracle_enabled():
-            verdict = getattr(ctx, "oracle_verdict", None)
-            if verdict is None or not verdict.trainable:
-                self._cancel_bandit_decision(ctx)
-                self._clear_bandit_decision(ctx)
-                return
-
-        if not getattr(ctx, "bandit_decision_id", ""):
-            return
-
-        raw_executed_model_ids = getattr(ctx, "executed_model_ids", [])
-        if isinstance(raw_executed_model_ids, Mapping):
-            raw_executed_model_ids = raw_executed_model_ids.values()
-        executed_model_ids = [model_id for model_id in raw_executed_model_ids if model_id]
-        if (
-            len(set(executed_model_ids)) > 1
-            or getattr(ctx, "executed_template", "") in _MULTI_NODE_ATTRIBUTION_TEMPLATES
-        ):
-            ctx.bandit_attribution_state = "skipped"
-            self._cancel_bandit_decision(ctx)
-            self._emit_bandit_attribution_mismatch(ctx, "multi_node_ambiguous")
-            self._clear_bandit_decision(ctx)
-            return
-
-        if not self._rust_router or not hasattr(self._rust_router, "record_outcome_checked"):
-            log.warning(
-                "Bandit outcome skipped: SystemRouter record_outcome_checked unavailable"
-            )
-            ctx.bandit_attribution_state = "mismatch"
-            self._cancel_bandit_decision(ctx)
-            self._emit_bandit_attribution_mismatch(ctx, "recorder_instance_mismatch")
-            return
-
-        try:
-            self._rust_router.record_outcome_checked(
-                ctx.bandit_decision_id,
-                ctx.executed_model_id,
-                ctx.executed_template,
-                quality,
-                ctx.cost,
-                ctx.latency_ms,
-            )
-            ctx.bandit_attribution_state = "verified"
-        except (ImportError, RuntimeError, ValueError) as exc:
-            reason_code = self._bandit_reason_from_exception(exc)
-            ctx.bandit_attribution_state = "mismatch"
-            self._cancel_bandit_decision(ctx)
-            self._emit_bandit_attribution_mismatch(ctx, reason_code)
+        from sage.pipeline_v2.bandit_attribution import record_bandit_outcome_checked
+        record_bandit_outcome_checked(self, ctx, quality)
 
     def _pick_fallback_provider(self):
         """Return (provider, config) for a healthy fallback, or (None, None).
