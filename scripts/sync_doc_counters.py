@@ -115,6 +115,31 @@ def load_current_json(repo_root: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def bump_commit_sha(repo_root: Path, head_sha: str) -> dict[str, Any]:
+    """Set `git.snapshot_commit_sha` and `git.generated_for_commit_sha` to `head_sha`.
+
+    Cycle-13 K Phase 0.1b: cgpro 2026-05-06 trap #1 — at db304bc6,
+    current.json embarked `git.commit_sha=32d39bdf`. The 1-commit
+    grace would have masked the drift instead of catching it. The
+    strict gate now demands an EXPLICIT pair `snapshot_commit_sha` ==
+    `generated_for_commit_sha`, both bumped intentionally before the
+    commit that ships them.
+
+    The CI gate accepts a bounded 1-commit grace — codified, not
+    implicit — because the two fields are written before the commit
+    they describe lands.
+    """
+    path = repo_root / "docs" / "status" / "current.json"
+    payload = load_current_json(repo_root)
+    payload.setdefault("git", {})
+    payload["git"]["snapshot_commit_sha"] = head_sha
+    payload["git"]["generated_for_commit_sha"] = head_sha
+    payload["git"]["commit_sha"] = head_sha  # back-compat with v1 readers
+    payload["schema_version"] = "v2"
+    path.write_text(json.dumps(payload, indent=2, sort_keys=False) + "\n", encoding="utf-8")
+    return payload
+
+
 # ---------------------------------------------------------------------------
 # Per-doc rewriters. Each returns (new_text, drifts_found_under_old_text).
 # Even when --check is true, we compute the "would-be" new text to confirm
@@ -300,9 +325,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--check", action="store_true", help="Don't write; exit 1 on drift.")
     parser.add_argument("--json", action="store_true", help="Print drift report as JSON.")
     parser.add_argument("--repo-root", type=Path, default=None)
+    parser.add_argument(
+        "--bump-commit-sha",
+        type=str,
+        default=None,
+        metavar="SHA",
+        help=(
+            "Set git.snapshot_commit_sha + git.generated_for_commit_sha + "
+            "git.commit_sha to SHA in current.json, bump schema_version to v2, "
+            "and run the regular sync. Run BEFORE staging your commit so "
+            "current.json describes the state the upcoming commit will land at."
+        ),
+    )
     args = parser.parse_args(argv)
 
     repo_root = args.repo_root if args.repo_root else _find_repo_root(Path.cwd())
+
+    if args.bump_commit_sha is not None:
+        bump_commit_sha(repo_root, args.bump_commit_sha)
+
     ok, drifts = sync(repo_root, check_only=args.check)
 
     if args.json:

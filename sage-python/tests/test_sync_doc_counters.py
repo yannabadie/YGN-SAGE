@@ -209,6 +209,50 @@ def test_invariant_count_propagates_into_readme(tmp_path: Path) -> None:
     assert "8 invariants" not in out
 
 
+def test_bump_commit_sha_writes_v2_schema_and_two_fields(tmp_path: Path) -> None:
+    """Phase 0.1b: --bump-commit-sha sets schema_version=v2 + two SHA fields."""
+    repo = _build_repo(tmp_path, py=100, rust=10, disc=5)
+    sync_mod = _load_sync_module()
+    sync_mod.bump_commit_sha(repo, "abc123def456")
+    payload = json.loads((repo / "docs" / "status" / "current.json").read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "v2"
+    assert payload["git"]["snapshot_commit_sha"] == "abc123def456"
+    assert payload["git"]["generated_for_commit_sha"] == "abc123def456"
+    # commit_sha kept for v1 backward-compat.
+    assert payload["git"]["commit_sha"] == "abc123def456"
+
+
+def test_bump_commit_sha_preserves_other_payload_fields(tmp_path: Path) -> None:
+    """The bump operation must not destructively edit unrelated content."""
+    repo = _build_repo(tmp_path, py=100, rust=10, disc=5)
+    sync_mod = _load_sync_module()
+    # Inject extra unrelated fields.
+    payload_path = repo / "docs" / "status" / "current.json"
+    p = json.loads(payload_path.read_text(encoding="utf-8"))
+    p["sage_python_tests"]["extra_meta"] = "preserve me"
+    p["custom_top_level"] = ["a", "b"]
+    payload_path.write_text(json.dumps(p), encoding="utf-8")
+
+    sync_mod.bump_commit_sha(repo, "deadbeef")
+    after = json.loads(payload_path.read_text(encoding="utf-8"))
+    assert after["sage_python_tests"]["extra_meta"] == "preserve me"
+    assert after["custom_top_level"] == ["a", "b"]
+    assert after["git"]["snapshot_commit_sha"] == "deadbeef"
+
+
+def test_main_with_bump_commit_sha_flag(tmp_path: Path) -> None:
+    """--bump-commit-sha CLI flag also runs the regular sync pass."""
+    repo = _build_repo(tmp_path, py=42, rust=5, disc=3)
+    sync_mod = _load_sync_module()
+    rc = sync_mod.main(["--repo-root", str(repo), "--bump-commit-sha", "feedfaceb000"])
+    assert rc == 0
+    payload = json.loads((repo / "docs" / "status" / "current.json").read_text(encoding="utf-8"))
+    assert payload["git"]["snapshot_commit_sha"] == "feedfaceb000"
+    # And README badge got updated too (proves the regular sync ran).
+    readme = (repo / "README.md").read_text(encoding="utf-8")
+    assert "tests-42%20Py%20%2B%205%20Rust" in readme
+
+
 def test_invariant_count_does_not_touch_claude_md(tmp_path: Path) -> None:
     """CLAUDE.md is INTENTIONALLY excluded — historical references like
     `5 invariants at cycle-8 closure` must NOT be rewritten."""
