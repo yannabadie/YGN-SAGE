@@ -10,7 +10,7 @@ paths:
 Performance-critical code MUST be in Rust (sage-core). Python is orchestration + fallback only.
 - New modules: Rust first → PyO3 export → Python fallback optional
 - Check sage-core/src/ for existing Rust module before writing Python
-- Routing: Rust SystemRouter (88%) + Rust kNN (92%) are PRIMARY
+- Routing: Rust SystemRouter + Rust kNN are PRIMARY; accuracy claims `routing.system_router_88pct` / `routing.knn_92pct` are `evidence_pending` in `docs/CLAIMS.yaml`.
 - Quality: Rust QualityLabeler (Z3 formal) is PRIMARY
 - Topology: Rust TopologyEngine (6-path) is PRIMARY
 - Memory: Rust Arrow + S-MMU is PRIMARY

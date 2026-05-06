@@ -30,15 +30,16 @@ Le ComplexityRouter heuristic est **Priority-3 emergency fallback only** (NOT de
 ## Stage 3 — SELECT TOPOLOGY
 
 **Composant** : DynamicTopologyEngine (Rust)
-**6 chemins + fallback templates** :
+**6 engine paths (Rust `TopologySource` canonical)** :
 
 1. **S-MMU retrieval** — cherche une topologie passee similaire (similarity > 0.7)
 2. **MAP-Elites archive** — meilleur elite du QD archive
 3. **LLM synthesis** — genere via prompt structure
 4. **Mutation** — mute un elite existant (7 operateurs)
 5. **MCTS** — Monte Carlo tree search dans l'espace de mutation
-6. **Path 6: Learned policy** — Qwen3-4B ou Nemotron-8B (opt-in, `SAGE_ENABLE_PATH6=1`)
-7. **Templates fallback** — 11 templates pre-cables
+6. **Templates fallback** — 11 templates pre-cables (engine path 6 per Rust enum)
+
+**Optional learned-policy path** (legacy env-var name `SAGE_ENABLE_PATH6=1`; sibling-of-6, NOT engine path 6) — Qwen3-4B ou Nemotron-8B, opt-in default-off.
 
 **Pre-filtre** : `select_macro_topology()` utilise les features structurelles du DAG :
 - omega (parallelism) eleve → `parallel_fanout`
