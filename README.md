@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-3132%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-3136%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -88,27 +88,30 @@ Unlike frameworks that use fixed agent pipelines, SAGE designs, executes, and im
 └─────────┘     └──────────┘     └──────────┘     └────────┘     └─────────┘     └───────┘
      │                │                │                │              │              │
   kNN router     TaskPlanner     TopologyEngine    ModelAssigner  TopologyRunner   Bandit +
-  (92% GT)       → TaskDAG       6 paths:          per-node       node-by-node    MAP-Elites +
-  S1/S2/S3                       S-MMU hit         model from     with provider   Memory +
-  routing                        MAP-Elites        cards.toml     resolution      Evolution
-                                 LLM synthesis     (7 providers)  + code nodes
+  (kNN primary,  → TaskDAG       6 paths:          per-node       node-by-node    MAP-Elites +
+  see CLAIMS)                    S-MMU hit         model from     with provider   Memory +
+  S1/S2/S3                       MAP-Elites        cards.toml     resolution      Evolution
+  routing                        LLM synthesis     (7 providers)  + code nodes
                                  Mutation/MCTS                    + adaptation
-                                 Path 6: learned
-                                 Templates (x8)
+                                 Templates (x11)
+                                 + optional
+                                 learned policy
 ```
 
-**Stage 1 — Classify:** The kNN router (92% accuracy on ground truth, [arXiv 2505.12601](https://arxiv.org/abs/2505.12601)) classifies the task into cognitive system S1 (simple), S2 (moderate), or S3 (complex) using arctic-embed-m embeddings.
+**Stage 1 — Classify:** The kNN router (primary; backing research [arXiv 2505.12601](https://arxiv.org/abs/2505.12601)) classifies the task into cognitive system S1 (simple), S2 (moderate), or S3 (complex) using arctic-embed-m embeddings. The often-cited "92% GT accuracy" figure is currently `evidence_pending` in [`docs/CLAIMS.yaml`](docs/CLAIMS.yaml) — a CI-runnable test pinning that threshold is a follow-up.
 
 **Stage 2 — Decompose:** TaskPlanner breaks the task into a dependency DAG with features (complexity, branching, domain).
 
-**Stage 3 — Select Topology:** The DynamicTopologyEngine tries 6 paths in order:
+**Stage 3 — Select Topology:** The DynamicTopologyEngine tries 6 generation paths in order. The Rust enum `TopologySource` is canonical:
+
 1. **S-MMU retrieval** — find a similar past topology from memory (semantic similarity > 0.7)
 2. **MAP-Elites archive** — pick the best elite from the quality-diversity archive
 3. **LLM synthesis** — generate a new topology via structured LLM prompt
 4. **Mutation** — mutate an existing elite (7 operators: add/remove node, swap model, rewire edge, split/merge, mutate prompt)
 5. **MCTS** — Monte Carlo tree search over the mutation space
-6. **Path 6: Learned policy** — a trained model (Qwen3-4B local, Nemotron-8B pod) generates the topology via tool-call. Enable with `SAGE_ENABLE_PATH6=1`.
-7. **Templates** — 11 pre-wired fallback patterns (sequential, parallel, AVR, debate, hub, hierarchical, selfmoa, brainstorming, robust, horizon_pipeline, parallel_fanout)
+6. **Template fallback** — 11 pre-wired patterns (sequential, parallel, AVR, debate, hub, hierarchical, selfmoa, brainstorming, robust, horizon_pipeline, parallel_fanout)
+
+**Optional learned-policy path** (NOT counted in the 6 engine paths above): a trained model (Qwen3-4B local, Nemotron-8B pod) can generate the topology via tool-call. Enabled by `SAGE_ENABLE_PATH6=1`, default off, inference-only on `main`. Historically called "Path 6" but the *engine* path 6 is template fallback per the Rust enum; the learned-policy path is a sibling-of-6, not 6 itself. CLAIMS registry tracks them as `topology.engine_6_paths` and `topology.path6_learned` respectively.
 
 Before the 6-path engine, `select_macro_topology()` uses DAG structural features (omega=parallelism, delta=depth, gamma=coupling) to select specialized templates: deep chains → `horizon_pipeline`, wide parallel → `parallel_fanout`, coupled parallel → `robust` (majority voting).
 
@@ -244,8 +247,11 @@ proof of capability.
 |---|---|---|
 | **Source install (`maturin develop`)** | `delivered` | Requires Rust toolchain. See [Install from source](#install-from-source). |
 | **`pip install ygn-sage` (one command)** | `planned` | Cycle-10 P5 (B4 wheels). Until then, source-only. |
-| **Cognitive routing S1/S2/S3 (kNN primary, 92% GT)** | `delivered` | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601), 60-task internal GT. Rust SystemRouter 88% GT secondary. |
-| **Topology engine 6-path (S-MMU/archive/LLM/mutation/MCTS/templates)** | `delivered` | Rust `TopologyEngine`, 11 templates fallback. |
+| **Cognitive routing path wired (S1/S2/S3, kNN + SystemRouter cascade)** | `delivered` | Routing path exists end-to-end and is exercised in CI; the kNN router and Rust `SystemRouter` are both wired into `pipeline.py`. |
+| **kNN routing accuracy ~92% on internal GT** | `evidence_pending` | Cited across docs but no CI-runnable test pins the figure to a seeded threshold. Follow-up: ship `tests/test_routing_gt_invariant.py` over the 60-task GT set with seed pinned, pin in `docs/claims/routing.yaml`. |
+| **Rust SystemRouter accuracy ~88% on internal GT** | `evidence_pending` | Same status / same follow-up as the kNN figure. |
+| **Topology engine module shipped (6 generation paths in Rust)** | `delivered` | Rust `TopologyEngine`, 11 templates fallback. The 6 paths are S-MMU retrieval, MAP-Elites archive, LLM synthesis, mutation, MCTS, template fallback. |
+| **All 6 engine paths proven end-to-end in CI** | `evidence_pending` | Per-path coverage exists in scattered Rust unit tests but no single end-to-end test exercises every path. Follow-up: ship `tests/test_topology_engine_six_paths.py`, pin in `docs/claims/topology.yaml`. |
 | **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
 | **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
 | **Runtime integrity ledger (9 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |

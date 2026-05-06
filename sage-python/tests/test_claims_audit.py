@@ -195,6 +195,57 @@ def test_delivered_with_malformed_commit_sha_is_error(tmp_path: Path) -> None:
     assert any(v.field_name == "evidence_commit" and v.severity == "error" for v in violations)
 
 
+def test_evidence_benchmark_prefix_ok_accepts_canonical_paths() -> None:
+    """Phase 0.6 (cgpro post-push): allowed prefixes are docs/benchmarks/
+    and docs/audits/. Any other location fails the contract."""
+    assert claims_audit._evidence_benchmark_prefix_ok("docs/benchmarks/2026-04-08-foo.json")
+    assert claims_audit._evidence_benchmark_prefix_ok("docs/audits/2026-04-22-bar.md")
+
+
+def test_evidence_benchmark_prefix_ok_rejects_other_locations() -> None:
+    assert not claims_audit._evidence_benchmark_prefix_ok("docs/random/foo.json")
+    assert not claims_audit._evidence_benchmark_prefix_ok("README.md")
+    assert not claims_audit._evidence_benchmark_prefix_ok("sage-python/tests/test_x.py")
+    assert not claims_audit._evidence_benchmark_prefix_ok("/etc/passwd")
+
+
+def test_evidence_benchmark_prefix_ok_normalizes_backslashes() -> None:
+    """Windows path separators must not slip past the gate."""
+    assert claims_audit._evidence_benchmark_prefix_ok("docs\\benchmarks\\foo.json")
+    assert claims_audit._evidence_benchmark_prefix_ok("docs\\audits\\bar.md")
+
+
+def test_audit_claim_rejects_benchmark_outside_allowed_prefix(tmp_path: Path) -> None:
+    """A delivered claim whose evidence_benchmark exists on disk but lives
+    outside docs/benchmarks/ or docs/audits/ MUST fail strict mode. The
+    docstring promised this; pre-Phase-0.6 the implementation accepted
+    any existing file in the repo."""
+    repo = _make_repo_root(tmp_path)
+    # Seed a file at a non-canonical location.
+    bogus_dir = repo / "scripts" / "stuff"
+    bogus_dir.mkdir(parents=True)
+    bogus_file = bogus_dir / "leak.json"
+    bogus_file.write_text("{}", encoding="utf-8")
+
+    violations = claims_audit.audit_claim(
+        repo,
+        _full_claim(
+            evidence_test="evidence_pending",
+            evidence_benchmark="scripts/stuff/leak.json",
+        ),
+    )
+    prefix_violations = [
+        v for v in violations
+        if v.field_name == "evidence_benchmark"
+        and v.severity == "error"
+        and "outside the allowed prefixes" in v.message
+    ]
+    assert prefix_violations, (
+        f"Audit accepted a benchmark anchor outside docs/benchmarks/ or "
+        f"docs/audits/; got violations={violations}"
+    )
+
+
 def test_evidence_benchmark_missing_file_is_error_when_pinned(tmp_path: Path) -> None:
     """Phase 0.4: if a claim explicitly pins evidence_benchmark to a path,
     that path must exist (otherwise the registry is lying about the anchor).

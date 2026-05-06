@@ -13,7 +13,17 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 
 **Ce que le système fait réellement (2026-05-04) :**
 
-- Route les tâches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (92% GT) + Rust SystemRouter (88% GT) + bandit contextuel Thompson, avec **attribution causale** Stage-0 → Stage-5 (`route_integrated()` + `record_outcome_checked()` depuis cycle-9 `6f23eea4`).
+> **Note sur les pourcentages cités** (cycle-13 K Phase 0.6, 2026-05-06) :
+> les capacités sont trackées en machine-readable dans `docs/CLAIMS.yaml`
+> (sortie autogénérée de `docs/claims/*.yaml`). Lorsque ce document cite
+> un chiffre (kNN 92%, SystemRouter 88%, BCB 45.9%, MASBENCH +22pp,
+> SWE-bench Lite 10%), le statut autoritaire est dans le registre. Les
+> chiffres sans test/bench CI-runnable piné sont taggés
+> `evidence_pending` dans le registre et NE doivent PAS être traités
+> comme preuve de capacité tant que `python -m sage.ops.claims_audit
+> --strict` ne pin pas l'évidence.
+
+- Route les tâches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (`routing.knn_92pct` = `evidence_pending`) + Rust SystemRouter (`routing.system_router_88pct` = `evidence_pending`) + bandit contextuel Thompson, avec **attribution causale** Stage-0 → Stage-5 (`route_integrated()` + `record_outcome_checked()` depuis cycle-9 `6f23eea4`).
 - Génère des topologies multi-agents (11 templates + MAP-Elites + MCTS + CMA-ME + LLM synthesis) et les exécute via `TopologyRunner` avec résolution per-node de providers.
 - Pipeline 5-stages (CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN) avec boucle d'apprentissage bandit, **TopologyController Rust-primary** (ADR-012, 2026-04-20).
 - Sandbox **par défaut** : tree-sitter AST + RustPython wasm32-wasip1 deny-by-default WASI-p1 (ADR-013 §5 flip 2026-04-22, `validate_and_execute` ne fall-back plus en subprocess).
@@ -41,7 +51,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3132** (canonical : `docs/status/current.json`) |
+| **Tests Python collected** | **3136** (canonical : `docs/status/current.json`) |
 | **Tests Rust** | **553** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
 | **mypy / ruff** | mypy 0 errors / 183 files, ruff clean, type:ignore ceiling 45/45 |

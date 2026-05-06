@@ -24,10 +24,22 @@ runs `--check` on every push to fail CI if any doc drifts away from
 `current.json`.
 
 This script does NOT compute test counts itself — that's
-`pytest --collect-only` + `cargo test --list`. It only propagates.
-The CI gate also runs `pytest --collect-only` and asserts the
-result equals `current.json#sage_python_tests.total` so a stale
-`current.json` is caught at the same moment as a stale README.
+`pytest --collect-only` + `cargo test --list`. It only propagates
+counter values from `current.json` to the downstream docs.
+
+**Scope of the CI gate** (cycle-13 K Phase 0.6, cgpro post-push
+2026-05-06 trap #4): the workflow `doc-counters-coherence.yml` is a
+COUNTER-PROPAGATION GATE. It verifies that the four canonical docs
+(README badge, AI-ARCHITECTURE.md header, .claude/rules/architecture.md,
+docs/status/current.json) all cite the same counter values. It does
+NOT run `pytest --collect-only` and does NOT compare to the live
+test surface — that would require a full sage_core wheel build in CI
+which is too expensive for a per-push gate. The deeper "counter
+matches actual test surface" assertion is left to the developer
+flow (run `pytest --collect-only -q` locally, update `current.json`,
+re-run sync) plus the per-suite CI jobs that run pytest anyway.
+The narrow contract this gate ships is "the four docs agree", not
+"the four docs are right".
 """
 from __future__ import annotations
 

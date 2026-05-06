@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-06T10:38:44+00:00'
+_generated_at_utc: '2026-05-06T11:01:08+00:00'
 _total_claims: 19
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -419,8 +419,11 @@ claims:
   _source_file: docs/claims/topology.yaml
 - id: topology.path6_learned
   status: opt-in
-  description: Path 6 = learned topology policy (Phi-4-mini SFT or Nemotron-Orchestrator-8B GiGPO). Inference-only
-    on `main`. Default-off; opt-in via SAGE_ENABLE_PATH6=1.
+  description: Optional learned-policy generation path (Phi-4-mini SFT or Nemotron-Orchestrator-8B GiGPO).
+    Inference-only on `main`. Default-off; opt-in via SAGE_ENABLE_PATH6=1. Historically called 'Path 6';
+    note that the *engine* path 6 (per the Rust `TopologySource` enum) is template fallback, NOT this
+    learned policy. The learned policy is a sibling-of-6, not 6 itself — keep the env-var name for backward
+    compat but treat it as 'optional learned policy' in narrative.
   evidence_test: n/a
   evidence_benchmark: n/a
   evidence_commit: n/a
@@ -430,11 +433,19 @@ claims:
 
     (1) explicit feature flag, (2) default-off, (3) claim
 
-    opt-in/experimental in registry (this entry), (4) non-regression
+    opt-in/experimental in registry (this entry), (4) source-and-
 
-    test asserting `path6_usage_count == 0` in default config. (4)
+    env default-off guard test (Phase 0.5 + 0.6 of cycle-13 K).
 
-    is owned by Phase 0.5 (cycle-13 K).
+    The deeper "runtime path6_usage_count == 0 under default env"
+
+    assertion is deferred to Phase 2.1/2.2 where the topology
+
+    engine refactor exposes a Python-side seam for the learned-
+
+    policy callsite. Until then, the source-scan + allowlist test
+
+    in `tests/test_path6_default_off.py` is the binding contract.
 
     '
   _source_file: docs/claims/topology.yaml

@@ -189,8 +189,27 @@ def _evidence_test_resolves(repo_root: Path, value: str) -> bool:
     return (repo_root / file_part).is_file()
 
 
+_EVIDENCE_BENCHMARK_ALLOWED_PREFIXES: tuple[str, ...] = (
+    "docs/benchmarks/",
+    "docs/audits/",
+)
+
+
 def _evidence_benchmark_resolves(repo_root: Path, value: str) -> bool:
     return (repo_root / value).is_file()
+
+
+def _evidence_benchmark_prefix_ok(value: str) -> bool:
+    """Cycle-13 K Phase 0.6 (cgpro post-push 2026-05-06 trap): the audit
+    docstring promised that `evidence_benchmark` lives under
+    `docs/benchmarks/` or `docs/audits/`, but the implementation accepted
+    any existing file in the repo. This check enforces the docstring.
+
+    Path separators are normalized so Windows-style backslashes don't slip
+    a `docs\\benchmarks\\foo.json` past the gate.
+    """
+    normalized = value.replace("\\", "/").lstrip("./")
+    return any(normalized.startswith(prefix) for prefix in _EVIDENCE_BENCHMARK_ALLOWED_PREFIXES)
 
 
 _SHA_PATTERN = re.compile(r"^[0-9a-f]{7,40}$")
@@ -284,6 +303,19 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
                     "error",
                     "evidence_benchmark",
                     f"evidence_benchmark path `{ev_bench}` does not exist on disk",
+                )
+            )
+
+        if bench_pinned and not _evidence_benchmark_prefix_ok(ev_bench):
+            out.append(
+                Violation(
+                    cid,
+                    "error",
+                    "evidence_benchmark",
+                    f"evidence_benchmark path `{ev_bench}` is outside the "
+                    f"allowed prefixes {list(_EVIDENCE_BENCHMARK_ALLOWED_PREFIXES)}. "
+                    f"A benchmark anchor must live under docs/benchmarks/ or "
+                    f"docs/audits/ — that's the contract the registry binds.",
                 )
             )
 

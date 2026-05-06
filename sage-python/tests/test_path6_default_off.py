@@ -1,40 +1,40 @@
-"""Path 6 default-off non-regression test.
+"""Optional-learned-policy default-off non-regression test (sometimes called "Path 6").
 
-Cycle-13 K Phase 0.5 (cgpro `Analyse approfondie de repo` 2026-05-06
-answer 4): Path 6 (learned topology policy) is shipped on `main` as
-inference-only behind `SAGE_ENABLE_PATH6=1`. Per the cgpro contract,
-keeping it on `main` requires:
+Cycle-13 K Phase 0.5 + 0.6 (cgpro `Analyse approfondie de repo`
+2026-05-06 answer 4 + post-push EDIT_REQUIRED): the optional
+learned-policy generation path (env var `SAGE_ENABLE_PATH6` for
+backward compat) is shipped on `main` as inference-only behind
+`SAGE_ENABLE_PATH6=1`. The runtime contract this test BINDS:
 
-  1. Feature flag exists and is read-only-on-set (already true).
-  2. Default-off (no auto-enable in any boot path).
-  3. CLAIMS.yaml entry `topology.path6_learned` with status `opt-in`.
-  4. THIS test — non-regression that asserts (a) the registry agrees
-     on `opt-in`, (b) no source file implicitly sets
-     `os.environ["SAGE_ENABLE_PATH6"] = "1"` (or equivalent) during
-     boot or normal runtime paths.
+  1. Source default-off — no module under `sage-python/src/` may
+     set `os.environ["SAGE_ENABLE_PATH6"]` to a truthy value in
+     module-level or boot-path code (direct mutation OR setdefault
+     to "1" / "true" / etc. is rejected).
+  2. Sanctioned channel — the runtime feature-flag allowlist
+     (`sage.runtime.run_frame.builder._RunFrameBuilder._ALLOWED_FEATURE_FLAGS`)
+     still includes `SAGE_ENABLE_PATH6`, proving the env-var is the
+     ONLY sanctioned enabling channel (no config file / hardcoded
+     toggle / sys.argv parser etc.).
+  3. Registry agreement — `docs/claims/topology.yaml` entry
+     `topology.path6_learned` has status `opt-in` (not `delivered`,
+     not `default-on`).
 
-If a future PR ever flips the default, this test fails and the
+EXPLICIT NON-PROMISE (cgpro 2026-05-06 trap #3): this test does NOT
+prove the runtime path itself short-circuits when `SAGE_ENABLE_PATH6`
+is unset. That assertion requires a Python-side seam on the
+learned-policy callsite (which currently lives in Rust) and is
+deferred to Phase 2.1/2.2 of cycle-13 K, when the topology engine
+refactor exposes such a seam. The contract this file ships is
+narrower-but-binding: source-default-off + sanctioned-channel +
+registry-agreement.
+
+If a future PR ever flips any of (1)-(3), this test fails and the
 ALIRE-driven default-off contract is preserved as a hard gate.
-
-Concrete contract checked here:
-  - `topology.path6_learned` is in `docs/claims/topology.yaml` with
-    status == "opt-in".
-  - No source file under `sage-python/src/` mutates
-    `os.environ["SAGE_ENABLE_PATH6"]` to truthy ("1", "true", ...)
-    in module-level or boot-path code. CI tests may set the env var
-    to exercise the opt-in path; that's allowed because tests live
-    under `tests/` not `src/`.
-  - The runtime feature-flag allowlist
-    (`sage.runtime.run_frame.builder.RunFrameBuilder._ALLOWED_FEATURE_FLAGS`)
-    still includes `SAGE_ENABLE_PATH6` — proving that the only
-    sanctioned channel for enabling Path 6 is the env-var, NOT a
-    config file or a hardcoded toggle.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
