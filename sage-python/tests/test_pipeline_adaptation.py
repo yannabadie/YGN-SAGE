@@ -4,6 +4,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from sage.pipeline_v2.assign_models import assign_models
+from sage.pipeline_v2.learn import learn
 from sage.topology_controller import TopologyController, AdaptationDecision
 
 
@@ -108,7 +109,7 @@ def test_prm_skipped_on_plain_text():
     ctx.result = "just plain text with no think tags or code"
     ctx.latency_ms = 100.0
 
-    pipeline._stage_learn(ctx)
+    asyncio.run(learn(pipeline, ctx))
     prm.calculate_r_path.assert_not_called()
 
 

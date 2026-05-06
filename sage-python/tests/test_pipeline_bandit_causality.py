@@ -13,6 +13,7 @@ import pytest
 from sage.llm.base import LLMConfig, LLMResponse
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
 from sage.pipeline_v2.execute import execute
+from sage.pipeline_v2.learn import learn
 from sage.runtime.event_log import RuntimeEventLog, install_event_log
 
 
@@ -289,7 +290,7 @@ async def _learn_with_trace(
     token = install_event_log(log)
     try:
         log.emit_task_started(ctx.task)
-        await pipeline._stage_learn(ctx)
+        await learn(pipeline, ctx)
     finally:
         token.var.reset(token)
         log.close()
@@ -587,7 +588,7 @@ async def test_multi_agent_path_does_not_select_or_record_standalone_bandit(
     )
 
     ctx = await execute(pipeline, ctx)
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert ctx.result == "multi-agent output"
     assert ctx.bandit_decision_id == ""
