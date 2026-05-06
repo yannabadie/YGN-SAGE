@@ -272,7 +272,7 @@ conservative" by cgpro+plan agreement. Cycle-11 is the right place.
   C2" plan). Final Phase 2.1 acceptance amended:
     - pipeline.py 1800 LOC → 727 LOC (1073 LOC migrated; **landing
       inside cgpro round-4 amended target 650-800 LOC**).
-    - 5 stage bodies + orchestrator + 5 helper modules + PipelineContext
+    - 6 stage bodies + orchestrator + 5 helper modules + PipelineContext
       dataclass all moved to pipeline_v2/.
     - 6 `_stage_*` methods + ~22 `_<helper>` delegator methods retained
       as transitional runtime test seams (the 27-file `pipeline._stage_*
