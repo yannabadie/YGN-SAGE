@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
+from sage.pipeline_v2.assign_models import assign_models
 from sage.topology_controller import TopologyController, AdaptationDecision
 
 
@@ -87,7 +88,7 @@ def test_oxiz_verification_fail_proceeds():
     ctx.assignments = {0: "test-model"}
 
     # Should not raise even if verification fails internally
-    pipeline._stage_assign_models(ctx)
+    assign_models(pipeline, ctx)
     # If we get here, it's non-blocking ✓
 
 
