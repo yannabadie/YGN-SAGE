@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from sage.pipeline_v2.learn import learn
+
 
 @pytest.fixture(autouse=True)
 def _legacy_oracle_off(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,7 +176,7 @@ class TestPipelineEvolutionWiring:
         pipeline, engine = self._make_pipeline_with_mock_engine(should_evolve_returns=True)
         ctx = self._make_learn_ctx()
 
-        await pipeline._stage_learn(ctx)
+        await learn(pipeline, ctx)
 
         engine.should_evolve.assert_called_once()
         engine.evolve.assert_called_once()
@@ -194,7 +196,7 @@ class TestPipelineEvolutionWiring:
         pipeline, engine = self._make_pipeline_with_mock_engine(should_evolve_returns=False)
         ctx = self._make_learn_ctx()
 
-        await pipeline._stage_learn(ctx)
+        await learn(pipeline, ctx)
 
         engine.should_evolve.assert_called_once()
         engine.evolve.assert_not_called()
@@ -215,7 +217,7 @@ class TestPipelineEvolutionWiring:
         ctx = self._make_learn_ctx()
 
         # Must not raise — degrades silently
-        await pipeline._stage_learn(ctx)
+        await learn(pipeline, ctx)
 
 
 # -- H4 (2026-04-19): empirical end-to-end against the REAL Rust engine --------

@@ -63,6 +63,7 @@ from sage.pipeline import (
     PipelineContext,
 )
 from sage.pipeline_v2.execute import execute
+from sage.pipeline_v2.learn import learn
 from sage.runtime.oracle.verdict import OracleVerdict
 
 
@@ -373,7 +374,7 @@ async def test_path_single_agent_bypass_settles_with_record_once(
     capture.issue("d-bypass")
     ctx = _make_ctx_single_agent_bypass("d-bypass")
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-bypass", expected="record")
 
@@ -387,7 +388,7 @@ async def test_path_topology_runner_single_model_settles_with_record_once(
     capture.issue("d-seq-1")
     ctx = _make_ctx_topology_runner_single_model("d-seq-1")
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-seq-1", expected="record")
 
@@ -401,7 +402,7 @@ async def test_path_topology_runner_multi_node_template_cancels_once(
     capture.issue("d-parallel")
     ctx = _make_ctx_topology_runner_multi_node_template("d-parallel")
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-parallel", expected="cancel")
     pipeline._emit_bandit_attribution_mismatch.assert_called_once()
@@ -420,7 +421,7 @@ async def test_path_topology_runner_multi_executed_models_cancels_once(
     capture.issue("d-seq-multi")
     ctx = _make_ctx_topology_runner_multi_executed_models("d-seq-multi")
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-seq-multi", expected="cancel")
 
@@ -436,7 +437,7 @@ async def test_path_oracle_abstain_cancels_once(
     capture.issue("d-abstain")
     ctx = _make_ctx_oracle_abstain("d-abstain")
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-abstain", expected="cancel")
     # No record_outcome_checked attempt — the gate short-circuits
@@ -473,7 +474,7 @@ async def test_record_outcome_mismatch_raises_then_cancels_once(
     ctx = _make_ctx_single_agent_bypass("d-mismatch")
     ctx.executed_model_id = "different-model"  # forces mismatch
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     _assert_settled_exactly_once(capture, "d-mismatch", expected="cancel")
     assert len(capture.record_attempts) == 1, (
@@ -521,7 +522,7 @@ async def test_invariant_singleton_settle_per_decision_id_across_all_paths(
             monkeypatch.setenv("SAGE_ORACLE", "0")
         capture.issue(decision_id)
         ctx = ctx_factory(decision_id)
-        await pipeline._stage_learn(ctx)
+        await learn(pipeline, ctx)
         _assert_settled_exactly_once(capture, decision_id, expected=expected)
 
     # Final invariant check: every issued decision_id has exactly
@@ -689,7 +690,7 @@ async def test_path_frugalgpt_cascade_settles_decision_id_once(
     ctx = _make_multi_agent_ctx("d-cascade")
 
     ctx = await execute(pipeline, ctx)
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     # Cascade fired: 2 runner instances (initial + cascade retry).
     assert len(runner_instances) >= 2, (
@@ -768,7 +769,7 @@ async def test_path_multi_agent_error_fallback_settles_decision_id_once(
     ctx = _make_multi_agent_ctx("d-fallback")
 
     ctx = await execute(pipeline, ctx)
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     # Multi-agent runner attempted exactly once before raising.
     assert len(runner_instances) == 1, (

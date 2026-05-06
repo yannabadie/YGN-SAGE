@@ -57,6 +57,7 @@ import pytest
 
 from sage.constants import BANDIT_FLUSH_INTERVAL
 from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
+from sage.pipeline_v2.learn import learn
 from sage.posterior_epoch import (
     CONTAMINATED_MARKER_FILENAME,
     POSTERIOR_EPOCH_FILENAME,
@@ -183,7 +184,7 @@ async def test_periodic_save_blocks_when_bypass_env_active(
     )
     ctx = _build_minimal_ctx()
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert captured == [], (
         f"Periodic save fired under SAGE_BOOT_BYPASS_EPOCH_GUARD=1: "
@@ -226,7 +227,7 @@ async def test_periodic_save_blocks_on_contaminated_marker(
     )
     ctx = _build_minimal_ctx()
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert captured == [], (
         f"Periodic save fired with _CONTAMINATED.json present: "
@@ -270,7 +271,7 @@ async def test_periodic_save_blocks_on_state_files_without_manifest(
     )
     ctx = _build_minimal_ctx()
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert captured == [], (
         f"Periodic save fired with state files present but no "
@@ -314,7 +315,7 @@ async def test_periodic_save_proceeds_on_clean_state_dir(
     )
     ctx = _build_minimal_ctx()
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert len(captured) == 1, (
         f"Periodic save did not fire on clean state: {captured!r}. "
@@ -384,7 +385,7 @@ async def test_periodic_save_idempotent_after_first_save(
     )
     ctx = _build_minimal_ctx()
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert len(captured) == 1, (
         f"Subsequent flush after a clean save did not fire: "

@@ -83,6 +83,7 @@ from sage.pipeline import (
     CognitiveOrchestrationPipeline as Pipeline,
     PipelineContext,
 )
+from sage.pipeline_v2.learn import learn
 from sage.runtime.oracle.verdict import EvidenceRef, OracleVerdict
 
 
@@ -350,7 +351,7 @@ async def test_oracle_trainable_false_blocks_bandit_record_outcome_checked(
     capture.install_on(pipeline)
     ctx = _build_ctx_for_learn(oracle_verdict=_make_untrainable_verdict())
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert capture.bandit_record_calls == [], (
         f"Untrainable verdict allowed bandit posterior update: "
@@ -374,7 +375,7 @@ async def test_oracle_trainable_false_blocks_map_elites_record_outcome(
     capture.install_on(pipeline)
     ctx = _build_ctx_for_learn(oracle_verdict=_make_untrainable_verdict())
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert capture.map_elites_calls == [], (
         f"Untrainable verdict allowed MAP-Elites archive insert: "
@@ -399,7 +400,7 @@ async def test_oracle_trainable_false_blocks_online_evolution(
     capture.install_on(pipeline)
     ctx = _build_ctx_for_learn(oracle_verdict=_make_untrainable_verdict())
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert capture.should_evolve_calls == 0, (
         f"Untrainable verdict allowed should_evolve() probing: "
@@ -434,7 +435,7 @@ async def test_oracle_trainable_false_blocks_inter_tier_consolidation(
     pipeline._task_count = CONSOLIDATION_INTERVAL_STEPS - 1
     ctx = _build_ctx_for_learn(oracle_verdict=_make_untrainable_verdict())
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     assert capture.consolidate_calls == 0, (
         f"Untrainable verdict allowed inter-tier consolidation: "
@@ -480,7 +481,7 @@ async def test_oracle_trainable_true_allows_all_four_side_effects(
     pipeline._task_count = CONSOLIDATION_INTERVAL_STEPS - 1
     ctx = _build_ctx_for_learn(oracle_verdict=_make_trainable_verdict())
 
-    await pipeline._stage_learn(ctx)
+    await learn(pipeline, ctx)
 
     # 1. Bandit posterior recorded with the trainable score.
     assert len(capture.bandit_record_calls) == 1, (
