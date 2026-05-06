@@ -1,17 +1,31 @@
 """Stage 2 - SELECT_TOPOLOGY.
 
-Per ADR-015 + cgpro 2026-05-05 DESIGN lock
-(`cgpro_pi_mono_pivot_20260505`): cycle-12 Phase B moves the body of
-`CognitiveOrchestrationPipeline._stage_select_topology` here as a
-module-level function. Legacy method becomes a 1-line LOCAL-import
-delegator.
+Per ADR-015 + cgpro 2026-05-05 DESIGN lock + cgpro Phase 2.1 round-2
+GO_STEP_B 2026-05-06:
 
-Topology helper methods stay on `CognitiveOrchestrationPipeline` per
-cgpro DESIGN: `_build_topology_from_hint`, `_log_topology_structure`,
-`_apply_topology_budget_and_cache`, `_topology_candidate_items`, and
-`_log_topology_candidates` remain methods of the pipeline class. The
-body accesses them via `self.<helper>(...)` after the `self = pipeline`
-shim. Helper ownership migration is Phase C territory.
+  - cycle-12 Phase B moved the body of
+    `CognitiveOrchestrationPipeline._stage_select_topology` here as a
+    module-level function. Legacy method became a 1-line LOCAL-import
+    delegator.
+  - cycle-13 K Phase 2.1 Step B5 (2026-05-06) moved the
+    topology-construction helpers out to
+    `pipeline_v2/topology_helpers.py` (`build_topology_from_hint`,
+    `log_topology_structure`, `apply_topology_budget_and_cache`,
+    `topology_candidate_items`, `log_topology_candidates`,
+    `candidate_text_attr`, `candidate_float_attr`,
+    `candidate_node_count`, `check_topology_budget`,
+    `make_single_node_topology`). The pipeline class retains 1-line
+    delegator methods (`_<helper>`) so the call sites below
+    (`self._<helper>(...)` where self is the pipeline) continue working
+    byte-identical and the ~10 test files that mock these methods keep
+    firing. Stage 2 flow stays in this module per cgpro Q3 ("ne pas
+    faire monter select_topology.py à ~950 LOC").
+
+cgpro Q3 explicit garde-fou: `_estimate_topology_cost` and
+`_load_model_catalog` are NOT topology-construction helpers — they
+live in `pipeline_v2/costing.py` (consumed by Stage 4 execute when
+the runner doesn't produce a real cost; conceptually pricing/
+catalogue, not topology selection).
 """
 from __future__ import annotations
 

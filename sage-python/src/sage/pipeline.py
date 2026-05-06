@@ -820,49 +820,17 @@ class CognitiveOrchestrationPipeline:
         from sage.pipeline_v2.select_topology import select_topology as _v2_select_topology
         return _v2_select_topology(self, ctx)
 
+    # ── Topology helpers (Phase 2.1 Step B5, 2026-05-06) ───────────────────
+    # Bodies in `sage.pipeline_v2.topology_helpers`. Methods preserved as
+    # delegators for mockability. LOCAL imports.
+
     def _topology_candidate_items(self, result: Any) -> list[Any]:
-        if result is None:
-            return []
-        if isinstance(result, (list, tuple)):
-            return list(result)
-        candidates_attr = getattr(result, "candidates", None)
-        if callable(candidates_attr):
-            try:
-                candidates_attr = candidates_attr()
-            except Exception:
-                candidates_attr = None
-        if candidates_attr is not None:
-            try:
-                return list(candidates_attr)
-            except TypeError:
-                pass
-        return [result]
+        from sage.pipeline_v2.topology_helpers import topology_candidate_items
+        return topology_candidate_items(self, result)
 
     def _log_topology_candidates(self, candidates: list[Any]) -> None:
-        for path, candidate in enumerate(candidates, start=1):
-            source = self._candidate_text_attr(candidate, ("source",), "unknown")
-            score = self._candidate_float_attr(
-                candidate,
-                ("score", "confidence", "quality"),
-                0.0,
-            )
-            topology = getattr(candidate, "topology", None)
-            template = self._candidate_text_attr(
-                topology if topology is not None else candidate,
-                ("template_type", "template"),
-                "unknown",
-            )
-            nodes = self._candidate_node_count(topology if topology is not None else candidate)
-            log.info(
-                "topology.candidate path=%d source=%s archive_hit=%s "
-                "score=%.3f template_type=%s nodes=%d",
-                path,
-                source,
-                "true" if source in ("archive", "archive_hit") else "false",
-                score,
-                template,
-                nodes,
-            )
+        from sage.pipeline_v2.topology_helpers import log_topology_candidates
+        log_topology_candidates(self, candidates)
 
     @staticmethod
     def _candidate_text_attr(
@@ -870,20 +838,8 @@ class CognitiveOrchestrationPipeline:
         names: tuple[str, ...],
         default: str,
     ) -> str:
-        if obj is None:
-            return default
-        for name in names:
-            value = getattr(obj, name, None)
-            if callable(value):
-                try:
-                    value = value()
-                except Exception:
-                    value = None
-            if value is not None:
-                text = str(value)
-                if text:
-                    return text
-        return default
+        from sage.pipeline_v2.topology_helpers import candidate_text_attr
+        return candidate_text_attr(obj, names, default)
 
     @staticmethod
     def _candidate_float_attr(
@@ -891,39 +847,13 @@ class CognitiveOrchestrationPipeline:
         names: tuple[str, ...],
         default: float,
     ) -> float:
-        if obj is None:
-            return default
-        for name in names:
-            value = getattr(obj, name, None)
-            if callable(value):
-                try:
-                    value = value()
-                except Exception:
-                    value = None
-            if isinstance(value, bool) or value is None:
-                continue
-            if isinstance(value, (int, float)):
-                return float(value)
-            if isinstance(value, str):
-                try:
-                    return float(value)
-                except ValueError:
-                    continue
-        return default
+        from sage.pipeline_v2.topology_helpers import candidate_float_attr
+        return candidate_float_attr(obj, names, default)
 
     @staticmethod
     def _candidate_node_count(obj: Any) -> int:
-        if obj is None:
-            return 0
-        try:
-            node_count = getattr(obj, "node_count", None)
-            if callable(node_count):
-                return int(node_count())
-            if node_count is not None:
-                return int(node_count)
-        except Exception:
-            return 0
-        return 0
+        from sage.pipeline_v2.topology_helpers import candidate_node_count
+        return candidate_node_count(obj)
 
     def _log_topology_structure(
         self,
@@ -931,227 +861,32 @@ class CognitiveOrchestrationPipeline:
         source: str,
         confidence: float | None,
     ) -> None:
-        """Gap 1+2 (2026-04-21): emit two INFO lines describing the DAG shape.
-
-        Called from each Stage-2 branch right before the final cache step so
-        every selected topology gets attribution regardless of which of the
-        6 paths (smmu_hit / archive_hit / llm_synthesis / mutation /
-        mcts_search / template_fallback) or fallback branches produced it.
-
-        topology.edges — adjacency list. Truncated at 20 tuples; when the
-        graph has >20 edges, include `total=N` so readers can tell the
-        truncation happened. When the graph exposes no `get_edges`, we
-        emit count-only so post-run analysis still sees the structure.
-
-        topology.source — 6-path attribution with confidence. "dag_template"
-        and "template_fallback" are Python-side branches (no engine call);
-        all Rust-side sources are the canonical string from
-        PyGenerateResult.source() (sage-core/src/topology/pyo3_wrappers.rs).
-        """
-        if topology is None:
-            return
-
-        nodes = 0
-        try:
-            if hasattr(topology, "node_count"):
-                nc = topology.node_count()
-                nodes = nc() if callable(nc) else int(nc)
-        except Exception:
-            nodes = 0
-
-        template = getattr(topology, "template_type", None) or "unknown"
-        topo_id = getattr(topology, "id", "") or ""
-
-        # --- edges line ---
-        edges_render: str = "[]"
-        total_edges = 0
-        truncated = False
-        try:
-            if hasattr(topology, "get_edges"):
-                raw_edges = topology.get_edges()
-                edges_iter = list(raw_edges) if raw_edges is not None else []
-                total_edges = len(edges_iter)
-                # Keep only (from, to) tuples; flow_type (3rd field) omitted
-                # to keep the line short. Flow type is dominated by "control"
-                # for DAG templates and not load-bearing for grep.
-                pairs = [(int(e[0]), int(e[1])) for e in edges_iter[:20]]
-                edges_render = repr(pairs)
-                if total_edges > 20:
-                    truncated = True
-            elif hasattr(topology, "edge_count"):
-                ec = topology.edge_count()
-                total_edges = ec() if callable(ec) else int(ec)
-                edges_render = "<count-only>"
-        except Exception:
-            edges_render = "<unreadable>"
-
-        if truncated:
-            log.info(
-                "topology.edges nodes=%d template=%s id=%s edges=%s total=%d",
-                nodes, template, (topo_id[:8] if topo_id else "none"),
-                edges_render, total_edges,
-            )
-        else:
-            log.info(
-                "topology.edges nodes=%d template=%s id=%s edges=%s",
-                nodes, template, (topo_id[:8] if topo_id else "none"),
-                edges_render,
-            )
-
-        # --- source line ---
-        conf_str = (
-            f"{float(confidence):.3f}"
-            if confidence is not None
-            else "n/a"
-        )
-        # archive_hit flag (boolean) distinguishes the fast archive path from
-        # every other 6-path source — useful for MAP-Elites growth attribution.
-        archive_hit = (source == "archive_hit")
-        log.info(
-            "topology.source source=%s confidence=%s archive_hit=%s template=%s id=%s",
-            source, conf_str, "true" if archive_hit else "false",
-            template, (topo_id[:8] if topo_id else "none"),
-        )
+        from sage.pipeline_v2.topology_helpers import log_topology_structure
+        log_topology_structure(self, topology, source, confidence)
 
     def _apply_topology_budget_and_cache(self, ctx: PipelineContext) -> None:
-        """Plan item 1.4a (2026-04-20): apply budget check + cache the final topology.
-
-        _check_topology_budget may replace ctx.topology with a degraded
-        single-node fallback; we cache AFTER that replacement so the id
-        stored in topology_cache matches whatever record_outcome will
-        reference in Stage 5. Before this helper existed, cache_topology
-        was only wired on the engine branch (H4, commit dc51976), leaving
-        three production paths silently uncached:
-          - template branch (line ~502, dominant production path)
-          - engine-branch budget degrade (_make_single_node_topology)
-          - fallback TopologyGraph + TopologyNode path
-        Empirically verified by plan-1.4 smoke: template branch → 0 cells
-        after 10 pipeline.run() calls; with this helper → archive grows.
-        """
-        self._check_topology_budget(ctx)
-        if (ctx.topology is not None
-                and self.engine is not None
-                and hasattr(self.engine, "cache_topology")):
-            try:
-                self.engine.cache_topology(ctx.topology)
-            except (RuntimeError, TypeError) as exc:
-                log.debug("cache_topology failed: %s", exc)
+        from sage.pipeline_v2.topology_helpers import apply_topology_budget_and_cache
+        apply_topology_budget_and_cache(self, ctx)
 
     def _check_topology_budget(self, ctx: PipelineContext) -> None:
-        """Pre-validate budget feasibility — degrade to single-node if over budget."""
-        if ctx.budget <= 0:
-            return
-        if ctx.topology and hasattr(ctx.topology, 'node_count'):
-            total_node_cost = 0.0
-            nc = ctx.topology.node_count()
-            for i in range(nc):
-                node = ctx.topology.get_node(i) if hasattr(ctx.topology, 'get_node') else None
-                if node:
-                    total_node_cost += getattr(node, 'max_cost_usd', 0.0)
-            if total_node_cost > ctx.budget:
-                log.warning(
-                    "Topology budget %.2f > pipeline budget %.2f — degrading to single-node",
-                    total_node_cost, ctx.budget,
-                )
-                self._emit("TOPOLOGY_BUDGET_WARNING", {"total_cost": total_node_cost, "budget": ctx.budget})
-                # Degrade: replace with single-node template topology
-                ctx.topology = self._make_single_node_topology(ctx)
+        from sage.pipeline_v2.topology_helpers import check_topology_budget
+        check_topology_budget(self, ctx)
 
     def _make_single_node_topology(self, ctx: PipelineContext) -> Any:
-        """Create a minimal single-node topology as budget-safe fallback."""
-        try:
-            from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+        from sage.pipeline_v2.topology_helpers import make_single_node_topology
+        return make_single_node_topology(self, ctx)
 
-            topo = TopologyGraph("sequential")
-            node = TopologyNode(role="agent", model_id="", system=ctx.system)
-            topo.add_node(node)
-            return topo
-        except ImportError:
-            log.debug("sage_core unavailable, topology=None (single-agent mode)")
-            return None
-
-    # ── Cost Estimation ──────────────────────────────────────────────────────
+    # ── Costing helpers (Phase 2.1 Step B5, 2026-05-06) ────────────────────
+    # Bodies in `sage.pipeline_v2.costing` — costing-transverse, NOT
+    # assign-side per cgpro Q3 garde-fou.
 
     def _estimate_topology_cost(self, ctx: PipelineContext) -> float:
-        """PREDICTIVE cost estimate (pre-execution budget check only).
-
-        P1.6 clarification (2026-04-22 audit remediation): this function is
-        a PREDICTION used by the topology-budget gate BEFORE execution. It
-        is NOT the actual cost tracker. The real runtime cost comes from
-        `AgentLoop.total_cost_usd`, which is computed by
-        `sage.phases.think._extract_step_cost` using the provider-reported
-        token usage (`response.usage.prompt_tokens` +
-        `response.usage.completion_tokens`) times the per-model rate in
-        cards.toml. That path is the truth; ctx.cost gets updated from it
-        post-execution (see lines 1270, 1353, 1398 in this file).
-
-        This predictor uses a fixed ~500 input / ~300 output token budget
-        per node — a known imprecise heuristic acceptable for a pre-run
-        budget-gate. The audit (AUDIT4 bug #1 "cost estimation fictive")
-        correctly flagged this as fiction for POST-EXEC reporting, but
-        pre-exec gating is a distinct problem from per-token accounting.
-        A token-count PREDICTOR (rather than a fixed 500/300) is a separate
-        research task; the $0.001 fallback fires only when cards.toml has
-        no entry for the assigned model.
-
-        Loads the model catalog once (cached) and looks up cost_input_per_m /
-        cost_output_per_m for each node's assigned model.  Falls back to
-        $0.001 per node when the catalog or model is unavailable.
-        """
-        if not ctx.topology or not hasattr(ctx.topology, 'node_count'):
-            return 0.0
-
-        n_nodes = ctx.topology.node_count()
-        if n_nodes == 0:
-            return 0.0
-
-        # Lazy-load model catalog for pricing
-        catalog = self._load_model_catalog()
-
-        total_cost = 0.0
-        for i in range(n_nodes):
-            model_id = ctx.assignments.get(i, '')
-            if not model_id and hasattr(ctx.topology, 'get_node'):
-                node = ctx.topology.get_node(i)
-                model_id = getattr(node, 'model_id', '') if node else ''
-
-            card = catalog.get(model_id) if catalog and model_id else None
-            if card:
-                # ~500 tokens input + ~300 tokens output per node
-                total_cost += (
-                    500 * card.cost_input_per_m + 300 * card.cost_output_per_m
-                ) / 1_000_000
-            else:
-                total_cost += 0.001  # fallback estimate per node
-
-        return total_cost
+        from sage.pipeline_v2.costing import estimate_topology_cost
+        return estimate_topology_cost(self, ctx)
 
     def _load_model_catalog(self) -> Any:
-        """Load ModelCardCatalog from cards.toml (cached after first call)."""
-        if hasattr(self, '_model_catalog'):
-            return self._model_catalog
-
-        self._model_catalog = None
-        # Try Python ModelCardCatalog (always available, no Rust dependency)
-        try:
-            from sage.llm.model_registry import ModelCardCatalog
-            from pathlib import Path
-
-            # Search common locations for cards.toml
-            for candidate in [
-                Path("config/cards.toml"),
-                Path("sage-python/config/cards.toml"),
-                Path(__file__).parent.parent.parent / "config" / "cards.toml",
-            ]:
-                if candidate.exists():
-                    self._model_catalog = ModelCardCatalog.from_toml_file(str(candidate))
-                    log.debug("Cost estimator: loaded %d models from %s",
-                              len(self._model_catalog), candidate)
-                    break
-        except (IOError, OSError, ValueError) as exc:
-            log.debug("Cost estimator: catalog unavailable (%s)", exc)
-
-        return self._model_catalog
+        from sage.pipeline_v2.costing import load_model_catalog
+        return load_model_catalog(self)
 
     # ── Stage 3: Assign Models ──────────────────────────────────────────────
 
