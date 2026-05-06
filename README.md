@@ -11,7 +11,7 @@
 
 <p align="center">
   <a href="https://pypi.org/project/ygn-sage/"><img src="https://img.shields.io/pypi/v/ygn-sage?style=flat-square" alt="PyPI"></a>
-  <img src="https://img.shields.io/badge/tests-3136%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-3141%20Py%20%2B%20553%20Rust-brightgreen?style=flat-square" alt="Tests">
   <img src="https://img.shields.io/badge/status-research%20preview-yellow?style=flat-square" alt="Status">
   <img src="https://img.shields.io/badge/python-3.12+-blue?style=flat-square" alt="Python">
   <img src="https://img.shields.io/badge/rust-1.90+-orange?style=flat-square" alt="Rust">
@@ -158,7 +158,7 @@ The core insight: **which agents work together matters more than which model you
 - **HyEvo hybrid nodes** ([arXiv 2603.19639](https://arxiv.org/abs/2603.19639)): `node_type="code"` for deterministic sandbox execution (13-19x cost reduction on MBPP)
 - **Cascaded evaluation**: 4-stage filtering (schema → security → smoke → full) — 26-87% eval cost savings
 - **Reflect-then-generate**: diagnose execution traces → structured recommendations → improved topology candidate
-- **Path 6: Learned policy** — Qwen3-4B (local, N1=0.922) or Nemotron-Orchestrator-8B (pod) trained via SFT → GRPO to generate topology via `<tool_call>` JSON
+- **Optional learned-policy path** (legacy env-var name `SAGE_ENABLE_PATH6`; sibling-of-6, NOT engine path 6 per the Rust `TopologySource` enum which reserves engine path 6 for `TemplateFallback`) — Qwen3-4B (local, N1=0.922) or Nemotron-Orchestrator-8B (pod) trained via SFT → GRPO to generate topology via `<tool_call>` JSON
 
 ### 2. Tools (Rust + Python)
 
@@ -200,7 +200,7 @@ Plus:
 
 ### 5. Strategy — Cognitive Routing (Rust)
 
-- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (92% GT on our internal 50-task set; the [backing research arXiv 2505.12601](https://arxiv.org/abs/2505.12601) validates kNN as a viable router class, reporting 52-77% AUC on public RouterBench/AlpacaEval), SystemRouter (88% GT on the same set)
+- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (`routing.knn_92pct` in `docs/CLAIMS.yaml` is currently `evidence_pending`; backing research [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) validates kNN as a viable router class — RouterBench/AlpacaEval public scores 52-77% AUC), SystemRouter (`routing.system_router_88pct` is also `evidence_pending` until a CI-runnable test pins the figure)
 - **ContextualBandit** (Rust): per-arm Thompson sampling with Beta/Gamma posteriors, Pareto front selection. General principle — bandit must learn from actual quality signal — is from the [Cascade Routing ETH-SRI ICLR 2025](https://arxiv.org/abs/2410.10347) line of work.
 - **ModelAssigner** (Rust): per-node model selection with configurable weights + provider hints (+0.15 bonus)
 - **ProviderPool**: 7 API providers + Codex, per-node resolution, circuit breaker with auto-failover
@@ -260,9 +260,9 @@ proof of capability.
 | **OpenTelemetry GenAI spans (Python + Rust bridge)** | `delivered` | B1 (2026-04-25) + B1.b. `SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}`. |
 | **Cycle-9 bench infrastructure (event ledger + watchdog + keep-awake)** | `delivered` | NDJSON fsync per emit; `HostSuspendDetected` on wall-clock > timeout × grace; Windows `SetThreadExecutionState`. |
 | **`SAGE_DANGEROUS_TOOLS` (`execute_bash` register)** | `opt-in (default off, cycle 8)` | Flipped 2026-04-23. Set `SAGE_DANGEROUS_TOOLS=1` only for SWE-bench/research. |
-| **Path 6 — learned topology policy** | `opt-in / inference-only on main` | `SAGE_ENABLE_PATH6=1`. Lazy-loads HF checkpoint (`yannabadie/sage-topology-policy-local` 0.922 structural). Training code parked. |
+| **Optional learned-policy path (legacy `SAGE_ENABLE_PATH6`; sibling-of-6, NOT engine path 6)** | `opt-in / inference-only on main` | `SAGE_ENABLE_PATH6=1`. Lazy-loads HF checkpoint (`yannabadie/sage-topology-policy-local` 0.922 structural). Training code parked. |
 | **ONNX QualityEstimator (`quality_estimator_v2.onnx`)** | `planned, not shipped` | Artifact absent. `_try_load_onnx()` returns None → runtime falls back to OxiZ Z3 labeler or abstains. No invented score. |
-| **GiGPO / veRL training (Nemotron-Orchestrator-8B)** | `parked on main (since 2026-04-15)` | Code on dedicated `training` branch (`b2f59ee`, -4.3 GB). Inference-only on main via Path 6. |
+| **GiGPO / veRL training (Nemotron-Orchestrator-8B)** | `parked on main (since 2026-04-15)` | Code on dedicated `training` branch (`b2f59ee`, -4.3 GB). Inference-only on main via the optional learned-policy path (legacy `SAGE_ENABLE_PATH6`). |
 | **A3 N=50 ablation (cycle-10 cloud rerun)** | `pending` | A3 morning aborted 2026-05-04 (Modern Standby S0 DRIPS). Recovery infra (event ledger + watchdog + keep-awake) shipped cycle-9. Cycle-10 P8 cloud rerun planned. |
 | **`pip install sage-router` standalone** | `retired (cycle-11)` | The standalone `sage-router/` package (1374 LOC, never imported by the canonical runtime) was removed in cycle-11. Routing lives in `sage-python/src/sage/strategy/` with Rust `SystemRouter` + kNN acceleration. The cycle-10/11 fork "publish separately or fold back" was closed by deletion: maintaining a near-duplicate Python-only routing surface had no production-grade consumer. |
 | **A2A v1.0 (Google Agent-to-Agent)** | `delivered` | `a2a_server.py` with `a2a-sdk 0.3.x`. Cancellation TODO. |
@@ -293,7 +293,7 @@ Trained checkpoints remain available on HuggingFace:
 - [yannabadie/sage-topology-policy-local](https://huggingface.co/yannabadie/sage-topology-policy-local) — Qwen3-4B (Phase C: 0.922 structural, 40% on our internal sage-mas-bench depth — **best local model**)
 - [yannabadie/sage-topology-policy-v2](https://huggingface.co/yannabadie/sage-topology-policy-v2) — Nemotron-Orchestrator-8B (veRL pod checkpoints)
 
-Path 6 (learned topology policy) is currently off by default. To use a trained model:
+The optional learned-policy path (legacy env-var name `SAGE_ENABLE_PATH6`; sibling-of-6, NOT engine path 6) is currently off by default. To use a trained model:
 - Enable via `SAGE_ENABLE_PATH6=1`, point to your local checkpoint, and install the training extras in a dedicated environment.
 - See the training branch for SFT/GRPO scripts and the `V2 GRPO lessons` note (avoid `environment_factory`, use plain `reward_funcs`).
 
@@ -321,7 +321,7 @@ Each topology node can use a different provider. The policy model can express `p
 | **BigCodeBench Hard Instruct (budget)** | **37.8%** (56/148) | Budget model baseline (2026-03). |
 | **sage-mas-bench breadth** (our internal suite, NOT the published MAS-Bench arXiv 2509.06477) | **+22pp** p=0.015 | Only statistically significant axis (N=50). Other axes p>0.05. |
 | **HumanEval+ pipeline** | **84.1%** (138/164) | The "89.6%" figure previously cited here was an aspirational projection of 84.1% + 5.5pp; it was never actually measured. Saturated benchmark — prefer BCB for framework delta. |
-| **kNN routing GT** | **92%** (~46/50 accuracy on 60-task stratified set) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601). Ground-truth set lives at `sage-python/config/routing_ground_truth.json` with 60 stratified S1/S2/S3 tasks (human-labeled 2026-03-11, criteria in the JSON). The 50-task figure in earlier docs was a stale subset reference — AUDIT2 2026-04-24 confirmed dataset has 60 tasks. Rust SystemRouter 88%. |
+| **kNN routing GT** | **`evidence_pending`** (`routing.knn_92pct` in `docs/CLAIMS.yaml`) | [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) backs the kNN-as-router class. Ground-truth set lives at `sage-python/config/routing_ground_truth.json` with 60 stratified S1/S2/S3 tasks (human-labeled 2026-03-11, criteria in the JSON). The historically cited ~92% figure has not yet been pinned to a CI-runnable seeded threshold; follow-up: ship `tests/test_routing_gt_invariant.py`. Rust SystemRouter (~88%) is also `evidence_pending` (`routing.system_router_88pct`). |
 | **sage-topo-bench** (our internal topology sweep, NOT the UCL TopologyBench 2024 optical-network dataset) | **94.0%** mean (9/9) | 4.3pp spread across topologies. Distinct from both the optical-network TopologyBench and the TopoBench (arXiv 2603.12133) LLM puzzle benchmark. |
 | **SWE-bench Lite** | 10% (1/10) resolved, 40% (4/10) patch-generated | 2026-04-21 v15 Docker-graded smoke after 3-fix chain (Directive #3 gating, CRLF, UTF-8). Gen-rate prior to Docker grading was 70% (patch-produce rate), not pass-rate. |
 | **Pre-emission diff-context verifier** | observe-mode instrumentation, opt-in | 2026-04-23: `SAGE_DIFF_VERIFIER_MODE=observe` annotates predictions.jsonl with `_diff_verifier_mismatches` when an emitted hunk's context/removed lines don't match file bytes at the hunk position. First observability smoke caught a parser false-negative (commit `711008a`) — both emitted patches in the N=10 slice flagged `content_mismatch` post-fix, zero false positives. Repair mode deferred until ≥10 clean + ≥10 flagged observations accumulate. See `docs/superpowers/specs/2026-04-23-diff-context-verifier-design.md`. |
@@ -423,9 +423,9 @@ YGN-SAGE/
 |       |-- protocols/   #   A2A v1.0, MCP server, unified serve
 |       |-- providers/   #   connector.py (single source of truth), OpenAI-compat wrapper
 |       |-- runtime/     #   2026-04-29 typed runtime spine (event_log, state, run_frame, oracle)
-|       |-- strategy/    #   S1/S2/S3 routing, kNN (92%), AdaptiveRouter
+|       |-- strategy/    #   S1/S2/S3 routing, kNN primary (accuracy `evidence_pending`), AdaptiveRouter
 |       |-- tools/       #   ToolForge, AgentTool, agent_mgmt, sandbox_executor, gap_detector
-|       |-- topology/    #   TopologyRunner (code node dispatch), LLM caller (Path 6 V1/V2), controller
+|       |-- topology/    #   TopologyRunner (code node dispatch), LLM caller (optional learned-policy V1/V2), controller
 |       |-- verl/        #   Training: topology_env (4-state), reward (5-signal), manifest, cascaded_eval,
 |       |                #     reflection, edge_credit, rewardflow, topology_schema (shared contract)
 |       |-- pipeline.py  #   5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)

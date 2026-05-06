@@ -16,8 +16,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 > **Note sur les pourcentages cités** (cycle-13 K Phase 0.6, 2026-05-06) :
 > les capacités sont trackées en machine-readable dans `docs/CLAIMS.yaml`
 > (sortie autogénérée de `docs/claims/*.yaml`). Lorsque ce document cite
-> un chiffre (kNN 92%, SystemRouter 88%, BCB 45.9%, MASBENCH +22pp,
-> SWE-bench Lite 10%), le statut autoritaire est dans le registre. Les
+> un chiffre historiquement cité (kNN ~92% — `routing.knn_92pct` `evidence_pending` ; SystemRouter ~88% — `routing.system_router_88pct` `evidence_pending` ; BCB 45.9% ; MASBENCH +22pp ; SWE-bench Lite 10%), le statut autoritaire est dans le registre. Les
 > chiffres sans test/bench CI-runnable piné sont taggés
 > `evidence_pending` dans le registre et NE doivent PAS être traités
 > comme preuve de capacité tant que `python -m sage.ops.claims_audit
@@ -36,7 +35,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 
 - **A3 N=50 ablation cloud** : aborted le 2026-05-04 03:24 (Windows Modern Standby S0 DRIPS), 34/300 tasks complétées. Recovery infrastructure shipped (commits `a56a76e2` à `c136463e`). Cycle-10 cible : full v7 N=10 counterbalanced replay puis A3 N=50 cloud.
 - **Fix C `a23e196b`** : désactive `TopologyController` quand `tier=budget`. Correctement câblé end-to-end MAIS empiriquement non-validateur du gap v7 (cgpro round-2 review 2026-05-04 : v7 4/10→7/10 gap est très probablement sample variance sur tasks borderline).
-- **Path 6 (topologie apprise)** : checkpoint Phase C (`yannabadie/sage-topology-policy-local`, 40% MASBENCH) sur HuggingFace. **Off par défaut** (`SAGE_ENABLE_PATH6=1` requis). Inférence-only (training PARKED).
+- **Optional learned-policy path** (legacy env-var name `SAGE_ENABLE_PATH6`; sibling-of-6, NOT engine path 6 per Rust `TopologySource` enum) : checkpoint Phase C (`yannabadie/sage-topology-policy-local`, 40% MASBENCH) sur HuggingFace. **Off par défaut** (`SAGE_ENABLE_PATH6=1` requis). Inférence-only (training PARKED).
 - **GiGPO V2 (Nemotron-Orchestrator-8B)** : code complet, jamais exécuté GPU sur main (parqué 2026-04-15 `b2f59ee`, -4.3 GB). Le code training, `verl/`, `scripts/`, `data/`, `models/` vit sur une branche dédiée `training`.
 - **`evolution/engine.py`** : "No quantitative evidence that evolution improves task outcomes yet" (`engine.py:7-9`).
 - **Persistence MAP-Elites + bandit** : Rust `persistence.rs` shipped + actif (default features incluent `cognitive` depuis ADR-013 §5). `restore_arm` fix `restore` `context_sum`/`context_count` (cgpro 2026-04-26).
@@ -51,7 +50,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 | **Branche analysée** | `main` |
 | **HEAD commit** | `a6f869c4` (2026-05-04) |
 | **Langages** | Rust 1.94 (sage-core), Python 3.13 (sage-python, sage-discover) |
-| **Tests Python collected** | **3136** (canonical : `docs/status/current.json`) |
+| **Tests Python collected** | **3141** (canonical : `docs/status/current.json`) |
 | **Tests Rust** | **553** (`cargo test --features smt,cognitive,sandbox,cranelift,tool-executor`) |
 | **Tests sage-discover** | **100** |
 | **mypy / ruff** | mypy 0 errors / 183 files, ruff clean, type:ignore ceiling 45/45 |
@@ -94,7 +93,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 
 **Pipeline en 1 ligne :**
 ```
-CLASSIFY (kNN/SystemRouter+bandit decision_id) → DECOMPOSE (TaskPlanner DAG features) → SELECT TOPOLOGY (6-path engine + Path 6 opt-in) → ASSIGN MODELS (Rust ModelAssigner + Z3 verify) → EXECUTE (TopologyRunner + Rust TopologyController) → LEARN (QualityEstimator + OracleStack → bandit.record_outcome_checked + MAP-Elites + S-MMU)
+CLASSIFY (kNN/SystemRouter+bandit decision_id) → DECOMPOSE (TaskPlanner DAG features) → SELECT TOPOLOGY (6-path engine [path 6 = template fallback] + optional learned-policy path opt-in via legacy SAGE_ENABLE_PATH6) → ASSIGN MODELS (Rust ModelAssigner + Z3 verify) → EXECUTE (TopologyRunner + Rust TopologyController) → LEARN (QualityEstimator + OracleStack → bandit.record_outcome_checked + MAP-Elites + S-MMU)
 ```
 
 **Sous-systèmes centraux (10) :**
@@ -171,7 +170,7 @@ graph TB
 | `python -m sage.bench --type bigcodebench` | `sage-python/src/sage/bench/bigcodebench_bench.py` | BigCodeBench Hard/Full × Instruct/Complete |
 | `python -m sage.bench --type swebench` | `sage-python/src/sage/bench/swebench_bench.py` | SWE-bench Lite/Verified/Pro avec diff verifier opt-in (observe par défaut) |
 | `python -m sage.bench --type ablation` | `sage-python/src/sage/bench/__main__.py` (`_run_ablation`) | 6 configs paired ablation. Filtres `--ablation-configs` + `--task-ids` (α.1+α.2 cycle-9) |
-| `python -m sage.bench --type routing_gt` | `sage-python/src/sage/bench/routing_ground_truth.py` | 50 tasks GT (kNN 92% / SystemRouter 88% / heuristic 34%) |
+| `python -m sage.bench --type routing_gt` | `sage-python/src/sage/bench/routing_ground_truth.py` | 50 tasks GT bench. Historic figures (kNN ~92% / SystemRouter ~88% / heuristic ~34%) tracked in `docs/CLAIMS.yaml` and currently `evidence_pending`. |
 | `python -m sage.bench --type evalplus` | `sage-python/src/sage/bench/evalplus_bench.py` | EvalPlus (saturated, déprécié) |
 
 Sortie : `<output>.json` (BenchReport) + `<output>.events.jsonl` (event ledger NDJSON, depuis cycle-9 `0036217b`).
@@ -187,7 +186,7 @@ Sortie : `<output>.json` (BenchReport) + `<output>.events.jsonl` (event ledger N
 ### 6.4 Training (PARKED sur main)
 
 Le code training (`verl/`, `scripts/training/`, `data/training_*.jsonl`, `models/`) est sur la branche dédiée `training` depuis 2026-04-15 (commit `b2f59ee`, -4.3 GB). Sur `main` :
-- Inférence Path 6 reste possible via `SAGE_ENABLE_PATH6=1` (lazy-load HF checkpoint)
+- Inférence learned-policy reste possible via `SAGE_ENABLE_PATH6=1` (legacy env-var name; sibling-of-6, NOT engine path 6 — lazy-load HF checkpoint)
 - Tous les modules `sage.verl.*` ont été retirés de `main`
 
 ---
@@ -247,7 +246,7 @@ graph LR
 |---|---|---|---|---|
 | `SystemRouter` | `#[pyclass]` | Route tâche → S1/S2/S3 + model_id, **route_integrated** + record_outcome_checked | Runtime | Bandit attribution invariant (cycle-9 `6f23eea4`) |
 | `ContextualBandit` | `#[pyclass]` | Thompson sampling per-arm Beta/Gamma, persistence SQLite (cycle `cognitive`) | Runtime | `restore_arm` corrige context_sum/count (`d9b0b659`) |
-| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | 92% GT |
+| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | accuracy: `routing.knn_92pct` `evidence_pending` |
 | `ModelAssigner` | `#[pyclass]` | Assigne model_id par nœud topologie | Runtime | Domain-aware, budget-aware |
 | `ModelRegistry` | `#[pyclass]` | Catalogue TOML 23 modèles | Runtime | `cards.toml` |
 | `ModelCard` | `#[pyclass]` | Profil par modèle (scores, coûts, affinités) | Runtime | s1/s2/s3 affinity + domain scores |
@@ -407,9 +406,9 @@ graph LR
 
 3. pipeline.run(task) :
    Stage 0: classify_route_and_decide():
-     - kNN router (primary, 92% GT)
+     - kNN router (primary; accuracy: `routing.knn_92pct` `evidence_pending`)
      - Rust SystemRouter.route_integrated() → bandit decision_id
-     - ComplexityRouter (heuristic 34%, emergency fallback Priority-3)
+     - ComplexityRouter (heuristic, emergency fallback Priority-3 — accuracy `evidence_pending`)
      - Stage 0 input guardrails (perceive.py:119) — skippable via _skip_guardrails
 
    Stage 1: decompose():
@@ -418,8 +417,8 @@ graph LR
 
    Stage 2: select_topology():
      - select_macro_topology(features) → template name (11 options)
-     - TopologyEngine.generate() 6-path : S-MMU > archive > LLM > mutation > MCTS > template
-     - OR Path 6 (SAGE_ENABLE_PATH6=1) : Nemotron-Orchestrator-8B inference
+     - TopologyEngine.generate() 6-path : S-MMU > archive > LLM > mutation > MCTS > template fallback
+     - OR optional learned-policy path (legacy `SAGE_ENABLE_PATH6=1`; sibling-of-6, NOT engine path 6) : Nemotron-Orchestrator-8B inference
 
    Stage 3: assign_models():
      - Rust ModelAssigner.assign_models() (domain + budget aware)
@@ -579,12 +578,12 @@ Source de vérité : `sage-core/config/cards.toml` (symlink depuis `sage-python/
 
 ```
 1. Pipeline Stage 0 (classify_route_and_decide) :
-   - kNN primary (RustKnnRouter, 92% GT) — Stage A
-   - Rust SystemRouter.route_integrated() — Stage B (88% GT)
+   - kNN primary (RustKnnRouter; `routing.knn_92pct` `evidence_pending`) — Stage A
+   - Rust SystemRouter.route_integrated() — Stage B (`routing.system_router_88pct` `evidence_pending`)
      - StructuralFeatures + formal keywords detection
      - ModelRegistry.best_model_for_system(system, budget)
      - ContextualBandit attribution decision_id
-   - ComplexityRouter heuristic — Priority-3 emergency fallback (34% GT)
+   - ComplexityRouter heuristic — Priority-3 emergency fallback (accuracy `evidence_pending`)
    - Stage 0 input guardrails (skippable via _skip_guardrails)
 
 2. ContextualBandit.select(decision_id, context_vec):
@@ -614,11 +613,11 @@ Source de vérité : `sage-core/config/cards.toml` (symlink depuis `sage-python/
 Le code training (`verl/`, `scripts/`, `data/`, `models/` + tests training) a été **retiré de main** (-4.3 GB) pour réduire la surface du code et concentrer main sur le runtime + bench. Le code vit sur la branche dédiée `training`.
 
 Sur `main` :
-- Inférence Path 6 : `SAGE_ENABLE_PATH6=1` charge un checkpoint local (lazy-load HF)
+- Inférence learned-policy : `SAGE_ENABLE_PATH6=1` charge un checkpoint local (legacy env-var name; sibling-of-6, NOT engine path 6 — lazy-load HF)
 - Aucun module `sage.verl.*` actif
 - Bench infrastructure (BigCodeBench, SWE-bench, ablation) reste sur main
 
-### 12.2 Path 6 — Topologie apprise (inference seulement sur main)
+### 12.2 Optional learned-policy path — topologie apprise (inference seulement sur main; legacy env-var name `SAGE_ENABLE_PATH6`; sibling-of-6, NOT engine path 6)
 
 - **V1 (legacy)** : Phi-4-mini-instruct SFT, 70% YAML valid, sur HF `yannabadie/sage-topology-policy`.
 - **V2 (Phase C, best)** : `yannabadie/sage-topology-policy-local` — 40% MASBENCH.
@@ -636,7 +635,7 @@ Lazy-loaded sur premier appel, fallback sur templates si output invalide.
 | A3 ablation N=50 | `sage.bench.ablation` | **ABORTED** at 34/300 (Modern Standby) | 2026-05-04 |
 | α paired diagnostic N=8 + replay N=8 | `sage.bench.ablation` --task-ids | full = no-grd = 4/8 (morn), 3/8 vs 4/8 (replay) | 2026-05-04 |
 | SWE-bench Lite Docker-graded | `sage.bench.swebench_bench` | **10%** (1/10), patch-gen 70% | 2026-04-21 |
-| Routing GT 50 tasks | `sage.bench.routing_ground_truth` | kNN 92%, SystemRouter 88%, heuristic 34% | 2026-04 |
+| Routing GT 50 tasks | `sage.bench.routing_ground_truth` | Historic figures (kNN ~92%, SystemRouter ~88%, heuristic ~34%) — `routing.knn_92pct` / `routing.system_router_88pct` `evidence_pending` in `docs/CLAIMS.yaml` | 2026-04 |
 
 **Important** : MASBENCH leaderboard frozen depuis April 2025. Frontier 2026 models pas soumis. La VALEUR de SAGE est le **framework delta** (ablation), pas l'absolu vs frontier.
 
@@ -648,7 +647,7 @@ Lazy-loaded sur premier appel, fallback sur templates si output invalide.
 | Reward function complète | `Réel mais sur branche training` | |
 | Training GPU exécuté | `Inconclusif sur main` | Aucun log sur main, branche training a un H100 RunPod setup |
 | Modèle entraîné déployé | `Réel et inférable` | HF v2 existe + Phase C best |
-| Path 6 inference active runtime | `Experimental` | `SAGE_ENABLE_PATH6=1` requis |
+| Optional learned-policy inference active runtime (legacy `SAGE_ENABLE_PATH6`; sibling-of-6) | `Experimental` | `SAGE_ENABLE_PATH6=1` requis |
 
 ---
 
@@ -665,7 +664,7 @@ Lazy-loaded sur premier appel, fallback sur templates si output invalide.
 | `KIMI_API_KEY` | Provider Kimi | — |
 | `MINIMAX_API_KEY` | Provider MiniMax | — |
 | `OPEN_ROUTER_API_KEY` | OpenRouter | — |
-| `SAGE_ENABLE_PATH6` | Active Path 6 inference | unset |
+| `SAGE_ENABLE_PATH6` | Active optional learned-policy inference (legacy env-var name; sibling-of-6, NOT engine path 6) | unset |
 | `SAGE_EXOCORTEX_STORE` | Store ExoCortex (multi-tenant fix 2026-04-18 `e338b7e`) | unset (no-op silent) |
 | **`SAGE_ORACLE`** | OracleStack kill-switch | **DEFAULT-ON** depuis cycle-7 (`128e1b89`). Off : `0\|false\|off\|no\|disable\|disabled` |
 | `SAGE_STATECORE` | Edge-channel separation (R6) | `0` |
@@ -805,7 +804,7 @@ Lazy-loaded sur premier appel, fallback sur templates si output invalide.
 Hot-paths en Rust (routing, S-MMU, topologie, vérification, controller depuis ADR-012). Orchestration en Python.
 **Conséquence** : Double maintenance, fallbacks Python pour quelques modules (WorkingMemory mock).
 
-### ADR-2 : kNN comme routeur principal (92% GT)
+### ADR-2 : kNN comme routeur principal (accuracy: `routing.knn_92pct` `evidence_pending`)
 arXiv 2505.12601 + ETH-SRI Cascade Routing 2410.10347.
 **Conséquence** : Dépendance ONNX + arctic-embed-m. Hash embeddings interdits.
 
@@ -884,7 +883,7 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 | Item | Sévérité | Detail |
 |---|---|---|
 | **Cost tracking partiel** | Moyenne | Per-task ctx.cost OK depuis 2026-04-18 (P0.3), mais legacy AgentLoop accumulator pas remplacé partout. |
-| **Path 6 derrière env var** | Basse | Inférence Path 6 OK mais désactivée par défaut (lazy + opt-in). |
+| **Optional learned-policy derrière env var** | Basse | Inférence learned-policy OK mais désactivée par défaut (legacy `SAGE_ENABLE_PATH6` + lazy + opt-in; sibling-of-6, NOT engine path 6). |
 | **Shadow routing 49.6% divergence** | Moyenne | Gates evidence pas franchies. Rust router non-promu — mais kNN reste primary. |
 | **`evolution/engine.py` quantitative validation** | Moyenne | Tests OK mais pas de Wilcoxon/Cohen's d/courbes convergence. |
 | **A3 N=50 cloud rerun** | Haute (cycle-10) | Aborted 2026-05-04 par Modern Standby. Recovery infra prête, à relancer cloud. |
@@ -918,7 +917,7 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 3. **v7 4/10→7/10 gap** : sample variance ou mécanisme caché ? cgpro round-2 verdict : "very likely sample variance + boundary stochasticity on /13, /82, /101". Cycle-10 full v7 N=10 counterbalanced réplay = définitif.
 4. **perceive→TaskPlanner coupling** sur BCB/82+/19+/34 : bug, feature, ou unspecified contract ? cgpro : "unknown, operationally suspected bug until tested".
 5. **`ComplexityRouter` heuristic 34%** : utile comme Priority-3 fallback ou code mort à supprimer ? AUDIT2 2026-04-24 a flaggé l'incohérence "DEAD CODE" framing.
-6. **Path 6 production rollout** : quand activer par défaut ? Manque benchmark direct comparant Path 6 vs templates.
+6. **Optional learned-policy rollout** (legacy `SAGE_ENABLE_PATH6`) : quand activer par défaut ? Manque benchmark direct comparant learned-policy vs template fallback.
 7. **Frontier 2026 benchmark** : Cycle-12+ planning pour tester gpt-5.5-pro, gemini-3.1-pro frontière vs SAGE delta.
 
 ---
@@ -935,12 +934,12 @@ PIPELINE: CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN
   Stage 5 closure: record_outcome_checked() — bandit attribution invariant
 
 ROUTING:
-  kNN (92% GT, primary) > Rust SystemRouter (88%) > ContextualBandit Thompson > ComplexityRouter heuristic (34%, Priority-3 fallback)
+  kNN (primary; routing.knn_92pct evidence_pending) > Rust SystemRouter (routing.system_router_88pct evidence_pending) > ContextualBandit Thompson > ComplexityRouter heuristic (Priority-3 fallback, evidence_pending)
 
 TOPOLOGIE:
   11 templates: sequential, parallel, avr, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout
-  6-path engine: S-MMU > archive > LLM > mutation > MCTS > template (Rust)
-  Path 6 (learned, opt-in): SAGE_ENABLE_PATH6=1, Phase C 40% MASBENCH OR Nemotron GiGPO
+  6-path engine: S-MMU > archive > LLM > mutation > MCTS > template fallback (Rust)
+  Optional learned-policy path (legacy SAGE_ENABLE_PATH6=1; sibling-of-6, NOT engine path 6): Phase C 40% MASBENCH OR Nemotron GiGPO
   3-flow edges: control + message + state
   Execution dual-mode: static (Kahn DAG) ou dynamic (gate-based)
 
@@ -984,14 +983,14 @@ BENCH INFRASTRUCTURE (cycle-9):
   Event ledger NDJSON fsync per emit | wall-clock watchdog (HostSuspendDetected)
   Windows keep-awake (SetThreadExecutionState ES_SYSTEM_REQUIRED)
   Targeted filters: --ablation-configs, --task-ids
-  Latest results: BCB Hard 45.9% (full pipe), BCB Hard N=50 official 32% (budget)
-                  SWE-bench Lite 10% (Docker-graded)
-                  Routing GT 92%/88%/34%
+  Latest results: BCB Hard 45.9% (full pipe — `benchmarks.bcb_hard_45_9` delivered), BCB Hard N=50 official 32% (budget)
+                  SWE-bench Lite 10% (Docker-graded — `benchmarks.swebench_lite_10pct` delivered)
+                  Routing GT historic: ~92%/~88%/~34% — registry `evidence_pending`
 
 TRAINING:
   ⏸ PARKED on main since 2026-04-15 (b2f59ee, -4.3 GB)
   Code on dedicated `training` branch
-  Path 6 inference still works on main via SAGE_ENABLE_PATH6=1
+  Optional learned-policy inference still works on main via SAGE_ENABLE_PATH6=1 (legacy env-var name; sibling-of-6, NOT engine path 6)
 
 BUILD:
   cd sage-core && maturin develop --features smt,onnx (default = sandbox+cranelift+tool-executor+cognitive)
