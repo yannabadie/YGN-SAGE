@@ -1,8 +1,12 @@
 """Stage 4 (EXECUTE) implementation for pipeline_v2.
 
-See pipeline_v2/__init__.py module docstring for the Phase A/B/C
-plan. Phase B moves the legacy body here while the class method
-becomes a local-import delegator.
+Cycle-12 Phase B moved the legacy `_stage_execute` body here. The
+`CognitiveOrchestrationPipeline._stage_execute` method form is
+retained as a 1-line LOCAL-import delegator AND as a transitional
+runtime test seam (27 test files mock `pipeline._stage_*` directly).
+Cycle-13 K Phase 2.1 Step B3 extended this module with
+`pick_fallback_provider`. Phase 2.2 DESIGN_LOCK will rewrite the
+27 mock-using test files and retire the `_stage_*` delegators.
 """
 from __future__ import annotations
 

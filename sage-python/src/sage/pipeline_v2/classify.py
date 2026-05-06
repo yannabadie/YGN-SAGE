@@ -25,10 +25,15 @@ Stage 0 contract preserved:
   - Same exception strategy: bare `except Exception` for Rust router
     (Rust extension types raise unconventional exceptions); narrow
     `(ImportError, RuntimeError)` for the Python paths.
-  - Bandit-attribution lifecycle helpers (`_clear_bandit_decision`,
-    `_cancel_bandit_decision`, `_emit_bandit_attribution_mismatch`)
-    stay as methods on `CognitiveOrchestrationPipeline` per cgpro
-    DESIGN: helper ownership migration is Phase C territory.
+  - Bandit-attribution lifecycle helpers (`clear_bandit_decision`,
+    `cancel_bandit_decision`, `emit_bandit_attribution_mismatch`)
+    moved to `sage.pipeline_v2.bandit_attribution` and
+    `sage.pipeline_v2.runtime_events` in cycle-13 K Phase 2.1
+    Steps A2 + B4 (`6c2e0364` + `5d0680c3`). The
+    `CognitiveOrchestrationPipeline._<helper>` method form is
+    preserved as a transitional mock-surface delegator — Phase 2.2
+    DESIGN_LOCK will purge those delegators once 27 mock-using test
+    files are rewritten.
 """
 from __future__ import annotations
 

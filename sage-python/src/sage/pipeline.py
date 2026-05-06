@@ -1,7 +1,32 @@
-"""CognitiveOrchestrationPipeline — 5-stage cognitive orchestration.
+"""CognitiveOrchestrationPipeline — 5-stage cognitive orchestration façade.
 
 Replaces the inline routing+topology+execution logic in AgentSystem.run()
 with a clean, staged pipeline driven by ModelCards and TopologyGraph.
+
+Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
+2026-05-06): this module is now a thin façade. The 5 stage bodies +
+the orchestrator + the helper modules + the `PipelineContext`
+dataclass live in `sage.pipeline_v2`. What remains here:
+
+  - public entry points (`run`, `run_with_frame`, `run_with_bench_evaluator`)
+  - the `CognitiveOrchestrationPipeline.__init__` constructor
+  - module-level helpers consumed by the orchestrator
+    (`_new_runtime_run_id`, `_resolve_task_budget_usd`,
+    `_is_strict_governance`, `BUDGET_EXCEEDED_RESULT`,
+    `_BANDIT_ATTRIBUTION_REASON_CODES`)
+  - 6 `_stage_*` 1-line delegator methods + ~22 `_<helper>` 1-line
+    delegator methods. These are RETAINED on the class as
+    transitional runtime test seams: 27 test files mock
+    `pipeline._stage_<X> = <fake>` as the canonical interception
+    point for fast unit isolation, oracle gate setup, bypass /
+    topology controller scenarios, observability isolation, and
+    E2E injection. cgpro Phase 2.1 round-4 OPTION_3 verdict
+    explicitly preserves this seam contract; Phase 2.2 DESIGN_LOCK
+    will rewrite the 27 test files + purge the delegators + reach
+    the architectural target `pipeline.py < 300 LOC`.
+  - `PipelineContext` re-export from `sage.pipeline_v2.context`
+    (cgpro round-3 Q4 backward-compat lock — `from sage.pipeline
+    import PipelineContext` continues to resolve).
 """
 from __future__ import annotations
 

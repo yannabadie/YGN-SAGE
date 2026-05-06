@@ -257,6 +257,38 @@ conservative" by cgpro+plan agreement. Cycle-11 is the right place.
 ## Status changes
 
 - 2026-05-04: Proposed (cycle-10 P9) — this document.
-- TBD (cycle-11): Accepted with characterization tests landed.
-- TBD (cycle-12): Implemented; superseded if `pipeline_v2/` becomes the
-  canonical location.
+- 2026-05-05 (cycle-11): Accepted with characterization tests landed
+  (37 P9 phase-1 tests covering byte-identical run + oracle gate +
+  bandit attribution + Fix C + control-surface).
+- 2026-05-05 (cycle-12 Phase A + Phase B): pipeline_v2/ scaffold
+  shipped + 6 stage bodies (~2050 LOC) moved out of pipeline.py.
+- **2026-05-06 (cycle-13 K Phase 2.1): Implemented — facade extraction
+  with transition seams retained.** cgpro `cgpro_phase21_facade_rewrite_20260506`
+  round-1 DESIGN_LOCKED + round-2 GO_STEP_B + round-3 GO_STEP_C amended +
+  **round-4 OPTION_3** (the empirical 27-file `pipeline._stage_*` mock
+  contract was incompatible with cgpro round-3's "delete delegators in
+  C2" plan). Final Phase 2.1 acceptance amended:
+    - pipeline.py 1800 LOC → ~702 LOC (1098 LOC migrated; **landing
+      inside cgpro round-4 amended target 650-800 LOC**).
+    - 5 stage bodies + orchestrator + 5 helper modules + PipelineContext
+      dataclass all moved to pipeline_v2/.
+    - 6 `_stage_*` methods + ~22 `_<helper>` delegator methods retained
+      as transitional runtime test seams (the 27-file `pipeline._stage_*
+      = <fake>` mock contract is unchanged).
+    - 37/37 P9 phase-1 tests byte-identical at every commit.
+    - PEP 562 `__getattr__` in `pipeline_v2/__init__.py` defers
+      `from sage.pipeline import …` to attribute-access time,
+      breaking the otherwise-circular dependency once
+      `PipelineContext` source moved to `pipeline_v2/context.py`.
+    - `PipelineContext.__module__ == "sage.pipeline"` preserved via
+      explicit `setattr` in `pipeline_v2/context.py` so existing
+      tests / bench / dashboard / observability assertions on the
+      legacy module path continue to pass.
+- **TBD (Phase 2.2 Proposed)**: rewrite the 27 test files that
+  monkeypatch `pipeline._stage_<X> = <fake>`; replace the stage
+  monkeypatch contract with module-function patching or
+  public-effect assertions; remove the 6 `_stage_*` delegators;
+  remove the ~22 `_<helper>` delegators where safe (separate grep
+  pass); reach **`pipeline.py < 300 LOC`** (the original Phase 2.1
+  cible reclassified to Phase 2.2 acceptance per cgpro round-4
+  OPTION_3 verdict).
