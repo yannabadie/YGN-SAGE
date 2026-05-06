@@ -84,14 +84,27 @@ def _count_cargo_tests(cwd: Path, features: str = "smt,cognitive,sandbox,craneli
 
 
 def _git_meta(cwd: Path) -> dict[str, Any]:
-    """Capture commit SHA, branch, and dirty flag."""
+    """Capture commit SHA, branch, and dirty flag.
+
+    Phase 1.5h (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): emit schema v2's
+    explicit (snapshot_commit_sha, generated_for_commit_sha) pair in
+    addition to the legacy `commit_sha`. The
+    `strict-current-json-coherence.yml` CI gate (cycle-13 K Phase 0.1b)
+    requires ALL three to match each other AND to be at distance ≤ 1
+    from `${{ github.sha }}`. By making the canonical generator emit
+    them at the same authoritative SHA, we keep the strict gate happy
+    in a single commit (HEAD stamp).
+    """
     sha_rc, sha, _ = _run(["git", "rev-parse", "HEAD"], cwd)
     branch_rc, branch, _ = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd)
     dirty_rc, dirty, _ = _run(["git", "status", "--porcelain"], cwd)
+    sha_value = sha.strip() if sha_rc == 0 else "unknown"
     return {
-        "commit_sha": sha.strip() if sha_rc == 0 else "unknown",
         "branch": branch.strip() if branch_rc == 0 else "unknown",
+        "commit_sha": sha_value,
         "dirty": bool(dirty.strip()) if dirty_rc == 0 else None,
+        "snapshot_commit_sha": sha_value,
+        "generated_for_commit_sha": sha_value,
     }
 
 
@@ -103,7 +116,12 @@ def _build_snapshot() -> dict[str, Any]:
 
     git = _git_meta(REPO_ROOT)
     snapshot: dict[str, Any] = {
-        "schema_version": "v1",
+        # Phase 1.5h (cgpro VERIFY 2026-05-06): schema_version pinned at
+        # "v2" so the strict-current-json-coherence.yml CI gate (Phase
+        # 0.1b) accepts the snapshot. v1 emitted only `commit_sha`,
+        # which the gate rejects since it requires the explicit
+        # `snapshot_commit_sha` + `generated_for_commit_sha` pair.
+        "schema_version": "v2",
         "generated_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git": git,
         "sage_python_tests": _count_pytest_collect(sage_python),
@@ -141,14 +159,23 @@ def main() -> int:
             print(f"STALE: {out_path} does not exist", file=sys.stderr)
             return 1
         existing = out_path.read_text(encoding="utf-8")
-        # Strip generated_at_utc + commit_sha for stale-check comparison (those
-        # change every run; we care about test counts being equal)
+
+        # Strip generated_at_utc + every git.* SHA / dirty field for the
+        # stale-check comparison. Phase 1.5h (cgpro VERIFY 2026-05-06):
+        # schema v2 added `snapshot_commit_sha` and
+        # `generated_for_commit_sha` to the `git` block — both change
+        # every run alongside `commit_sha`, so we strip all three plus
+        # `dirty`. Test counts are the only stable signal we compare on.
         def _strip_volatile(text: str) -> str:
             obj = json.loads(text)
             obj.pop("generated_at_utc", None)
-            obj.get("git", {}).pop("commit_sha", None)
-            obj.get("git", {}).pop("dirty", None)
+            git = obj.get("git", {})
+            git.pop("commit_sha", None)
+            git.pop("snapshot_commit_sha", None)
+            git.pop("generated_for_commit_sha", None)
+            git.pop("dirty", None)
             return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False)
+
         if _strip_volatile(existing) != _strip_volatile(canonical_text):
             print(f"STALE: {out_path} test counts differ from live counts.", file=sys.stderr)
             print("Run `python scripts/status_snapshot.py` to refresh.", file=sys.stderr)
