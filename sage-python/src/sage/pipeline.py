@@ -4,7 +4,7 @@ Replaces the inline routing+topology+execution logic in AgentSystem.run()
 with a clean, staged pipeline driven by ModelCards and TopologyGraph.
 
 Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
-2026-05-06): this module is now a thin façade. The 5 stage bodies +
+2026-05-06): this module is now a thin façade. The 6 stage bodies +
 the orchestrator + the helper modules + the `PipelineContext`
 dataclass live in `sage.pipeline_v2`. What remains here:
 

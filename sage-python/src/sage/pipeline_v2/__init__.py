@@ -2,7 +2,7 @@
 
 Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
 2026-05-06): this package now hosts the bulk of the legacy
-`CognitiveOrchestrationPipeline` body. The 5 stage modules
+`CognitiveOrchestrationPipeline` body. The 6 stage modules
 (classify/decompose/select_topology/assign_models/execute/learn) +
 the orchestrator + the helper modules
 (bandit_attribution / runtime_events / memory_gate / topology_helpers /
