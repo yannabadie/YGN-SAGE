@@ -1359,66 +1359,16 @@ class CognitiveOrchestrationPipeline:
         record_bandit_outcome_checked(self, ctx, quality)
 
     def _pick_fallback_provider(self):
-        """Return (provider, config) for a healthy fallback, or (None, None).
+        """Return (provider, config) for a healthy fallback.
 
-        Preference order (first match wins):
-          1. ``self.llm_provider`` if its provider name is alive in the
-             pool (i.e. the boot default is not currently dead).
-          2. Any provider in ``self.provider_pool._providers`` whose
-             circuit is closed and whose TTL'd exclusion hasn't fired.
-          3. ``self.llm_provider`` as a last resort (better than nothing).
-
-        Used by Stage 4 single-agent fallback after multi-agent execution
-        failed. The previous implementation used ``self.llm_provider``
-        unconditionally, which on a provider-outage (minimax 529 storm
-        2026-04-21 morning) meant the fallback hit the same dead provider
-        and returned empty content. Routing to a different healthy
-        provider recovers 3-5/10 tasks that would otherwise be EMPTY.
+        Cycle-13 K Phase 2.1 Step B3 (2026-05-06): body moved to
+        `sage.pipeline_v2.execute.pick_fallback_provider`. Method
+        preserved as 1-line LOCAL-import delegator so the 7 tests
+        in test_pipeline_fallback_provider.py + the call site in
+        pipeline_v2/execute.py:505 continue working byte-identical.
         """
-        pool = getattr(self, "provider_pool", None)
-
-        # Helper: is a provider alive?
-        def _alive(pname: str) -> bool:
-            if pool is None:
-                return True  # No pool → assume alive
-            # Dead if TTL'd exclusion or circuit-open.
-            if pname in getattr(pool, "_dead_at", {}):
-                return False
-            if hasattr(pool, "is_available") and not pool.is_available(pname):
-                return False
-            return True
-
-        # 1. Try the default provider first if it's alive.
-        default = self.llm_provider
-        default_name = ""
-        if default is not None:
-            default_name = getattr(default, "name", "") or getattr(default, "provider_name", "")
-            if default_name and _alive(default_name):
-                return default, self.llm_config
-
-        # 2. Iterate the pool for any alive provider that's not the dead default.
-        if pool is not None:
-            providers = getattr(pool, "_providers", {}) or {}
-            for pname, prov in providers.items():
-                if pname == default_name:
-                    continue
-                if not _alive(pname):
-                    continue
-                model_id = getattr(prov, "model_id", "") or getattr(prov, "model_string", "")
-                from sage.llm.base import LLMConfig
-                cfg = LLMConfig(
-                    provider=pname,
-                    model=model_id,
-                    context_window=getattr(self.llm_config, "context_window", 128000) if self.llm_config else 128000,
-                )
-                log.info(
-                    "Stage 4 fallback: rerouting from dead default=%s to healthy %s",
-                    default_name or "(none)", pname,
-                )
-                return prov, cfg
-
-        # 3. Last resort: default even if marked dead (better than nothing).
-        return default, self.llm_config
+        from sage.pipeline_v2.execute import pick_fallback_provider
+        return pick_fallback_provider(self)
 
     async def _stage_execute(
         self,
