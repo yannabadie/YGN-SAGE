@@ -12,7 +12,28 @@ class ToolRegistry:
         self._usage: dict[str, dict] = {}  # name -> {usage_count, success_count, source}
 
     def register(self, tool: Tool) -> None:
-        """Register a tool."""
+        """Register a tool.
+
+        Phase 1.5 cycle-13 K (cgpro DESIGN_LOCKED 2026-05-06):
+        registration MUST resolve the tool's ToolCapability via
+        `sage.policy.manifest.resolve_tool_capability`. If unresolved
+        (no explicit kwarg, no built-in manifest entry, no class
+        default), `ToolPolicyDeclarationError` is raised — there is
+        intentionally NO default-tag-dangerous fallback per cgpro
+        DESIGN trap "creates an illusion of security". The resolved
+        capability is normalised back onto `tool.capability` so
+        downstream consumers (Tool.execute, audit CLI) can rely on
+        a non-None, enum-valued attribute.
+        """
+        from sage.policy.manifest import resolve_tool_capability
+
+        # `resolve_tool_capability` raises ToolPolicyDeclarationError on
+        # an unresolvable tool — propagate so the boot path fails fast.
+        resolved = resolve_tool_capability(tool)
+        # Normalise the resolved enum back onto the Tool so all later
+        # code paths see the same authoritative value (manifest hits
+        # would otherwise leave `tool.capability=None` in place).
+        tool.capability = resolved
         self._tools[tool.spec.name] = tool
 
     def get(self, name: str) -> Tool | None:

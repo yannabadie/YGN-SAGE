@@ -37,26 +37,53 @@ from sage.policy.tool_policy import ToolCapability
 # class default unless they pass an explicit override.
 
 _BUILTIN_TOOL_CAPABILITIES: dict[str, ToolCapability] = {
-    # Pure functional tools — no I/O, no network, no shell.
-    # (Empty set at Phase 1.5; add as new pure utilities ship.)
-    # File-system reads.
+    # File-system reads (typed_repo.py + memory_tools.py).
     "read_file": ToolCapability.READ_LOCAL,
     "list_files": ToolCapability.READ_LOCAL,
     "search_files": ToolCapability.READ_LOCAL,
-    # File-system writes.
+    "search_repo": ToolCapability.READ_LOCAL,
+    "git_diff": ToolCapability.READ_LOCAL,
+    # File-system writes (typed_repo.py).
     "write_file": ToolCapability.WRITE_LOCAL,
     "edit_file": ToolCapability.WRITE_LOCAL,
     "create_file": ToolCapability.WRITE_LOCAL,
     "delete_file": ToolCapability.WRITE_LOCAL,
-    # Network / remote.
+    "apply_patch": ToolCapability.WRITE_LOCAL,
+    # Subprocess (typed_repo.py: pytest invocation under sandbox).
+    "run_tests": ToolCapability.SUBPROCESS,
+    # Network / remote (exocortex_tools.py + context7_tools.py).
     "search_exocortex": ToolCapability.NETWORK,
+    "refresh_knowledge": ToolCapability.NETWORK,
+    "lookup_library_docs": ToolCapability.NETWORK,
     "context7_query": ToolCapability.NETWORK,
     "web_search": ToolCapability.NETWORK,
     "web_fetch": ToolCapability.NETWORK,
+    # Memory tools (memory_tools.py) — read/write within local SQLite
+    # tier. Treated as read_local for retrieval, write_local for store/
+    # update/delete.
+    "search_memory": ToolCapability.READ_LOCAL,
+    "retrieve_context": ToolCapability.READ_LOCAL,
+    "summarize_context": ToolCapability.READ_LOCAL,
+    "filter_context": ToolCapability.READ_LOCAL,
+    "search_causal_chain": ToolCapability.READ_LOCAL,
+    "store_memory": ToolCapability.WRITE_LOCAL,
+    "update_memory": ToolCapability.WRITE_LOCAL,
+    "delete_memory": ToolCapability.WRITE_LOCAL,
     # Subprocess / sandboxed exec.
     "execute_python": ToolCapability.SUBPROCESS,
     "execute_code": ToolCapability.SUBPROCESS,
-    # Dangerous: raw shell, agent delegation, code synthesis.
+    # Agent management (agent_mgmt.py): creating / calling sub-agents
+    # delegates to arbitrary `agent.run(...)` — class-default-dangerous
+    # for AgentTool concretes; the create/call wrappers themselves are
+    # also dangerous because they enable that delegation.
+    "create_agent": ToolCapability.DANGEROUS,
+    "call_agent": ToolCapability.DANGEROUS,
+    "list_active_agents": ToolCapability.READ_LOCAL,
+    # ToolForge / dynamic tool synthesis.
+    "create_python_tool": ToolCapability.DANGEROUS,
+    "create_bash_tool": ToolCapability.DANGEROUS,
+    # Dangerous: raw shell, agent recursion, raw exec.
+    "bash": ToolCapability.DANGEROUS,
     "execute_bash": ToolCapability.DANGEROUS,
     "execute_raw": ToolCapability.DANGEROUS,
     "sage_recurse": ToolCapability.DANGEROUS,

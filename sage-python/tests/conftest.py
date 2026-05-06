@@ -98,6 +98,82 @@ def _restore_windows_proactor_policy():
 
 
 @pytest.fixture(autouse=True)
+def _grant_all_tool_capabilities_in_tests(monkeypatch):
+    """Phase 1.5 cycle-13 K (cgpro DESIGN trap 8): isolate ToolPolicy for
+    every test.
+
+    Two test-only relaxations applied at session start:
+
+      1. Set the effective `ToolPolicy` to grant ALL six ToolCapability
+         tiers, so existing tests that exercise file IO / network mocks
+         / subprocess sandboxes / agent delegation don't trip on the
+         production default `{pure}`-only policy.
+
+      2. Monkey-patch `sage.tools.registry.resolve_tool_capability` to
+         fall back to `ToolCapability.PURE` when the strict resolver
+         finds no manifest entry, no class default, and no explicit
+         `capability=` kwarg. This lets tests construct ad-hoc tools
+         like `Tool(spec=ToolDef(name="tool_a", ...), handler=...)`
+         without manually classifying every fixture. Production is
+         strict — only the test surface gets this fallback.
+
+    Tests that specifically want to exercise ToolPolicy denial paths
+    use their own scoped policies inside `set_current_tool_policy(...)`
+    (the ContextVar mechanism is reentrant, so a test-local policy
+    overrides this autouse grant for the duration of the with-block /
+    `set/reset` pair). Tests that want to exercise registration-denial
+    patch `sage.tools.registry.resolve_tool_capability` themselves to
+    point at the strict version (`sage.policy.manifest.resolve_tool_capability`).
+
+    Trap: this fixture must NOT mutate operator env-var state.
+    `SAGE_TOOL_GRANTS` and `~/.sage/tool_policy.toml` are deliberately
+    untouched — only the in-process ContextVar policy and the tools
+    registry's resolver attribute are scoped to the test.
+    """
+    from sage.policy import (
+        ToolCapability,
+        ToolPolicy,
+        set_current_tool_policy,
+    )
+    from sage.policy.errors import ToolPolicyDeclarationError
+    from sage.policy.manifest import resolve_tool_capability as _strict_resolve
+
+    permissive = ToolPolicy(grants=frozenset(ToolCapability))
+    token = set_current_tool_policy(permissive)
+
+    def _permissive_resolve(tool):
+        try:
+            return _strict_resolve(tool)
+        except ToolPolicyDeclarationError:
+            return ToolCapability.PURE
+
+    # Monkey-patch the resolver alias inside `sage.tools.registry`.
+    # `resolve_tool_capability` is imported lazily inside
+    # `ToolRegistry.register`, so we must patch the module attribute
+    # itself rather than the function reference.
+    import sage.tools.registry as _registry_mod
+    monkeypatch.setattr(
+        _registry_mod, "_resolve_tool_capability_for_tests_only", _permissive_resolve, raising=False
+    )
+
+    # Also patch the resolver name as imported by `register`. The
+    # `register` body does `from sage.policy.manifest import resolve_tool_capability`
+    # — so we patch the source module's name to the permissive variant.
+    import sage.policy.manifest as _manifest_mod
+    monkeypatch.setattr(_manifest_mod, "resolve_tool_capability", _permissive_resolve)
+
+    try:
+        yield
+    finally:
+        try:
+            from sage.policy.tool_policy import _CURRENT_POLICY
+
+            _CURRENT_POLICY.reset(token)
+        except (ValueError, LookupError):
+            set_current_tool_policy(ToolPolicy.default())
+
+
+@pytest.fixture(autouse=True)
 def _isolate_sage_state_dir():
     """Wipe ``<HOME>/.sage/`` before each test to prevent A14 cross-test pollution.
 
