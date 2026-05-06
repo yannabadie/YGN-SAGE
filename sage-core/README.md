@@ -58,6 +58,27 @@ cargo test --no-default-features --features sandbox,cranelift --test '*'  # Inte
 cargo clippy --no-default-features                        # Lint
 ```
 
+## Build-info exposure (cycle-13 B Q1, 2026-05-06)
+
+Since commit `b035973e`, `sage_core` exposes 4 module-level attributes populated at compile time by `build.rs`. Used by `sage.ops.sage_core_version` (Python helper) and `sage.ops.wheel_smoke` (post-install CI assertion) to detect stale binaries — the gap that caused the cycle-13 B incident where a 2026-04-27 wheel didn't have the manifest-write fix shipped 2026-04-30.
+
+```python
+import sage_core
+sage_core.__commit_sha__       # 'b035973e760ace33c26255420fcbe583ae661282' (40-char) or 'unknown'
+sage_core.__build_timestamp__  # UNIX seconds string (e.g. '1778055279')
+sage_core.__build_profile__    # 'release' / 'debug' / cargo PROFILE
+sage_core.__version__          # '0.1.0' (from Cargo.toml)
+```
+
+Override the SHA at build time (CI / PyPI sdist where `git` may be absent):
+
+```bash
+SAGE_CORE_COMMIT_SHA_OVERRIDE=$(git rev-parse HEAD) \
+  maturin build --release --features smt,onnx
+```
+
+`build.rs` resolves `.git/HEAD` / `refs/heads` / `packed-refs` paths via `git rev-parse --git-path` and emits `cargo:rerun-if-changed` only when the resolved path exists — handles git worktrees + PyPI sdist source builds without breaking Cargo cache.
+
 ## Module Overview
 
 | Module | Description |

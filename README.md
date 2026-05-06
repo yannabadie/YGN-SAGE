@@ -38,7 +38,7 @@ nothing is silently fabricated.
 
 For full architectural framing see [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md)
 and the contract docs at `docs/contracts/runtime-integrity-ledger.md`
-(8 invariants binding declared labels to verified content).
+(9 invariants binding declared labels to verified content).
 
 ## Install from source
 
@@ -235,7 +235,7 @@ updated 2026-05-04 (cycle-10 P3, post cycle-9 closure at HEAD `97fba93f`).
 | **Topology engine 6-path (S-MMU/archive/LLM/mutation/MCTS/templates)** | `delivered` | Rust `TopologyEngine`, 11 templates fallback. |
 | **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
 | **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
-| **Runtime integrity ledger (8 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. |
+| **Runtime integrity ledger (9 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
 | **A14 epoch guard + `topology_state_manifest.json`** | `delivered` | Cycle-8 step 2 (`6b2ebcbe + f9521616`). Fail-closed boot if epoch ≠ DB SHA-256. |
 | **Wasm sandbox (RustPython wasm32-wasip1)** | `default-on (cycle 8)` | ADR-013 §5 flip 2026-04-22. `validate_and_execute` deny-by-default. `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC=1`. |
 | **OpenTelemetry GenAI spans (Python + Rust bridge)** | `delivered` | B1 (2026-04-25) + B1.b. `SAGE_OTEL_EXPORTER={none,console,otlp_http,logfire}`. |
@@ -313,7 +313,7 @@ Live counts canonicalized at `docs/status/current.json` (regenerated via `python
 
 | Suite | Result |
 |-------|--------|
-| Python (`sage-python`) | **2953 collected** (cycle-11 P4 coupling test + P6-B bypass lock, source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
+| Python (`sage-python`) | **3089 collected** (cycle-13 B chain — manifest-contract regression + a14_reset orphan cleanup + sage_core_version helper + wheel_smoke release-pipeline assertion; source of truth = `docs/status/current.json`). Pre-existing 8 fail + 2 error in `test_e2e_*` / `test_pydantic_ai_integration.py` — API-key-gated fixtures. |
 | Rust (`sage-core`) | **553 listed** with `--features smt,cognitive,sandbox,cranelift,tool-executor`. `sandbox`/`cranelift`/`tool-executor`/`cognitive` are Cargo default features (ADR-013 §5 flip). |
 | Discovery (`sage-discover`) | **100 collected** |
 | CI | `.github/workflows/ci.yml` runs 10 jobs (`build-wasm-sandbox`, `python-constraints`, `rust`, `otel-bridge`, `otel-bridge-windows`, `rust-features`, `python-sage`, `python-discover`, `windows-pytest`, `integration-smoke`) + 3 supporting workflows (`security.yml` pip-audit/SBOM, `latest-deps.yml` weekly drift, `stochastic-empirical.yml` scheduled). |

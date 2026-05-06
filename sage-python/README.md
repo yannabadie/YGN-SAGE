@@ -33,7 +33,7 @@ sage chat           # Interactive chat (bash off by default; SAGE_CHAT_ALLOW_BAS
 ## Testing
 
 ```bash
-python -m pytest tests/ -v             # 2940 collected (source of truth: docs/status/current.json)
+python -m pytest tests/ -v             # 3089 collected (source of truth: docs/status/current.json)
 ruff check src/                        # Lint (clean)
 mypy src/sage/                         # Type check (0 errors)
 ```
@@ -105,7 +105,23 @@ export SAGE_EXOCORTEX_STORE=fileSearchStores/ygnsageresearch-wii7kwkqozrd  # Exo
 
 ## A14 Epoch Guard
 
-State files under `~/.sage/` (bandit_state.db, archive_state.db, engine_extras.json, topology_state_manifest.json) are protected by a fail-closed epoch guard. Normal boot requires `posterior_epoch.json` (epoch=1) + `topology_state_manifest.json`. Reset: `python -m sage.ops.a14_reset --reason "..."`.
+State files under `~/.sage/` (bandit_state.db, archive_state.db, engine_extras.json, topology_state_manifest.json) are protected by a fail-closed epoch guard. Normal boot requires `posterior_epoch.json` (epoch=1) + `topology_state_manifest.json`. Reset: `python -m sage.ops.a14_reset --reason "..."` (also cleans orphaned `.<name>.<id>.tmp` files left by pre-`bc662d9a` atomic-rename failures, recorded in the audit MANIFEST).
+
+## Stale Rust binary detection (cycle-13 B chain, 2026-05-06)
+
+When `sage_core/` Rust source moves ahead of the locally-installed `.pyd` wheel, silent contract violations follow (the manifest-write fix at `engine.rs:1031` shipped 2026-04-30 was missed by 4-day-old wheels). Two ops surfaces detect drift:
+
+```bash
+# Compares the installed wheel's commit_sha vs git HEAD; exit 1 on confirmed stale.
+python -m sage.ops.sage_core_version
+
+# Post-install runtime contract assertion (CI-ready). Used in wheels.yml +
+# release-test.yml smoke steps; fails loud if the wheel doesn't write
+# topology_state_manifest.json with byte-exact SHA256 binding.
+python -m sage.ops.wheel_smoke
+```
+
+If `sage_core_version` reports `"matches": false`, rebuild with the canonical recipe per `CLAUDE.md` Quick Commands block.
 
 ## Dependencies
 
