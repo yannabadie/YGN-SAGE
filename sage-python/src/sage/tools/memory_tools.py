@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 from sage.memory.episodic import EpisodicMemory
 from sage.memory.working import WorkingMemory
@@ -19,6 +20,7 @@ def create_search_memory_tool(episodic: EpisodicMemory) -> Tool:
     """Legacy: create a single search_memory tool. Use create_memory_tools() instead."""
 
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="search_memory",
         description=(
             "Search long-term episodic memory for relevant past experiences. "
@@ -60,6 +62,7 @@ def create_memory_tools(
     # --- STM Tools (Working Memory) ---
 
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="retrieve_context",
         description="Retrieve the N most recent events from short-term working memory.",
         parameters={
@@ -80,6 +83,7 @@ def create_memory_tools(
     tools.append(retrieve_context)
 
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="summarize_context",
         description="Get the current internal state summary (rolling MEM1 IS) of the agent's memory.",
         parameters={"type": "object", "properties": {"_": {"type": "string", "description": "Unused (no-arg tool). Pass empty string."}}, "required": []},
@@ -93,6 +97,7 @@ def create_memory_tools(
     tools.append(summarize_context)
 
     @Tool.define(
+        capability=ToolCapability.WRITE_LOCAL,
         name="filter_context",
         description="Trim working memory to keep only the N most recent events. Use to drop irrelevant early context.",
         parameters={
@@ -115,6 +120,7 @@ def create_memory_tools(
     # --- LTM Tools (Episodic Memory) ---
 
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="search_memory",
         description="Search long-term episodic memory for relevant past experiences.",
         parameters={
@@ -136,6 +142,7 @@ def create_memory_tools(
     tools.append(search_memory)
 
     @Tool.define(
+        capability=ToolCapability.WRITE_LOCAL,
         name="store_memory",
         description="Store a new entry in long-term episodic memory for future retrieval.",
         parameters={
@@ -154,6 +161,7 @@ def create_memory_tools(
     tools.append(store_memory)
 
     @Tool.define(
+        capability=ToolCapability.WRITE_LOCAL,
         name="update_memory",
         description="Update an existing long-term memory entry by key.",
         parameters={
@@ -174,6 +182,7 @@ def create_memory_tools(
     tools.append(update_memory)
 
     @Tool.define(
+        capability=ToolCapability.WRITE_LOCAL,
         name="delete_memory",
         description="Delete an obsolete or incorrect long-term memory entry.",
         parameters={
@@ -197,6 +206,7 @@ def create_memory_tools(
     if causal_memory is not None:
 
         @Tool.define(
+            capability=ToolCapability.READ_LOCAL,
             name="search_causal_chain",
             description=(
                 "Trace causal chains in memory. Given an entity, find what it caused "

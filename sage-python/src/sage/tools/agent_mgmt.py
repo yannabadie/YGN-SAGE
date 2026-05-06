@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 
 if TYPE_CHECKING:
@@ -42,6 +43,7 @@ class ListActiveAgentsResult(BaseModel):
 
 # Dynamic sub-agent creation and delegation
 @Tool.define(
+    capability=ToolCapability.DANGEROUS,
     name="create_agent",
     description="Creates a new sub-agent dynamically. The sub-agent is stored in the unified sub-agent pool and can be invoked later using call_agent.",
     parameters={
@@ -98,6 +100,7 @@ async def create_agent(agent_name: str, role: str, instruction: str, tools: list
 
 
 @Tool.define(
+    capability=ToolCapability.DANGEROUS,
     name="call_agent",
     description="Invokes an existing sub-agent to execute a specific task.",
     parameters={
@@ -134,6 +137,7 @@ async def call_agent(agent_name: str, task_message: str, agent_pool: dict | None
 
 
 @Tool.define(
+    capability=ToolCapability.READ_LOCAL,
     name="list_active_agents",
     description="Lists all currently active sub-agents in the pool.",
     parameters={

@@ -186,19 +186,21 @@ def _strict_resolve_inline(tool: Any) -> ToolCapability:
     """Re-implement the strict resolver inline so this test does not
     depend on the autouse fixture's monkey-patched binding.
 
-    The autouse `_grant_all_tool_capabilities_in_tests` fixture replaces
-    `sage.policy.manifest.resolve_tool_capability` with a permissive
-    fallback that defaults to PURE on declaration error. Trying to
-    `from sage.policy.manifest import resolve_tool_capability` at test
-    time would import the permissive version (the autouse has already
-    run by the time the test body executes). Hence the inline copy of
-    the strict resolution chain here. Mirrors `manifest.py:resolve_tool_capability`.
+    Phase 1.5c (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the resolver
+    does NOT consult the built-in manifest at runtime. `function.__module__`
+    is writable in Python and cannot serve as a trust anchor; the
+    manifest is now documentation/audit only. The runtime resolution
+    path is:
+
+        explicit `tool.capability` -> class default -> raise.
+
+    The autouse `_grant_all_tool_capabilities_in_tests` fixture in
+    `conftest.py` replaces `sage.policy.manifest.resolve_tool_capability`
+    with a permissive fallback. This inline copy mirrors the production
+    resolver (post-Phase-1.5c) so the strict-path tests can re-install
+    it via monkeypatch.
     """
-    from sage.policy.manifest import (
-        _BUILTIN_TOOL_CAPABILITIES,
-        _CLASS_CAPABILITY_DEFAULTS,
-        _module_matches,
-    )
+    from sage.policy.manifest import _CLASS_CAPABILITY_DEFAULTS
 
     explicit = getattr(tool, "capability", None)
     if explicit is not None:
@@ -207,37 +209,30 @@ def _strict_resolve_inline(tool: Any) -> ToolCapability:
         if isinstance(explicit, str):
             return ToolCapability(explicit)
 
-    spec = getattr(tool, "spec", None)
-    spec_name = getattr(spec, "name", None) if spec else None
-
-    if isinstance(spec_name, str) and spec_name:
-        handler = getattr(tool, "_handler", None)
-        handler_module = getattr(handler, "__module__", "") if handler else ""
-        for (entry_name, expected_prefix), capability in _BUILTIN_TOOL_CAPABILITIES.items():
-            if entry_name != spec_name:
-                continue
-            if _module_matches(handler_module, expected_prefix):
-                return capability
-
     cls_name = type(tool).__name__
     if cls_name in _CLASS_CAPABILITY_DEFAULTS:
         return _CLASS_CAPABILITY_DEFAULTS[cls_name]
 
     raise ToolPolicyDeclarationError(
-        f"strict_resolve_inline: unresolved name={spec_name!r} class={cls_name!r}"
+        f"strict_resolve_inline (Phase 1.5c): unresolved class={cls_name!r}, "
+        f"capability=None, no class default. Manifest is doc-only — "
+        f"explicit `capability=` required at construction site."
     )
 
 
-def test_t12_registry_resolution_anti_spoof_and_rejects_unknown(monkeypatch):
-    """Phase 1.5b (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the strict
-    resolver accepts a real built-in factory tool, REJECTS spoofs (a
-    tool whose name matches a built-in but whose handler lives in an
-    untrusted module), and rejects unknown unlabeled tools.
+def test_t12_registry_resolution_via_explicit_capability_and_rejects_unknown(monkeypatch):
+    """Phase 1.5c (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the strict
+    resolver accepts a real built-in factory tool BECAUSE the factory
+    sets `capability=...` explicitly at construction site (NOT because
+    the manifest blanches it via handler metadata). Rejects unlabeled
+    external tools.
 
-    The autouse fixture monkey-patches `resolve_tool_capability` to a
-    permissive variant. This test reverts that patch back to the
-    strict production semantics via the inline re-implementation
-    `_strict_resolve_inline`.
+    Phase 1.5c moved the manifest from runtime trust anchor to
+    documentation-only. The factory call sites
+    (e.g. `sage.tools.typed_repo._build_read_file_tool` -> `@Tool.define(
+    capability=ToolCapability.READ_LOCAL, name="read_file", ...)`) now
+    declare capability inline. The runtime resolver only checks:
+    explicit -> class default -> raise.
     """
     import sage.policy.manifest as _manifest_mod
 
@@ -245,31 +240,65 @@ def test_t12_registry_resolution_anti_spoof_and_rejects_unknown(monkeypatch):
 
     reg = ToolRegistry()
 
-    # 1. Real built-in factory tool — manifest hit (name + module
-    #    both match): registers OK and resolves to READ_LOCAL.
+    # 1. Real built-in factory tool — registers OK because the factory
+    #    set `capability=ToolCapability.READ_LOCAL` at the @Tool.define
+    #    call site (NOT because of any manifest-by-name lookup).
     from sage.tools.typed_repo import create_typed_repo_tools
 
     real_tools = create_typed_repo_tools()
     real_read_file = next(t for t in real_tools if t.spec.name == "read_file")
-    reg.register(real_read_file)
+    # Sanity: the factory declared the capability inline.
     assert real_read_file.capability == ToolCapability.READ_LOCAL
+    reg.register(real_read_file)
     assert reg.get("read_file") is real_read_file
 
-    # 2. ANTI-SPOOF (cgpro EDIT_REQUIRED Phase 1.5b): a fake tool
-    #    constructed in this test file with name="read_file" but a
-    #    handler from a non-trusted module MUST be rejected.
-    fake_read_file = _make_tool("read_file")  # handler.__module__ == this test
-    with pytest.raises(ToolPolicyDeclarationError):
-        reg.register(fake_read_file, replace=True)  # replace ignored — fails on resolution
-    # The fake never made it past the resolver, so the registry still
-    # holds the real one.
-    assert reg.get("read_file") is real_read_file
-
-    # 3. Unknown unlabeled tool: rejected at the resolver.
-    unknown = _make_tool("unknown_xyz_t12")
+    # 2. Unknown unlabeled tool: rejected at the resolver (no manifest
+    #    fallback exists anymore; without explicit `capability=` and
+    #    without a class default, registration MUST raise).
+    unknown = _make_tool("unknown_xyz_t12")  # capability=None
     with pytest.raises(ToolPolicyDeclarationError):
         reg.register(unknown)
     assert reg.get("unknown_xyz_t12") is None
+
+
+def test_t12c_unlabeled_external_cannot_spoof_builtin_via_module_metadata(monkeypatch):
+    """Phase 1.5c (cgpro EDIT_REQUIRED): even if an attacker mutates
+    `handler.__module__` and `handler.__qualname__` to match a built-in
+    factory's module path, the tool still has no resolvable capability
+    because the manifest is no longer consulted at runtime.
+
+    Closes the cgpro VERIFY 2026-05-06 trap: Python documents
+    `function.__module__` and `function.__qualname__` as writable
+    attributes, so any handler-metadata-based trust anchor is
+    forgeable. The Phase 1.5c fix is to move the manifest to
+    documentation-only and require explicit `capability=...` at the
+    factory call site for built-ins.
+
+    This test mutates the spoof-fake's module + qualname to mimic the
+    canonical `read_file` handler signature, then proves that
+    `Registry.register` STILL rejects it (because the resolver sees
+    `tool.capability is None` and no class default applies).
+    """
+    import sage.policy.manifest as _manifest_mod
+
+    monkeypatch.setattr(_manifest_mod, "resolve_tool_capability", _strict_resolve_inline)
+
+    reg = ToolRegistry()
+    fake = _make_tool("read_file")  # capability=None
+
+    # Forge the metadata to mimic the canonical handler exactly.
+    # Python allows this (the documented writable-function-attribute
+    # surface): in production, an attacker who can construct a Tool
+    # could trivially do this.
+    fake._handler.__module__ = "sage.tools.typed_repo"
+    fake._handler.__qualname__ = "_build_read_file_tool.<locals>.read_file"
+
+    # The Phase 1.5c resolver does NOT look at handler metadata for
+    # an unlabeled tool — it only looks at explicit `capability=`,
+    # then class default, then raises. So the mutation has zero effect.
+    with pytest.raises(ToolPolicyDeclarationError):
+        reg.register(fake)
+    assert reg.get("read_file") is None  # registry unchanged
 
 
 def test_t12b_registry_rejects_silent_overwrite(monkeypatch):

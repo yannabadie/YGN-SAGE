@@ -3,12 +3,14 @@ from __future__ import annotations
 
 import asyncio
 import re
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 
 BLOCKED_PATTERNS = re.compile(r'rm\s+-rf|mkfs|dd\s+if=|:\(\)\s*\{|/dev/sd')
 
 
 bash_tool = Tool.define(
+    capability=ToolCapability.DANGEROUS,
     name="bash",
     description="Execute a bash command and return its output.",
     parameters={

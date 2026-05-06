@@ -14,6 +14,7 @@ import shlex
 from typing import Any, Awaitable, Callable
 
 from sage.llm.base import ToolDef
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 from sage.tools.registry import ToolRegistry
 from sage.tools.runtime_safety import (
@@ -181,6 +182,7 @@ def _build_isolated_exec_wrapper(argv: list[str]) -> str:
     )
 
 @Tool.define(
+    capability=ToolCapability.DANGEROUS,
     name="create_python_tool",
     description="Dynamically writes and registers a new Python tool. The code is saved persistently to disk and formally validated before registration.",
     parameters={
@@ -320,6 +322,7 @@ def _register_generated_tool(
 
 
 @Tool.define(
+    capability=ToolCapability.DANGEROUS,
     name="create_bash_tool",
     description="Creates a persistent tool that wraps a specific bash command or script. Executed via secure subprocess.",
     parameters={

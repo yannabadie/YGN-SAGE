@@ -40,6 +40,7 @@ import os
 import httpx
 
 from sage.llm._ssl import ssl_verify
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 
 _log = logging.getLogger(__name__)
@@ -183,6 +184,7 @@ def create_context7_tools(api_key: str | None = None) -> list[Tool]:
         return []
 
     @Tool.define(
+        capability=ToolCapability.NETWORK,
         name="lookup_library_docs",
         description=_DESCRIPTION,
         parameters={

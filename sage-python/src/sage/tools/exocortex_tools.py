@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 
 
@@ -12,6 +13,7 @@ def create_exocortex_tools(exocortex: Any) -> list[Tool]:
     tools: list[Tool] = []
 
     @Tool.define(
+        capability=ToolCapability.NETWORK,
         name="search_exocortex",
         description=(
             "Search the ExoCortex knowledge store for research papers and insights. "
@@ -41,6 +43,7 @@ def create_exocortex_tools(exocortex: Any) -> list[Tool]:
     tools.append(search_exocortex)
 
     @Tool.define(
+        capability=ToolCapability.NETWORK,
         name="refresh_knowledge",
         description=(
             "Trigger on-demand knowledge discovery: scan arXiv, Semantic Scholar, "

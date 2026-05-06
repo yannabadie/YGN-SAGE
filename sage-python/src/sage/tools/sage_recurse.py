@@ -23,6 +23,7 @@ import os
 from typing import Any, Awaitable, Callable
 
 from sage.llm.base import ToolDef
+from sage.policy import ToolCapability
 from sage.tools.base import Tool
 
 log = logging.getLogger(__name__)
@@ -198,6 +199,7 @@ def build_sage_recurse_tool(
             parameters=_PARAMETERS,
         ),
         handler=_handler,
+        capability=ToolCapability.DANGEROUS,
     )
 
 

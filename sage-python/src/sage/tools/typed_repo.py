@@ -29,6 +29,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from sage.policy import ToolCapability
 from sage.tools._env_safe import safe_subprocess_env
 from sage.tools.base import Tool
 
@@ -200,6 +201,7 @@ async def _run_argv(
 
 def _build_read_file_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="read_file",
         description=(
             "Read a text file from the current working directory. "
@@ -272,6 +274,7 @@ def _build_read_file_tool() -> Tool:
 
 def _build_search_repo_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="search_repo",
         description=(
             "Search the repository for a text or regex pattern. Prefers "
@@ -394,6 +397,7 @@ def _build_search_repo_tool() -> Tool:
 
 def _build_list_files_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="list_files",
         description=(
             "List files matching a glob pattern under a relative root. "
@@ -575,6 +579,7 @@ def _validate_pytest_args(args: list[str]) -> tuple[list[str] | None, str]:
 
 def _build_run_tests_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.SUBPROCESS,
         name="run_tests",
         description=(
             "Run pytest on a relative path. Only a curated set of pytest "
@@ -656,6 +661,7 @@ def _extract_patch_target_paths(diff: str) -> list[str]:
 
 def _build_apply_patch_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.WRITE_LOCAL,
         name="apply_patch",
         description=(
             "Apply a unified diff to the working directory. Prefers "
@@ -742,6 +748,7 @@ def _build_apply_patch_tool() -> Tool:
 
 def _build_git_diff_tool() -> Tool:
     @Tool.define(
+        capability=ToolCapability.READ_LOCAL,
         name="git_diff",
         description=(
             "Show the current working-tree diff. Optionally restrict to a "

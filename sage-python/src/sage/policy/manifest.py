@@ -27,26 +27,31 @@ from sage.policy.tool_policy import ToolCapability
 
 
 # ---------------------------------------------------------------------------
-# Built-in manifest — keyed by (spec.name, expected handler module prefix).
+# Built-in manifest — DOCUMENTATION / AUDIT ONLY (Phase 1.5c).
 # ---------------------------------------------------------------------------
 #
-# Phase 1.5 ship-time inventory. New tools added to the codebase MUST
-# either pass `capability=...` at construction or be added here.
+# Phase 1.5c (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the manifest is
+# NO LONGER consulted by `resolve_tool_capability` at runtime. Python's
+# `function.__module__` and `function.__qualname__` are writable
+# attributes — they cannot serve as a trust anchor for accepting an
+# unlabeled tool, because a hostile caller can set
+# `fake._handler.__module__ = "sage.tools.typed_repo"` and bypass any
+# (name, module) match.
 #
-# Phase 1.5b (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the manifest is
-# keyed BOTH by `spec.name` AND by the trusted `handler.__module__`
-# prefix the handler MUST originate from. Without the module check, an
-# external tool could spoof a built-in name (e.g. construct a
-# `Tool(name="read_file", handler=untrusted_callable)`) and inherit
-# the built-in's READ_LOCAL capability. The module check anchors the
-# manifest hit to the trusted tool factory's module surface — an
-# external impostor whose handler lives in `__main__` or some
-# unrelated module fails resolution and is rejected at registration.
+# The manifest is kept here for two purposes:
+#   (1) Audit (`sage.ops.toolpolicy_audit`) reads it to enumerate the
+#       built-in inventory and report each tool's expected capability.
+#   (2) Documentation: a single place where a reader can find out
+#       "what capability does the canonical `read_file` factory carry?".
+#
+# To CHANGE a built-in tool's capability, you MUST update both:
+#   - The `capability=...` argument at the factory's call site
+#     (e.g. `@Tool.define(name="read_file", capability=...)` in
+#     `sage.tools.typed_repo._build_read_file_tool`).
+#   - The corresponding entry in this manifest (so the audit CLI
+#     reports the same value).
 #
 # Map shape: `(spec.name, expected_handler_module_prefix) -> ToolCapability`.
-# A handler at `<expected_prefix>` OR `<expected_prefix>.<sub>` matches.
-# A handler from an unrelated module does NOT match — even if the
-# `spec.name` is identical.
 
 _BUILTIN_TOOL_CAPABILITIES: dict[tuple[str, str], ToolCapability] = {
     # File-system reads (typed_repo.py).
@@ -149,24 +154,22 @@ def resolve_tool_capability(tool: Any) -> ToolCapability:
                     f"{explicit!r}: {exc}"
                 ) from exc
 
-    spec_name = _safe_spec_name(tool)
-    if spec_name:
-        # Phase 1.5b anti-spoof: the manifest hit requires BOTH the
-        # spec.name AND the handler's `__module__` to match a trusted
-        # entry. A tool whose spec.name happens to match `read_file`
-        # but whose handler lives in `__main__` (or any other module)
-        # is NOT a manifest hit — it falls through to class default
-        # then raises ToolPolicyDeclarationError if unresolved.
-        handler = getattr(tool, "_handler", None)
-        handler_module = getattr(handler, "__module__", "") if handler else ""
-        for (entry_name, expected_prefix), capability in _BUILTIN_TOOL_CAPABILITIES.items():
-            if entry_name != spec_name:
-                continue
-            if _module_matches(handler_module, expected_prefix):
-                return capability
-            # Name match but module mismatch — possible spoof attempt.
-            # Don't return early; let the class-default / raise paths
-            # handle it. A future iteration could log a warning here.
+    # Phase 1.5c (cgpro VERIFY 2026-05-06 EDIT_REQUIRED): the resolver
+    # runtime path NO LONGER consults the built-in manifest. Python
+    # documents `function.__module__` and `function.__qualname__` as
+    # writable attributes, so any handler-metadata-based trust anchor
+    # is forgeable: an attacker can set `fake._handler.__module__ =
+    # "sage.tools.typed_repo"` and bypass any (name, module) match.
+    # The manifest is kept as documentation / audit reference (Tool
+    # of name X is *expected* to live in module Y) but is not
+    # consulted to resolve capability for an unlabeled tool.
+    #
+    # Resolution order (Phase 1.5c):
+    #   1. Explicit `tool.capability` — required for built-ins, set
+    #      at the factory's `Tool.define(capability=...)` /
+    #      `Tool(spec=..., capability=...)` call site.
+    #   2. Class-level default (currently: AgentTool -> dangerous).
+    #   3. Raise `ToolPolicyDeclarationError`.
 
     class_name = type(tool).__name__
     if class_name in _CLASS_CAPABILITY_DEFAULTS:
@@ -175,11 +178,15 @@ def resolve_tool_capability(tool: Any) -> ToolCapability:
     raise ToolPolicyDeclarationError(
         f"Tool {_describe_tool(tool)} has no resolvable capability declaration. "
         f"Pass `capability=` at construction (e.g. `Tool(spec=..., capability="
-        f"\"pure\")`), add a built-in manifest entry, or set a class default. "
-        f"There is intentionally no default-tag-dangerous fallback (per cgpro "
-        f"DESIGN: that creates an illusion of security). NB: the manifest "
-        f"now requires BOTH spec.name AND the handler's __module__ to match "
-        f"a trusted entry (Phase 1.5b anti-spoof, cgpro 2026-05-06)."
+        f"\"pure\")` or `@Tool.define(name=..., capability=ToolCapability.X)`), "
+        f"or set a class default in `_CLASS_CAPABILITY_DEFAULTS`. "
+        f"There is intentionally no default-tag-dangerous fallback AND no "
+        f"runtime manifest lookup (per cgpro 2026-05-06 EDIT_REQUIRED Phase "
+        f"1.5c: handler metadata `__module__` / `__qualname__` are writable "
+        f"in Python and cannot serve as a trust anchor). The built-in "
+        f"manifest at `_BUILTIN_TOOL_CAPABILITIES` is documentation only — "
+        f"it is consulted by `sage.ops.toolpolicy_audit` for inventory but "
+        f"NOT by `Registry.register` to blanche unlabeled tools."
     )
 
 
