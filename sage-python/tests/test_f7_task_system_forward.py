@@ -12,6 +12,7 @@ import pytest
 from unittest.mock import MagicMock
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.assign_models import assign_models
 
 
 class _SpyAssigner:
@@ -71,7 +72,7 @@ def test_assigner_receives_task_system_when_ctx_is_s3():
     ctx.system = 3
     ctx.domain = "code"
     ctx.topology = _Topology(3)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.call_count == 1
     assert spy.last_call["task_system"] == 3
 
@@ -82,7 +83,7 @@ def test_assigner_receives_task_system_when_ctx_is_s2():
     ctx.system = 2
     ctx.domain = "code"
     ctx.topology = _Topology(2)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.last_call["task_system"] == 2
 
 
@@ -92,7 +93,7 @@ def test_assigner_receives_task_system_when_ctx_is_s1():
     ctx.system = 1
     ctx.domain = ""
     ctx.topology = _Topology(1)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.last_call["task_system"] == 1
 
 
@@ -102,7 +103,7 @@ def test_assigner_receives_none_when_system_not_set():
     ctx = PipelineContext(task="x", budget=1.0)
     # ctx.system default is 0 — out of (1,2,3), so must be None-forwarded.
     ctx.topology = _Topology(1)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.last_call["task_system"] is None
 
 
@@ -112,7 +113,7 @@ def test_assigner_receives_none_when_system_is_garbage():
     ctx = PipelineContext(task="x", budget=1.0)
     ctx.system = 99
     ctx.topology = _Topology(1)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.last_call["task_system"] is None
 
 
@@ -123,6 +124,6 @@ def test_domain_and_budget_still_forwarded_correctly():
     ctx.system = 3
     ctx.domain = "math"
     ctx.topology = _Topology(2)
-    ctx = pipeline._stage_assign_models(ctx)
+    ctx = assign_models(pipeline, ctx)
     assert spy.last_call["domain"] == "math"
     assert spy.last_call["budget"] == 7.5

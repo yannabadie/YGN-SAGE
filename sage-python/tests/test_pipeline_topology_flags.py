@@ -8,6 +8,7 @@ from typing import Any
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
 from sage.pipeline_stages import DAGFeatures
+from sage.pipeline_v2.select_topology import select_topology
 
 
 class _Topology:
@@ -90,7 +91,7 @@ def test_skip_dag_template_routes_through_engine(monkeypatch, caplog) -> None:
     )
     setattr(pipeline, "_build_topology_from_hint", lambda hint: _Topology(hint))
 
-    result = pipeline._stage_select_topology(_ctx())
+    result = select_topology(pipeline, _ctx())
 
     assert engine.calls == 1
     assert result.topology is engine.result.topology
@@ -127,7 +128,7 @@ def test_log_all_candidates_emits_per_candidate_lines(monkeypatch, caplog) -> No
         provider_pool=None,
     )
 
-    pipeline._stage_select_topology(_ctx())
+    select_topology(pipeline, _ctx())
 
     candidate_lines = [
         record.getMessage()
@@ -154,7 +155,7 @@ def test_default_off_byte_identical(monkeypatch, caplog) -> None:
     )
     setattr(pipeline, "_build_topology_from_hint", lambda hint: _Topology(hint))
 
-    result = pipeline._stage_select_topology(_ctx())
+    result = select_topology(pipeline, _ctx())
 
     assert engine.calls == 0
     assert result.topology is not None

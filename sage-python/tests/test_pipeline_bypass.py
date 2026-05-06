@@ -15,6 +15,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
+from sage.pipeline_v2.execute import execute
 
 
 def _make_pipeline(agent_loop=None):
@@ -58,7 +59,7 @@ async def test_bypass_without_agent_loop_uses_provider_loop():
     ctx = PipelineContext(task="simple question", system=1)
     ctx.topology = None
 
-    result_ctx = await pipeline._stage_execute(ctx)
+    result_ctx = await execute(pipeline, ctx)
 
     mock_provider.generate.assert_called_once()
     assert result_ctx.result == "provider result"
