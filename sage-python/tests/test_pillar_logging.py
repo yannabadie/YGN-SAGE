@@ -37,6 +37,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from sage.pipeline import CognitiveOrchestrationPipeline
+from sage.pipeline_v2 import select_topology as _select_topology_module
 
 
 @pytest.fixture(autouse=True)
@@ -374,19 +375,19 @@ async def _run_with_injected_topology(
     path) and our spy loop is bypassed entirely.
     """
     mock_topo = engine._result.topology
-    original_stage = pipeline._stage_select_topology
+    original_select = _select_topology_module.select_topology
 
-    def _patched(ctx):  # type: ignore[no-untyped-def]
-        original_stage(ctx)
+    def _patched(_pipeline, ctx):  # type: ignore[no-untyped-def]
+        ctx = original_select(_pipeline, ctx)
         ctx.topology = mock_topo
         ctx.topology_id = getattr(mock_topo, "id", "")
         return ctx
 
-    pipeline._stage_select_topology = _patched  # type: ignore[method-assign]
+    _select_topology_module.select_topology = _patched  # type: ignore[assignment]
     try:
         await pipeline.run(task, budget_usd=3.0)
     finally:
-        pipeline._stage_select_topology = original_stage  # type: ignore[method-assign]
+        _select_topology_module.select_topology = original_select  # type: ignore[assignment]
 
 
 # ── Memory pillar logs ──────────────────────────────────────────────────────
