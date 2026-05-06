@@ -28,24 +28,45 @@ def in_memory_exporter(monkeypatch: pytest.MonkeyPatch):
 
 
 @pytest.mark.asyncio
-async def test_pipeline_run_emits_top_level_span(in_memory_exporter) -> None:
+async def test_pipeline_run_emits_top_level_span(
+    in_memory_exporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """pipeline.run() emits a top-level sage.pipeline.run span with op=invoke_agent."""
     from sage.pipeline import CognitiveOrchestrationPipeline
     pipeline = CognitiveOrchestrationPipeline.__new__(CognitiveOrchestrationPipeline)
     # Stub instance attributes accessed before / during stage calls
     pipeline.budget_usd = 0.0
     pipeline._agent_loop = None
-    pipeline._build_write_gate = MagicMock(return_value=None)
-    pipeline._emit = MagicMock()
-    pipeline._record_to_memory = MagicMock()
-    # Stub all the stages to no-op
-    pipeline._stage_classify = MagicMock(side_effect=lambda ctx: ctx)
-    pipeline._stage_decompose = AsyncMock(side_effect=lambda ctx: ctx)
-    pipeline._stage_select_topology = MagicMock(side_effect=lambda ctx: ctx)
-    pipeline._stage_assign_models = MagicMock(side_effect=lambda ctx: ctx)
-    pipeline._stage_execute = AsyncMock(side_effect=lambda ctx, **_kwargs: ctx)
-    pipeline._stage_learn = AsyncMock(side_effect=lambda ctx: ctx)
-    pipeline._emit_budget_exceeded = MagicMock()
+    pipeline._emit = MagicMock()  # _emit stays as instance seam per cgpro Q3a
+    # Helper module functions: monkeypatch on the canonical module attribute
+    # so the production delegators / orchestrator local-import path resolves
+    # to the stub at call time (Trap 2 lock).
+    monkeypatch.setattr("sage.pipeline_v2.memory_gate.build_write_gate", lambda _p: None)
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.record_to_memory",
+        lambda _p, _ctx, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.emit_budget_exceeded",
+        lambda _p, _ctx: None,
+    )
+    # Stub all 6 stages to no-op via module-function patching
+    monkeypatch.setattr("sage.pipeline_v2.classify.classify", lambda _p, ctx: ctx)
+    async def _decompose_stub(_p, ctx):
+        return ctx
+    monkeypatch.setattr("sage.pipeline_v2.decompose.decompose", _decompose_stub)
+    monkeypatch.setattr(
+        "sage.pipeline_v2.select_topology.select_topology", lambda _p, ctx: ctx
+    )
+    monkeypatch.setattr(
+        "sage.pipeline_v2.assign_models.assign_models", lambda _p, ctx: ctx
+    )
+    async def _execute_stub(_p, ctx, **_kwargs):
+        return ctx
+    monkeypatch.setattr("sage.pipeline_v2.execute.execute", _execute_stub)
+    async def _learn_stub(_p, ctx):
+        return None
+    monkeypatch.setattr("sage.pipeline_v2.learn.learn", _learn_stub)
 
     await pipeline.run("hello")
 
@@ -56,16 +77,21 @@ async def test_pipeline_run_emits_top_level_span(in_memory_exporter) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pipeline_run_emits_six_stage_spans(in_memory_exporter) -> None:
+async def test_pipeline_run_emits_six_stage_spans(
+    in_memory_exporter, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """All 6 SAGE stages emit child spans with sage.* operation names (real methods, not mocks)."""
     from sage.pipeline import CognitiveOrchestrationPipeline
     pipeline = CognitiveOrchestrationPipeline.__new__(CognitiveOrchestrationPipeline)
-    # Infrastructure stubs — same 5 as the top-level span test
+    # Infrastructure stubs — same 3 as the top-level span test
     pipeline.budget_usd = 0.0
     pipeline._agent_loop = None
-    pipeline._build_write_gate = MagicMock(return_value=None)
-    pipeline._emit = MagicMock()
-    pipeline._record_to_memory = MagicMock()
+    pipeline._emit = MagicMock()  # _emit stays as instance seam per cgpro Q3a
+    monkeypatch.setattr("sage.pipeline_v2.memory_gate.build_write_gate", lambda _p: None)
+    monkeypatch.setattr(
+        "sage.pipeline_v2.memory_gate.record_to_memory",
+        lambda _p, _ctx, **_kwargs: None,
+    )
     # All router/engine/bandit/provider attributes → None so every stage
     # hits its early-return / fast-path branch without external dependencies.
     pipeline._rust_router = None
@@ -83,8 +109,11 @@ async def test_pipeline_run_emits_six_stage_spans(in_memory_exporter) -> None:
     pipeline.llm_config = None
     pipeline.consolidator = None
     pipeline._task_count = 0
-    # Defensive: ensure _build_topology_from_hint can't acquire real sage_core
-    pipeline._build_topology_from_hint = MagicMock(return_value=None)
+    # Defensive: ensure build_topology_from_hint can't acquire real sage_core
+    monkeypatch.setattr(
+        "sage.pipeline_v2.topology_helpers.build_topology_from_hint",
+        lambda _hint: None,
+    )
 
     # system_hint=1 forces S1 on classify-override; S1 takes the short-circuit
     # branch in decompose (omega=1), select_topology (no topology), assign_models
