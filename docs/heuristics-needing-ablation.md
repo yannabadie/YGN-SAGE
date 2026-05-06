@@ -35,7 +35,7 @@ This doc is the single calibration plan.
 | R1 | diversity_penalty per provider | 0.08 | `sage-core/src/routing/model_assigner.rs:319` | **Empirical** — v5f MiniMax saturation; added Apr 18 to spread providers on coder nodes | High (every routing decision with ≥2 providers on same role) | Sweep {0, 0.04, 0.08, 0.12, 0.20} on 50-task BCB Hard + 10-task SWE-Pro |
 | R2 | diversity_penalty cap | 0.20 | `sage-core/src/routing/model_assigner.rs:319` | Engineering guard (prevents runaway penalty) | Low | Sweep {0.10, 0.20, 0.30} |
 | R3 | role-tier score defaults (code, reasoning, tool_use, math) | 0.30 / 0.70 / 0.75 | `sage-core/src/routing/model_assigner.rs:542–717` | Research-backed tier banding per ModelCard, calibrated from MMLU + HumanEval — BUT values themselves are intuition | Medium | Joint ablation against kNN-learned alternative (planned post-P0.1) |
-| R4 | THETA_COMPLEXITY (heuristic router) | 0.5 | (if present) | DEAD CODE per §4 — ComplexityRouter at 34% GT | Zero (emergency fallback only) | Do not ablate — replace or delete |
+| R4 | THETA_COMPLEXITY (heuristic router) | 0.5 | (if present) | Priority-3 emergency fallback only, NOT dead code (AUDIT2 2026-04-24 corrected the prior framing) — ComplexityRouter historic ~34% — non-autoritative; `evidence_pending` in `docs/CLAIMS.yaml` | Zero (emergency fallback only) | Do not ablate — replace or delete |
 
 ## Topology controller (Python)
 

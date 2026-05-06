@@ -366,7 +366,9 @@ class AdaptiveRouter:
         """Degraded keyword-count fallback (no regex).
 
         Used only when ONNX model and kNN are both unavailable.
-        Keyword-count heuristic (degraded fallback, 34% GT accuracy).
+        Keyword-count heuristic — Priority-3 emergency fallback only,
+        NOT dead code (AUDIT2 2026-04-24 corrected). Historical accuracy
+        figure (~34%) is `evidence_pending` in `docs/CLAIMS.yaml`.
         """
         import warnings
         warnings.warn(

@@ -76,6 +76,9 @@ _GUARDED_DOCS: tuple[str, ...] = (
     # Phase 0.6e closeout: 2 additional READMEs caught by repo-wide grep.
     "sage-python/README.md",
     "sage-python/src/sage/bench/README.md",
+    # Phase 0.6f (post-Phase-0.6e repo-wide grep): final 2 surfaces caught.
+    "sage-python/src/sage/strategy/adaptive_router.py",
+    "docs/heuristics-needing-ablation.md",
 )
 
 # Each pattern below is a (label, regex, allow_substrings) tuple.
