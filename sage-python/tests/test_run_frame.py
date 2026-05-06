@@ -158,7 +158,10 @@ def _builder(run_id: str = "01RUNFRAME00000000000001") -> _RunFrameBuilder:
     return builder
 
 
-def _make_pipeline(output: str = "pipeline output") -> CognitiveOrchestrationPipeline:
+def _make_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+    output: str = "pipeline output",
+) -> CognitiveOrchestrationPipeline:
     pipeline = CognitiveOrchestrationPipeline(
         router=None,
         engine=None,
@@ -167,38 +170,40 @@ def _make_pipeline(output: str = "pipeline output") -> CognitiveOrchestrationPip
         llm_provider=MagicMock(),
     )
 
-    def _classify(ctx):
+    def _classify(_pipeline, ctx):
         ctx.system = 1
         ctx.domain = "code"
         return ctx
 
-    async def _decompose(ctx):
+    async def _decompose(_pipeline, ctx):
         return ctx
 
-    def _select(ctx):
+    def _select(_pipeline, ctx):
         ctx.topology = FakeGraph([FakeNode("solo")], graph_id="pipe-topo")
         ctx.topology_id = "pipe-topo"
         return ctx
 
-    def _assign(ctx):
+    def _assign(_pipeline, ctx):
         ctx.assignments = {0: "model-a"}
         ctx.provider_hints = {0: "provider-a"}
         return ctx
 
-    async def _execute(ctx, **_kwargs):
+    async def _execute(_pipeline, ctx, **_kwargs):
         ctx.result = output
         ctx.cost = 0.0
         return ctx
 
-    async def _learn(ctx):
+    async def _learn(_pipeline, ctx):
         return None
 
-    pipeline._stage_classify = _classify
-    pipeline._stage_decompose = _decompose
-    pipeline._stage_select_topology = _select
-    pipeline._stage_assign_models = _assign
-    pipeline._stage_execute = _execute
-    pipeline._stage_learn = _learn
+    monkeypatch.setattr("sage.pipeline_v2.classify.classify", _classify)
+    monkeypatch.setattr("sage.pipeline_v2.decompose.decompose", _decompose)
+    monkeypatch.setattr("sage.pipeline_v2.select_topology.select_topology", _select)
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.assign_models", _assign)
+    monkeypatch.setattr("sage.pipeline_v2.execute.execute", _execute)
+    monkeypatch.setattr("sage.pipeline_v2.learn.learn", _learn)
+    # B->D boundary: _record_to_memory helper delegator instance setattr
+    # preserved for now per cgpro scope (helper purge = Stage D).
     pipeline._record_to_memory = lambda _ctx, **_kw: None
     return pipeline
 
@@ -223,7 +228,7 @@ async def _run_pipeline_trace(
     monkeypatch.setattr("sage.runtime.event_log.writer.time.time_ns", lambda: next(stamps, 10_099))
     monkeypatch.setattr("sage.pipeline.time.monotonic", lambda: next(monotonic, 2.0))
 
-    pipeline = _make_pipeline()
+    pipeline = _make_pipeline(monkeypatch)
     if with_frame:
         result, frame = await pipeline.run_with_frame("task")
     else:
@@ -453,7 +458,7 @@ async def test_pipeline_run_with_frame_returns_typed_runframe(
     monkeypatch.delenv("SAGE_RUN_FRAME", raising=False)
     monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: "01RFTYPED00000000000001")
 
-    result, frame = await _make_pipeline("typed output").run_with_frame("task")
+    result, frame = await _make_pipeline(monkeypatch, "typed output").run_with_frame("task")
 
     assert result == "typed output"
     assert isinstance(frame, RunFrame)
@@ -492,7 +497,7 @@ async def test_run_with_frame_signature_mirrors_run(
         "sage.pipeline._new_runtime_run_id",
         lambda: "01RFPARITY0000000000000001",
     )
-    result, frame = await _make_pipeline("parity output").run_with_frame(
+    result, frame = await _make_pipeline(monkeypatch, "parity output").run_with_frame(
         "task",
         budget_usd=2.0,
         system_hint=2,
@@ -680,7 +685,7 @@ async def test_run_frame_summary_write_failure_does_not_change_pipeline_result(
 
     monkeypatch.setattr(RuntimeEventLog, "emit_run_frame_summary", _raise_summary)
 
-    result, frame = await _make_pipeline("survived").run_with_frame("task")
+    result, frame = await _make_pipeline(monkeypatch, "survived").run_with_frame("task")
 
     assert result == "survived"
     assert frame.status == "success"
@@ -695,7 +700,7 @@ async def test_run_frame_event_log_disabled_still_returns_frame_with_none_seqs(
     monkeypatch.delenv("SAGE_RUN_FRAME", raising=False)
     monkeypatch.setattr("sage.pipeline._new_runtime_run_id", lambda: "01RFDISABLED00000000001")
 
-    result, frame = await _make_pipeline("disabled").run_with_frame("task")
+    result, frame = await _make_pipeline(monkeypatch, "disabled").run_with_frame("task")
 
     assert result == "disabled"
     assert frame.final_result_seq is None
@@ -810,7 +815,7 @@ async def test_run_with_bench_evaluator_passed_trains_exact_pass(
             "reason": "all assertions passed",
         }
 
-    result, frame = await _make_pipeline("evaluated output").run_with_bench_evaluator(
+    result, frame = await _make_pipeline(monkeypatch, "evaluated output").run_with_bench_evaluator(
         "task", evaluator,
     )
     assert result == "evaluated output"
@@ -839,7 +844,7 @@ async def test_run_with_bench_evaluator_failed_trains_exact_fail(
     def evaluator(_output: str) -> dict:
         return {"passed": False, "score": 0.0, "verifier_id": "test_unit_eval"}
 
-    _, frame = await _make_pipeline("bad output").run_with_bench_evaluator(
+    _, frame = await _make_pipeline(monkeypatch, "bad output").run_with_bench_evaluator(
         "task", evaluator,
     )
     assert frame.oracle_verdict is not None
@@ -865,7 +870,7 @@ async def test_run_with_bench_evaluator_async_evaluator_supported(
     async def evaluator(_output: str) -> dict:
         return {"passed": True, "score": 1.0, "verifier_id": "async_eval"}
 
-    _, frame = await _make_pipeline("ok").run_with_bench_evaluator("task", evaluator)
+    _, frame = await _make_pipeline(monkeypatch, "ok").run_with_bench_evaluator("task", evaluator)
     assert frame.oracle_verdict is not None
     assert frame.oracle_verdict.verdict_source == "exact"
     assert frame.oracle_verdict.trainable is True
@@ -889,7 +894,7 @@ async def test_run_with_bench_evaluator_raises_fails_closed_to_abstain(
     def evaluator(_output: str) -> dict:
         raise RuntimeError("evaluator boom")
 
-    result, frame = await _make_pipeline("output").run_with_bench_evaluator(
+    result, frame = await _make_pipeline(monkeypatch, "output").run_with_bench_evaluator(
         "task", evaluator,
     )
     assert result == "output"
@@ -916,7 +921,7 @@ async def test_run_with_bench_evaluator_invalid_shape_abstains(
     def evaluator(_output: str) -> str:  # not a Mapping
         return "not a mapping"
 
-    _, frame = await _make_pipeline("output").run_with_bench_evaluator(
+    _, frame = await _make_pipeline(monkeypatch, "output").run_with_bench_evaluator(
         "task", evaluator,
     )
     assert frame.oracle_verdict is not None
@@ -975,7 +980,7 @@ async def test_run_with_bench_evaluator_event_order_preserved(
         evaluator_called_at.append(_time.monotonic())
         return {"passed": True, "score": 1.0, "verifier_id": "order_test"}
 
-    _, _ = await _make_pipeline("ordered output").run_with_bench_evaluator(
+    _, _ = await _make_pipeline(monkeypatch, "ordered output").run_with_bench_evaluator(
         "task", evaluator,
     )
 
