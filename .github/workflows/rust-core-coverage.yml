@@ -1,0 +1,25 @@
+name: rust-core-coverage
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  rust-coverage:
+    runs-on: ubuntu-latest
+    env:
+      SAGE_REQUIRE_WASM: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: rustup update stable
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Coverage
+        run: |
+          cargo llvm-cov clean --workspace
+          cargo llvm-cov --workspace --all-features --fail-under-lines 65 --lcov --output-path lcov.info
