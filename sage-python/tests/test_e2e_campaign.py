@@ -1,7 +1,7 @@
 """E2E validation campaign — 7 tests proving 6 architectural claims.
 
 Claims validated:
-  C1: Full 5-stage pipeline runs end-to-end (classify→decompose→topology→assign→execute)
+  C1: Full pipeline runs end-to-end (classify→decompose→select_topology→assign_models→execute→learn)
   C2: Multi-model assignment produces per-node model IDs
   C3: TopologyController adaptation triggers on low-quality output
   C4: OxiZ SMT verification runs in sub-10ms
@@ -83,7 +83,7 @@ def _run_async(coro):
 # C1: Full pipeline end-to-end
 # ═══════════════════════════════════════════════════════════════════════════════
 class TestC1PipelineStages:
-    """Prove the 5-stage pipeline runs and emits observable events."""
+    """Prove the pipeline runs and emits observable events."""
 
     def test_c1_pipeline_5_stages(self, system) -> None:
         task = "Write a Python function that checks if a string is a palindrome."

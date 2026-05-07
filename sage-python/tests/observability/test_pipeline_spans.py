@@ -39,7 +39,7 @@ async def test_pipeline_run_emits_top_level_span(
     pipeline._agent_loop = None
     pipeline._emit = MagicMock()  # _emit stays as instance seam per cgpro Q3a
     # Helper module functions: monkeypatch on the canonical module attribute
-    # so the production delegators / orchestrator local-import path resolves
+    # so the production orchestrator local-import path resolves
     # to the stub at call time (Trap 2 lock).
     monkeypatch.setattr("sage.pipeline_v2.memory_gate.build_write_gate", lambda _p: None)
     monkeypatch.setattr(
@@ -50,7 +50,7 @@ async def test_pipeline_run_emits_top_level_span(
         "sage.pipeline_v2.memory_gate.emit_budget_exceeded",
         lambda _p, _ctx: None,
     )
-    # Stub all 6 stages to no-op via module-function patching
+    # Stub all stages to no-op via module-function patching
     monkeypatch.setattr("sage.pipeline_v2.classify.classify", lambda _p, ctx: ctx)
     async def _decompose_stub(_p, ctx):
         return ctx

@@ -1,40 +1,26 @@
-"""`pipeline_v2` — Phase 2.1 façade backing modules.
+"""`pipeline_v2` — backing modules for the `CognitiveOrchestrationPipeline` façade.
 
-Cycle-13 K Phase 2.1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
-2026-05-06): this package now hosts the bulk of the legacy
-`CognitiveOrchestrationPipeline` body. The 6 stage modules
-(classify/decompose/select_topology/assign_models/execute/learn) +
-the orchestrator + the helper modules
-(bandit_attribution / runtime_events / memory_gate / topology_helpers /
-costing) own the runtime; `sage.pipeline` keeps a thin façade plus
-6 `_stage_*` transition seams that 27 test files rely on as their
-runtime interception contract. cgpro round-4 OPTION_3 reclassified
-the seam removal + final ``pipeline.py < 300 LOC`` target to
-Phase 2.2.
+This package owns the runtime: classify, decompose, select_topology,
+assign_models, execute, and learn modules, the orchestrator
+(`run_internal` body), the constructor body, the `PipelineContext`
+dataclass, and the helper modules (bandit_attribution / runtime_events
+/ memory_gate / topology_helpers / costing). `sage.pipeline` is now
+a thin public façade.
 
-Phase 2.1 Step E0 (this file): the previous top-level
-``from sage.pipeline import CognitiveOrchestrationPipeline,
-PipelineContext`` is replaced by a PEP 562 module-level
-``__getattr__`` that resolves the public names lazily at attribute-
-access time. Reason: Phase 2.1 Step E1 moves the ``PipelineContext``
-dataclass source to ``pipeline_v2/context.py`` and adds
-``from sage.pipeline_v2.context import PipelineContext`` to
-``sage.pipeline``. The legacy eager import from inside this
-``__init__`` would then close a circular: ``sage.pipeline →
-sage.pipeline_v2 → sage.pipeline``. The PEP 562 form defers the
-lookup to call time, and the actual symbol resolution falls back
-to whichever module currently owns the name (``sage.pipeline``
-during Step D, ``sage.pipeline_v2.context`` after Step E1).
+Module-level lazy `__getattr__` (PEP 562) resolves the public class
+names at attribute-access time so the eager `sage.pipeline →
+sage.pipeline_v2 → sage.pipeline` cycle (introduced when
+`sage.pipeline` re-exports `PipelineContext` from
+`pipeline_v2.context`) is broken at module load.
 
-Public surface preserved:
+Public surface:
 
   - ``from sage.pipeline_v2 import CognitiveOrchestrationPipeline``
   - ``from sage.pipeline_v2 import Pipeline``  (alias)
   - ``from sage.pipeline_v2 import PipelineContext``
 
-The Phase 2.1 acceptance contract (cgpro round-4 amended) requires
-all three to remain stable references to the same class objects
-that are imported from ``sage.pipeline``.
+All three reference the same class objects as the corresponding
+imports from ``sage.pipeline``.
 """
 from __future__ import annotations
 
@@ -56,11 +42,9 @@ _PUBLIC_LAZY_NAMES = ("CognitiveOrchestrationPipeline", "Pipeline", "PipelineCon
 def __getattr__(name: str) -> Any:
     """PEP 562 module-level lazy attribute resolution.
 
-    cgpro Phase 2.1 round-4 critical garde-fou: deferring the
-    `from sage.pipeline import ...` to attribute-access time avoids
-    a circular import once Step E1 lands. Module-level dunder
-    `__getattr__` is the canonical PEP 562 way to expose attributes
-    on demand without forcing the dependency at module load.
+    Deferring the `from sage.pipeline import ...` to attribute-access
+    time avoids the otherwise-circular dependency
+    `sage.pipeline → sage.pipeline_v2 → sage.pipeline`.
     """
     if name == "CognitiveOrchestrationPipeline" or name == "Pipeline":
         from sage.pipeline import CognitiveOrchestrationPipeline as _Cog

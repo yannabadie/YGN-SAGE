@@ -1,11 +1,8 @@
-"""Cycle-13 K Phase 2.1 Step A2 — bandit-attribution lifecycle module.
+"""Bandit-attribution lifecycle module.
 
-cgpro DESIGN_LOCKED 2026-05-06 (`cgpro_phase21_facade_rewrite_20260506`)
-fully promoted this module from the Phase A placeholder ("file
-intentionally empty") to its real home. Per ADR-015 §"Module
-boundaries" + invariant 6 in `docs/contracts/runtime-integrity-ledger.md`
-("Bandit attribution"), this module now owns the bandit decision_id
-lifecycle:
+Per ADR-015 §"Module boundaries" + invariant 6 in
+`docs/contracts/runtime-integrity-ledger.md` ("Bandit attribution"),
+this module owns the bandit decision_id lifecycle:
 
   - context vector construction (`bandit_task_context`)
   - single-agent vs multi-agent execution detection
@@ -17,22 +14,13 @@ lifecycle:
     cancellation (`record_bandit_outcome_checked`)
 
 Each module function takes the host `pipeline` instance as the first
-positional argument so the corresponding `CognitiveOrchestrationPipeline`
-methods can collapse to 1-line delegators while preserving:
+positional argument. Internal helper-to-helper calls inside
+`record_bandit_outcome_checked` resolve to the in-module functions
+(`cancel_bandit_decision`, `clear_bandit_decision`) and to
+`runtime_events.emit_bandit_attribution_mismatch`.
 
-  - `pipeline._<method>` mockability for ~5+ test files (test_oracle_stack
-    monkeypatches `pipeline._record_bandit_outcome_checked`,
-    test_pipeline_topology_skip_guardrails_decoupling calls
-    `pipeline._is_single_agent_execution(ctx)` directly, etc.)
-  - byte-identical cross-call traces inside
-    `record_bandit_outcome_checked` — internal calls to
-    `_cancel_bandit_decision` / `_clear_bandit_decision` /
-    `_emit_bandit_attribution_mismatch` go through the pipeline
-    instance methods so existing mocks fire identically
-
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved across the refactor.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 
 `_MULTI_NODE_ATTRIBUTION_TEMPLATES` is bandit-specific and is owned
 here. Tests reference the constant by literal value
@@ -141,7 +129,7 @@ def record_bandit_outcome_checked(
 
     The cross-calls to `_cancel_bandit_decision`, `_clear_bandit_decision`,
     and `_emit_bandit_attribution_mismatch` go through the pipeline
-    instance methods (delegators) so existing mocks continue to fire.
+    in-module helper functions for byte-identical cross-call traces.
     """
     if oracle_enabled():
         verdict = getattr(ctx, "oracle_verdict", None)

@@ -1,12 +1,10 @@
-"""Stage 4 (EXECUTE) implementation for pipeline_v2.
+"""Stage 4 — EXECUTE.
 
-Cycle-12 Phase B moved the legacy `_stage_execute` body here. The
-`CognitiveOrchestrationPipeline._stage_execute` method form is
-retained as a 1-line LOCAL-import delegator AND as a transitional
-runtime test seam (27 test files mock `pipeline._stage_*` directly).
-Cycle-13 K Phase 2.1 Step B3 extended this module with
-`pick_fallback_provider`. Phase 2.2 DESIGN_LOCK will rewrite the
-27 mock-using test files and retire the `_stage_*` delegators.
+Module function `execute(pipeline, ctx, *, event_log=None,
+run_frame_builder=None)` is the canonical Stage 4 entry point; the
+orchestrator awaits it directly with the pipeline instance as first
+argument. `pick_fallback_provider(pipeline)` lives here too — it is
+consumed by the multi-agent error-fallback path inside `execute`.
 """
 from __future__ import annotations
 
@@ -15,20 +13,16 @@ from typing import TYPE_CHECKING, Any
 
 from sage.agent_loop_factory import create_bypass_agent_loop
 
-# Module-level imports for the moved Stage 4 body. cgpro DESIGN trap #2:
-# unqualified names in the moved body resolve in THIS module's namespace.
-# The `BUDGET_EXCEEDED_RESULT` / `EXECUTE_*` constants and
-# `_is_strict_governance()` helper are imported by reference.
+# Constants + module-level helpers consumed unqualified inside `execute`.
 from sage.pipeline import (
     BUDGET_EXCEEDED_RESULT,
     EXECUTE_HALTED_UNVERIFIED,
     EXECUTE_UNVERIFIED,
     _is_strict_governance,
 )
-# Phase 2.2 Stage D1.a/b (cgpro lock 2026-05-06): import the helper
-# modules themselves, not aliases to their functions, so production
+# Module-attribute imports (not aliased function references) so production
 # calls resolve `<mod>_mod.<fn>` at call time and pick up
-# monkeypatch.setattr("sage.pipeline_v2.<mod>.<fn>", ...) from tests.
+# `monkeypatch.setattr("sage.pipeline_v2.<mod>.<fn>", ...)` from tests.
 from sage.pipeline_v2 import memory_gate as memory_gate_mod
 from sage.pipeline_v2 import runtime_events as runtime_events_mod
 
@@ -355,10 +349,8 @@ async def execute(
             if result == "__REROUTE__" and self.engine:
                 log.info("Topology reroute triggered — REBUILDING full topology (not in-place mutation)")
                 self._emit("REROUTE_REBUILD", {"reason": "controller_triggered"})
-                # Phase 2.1 Step C0 (cgpro round-3 garde-fou) : direct module
-                # function calls replace the legacy self._stage_* delegators
-                # that Step C2 will retire. LOCAL imports per circular-import
-                # discipline.
+                # Direct module-function calls (LOCAL imports for the
+                # circular-import discipline).
                 from sage.pipeline_v2.assign_models import assign_models
                 from sage.pipeline_v2.select_topology import select_topology
                 ctx = select_topology(self, ctx)  # new topology
@@ -558,25 +550,21 @@ def pick_fallback_provider(
 ) -> "tuple[Any, Any]":
     """Return (provider, config) for a healthy fallback, or (default, default_config).
 
-    Preference order (first match wins) — cgpro Phase 2.1 round-2
-    garde-fou: this order is BYTE-IDENTICAL to the legacy
-    `pipeline._pick_fallback_provider` body:
+    Preference order (first match wins):
 
       1. ``pipeline.llm_provider`` if its provider name is alive in
          the pool (i.e. the boot default is not currently dead).
       2. Any provider in ``pipeline.provider_pool._providers`` whose
          circuit is closed and whose TTL'd exclusion hasn't fired.
-      3. ``pipeline.llm_provider`` as a last resort (better than nothing).
+      3. ``pipeline.llm_provider`` as a last resort.
 
     Used by Stage 4 single-agent fallback after multi-agent execution
-    failed. The previous implementation used ``pipeline.llm_provider``
-    unconditionally, which on a provider-outage (minimax 529 storm
-    2026-04-21 morning) meant the fallback hit the same dead provider
-    and returned empty content. Routing to a different healthy
-    provider recovers 3-5/10 tasks that would otherwise be EMPTY.
+    failed. Routing to an alternative healthy provider recovers tasks
+    that would otherwise return empty content when the boot-default
+    provider is degraded (e.g. minimax 529 storm 2026-04-21).
 
-    `LLMConfig` import is LAZY (per cgpro garde-fou) — only loaded
-    when an alternative provider is selected from the pool.
+    `LLMConfig` is imported LAZILY — only when an alternative provider
+    is selected from the pool.
     """
     pool = getattr(pipeline, "provider_pool", None)
 

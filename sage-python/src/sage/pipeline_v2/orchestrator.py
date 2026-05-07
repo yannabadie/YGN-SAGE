@@ -1,30 +1,27 @@
-"""Cycle-13 K Phase 2.1 Step D — orchestrator (`_run_internal` body home).
+"""Orchestrator — `run_internal` body home.
 
-cgpro Phase 2.1 round-4 OPTION_3 verdict 2026-05-06: Phase 2.1
-closes as "facade extraction with transition seams retained". The
-`_run_internal` body moves here so `pipeline.py` can shrink toward
-the Phase 2.1 acceptance landing 650-800 LOC, but the 6 `_stage_*`
-seam methods on `CognitiveOrchestrationPipeline` are PRESERVED —
-they are an explicit runtime test seam used by 27 test files. The
-`<300 LOC` target is reclassified Phase 2.2 with its own DESIGN_LOCK
-covering the test-rewrite contract change.
+The `run_internal(pipeline, task, ...)` async function is the
+canonical orchestrator entry point; the thin
+`CognitiveOrchestrationPipeline._run_internal` method is a 1-line
+wrapper that calls it (keeps subclass-override surfaces intact for
+the few benchmark adapters that override the private method).
 
-cgpro round-4 critical garde-fou: existing tests monkeypatch
+Critical garde-fou: existing tests monkeypatch
 `sage.pipeline._new_runtime_run_id` and `sage.pipeline.time.monotonic`
-(eg `test_run_frame.py:219+224+454+492+...`). The orchestrator MUST
-NOT take the naive top-level `from sage.pipeline import _new_runtime_run_id`
-shortcut — that would cache the bound symbol at import time and
-defeat the monkeypatches. Instead we resolve the names DYNAMICALLY
-through `from sage import pipeline as pipeline_mod` at function-call
-time so each call walks the attribute lookup that the test fixture
-intercepts.
+(see `test_run_frame.py`, `test_oracle_stack.py`). The orchestrator
+MUST NOT take the naive top-level `from sage.pipeline import
+_new_runtime_run_id` shortcut — that would cache the bound symbol at
+import time and defeat the monkeypatches. Instead we resolve the
+names DYNAMICALLY through `from sage import pipeline as pipeline_mod`
+at function-call time so each call walks the attribute lookup that
+the test fixture intercepts.
 
 Pattern:
 
     async def run_internal(pipeline, task, ...):
         from sage import pipeline as pipeline_mod
         from sage.pipeline_v2.classify import classify
-        # ... other 5 stage module imports ...
+        # ... other five stage module imports ...
         # ALL references to legacy module-level symbols via pipeline_mod
         # for monkeypatch correctness:
         run_id = pipeline_mod._new_runtime_run_id()
@@ -32,18 +29,12 @@ Pattern:
         ctx = pipeline_mod.PipelineContext(...)
         t0 = pipeline_mod.time.monotonic()
         # Stage entry points are module functions called with the pipeline
-        # instance as first argument (Phase 2.2 Stage C 2026-05-06):
+        # instance as first argument:
         ctx = classify(pipeline, ctx)
         ...
 
-The thin `_run_internal` method on `CognitiveOrchestrationPipeline`
-collapses to a 1-line LOCAL-import wrapper that calls `run_internal`,
-preserving subclass overridability (a few benchmark adapters override
-the private method).
-
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved across the refactor.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 """
 from __future__ import annotations
 
@@ -69,19 +60,15 @@ async def run_internal(
     emit_run_frame_summary: bool = False,
     bench_evaluator: Any = None,
 ) -> "tuple[str, RunFrame]":
-    """Execute the full 6-stage pipeline.
-
-    Body moved from `CognitiveOrchestrationPipeline._run_internal`
-    (cycle-13 K Phase 2.1 Step D) per cgpro round-4 OPTION_3 garde-fou:
+    """Execute the full pipeline (classify → decompose → select_topology → assign_models → execute → learn).
 
       - References to module-level symbols (`_new_runtime_run_id`,
         `_resolve_task_budget_usd`, `PipelineContext`, `time.monotonic`)
         go through `pipeline_mod.<X>` so test monkeypatches on
         `sage.pipeline.*` keep firing.
-      - The 6 stage entry points are module functions in
-        `sage.pipeline_v2.<stage>`, locally imported and called with the
-        pipeline instance as first argument (Phase 2.2 Stage C
-        2026-05-06).
+      - The stage entry points are module functions in
+        `sage.pipeline_v2.<stage>`, locally imported and called with
+        the pipeline instance as first argument.
       - Order final_result -> oracle_verdict -> learn -> run_frame_summary
         is preserved byte-identical.
 

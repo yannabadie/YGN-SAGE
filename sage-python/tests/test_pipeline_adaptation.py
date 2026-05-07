@@ -114,7 +114,7 @@ def test_prm_skipped_on_plain_text():
 
 
 def test_controller_none_preserves_phase_b():
-    """controller=None → pipeline behaves identically to Phase B."""
+    """controller=None → pipeline behaves identically to the no-controller baseline."""
     from sage.pipeline import CognitiveOrchestrationPipeline
     pipeline = CognitiveOrchestrationPipeline(
         router=None, engine=None, assigner=None,

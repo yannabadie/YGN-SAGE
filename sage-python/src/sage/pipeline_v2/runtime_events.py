@@ -1,40 +1,33 @@
 """Runtime-event helpers for `CognitiveOrchestrationPipeline`.
 
-cgpro DESIGN_LOCKED 2026-05-06 (`cgpro_phase21_facade_rewrite_20260506`)
-real home for the EventBus emission helpers and the 11 `_runtime_emit_*`
-builders carved out of `CognitiveOrchestrationPipeline`.
+EventBus emission helpers + the 11 `runtime_emit_*` builders that the
+orchestrator and the Stage 4 reroute / rebuild paths consume:
 
-Step A3 landed `emit` (basic). Step B4 (this commit) lands the rest:
-
-  - `emit_bandit_attribution_mismatch` — invariant 6 mismatch event
-  - `bandit_reason_from_exception` — string-parsing static (pure)
+  - `emit` — generic EventBus emission entry point (also retained as
+    `pipeline._emit` instance method per Q3a EventBus seam lock).
+  - `emit_bandit_attribution_mismatch` — invariant 6 mismatch event.
+  - `bandit_reason_from_exception` — pure exception-to-reason-code mapper.
   - `runtime_node_count` / `runtime_edge_type` /
     `runtime_node_capabilities` / `runtime_graph_digest` — pure
-    helpers (no `pipeline` arg)
+    helpers (no `pipeline` arg).
   - `runtime_edge_summary` / `runtime_node_summary` — read pipeline
-    + topology / ctx state
+    + topology / ctx state.
   - `runtime_provider_id_for_model` — uses `pipeline.provider_pool`
-    + `pipeline.llm_config`
+    + `pipeline.llm_config`.
   - `runtime_emit_topology_selected` / `runtime_emit_model_assigned` —
-    canonical event-emission entry points consumed by `_run_internal`
-    and the topology controller's reroute / rebuild paths
+    canonical event-emission entry points consumed by
+    `pipeline_v2/orchestrator.py:run_internal` and the topology
+    controller's reroute / rebuild paths.
   - `runtime_final_status` / `runtime_final_node_count` — final-result
-    classification
+    classification.
 
-cgpro Q4 garde-fou: NO top-level imports of `sage.pipeline` from this
-module — TYPE_CHECKING only. The `BUDGET_EXCEEDED_RESULT` and
-`_BANDIT_ATTRIBUTION_REASON_CODES` constants are imported LAZILY
-inside the functions that need them so the `pipeline_v2/__init__.py`
-PEP 562 lazy conversion (Step E0) does not regress.
+No top-level imports of `sage.pipeline` (TYPE_CHECKING only). The
+`BUDGET_EXCEEDED_RESULT` and `_BANDIT_ATTRIBUTION_REASON_CODES`
+constants are imported LAZILY inside the functions that need them so
+the `pipeline_v2/__init__.py` PEP 562 lazy resolver stays acyclic.
 
-cgpro Q7 garde-fou: order in `_run_internal` (final_result →
-oracle_verdict → learn → run_frame_summary) is NOT touched by this
-module. Step B4 only carves out the helpers — `_run_internal` body
-relocation is Step D.
-
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved across the refactor.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 """
 from __future__ import annotations
 

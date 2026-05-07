@@ -19,7 +19,7 @@ Rust core (sage-core) + Python SDK (sage-python) + Knowledge Pipeline (sage-disc
 
 ```
 sage-core/   — Rust (PyO3): TopologyEngine, SystemRouter, ModelAssigner, QualityLabeler, S-MMU, SmtVerifier
-sage-python/ — Python SDK: Pipeline (5-stage), AgentLoop, Providers (7), Bench (BigCodeBench, EvalPlus)
+sage-python/ — Python SDK: CognitiveOrchestrationPipeline, AgentLoop, Providers (7), Bench (BigCodeBench, EvalPlus)
 sage-discover/ — Knowledge Pipeline (arXiv → ExoCortex)
 ```
 

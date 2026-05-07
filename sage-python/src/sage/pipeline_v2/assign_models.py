@@ -1,35 +1,27 @@
 """Stage 3 — ASSIGN_MODELS + assign-side helpers.
 
-Per ADR-015 + cgpro 2026-05-05 DESIGN lock + cgpro 2026-05-06 Phase
-2.1 round-2 GO_STEP_B garde-fous:
+Module function `assign_models(pipeline, ctx)` is the canonical
+Stage 3 entry point; the orchestrator calls it directly with the
+pipeline instance as first argument. Two assign-side helpers also
+live here:
 
-  - cycle-12 Phase B moved the body of
-    `CognitiveOrchestrationPipeline._stage_assign_models` here as the
-    module-level `assign_models` function (legacy `_stage_assign_models`
-    method became a 1-line LOCAL-import delegator).
-  - cycle-13 K Phase 2.1 Step B2 (this commit) extends the module
-    with the two assign-side helpers `log_model_assigner_chosen_fallback`
-    (T5 diagnostic for opaque Rust assigners) and
-    `verify_assignment_formal` (non-blocking OxiZ / Z3 SAT check).
-    Both helpers' methods on `CognitiveOrchestrationPipeline` collapse
-    to 1-line LOCAL-import delegators preserving mock surface.
+  - `log_model_assigner_chosen_fallback` — T5 diagnostic for opaque
+    Rust assigners.
+  - `verify_assignment_formal` — non-blocking OxiZ / Z3 SAT check.
 
-Stage 3 contract preserved:
-  - Same Rust `ModelAssigner.assign_models` call signature (topology,
+Stage 3 contract:
+  - Rust `ModelAssigner.assign_models` call signature (topology,
     domain, budget, hints_list, task_system) per F7 wiring (2026-04-17).
-  - Same node assignment recording loop into `ctx.assignments`.
-  - Same provider-pool dead-model fallback (replaces unavailable
-    models with the default LLM config model_id).
-  - Same non-blocking formal verification call (now via the local
-    delegator method `pipeline._verify_assignment_formal(ctx)`).
-  - Same T5 diagnostic call (now via the local delegator method
-    `pipeline._log_model_assigner_chosen_fallback(ctx)`).
+  - Node assignment recording loop into `ctx.assignments`.
+  - Provider-pool dead-model fallback (replaces unavailable models
+    with the default LLM config model_id).
+  - Non-blocking formal verification.
+  - T5 diagnostic on assigner output.
 
-cgpro DESIGN trap #3 (`__file__` drift): `_load_model_catalog` (which
-uses `Path(__file__).parent.parent.parent / "config" / "cards.toml"`)
-is a SEPARATE method on the class. It is NOT moved by Step B2 per
-cgpro round-2 explicit garde-fou — it is a costing-side helper bound
-for Step B5's `pipeline_v2/costing.py`, NOT this module.
+`load_model_catalog` (which uses
+`Path(__file__).parent.parent.parent / "config" / "cards.toml"`) is
+a costing-side helper and lives in `pipeline_v2/costing.py`, NOT
+here.
 """
 from __future__ import annotations
 
@@ -48,11 +40,7 @@ log = logging.getLogger("sage.pipeline")
 def assign_models(
     pipeline: "CognitiveOrchestrationPipeline", ctx: "PipelineContext",
 ) -> "PipelineContext":
-    """Stage 3: Assign model_id to each topology node.
-
-    Body moved from `sage.pipeline.CognitiveOrchestrationPipeline._stage_assign_models`
-    in cycle-12 Phase B. Behavior preserved byte-identically.
-    """
+    """Stage 3: Assign model_id to each topology node."""
     self = pipeline
     from sage.observability.spans import sage_span
     with sage_span("sage.assign_models", op="sage.assign_models"):

@@ -1,26 +1,19 @@
 """Stage 1 — DECOMPOSE.
 
-Per ADR-015 + ADR-016 + cgpro 2026-05-05 DESIGN lock
-(`cgpro_pi_mono_pivot_20260505`): cycle-12 Phase B moves the body of
-`CognitiveOrchestrationPipeline._stage_decompose` here as a module-
-level function `decompose(pipeline, ctx)`. The legacy method becomes a
-1-line delegator with a LOCAL import (no top-level circular import).
+Module function `decompose(pipeline, ctx)` is the canonical Stage 1
+entry point; the orchestrator awaits it directly with the pipeline
+instance as first argument.
 
-Phase B contract preserved:
-  - Same return value (the same `PipelineContext` instance, mutated).
-  - Same exception class hierarchy (only `RuntimeError` and
-    `TimeoutError` from the planner are caught).
-  - Same logger name (`sage.pipeline`'s `log`, NOT a new one — the
-    cycle-9 trace ledger consumers grep on the source).
-  - Same `dag_features` semantics: trivial `DAGFeatures(1, 1, 0.0)`
-    for the S1 short-circuit and the LLM-unavailable / planner-error
+Stage 1 contract:
+  - Returns the same `PipelineContext` instance, mutated in place.
+  - Exception strategy: only `RuntimeError` and `TimeoutError` from
+    the planner are caught.
+  - Logger name `sage.pipeline` (cycle-9 trace ledger consumers grep
+    on the source).
+  - `dag_features` semantics: trivial `DAGFeatures(1, 1, 0.0)` for
+    the S1 short-circuit and the LLM-unavailable / planner-error
     fallback paths.
-  - Same `sage_span` instrumentation under `op="sage.decompose"`.
-
-The 25 P9 phase 1 acceptance-gate tests are the byte-identical
-verification — they call `pipeline._stage_decompose` (now the
-delegator), which awaits this module's `decompose()`, which produces
-the same context the legacy method produced.
+  - `sage_span` instrumentation under `op="sage.decompose"`.
 """
 from __future__ import annotations
 
@@ -46,12 +39,7 @@ log = logging.getLogger("sage.pipeline")
 async def decompose(
     pipeline: "CognitiveOrchestrationPipeline", ctx: "PipelineContext",
 ) -> "PipelineContext":
-    """Stage 1: Decompose task into sub-tasks (S2/S3 only).
-
-    Body moved from `sage.pipeline.CognitiveOrchestrationPipeline._stage_decompose`
-    in cycle-12 Phase B (commit chain post `3a851db3`). Behavior
-    preserved byte-identically.
-    """
+    """Stage 1: Decompose task into sub-tasks (S2/S3 only)."""
     self = pipeline
     from sage.observability.spans import sage_span
     with sage_span("sage.decompose", op="sage.decompose"):

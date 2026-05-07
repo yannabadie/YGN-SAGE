@@ -1,4 +1,4 @@
-"""Tests for CognitiveOrchestrationPipeline (5-stage orchestration).
+"""Tests for CognitiveOrchestrationPipeline (cognitive orchestration).
 
 Post cycle-7 default-on flip (2026-04-29): SAGE_ORACLE unset means ON.
 This module's tests cover the LEGACY (pre-oracle) pipeline path. Set
@@ -246,7 +246,7 @@ class _MockQualityEstimator:
 
 @pytest.mark.asyncio
 async def test_pipeline_full_run():
-    """Pipeline completes all 5 stages and returns a result."""
+    """Pipeline completes all stages and returns a result."""
     event_bus = MagicMock()
     bandit = _MockBandit()
     provider = _MockLLMProvider()

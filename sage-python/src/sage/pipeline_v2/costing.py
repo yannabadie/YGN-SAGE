@@ -1,19 +1,15 @@
-"""Cycle-13 K Phase 2.1 Step B5 — costing helpers (NEW module).
+"""Costing helpers — pricing / catalogue lookup.
 
-cgpro DESIGN_LOCKED 2026-05-06 (`cgpro_phase21_facade_rewrite_20260506`)
-Q3 explicit garde-fou: `_estimate_topology_cost` + `_load_model_catalog`
-are NOT topology-side helpers (Stage 2) and NOT assign-side helpers
-(Stage 3). They are costing-transverse helpers consumed by Stage 4
-execute (`pipeline_v2/execute.py:490` `ctx.cost = self._estimate_topology_cost(ctx)`)
-when the runner doesn't produce a real cost. Conceptually pricing/
-catalogue, not topology-construction or model-assignment.
+`estimate_topology_cost` and `load_model_catalog` are
+costing-transverse helpers consumed by Stage 4 execute (when the
+runner doesn't produce a real cost) and indirectly by
+Stage 2 select_topology via the budget gate.
 
-`_load_model_catalog` is the cards.toml ModelCardCatalog loader. Per
-cgpro Q3 + Q7 garde-fou (`__file__` drift): the cards.toml resolution
-path from this module MUST be ``Path(__file__).resolve().parents[3]
-/ "config" / "cards.toml"`` — NOT ``parent.parent.parent``, which
-would point at ``sage-python/src/config/cards.toml`` and silently
-miss the real catalog. Validated:
+`load_model_catalog` is the cards.toml `ModelCardCatalog` loader. The
+resolution path is ``Path(__file__).resolve().parents[3] / "config"
+/ "cards.toml"`` (NOT ``parent.parent.parent``, which would point at
+``sage-python/src/config/cards.toml`` and silently miss the real
+catalog). Validated:
 
   Path(__file__) = sage-python/src/sage/pipeline_v2/costing.py
   parents[0]     = sage-python/src/sage/pipeline_v2/
@@ -23,17 +19,11 @@ miss the real catalog. Validated:
   parents[3] / "config" / "cards.toml"
                 = sage-python/config/cards.toml  ✓
 
-Method form preserved on `CognitiveOrchestrationPipeline` as 1-line
-LOCAL-import delegators so existing call sites
-(`pipeline._estimate_topology_cost(ctx)` from execute.py and
-`pipeline._load_model_catalog()` from estimate body) continue working
-byte-identical, including the `_model_catalog` cache attribute on the
-pipeline instance (set on the pipeline, not the module — first call
-caches the catalog on `pipeline._model_catalog`).
+The catalog is cached as `pipeline._model_catalog` on the pipeline
+instance — first call populates it, subsequent calls reuse the cache.
 
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 """
 from __future__ import annotations
 
@@ -75,10 +65,8 @@ def estimate_topology_cost(
     Loads the model catalog once (cached on the pipeline) and looks up
     cost_input_per_m / cost_output_per_m for each node's assigned model.
     Falls back to $0.001 per node when the catalog or model is
-    unavailable.
-
-    `pipeline._load_model_catalog()` is invoked through the delegator so
-    test mocks of the load path keep firing.
+    unavailable. The catalog is loaded via `load_model_catalog(pipeline)`
+    in this same module.
     """
     if not ctx.topology or not hasattr(ctx.topology, 'node_count'):
         return 0.0

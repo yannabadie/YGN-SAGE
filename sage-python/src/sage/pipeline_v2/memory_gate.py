@@ -1,39 +1,20 @@
-"""Cycle-13 K Phase 2.1 Step B1 — memory gate + budget emit module.
+"""Memory gate + budget-exceeded emit helpers.
 
-cgpro DESIGN_LOCKED 2026-05-06 (`cgpro_phase21_facade_rewrite_20260506`)
-Phase 2.1 Step B1 garde-fous:
+Three module functions, all taking the host `pipeline` instance as the
+first positional argument:
 
-  - preserve `pipeline._emit(EXECUTE_BUDGET_EXCEEDED, data)` via the
-    pipeline.event_bus emission contract (`emit_budget_exceeded` calls
-    `pipeline._emit(...)` rather than emitting directly so the
-    delegator + mock surface in pipeline.py stays authoritative)
-  - preserve fail-open / fail-closed dispatch via
-    `_is_strict_governance` (A0b 2026-04-23, ALIRE2 §6): in normal mode
-    a `CompositeWriteGate` init failure logs-and-returns-None (memory
-    writes continue ungated); under `SAGE_STRICT_GOVERNANCE=1` the
-    failure is re-raised so the pipeline aborts
-  - preserve TypeError fallbacks on `episodic_memory.add(...)` /
-    `add_episode(...)` for older episodic-memory shims that don't
-    accept `metadata=` kwarg
+  - `build_write_gate(pipeline)` — constructs the per-task
+    `CompositeWriteGate` (or returns None on failure under fail-open
+    governance; re-raises under `SAGE_STRICT_GOVERNANCE=1` per A0b
+    2026-04-23, ALIRE2 §6).
+  - `record_to_memory(pipeline, ctx, *, is_training_evidence=None)`
+    — TypeError-fallback aware episodic-memory writes.
+  - `emit_budget_exceeded(pipeline, ctx)` — emits
+    `EXECUTE_BUDGET_EXCEEDED` through `pipeline._emit(...)` so the
+    EventBus seam (Q3a) stays authoritative.
 
-Module functions take the host `pipeline` instance as the first
-positional argument so the corresponding `CognitiveOrchestrationPipeline`
-methods can collapse to 1-line delegators while preserving:
-
-  - `pipeline._<method>` mockability for ~10 test files (test_pillar_logging,
-    test_system_hint, test_pipeline_v2_oracle_gate_invariant,
-    test_pipeline_v2_bandit_attribution_invariant,
-    test_pipeline_v2_control_surface_fields,
-    test_pipeline_periodic_save_epoch_preflight,
-    test_pipeline_v2_fix_c_budget_tier_no_controller, test_run_frame,
-    observability/test_pipeline_spans, test_pipeline_governance)
-  - byte-identical call-site semantics in pipeline_v2/execute.py:{138,
-    341,387,477} `self._emit_budget_exceeded(ctx)` and pipeline.py
-    `self._record_to_memory(ctx, ...)` / `self._build_write_gate()`
-
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved across the refactor.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 """
 from __future__ import annotations
 

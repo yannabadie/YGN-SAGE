@@ -11,7 +11,7 @@ narrower.
 
 What this file proves
 =====================
-1. The 6 stage modules exist and expose a callable named after the
+1. The stage modules exist and expose a callable named after the
    stage (`classify`, `decompose`, `select_topology`,
    `assign_models`, `execute`, `learn`). Calling each with
    `(pipeline, ctx)` runs the production body.
@@ -57,7 +57,7 @@ def test_pipeline_v2_package_exposes_expected_modules() -> None:
     """The 14 representative pipeline_v2 modules import without error.
 
     The package hosts:
-      - 6 stage bodies (classify / decompose / select_topology /
+      - the stage bodies (classify / decompose / select_topology /
         assign_models / execute / learn)
       - the orchestrator (run_internal body)
       - the PipelineContext dataclass body (context)
@@ -107,11 +107,9 @@ def test_pipeline_v2_init_reexports_pipeline_class_and_context() -> None:
 def test_pipeline_v2_context_module_preserves_legacy_identity() -> None:
     """`pipeline_v2.context` owns the dataclass body while preserving legacy identity.
 
-    Cycle-13 K Phase 2.1 Step E1 (cgpro
-    `cgpro_phase21_facade_rewrite_20260506` round-3 Q4 + round-4
-    OPTION_3, 2026-05-06) moved the canonical `PipelineContext`
-    dataclass body to `sage.pipeline_v2.context`. Backward
-    compatibility is preserved on three fronts:
+    The canonical `PipelineContext` dataclass body lives in
+    `sage.pipeline_v2.context`. Backward compatibility is preserved
+    on three fronts:
 
       - `from sage.pipeline import PipelineContext` (legacy) and
         `from sage.pipeline_v2.context import PipelineContext`
@@ -363,7 +361,7 @@ def test_pipeline_top_level_pipeline_v2_imports_are_allowlisted() -> None:
     `sage.pipeline_v2.context` and the legacy
     ``from sage.pipeline import PipelineContext`` still resolves.
 
-    All OTHER `pipeline_v2` symbols (the 6 stage modules, the
+    All OTHER `pipeline_v2` symbols (the stage modules, the
     orchestrator, the helper modules) MUST remain locally imported
     inside method bodies. The PEP 562 lazy re-export in
     `pipeline_v2/__init__.py` keeps the dependency graph acyclic at
@@ -379,7 +377,7 @@ def test_pipeline_top_level_pipeline_v2_imports_are_allowlisted() -> None:
     assert pipeline_path.exists()
     text = pipeline_path.read_text(encoding="utf-8")
 
-    # Allowlisted top-level pipeline_v2 imports (Phase 2.1 Step E1):
+    # Allowlisted top-level pipeline_v2 imports:
     allowlist_top_level = (
         "\nfrom sage.pipeline_v2.context import PipelineContext  # noqa: E402",
     )
@@ -409,11 +407,10 @@ def test_pipeline_top_level_pipeline_v2_imports_are_allowlisted() -> None:
             raise AssertionError(
                 f"Disallowed top-level pipeline_v2 import in pipeline.py:\n"
                 f"  {offending_line.lstrip()!r}\n"
-                f"Phase 2.1 Step E1 allowlist (cgpro round-3 Q5 + round-4 "
-                f"OPTION_3) permits only `from sage.pipeline_v2.context "
+                f"Allowlist permits only `from sage.pipeline_v2.context "
                 f"import PipelineContext # noqa: E402` at top level. All "
                 f"other pipeline_v2 symbols must use LOCAL imports inside "
-                f"delegator method bodies (cgpro DESIGN trap #4)."
+                f"method bodies (partial-init avoidance)."
             )
         assert matched_prefix is not None
         pos = next_idx + len(matched_prefix)

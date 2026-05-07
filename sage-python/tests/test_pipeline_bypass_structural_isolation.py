@@ -1,13 +1,13 @@
-"""Regression tests for cycle-12 P6-A Phase B (cgpro DESIGN 2026-05-05).
+"""Regression tests for cycle-12 P6-A Phase B (cgpro DESIGN 2026-05-05).  # narrative-guard: allow historical-commit-reference
 
 Locks the structural-isolation property that REPLACES the cycle-11
 P6-B asyncio lock + ContextVar reentry guard:
 
-  Pre P6-A Phase B (cycle-11): the singleton AgentLoop was mutated
+  Pre P6-A Phase B (cycle-11): the singleton AgentLoop was mutated  # narrative-guard: allow historical-commit-reference
   in-place during bypass; concurrency was prevented by an
   asyncio.Lock + ContextVar reentry guard (the band-aid).
 
-  Post P6-A Phase B (cycle-12): each bypass run gets a FRESH
+  Post P6-A Phase B (cycle-12): each bypass run gets a FRESH  # narrative-guard: allow historical-commit-reference
   AgentLoop instance from `create_bypass_agent_loop()`. The
   singleton is never mutated. Concurrency is structurally safe
   because there's no shared mutable state. Recursion is safe because
@@ -23,7 +23,7 @@ These tests prove the structural property by asserting:
   - Recursive bypass (nested pipeline.run() from inside a bypass)
     completes without deadlock -- there's no lock to deadlock on.
 
-If a future commit reverts P6-A Phase B (re-introduces the singleton
+If a future commit reverts P6-A Phase B (re-introduces the singleton  # narrative-guard: allow historical-commit-reference
 mutation block), these tests fail loudly.
 """
 from __future__ import annotations

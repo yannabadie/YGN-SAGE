@@ -1,31 +1,19 @@
-"""Stage 2 - SELECT_TOPOLOGY.
+"""Stage 2 — SELECT_TOPOLOGY.
 
-Per ADR-015 + cgpro 2026-05-05 DESIGN lock + cgpro Phase 2.1 round-2
-GO_STEP_B 2026-05-06:
+Module function `select_topology(pipeline, ctx)` is the canonical
+Stage 2 entry point; the orchestrator calls it directly with the
+pipeline instance as first argument.
 
-  - cycle-12 Phase B moved the body of
-    `CognitiveOrchestrationPipeline._stage_select_topology` here as a
-    module-level function. Legacy method became a 1-line LOCAL-import
-    delegator.
-  - cycle-13 K Phase 2.1 Step B5 (2026-05-06) moved the
-    topology-construction helpers out to
-    `pipeline_v2/topology_helpers.py` (`build_topology_from_hint`,
-    `log_topology_structure`, `apply_topology_budget_and_cache`,
-    `topology_candidate_items`, `log_topology_candidates`,
-    `candidate_text_attr`, `candidate_float_attr`,
-    `candidate_node_count`, `check_topology_budget`,
-    `make_single_node_topology`). The pipeline class retains 1-line
-    delegator methods (`_<helper>`) so the call sites below
-    (`self._<helper>(...)` where self is the pipeline) continue working
-    byte-identical and the ~10 test files that mock these methods keep
-    firing. Stage 2 flow stays in this module per cgpro Q3 ("ne pas
-    faire monter select_topology.py à ~950 LOC").
-
-cgpro Q3 explicit garde-fou: `_estimate_topology_cost` and
-`_load_model_catalog` are NOT topology-construction helpers — they
-live in `pipeline_v2/costing.py` (consumed by Stage 4 execute when
-the runner doesn't produce a real cost; conceptually pricing/
-catalogue, not topology selection).
+Topology-construction helpers (`build_topology_from_hint`,
+`log_topology_structure`, `apply_topology_budget_and_cache`,
+`topology_candidate_items`, `log_topology_candidates`,
+`candidate_text_attr`, `candidate_float_attr`, `candidate_node_count`,
+`check_topology_budget`, `make_single_node_topology`) live in
+`pipeline_v2/topology_helpers.py`. Pricing-side helpers
+(`estimate_topology_cost`, `load_model_catalog`) live in
+`pipeline_v2/costing.py` — conceptually pricing/catalogue, not
+topology selection (consumed by Stage 4 execute when the runner
+doesn't produce a real cost).
 """
 from __future__ import annotations
 
@@ -38,10 +26,9 @@ from typing import TYPE_CHECKING
 # module's namespace, not pipeline.py's.
 from sage.pipeline_stages import select_macro_topology
 
-# Phase 2.2 D1.c (cgpro lock 2026-05-06): import the topology_helpers
-# module itself, not aliases to its functions, so production calls
-# resolve `topology_helpers_mod.<fn>` at call time and pick up
-# monkeypatch.setattr("sage.pipeline_v2.topology_helpers.<fn>", ...) from tests.
+# Module-attribute import (not aliased function references) so production
+# calls resolve `topology_helpers_mod.<fn>` at call time and pick up
+# `monkeypatch.setattr("sage.pipeline_v2.topology_helpers.<fn>", ...)` from tests.
 from sage.pipeline_v2 import topology_helpers as topology_helpers_mod
 
 if TYPE_CHECKING:

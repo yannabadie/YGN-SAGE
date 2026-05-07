@@ -1,12 +1,11 @@
-"""Stage 5 - LEARN.
+"""Stage 5 — LEARN.
 
-Per ADR-015 + cgpro 2026-05-05 DESIGN lock, cycle-12 Phase B
-moves the body of `CognitiveOrchestrationPipeline._stage_learn`
-here as a module-level function. Legacy method becomes a 1-line
-LOCAL-import async delegator.
-
-Helpers stay on `CognitiveOrchestrationPipeline`; the body accesses
-them via `self.<helper>(...)` after the `self = pipeline` shim.
+Module function `learn(pipeline, ctx)` is the canonical Stage 5 entry
+point; the orchestrator awaits it directly with the pipeline instance
+as first argument. Bandit-attribution lifecycle helpers
+(`record_bandit_outcome_checked`, `cancel_bandit_decision`,
+`clear_bandit_decision`) live in
+`sage.pipeline_v2.bandit_attribution`.
 """
 from __future__ import annotations
 

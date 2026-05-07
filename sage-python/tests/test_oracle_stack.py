@@ -825,7 +825,7 @@ def test_oracle_v0_evidence_starved_default_falls_through_to_abstain() -> None:
     view = FakeRunFrameView()  # default: no state_frames, no bench evidence
 
     # No bench result. No state contradiction. Tool + Formal oracles are
-    # placeholders that return None in v0. LLMJudge stubbed.
+    # placeholders that return None in v0. LLMJudge stubbed.  # narrative-guard: allow oracle-v0-vocabulary
     verdict = evaluate(view, final_output="any free-form output", bench_result=None)
 
     assert verdict.verdict_source == "abstain", (
@@ -838,7 +838,7 @@ def test_oracle_v0_evidence_starved_default_falls_through_to_abstain() -> None:
     assert verdict.quality_label == "unknown"
 
     # Reason codes should reflect "hierarchy exhausted" or similar — the
-    # placeholder fallthrough path. Don't lock the exact string; just check
+    # placeholder fallthrough path. Don't lock the exact string; just check  # narrative-guard: allow oracle-v0-vocabulary
     # it's one of the expected v0 abstain reasons.
     assert verdict.reason_codes, "Abstain verdict must carry at least one reason_code"
     abstain_reasons = {"hierarchy_exhausted", "hierarchy_low_confidence_only"}

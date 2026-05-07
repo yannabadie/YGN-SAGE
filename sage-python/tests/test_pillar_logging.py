@@ -50,7 +50,7 @@ def _legacy_oracle_off(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _spy_loop_passthrough_factory(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Cycle-12 P6-A Phase B (commit 7e20372e): the bypass path now calls
+    """Cycle-12 P6-A Phase B (commit 7e20372e): the bypass path now calls  # narrative-guard: allow historical-commit-reference
     `create_bypass_agent_loop(singleton=...)` to build a fresh AgentLoop
     from the singleton's deps. _SpyAgentLoop is a hand-rolled spy with
     only the attrs needed to exercise pillar logging — the real factory

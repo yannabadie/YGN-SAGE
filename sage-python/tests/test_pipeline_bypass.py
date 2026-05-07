@@ -4,7 +4,8 @@ Phase 1 of unified entry point: single-agent bypass calls agent_loop
 instead of provider.generate(), gaining tools + validation + guardrails.
 
 The 4 legacy "bypass mutates singleton X / restores X" tests were retired
-in cycle-12 P6-A Phase B (commit 7e20372e). The singleton is no longer
+in cycle-12 P6-A Phase B (commit 7e20372e).  <!-- narrative-guard: allow historical-commit-reference -->
+The singleton is no longer
 mutated — each bypass run gets a fresh AgentLoop from
 `create_bypass_agent_loop()`. The structural-isolation contract that
 replaces them lives in `test_pipeline_bypass_structural_isolation.py`

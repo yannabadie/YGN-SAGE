@@ -1,12 +1,10 @@
 """Stage 0 — CLASSIFY.
 
-Per ADR-015 + cgpro 2026-05-05 DESIGN lock
-(`cgpro_pi_mono_pivot_20260505`): cycle-12 Phase B moves the body of
-`CognitiveOrchestrationPipeline._stage_classify` here as a module-
-level function `classify(pipeline, ctx)`. Legacy method becomes a
-1-line delegator with a LOCAL import.
+Module function `classify(pipeline, ctx)` is the canonical Stage 0
+entry point; the orchestrator calls it directly with the pipeline
+instance as first argument.
 
-Stage 0 contract preserved:
+Stage 0 contract:
   - Priority 1: Rust SystemRouter `route_integrated` (full
     integrated routing — sets `ctx.system`, `ctx.bandit_decision_id`,
     `ctx.bandit_model_id`, `ctx.bandit_template`,
@@ -15,25 +13,17 @@ Stage 0 contract preserved:
     that downstream stages + telemetry read).
   - Priority 2: Python kNN fallback (Rust-accelerated embedding).
     Accuracy claim `routing.knn_92pct` is `evidence_pending` in
-    `docs/CLAIMS.yaml` — figure historically cited as ~92%/93.3% GT.
-  - Priority 3: AdaptiveRouter heuristic — Priority-3 emergency
-    fallback only, NOT dead code (AUDIT2 2026-04-24 corrected the
-    prior framing). Historical accuracy figures `evidence_pending`
-    in `docs/CLAIMS.yaml`.
-  - Same `sage.observability.spans.sage_span` instrumentation under
+    `docs/CLAIMS.yaml` — historically cited as ~92%/93.3% GT.
+  - Priority 3: AdaptiveRouter heuristic — emergency fallback only.
+    Historical accuracy figures `evidence_pending` in
+    `docs/CLAIMS.yaml`.
+  - `sage.observability.spans.sage_span` instrumentation under
     `op="sage.classify"`.
-  - Same exception strategy: bare `except Exception` for Rust router
-    (Rust extension types raise unconventional exceptions); narrow
-    `(ImportError, RuntimeError)` for the Python paths.
-  - Bandit-attribution lifecycle helpers (`clear_bandit_decision`,
-    `cancel_bandit_decision`, `emit_bandit_attribution_mismatch`)
-    moved to `sage.pipeline_v2.bandit_attribution` and
-    `sage.pipeline_v2.runtime_events` in cycle-13 K Phase 2.1
-    Steps A2 + B4 (`6c2e0364` + `5d0680c3`). The
-    `CognitiveOrchestrationPipeline._<helper>` method form is
-    preserved as a transitional mock-surface delegator — Phase 2.2
-    DESIGN_LOCK will purge those delegators once 27 mock-using test
-    files are rewritten.
+  - Bandit-attribution lifecycle helpers
+    (`clear_bandit_decision`, `cancel_bandit_decision`,
+    `emit_bandit_attribution_mismatch`) live in
+    `sage.pipeline_v2.bandit_attribution` and
+    `sage.pipeline_v2.runtime_events`.
 """
 from __future__ import annotations
 
@@ -66,7 +56,7 @@ def classify(
     model selection in Stage 3 (ModelAssigner) and Stage 5 telemetry.
 
     Body moved from `sage.pipeline.CognitiveOrchestrationPipeline._stage_classify`
-    in cycle-12 Phase B. Behavior preserved byte-identically.
+    Behavior preserved byte-identically against the legacy implementation.
     """
     self = pipeline
     from sage.observability.spans import sage_span

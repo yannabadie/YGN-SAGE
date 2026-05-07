@@ -1,28 +1,22 @@
-"""`PipelineContext` dataclass — Phase 2.1 Step E1 source of truth.
+"""`PipelineContext` dataclass — canonical source of truth.
 
-Cycle-13 K Phase 2.1 Step E1 (cgpro `cgpro_phase21_facade_rewrite_20260506`,
-2026-05-06): the canonical `PipelineContext` dataclass body lives
-HERE now. `sage.pipeline` re-exports it as a 1-line import for
-backward compatibility (cgpro round-3 Q4 backward-compat lock).
+The canonical `PipelineContext` dataclass body lives here.
+`sage.pipeline` re-exports it as a 1-line import so the legacy
+`from sage.pipeline import PipelineContext` keeps resolving.
 
-cgpro round-3 critical garde-fou applied: `PipelineContext.__module__`
-is set back to ``"sage.pipeline"`` after the dataclass body so:
+`PipelineContext.__module__` is forced back to ``"sage.pipeline"``
+after the dataclass body so:
 
   - existing tests / bench / dashboard / observability consumers
     that compare ``PipelineContext.__module__ == "sage.pipeline"``
-    continue to pass byte-identical
+    keep passing byte-identical
   - `repr(ctx)` still shows the legacy module path
   - pickle support is unchanged for any consumer pickling
     `PipelineContext` instances against the legacy path
 
-The dataclass field set is preserved verbatim (~30+ fields). cgpro
-round-4 OPTION_3: Phase 2.1 acceptance requires the field surface
-to be stable; this commit must NOT add, rename, or reorder any
-field.
-
-Logger and other module-level state (BUDGET_EXCEEDED_RESULT,
-_BANDIT_ATTRIBUTION_REASON_CODES, etc.) stay in `sage.pipeline` —
-they are NOT context-side state and Step E1 does not touch them.
+Module-level constants (`BUDGET_EXCEEDED_RESULT`,
+`_BANDIT_ATTRIBUTION_REASON_CODES`, etc.) stay in `sage.pipeline` —
+they are not context-side state.
 """
 from __future__ import annotations
 
@@ -37,7 +31,7 @@ if TYPE_CHECKING:
 
 @dataclass
 class PipelineContext:
-    """State that flows through the 5 pipeline stages."""
+    """State that flows through the 6 pipeline stages."""
 
     task: str
     budget: float = 5.0

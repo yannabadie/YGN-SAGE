@@ -271,7 +271,7 @@ proof of capability.
 | **BCB Hard Instruct pass rate (full pipe, internal-tuned)** | `measured: 45.9% (68/148)` | NOT a leaderboard submission. See [Benchmark Results](#benchmark-results). |
 | **BCB Hard pass rate (budget tier, official Docker)** | `measured: 32% N=50` | Docker-graded, cycle-7 evidence at commit `01b0bb24`. |
 | **SWE-bench Lite Docker-graded** | `measured: 10% (1/10) resolved, 70% patch-emit rate` | 2026-04-21. Diff verifier observe-mode opt-in. |
-| **`pipeline.py` decomposition** | `planned (cycle 11/12)` | 2983 lines, 44 `Any`. Cycle-10 P9 ships ADR + characterization tests only; refactor deferred. |
+| **`pipeline.py` decomposition** | `implemented (cycle-13 K Phase 2.2)` | The runtime now lives in `sage-python/src/sage/pipeline_v2/` (classify / decompose / select_topology / assign_models / execute / learn modules + orchestrator + helper modules + `PipelineContext` dataclass). `pipeline.py` is a <300 LOC façade retaining the public class, `_run_internal`, `_emit`, module-level orchestrator helpers, and the `PipelineContext` re-export. ADR-015 (cycle-10 P9) + ADR-016 (cycle-11 follow-up) record the design and acceptance gates. |
 | **CLI agent (`sage run --jsonl` + pi-mono adapter)** | `prelude shipped (cycle-12), adapter planned (cycle-13)` | Cycle-12 prelude (2026-05-05): `docs/contracts/SAGE_CLI_PROTOCOL.md` + `sage run --jsonl` backend + 16 unit tests. Cycle-13: `clients/pi-ygn-sage/` npm package wrapping pi-mono TUI around the JSONL backend. Acceptance gate cycle-13: SWE-bench Pro 4-arm ablation ≥5pp pass@1 lift over Claude Code (plan: `docs/benchmarks/2026-05-05-cli-baseline-plan.md`). |
 
 ## Formal Verification (Rust)
@@ -428,7 +428,7 @@ YGN-SAGE/
 |       |-- topology/    #   TopologyRunner (code node dispatch), LLM caller (optional learned-policy V1/V2), controller
 |       |-- verl/        #   Training: topology_env (4-state), reward (5-signal), manifest, cascaded_eval,
 |       |                #     reflection, edge_credit, rewardflow, topology_schema (shared contract)
-|       |-- pipeline.py  #   5-stage CognitiveOrchestrationPipeline (primary path, legacy fallback exists)
+|       |-- pipeline.py  #   CognitiveOrchestrationPipeline thin façade (delegates to pipeline_v2/)
 |       +-- boot.py      #   System bootstrap (7 providers auto-detected from .env)
 |
 |-- sage-discover/       # Knowledge pipeline: 17 modules — arXiv → ExoCortex (adjunct, depends on ygn-sage)

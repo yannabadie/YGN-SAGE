@@ -1,30 +1,23 @@
 """Topology construction + structure-logging + budget helpers.
 
-cgpro DESIGN_LOCKED 2026-05-06 (`cgpro_phase21_facade_rewrite_20260506`)
-real home for topology-construction helpers carved out of
-`CognitiveOrchestrationPipeline` so `pipeline.py` can shrink toward
-< 300 LOC without losing the mockable surface that ~10 test files rely on.
-
-Step A1 landed `build_topology_from_hint`. Step B5 (this commit) lands
-the remaining 9 helpers per cgpro Q3 verdict ("ne pas faire monter
-select_topology.py à ~950 LOC ; tri-split"):
+This module groups the topology-side helpers consumed by
+`pipeline_v2/select_topology.py`:
 
   - candidate parsing : `topology_candidate_items`,
     `log_topology_candidates`, `candidate_text_attr`,
     `candidate_float_attr`, `candidate_node_count`
+  - hint construction : `build_topology_from_hint`
   - structure logging : `log_topology_structure` (gap 1+2 attribution)
   - budget gate       : `apply_topology_budget_and_cache`,
     `check_topology_budget`, `make_single_node_topology`
 
-Stage 2 flow stays in `pipeline_v2/select_topology.py` (lisible).
-The cost-side helpers (`_estimate_topology_cost`, `_load_model_catalog`)
-live in `pipeline_v2/costing.py` per cgpro Q3 explicit garde-fou
-(they are consumed by Stage 4 execute — costing-transverse, NOT
-topology-construction).
+Pricing-side helpers (`estimate_topology_cost`, `load_model_catalog`)
+live in `pipeline_v2/costing.py` — they are consumed by Stage 4
+execute when the runner doesn't produce a real cost (costing-transverse,
+not topology construction).
 
-Logger uses ``sage.pipeline`` per cgpro Q7 trap "logger name drift" —
-modules carved out of `pipeline.py` keep the legacy logger name so
-trace-grep continuity is preserved.
+Logger uses ``sage.pipeline`` so trace-grep continuity is preserved
+across the refactor.
 """
 from __future__ import annotations
 
@@ -282,9 +275,8 @@ def apply_topology_budget_and_cache(
     Empirically verified by plan-1.4 smoke: template branch → 0 cells
     after 10 pipeline.run() calls; with this helper → archive grows.
 
-    The internal call to `pipeline._check_topology_budget(ctx)` goes
-    through the delegator that lives in `pipeline.py` so existing test
-    mocks on the method continue to fire byte-identical.
+    The internal call resolves to `check_topology_budget(pipeline, ctx)`
+    in this same module.
     """
     check_topology_budget(pipeline, ctx)
     if (
