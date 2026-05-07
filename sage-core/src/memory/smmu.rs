@@ -9,11 +9,13 @@
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use pyo3::prelude::*;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::path::Path;
 use ulid::Ulid;
 
 /// Metadata stored per compacted chunk in the S-MMU.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChunkMetadata {
     pub chunk_id: String,
     pub start_time: i64,
@@ -30,7 +32,7 @@ pub struct ChunkMetadata {
 }
 
 /// Edge label identifying which graph view an edge belongs to.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum EdgeKind {
     Temporal,
     Semantic,
@@ -39,7 +41,7 @@ pub enum EdgeKind {
 }
 
 /// A weighted, labeled edge in the multi-view graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiEdge {
     pub kind: EdgeKind,
     pub weight: f32,
@@ -452,6 +454,98 @@ fn jaccard_similarity(a: &HashSet<&str>, b: &HashSet<&str>) -> f32 {
 }
 
 // ---------------------------------------------------------------------------
+// S-MMU Persistence (Phase 3 — AUDITRUST.md)
+// ---------------------------------------------------------------------------
+
+/// Serializable snapshot of the MultiViewMMU for save/load roundtrip.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiViewMMUSnapshot {
+    pub version: u32,
+    pub chunks: Vec<ChunkMetadata>,
+    pub edges: Vec<(String, String, EdgeKind, f32)>,
+    pub recent_ids: Vec<String>,
+}
+
+impl MultiViewMMU {
+    /// Serialise the S-MMU state into a portable snapshot.
+    pub fn to_snapshot(&self) -> MultiViewMMUSnapshot {
+        let chunks: Vec<ChunkMetadata> = self.graph.node_weights().cloned().collect();
+
+        let mut edges = Vec::new();
+        for edge in self.graph.edge_references() {
+            let src = &self.graph[edge.source()].chunk_id;
+            let dst = &self.graph[edge.target()].chunk_id;
+            let w = edge.weight();
+            edges.push((src.clone(), dst.clone(), w.kind, w.weight));
+        }
+
+        MultiViewMMUSnapshot {
+            version: 1,
+            chunks,
+            edges,
+            recent_ids: self.recent_ids.iter().cloned().collect(),
+        }
+    }
+
+    /// Reconstruct an S-MMU from a snapshot.  Chunk IDs with dangling
+    /// edge references are silently skipped (defensive — the snapshot
+    /// should be internally consistent).
+    pub fn from_snapshot(snapshot: MultiViewMMUSnapshot) -> Result<Self, String> {
+        if snapshot.version != 1 {
+            return Err(format!(
+                "unsupported S-MMU snapshot version {}",
+                snapshot.version
+            ));
+        }
+
+        let mut smmu = MultiViewMMU::new();
+
+        for chunk in snapshot.chunks {
+            let id = chunk.chunk_id.clone();
+            let idx = smmu.graph.add_node(chunk);
+            smmu.chunk_map.insert(id, idx);
+        }
+
+        for (src, dst, kind, weight) in snapshot.edges {
+            let Some(&src_idx) = smmu.chunk_map.get(&src) else {
+                continue;
+            };
+            let Some(&dst_idx) = smmu.chunk_map.get(&dst) else {
+                continue;
+            };
+            smmu.graph
+                .add_edge(src_idx, dst_idx, MultiEdge { kind, weight });
+        }
+
+        smmu.recent_ids = snapshot
+            .recent_ids
+            .into_iter()
+            .filter(|id| smmu.chunk_map.contains_key(id))
+            .collect();
+
+        Ok(smmu)
+    }
+
+    /// Persist the current S-MMU state to a JSON file.
+    pub fn save_json(&self, path: &Path) -> Result<(), String> {
+        let snapshot = self.to_snapshot();
+        let bytes = serde_json::to_vec_pretty(&snapshot)
+            .map_err(|e| format!("serialize smmu snapshot: {e}"))?;
+        std::fs::write(path, bytes)
+            .map_err(|e| format!("write smmu snapshot {}: {e}", path.display()))
+    }
+
+    /// Load an S-MMU from a JSON file.
+    pub fn load_json(path: &Path) -> Result<Self, String> {
+        let raw = std::fs::read(path)
+            .map_err(|e| format!("read smmu snapshot {}: {e}", path.display()))?;
+        let snapshot: MultiViewMMUSnapshot =
+            serde_json::from_slice(&raw).map_err(|e| format!("parse smmu snapshot: {e}"))?;
+        Self::from_snapshot(snapshot)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // PyO3 wrapper
 // ---------------------------------------------------------------------------
 
@@ -527,6 +621,22 @@ impl PyMultiViewMMU {
     /// Returns the number of chunks actually evicted.
     fn evict_by_utility(&mut self, count: usize) -> usize {
         self.inner.evict_by_utility(count)
+    }
+
+    /// Persist the current S-MMU state to a JSON file at `path`.
+    fn save_json(&self, path: &str) -> PyResult<()> {
+        self.inner
+            .save_json(Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e))
+    }
+
+    /// Load an S-MMU from a JSON file at `path`.  Returns a fresh
+    /// ``MultiViewMMU`` reconstructed from the snapshot.
+    #[staticmethod]
+    fn load_json(path: &str) -> PyResult<Self> {
+        let inner = MultiViewMMU::load_json(Path::new(path))
+            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e))?;
+        Ok(Self { inner })
     }
 }
 
@@ -887,5 +997,59 @@ mod tests {
             smmu.graph[a_idx].access_count > 0,
             "access_count should increment after retrieval"
         );
+    }
+
+    #[test]
+    fn test_smmu_snapshot_roundtrip_retrieval_equivalence() {
+        let mut smmu = MultiViewMMU::new();
+
+        let a = smmu.register_chunk(
+            0,
+            1,
+            "rust memory graph",
+            vec!["rust".into(), "memory".into()],
+            Some(vec![1.0, 0.0, 0.5]),
+            None,
+        );
+        let b = smmu.register_chunk(
+            2,
+            3,
+            "rust graph verifier",
+            vec!["rust".into(), "graph".into()],
+            Some(vec![1.0, 0.0, 0.5]),
+            None,
+        );
+
+        let before = smmu.retrieve_relevant(&a, 2, [0.4, 0.3, 0.2, 0.1]);
+
+        let snapshot = smmu.to_snapshot();
+        let mut restored = MultiViewMMU::from_snapshot(snapshot).unwrap();
+
+        let after = restored.retrieve_relevant(&a, 2, [0.4, 0.3, 0.2, 0.1]);
+
+        assert_eq!(before, after);
+        assert_eq!(restored.chunk_count(), 2);
+        assert_eq!(restored.last_chunk_id(), Some(b.as_str()));
+    }
+
+    #[test]
+    fn test_smmu_snapshot_json_roundtrip() {
+        let mut smmu = MultiViewMMU::new();
+        smmu.register_chunk(
+            0, 1, "test chunk",
+            vec!["test".into()],
+            None, None,
+        );
+
+        let dir = std::env::temp_dir().join("smmu_test");
+        let _ = std::fs::create_dir_all(&dir);
+        let path = dir.join("smmu_roundtrip.json");
+
+        smmu.save_json(&path).unwrap();
+        let restored = MultiViewMMU::load_json(&path).unwrap();
+
+        assert_eq!(restored.chunk_count(), smmu.chunk_count());
+
+        let _ = std::fs::remove_file(&path);
     }
 }
