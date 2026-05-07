@@ -51,6 +51,21 @@ if TYPE_CHECKING:
 log = logging.getLogger("sage.pipeline")
 
 
+def _set_cli_progress_stage(pipeline: Any, stage: str) -> None:
+    """Update ``pipeline._cli_progress_state.stage`` if a CLI is attached.
+
+    Stage C of cycle-13 K post-Phase-2.2 (cgpro
+    `cgpro_cli_protocol_gaps_20260507`). The CLI driver in
+    ``sage.cli.run`` attaches a ``_CliProgressState`` to the pipeline at
+    runtime via ``setattr`` so the heartbeat can report the current
+    high-level stage. Runs without a CLI never see this attribute and
+    the helper is a no-op.
+    """
+    state = getattr(pipeline, "_cli_progress_state", None)
+    if state is not None:
+        state.stage = stage
+
+
 async def run_internal(
     pipeline: "CognitiveOrchestrationPipeline",
     task: str,
@@ -169,6 +184,7 @@ async def run_internal(
             pipeline.write_gate = memory_gate_mod.build_write_gate(pipeline)
 
             # Stage 0: CLASSIFY
+            _set_cli_progress_stage(pipeline, "classify")
             ctx = classify(pipeline, ctx)
             if system_hint in (1, 2, 3) and ctx.system != system_hint:
                 log.info(
@@ -197,6 +213,7 @@ async def run_internal(
             pipeline._emit("CLASSIFY", {"system": ctx.system, "domain": ctx.domain})
 
             # Stage 1: DECOMPOSE (S2/S3 only)
+            _set_cli_progress_stage(pipeline, "decompose")
             ctx = await decompose(pipeline, ctx)
             dag_node_count = 0
             if ctx.task_dag is not None:
@@ -221,6 +238,7 @@ async def run_internal(
             )
 
             # Stage 2: SELECT TOPOLOGY
+            _set_cli_progress_stage(pipeline, "select_topology")
             ctx = select_topology(pipeline, ctx)
             topo_nodes = (
                 ctx.topology.node_count()
@@ -237,6 +255,7 @@ async def run_internal(
             pipeline._emit("SELECT_TOPOLOGY", {"node_count": topo_nodes})
 
             # Stage 3: ASSIGN MODELS
+            _set_cli_progress_stage(pipeline, "assign_models")
             ctx = assign_models(pipeline, ctx)
             runtime_events_mod.runtime_emit_model_assigned(pipeline, ctx, event_log, run_frame_builder)
             pipeline._emit(
@@ -244,6 +263,7 @@ async def run_internal(
             )
 
             # Stage 4: EXECUTE
+            _set_cli_progress_stage(pipeline, "execute")
             ctx = await execute(
                 pipeline,
                 ctx,
@@ -330,11 +350,13 @@ async def run_internal(
                     ctx,
                     is_training_evidence=verdict.trainable,
                 )
+                _set_cli_progress_stage(pipeline, "learn")
                 await learn(pipeline, ctx)
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
             else:
                 # Legacy OFF mode: keep the R7 execution/learn/final order.
                 memory_gate_mod.record_to_memory(pipeline, ctx)
+                _set_cli_progress_stage(pipeline, "learn")
                 await learn(pipeline, ctx)
                 pipeline._emit("LEARN", {"latency_ms": ctx.latency_ms})
 

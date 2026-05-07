@@ -535,6 +535,358 @@ def test_set_budget_accepted_emits_budget_event_kind_tightened() -> None:
     assert captured[0]["budget"]["cost_so_far_usd"] == 3.0
 
 
+# ────────────────────────────────────────────────────────────────────
+# 3.6 cli_progress idle heartbeat (Stage C)
+#
+# Fake-clock tests: production uses ``loop.time()`` (asyncio's monotonic),
+# tests inject ``now`` (or ``now_fn``) explicitly so the timer logic is
+# fully deterministic. NO real 5/10-second sleeps anywhere.
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_maybe_emit_cli_progress_does_not_emit_before_idle_threshold() -> None:
+    """Below the 10s idle floor, no progress frame fires."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    state = cli_run._CliProgressState(
+        stage="execute",
+        started_at=0.0,
+        last_non_progress_frame_at=0.0,
+        last_progress_frame_at=0.0,
+    )
+    fired = cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=5.0,
+    )
+    assert fired is False
+    assert stdout.getvalue() == ""
+
+
+def test_maybe_emit_cli_progress_fires_after_idle_threshold() -> None:
+    """At >=10s idle, a single progress frame fires with the current stage."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # simulate cli_started already at seq=0
+    state = cli_run._CliProgressState(
+        stage="execute",
+        started_at=0.0,
+        last_non_progress_frame_at=0.0,
+        last_progress_frame_at=0.0,
+    )
+    fired = cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=10.5,
+    )
+    assert fired is True
+    frame = json.loads(stdout.getvalue().strip())
+    assert frame["event_type"] == "cli_progress"
+    assert frame["seq"] == 1
+    assert frame["payload"]["stage"] == "execute"
+    assert frame["payload"]["elapsed_ms"] == 10500
+    assert "Still running" in frame["payload"]["human_readable"]
+    # last_progress_frame_at advanced; last_non_progress_frame_at NOT
+    # advanced — the load-bearing trap.
+    assert state.last_progress_frame_at == 10.5
+    assert state.last_non_progress_frame_at == 0.0
+
+
+def test_maybe_emit_cli_progress_repeats_every_5s_while_idle() -> None:
+    """While no non-progress frame arrives, heartbeat repeats every 5s."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # cli_started seq=0
+    state = cli_run._CliProgressState(
+        stage="learn",
+        started_at=0.0,
+        last_non_progress_frame_at=0.0,
+        last_progress_frame_at=0.0,
+    )
+    # First fire at t=10
+    assert cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=10.0,
+    ) is True
+    # 4s later: idle 14s but only 4s since last progress → SUPPRESS.
+    assert cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=14.0,
+    ) is False
+    # 6s after first: 5s since last progress → FIRE.
+    assert cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=15.0,
+    ) is True
+    # 5s later: should fire again.
+    assert cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=20.0,
+    ) is True
+    # Stdout has 3 progress frames seq 1, 2, 3.
+    seqs = [json.loads(line)["seq"] for line in stdout.getvalue().splitlines()]
+    assert seqs == [1, 2, 3]
+
+
+def test_runtime_mirror_frame_resets_idle_guard_and_suppresses_progress() -> None:
+    """A mirrored runtime event updates ``last_non_progress_frame_at`` so
+    the next heartbeat tick re-starts the 10s idle clock from that point."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # cli_started seq=0
+    fake_now = [0.0]
+    state = cli_run._CliProgressState(
+        stage="boot",
+        started_at=0.0,
+        last_non_progress_frame_at=0.0,
+        last_progress_frame_at=0.0,
+    )
+    tee = cli_run._CliMirrorSinkHandle(
+        file, stdout, counter,
+        progress_state=state,
+        now_fn=lambda: fake_now[0],
+    )
+    # t=8: a mirrored runtime frame arrives; updates the guard.
+    fake_now[0] = 8.0
+    tee.write('{"event_type":"task_started","seq":0}\n')
+    assert state.last_non_progress_frame_at == 8.0
+    # t=15: only 7s since the last non-progress frame → idle threshold
+    # NOT met. No heartbeat.
+    fired = cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=15.0,
+    )
+    assert fired is False
+    # t=18.5: 10.5s since last non-progress → idle met, heartbeat fires.
+    fired = cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=18.5,
+    )
+    assert fired is True
+
+
+def test_unparseable_mirror_write_does_NOT_reset_idle_guard() -> None:
+    """Verbatim-fallback mirror writes (malformed JSON) must NOT reset the
+    idle clock — they're not real protocol frames, just byte passthrough
+    for forensic preservation."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    fake_now = [0.0]
+    state = cli_run._CliProgressState(
+        stage="boot", started_at=0.0,
+        last_non_progress_frame_at=0.0, last_progress_frame_at=0.0,
+    )
+    tee = cli_run._CliMirrorSinkHandle(
+        file, stdout, counter,
+        progress_state=state,
+        now_fn=lambda: fake_now[0],
+    )
+    fake_now[0] = 5.0
+    tee.write("not-json\n")
+    assert state.last_non_progress_frame_at == 0.0  # unchanged
+
+
+def test_emit_cli_event_updates_last_non_progress_for_envelope_events() -> None:
+    """``cli_started`` / ``cli_tool_request`` / ``cli_complete`` (non-progress
+    CLI envelope events) update ``last_non_progress_frame_at`` so they
+    reset the idle guard alongside mirrored runtime frames."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    state = cli_run._CliProgressState(
+        stage="boot", started_at=0.0,
+        last_non_progress_frame_at=0.0, last_progress_frame_at=0.0,
+    )
+    fake_now = [3.5]
+    cli_run._emit_cli_event(
+        stdout, "cli_tool_request", run_id="R",
+        payload={"correlation_id": "c1"},
+        seq=counter.next(),
+        progress_state=state,
+        now_fn=lambda: fake_now[0],
+    )
+    assert state.last_non_progress_frame_at == 3.5
+
+
+def test_emit_cli_progress_does_NOT_update_last_non_progress() -> None:
+    """The cli_progress emission path passes ``progress_state=None`` to
+    ``_emit_cli_event`` so it doesn't accidentally update the idle guard
+    (the load-bearing trap from cgpro Stage C lock — would forever
+    reset the heartbeat into a 10s cadence)."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # cli_started seq=0
+    state = cli_run._CliProgressState(
+        stage="execute", started_at=0.0,
+        last_non_progress_frame_at=0.0, last_progress_frame_at=0.0,
+    )
+    cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=10.0,
+    )
+    assert state.last_non_progress_frame_at == 0.0
+    assert state.last_progress_frame_at == 10.0
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_sets_progress_stage_labels_in_canonical_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``run_internal`` MUST call ``_set_cli_progress_stage(pipeline, ...)``
+    before each high-level stage with one of the 6 canonical labels in
+    the canonical order. cgpro Stage C lock 2026-05-07 acceptance test.
+
+    The orchestrator's stage calls are LOCAL-imported (Phase 2.1
+    discipline), so module-level monkeypatch on
+    ``sage.pipeline_v2.orchestrator._set_cli_progress_stage`` intercepts
+    every call site.
+    """
+    captured: list[str] = []
+
+    def _capture(_pipeline: Any, stage: str) -> None:
+        captured.append(stage)
+
+    monkeypatch.setattr(
+        "sage.pipeline_v2.orchestrator._set_cli_progress_stage", _capture,
+    )
+
+    # Build a minimal S1 single-agent pipeline inline (mirrors the
+    # ``_single_agent_pipeline`` helper in test_pipeline_budget.py
+    # without the cross-test import).
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from sage.llm.base import LLMResponse
+    from sage.pipeline import CognitiveOrchestrationPipeline
+
+    class _Router:
+        system = 1
+
+        def assess_complexity(self, task: str) -> Any:
+            return SimpleNamespace(system=1)
+
+        def route(self, profile: Any) -> Any:
+            return SimpleNamespace(system=profile.system)
+
+    class _Provider:
+        async def generate(self, *args: Any, **kwargs: Any) -> LLMResponse:
+            return LLMResponse(content="ok", model="stub")
+
+    pipeline = CognitiveOrchestrationPipeline(
+        router=_Router(), engine=None, assigner=None,
+        provider_pool=MagicMock(), llm_provider=_Provider(),
+    )
+    await pipeline.run("trivial s1 task")
+
+    # The orchestrator calls _set_cli_progress_stage UNCONDITIONALLY before
+    # each of the 6 stages (decompose, assign_models etc. don't gate the
+    # label call — they always fire even on S1 fast paths). Stage 5 (learn)
+    # appears once per run on the success path; on the failure-recovery
+    # path it could appear twice (see orchestrator try/except). For the
+    # success-path test, the canonical sequence is exactly:
+    canonical = [
+        "classify", "decompose", "select_topology",
+        "assign_models", "execute", "learn",
+    ]
+    assert captured == canonical, (
+        f"stage labels diverged from canonical sequence: {captured}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_cli_progress_heartbeat_task_cancellable_before_terminal() -> None:
+    """The heartbeat async task respects ``stop_event`` + ``cancel()`` and
+    never emits a frame after cancellation. Stage C lock: no
+    cli_progress after cli_complete (terminal-frame contract)."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    state = cli_run._CliProgressState(
+        stage="execute", started_at=0.0,
+        last_non_progress_frame_at=0.0, last_progress_frame_at=0.0,
+    )
+    stop_event = asyncio.Event()
+    fake_now = [100.0]  # well past idle threshold
+
+    async def _tick(_seconds: float) -> None:
+        # Yield once so the task gets to enter its loop, then return.
+        await asyncio.sleep(0)
+
+    task = asyncio.create_task(
+        cli_run._cli_progress_heartbeat(
+            stdout=stdout, run_id="R", seq_counter=counter,
+            progress_state=state, stop_event=stop_event,
+            sleep_fn=_tick, now_fn=lambda: fake_now[0],
+            idle_after_s=10.0, heartbeat_interval_s=5.0,
+        )
+    )
+    # Let the loop run a few iterations.
+    await asyncio.sleep(0)
+    await asyncio.sleep(0)
+    # Cancel + signal stop.
+    stop_event.set()
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+    # No subsequent emission can happen after the task is cancelled — write
+    # something now and assert no NEW progress frames appear.
+    bytes_at_cancel = len(stdout.getvalue())
+    await asyncio.sleep(0)
+    assert len(stdout.getvalue()) == bytes_at_cancel
+
+
+def test_boot_initialization_prevents_first_heartbeat_before_idle_threshold() -> None:
+    """After ``cli_started``, ``last_non_progress_frame_at`` is initialized
+    to the cli-start time so the first boot-stage heartbeat cannot fire
+    before the 10s idle threshold elapses (cgpro Stage C VERIFY round-2:
+    boot-timing initialization regression test)."""
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # cli_started just fired at seq=0, time t=cli_start_t.
+    cli_start_t = 100.0
+    state = cli_run._CliProgressState(
+        stage="boot",
+        started_at=cli_start_t,
+        last_non_progress_frame_at=cli_start_t,
+        last_progress_frame_at=cli_start_t,
+    )
+    # Tick through every second from t=cli_start_t to t=cli_start_t+9.99 and
+    # assert no heartbeat ever fires before the idle threshold. That covers
+    # the entire boot phase (typically 1-3s on this machine) without
+    # assuming a specific boot duration.
+    for offset in [0.0, 0.5, 1.0, 2.0, 5.0, 9.0, 9.99]:
+        fired = cli_run._maybe_emit_cli_progress(
+            stdout=stdout, run_id="R", seq_counter=counter,
+            progress_state=state, now=cli_start_t + offset,
+        )
+        assert fired is False, f"heartbeat fired prematurely at offset={offset}"
+    assert stdout.getvalue() == ""
+    # At t = cli_start_t + 10.0 the threshold is met and the heartbeat fires
+    # exactly once.
+    assert cli_run._maybe_emit_cli_progress(
+        stdout=stdout, run_id="R", seq_counter=counter,
+        progress_state=state, now=cli_start_t + 10.0,
+    ) is True
+
+
+def test_set_cli_progress_stage_helper_no_op_without_state() -> None:
+    """``_set_cli_progress_stage`` is a no-op when no CLI is attached
+    (running pipeline outside the CLI doesn't pay any cost)."""
+    from sage.pipeline_v2.orchestrator import _set_cli_progress_stage
+
+    class _NoCliPipeline:
+        pass
+
+    pipeline = _NoCliPipeline()
+    # Does not raise; nothing to assert on the pipeline side.
+    _set_cli_progress_stage(pipeline, "classify")
+    # And when state IS present, it updates the label.
+    pipeline._cli_progress_state = cli_run._CliProgressState(stage="boot")  # type: ignore[attr-defined]
+    _set_cli_progress_stage(pipeline, "execute")
+    assert pipeline._cli_progress_state.stage == "execute"  # type: ignore[attr-defined]
+
+
 def test_mirror_falls_through_on_unparseable_line() -> None:
     """Mirror is best-effort: malformed JSON is written verbatim so the
     forensic file's bytes still reach stdout (parser bugs are caller-side)."""

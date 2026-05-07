@@ -3,7 +3,9 @@
 See ``docs/contracts/SAGE_CLI_PROTOCOL.md`` for the full v0 spec. This module
 implements the contract:
 
-  - 14 inherited events from ``RuntimeEventLog`` v0 (tee'd to stdout).
+  - 14 inherited events from ``RuntimeEventLog`` v0 (tee'd to stdout, with
+    stdout seq rewritten through the unified ``_StdoutSeqCounter``;
+    forensic file keeps its own internal seq).
   - 4 CLI-shell envelope events emitted directly: ``cli_started``,
     ``cli_progress``, ``cli_tool_request``, ``cli_complete``.
   - 5 inbound commands parsed from stdin: ``prompt``, ``approve_tool_call``,
@@ -11,22 +13,19 @@ implements the contract:
   - Strict JSONL: LF-only delimiters, UTF-8, fail-close on protocol_version
     mismatch.
 
-Cycle-12 prelude scope (this commit):
-  - ``cli_started`` + ``cli_complete`` envelope frames around the run.
-  - RuntimeEventLog file ↔ stdout TEE via ``_CliMirrorSinkHandle``.
-  - ``prompt`` + ``cancel`` commands.
-  - ``approve_tool_call`` / ``deny_tool_call`` round-trip via
-    ``TopologyRunner.approval_callback``.
+Cycle-13 K post-Phase-2.2 closure status:
+  - Stage A (`2d557b15`): unified stdout seq + ``cli_complete.payload.final_seq``.
+  - Stage B (`7bd48c17`): tightening-only ``set_budget`` command wired
+    through ``CostTracker.tighten_remaining_budget`` root guard.
+  - Stage C: ``cli_progress`` idle heartbeat (this commit) — timer-based
+    5s cadence with 10s idle guard, stage labels driven by orchestrator,
+    no piggyback. Cooperative Python cancellation (Stage D) ships next.
 
-Out of scope for this commit (lands in Cycle-12 Phase B alongside the ADR-015
-decomposition):
-  - ``cli_progress`` heartbeat (the runner doesn't yet expose a stage-level
-    progress signal; we'd add a noisy timer here without the upstream signal).
-  - ``set_budget`` (the ``CostTracker`` mid-run mutation point isn't exposed
-    yet; needs a small ``Pipeline`` API addition).
+Out of scope (deferred to a later cycle):
   - Cancellation token threading into Rust ``TopologyRunner`` (today the
     Python pipeline can ``asyncio.CancelledError`` itself; deeper cancellation
-    is Cycle-13 work).
+    of in-flight LLM calls / Rust paths is documented as a known v0
+    limitation in ``docs/contracts/SAGE_CLI_PROTOCOL.md``).
 """
 from __future__ import annotations
 
@@ -38,12 +37,93 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping, TextIO
+from typing import Any, Callable, Mapping, TextIO
 
 CLI_PROTOCOL_VERSION = "v0"
 
 log = logging.getLogger(__name__)
+
+
+# ────────────────────────────────────────────────────────────────────────
+# CLI progress state (Stage C — cli_progress idle heartbeat)
+#
+# The state object is created in ``run_jsonl_async``, threaded into the
+# mirror sink + ``_emit_cli_event`` so every NON-progress stdout frame
+# updates ``last_non_progress_frame_at``. The heartbeat task reads the
+# state through ``_maybe_emit_cli_progress`` and emits ``cli_progress``
+# only when ``now - last_non_progress_frame_at >= idle_after_s`` AND
+# ``now - last_progress_frame_at >= heartbeat_interval_s``. Two timestamps
+# are required to prevent the progress emission itself from forever
+# resetting the idle guard — that's the cgpro Stage C lock trap.
+# ────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class _CliProgressState:
+    """CLI-owned progress state. Attached to the pipeline at runtime via
+    ``setattr(pipeline, "_cli_progress_state", state)``. NOT a declared
+    Pipeline attribute — keeps the public façade (293 LOC at
+    Stage F closure, < 300 LOC HARD GATE) untouched.
+
+    ``stage`` follows the canonical 7-label vocabulary:
+    ``boot`` → ``classify`` → ``decompose`` → ``select_topology`` →
+    ``assign_models`` → ``execute`` → ``learn``. The orchestrator updates
+    it before each stage call via ``_set_cli_progress_stage(pipeline, stage)``.
+    """
+
+    stage: str = "boot"
+    started_at: float = 0.0
+    last_non_progress_frame_at: float = 0.0
+    last_progress_frame_at: float = 0.0
+
+
+def _maybe_emit_cli_progress(
+    *,
+    stdout: TextIO,
+    run_id: str,
+    seq_counter: "_StdoutSeqCounter",
+    progress_state: _CliProgressState,
+    now: float,
+    idle_after_s: float = 10.0,
+    heartbeat_interval_s: float = 5.0,
+) -> bool:
+    """Emit one ``cli_progress`` frame iff the idle conditions are met.
+
+    Conditions (cgpro Stage C lock):
+      - ``now - last_non_progress_frame_at >= idle_after_s`` — the stream
+        has been silent for at least the idle threshold.
+      - ``now - last_progress_frame_at >= heartbeat_interval_s`` — the
+        previous heartbeat was at least one full interval ago.
+
+    On emit: writes a ``cli_progress`` frame through the unified seq
+    counter (so ``cli_complete.payload.final_seq`` reconciles correctly),
+    updates ``last_progress_frame_at`` only (NOT
+    ``last_non_progress_frame_at`` — that would forever reset the idle
+    guard, the load-bearing trap). Returns ``True`` if a frame was
+    emitted, ``False`` otherwise.
+    """
+    if now - progress_state.last_non_progress_frame_at < idle_after_s:
+        return False
+    if now - progress_state.last_progress_frame_at < heartbeat_interval_s:
+        return False
+    elapsed_ms = max(0, int((now - progress_state.started_at) * 1000))
+    payload = {
+        "stage": progress_state.stage,
+        "elapsed_ms": elapsed_ms,
+        "human_readable": f"Still running: {progress_state.stage}",
+    }
+    _emit_cli_event(
+        stdout,
+        "cli_progress",
+        run_id=run_id,
+        payload=payload,
+        seq=seq_counter.next(),
+        progress_state=None,  # cli_progress does NOT update last_non_progress.
+    )
+    progress_state.last_progress_frame_at = now
+    return True
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -83,10 +163,14 @@ class _CliMirrorSinkHandle:
         file_handle: Any,
         stdout_stream: TextIO,
         stdout_seq_counter: "_StdoutSeqCounter",
+        progress_state: _CliProgressState | None = None,
+        now_fn: Callable[[], float] | None = None,
     ) -> None:
         self._file = file_handle
         self._stdout = stdout_stream
         self._stdout_seq_counter = stdout_seq_counter
+        self._progress_state = progress_state
+        self._now_fn = now_fn or time.monotonic
         self.last_stdout_seq: int | None = None
 
     def _rewrite_seq_for_stdout(self, value: str) -> str:
@@ -126,7 +210,9 @@ class _CliMirrorSinkHandle:
         # Stdout mirror — CLI protocol consumer. The seq is rewritten into
         # the unified per-run stdout domain; bytes downstream of ``"seq":N``
         # are otherwise preserved.
+        seq_before = self.last_stdout_seq
         rewritten = self._rewrite_seq_for_stdout(value)
+        seq_after = self.last_stdout_seq
         try:
             self._stdout.write(rewritten)
             # Flush stdout immediately so frames are visible to the
@@ -138,6 +224,15 @@ class _CliMirrorSinkHandle:
             # will keep trying — the OS will keep raising EPIPE; we keep
             # eating it.
             pass
+        # Stage C: a successfully-parsed mirrored runtime frame counts as
+        # a non-progress stdout frame for the heartbeat idle guard.
+        # ``seq_after != seq_before`` is the parse-success witness — the
+        # rewrite only advances ``last_stdout_seq`` when JSON parse +
+        # ``"seq"`` extraction succeeded. Verbatim-fallback writes
+        # (malformed JSON) leave ``last_stdout_seq`` unchanged and
+        # therefore don't reset the idle clock.
+        if self._progress_state is not None and seq_after != seq_before:
+            self._progress_state.last_non_progress_frame_at = self._now_fn()
         return n
 
     def flush(self) -> None:
@@ -181,6 +276,8 @@ def _emit_cli_event(
     run_id: str,
     payload: Mapping[str, Any],
     seq: int,
+    progress_state: _CliProgressState | None = None,
+    now_fn: Callable[[], float] | None = None,
 ) -> None:
     """Emit a CLI-shell envelope event directly (bypasses RuntimeEventLog).
 
@@ -188,6 +285,13 @@ def _emit_cli_event(
     protocol-layer, NOT runtime-layer. They MUST NOT appear in
     ``RuntimeEventLog`` v0's ``EVENT_TYPES``. Their schema is independently
     versioned (``cli_v1`` initially).
+
+    When ``progress_state`` is provided AND ``event_type != "cli_progress"``,
+    ``last_non_progress_frame_at`` is updated to ``now_fn()`` so the
+    heartbeat idle guard sees this frame. ``cli_progress`` itself MUST
+    pass ``progress_state=None`` (its caller, ``_maybe_emit_cli_progress``,
+    updates ``last_progress_frame_at`` directly) — otherwise the idle
+    guard would forever reset and the heartbeat would never repeat.
     """
     frame = {
         "protocol_version": CLI_PROTOCOL_VERSION,
@@ -203,6 +307,10 @@ def _emit_cli_event(
         stream.flush()
     except (OSError, ValueError):
         pass
+    if progress_state is not None and event_type != "cli_progress":
+        progress_state.last_non_progress_frame_at = (
+            now_fn() if now_fn is not None else time.monotonic()
+        )
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -446,6 +554,68 @@ def _handle_set_budget(
 
 
 # ────────────────────────────────────────────────────────────────────────
+# Background heartbeat task (Stage C)
+# ────────────────────────────────────────────────────────────────────────
+
+
+async def _cli_progress_heartbeat(
+    *,
+    stdout: TextIO,
+    run_id: str,
+    seq_counter: "_StdoutSeqCounter",
+    progress_state: _CliProgressState,
+    stop_event: asyncio.Event,
+    sleep_fn: Callable[[float], "asyncio.Future[None] | Any"] | None = None,
+    now_fn: Callable[[], float] | None = None,
+    idle_after_s: float = 10.0,
+    heartbeat_interval_s: float = 5.0,
+) -> None:
+    """Background task: poll every ``heartbeat_interval_s`` and emit a
+    ``cli_progress`` frame iff ``_maybe_emit_cli_progress`` returns True.
+
+    Uses the asyncio loop's monotonic clock by default (``loop.time()``).
+    Tests inject ``now_fn`` + ``sleep_fn`` for deterministic timing.
+    The strong reference to this task MUST be retained by the caller and
+    ``cancel()``-ed in ``finally`` before ``cli_complete`` (per cgpro
+    Stage C lock + Python asyncio docs warning on GC of background tasks).
+    """
+    if sleep_fn is None:
+        sleep_fn = asyncio.sleep
+    if now_fn is None:
+        loop = asyncio.get_event_loop()
+        now_fn = loop.time
+    while not stop_event.is_set():
+        try:
+            await sleep_fn(heartbeat_interval_s)
+        except asyncio.CancelledError:
+            return
+        if stop_event.is_set():
+            return
+        _maybe_emit_cli_progress(
+            stdout=stdout,
+            run_id=run_id,
+            seq_counter=seq_counter,
+            progress_state=progress_state,
+            now=now_fn(),
+            idle_after_s=idle_after_s,
+            heartbeat_interval_s=heartbeat_interval_s,
+        )
+
+
+def _set_cli_progress_stage(pipeline: Any, stage: str) -> None:
+    """Update the CLI progress stage label if the pipeline has a state.
+
+    Called by ``pipeline_v2.orchestrator.run_internal`` before each
+    high-level stage. Safe to call when no CLI is attached — the
+    ``getattr`` falls through to ``None`` and the helper is a no-op
+    (running outside the CLI does not pay the cost of a state object).
+    """
+    state = getattr(pipeline, "_cli_progress_state", None)
+    if state is not None:
+        state.stage = stage
+
+
+# ────────────────────────────────────────────────────────────────────────
 # Main entry: run_jsonl_async + main(argv)
 # ────────────────────────────────────────────────────────────────────────
 
@@ -485,6 +655,18 @@ async def run_jsonl_async(
     seq_counter = _StdoutSeqCounter()
     run_id = _new_runtime_run_id()
 
+    # Stage C: CLI-owned progress state. Started immediately so the boot
+    # phase has liveness too (heartbeat task starts after cli_started, sees
+    # ``stage="boot"`` until orchestrator updates it). ``loop.time()`` is
+    # the canonical clock per asyncio docs.
+    loop = asyncio.get_event_loop()
+    progress_state = _CliProgressState(
+        stage="boot",
+        started_at=loop.time(),
+        last_non_progress_frame_at=loop.time(),
+        last_progress_frame_at=loop.time(),
+    )
+
     # Emit cli_started BEFORE booting (so consumers see "sage is starting"
     # immediately even if boot takes seconds).
     sage_version = "0.1.0"  # TODO(cycle-12): pull from pyproject.toml
@@ -503,6 +685,8 @@ async def run_jsonl_async(
             "tier": os.environ.get("SAGE_LLM_TIER", ""),
         },
         seq=seq_counter.next(),
+        progress_state=progress_state,
+        now_fn=loop.time,
     )
 
     # Tempdir for the forensic JSONL archive (RuntimeEventLog file). The
@@ -526,8 +710,26 @@ async def run_jsonl_async(
     # the targeted ignore narrows the type-safety escape to one site.
     mirror_sink: _CliMirrorSinkHandle | None = None
     if eventlog._fh is not None:  # type: ignore[attr-defined]
-        mirror_sink = _CliMirrorSinkHandle(eventlog._fh, stdout, seq_counter)
+        mirror_sink = _CliMirrorSinkHandle(
+            eventlog._fh, stdout, seq_counter,
+            progress_state=progress_state,
+            now_fn=loop.time,
+        )
         eventlog._fh = mirror_sink  # type: ignore[assignment]
+
+    # Stage C: heartbeat task. Strong reference retained so it isn't GC'd
+    # mid-run; cancelled in ``finally`` before cli_complete (see Python
+    # asyncio task-lifetime docs + cgpro Stage C lock).
+    heartbeat_stop = asyncio.Event()
+    heartbeat_task = asyncio.create_task(
+        _cli_progress_heartbeat(
+            stdout=stdout,
+            run_id=run_id,
+            seq_counter=seq_counter,
+            progress_state=progress_state,
+            stop_event=heartbeat_stop,
+        )
+    )
 
     log_token = install_event_log(eventlog)
 
@@ -598,6 +800,12 @@ async def run_jsonl_async(
         # ``pipeline_for_dispatcher[0]`` lazily on each command, so runs
         # that finish before any set_budget arrives never observe it.
         pipeline_for_dispatcher[0] = pipeline
+        # Stage C: attach the CLI progress state so ``run_internal`` can
+        # update ``state.stage`` before each high-level stage. ``setattr``
+        # at runtime keeps the public ``Pipeline`` façade (293 LOC at
+        # Stage F closure, < 300 LOC HARD GATE) untouched per cgpro
+        # Stage C lock.
+        setattr(pipeline, "_cli_progress_state", progress_state)
 
         # Wire the approval callback into the topology runner. The runner
         # is constructed per-run inside _stage_execute, so we set a default
@@ -651,7 +859,15 @@ async def run_jsonl_async(
 
     finally:
         # Stop background tasks before emitting the terminal frame.
+        # Stage C: heartbeat MUST be stopped + awaited before cli_complete
+        # so no cli_progress can fire after the terminal frame.
         stop_stdin_event.set()
+        heartbeat_stop.set()
+        heartbeat_task.cancel()
+        try:
+            await heartbeat_task
+        except (asyncio.CancelledError, Exception):
+            pass
         for t in (stdin_task, dispatcher_task):
             t.cancel()
             try:

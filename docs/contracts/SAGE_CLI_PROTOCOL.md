@@ -123,7 +123,7 @@ are versioned independently of `payload_schemas.py`.
 | `event_type` | When emitted | Payload (v1) | Invariant |
 |---|---|---|---|
 | `cli_started` | Frame 0 (always first) | `{ "protocol_version", "sage_version", "sage_commit_sha", "task", "budget_usd", "system_hint", "tier" }` | 9 (CLI protocol versioning, NEW) |
-| `cli_progress` | Heartbeat (every N seconds when no other event for X seconds) | `{ "stage", "elapsed_ms", "human_readable" }` | None (UX-only) |
+| `cli_progress` | Idle heartbeat: emitted every 5s when no other stdout frame has fired for ≥10s. The CLI driver runs a timer-based heartbeat task (NOT event piggyback) so the frontend has liveness during long idle waits (e.g. Stage 4 model thinking). | `{ "stage", "elapsed_ms", "human_readable" }` where `stage` is one of `boot` / `classify` / `decompose` / `select_topology` / `assign_models` / `execute` / `learn`, `elapsed_ms` is monotonic ms since `cli_started`, `human_readable` is a free-form display hint. | None (UX-only) |
 | `cli_tool_request` | `TopologyRunner.approval_callback` fires | `{ "correlation_id", "tool_name", "tool_args_redacted", "node_id", "model_id" }` | 9 |
 | `cli_complete` | Last frame, terminal | `{ "exit_code", "total_cost_usd", "total_latency_ms", "outcome": "success" \| "failure" \| "cancelled", "final_seq" }` | 9, 5 |
 
@@ -213,10 +213,22 @@ What pi-mono DOES own:
 
 ## Inbound rate / liveness
 
-- The backend SHOULD emit a `cli_progress` heartbeat every **5 seconds** when no
-  other event has fired in the last **10 seconds**. This bound is per-stage
-  (a long Stage 4 multi-agent run with 30s of model thinking should heartbeat;
-  a fast S1 bypass that completes in 200ms does not).
+- The backend MUST emit a `cli_progress` heartbeat every **5 seconds** when no
+  other stdout frame has fired in the last **10 seconds**. The heartbeat is
+  timer-based (NOT event-piggyback) so liveness is preserved during long
+  idle waits (e.g. 30s of Stage 4 model thinking). A fast S1 bypass that
+  completes in 200ms emits no `cli_progress`.
+- The heartbeat starts immediately after `cli_started` and reports
+  `stage="boot"` until the orchestrator updates the label before each
+  high-level pipeline stage. The heartbeat task is cancelled in the
+  CLI driver's `finally` block before `cli_complete`, so no
+  `cli_progress` frame ever appears after the terminal frame.
+- `cli_progress` itself does NOT reset the idle clock. The driver tracks
+  two timestamps (`last_non_progress_frame_at` and
+  `last_progress_frame_at`) and emits when both
+  `now - last_non_progress_frame_at >= 10s` AND
+  `now - last_progress_frame_at >= 5s`. Resetting on the heartbeat
+  itself would degrade the cadence to 10s during long idle periods.
 - Frontends SHOULD treat absence of any frame for **60 seconds** as a probable
   hang and offer the user a `cancel` action.
 - The backend MUST flush `stdout` after every frame. (The `_SinkHandle.flush`
