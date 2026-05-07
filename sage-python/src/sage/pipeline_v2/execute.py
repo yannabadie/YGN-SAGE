@@ -542,6 +542,33 @@ async def execute(
                 log.error("Stage 4 fallback: no healthy provider available")
                 ctx.result = ""
 
+            # PATCH_FALLBACK_ATTRIBUTION (cgpro 2026-05-07): the multi-agent
+            # runner never ran — it raised before producing results. Reset
+            # `executed_template` to "single_agent" and clear the stale
+            # multi-agent `executed_model_ids` so the bandit attribution
+            # sees the actual execution mode (single-agent fallback), not
+            # the failed multi-agent assignment.
+            #
+            # Also cancel the in-flight bandit decision: the fallback
+            # provider/model is different from the bandit-selected one,
+            # so the attribution would be off-policy. Cancelling ensures
+            # the posterior is not contaminated by a model-id mismatch.
+            ctx.executed_template = "single_agent"
+            ctx.executed_model_ids = []
+            fallback_model_id = (
+                getattr(fallback_config, "model", "")
+                if fallback_config is not None
+                else ""
+            )
+            if fallback_model_id:
+                ctx.executed_model_id = fallback_model_id
+            from sage.pipeline_v2.bandit_attribution import (
+                cancel_bandit_decision,
+                clear_bandit_decision,
+            )
+            cancel_bandit_decision(pipeline, ctx, force=True)
+            clear_bandit_decision(pipeline, ctx)
+
         return ctx
 
 

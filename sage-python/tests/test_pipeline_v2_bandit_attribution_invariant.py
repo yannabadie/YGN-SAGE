@@ -726,26 +726,27 @@ async def test_path_frugalgpt_cascade_settles_decision_id_once(
 async def test_path_multi_agent_error_fallback_settles_decision_id_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Multi-agent runner raises → fallback provider runs → decision_id cancelled.
+    """Multi-agent runner raises → fallback provider runs → attribution corrected.
 
-    Drives ``_stage_execute`` through the error-fallback branch
-    (pipeline.py:2768-2805): TopologyRunner.run() raises RuntimeError
-    → except handler picks fallback_provider via
-    ``_pick_fallback_provider`` → fallback.generate() produces result.
+    Drives ``execute`` through the error-fallback branch:
+    TopologyRunner.run() raises RuntimeError → except handler picks
+    fallback_provider via ``pick_fallback_provider`` →
+    fallback.generate() produces result.
 
-    cgpro VERIFY observation: the fallback path does NOT clear
-    ``ctx.executed_template`` ("sequential" from line 2519) or
-    ``ctx.executed_model_ids`` (multi-model from line 2516). So the
-    bench attribution sees "multi-agent + 2 models" even though the
-    actual run was a single fallback provider call. Stage 5 cancels
-    via the multi_node_ambiguous trip-wire — this preserves the
-    singleton-settle invariant but the SEMANTIC mismatch is itself a
-    finding worth surfacing.
+    cgpro PATCH_FALLBACK_ATTRIBUTION (2026-05-07): the fallback path
+    MUST reset ``ctx.executed_template`` to ``"single_agent"``, clear
+    ``ctx.executed_model_ids``, AND cancel the in-flight bandit
+    decision. The fallback provider/model differs from the
+    bandit-selected one, so attribution would be off-policy. The
+    explicit cancel prevents posterior contamination.
 
     Asserts:
       1. Fallback provider was actually called (not topology runner).
       2. Pipeline result is from the fallback provider.
-      3. Decision_id settled exactly once via cancel.
+      3. exec_template = "single_agent" (NOT the stale multi-agent label).
+      4. executed_model_ids is empty or single-entry (NOT multi-agent).
+      5. Decision_id settled exactly once via cancel (explicit cancel in
+         the fallback handler, BEFORE Stage 5 learn).
     """
     pipeline, capture = _build_pipeline_for_learn(monkeypatch)
     pipeline.llm_provider = MagicMock()
@@ -800,19 +801,23 @@ async def test_path_multi_agent_error_fallback_settles_decision_id_once(
         f"Expected 'fallback provider output'."
     )
 
-    # ctx.executed_template + ctx.executed_model_ids stay populated
-    # from line 2516/2519 (NOT cleared by fallback handler) — this is
-    # the cgpro VERIFY semantic mismatch finding. The trip-wire still
-    # catches it.
-    assert ctx.executed_template == "sequential", (
-        f"ctx.executed_template should remain 'sequential' (set "
-        f"before fallback) — got {ctx.executed_template!r}. The "
-        f"fallback handler does NOT clear it; cgpro VERIFY flagged "
-        f"this as a semantic mismatch worth tracking."
+    # After the PATCH_FALLBACK_ATTRIBUTION fix (cgpro 2026-05-07),
+    # the fallback handler resets ctx.executed_template to "single_agent",
+    # clears ctx.executed_model_ids, and explicitly cancels the bandit
+    # decision (force=True). The bandit attribution sees single-agent
+    # fallback, not the stale multi-agent label.
+    assert ctx.executed_template == "single_agent", (
+        f"ctx.executed_template should be 'single_agent' after "
+        f"fallback (NOT 'sequential' from the failed multi-agent "
+        f"runner). Got {ctx.executed_template!r}."
     )
-    assert len(set(ctx.executed_model_ids)) >= 2, (
-        f"ctx.executed_model_ids should have 2 distinct entries "
-        f"(set before fallback): {ctx.executed_model_ids!r}."
+    assert (
+        not ctx.executed_model_ids
+        or len(set(ctx.executed_model_ids)) <= 1
+    ), (
+        f"ctx.executed_model_ids should be empty or single-entry "
+        f"after fallback (NOT the multi-agent assignment). "
+        f"Got: {ctx.executed_model_ids!r}."
     )
 
     # Singleton-settle invariant holds: cancel via multi_node_ambiguous.
