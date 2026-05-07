@@ -1,0 +1,32 @@
+{
+  "generated_at_utc": "2026-05-07T18:11:31.240520+00:00",
+  "source_commit_sha": "c019840a655a4ad9cdb6c0e1fc20592df8dc92a5",
+  "sage_core_build_commit_sha": "b25c28a6fe9b985805a56a41d30fb1d0fde988c3",
+  "sage_core_build_profile": "release",
+  "sage_core_version": "0.1.0",
+  "routing": {
+    "system_router_gt_accuracy": null,
+    "knn_gt_accuracy": null,
+    "gt_dataset_path": "sage-python/config/routing_ground_truth.json",
+    "last_eval_artifact": null
+  },
+  "topology": {
+    "six_paths_tested": false,
+    "paths": {
+      "smmu_hit": false,
+      "archive_hit": false,
+      "llm_synthesis": false,
+      "mutation": false,
+      "mcts_search": false,
+      "template_fallback": false
+    }
+  },
+  "sandbox": {
+    "embedded_wasm_available": true,
+    "validate_and_execute_subprocess_fallback": false,
+    "raw_exec_requires_env": true
+  },
+  "memory": {
+    "smmu_persistent": false
+  }
+}
