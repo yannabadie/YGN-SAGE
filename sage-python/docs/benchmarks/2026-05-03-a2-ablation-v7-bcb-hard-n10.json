@@ -1,0 +1,342 @@
+{
+  "full": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": true,
+      "label": "full"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 80957.99098014832,
+    "avg_cost_usd": 0.006702273030733131,
+    "per_task": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "baseline": {
+    "config": {
+      "memory": false,
+      "avr": false,
+      "routing": false,
+      "guardrails": false,
+      "label": "baseline"
+    },
+    "pass_rate": 0.8,
+    "passed": 8,
+    "total": 10,
+    "avg_latency_ms": 37130.621218681335,
+    "avg_cost_usd": 0.0,
+    "per_task": [
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "no-memory": {
+    "config": {
+      "memory": false,
+      "avr": true,
+      "routing": true,
+      "guardrails": true,
+      "label": "no-memory"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 82163.36889266968,
+    "avg_cost_usd": 0.005492335520356801,
+    "per_task": [
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "no-avr": {
+    "config": {
+      "memory": true,
+      "avr": false,
+      "routing": true,
+      "guardrails": true,
+      "label": "no-avr"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 87040.80386161804,
+    "avg_cost_usd": 0.007510307525644732,
+    "per_task": [
+      true,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "no-routing": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": false,
+      "guardrails": true,
+      "label": "no-routing"
+    },
+    "pass_rate": 0.4,
+    "passed": 4,
+    "total": 10,
+    "avg_latency_ms": 83091.26448631287,
+    "avg_cost_usd": 0.008142006527770404,
+    "per_task": [
+      true,
+      false,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "no-guardrails": {
+    "config": {
+      "memory": true,
+      "avr": true,
+      "routing": true,
+      "guardrails": false,
+      "label": "no-guardrails"
+    },
+    "pass_rate": 0.7,
+    "passed": 7,
+    "total": 10,
+    "avg_latency_ms": 75021.6968536377,
+    "avg_cost_usd": 0.009756695533360449,
+    "per_task": [
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true,
+      true,
+      false
+    ]
+  },
+  "_statistics": {
+    "pairwise": {
+      "full_vs_baseline": {
+        "mcnemar_p": 0.1336,
+        "cohens_d": -0.8944,
+        "bootstrap_ci_95": [
+          -0.7,
+          -0.1
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 4
+        }
+      },
+      "full_vs_no-memory": {
+        "mcnemar_p": 1.0,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          0.0,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 0
+        }
+      },
+      "full_vs_no-avr": {
+        "mcnemar_p": 0.4795,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          -0.3,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 1
+        }
+      },
+      "full_vs_no-routing": {
+        "mcnemar_p": 0.4795,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          -0.3,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 1
+        }
+      },
+      "full_vs_no-guardrails": {
+        "mcnemar_p": 0.2482,
+        "cohens_d": -0.6325,
+        "bootstrap_ci_95": [
+          -0.6,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 3
+        }
+      },
+      "baseline_vs_no-memory": {
+        "mcnemar_p": 0.1336,
+        "cohens_d": 0.8944,
+        "bootstrap_ci_95": [
+          0.1,
+          0.7
+        ],
+        "discordant": {
+          "b_wins": 4,
+          "c_wins": 0
+        }
+      },
+      "baseline_vs_no-avr": {
+        "mcnemar_p": 0.1336,
+        "cohens_d": 0.8944,
+        "bootstrap_ci_95": [
+          0.1,
+          0.7
+        ],
+        "discordant": {
+          "b_wins": 4,
+          "c_wins": 0
+        }
+      },
+      "baseline_vs_no-routing": {
+        "mcnemar_p": 0.1336,
+        "cohens_d": 0.8944,
+        "bootstrap_ci_95": [
+          0.1,
+          0.7
+        ],
+        "discordant": {
+          "b_wins": 4,
+          "c_wins": 0
+        }
+      },
+      "baseline_vs_no-guardrails": {
+        "mcnemar_p": 1.0,
+        "cohens_d": 0.2325,
+        "bootstrap_ci_95": [
+          0.0,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 0
+        }
+      },
+      "no-memory_vs_no-avr": {
+        "mcnemar_p": 0.4795,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          -0.3,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 1
+        }
+      },
+      "no-memory_vs_no-routing": {
+        "mcnemar_p": 0.4795,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          -0.3,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 1
+        }
+      },
+      "no-memory_vs_no-guardrails": {
+        "mcnemar_p": 0.2482,
+        "cohens_d": -0.6325,
+        "bootstrap_ci_95": [
+          -0.6,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 3
+        }
+      },
+      "no-avr_vs_no-routing": {
+        "mcnemar_p": 0.4795,
+        "cohens_d": 0.0,
+        "bootstrap_ci_95": [
+          -0.3,
+          0.3
+        ],
+        "discordant": {
+          "b_wins": 1,
+          "c_wins": 1
+        }
+      },
+      "no-avr_vs_no-guardrails": {
+        "mcnemar_p": 0.2482,
+        "cohens_d": -0.6325,
+        "bootstrap_ci_95": [
+          -0.6,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 3
+        }
+      },
+      "no-routing_vs_no-guardrails": {
+        "mcnemar_p": 0.2482,
+        "cohens_d": -0.6325,
+        "bootstrap_ci_95": [
+          -0.6,
+          0.0
+        ],
+        "discordant": {
+          "b_wins": 0,
+          "c_wins": 3
+        }
+      }
+    }
+  }
+}
