@@ -33,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGET_GLOBS: tuple[str, ...] = (
     "docs/adr/ADR-015-*.md",
     "docs/adr/ADR-016-*.md",
+    "docs/adr/ADR-017-*.md",
     "sage-python/src/sage/pipeline.py",
     "sage-python/src/sage/pipeline_v2/*.py",
     "sage-python/tests/test_pipeline_v2_phase_a_wrappers.py",

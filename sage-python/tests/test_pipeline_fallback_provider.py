@@ -1,4 +1,4 @@
-"""Tests for Pipeline._pick_fallback_provider + Stage 4 empty-fallback fix.
+"""Tests for `pick_fallback_provider` + Stage 4 empty-fallback fix.
 
 Motivates the v17 change (2026-04-21): the single-agent fallback used to
 call self.llm_provider unconditionally. When the default provider was
@@ -6,6 +6,12 @@ the one that just 529'd (e.g. minimax outage), the fallback hit the
 same dead provider or returned empty content — which was then silently
 emitted as a 0-char patch. 5/10 tasks on the v13 smoke went EMPTY this
 way. Fix: route fallback to a healthy provider; raise on empty content.
+
+Cycle-13 K Phase 2.2 (2026-05-07): the helper moved from
+`Pipeline._pick_fallback_provider` (private compatibility method,
+retired Stage D2 `6f0b2606`) to the module function
+`sage.pipeline_v2.execute.pick_fallback_provider(pipeline)`. Tests
+now call the module function directly.
 """
 from __future__ import annotations
 
@@ -13,6 +19,7 @@ import pytest
 
 from sage.llm.base import LLMConfig, LLMResponse, Message, Role
 from sage.pipeline import CognitiveOrchestrationPipeline as Pipeline, PipelineContext
+from sage.pipeline_v2.execute import pick_fallback_provider
 
 
 class _FakeProvider:
@@ -63,7 +70,7 @@ def test_pick_prefers_default_when_alive():
     other = _FakeProvider("openai")
     pool = _FakePool({"google": default, "openai": other}, dead=[])
     p = _make_pipeline(default, pool)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is default
     assert cfg is p.llm_config
 
@@ -77,7 +84,7 @@ def test_pick_routes_around_dead_default():
         dead=["minimax"],
     )
     p = _make_pipeline(dead_default, pool)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is alive_alt
     assert cfg.provider == "deepseek"
 
@@ -92,7 +99,7 @@ def test_pick_falls_back_to_default_when_all_dead():
         dead=["minimax", "deepseek"],
     )
     p = _make_pipeline(dead_default, pool)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is dead_default  # last-resort fallback
 
 
@@ -100,14 +107,14 @@ def test_pick_no_pool_returns_default():
     """Pipeline without a pool (unit-test scenario) → default always OK."""
     default = _FakeProvider("google")
     p = _make_pipeline(default, provider_pool=None)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is default
 
 
 def test_pick_no_default_no_pool_returns_none():
     """Pipeline with neither default nor pool → (None, None)."""
     p = _make_pipeline(llm_provider=None, provider_pool=None)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is None
 
 
@@ -139,7 +146,7 @@ async def test_stage4_fallback_raises_on_empty_content(monkeypatch):
     ctx = PipelineContext(task="do something")
 
     # Simulate the except branch directly.
-    fallback_provider, fallback_config = p._pick_fallback_provider()
+    fallback_provider, fallback_config = pick_fallback_provider(p)
     assert fallback_provider is empty_provider
 
     response = await fallback_provider.generate(
@@ -166,7 +173,7 @@ async def test_stage4_fallback_routes_to_alternate_provider():
     pool = _FakePool({"minimax": dead, "deepseek": alive}, dead=["minimax"])
     p = _make_pipeline(dead, pool)
 
-    fallback_provider, _ = p._pick_fallback_provider()
+    fallback_provider, _ = pick_fallback_provider(p)
     assert fallback_provider is alive
 
     from sage.llm.base import Message, Role
@@ -185,5 +192,5 @@ async def test_stage4_pool_without_llm_provider_still_works():
     alive = _FakeProvider("gemini", content="ok")
     pool = _FakePool({"gemini": alive}, dead=[])
     p = _make_pipeline(llm_provider=None, provider_pool=pool)
-    prov, cfg = p._pick_fallback_provider()
+    prov, cfg = pick_fallback_provider(p)
     assert prov is alive

@@ -105,7 +105,26 @@ from pathlib import Path
 # at the boundary between RuntimeEventLog (existing) and the new
 # CLI tee (new). Resolution path is documented above (Protocol +
 # signature widening); the cycle-12 Phase B refactor will close them.
-_MAX_TYPE_IGNORES = 51
+# Raised from 51 to 54 (2026-05-07, cycle-13 K Phase 2.2 closure —
+# pipeline.py module split). Phase 2.1/2.2 carved the
+# `CognitiveOrchestrationPipeline._stage_*` bodies into
+# `sage.pipeline_v2/*.py` modules. The local imports of `sage_core`
+# (the Rust extension that mypy cannot introspect on a python-sage
+# Linux CI runner) duplicated across the new module boundaries:
+#   +1 pipeline_v2/execute.py:275  `from sage_core import TopologyExecutor # type: ignore[import-not-found]`
+#     — local import inside the multi-agent run path that was a
+#     single sage_core import in pre-decomposition pipeline.py.
+#   +1 pipeline_v2/execute.py:373  `from sage_core import TopologyExecutor as _TE # type: ignore[import-not-found]`
+#     — second local import inside the topology-reroute path of the
+#     same module.
+#   +1 pipeline_v2/execute.py:466  `from sage_core import TopologyExecutor as _TE # type: ignore[import-not-found]`
+#     — third local import in the same module (single-agent fallback
+#     escalation path); kept LOCAL so the circular-import discipline
+#     in the post-decomposition import graph is preserved.
+# All three are the same `import-not-found` for `sage_core`; the
+# ceiling raises as the public class body is split into per-stage
+# modules, not because new diagnostic categories are silenced.
+_MAX_TYPE_IGNORES = 54
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")
