@@ -1,9 +1,13 @@
 # SAGE CLI Protocol — `sage run --jsonl` v0
 
-**Status**: Proposed 2026-05-05 (cycle-12 prelude). Implementation in commit chain
-post-`e2e57ebe`. Per cgpro consultation `cgpro_pi_mono_pivot_20260505` (Option 1
-verdict): pi-mono front-end + YGN-SAGE backend communicating via subprocess +
-JSONL/RPC.
+**Status**: Implemented (Python backend gaps closed). Proposed 2026-05-05 in
+cycle-12 prelude (`cgpro_pi_mono_pivot_20260505` Option 1 verdict). Implementation
+shipped 2026-05-05 (`d09bed4d` `sage run --jsonl` backend) and the four NYI
+v0 protocol gaps closed in cycle-13 K post-Phase-2.2 cli_gaps stage chain
+2026-05-07 (Stages A-D under `cgpro_cli_protocol_gaps_20260507`). The
+TypeScript `clients/pi-ygn-sage/` adapter is tracked separately and has not
+yet shipped. Architecture: pi-mono front-end + YGN-SAGE backend
+communicating via subprocess + JSONL/RPC.
 
 ---
 
@@ -158,7 +162,7 @@ ledger is reproduced here with the CLI-specific binding.
 | # | Invariant | CLI binding |
 |---|---|---|
 | 1 | **Event payload schema** | The 14 inherited events use the same `payload_schemas.py` envelope. Frame writes go through the same `_assert_current_payload_schema_for_emit` validator. The 4 CLI-shell events use an INDEPENDENT v1 schema (cli_payload_schemas.py) — ledger invariant 1 still holds because schema mismatches fail-close at write time. |
-| 2 | **Oracle evidence** | The CLI MUST NOT update bandit / MAP-Elites / online-evolution / training-memory based on its own state. All those updates remain gated by `OracleVerdict.trainable` inside `_stage_learn`. The CLI is a CONSUMER of `oracle_verdict` events (it can show "✓ Trainable" / "✗ Abstain" in the TUI), never a producer. |
+| 2 | **Oracle evidence** | The CLI MUST NOT update bandit / MAP-Elites / online-evolution / training-memory based on its own state. All those updates remain gated by `OracleVerdict.trainable` inside `sage.pipeline_v2.learn.learn` (the canonical Stage 5 module function — Phase 2.2 retired the `_stage_learn` private method). The CLI is a CONSUMER of `oracle_verdict` events (it can show "✓ Trainable" / "✗ Abstain" in the TUI), never a producer. |
 | 3 | **Posterior epoch** | CLI is read-only on bandit_state.db / archive_state.db / posterior_epoch.json. It does NOT call `engine.save_state` directly. The pipeline's existing periodic flush (post `213183c1` epoch preflight) and the atexit handler are the only writers. |
 | 4 | **Contaminated backup** | CLI MUST refuse to start when `~/.sage/_CONTAMINATED.json` is present. It surfaces the operator-readable poison-pill in `cli_started`'s `tier` field with `tier="contaminated_refuse"`, then exits 78 (EX_CONFIG). |
 | 5 | **RunFrame summary** | `cli_complete` is always the terminal frame on stdout. `cli_complete.payload.final_seq` MUST equal the stdout `seq` of the frame IMMEDIATELY PRECEDING `cli_complete`. On the normal success path that frame is the stdout-mirrored `run_frame_summary`; on cancel / failure / mid-tool-call paths it may be any other stdout frame including a CLI-shell event such as `cli_tool_request`. Frontends use this as a stream reconciliation gate — any frame with `seq > final_seq` after `cli_complete` is a stream-level violation. |
@@ -167,11 +171,14 @@ ledger is reproduced here with the CLI-specific binding.
 | 8 | **Control-surface completeness** | When `node_count > 0`, frames `topology_selected` + `model_assigned` MUST appear before `node_started`. Frontend SHOULD validate this ordering and refuse to render a topology card without both. |
 | 9 | **CLI protocol versioning (NEW)** | `cli_started` MUST be the first frame. `protocol_version` MUST be `"v0"` (bumped per protocol change). Frontends fail-close on mismatch. Backend version must come from `sage.__version__`, not be a hardcoded literal. |
 
-Invariant 9 is added by this document. It will be backported into
-`runtime-integrity-ledger.md` as the 9th invariant in the same commit chain
-(per the ledger maintenance discipline: "When adding a new invariant: append
-a row to both tables AND wire a regression test that proves the side-effect
-is blocked when the verification fails.").
+Invariant 9 is recorded in `docs/contracts/runtime-integrity-ledger.md` as
+the 9th invariant (backported in cycle-12 commit `f647c5ae`, per the ledger
+maintenance discipline: "When adding a new invariant: append a row to both
+tables AND wire a regression test that proves the side-effect is blocked
+when the verification fails."). The regression test
+`tests/test_runtime_event_contracts.py::test_cli_protocol_version_is_locked`
+asserts `CLI_PROTOCOL_VERSION == "v0"` AND every emitted frame carries that
+string verbatim.
 
 ---
 
@@ -187,9 +194,10 @@ What pi-mono does NOT see / decide:
 - **Which model to use** — that's `bandit.select_with_context_for_template`
   via Stage 0. The frontend reads `model_assigned` and may DISPLAY a
   "model: claude-sonnet-4-6" pill, but cannot override it.
-- **Topology shape** — that's `_stage_select_topology` via DAG features. The
-  frontend reads `topology_selected` and may render a graph, but cannot
-  reroute.
+- **Topology shape** — that's `sage.pipeline_v2.select_topology.select_topology`
+  via DAG features (Phase 2.2 retired the `_stage_select_topology` private
+  method; module-function patching is the permanent test seam). The frontend
+  reads `topology_selected` and may render a graph, but cannot reroute.
 - **Tool list** — the runner's `tool_registry` is fixed at boot. pi-mono's
   4 default tools (read/write/edit/bash) are NOT injected; YGN-SAGE's typed
   repo tools (`read_file` / `search_repo` / `list_files` / `run_tests` /
@@ -309,8 +317,12 @@ JSONL files at `sage-python/tests/golden/cli_jsonl/`):
    node_started ×3, node_completed ×3, ...`.
 3. **Tool approval round-trip** — `cli_tool_request` →
    `approve_tool_call` (then `deny_tool_call`) → check both branches.
-4. **Cancel mid-run** — `cancel` command produces
-   `failure(reason="cancelled")` then `cli_complete(outcome="cancelled")`.
+4. **Cancel mid-run** — `cancel` command produces a runtime `failure`
+   frame whose top-level `kind == "cli_cancel"` and `error_type == "cancelled"`
+   (cycle-7 R6.1c FLAT redacted shape on stdout, NOT nested under `payload`),
+   then terminal `cli_complete(outcome="cancelled", exit_code=130)`.
+   Idempotent at stream level: a second `cancel` does NOT emit a second
+   failure frame.
 5. **Two-run determinism** — same input → same JSONL bytes excluding
    `run_id`, `ts_ms`, and ULID fields. Mirrors P9 phase 1 test #1
    (`test_pipeline_v2_run_byte_identical.py`).
@@ -336,6 +348,16 @@ JSONL files at `sage-python/tests/golden/cli_jsonl/`):
 ## Status changes
 
 - 2026-05-05: Proposed (cycle-12 prelude, this document).
-- TBD (cycle-12 prelude commit): Accepted with `sage run --jsonl` implementation + 5 snapshot tests landed.
-- TBD (cycle-13): adapter `clients/pi-ygn-sage/` shipped on npm with `protocol_version="v0"` pinned.
+- 2026-05-05 (`d09bed4d`, cycle-12 prelude): Accepted with `sage run --jsonl`
+  implementation. cli_started + cli_complete envelope + RuntimeEventLog file
+  ↔ stdout TEE + prompt + cancel + approval bridge wired. 4 NYI gaps
+  documented in `cli/run.py:21-29` for follow-up (final_seq, set_budget,
+  cli_progress, cancel-failure-frame).
+- 2026-05-07 (cycle-13 K cli_gaps stage chain): All 4 NYI gaps closed,
+  Python backend contract complete:
+    - Stage A `2d557b15`: unified stdout seq + populated `cli_complete.payload.final_seq`.
+    - Stage B `7bd48c17`: tightening-only `set_budget` command via `CostTracker.tighten_remaining_budget` root guard.
+    - Stage C `2ce3c877`: `cli_progress` idle heartbeat (timer-based, 5s cadence with 10s idle guard, 7 canonical stage labels).
+    - Stage D `d0bfea2b`: cooperative Python cancellation hardening + terminal `failure(kind="cli_cancel")` frame + v0 limitation documented.
+- TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` shipped on npm with `protocol_version="v0"` pinned. Not yet started.
 - TBD: First `protocol_version="v1"` bump (any breaking change to the 18 events / 5 commands / 9 invariants).
