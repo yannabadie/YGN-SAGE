@@ -291,20 +291,26 @@ def test_prediction_dict_has_verifier_repair_budget_field():
     # Schema assertions: verifier_repair_skipped starts with "verifier_repair"
     # so budget=0.0 is correctly exposed as the cap that was set.
     assert prediction_entry["_verifier_repair_budget_usd"] == 0.0
+    # skipped_reason computed from verifier_repair_stage (before chaining),
+    # not the final repair_stage, so reason preserved in chained cases.
     assert prediction_entry["_verifier_repair_skipped_reason"] == "budget_exhausted"
 
     # Positive case: repair was attempted (budget=0.5 → non-None)
+    verifier_repair_stage_2 = "verifier_repair"
     repair_stage_2 = "verifier_repair+crlf_normalized"
     repair_budget_usd_2 = 0.5
     pe2 = {
+        "verifier_repair_stage": verifier_repair_stage_2,
         "repair_stage": repair_stage_2,
         "_verifier_repair_budget_usd": (
             repair_budget_usd_2
-            if repair_stage_2.startswith("verifier_repair")
+            if verifier_repair_stage_2.startswith("verifier_repair")
             else None
         ),
         "_verifier_repair_skipped_reason": (
-            "budget_exhausted" if repair_stage_2 == "verifier_repair_skipped" else None
+            "budget_exhausted"
+            if verifier_repair_stage_2 == "verifier_repair_skipped"
+            else None
         ),
     }
     assert pe2["_verifier_repair_budget_usd"] == 0.5

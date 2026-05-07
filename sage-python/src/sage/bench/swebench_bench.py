@@ -1175,6 +1175,7 @@ class SWEBenchBench:
             # right bucket.
             extraction_method = "empty"
             repair_stage = ""
+            verifier_repair_stage = ""  # hoisted for prediction dict
             # Pre-emission diff-context verifier output. ``None`` when
             # the verifier is ``off`` (the default) so the prediction
             # dict stays byte-identical to today's output. Lists/outcome
@@ -1433,11 +1434,20 @@ class SWEBenchBench:
                                 instance_id, repair_exc,
                             )
 
+                    # When verifier-repair was skipped due to budget exhaustion,
+                    # do NOT hand off to downstream try_repair_patch with a
+                    # live LLM — that would spend budget after the skip.
+                    # Pass llm=None so try_repair_patch skips repair entirely.
+                    _llm_for_repair = (
+                        None
+                        if verifier_repair_stage == "verifier_repair_skipped"
+                        else llm_handle
+                    )
                     from sage.bench.swebench_patch_repair import try_repair_patch
                     patch, repair_stage = await try_repair_patch(
                         patch=patch,
                         repo_dir=repo_dir,
-                        llm=llm_handle,
+                        llm=_llm_for_repair,
                         problem_statement=instance.get("problem_statement", ""),
                         instance_id=instance_id,
                         llm_timeout=60.0,
@@ -1507,14 +1517,20 @@ class SWEBenchBench:
                 "_repair_stage": repair_stage,  # v16: "", unchanged, programmatic_counts, llm_repair, failed
                 "_extraction_method": extraction_method,  # T2.4: unified | search-replace-{exact,fuzzy,missing} | empty
                 # Diff-verifier repair budget metadata (cgpro NEXT_BLOCK_ID D)
+                # _verifier_repair_budget_usd: set whenever verifier-repair
+                # fired (including skipped — budget=0 signals explicit skip).
                 "_verifier_repair_budget_usd": (
                     repair_budget_usd
-                    if repair_stage.startswith("verifier_repair")
+                    if verifier_repair_stage.startswith("verifier_repair")
                     else None
                 ),
+                # _verifier_repair_skipped_reason: computed from
+                # verifier_repair_stage before chaining, so reason is
+                # preserved even when repair_stage becomes
+                # "verifier_repair_skipped+failed" after downstream fails.
                 "_verifier_repair_skipped_reason": (
                     "budget_exhausted"
-                    if repair_stage == "verifier_repair_skipped"
+                    if verifier_repair_stage == "verifier_repair_skipped"
                     else None
                 ),
             }
