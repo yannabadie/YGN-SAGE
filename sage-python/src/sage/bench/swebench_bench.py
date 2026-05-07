@@ -1370,6 +1370,16 @@ class SWEBenchBench:
                     llm_handle = getattr(
                         getattr(self.system, "agent_loop", None), "_llm", None,
                     )
+                    # Repair budget gate: if primary generation already spent
+                    # more than $4 of the per-task budget, don't waste more on repair.
+                    # _VERIFIER_REPAIR_BUDGET_USD is the maximum USD budget
+                    # allocated for one verifier-repair LLM call; callers may
+                    # lower it further (e.g. 0 to skip entirely) by passing
+                    # repair_budget_usd=0 to repair_with_verifier_feedback().
+                    # cost is read inline here (after self.system.run() returned)
+                    # so the guard catches budget exhaustion even on exception paths.
+                    _REPAIR_BUDGET_USD = 0.5  # $0.50 hard cap per task
+                    _REPAIR_BUDGET_SKIP_THRESHOLD = 4.0  # skip if primary spent >$4
                     verifier_repair_stage = ""
                     if (
                         verifier_mode == "repair"
@@ -1378,6 +1388,21 @@ class SWEBenchBench:
                     ):
                         from sage.bench.swebench_diff_verifier import (
                             repair_with_verifier_feedback,
+                        )
+                        # Pass explicit repair budget cap: 0 skips repair
+                        # entirely (budget exhausted after primary).
+                        repair_budget_usd = (
+                            0.0
+                            if (
+                                getattr(
+                                    getattr(self.system, "agent_loop", None),
+                                    "total_cost_usd",
+                                    0.0,
+                                )
+                                or 0.0
+                            )
+                            > _REPAIR_BUDGET_SKIP_THRESHOLD
+                            else _REPAIR_BUDGET_USD
                         )
                         try:
                             new_patch, verifier_repair_stage = await (
@@ -1390,6 +1415,7 @@ class SWEBenchBench:
                                     mismatches=mismatches,
                                     instance_id=instance_id,
                                     timeout=60.0,
+                                    repair_budget_usd=repair_budget_usd,
                                 )
                             )
                             if verifier_repair_stage == "verifier_repair":

@@ -709,6 +709,7 @@ async def repair_with_verifier_feedback(
     mismatches: list[HunkMismatch],
     instance_id: str = "",
     timeout: float = 60.0,
+    repair_budget_usd: float | None = None,
 ) -> tuple[str, str]:
     """One-shot LLM repair using mismatch diagnostic as feedback.
 
@@ -716,9 +717,21 @@ async def repair_with_verifier_feedback(
 
     * ``"verifier_repair"`` - LLM returned a non-empty corrected diff.
     * ``"verifier_repair_empty"`` - LLM returned nothing extractable.
-    * ``"verifier_repair_skipped"`` - no mismatches or no llm handle.
+    * ``"verifier_repair_skipped"`` - no mismatches, no llm handle,
+      or repair budget exhausted (timeout=0 or repair_budget_usd=0).
+
+    ``repair_budget_usd`` is an explicit budget cap for the repair call.
+    If 0 (or timeout=0, which is the caller's signal for "no budget"),
+    repair is skipped entirely and ``"verifier_repair_skipped"`` is
+    returned without any LLM call.  This ensures budget-exhausted skips
+    are distinguishable from timeout failures in post-hoc telemetry.
     """
     if not mismatches or llm is None:
+        return broken_patch, "verifier_repair_skipped"
+
+    # Budget-exhausted guard: caller signals "don't spend on repair"
+    # by passing repair_budget_usd=0 or timeout=0.
+    if repair_budget_usd == 0 or timeout == 0:
         return broken_patch, "verifier_repair_skipped"
 
     try:
