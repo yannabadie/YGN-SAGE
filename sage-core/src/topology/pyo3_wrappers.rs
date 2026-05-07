@@ -210,6 +210,65 @@ impl PyTopologyEngine {
         Ok(PyGenerateResult::from_inner(result))
     }
 
+    /// Generate with per-path toggles for deterministic testing (Phase 2).
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (
+        task_description,
+        task_embedding=None,
+        system=2,
+        exploration_budget=0.5,
+        allow_smmu=true,
+        allow_archive=true,
+        allow_mutation=true,
+        allow_mcts=true,
+        allow_template=true
+    ))]
+    pub fn generate_with_options(
+        &mut self,
+        task_description: &str,
+        task_embedding: Option<Vec<f32>>,
+        system: u8,
+        exploration_budget: f32,
+        allow_smmu: bool,
+        allow_archive: bool,
+        allow_mutation: bool,
+        allow_mcts: bool,
+        allow_template: bool,
+    ) -> PyResult<PyGenerateResult> {
+        let options = crate::topology::engine::GenerationOptions {
+            allow_smmu,
+            allow_archive,
+            allow_mutation,
+            allow_mcts,
+            allow_template,
+        };
+        let result = self.inner.generate_with_options(
+            &mut self.smmu,
+            task_description,
+            task_embedding,
+            system,
+            exploration_budget,
+            &options,
+        );
+        Ok(PyGenerateResult::from_inner(result))
+    }
+
+    /// Seed the archive with a single topology outcome for testing.
+    #[pyo3(signature = (system=2, quality=0.85, task_summary="seed archive"))]
+    pub fn seed_archive_outcome(
+        &mut self,
+        system: u8,
+        quality: f32,
+        task_summary: &str,
+    ) -> String {
+        self.inner.seed_archive_outcome(&mut self.smmu, system, quality, task_summary)
+    }
+
+    /// Seed the archive with diverse outcomes. Returns count inserted.
+    pub fn seed_archive_diversity(&mut self, count: usize) -> usize {
+        self.inner.seed_archive_diversity(&mut self.smmu, count)
+    }
+
     /// Record the outcome of a topology execution.
     ///
     /// Feeds into S-MMU bridge, MAP-Elites archive, and contextual bandit.

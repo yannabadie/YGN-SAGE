@@ -85,6 +85,33 @@ pub struct GenerateResult {
     pub confidence: f32,
 }
 
+// ── GenerationOptions ───────────────────────────────────────────────────────
+
+/// Per-path toggles for deterministic topology-path testing (Phase 2).
+///
+/// By default all paths are enabled.  Tests set individual flags to `false`
+/// to force a specific source.
+#[derive(Debug, Clone)]
+pub struct GenerationOptions {
+    pub allow_smmu: bool,
+    pub allow_archive: bool,
+    pub allow_mutation: bool,
+    pub allow_mcts: bool,
+    pub allow_template: bool,
+}
+
+impl Default for GenerationOptions {
+    fn default() -> Self {
+        Self {
+            allow_smmu: true,
+            allow_archive: true,
+            allow_mutation: true,
+            allow_mcts: true,
+            allow_template: true,
+        }
+    }
+}
+
 // ── TopologyEngine ────────────────────────────────────────────────────────
 
 /// Central engine that orchestrates S-MMU retrieval, archive lookup, mutation,
@@ -238,6 +265,62 @@ impl TopologyEngine {
         self.topology_cache.get(id)
     }
 
+    // ── Seed helpers (Phase 2 — deterministic topology path tests) ───────────
+
+    /// Seed the archive with a single topology outcome so
+    /// ``try_archive_hit`` has something to retrieve.
+    pub fn seed_archive_outcome(
+        &mut self,
+        smmu: &mut MultiViewMMU,
+        system: u8,
+        quality: f32,
+        task_summary: &str,
+    ) -> String {
+        let result = self.generate(smmu, task_summary, None, system, 0.0);
+        let id = result.topology.id.clone();
+        self.cache_topology(result.topology.clone());
+        self.record_outcome(
+            smmu,
+            &id,
+            task_summary,
+            vec!["seed".to_string()],
+            None,
+            quality,
+            0.01,
+            10.0,
+        );
+        id
+    }
+
+    /// Seed multiple diverse outcomes so the archive has enough variety
+    /// for mutation and MCTS to fire.  Returns the number actually inserted.
+    pub fn seed_archive_diversity(
+        &mut self,
+        smmu: &mut MultiViewMMU,
+        count: usize,
+    ) -> usize {
+        let mut inserted = 0usize;
+        let summaries = [
+            "debug a Rust memory graph",
+            "implement a parallel fan-out pipeline",
+            "verify a formal proof with Z3",
+            "refactor a Python codebase",
+            "build a hierarchical agent topology",
+            "optimise a database query plan",
+        ];
+        for i in 0..count {
+            let summary = summaries[i % summaries.len()];
+            let _id = self.seed_archive_outcome(smmu, 2, 0.85, summary);
+            inserted += 1;
+        }
+        inserted
+    }
+
+    /// Return the number of cells currently in the MAP-Elites archive.
+    pub fn archive_cell_count(&self) -> usize {
+        self.archive.cell_count()
+    }
+
     // ── Core generation ───────────────────────────────────────────────────
 
     /// Generate a topology for a task using the 6-path strategy.
@@ -256,6 +339,26 @@ impl TopologyEngine {
         system: u8,
         exploration_budget: f32,
     ) -> GenerateResult {
+        self.generate_with_options(
+            smmu,
+            task_description,
+            task_embedding,
+            system,
+            exploration_budget,
+            &GenerationOptions::default(),
+        )
+    }
+
+    /// Generate a topology with per-path toggles for deterministic testing.
+    pub fn generate_with_options(
+        &mut self,
+        smmu: &mut MultiViewMMU,
+        task_description: &str,
+        task_embedding: Option<Vec<f32>>,
+        system: u8,
+        exploration_budget: f32,
+        options: &GenerationOptions,
+    ) -> GenerateResult {
         let _span = info_span!(
             "topology_engine.generate",
             system = system,
@@ -265,16 +368,9 @@ impl TopologyEngine {
         .entered();
 
         // ── Bandit-guided exploration budget ──────────────────────────────────
-        // Move bandit.choose() BEFORE the 6-path cascade so the bandit
-        // *influences* path selection rather than merely recording it.
-        // When the bandit has enough arms (>3) and returns a high-confidence
-        // decision, we reduce the exploration budget to exploit known-good
-        // paths. During cold start we keep the caller's budget unchanged.
         let effective_budget = if self.bandit.arm_count() > 3 {
             if let Ok(d) = self.bandit.choose(exploration_budget) {
                 self.last_decision_id = Some(d.decision_id.clone());
-                // High expected quality → reduce exploration (exploit).
-                // Low expected quality  → keep exploration high.
                 let confidence_factor = 1.0 - d.expected_quality.clamp(0.0, 1.0);
                 let modulated = exploration_budget * (0.3 + 0.7 * confidence_factor);
                 debug!(
@@ -288,84 +384,65 @@ impl TopologyEngine {
                 exploration_budget
             }
         } else {
-            // Cold start — full caller-specified exploration
             self.last_decision_id = None;
             exploration_budget
         };
 
         // Path selection: bandit-guided exploration.
-        // When effective_budget > 0.5, skip retrieval paths (S-MMU, archive)
-        // and go straight to generative paths (mutation, MCTS) to discover new topologies.
-        // Threshold 0.35: with EXPLORATION_BUDGET_HIGH=0.50 and bandit modulation
-        // (0.3 + 0.7*confidence), effective_budget ranges [0.09, 0.50].
-        // At 0.35, exploration triggers when bandit has low confidence (quality < 0.43).
         let skip_retrieval = effective_budget > 0.35;
 
-        // Path 1: S-MMU hit — retrieve similar past task (skip if exploring)
-        let result = if !skip_retrieval {
+        // Path 1: S-MMU hit
+        let result = if !skip_retrieval && options.allow_smmu {
             if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone())
             {
-                info!(
-                    source = "smmu_hit",
-                    confidence = result.confidence,
-                    "topology_generated"
-                );
+                info!(source = "smmu_hit", confidence = result.confidence, "topology_generated");
                 Some(result)
             } else {
                 None
             }
         } else {
-            debug!("smmu_path_skipped_by_bandit_exploration");
             None
         };
 
-        // Path 2: Archive hit — look up MAP-Elites (skip if exploring)
+        // Path 2: Archive hit
         let result = result.or_else(|| {
-            if !skip_retrieval {
+            if !skip_retrieval && options.allow_archive {
                 if let Some(r) = self.try_archive_hit(system, task_description) {
-                    info!(
-                        source = "archive_hit",
-                        confidence = r.confidence,
-                        "topology_generated"
-                    );
+                    info!(source = "archive_hit", confidence = r.confidence, "topology_generated");
                     return Some(r);
                 }
-            } else {
-                debug!("archive_path_skipped_by_bandit_exploration");
             }
             None
         });
 
-        // Path 4: Mutation — mutate best-by-quality from archive
-        // Path 3: LLM synthesis — skipped in pure Rust (Python calls synthesize() directly)
+        // Path 4: Mutation (Path 3: LLM synthesis deferred to Python)
         let result = result.or_else(|| {
-            if let Some(r) = self.try_mutation() {
-                info!(
-                    source = "mutation",
-                    confidence = r.confidence,
-                    "topology_generated"
-                );
-                return Some(r);
+            if options.allow_mutation {
+                if let Some(r) = self.try_mutation() {
+                    info!(source = "mutation", confidence = r.confidence, "topology_generated");
+                    return Some(r);
+                }
             }
             None
         });
 
-        // Path 5: MCTS search (if archive has enough diversity)
+        // Path 5: MCTS search
         let result = result.or_else(|| {
-            if let Some(r) = self.try_mcts_search() {
-                info!(
-                    source = "mcts_search",
-                    confidence = r.confidence,
-                    "topology_generated"
-                );
-                return Some(r);
+            if options.allow_mcts {
+                if let Some(r) = self.try_mcts_search() {
+                    info!(source = "mcts_search", confidence = r.confidence, "topology_generated");
+                    return Some(r);
+                }
             }
             None
         });
 
-        // Path 6: Template fallback — ALWAYS succeeds, unwrap the Option chain.
-        // Path 3 hint: LLM synthesis deferred to Python side.
+        // Path 6: Template fallback (always available unless explicitly disabled)
         let result = result.unwrap_or_else(|| {
+            if !options.allow_template {
+                // All paths disabled — return a minimal fallback anyway
+                // to avoid a panic.  Template is the safety net.
+            }
             if effective_budget > 0.3 && !self.synthesizer.is_rate_limited() {
                 debug!("llm_synthesis_path_available_but_deferred_to_python");
             }
@@ -379,10 +456,7 @@ impl TopologyEngine {
             fb
         });
 
-        // Register the chosen path as a bandit arm so future decisions
-        // can reason about this source/template combination.
-        // choose() was already called BEFORE the cascade (above), so we
-        // do NOT call it again here — just register the observed arm.
+        // Register the chosen path as a bandit arm.
         let source_str = result.source.as_str();
         self.bandit
             .add_arm(source_str, &result.topology.template_type);
