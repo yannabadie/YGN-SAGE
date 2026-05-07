@@ -1,0 +1,24 @@
+name: fuzz-smoke
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  fuzz-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly Rust
+        run: rustup install nightly
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz --locked
+
+      - name: Fuzz topology_edge (1000 runs)
+        run: cargo +nightly fuzz run topology_edge -- -runs=1000
+
+      - name: Fuzz python_validator (1000 runs)
+        run: cargo +nightly fuzz run python_validator -- -runs=1000
