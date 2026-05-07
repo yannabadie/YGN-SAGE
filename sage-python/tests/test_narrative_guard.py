@@ -284,6 +284,20 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         r"\bkNN\b[^\n]{0,120}\baccuracy\b[^\n]{0,80}\bevidence_pending\b",
         (),
     ),
+    # Phase 4 closure (cgpro post-Phase-4-Option-C round-2 EDIT_REQUIRED
+    # 2026-05-07): catches the present-tense status drift that survived
+    # the claim-ID-specific patterns above. The CLAUDE.md L293 hit was
+    # "Accuracy figures cited historically (kNN 100% / 92% GT, ...) are
+    # tracked in `docs/CLAIMS.yaml` and currently `evidence_pending`" —
+    # no claim ID adjacent to evidence_pending, so stale-routing-knn-status
+    # missed it; "currently evidence_pending" is the present-tense smell.
+    # Routes through _is_archive_historic_status_line via the stale-status
+    # label set so past-tense + registry pointer wording can still pass.
+    (
+        "stale-routing-currently-pending",
+        r"\bRouting\b[^\n]{0,220}\bcurrently\s+`?evidence_pending`?",
+        (),
+    ),
 )
 
 
@@ -293,6 +307,7 @@ _STALE_STATUS_PATTERN_LABELS = frozenset({
     "stale-routing-knn-status",
     "stale-routing-systemrouter-status",
     "stale-knn-accuracy-pending",
+    "stale-routing-currently-pending",
 })
 
 # Archive context tokens (line must contain one of these for the line
