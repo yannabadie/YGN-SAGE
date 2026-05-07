@@ -734,6 +734,14 @@ async def repair_with_verifier_feedback(
     if repair_budget_usd == 0 or timeout == 0:
         return broken_patch, "verifier_repair_skipped"
 
+    # Translate repair_budget_usd to a bounded timeout so the cap is
+    # enforced at the call site.  Rough cost model: ~$0.50/min for code
+    # repair with a flash-tier model.  Minimum 30 s so budget>0 always
+    # allows at least one repair attempt; None leaves timeout unchanged.
+    if repair_budget_usd is not None and repair_budget_usd > 0:
+        derived_timeout = repair_budget_usd / 0.50 * 60.0
+        timeout = max(derived_timeout, 30.0)
+
     try:
         from sage.bench.swebench_bench import _extract_patch
     except ImportError:

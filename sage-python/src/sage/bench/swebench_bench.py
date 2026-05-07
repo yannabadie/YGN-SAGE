@@ -1381,6 +1381,7 @@ class SWEBenchBench:
                     _REPAIR_BUDGET_USD = 0.5  # $0.50 hard cap per task
                     _REPAIR_BUDGET_SKIP_THRESHOLD = 4.0  # skip if primary spent >$4
                     verifier_repair_stage = ""
+                    repair_budget_usd: float | None = None  # hoisted for prediction dict
                     if (
                         verifier_mode == "repair"
                         and mismatches
@@ -1505,6 +1506,17 @@ class SWEBenchBench:
                 "_repo": instance["repo"],
                 "_repair_stage": repair_stage,  # v16: "", unchanged, programmatic_counts, llm_repair, failed
                 "_extraction_method": extraction_method,  # T2.4: unified | search-replace-{exact,fuzzy,missing} | empty
+                # Diff-verifier repair budget metadata (cgpro NEXT_BLOCK_ID D)
+                "_verifier_repair_budget_usd": (
+                    repair_budget_usd
+                    if repair_stage.startswith("verifier_repair")
+                    else None
+                ),
+                "_verifier_repair_skipped_reason": (
+                    "budget_exhausted"
+                    if repair_stage == "verifier_repair_skipped"
+                    else None
+                ),
             }
             # Pre-emission diff-context verifier (spec 2026-04-23). Only
             # present when mode is observe/repair; absent in off mode so
