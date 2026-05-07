@@ -84,13 +84,12 @@ claims:
     '
   _source_file: docs/claims/benchmarks.yaml
 - id: memory.smmu_persistence
-  status: planned
-  description: 'MultiViewMMU (S-MMU) save/load: register chunks, save state, reload, retrieve_similar()
-    returns the same entries.'
-  evidence_test: evidence_pending
+  status: delivered
+  description: 'MultiViewMMU (S-MMU) save/load JSON roundtrip with retrieval equivalence.'
+  evidence_test: sage-python/tests/test_smmu_persistence_contract.py
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
-  last_verified_utc: '2026-05-06T00:00:00Z'
+  evidence_commit: f3abcde7
+  last_verified_utc: '2026-05-07T00:00:00Z'
   owner: yann
   notes: 'cgpro 2026-05-06 trap #3: TopologyEngine.save_state/load_state persists
 
