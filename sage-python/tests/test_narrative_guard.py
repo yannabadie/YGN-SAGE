@@ -10,10 +10,14 @@ machine-readable CLAIMS registry as the #1 truthfulness risk.
 This test bans residual marketing-grade phrasings that would silently
 re-introduce that drift:
 
-  - Bare "92% GT" / "88% GT" / "34% GT" claims (the figures are
-    `evidence_pending` in `docs/CLAIMS.yaml` until a CI-runnable test
-    pins them — citing the bare number elsewhere undermines the whole
-    Phase 0.4 contract).
+  - Bare "92% GT" / "88% GT" / "34% GT" claims. Since 2026-05-07
+    (commits da582a77 + e785753a) the `routing.knn_92pct` and
+    `routing.system_router_88pct` claims are `delivered` against a
+    strict-equal floor on the 60-task GT (50/60 and 52/60 respectively).
+    The historical 92% / 88% figures were measured on an earlier
+    50-task GT subset and are provenance only — not recertified by the
+    floor. The same-line caveat tokens require any narrative mention
+    of the bare figure to make this provenance explicit.
   - "Path 6: Learned policy" / "Path 6 (learned" / "OR Path 6" — these
     forms perpetuate the historical naming collision where "Path 6" was
     used for two different things (engine-path-6 = template fallback
@@ -21,10 +25,10 @@ re-introduce that drift:
     Phase 0.6 chose: engine path 6 = template fallback. The learned
     policy is "optional learned-policy path" / sibling-of-6.
 
-Self-caveatted forms (a line that ALSO mentions `evidence_pending` or
-`CLAIMS.yaml` or a `routing.*` registry id near the figure) are
-allowed — that's the explicit anchor pointing at the registry, which
-is exactly what we want.
+Self-caveatted forms (a line that ALSO mentions `CLAIMS.yaml` or a
+`routing.*` registry id, OR uses `historical` / `historically` /
+`provenance only` / `not recertified` / `50-task` / `delivered` /
+`floor` near the figure) are allowed.
 
 If a future PR reintroduces a bare phrasing, this test fails and the
 ALIRE-driven truthfulness contract is preserved as a hard gate.
@@ -88,31 +92,81 @@ _GUARDED_DOCS: tuple[str, ...] = (
 # the doc cannot miss it. A future stronger version could check by
 # paragraph rather than line, but line-level is unambiguous and easy to
 # reason about.
+#
+# Phase 4 (cycle-13 K post-routing-evidence-pin, 2026-05-07): the
+# routing.knn_92pct + routing.system_router_88pct claims flipped from
+# `evidence_pending` to `delivered` (commits da582a77 + e785753a). The
+# allow-token set tightens accordingly — `evidence_pending` is no longer a
+# valid same-line caveat for headline routing figures since the registry
+# entries have flipped to `delivered`. New caveat tokens are added so the
+# rewritten narrative ("historical 92% on the earlier 50-task GT, provenance
+# only, not recertified by the 60-task floor") passes. Registry anchors
+# (`CLAIMS.yaml`, `routing.knn_92pct`, `routing.system_router_88pct`) and
+# the existing `historic`/`historically`/`non-autoritative` tokens stay.
+_ROUTING_KNN_ALLOW: tuple[str, ...] = (
+    "CLAIMS.yaml",
+    "routing.knn_92pct",
+    "historical",
+    "historically",
+    "historic",
+    "provenance only",
+    "not recertified",
+    "50-task",
+    "delivered",
+    "floor",
+    "non-autoritative",
+)
+_ROUTING_SR_ALLOW: tuple[str, ...] = (
+    "CLAIMS.yaml",
+    "routing.system_router_88pct",
+    "historical",
+    "historically",
+    "historic",
+    "provenance only",
+    "not recertified",
+    "50-task",
+    "delivered",
+    "floor",
+    "non-autoritative",
+)
+# Heuristic ComplexityRouter is `retired` per registry — historical-only is
+# now the only acceptable framing.
+_ROUTING_HEURISTIC_ALLOW: tuple[str, ...] = (
+    "CLAIMS.yaml",
+    "historical",
+    "historically",
+    "historic",
+    "Priority-3",
+    "emergency fallback",
+    "retired",
+    "non-autoritative",
+)
+
 _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "bare-92-GT",
         r"\b92%\s*GT\b",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-88-GT",
         r"\b88%\s*GT\b",
-        ("evidence_pending", "CLAIMS.yaml", "routing.system_router_88pct", "historically"),
+        _ROUTING_SR_ALLOW,
     ),
     (
         "bare-34-GT",
         r"\b34%\s*GT\b",
-        ("evidence_pending", "CLAIMS.yaml", "historically"),
+        _ROUTING_HEURISTIC_ALLOW,
     ),
     (
         "bare-kNN-92",
         r"\bkNN\s+92%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-SystemRouter-88",
         r"\bSystemRouter\s+88%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.system_router_88pct", "historically"),
+        _ROUTING_SR_ALLOW,
     ),
     (
         "path6-learned-collision",
@@ -133,7 +187,7 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "bare-93p3-GT",
         r"\b93\.3%\s*GT\b",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "dead-code-routing-framing",
@@ -151,17 +205,17 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "bare-knn-paren-92",
         r"\bkNN\b[^\n]*?\(\s*92%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-systemrouter-paren-88",
         r"\bSystemRouter\b[^\n]*?\(\s*88%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.system_router_88pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_SR_ALLOW,
     ),
     (
         "bare-complexityrouter-paren-34",
         r"\bComplexityRouter\b[^\n]*?\(\s*34%",
-        ("evidence_pending", "CLAIMS.yaml", "historic", "non-autoritative", "historically", "Priority-3", "emergency fallback"),
+        _ROUTING_HEURISTIC_ALLOW,
     ),
     # Phase 0.6e additions (cgpro round-6): the paren-attribution patterns
     # of Phase 0.6d caught `kNN (92%)` but missed table-row / paper-prose
@@ -172,17 +226,17 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     (
         "bare-knn-near-92",
         r"\bkNN\b[^\n]{0,160}\b92%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-knn-near-93p3",
         r"\bkNN\b[^\n]{0,160}\b93\.3%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-systemrouter-near-88",
         r"\bSystemRouter\b[^\n]{0,160}\b88%",
-        ("evidence_pending", "CLAIMS.yaml", "routing.system_router_88pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_SR_ALLOW,
     ),
     (
         "bare-routing-sample-sizes",
@@ -190,12 +244,12 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         # 46/50 (legacy 50-task subset). Banning the bare form forces
         # any future citation to come with a registry anchor.
         r"\b56/60\b|\b46/50\b",
-        ("evidence_pending", "CLAIMS.yaml", "routing.knn_92pct", "historic", "non-autoritative", "historically"),
+        _ROUTING_KNN_ALLOW,
     ),
     (
         "bare-complexityrouter-near-45",
         r"\bComplexityRouter\b[^\n]{0,160}\b45%",
-        ("evidence_pending", "CLAIMS.yaml", "historic", "non-autoritative", "historically", "Priority-3", "emergency fallback"),
+        _ROUTING_HEURISTIC_ALLOW,
     ),
 )
 
