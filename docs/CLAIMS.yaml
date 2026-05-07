@@ -497,13 +497,14 @@ claims:
     '
   _source_file: docs/claims/topology.yaml
 - id: topology.engine_6_paths
-  status: evidence_pending
-  description: 'TopologyEngine generates topologies via 6 paths: S-MMU hit, archive, LLM synthesis, mutation,
-    MCTS, template (11 templates).'
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
-  evidence_commit: evidence_pending
-  last_verified_utc: '2026-05-06T00:00:00Z'
+  status: delivered
+  description: 'TopologyEngine 6-path generation with deterministic per-path test harness (GenerationOptions).'
+  evidence_test: sage-python/tests/test_topology_engine_six_paths.py
+  evidence_benchmark: n/a
+  evidence_commit: 32345072
+  last_verified_utc: '2026-05-07T00:00:00Z'
+  owner: yann
+  notes: 'Phase 2 (2026-05-07): 6 Python boundary tests prove each source reachable.'
   owner: yann
   notes: 'Capability lives in `sage-core/src/topology/engine.rs`. Phase 0.4
 
