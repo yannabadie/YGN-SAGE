@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-06T13:00:46+00:00'
+_generated_at_utc: '2026-05-07T14:30:25+00:00'
 _total_claims: 20
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -157,45 +157,110 @@ claims:
     '
   _source_file: docs/claims/routing.yaml
 - id: routing.knn_92pct
-  status: evidence_pending
-  description: kNN router on arctic-embed-m embeddings achieves ~92% GT accuracy on the in-house routing
-    benchmark.
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
+  status: delivered
+  description: 'Frozen kNN routing exemplar invariant: 5-NN weighted cosine LOO-CV over the 60-task human
+    GT set must score >= 50/60 overall, with S1 >= 16/20, S2 >= 15/20, S3 >= 19/20. Historical ~92% was
+    measured on an earlier 50-task GT and is provenance only, not recertified by this floor.'
+  evidence_test: sage-python/tests/test_routing_gt_invariant.py::test_knn_routing_exemplars_loo_cv_floor
+  evidence_benchmark: n/a
   evidence_commit: evidence_pending
-  last_verified_utc: '2026-05-06T00:00:00Z'
+  last_verified_utc: '2026-05-07T00:00:00Z'
   owner: yann
-  notes: 'Cited across README, AI-ARCHITECTURE.md, and CLAUDE.md. Phase 0.4
+  notes: 'CI-runnable strict-equal floor over committed
 
-    could not pin a bench artefact OR a unit test that asserts the
+    `sage-python/config/routing_ground_truth.json` +
 
-    92% figure specifically. The 60-task internal GT set lives at
+    `sage-python/config/routing_exemplars.npz` (60 × 768 float32
 
-    `sage-python/config/routing_ground_truth.json`; a follow-up cycle
+    L2-normalized, built once via
 
-    should ship a `tests/test_routing_gt_invariant.py` that runs the
+    `scripts/build_routing_exemplars.py`).
 
-    kNN router over the GT set in CI and asserts >= a threshold (with
 
-    seed pinned for reproducibility). Until that ships, the claim
+    The test validates artifact shape/dtype/L2-norm/label alignment
 
-    stays `evidence_pending` and README must not headline the 92%
+    first, then runs byte-equivalent LOO-CV (cosine dot product, k=5,
 
-    figure unanchored.
+    `np.argpartition`, weighted majority vote) — same mechanics as the
+
+    builder''s `--validate` path.
+
+
+    Empirical baseline 2026-05-07: 50/60 overall, S1=16/20, S2=15/20,
+
+    S3=19/20. Floors are strict-equal to the baseline because the
+
+    dataset and scoring rule are frozen — any artifact regeneration or
+
+    router/scoring drift that loses even one current correct route MUST
+
+    be visible in CI immediately. If `routing_ground_truth.json`,
+
+    `routing_exemplars.npz`, or the scoring logic changes intentionally,
+
+    update the floor constants in the same commit, with the new measured
+
+    baseline documented here.
+
+
+    The historical 92% figure traces back to
+
+    `scripts/eval_deberta_zeroshot.py:625` — "kNN (arctic-embed): 92.0%
+
+    (46/50)" — measured on a 50-task subset prior to the GT expansion to
+
+    60 tasks. Provenance only, not directly comparable.
 
     '
   _source_file: docs/claims/routing.yaml
 - id: routing.system_router_88pct
-  status: evidence_pending
-  description: Rust SystemRouter achieves ~88% GT accuracy via domain scoring from cards.toml.
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
+  status: delivered
+  description: 'Rust SystemRouter legacy route(task, budget=1.0) invariant: over the 60-task human GT
+    set and `sage-core/config/cards.toml`, the router must score >= 52/60 overall. Historical ~88% is
+    provenance only; this claim is pinned to the committed 60-task CI floor.'
+  evidence_test: sage-python/tests/test_routing_gt_invariant.py::test_system_router_gt_floor
+  evidence_benchmark: n/a
   evidence_commit: evidence_pending
-  last_verified_utc: '2026-05-06T00:00:00Z'
+  last_verified_utc: '2026-05-07T00:00:00Z'
   owner: yann
-  notes: 'Same status as `routing.knn_92pct`: the figure is documented but
+  notes: 'CI-runnable strict-equal floor over the committed GT and
 
-    not pinned to a CI-runnable artefact. Same follow-up applies.
+    `sage-core/config/cards.toml`. Calls
+
+    `sage_core.SystemRouter(registry).route(task, 1.0)` and compares
+
+    `decision.system` to the human-labeled `expected_system`. Budget
+
+    value is part of the invariant — the legacy `route(task, budget)`
+
+    signature can downgrade the selected model under tight budgets,
+
+    which can change `final_system` via model affinity.
+
+
+    Empirical baseline 2026-05-07: 52/60 overall (budget=1.0 and
+
+    budget=1_000_000.0 produce identical results on the current
+
+    cards.toml; budget=1.0 is locked as the canonical invariant
+
+    anchor).
+
+
+    The test uses `pytest.importorskip("sage_core")` for developer
+
+    environments where the PyO3 extension is not built. CI gate runs
+
+    MUST have sage_core built (the canonical CI Python jobs do); a
+
+    skip on CI is not acceptable closure evidence.
+
+
+    The historical 88% figure is provenance only; SystemRouter routing
+
+    logic uses structural features and formal-keyword detection plus
+
+    model-card affinity scoring, not pure domain-text pattern matching.
 
     '
   _source_file: docs/claims/routing.yaml
