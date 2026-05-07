@@ -56,4 +56,4 @@ jobs:
 
       - name: Run claims_audit --strict
         run: |
-          python -c "import sys; sys.path.insert(0, 'sage-python/src'); from sage.ops import claims_audit; sys.exit(claims_audit.main(['--strict']))"
+          python sage-python/src/sage/ops/claims_audit.py --strict

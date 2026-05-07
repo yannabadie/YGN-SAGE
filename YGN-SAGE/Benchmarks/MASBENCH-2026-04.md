@@ -14,7 +14,7 @@ tags:
 
 - **Modele(s)** : Multi-provider (DeepSeek primaire)
 - **Topologie** : DynamicTopologyEngine (6-path)
-- **Source** : `masbench_official_results.json`
+- **Source** : `docs/benchmarks/2026-04-07-masbench-ablation-stats.json`
 
 ## Resultats par axe
 

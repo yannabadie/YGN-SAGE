@@ -58,8 +58,8 @@ if [ "$RUST_ONLY" = false ]; then
         python -m pytest sage-python/tests/ -q --tb=short
 
     if [ "$FAST" = false ]; then
-        run_step "Routing benchmark" \
-            python -m sage.bench --type routing
+        run_step "Routing-GT benchmark" \
+            python -m sage.bench --type routing_gt
 
         run_step "Discovery tests (sage-discover)" \
             python -m pytest sage-discover/tests/ -q --tb=short 2>/dev/null || true

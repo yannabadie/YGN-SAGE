@@ -17,9 +17,16 @@ import time
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
-LOG_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "masbench_traced.log")
-JSON_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "masbench_traced_results.json")
-TRACES_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "masbench_traces.jsonl")
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+OUTPUT_DIR = os.environ.get(
+    "MASBENCH_OUTPUT_DIR",
+    os.path.join(REPO_ROOT, "docs", "benchmarks", "masbench-runs"),
+)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+LOG_FILE = os.path.join(OUTPUT_DIR, "masbench_traced.log")
+JSON_FILE = os.path.join(OUTPUT_DIR, "masbench_traced_results.json")
+TRACES_FILE = os.path.join(OUTPUT_DIR, "masbench_traces.jsonl")
 
 for h in logging.root.handlers[:]:
     logging.root.removeHandler(h)

@@ -6,11 +6,11 @@
 # models, and verifies the complete stack.
 #
 # Usage:
-#   bash setup.sh
+#   bash docs/runbooks/setup-runpod-h100.sh
 #
 # Prerequisites:
 #   - RunPod with 2x H100 NVL 94GB
-#   - .env file with API keys (see RUNPOD_PLAN.md)
+#   - .env file with API keys (see .env.example)
 #   - git clone of YGN-SAGE
 # ============================================================
 

@@ -148,10 +148,10 @@ sequential, parallel, AVR, selfmoa, hierarchical, hub, debate, brainstorming, ro
 
 | File | Content |
 |------|---------|
-| `masbench_traces.jsonl` | 20 detailed task traces (topology, nodes, edges, outputs, scores) — **THE KEY FILE** |
-| `masbench_traced.log` | Full DEBUG log of the last benchmark run |
-| `masbench_traced_console.log` | Console output of the last benchmark |
-| `masbench_official.log` | Log from the earlier official ablation run (stale, mixed with old runs) |
+| `docs/benchmarks/2026-04-03-masbench/masbench_traces.jsonl` | 20 detailed task traces (topology, nodes, edges, outputs, scores) — **THE KEY FILE** |
+| `masbench_traced.log` | Local root DEBUG log removed during 2026-05-07 root cleanup |
+| `masbench_traced_console.log` | Local root console log removed during 2026-05-07 root cleanup |
+| `masbench_official.log` | Stale local root official ablation log removed during 2026-05-07 root cleanup |
 | `~/.sage/archive_state.db` | PURGED (was corrupted by random mutations) |
 | `~/.sage/bandit_state.db` | PURGED |
 | `~/.sage/episodic.db` | Episodic memory (active) |

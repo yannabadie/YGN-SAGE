@@ -38,4 +38,4 @@ C'est coherent avec [[AdaptOrch]] qui montre le gain surtout sur les taches **di
 
 ## Donnees
 
-Source : `masbench_official_results.json`
+Source : `docs/benchmarks/2026-04-07-masbench-ablation-stats.json`
