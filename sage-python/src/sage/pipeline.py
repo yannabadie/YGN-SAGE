@@ -109,14 +109,10 @@ def _resolve_task_budget_usd(budget_usd: float | None) -> float:
         return 0.0
 
 
-# Cycle-13 K Phase 2.1 Step E1 (2026-05-06): the canonical
-# PipelineContext dataclass body lives in
-# `sage.pipeline_v2.context`. The re-export below preserves
-# `from sage.pipeline import PipelineContext` for backward
-# compatibility (cgpro round-3 Q4 backward-compat lock) AND
-# `PipelineContext.__module__ == "sage.pipeline"` (cgpro round-3
-# garde-fou: tests / bench / dashboards depend on this literal
-# module-path).
+# PipelineContext dataclass body lives in `sage.pipeline_v2.context`.
+# This re-export keeps `from sage.pipeline import PipelineContext`
+# resolving and pins `PipelineContext.__module__ == "sage.pipeline"`
+# (tests / bench / dashboards depend on the literal module-path).
 from sage.pipeline_v2.context import PipelineContext  # noqa: E402
 
 
@@ -124,10 +120,9 @@ class CognitiveOrchestrationPipeline:
     """6-stage pipeline: classify -> decompose -> select_topology -> assign_models -> execute -> learn."""
 
     # Class-level attribute declarations for transient runtime state.
-    # Cycle-13 K Phase 2.1 Step D (2026-05-06): now that `_run_internal`
-    # body lives in `pipeline_v2/orchestrator.py`, mypy needs these
-    # declared on the class so the orchestrator's `pipeline.<attr> = X`
-    # assignments are type-clean.
+    # `_run_internal` body lives in `pipeline_v2/orchestrator.py`; mypy
+    # needs these declared on the class so the orchestrator's
+    # `pipeline.<attr> = X` assignments are type-clean.
     _model_catalog: Any = None
     _last_routing_decision: Any = None
     _last_runtime_routing_source: str = "default"
@@ -280,9 +275,8 @@ class CognitiveOrchestrationPipeline:
     ) -> tuple[str, RunFrame]:
         """Execute the full 6-stage pipeline.
 
-        Body lives in `sage.pipeline_v2.orchestrator.run_internal`. The
-        method is preserved as a 1-line LOCAL-import wrapper so subclass
-        overrides and any direct method patches keep working.
+        Body lives in `sage.pipeline_v2.orchestrator.run_internal`; this
+        method is the subclass-override seam that calls it.
         """
         from sage.pipeline_v2.orchestrator import run_internal
         return await run_internal(
