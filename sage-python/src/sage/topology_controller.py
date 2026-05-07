@@ -155,6 +155,10 @@ class TopologyController:
         self._event_bus = event_bus
         self._gate_loops: dict[int, int] = {}  # Multi-turn refinement tracker (Python-only)
         self._rust_ctrl: Any = _RustTopologyControllerImpl()
+        # Observation hook (Phase 7 e2e): records which Rust decision path
+        # was most recently exercised.  Tests read this to prove the
+        # Python wrapper actually calls each Rust primitive.
+        self._last_rust_decision_path: str = ""
 
     # ── B.2 read-only façade properties (2026-04-20) ──────────────────────
     # All runtime counters live in Rust. Python reads via property; direct
@@ -282,6 +286,7 @@ class TopologyController:
             )
 
         # Path 1 (Rust): empty / sentinel / error reroute.
+        self._last_rust_decision_path = "empty_error_reroute"
         rd = self._rust_ctrl.check_empty_error_reroute(result, node_idx)
         if rd is not None:
             if rd.action == "reroute_topology":
@@ -327,6 +332,7 @@ class TopologyController:
                     )
 
         # Path 2 (Rust): quality cascade — good / critical-with-retry.
+        self._last_rust_decision_path = "quality_cascade"
         retry_limit = self._max_retries_for_node(topology, node_idx)
         rd = self._rust_ctrl.check_quality_cascade(quality, node_idx, retry_limit)
         if rd is not None:
@@ -377,6 +383,7 @@ class TopologyController:
         if parallel_outputs:
             is_debate = self._is_debate_topology(topology)
             consistency = self.compute_consistency_score(parallel_outputs)
+            self._last_rust_decision_path = "parallel_inconsistency"
             rd = self._rust_ctrl.check_parallel_inconsistency(
                 node_idx, consistency, is_debate
             )
@@ -395,6 +402,7 @@ class TopologyController:
             importance = self.compute_importance_score(
                 node_idx, result, parallel_outputs
             )
+            self._last_rust_decision_path = "importance_prune"
             rd = self._rust_ctrl.check_importance_prune(
                 node_idx, importance, is_debate, _quality_is_known
             )
