@@ -1,15 +1,24 @@
 # ADR-015 — `pipeline.py` decomposition into stage modules
 
-**Status:** Implemented for Phase 2.1 (cycle-13 K, 2026-05-06); Phase 2.2 Proposed.
+**Status:** Implemented — cycle-13 K closed 2026-05-07. The
+decomposition shipped in two cycles: the façade extraction (with
+the legacy `pipeline._stage_<X>` test-monkeypatch surface temporarily
+preserved) shipped 2026-05-06; the follow-up retirement of that
+surface (rewrite of 27 monkeypatching test files, deletion of the
+six `_stage_*` methods, deletion of the 36 `_<helper>` methods,
+constructor extraction to `pipeline_v2/constructor.py`, and the
+`pipeline.py` < 300 LOC façade landing) shipped 2026-05-07.
 **Related:** cgpro_kimi_audit_response_20260504, cycle-10 plan
 (`.claude/plans/2026-05-04-cycle-10-verified-runtime-release-preview.md`),
 runtime-integrity-ledger.md (10 invariants), cgpro
 `cgpro_phase21_facade_rewrite_20260506` round-1 DESIGN_LOCKED →
-round-4 OPTION_3 → round-5 EDIT_REQUIRED → round-6 POST-F2 VERIFY.
+round-4 OPTION_3 → round-5 EDIT_REQUIRED → round-6 POST-F2 VERIFY,
+and cgpro `cgpro_phase22_test_rewrite_20260506` (DESIGN_LOCK +
+Stage A through E VERIFY rounds 2026-05-06/07).
 
 ## Context
 
-`sage-python/src/sage/pipeline.py` is the canonical 5-stage cognitive
+`sage-python/src/sage/pipeline.py` is the canonical 5-stage cognitive  <!-- narrative-guard: allow historical-record -->
 orchestration pipeline (CLASSIFY → DECOMPOSE → SELECT_TOPOLOGY → ASSIGN
 → EXECUTE → LEARN). At HEAD `f22a77a0` it has accumulated:
 
@@ -39,7 +48,7 @@ implementation has a clear and reviewable target.
 
 ## Decision
 
-Decompose `pipeline.py` into **six stage modules + three coordinator
+Decompose `pipeline.py` into **six stage modules + three coordinator  <!-- narrative-guard: allow historical-record -->
 modules** under a new package `sage.pipeline_v2/` (cycle-11) or as
 direct replacements in `sage.pipeline/` (cycle-12, breaking import
 path). The implementing cycle decides between additive (v2 alongside)
@@ -58,7 +67,7 @@ and replacing layout based on import-graph audit results.
 | `sage/pipeline_v2/context.py` | `pipeline.py:117-150` (`PipelineContext`) | Mutable state object passed between stages. **Becomes immutable per-stage clone** (cycle-12). |
 | `sage/pipeline_v2/runtime_events.py` | `pipeline.py:413-646` (`_runtime_*` helpers, ~12 functions) | Topology-selected / model-assigned / final-status / RunFrame / control-surface event emission. |
 | `sage/pipeline_v2/bandit_attribution.py` | `pipeline.py:430-473, 1972-2057` (`_emit_bandit_attribution_mismatch`, `_record_bandit_outcome_checked`, `_clear_bandit_decision`) | Stage-0 → Stage-5 bandit decision_id lifecycle (invariant 6 in runtime-integrity-ledger.md). |
-| `sage/pipeline_v2/__init__.py` | reconstruction of `CognitiveOrchestrationPipeline` thin façade | Wires the 6 stages + 3 coordinators; preserves the public `run()` / `run_with_frame()` / `run_with_bench_evaluator()` entry points byte-identical. |
+| `sage/pipeline_v2/__init__.py` | reconstruction of `CognitiveOrchestrationPipeline` thin façade | Wires the 6 stages + 3 coordinators; preserves the public `run()` / `run_with_frame()` / `run_with_bench_evaluator()` entry points byte-identical. |  <!-- narrative-guard: allow historical-record -->
 
 ### Contracts that MUST be preserved
 
@@ -171,7 +180,7 @@ These tests are themselves part of the cycle-11 PR. The current
      into `pipeline_v2/<stage>.py`.
    - Each move is its own commit. Run characterization + Rust tests
      after each.
-   - When all 6 stages moved, delete the original methods from
+   - When all 6 stages moved, delete the original methods from  <!-- narrative-guard: allow historical-record -->
      `pipeline.py`.
 
 4. **Cycle-12 phase 3 (cleanup, 1-2 days):**
@@ -262,19 +271,19 @@ conservative" by cgpro+plan agreement. Cycle-11 is the right place.
 - 2026-05-05 (cycle-11): Accepted with characterization tests landed
   (37 P9 phase-1 tests covering byte-identical run + oracle gate +
   bandit attribution + Fix C + control-surface).
-- 2026-05-05 (cycle-12 Phase A + Phase B): pipeline_v2/ scaffold
-  shipped + 6 stage bodies (~2050 LOC) moved out of pipeline.py.
-- **2026-05-06 (cycle-13 K Phase 2.1): Implemented — facade extraction
-  with transition seams retained.** cgpro `cgpro_phase21_facade_rewrite_20260506`
+- 2026-05-05 (cycle-12 Phase A + Phase B): pipeline_v2/ scaffold  <!-- narrative-guard: allow historical-record -->
+  shipped + 6 stage bodies (~2050 LOC) moved out of pipeline.py.  <!-- narrative-guard: allow historical-record -->
+- **2026-05-06 (cycle-13 K Phase 2.1): Implemented — facade extraction  <!-- narrative-guard: allow historical-record -->
+  with transition seams retained.** cgpro `cgpro_phase21_facade_rewrite_20260506`  <!-- narrative-guard: allow historical-record -->
   round-1 DESIGN_LOCKED + round-2 GO_STEP_B + round-3 GO_STEP_C amended +
   **round-4 OPTION_3** (the empirical 27-file `pipeline._stage_*` mock
-  contract was incompatible with cgpro round-3's "delete delegators in
-  C2" plan). Final Phase 2.1 acceptance amended:
+  contract was incompatible with cgpro round-3's "delete delegators in  <!-- narrative-guard: allow historical-record -->
+  C2" plan). Final Phase 2.1 acceptance amended:  <!-- narrative-guard: allow historical-record -->
     - pipeline.py 1800 LOC → 727 LOC (1073 LOC migrated; **landing
       inside cgpro round-4 amended target 650-800 LOC**).
-    - 6 stage bodies + orchestrator + 5 helper modules + PipelineContext
+    - 6 stage bodies + orchestrator + 5 helper modules + PipelineContext  <!-- narrative-guard: allow historical-record -->
       dataclass all moved to pipeline_v2/.
-    - 6 `_stage_*` methods + ~22 `_<helper>` delegator methods retained
+    - 6 `_stage_*` methods + ~22 `_<helper>` delegator methods retained  <!-- narrative-guard: allow historical-record -->
       as transitional runtime test seams (the 27-file `pipeline._stage_*
       = <fake>` mock contract is unchanged).
     - 37/37 P9 phase-1 tests byte-identical at every commit.
@@ -286,11 +295,30 @@ conservative" by cgpro+plan agreement. Cycle-11 is the right place.
       explicit `setattr` in `pipeline_v2/context.py` so existing
       tests / bench / dashboard / observability assertions on the
       legacy module path continue to pass.
-- **TBD (Phase 2.2 Proposed)**: rewrite the 27 test files that
-  monkeypatch `pipeline._stage_<X> = <fake>`; replace the stage
-  monkeypatch contract with module-function patching or
-  public-effect assertions; remove the 6 `_stage_*` delegators;
-  remove the ~22 `_<helper>` delegators where safe (separate grep
-  pass); reach **`pipeline.py < 300 LOC`** (the original Phase 2.1
-  cible reclassified to Phase 2.2 acceptance per cgpro round-4
-  OPTION_3 verdict).
+- **2026-05-07 (cycle-13 K Phase 2.2): Closed — seam retirement +
+  `pipeline.py` < 300 LOC façade landing.** cgpro
+  `cgpro_phase22_test_rewrite_20260506` DESIGN_LOCK +
+  Stage A through E VERIFY rounds. Outcome at HEAD `cd3967c8` (E1) and
+  E2 + E3 closure commits:
+    - 27 test files rewritten from `pipeline._stage_<X> = <fake>`
+      monkeypatch contract to module-function patching
+      (`monkeypatch.setattr("sage.pipeline_v2.<X>.<X>", _fake)`) or
+      public-effect assertions. 14+ Q6 string-monkeypatch sites
+      preserved (`sage.pipeline._new_runtime_run_id` /
+      `sage.pipeline.time.monotonic` are still the canonical
+      RunFrame seam).
+    - 6 `_stage_*` methods deleted (Stage C atomic, commit `10e38931`).
+    - 36 `_<helper>` methods deleted (Stage D2 atomic, commit `6f0b2606`).
+    - Constructor body extracted to `pipeline_v2/constructor.py` ::
+      `initialize_pipeline(self, **kwargs)` (Stage D3, commit `970c451c`).
+    - **`pipeline.py` ≤ 290 LOC** at Stage D4 closure (commit `17ee3c38`),
+      well inside the < 300 LOC HARD GATE.
+    - 58 deletion contracts PASS (RED at Stage A, GREEN after Stage C + D2).
+    - 42/42 P9 invariant tests byte-identical at every Stage B/C/D/E
+      commit (Phase 2.1 originally reported 37/37; Phase 2.2  <!-- narrative-guard: allow historical-record -->
+      canonicalized the current P9 set at 42/42 after the test
+      rewrites and helper deletion contracts were added). 312-test
+      wider Phase 2.2 regression PASS at Stage D4 closure.
+    - `narrative_guard_phase22.py` PASS at Stage E3 closure (after
+      ADR-015 + ADR-016 + CLAUDE.md historical-record markers /
+      status updates).
