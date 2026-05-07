@@ -5,7 +5,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
-from sage.pipeline_v2.assign_models import assign_models
+from sage.pipeline_v2.assign_models import assign_models, verify_assignment_formal
 
 
 # ── Helper mocks ─────────────────────────────────────────────────────────────
@@ -56,8 +56,8 @@ class _MockLLMProvider:
 # ── Tests ─────────────────────────────────────────────────────────────────────
 
 
-def test_verify_assignment_called_after_assign() -> None:
-    """_verify_assignment_formal is called after assigner completes in _stage_assign_models."""
+def test_verify_assignment_called_after_assign(monkeypatch: pytest.MonkeyPatch) -> None:
+    """verify_assignment_formal is called after assigner completes in assign_models."""
     pipeline = CognitiveOrchestrationPipeline(
         router=None,
         engine=None,
@@ -74,21 +74,20 @@ def test_verify_assignment_called_after_assign() -> None:
     )
 
     called: list[bool] = []
+    original = verify_assignment_formal
 
-    original = pipeline._verify_assignment_formal
-
-    def _spy(c: PipelineContext) -> None:
+    def _spy(_pipeline: CognitiveOrchestrationPipeline, c: PipelineContext) -> None:
         called.append(True)
-        original(c)
+        original(_pipeline, c)
 
-    pipeline._verify_assignment_formal = _spy  # type: ignore[method-assign]
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.verify_assignment_formal", _spy)
     assign_models(pipeline, ctx)
 
-    assert called, "_verify_assignment_formal was not called after model assignment"
+    assert called, "verify_assignment_formal was not called after model assignment"
 
 
-def test_verify_assignment_fail_non_blocking() -> None:
-    """If OxiZ verification fails, _stage_assign_models still succeeds (non-blocking)."""
+def test_verify_assignment_fail_non_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
+    """If OxiZ verification fails, assign_models still succeeds (non-blocking)."""
     pipeline = CognitiveOrchestrationPipeline(
         router=None,
         engine=None,
@@ -104,11 +103,11 @@ def test_verify_assignment_fail_non_blocking() -> None:
         budget=5.0,
     )
 
-    # Patch _verify_assignment_formal to raise an exception
-    def _always_raise(c: PipelineContext) -> None:
+    # Patch the module-function to raise an exception
+    def _always_raise(_pipeline: CognitiveOrchestrationPipeline, c: PipelineContext) -> None:
         raise RuntimeError("Simulated OxiZ failure")
 
-    pipeline._verify_assignment_formal = _always_raise  # type: ignore[method-assign]
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.verify_assignment_formal", _always_raise)
 
     # Must not raise — verification is non-blocking
     result_ctx = assign_models(pipeline, ctx)
@@ -142,8 +141,8 @@ def test_verify_assignment_skipped_without_oxiz() -> None:
         assert result_ctx is ctx
 
 
-def test_verify_assignment_skipped_no_topology() -> None:
-    """When topology is None, Stage 3 returns early without calling verify."""
+def test_verify_assignment_skipped_no_topology(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When topology is None, assign_models returns early without calling verify."""
     pipeline = CognitiveOrchestrationPipeline(
         router=None,
         engine=None,
@@ -156,14 +155,14 @@ def test_verify_assignment_skipped_no_topology() -> None:
 
     called: list[bool] = []
 
-    def _spy(c: PipelineContext) -> None:
+    def _spy(_pipeline: CognitiveOrchestrationPipeline, c: PipelineContext) -> None:
         called.append(True)
 
-    pipeline._verify_assignment_formal = _spy  # type: ignore[method-assign]
+    monkeypatch.setattr("sage.pipeline_v2.assign_models.verify_assignment_formal", _spy)
     assign_models(pipeline, ctx)
 
     # No topology → early return → verify not called
-    assert not called, "_verify_assignment_formal should not be called when topology is None"
+    assert not called, "verify_assignment_formal should not be called when topology is None"
 
 
 def test_verify_assignment_formal_builds_adapter() -> None:
@@ -198,7 +197,7 @@ def test_verify_assignment_formal_builds_adapter() -> None:
         return result
 
     with patch("sage.pipeline.verify_provider_assignment", side_effect=_mock_verify):
-        pipeline._verify_assignment_formal(ctx)
+        verify_assignment_formal(pipeline, ctx)
 
     assert len(captured_args) == 1
     dag_adapter, provider_specs = captured_args[0]
@@ -248,7 +247,7 @@ def test_verify_assignment_formal_logs_warning_on_failure(caplog: pytest.LogCapt
 
     with patch("sage.pipeline.verify_provider_assignment", side_effect=_mock_verify_unsat):
         with caplog.at_level(logging.WARNING, logger="sage.pipeline"):
-            pipeline._verify_assignment_formal(ctx)
+            verify_assignment_formal(pipeline, ctx)
 
     # A warning must have been logged
     assert any("provider" in msg.lower() or "assignment" in msg.lower() or "formal" in msg.lower()

@@ -146,8 +146,8 @@ def record_bandit_outcome_checked(
     if oracle_enabled():
         verdict = getattr(ctx, "oracle_verdict", None)
         if verdict is None or not verdict.trainable:
-            pipeline._cancel_bandit_decision(ctx)
-            pipeline._clear_bandit_decision(ctx)
+            cancel_bandit_decision(pipeline, ctx)
+            clear_bandit_decision(pipeline, ctx)
             return
 
     if not getattr(ctx, "bandit_decision_id", ""):
@@ -162,10 +162,10 @@ def record_bandit_outcome_checked(
         or getattr(ctx, "executed_template", "") in _MULTI_NODE_ATTRIBUTION_TEMPLATES
     ):
         ctx.bandit_attribution_state = "skipped"
-        pipeline._cancel_bandit_decision(ctx)
+        cancel_bandit_decision(pipeline, ctx)
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "multi_node_ambiguous")
-        pipeline._clear_bandit_decision(ctx)
+        clear_bandit_decision(pipeline, ctx)
         return
 
     rust_router = pipeline._rust_router
@@ -174,7 +174,7 @@ def record_bandit_outcome_checked(
             "Bandit outcome skipped: SystemRouter record_outcome_checked unavailable"
         )
         ctx.bandit_attribution_state = "mismatch"
-        pipeline._cancel_bandit_decision(ctx)
+        cancel_bandit_decision(pipeline, ctx)
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, "recorder_instance_mismatch")
         return
@@ -193,7 +193,7 @@ def record_bandit_outcome_checked(
         from sage.pipeline_v2 import runtime_events as runtime_events_mod
         reason_code = runtime_events_mod.bandit_reason_from_exception(exc)
         ctx.bandit_attribution_state = "mismatch"
-        pipeline._cancel_bandit_decision(ctx)
+        cancel_bandit_decision(pipeline, ctx)
         runtime_events_mod.emit_bandit_attribution_mismatch(pipeline, ctx, reason_code)
 
 

@@ -71,6 +71,7 @@ from sage.pipeline import (
     PipelineContext,
 )
 from sage.pipeline_stages import DAGFeatures
+from sage.pipeline_v2.bandit_attribution import is_single_agent_execution
 from sage.pipeline_v2.select_topology import select_topology
 
 
@@ -329,22 +330,22 @@ def test_is_single_agent_execution_is_pure_topology_shape():
 
     # Case 1: ctx.topology is None -> bypass
     ctx = SimpleNamespace(topology=None)
-    assert pipeline._is_single_agent_execution(ctx) is True
+    assert is_single_agent_execution(pipeline, ctx) is True
 
     # Case 2: ctx.topology has node_count() == 1 -> bypass
     topo = MagicMock()
     topo.node_count = MagicMock(return_value=1)
     ctx = SimpleNamespace(topology=topo)
-    assert pipeline._is_single_agent_execution(ctx) is True
+    assert is_single_agent_execution(pipeline, ctx) is True
 
     # Case 3: ctx.topology has node_count() > 1 -> NOT bypass
     topo = MagicMock()
     topo.node_count = MagicMock(return_value=3)
     ctx = SimpleNamespace(topology=topo)
-    assert pipeline._is_single_agent_execution(ctx) is False
+    assert is_single_agent_execution(pipeline, ctx) is False
 
     # Case 4: ctx.topology has node_count() == 5 -> NOT bypass
     topo = MagicMock()
     topo.node_count = MagicMock(return_value=5)
     ctx = SimpleNamespace(topology=topo)
-    assert pipeline._is_single_agent_execution(ctx) is False
+    assert is_single_agent_execution(pipeline, ctx) is False

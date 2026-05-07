@@ -865,13 +865,17 @@ async def test_abstain_blocks_all_training_sinks(monkeypatch: pytest.MonkeyPatch
         quality_estimator=MagicMock(),
     )
     pipeline._task_count = CONSOLIDATION_INTERVAL_STEPS - 1
-    pipeline._record_bandit_outcome_checked = MagicMock(
-        wraps=pipeline._record_bandit_outcome_checked
+    from sage.pipeline_v2 import bandit_attribution as bandit_attr_mod
+
+    record_mock = MagicMock(wraps=bandit_attr_mod.record_bandit_outcome_checked)
+    monkeypatch.setattr(
+        "sage.pipeline_v2.bandit_attribution.record_bandit_outcome_checked",
+        record_mock,
     )
 
     await pipeline.run("task")
 
-    assert pipeline._record_bandit_outcome_checked.call_count == 0
+    assert record_mock.call_count == 0
     assert bandit.checked_records == []
     assert engine.record_outcome_calls == 0
     assert engine.should_evolve_calls == 0

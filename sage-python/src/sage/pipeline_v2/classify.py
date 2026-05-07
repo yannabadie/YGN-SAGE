@@ -105,7 +105,8 @@ def classify(
                     ctx.bandit_template = selected_template
                     ctx.bandit_attribution_state = "pending" if decision_id else "skipped"
                 else:
-                    self._clear_bandit_decision(ctx)
+                    from sage.pipeline_v2 import bandit_attribution as _bandit_attr
+                    _bandit_attr.clear_bandit_decision(self, ctx)
                 # Store decision for model selection + telemetry
                 self._last_routing_decision = decision
                 self._last_runtime_routing_source = "rust_system_router"
@@ -122,11 +123,12 @@ def classify(
                 return ctx
             except Exception as exc:
                 log.warning("Stage 0: Rust SystemRouter failed (%s), falling back to Python", exc)
-                self._cancel_bandit_decision(ctx, force=True)
-                ctx.bandit_attribution_state = "skipped"
+                from sage.pipeline_v2 import bandit_attribution as _bandit_attr
                 from sage.pipeline_v2 import runtime_events as runtime_events_mod
+                _bandit_attr.cancel_bandit_decision(self, ctx, force=True)
+                ctx.bandit_attribution_state = "skipped"
                 runtime_events_mod.emit_bandit_attribution_mismatch(self, ctx, "router_fallback_degraded")
-                self._clear_bandit_decision(ctx)
+                _bandit_attr.clear_bandit_decision(self, ctx)
 
         # Priority 2: Python kNN — Rust-accelerated embedding (accuracy claim
         # `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`;

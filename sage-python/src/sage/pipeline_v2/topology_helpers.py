@@ -286,7 +286,7 @@ def apply_topology_budget_and_cache(
     through the delegator that lives in `pipeline.py` so existing test
     mocks on the method continue to fire byte-identical.
     """
-    pipeline._check_topology_budget(ctx)
+    check_topology_budget(pipeline, ctx)
     if (
         ctx.topology is not None
         and pipeline.engine is not None
@@ -319,7 +319,7 @@ def check_topology_budget(
             )
             pipeline._emit("TOPOLOGY_BUDGET_WARNING", {"total_cost": total_node_cost, "budget": ctx.budget})
             # Degrade: replace with single-node template topology
-            ctx.topology = pipeline._make_single_node_topology(ctx)
+            ctx.topology = make_single_node_topology(pipeline, ctx)
 
 
 def make_single_node_topology(

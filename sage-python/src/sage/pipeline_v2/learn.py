@@ -85,11 +85,12 @@ async def learn(
                 log.warning("PRM scoring failed in LEARN: %s", exc)
 
         # Only record to bandit when quality is known and attribution is causal.
+        from sage.pipeline_v2 import bandit_attribution as _bandit_attr
         if quality is not None:
-            self._record_bandit_outcome_checked(ctx, quality)
+            _bandit_attr.record_bandit_outcome_checked(self, ctx, quality)
         else:
-            self._cancel_bandit_decision(ctx)
-            self._clear_bandit_decision(ctx)
+            _bandit_attr.cancel_bandit_decision(self, ctx)
+            _bandit_attr.clear_bandit_decision(self, ctx)
 
         # Evolution feedback: record outcome in TopologyEngine archive
         # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection

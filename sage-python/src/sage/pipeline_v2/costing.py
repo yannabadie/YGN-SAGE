@@ -88,7 +88,7 @@ def estimate_topology_cost(
         return 0.0
 
     # Lazy-load model catalog for pricing
-    catalog = pipeline._load_model_catalog()
+    catalog = load_model_catalog(pipeline)
 
     total_cost = 0.0
     for i in range(n_nodes):

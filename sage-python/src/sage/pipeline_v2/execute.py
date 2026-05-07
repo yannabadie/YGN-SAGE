@@ -172,7 +172,8 @@ async def execute(
             self._emit(EXECUTE_UNVERIFIED, {"reason": "SAT check failed in Stage 3"})
 
         # Single-agent mode (no topology or single node)
-        if self._is_single_agent_execution(ctx):
+        from sage.pipeline_v2 import bandit_attribution as _bandit_attr
+        if _bandit_attr.is_single_agent_execution(self, ctx):
             ctx.executed_template = "single_agent"
             decision = None
             bandit_provider = None
@@ -505,7 +506,8 @@ async def execute(
             # benches never saw real provider metering even when LiteLLM
             # populated it correctly.
             if not ctx.cost:
-                ctx.cost = self._estimate_topology_cost(ctx)
+                from sage.pipeline_v2 import costing as _costing
+                ctx.cost = _costing.estimate_topology_cost(self, ctx)
         except (ImportError, RuntimeError, TimeoutError) as exc:
             log.error("Stage 4 multi-agent execution failed: %s — falling back to single-agent", exc)
             # Fallback: run task directly on a healthy provider.
@@ -520,7 +522,8 @@ async def execute(
             # dead we try the first alive one instead. If the provider
             # returns empty content, we RAISE (not silently emit "") so
             # the bench classifier records an honest error.
-            fallback_provider, fallback_config = self._pick_fallback_provider()
+            from sage.pipeline_v2.execute import pick_fallback_provider
+            fallback_provider, fallback_config = pick_fallback_provider(self)
             if fallback_provider is not None:
                 try:
                     from sage.llm.base import Message, Role

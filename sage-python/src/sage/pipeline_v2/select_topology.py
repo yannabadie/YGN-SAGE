@@ -38,6 +38,12 @@ from typing import TYPE_CHECKING
 # module's namespace, not pipeline.py's.
 from sage.pipeline_stages import select_macro_topology
 
+# Phase 2.2 D1.c (cgpro lock 2026-05-06): import the topology_helpers
+# module itself, not aliases to its functions, so production calls
+# resolve `topology_helpers_mod.<fn>` at call time and pick up
+# monkeypatch.setattr("sage.pipeline_v2.topology_helpers.<fn>", ...) from tests.
+from sage.pipeline_v2 import topology_helpers as topology_helpers_mod
+
 if TYPE_CHECKING:
     from sage.pipeline import CognitiveOrchestrationPipeline, PipelineContext
 
@@ -77,7 +83,7 @@ def select_topology(
         # Rust solves exactly. Falls back to single-agent if solver fails.
         if ctx.system == 1 and not skip_dag_template:
             if ctx.domain == "math":
-                topo = self._build_topology_from_hint("formal_solver")
+                topo = topology_helpers_mod.build_topology_from_hint("formal_solver")
                 if topo:
                     ctx.topology = topo
                     # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
@@ -88,8 +94,8 @@ def select_topology(
                     # branches that build a topology.
                     ctx.topology_id = getattr(topo, "id", "") or ""
                     log.info("S1 math: formal_solver (formalizer → Rust solver, fallback to CoT)")
-                    self._log_topology_structure(topo, source="dag_template", confidence=None)
-                    self._apply_topology_budget_and_cache(ctx)
+                    topology_helpers_mod.log_topology_structure(self, topo, source="dag_template", confidence=None)
+                    topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
                     return ctx
             ctx.topology = None
             log.debug("S1 task: skipping topology (direct single-agent)")
@@ -132,7 +138,7 @@ def select_topology(
                 "parallel_fanout",
             )
         ):
-            topo = self._build_topology_from_hint(hint)
+            topo = topology_helpers_mod.build_topology_from_hint(hint)
             if topo:
                 ctx.topology = topo
                 # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
@@ -155,8 +161,8 @@ def select_topology(
                 # Gap 1+2 (2026-04-21): emit structure log alongside template
                 # name so post-run analysis can attribute pass-rate by DAG
                 # shape (edges) and 6-path source, not just template name.
-                self._log_topology_structure(topo, source="dag_template", confidence=None)
-                self._apply_topology_budget_and_cache(ctx)
+                topology_helpers_mod.log_topology_structure(self, topo, source="dag_template", confidence=None)
+                topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
                 return ctx
 
         # Try DynamicTopologyEngine
@@ -175,9 +181,9 @@ def select_topology(
                 raw_result = self.engine.generate(
                     ctx.task, task_embedding, ctx.system, ctx.budget
                 )
-                candidates = self._topology_candidate_items(raw_result)
+                candidates = topology_helpers_mod.topology_candidate_items(self, raw_result)
                 if log_all_candidates:
-                    self._log_topology_candidates(candidates)
+                    topology_helpers_mod.log_topology_candidates(self, candidates)
                 result = (
                     candidates[0]
                     if isinstance(raw_result, (list, tuple)) and candidates
@@ -224,10 +230,11 @@ def select_topology(
                             _conf = None
                     else:
                         _conf = _conf_attr
-                self._log_topology_structure(
+                topology_helpers_mod.log_topology_structure(
+                    self,
                     ctx.topology, source=_src or "engine_unknown", confidence=_conf,
                 )
-                self._apply_topology_budget_and_cache(ctx)
+                topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
                 return ctx
             except (ImportError, RuntimeError) as exc:
                 log.warning(
@@ -249,10 +256,11 @@ def select_topology(
 
         # Gap 1+2 (2026-04-21): log structure for the fallback path too.
         if ctx.topology is not None:
-            self._log_topology_structure(
+            topology_helpers_mod.log_topology_structure(
+                self,
                 ctx.topology, source="template_fallback", confidence=None,
             )
-        self._apply_topology_budget_and_cache(ctx)
+        topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
         return ctx
 
 

@@ -24,6 +24,7 @@ from sage.pipeline_stages import (
 )
 from sage.pipeline_v2.assign_models import assign_models
 from sage.pipeline_v2.classify import classify
+from sage.pipeline_v2.topology_helpers import check_topology_budget
 
 
 @pytest.fixture(autouse=True)
@@ -1420,7 +1421,7 @@ def test_check_topology_budget_degrades_when_over():
     over_topo = _OverBudgetTopology(n_nodes=3, cost_per_node=2.0)
     ctx = PipelineContext(task="test", budget=5.0, system=2, topology=over_topo)
 
-    pipeline._check_topology_budget(ctx)
+    check_topology_budget(pipeline, ctx)
 
     # Topology should have been replaced (not the original 3-node topology)
     # Without sage_core, fallback is None (single-agent mode)
@@ -1445,7 +1446,7 @@ def test_check_topology_budget_no_degrade_when_under():
     under_topo = _OverBudgetTopology(n_nodes=3, cost_per_node=1.0)
     ctx = PipelineContext(task="test", budget=5.0, system=2, topology=under_topo)
 
-    pipeline._check_topology_budget(ctx)
+    check_topology_budget(pipeline, ctx)
 
     # Topology unchanged — still the original 3-node topology
     assert ctx.topology is under_topo
@@ -1453,7 +1454,7 @@ def test_check_topology_budget_no_degrade_when_under():
 
 
 @pytest.mark.asyncio
-async def test_pipeline_budget_degrade_emits_event():
+async def test_pipeline_budget_degrade_emits_event(monkeypatch):
     """Budget degradation emits TOPOLOGY_BUDGET_WARNING event.
 
     Stage 2 now tries template path before falling back to engine.generate().
@@ -1480,7 +1481,10 @@ async def test_pipeline_budget_degrade_emits_event():
         llm_provider=_MockLLMProvider(),
     )
     # Force engine.generate() path (templates would shadow the mock engine)
-    pipeline._build_topology_from_hint = lambda hint: None  # type: ignore[assignment,method-assign]
+    monkeypatch.setattr(
+        "sage.pipeline_v2.topology_helpers.build_topology_from_hint",
+        lambda hint: None,
+    )
 
     await pipeline.run("test task", budget_usd=5.0)
 

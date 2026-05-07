@@ -771,8 +771,9 @@ async def test_path_multi_agent_error_fallback_settles_decision_id_once(
         generate=_fallback_generate,
         name="stub-fallback-provider",
     )
-    pipeline._pick_fallback_provider = MagicMock(
-        return_value=(fallback_provider, MagicMock()),
+    monkeypatch.setattr(
+        "sage.pipeline_v2.execute.pick_fallback_provider",
+        MagicMock(return_value=(fallback_provider, MagicMock())),
     )
 
     capture.issue("d-fallback")

@@ -101,7 +101,8 @@ def assign_models(
                 )
                 if node:
                     ctx.assignments[i] = getattr(node, "model_id", "")
-            self._log_model_assigner_chosen_fallback(ctx)
+            from sage.pipeline_v2.assign_models import log_model_assigner_chosen_fallback
+            log_model_assigner_chosen_fallback(self, ctx)
         except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
@@ -130,7 +131,8 @@ def assign_models(
 
         # Formal verification (non-blocking): prove every node has a valid provider
         try:
-            self._verify_assignment_formal(ctx)
+            from sage.pipeline_v2.assign_models import verify_assignment_formal
+            verify_assignment_formal(self, ctx)
         except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 formal verification error (non-blocking): %s", exc)
 

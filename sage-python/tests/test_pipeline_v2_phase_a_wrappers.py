@@ -285,15 +285,25 @@ async def test_learn_module_function_runs_body(
     pipeline.bandit = None
     pipeline.prm = None
     pipeline._task_count = 0
-    pipeline._record_bandit_outcome_checked = MagicMock()
-    pipeline._cancel_bandit_decision = MagicMock()
-    pipeline._clear_bandit_decision = MagicMock()
+    record_mock = MagicMock()
+    monkeypatch.setattr(
+        "sage.pipeline_v2.bandit_attribution.record_bandit_outcome_checked",
+        record_mock,
+    )
+    monkeypatch.setattr(
+        "sage.pipeline_v2.bandit_attribution.cancel_bandit_decision", MagicMock()
+    )
+    monkeypatch.setattr(
+        "sage.pipeline_v2.bandit_attribution.clear_bandit_decision", MagicMock()
+    )
 
     ctx = PipelineContext(task="learn direct task")
     ctx.result = ""
     out = await learn_mod.learn(pipeline, ctx)
     assert out is None
-    pipeline._record_bandit_outcome_checked.assert_called_once_with(ctx, 0.0)
+    # Module function signature is (pipeline, ctx, quality), so the assertion
+    # checks the 3-arg call.
+    record_mock.assert_called_once_with(pipeline, ctx, 0.0)
 
 
 # ────────────────────────────────────────────────────────────────────
