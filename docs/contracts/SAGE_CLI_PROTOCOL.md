@@ -140,7 +140,7 @@ version on `cli_started`.
 | `prompt` | `{ "task": "<text>", "budget_usd"?: <float>, "system_hint"?: 1\|2\|3 }` | Begins the run | MUST be the first command. Subsequent `prompt` is REJECTED — one run per process. (Future: multi-turn via a separate `chat` subcommand.) |
 | `approve_tool_call` | `{ "id": "<correlation_id from cli_tool_request>" }` | Releases the awaited approval | If `id` doesn't match a pending request, ignored (idempotent). |
 | `deny_tool_call` | `{ "id": "<correlation_id>", "reason"?: "<text>" }` | Releases the wait, signals deny | The runner treats the tool as unavailable for this call (does NOT abort the run). |
-| `cancel` | `{ "reason"?: "<text>" }` | Graceful abort | Drains current node, emits `failure(reason="cancelled")`, then `cli_complete(outcome="cancelled")`. Idempotent. |
+| `cancel` | `{ "reason"?: "<text>" }` | Cooperative abort | Requests cooperative cancellation of the Python pipeline task via `asyncio.Task.cancel()`. Emits exactly one `failure(kind="cli_cancel", error_type="cancelled", message=<reason or "cancel requested">)` followed by terminal `cli_complete(outcome="cancelled", exit_code=130)`. Idempotent at the stream level: a second `cancel` does NOT emit a second failure frame. See "Known v0 limitation — cooperative cancellation" below for the cooperative-at-await semantics. |
 | `set_budget` | `{ "budget_usd": <float> }` | Mid-run budget change | **TIGHTEN ONLY** — `budget_usd` is the new POSITIVE FINITE REMAINING budget cap (NOT absolute total). Accepted updates rebase `cost_tracker.budget_usd` to `total_spent + budget_usd` and emit a `budget(kind="budget_tightened", ...)` event. Rejection emits a non-terminal `failure(kind="cli_command", error_type=...)` event with one of the reason codes below; the run does NOT abort. Reason codes: `budget_before_prompt` (no active run yet), `budget_invalid_value` (zero / negative / NaN / inf / non-numeric `budget_usd` — zero is rejected because `budget_usd <= 0` is `CostTracker`'s unlimited sentinel), `budget_loosen_rejected` (new remaining > current `cost_tracker.remaining`). |
 
 The frontend MUST NOT send any other command. Unknown commands emit a
@@ -247,22 +247,53 @@ What pi-mono DOES own:
 - `final_result` and `oracle_verdict` are emitted within Stage 5; their
   ordering relative to each other is `final_result` → `oracle_verdict` →
   `run_frame_summary` (per cycle-7 R6.1c locked event order).
-- A `failure` event with `failure.payload.kind == "cli_command"` is
-  ALWAYS non-terminal: the backend uses these to surface command
-  rejections (e.g. `set_budget` reason codes
-  `budget_before_prompt` / `budget_invalid_value` /
-  `budget_loosen_rejected`) without aborting the run. The CLI MUST
-  NOT add a `recoverable` field to `failure.payload`; the runtime
-  schema carries only `kind`, `error_type`, and `message` (cycle-13 K
-  Stage B lock 2026-05-07).
-- For `failure` events with other `kind` values (e.g. node-level
-  failures, multi-agent error fallback, FrugalGPT cascade), the
-  frontend SHOULD treat them as terminal-leaning: the run continues
+- Runtime `failure` frames use the cycle-7 R6.1c redacted FLAT shape on
+  stdout: `kind` / `error_type` / `node_id` are TOP-LEVEL event fields
+  (NOT nested under `payload`). The `message` is hashed into
+  `payload_hash` for forensic redaction; the full payload (including
+  `message`) is preserved in the forensic file under `trace_dir`. CLI
+  envelope events (`cli_started` / `cli_progress` / `cli_tool_request` /
+  `cli_complete`) keep the nested `payload` shape and are written
+  directly by the CLI driver, not through `RuntimeEventLog`.
+- A `failure` frame whose top-level `kind == "cli_command"` is ALWAYS
+  non-terminal: the backend uses these to surface command rejections
+  (e.g. `set_budget` reason codes `budget_before_prompt` /
+  `budget_invalid_value` / `budget_loosen_rejected`) without aborting
+  the run. The CLI MUST NOT add a `recoverable` field to the failure
+  schema; the runtime carries only `kind`, `error_type`, and `message`
+  (cycle-13 K Stage B lock 2026-05-07).
+- For `failure` frames with other top-level `kind` values (e.g.
+  node-level failures, multi-agent error fallback, FrugalGPT cascade),
+  the frontend SHOULD treat them as terminal-leaning: the run continues
   only if a subsequent non-terminal frame appears before `cli_complete`.
-  The runtime does not currently expose a `recoverable` flag —
-  terminality is inferred from the surrounding event stream and the
+  Terminality is inferred from the surrounding event stream and the
   `cli_complete.payload.outcome` field (`success` / `failure` /
   `cancelled`).
+- A `failure` frame whose top-level `kind == "cli_cancel"` and
+  `error_type == "cancelled"` is the ALWAYS-EMITTED penultimate
+  frame on the cancel path. Exactly one such frame appears immediately
+  before `cli_complete(outcome="cancelled", exit_code=130)`, regardless
+  of how many `cancel` commands the frontend sent (idempotent stream
+  contract). The frame is mirrored through the unified stdout sequence
+  domain, so `cli_complete.payload.final_seq` equals the cancel
+  failure's stdout `seq`.
+
+---
+
+## Known v0 limitation — cooperative cancellation
+
+Cancellation is cooperative at Python `await` boundaries. When the
+frontend sends `cancel`, the backend requests cancellation of the
+pipeline task with `asyncio.Task.cancel()`. Python raises
+`asyncio.CancelledError` into the task at the next opportunity.
+In-flight provider HTTP calls, blocking tool calls, and Rust
+executor work do NOT support fine-grained interruption in v0.
+A frontend SHOULD display "cancellation requested" until it
+receives `cli_complete.payload.outcome == "cancelled"`. Deeper
+runtime cancellation (signal-based interrupt of provider calls,
+Rust `TopologyExecutor` work) is out of scope for the cycle-13 K
+post-Phase-2.2 cli_gaps stage chain and is tracked as a
+follow-up cycle initiative.
 
 ---
 

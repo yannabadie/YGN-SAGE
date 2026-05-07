@@ -870,6 +870,221 @@ def test_boot_initialization_prevents_first_heartbeat_before_idle_threshold() ->
     ) is True
 
 
+# ────────────────────────────────────────────────────────────────────
+# 3.7 cancel command + cooperative v0 cancellation (Stage D)
+#
+# Direct asyncio integration: monkeypatch ``boot_agent_system`` to return
+# a fake System whose pipeline.run hangs on an asyncio.Event; feed
+# stdin a JSONL ``cancel`` command and assert the full stream contract:
+# exactly one ``failure(kind="cli_cancel", error_type="cancelled")``
+# frame followed by ``cli_complete(outcome="cancelled", exit_code=130)``,
+# stream idempotency on double-cancel, no progress after terminal,
+# final_seq reconciliation, exit code 130.
+# ────────────────────────────────────────────────────────────────────
+
+
+class _CancelHangingPipeline:
+    """Fake Pipeline.run that hangs on an asyncio.Event.
+
+    Tracks whether cancellation was observed (asyncio.CancelledError raised
+    out of the wait). This is the v0 cooperative cancellation contract:
+    Python's ``asyncio.Task.cancel()`` raises CancelledError at the next
+    ``await`` boundary, which is exactly the Event.wait() here.
+    """
+
+    def __init__(self) -> None:
+        self.cancelled = False
+        self.last_context: Any = None
+        self._never_set = asyncio.Event()
+        self._active_context: Any = None
+        self._cli_progress_state: Any = None
+
+    async def run(
+        self, task: str,
+        budget_usd: float | None = None, system_hint: int | None = None,
+    ) -> str:
+        try:
+            await self._never_set.wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        return "never reached"
+
+    def tighten_budget(self, _new: float) -> Any:
+        from sage.contracts.cost_tracker import BudgetUpdateResult
+        return BudgetUpdateResult(
+            accepted=False, reason="budget_before_prompt",
+            budget_usd=0.0, remaining=0.0, total_spent=0.0,
+        )
+
+
+class _CancelFakeSystem:
+    """Fake ``System`` returned by patched ``boot_agent_system``."""
+
+    def __init__(self, pipeline: _CancelHangingPipeline) -> None:
+        self.pipeline = pipeline
+
+
+async def _drive_cancel_run(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    stdin_lines: list[str],
+) -> tuple[int, str, _CancelHangingPipeline]:
+    """Helper: spin up ``run_jsonl_async`` with a fake boot + fake stdin
+    populated with ``stdin_lines`` (each is a complete JSONL command
+    line ending in ``\\n``)."""
+    fake_pipeline = _CancelHangingPipeline()
+
+    def _fake_boot(*_args: Any, **_kwargs: Any) -> _CancelFakeSystem:
+        return _CancelFakeSystem(fake_pipeline)
+
+    # Patch the boot function. ``run_jsonl_async`` does
+    # ``from sage.boot import boot_agent_system`` LOCALLY — patch
+    # the source module so the local import picks up the fake.
+    monkeypatch.setattr("sage.boot.boot_agent_system", _fake_boot)
+    # Ensure no real .sage state interferes.
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_EPOCH_GUARD", "1")
+    monkeypatch.setenv("SAGE_BOOT_BYPASS_REASON", "cli stage-D test")
+    monkeypatch.setenv("SAGE_OPERATOR_ID", "test")
+
+    stdin_buf = io.StringIO("".join(stdin_lines))
+    stdout_buf = io.StringIO()
+    exit_code = await cli_run.run_jsonl_async(
+        "fake task", stdin=stdin_buf, stdout=stdout_buf,
+    )
+    return exit_code, stdout_buf.getvalue(), fake_pipeline
+
+
+def _parse_jsonl_frames(text: str) -> list[dict[str, Any]]:
+    return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+@pytest.mark.asyncio
+async def test_cancel_emits_failure_then_terminal_complete(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``cancel`` command produces exactly one
+    ``failure(kind="cli_cancel", error_type="cancelled")`` frame followed
+    by ``cli_complete(outcome="cancelled", exit_code=130)`` — terminal."""
+    exit_code, stdout, fake_pipeline = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[
+            json.dumps({"command": "cancel", "args": {"reason": "user clicked"}}) + "\n",
+        ],
+    )
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    # Runtime ``failure`` events from RuntimeEventLog use the cycle-7 R6.1c
+    # FLAT redacted shape: ``kind`` / ``error_type`` are at the top level
+    # (NOT nested under ``payload``). CLI envelope events (cli_started /
+    # cli_complete) keep the ``payload`` nesting. Stage A's stdout seq
+    # rewrite preserves this distinction.
+    cancel_failures = [
+        f for f in frames
+        if f["event_type"] == "failure" and f.get("kind") == "cli_cancel"
+    ]
+    assert len(cancel_failures) == 1
+    assert cancel_failures[0]["error_type"] == "cancelled"
+    # ``message`` is hashed into payload_hash for the redacted forensic
+    # archive but the flat-redacted stdout frame doesn't carry it. The
+    # forensic file (under trace_dir) retains the full payload.
+    # cli_complete is the LAST frame.
+    assert frames[-1]["event_type"] == "cli_complete"
+    assert frames[-1]["payload"]["outcome"] == "cancelled"
+    assert frames[-1]["payload"]["exit_code"] == 130
+    # The fake pipeline observed the CancelledError.
+    assert fake_pipeline.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_cancel_final_seq_points_to_cancel_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``cli_complete.payload.final_seq`` equals the cancel failure
+    frame's stdout seq (the failure is the immediately previous
+    stdout frame on the cancel path)."""
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[json.dumps({"command": "cancel"}) + "\n"],
+    )
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    cli_complete = frames[-1]
+    final_seq = cli_complete["payload"]["final_seq"]
+    # The frame at seq=final_seq MUST be the cli_cancel failure.
+    pen_ultimate = [f for f in frames if f["seq"] == final_seq]
+    assert len(pen_ultimate) == 1
+    assert pen_ultimate[0]["event_type"] == "failure"
+    # Runtime failure shape is FLAT (cycle-7 R6.1c redacted form),
+    # not nested under ``payload``.
+    assert pen_ultimate[0].get("kind") == "cli_cancel"
+
+
+@pytest.mark.asyncio
+async def test_cancel_idempotent_double_cancel(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two ``cancel`` commands produce exactly ONE
+    ``failure(kind="cli_cancel")`` and ONE ``cli_complete``. Stream-level
+    idempotency, regardless of stdin-drain semantics."""
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[
+            json.dumps({"command": "cancel"}) + "\n",
+            json.dumps({"command": "cancel"}) + "\n",
+        ],
+    )
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    cancel_failures = [
+        f for f in frames
+        if f["event_type"] == "failure" and f.get("kind") == "cli_cancel"
+    ]
+    cli_completes = [f for f in frames if f["event_type"] == "cli_complete"]
+    assert len(cancel_failures) == 1
+    assert len(cli_completes) == 1
+
+
+@pytest.mark.asyncio
+async def test_cancel_before_pipeline_wait_still_cancels(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``cancel`` queued before pipeline_task starts waiting still cancels
+    the run. The dispatcher sets ``cancel_requested`` during/before boot
+    and the wait races immediately (FIRST_COMPLETED) on the cancel side."""
+    exit_code, stdout, fake_pipeline = await _drive_cancel_run(
+        monkeypatch,
+        # Cancel arrives first — before any other command.
+        stdin_lines=[json.dumps({"command": "cancel"}) + "\n"],
+    )
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    assert frames[-1]["event_type"] == "cli_complete"
+    assert frames[-1]["payload"]["outcome"] == "cancelled"
+    assert fake_pipeline.cancelled is True
+
+
+@pytest.mark.asyncio
+async def test_cancel_stops_progress_before_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No ``cli_progress`` frame appears AFTER the terminal
+    ``cli_complete`` on the cancel path. The heartbeat task is cancelled
+    + awaited in ``finally`` before ``cli_complete`` is emitted (Stage C
+    contract preserved through the cancel-then-cli_complete sequence)."""
+    exit_code, stdout, _ = await _drive_cancel_run(
+        monkeypatch,
+        stdin_lines=[json.dumps({"command": "cancel"}) + "\n"],
+    )
+    assert exit_code == 130
+    frames = _parse_jsonl_frames(stdout)
+    # Find cli_complete index; assert nothing follows.
+    cli_complete_idx = next(
+        i for i, f in enumerate(frames) if f["event_type"] == "cli_complete"
+    )
+    assert cli_complete_idx == len(frames) - 1, "cli_complete is not the last frame"
+
+
 def test_set_cli_progress_stage_helper_no_op_without_state() -> None:
     """``_set_cli_progress_stage`` is a no-op when no CLI is attached
     (running pipeline outside the CLI doesn't pay any cost)."""

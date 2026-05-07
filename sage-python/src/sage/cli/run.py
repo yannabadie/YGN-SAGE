@@ -17,15 +17,22 @@ Cycle-13 K post-Phase-2.2 closure status:
   - Stage A (`2d557b15`): unified stdout seq + ``cli_complete.payload.final_seq``.
   - Stage B (`7bd48c17`): tightening-only ``set_budget`` command wired
     through ``CostTracker.tighten_remaining_budget`` root guard.
-  - Stage C: ``cli_progress`` idle heartbeat (this commit) — timer-based
+  - Stage C (`2ce3c877`): ``cli_progress`` idle heartbeat — timer-based
     5s cadence with 10s idle guard, stage labels driven by orchestrator,
-    no piggyback. Cooperative Python cancellation (Stage D) ships next.
+    no piggyback.
+  - Stage D (this commit): cooperative Python cancellation hardening.
+    The cancel path emits one terminal
+    ``failure(kind="cli_cancel", error_type="cancelled")`` frame before
+    ``cli_complete(outcome="cancelled", exit_code=130)``. Idempotent
+    at the stream level.
 
-Out of scope (deferred to a later cycle):
-  - Cancellation token threading into Rust ``TopologyRunner`` (today the
-    Python pipeline can ``asyncio.CancelledError`` itself; deeper cancellation
-    of in-flight LLM calls / Rust paths is documented as a known v0
-    limitation in ``docs/contracts/SAGE_CLI_PROTOCOL.md``).
+Known v0 limitations (documented in ``docs/contracts/SAGE_CLI_PROTOCOL.md``):
+  - Cancellation is cooperative at Python ``await`` boundaries.
+    ``asyncio.Task.cancel()`` raises ``CancelledError`` at the next
+    opportunity. In-flight provider HTTP calls, blocking tool calls,
+    and Rust ``TopologyExecutor`` work do NOT support fine-grained
+    interruption in v0. Frontends SHOULD show "cancellation
+    requested" until ``cli_complete.payload.outcome == "cancelled"``.
 """
 from __future__ import annotations
 
@@ -757,6 +764,12 @@ async def run_jsonl_async(
     # is rejected with reason="budget_before_prompt" (Stage B lock).
     pipeline_for_dispatcher: list[Any] = [None]
 
+    # Stage D: cancel reason captured from ``args.reason``. Surfaced in the
+    # terminal ``failure(kind="cli_cancel")`` frame's ``message`` field so
+    # the operator-readable reason is recorded both forensically and on the
+    # stdout protocol stream.
+    cancel_reason: list[str] = [""]
+
     async def _command_dispatcher() -> None:
         while True:
             cmd = await command_queue.get()
@@ -767,6 +780,11 @@ async def run_jsonl_async(
             if approval_bridge.dispatch_command(cmd):
                 continue
             if verb == "cancel":
+                args = cmd.get("args")
+                if isinstance(args, Mapping):
+                    raw_reason = args.get("reason")
+                    if isinstance(raw_reason, str) and raw_reason:
+                        cancel_reason[0] = raw_reason
                 cancel_requested.set()
                 return
             if verb == "set_budget":
@@ -873,6 +891,22 @@ async def run_jsonl_async(
             try:
                 await t
             except (asyncio.CancelledError, Exception):
+                pass
+
+        # Stage D: emit one terminal ``failure(kind="cli_cancel")`` frame
+        # BEFORE closing the eventlog so it lands on stdout immediately
+        # before ``cli_complete``. ``cli_complete.payload.final_seq`` will
+        # then point at this failure frame on the cancel path. Guarded so
+        # only one frame fires even if the cancel handler ran multiple
+        # times (idempotent stream contract).
+        if outcome == "cancelled":
+            try:
+                eventlog.emit_failure(
+                    kind="cli_cancel",
+                    error_type="cancelled",
+                    message=cancel_reason[0] or "cancel requested",
+                )
+            except Exception:  # noqa: BLE001
                 pass
 
         # Close eventlog (flushes the tee → final runtime events on stdout).
