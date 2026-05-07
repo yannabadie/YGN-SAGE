@@ -245,23 +245,10 @@ jobs:
           path: sage-core/dist/*.whl
           retention-days: 30
 
-  # PyPI publish step deliberately omitted in the cycle-10 P5 draft.
-  # Acceptance gate before adding it (per cycle-10 plan + advisor 2026-05-04):
-  #   1. Successful workflow_dispatch run on all 6 matrix entries
-  #      (Linux 3.12 + 3.13, Windows 3.12 + 3.13, macOS arm64 3.12 + 3.13)
-  #   2. Smoke test passing on at least Linux + Windows in the matrix run
-  #   3. Operator review of artifact sizes (PyPI 100 MB hard cap; smt+onnx
-  #      wheels may exceed that)
-  #   4. TestPyPI dry-run via a separate `release-test` workflow
-  #   5. Real PyPI publish via tag-triggered release workflow
-  # Track this gate in the cycle-10 plan task P5 and the cycle-11 followup
-  # ticket once the first dispatch run produces evidence.
-
-  # ── PyPI publish (Phase 9, tag-triggered only) ────────────────────────
-  # Requires PYPI_TOKEN secret configured in repository settings.
-  pypi-publish:
+  # ── PyPI publish (Phase 9, tag-triggered only) ────────────────────
+  publish-pypi:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build]
+    needs: [build-wheels]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
