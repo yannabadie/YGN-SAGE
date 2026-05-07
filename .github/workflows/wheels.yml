@@ -1,17 +1,15 @@
-name: Build wheels (B4)
+name: Build wheels (B4 — Phase 9 release pipeline)
 
-# Cycle-10 P5 (B4) — multi-OS wheel build matrix for sage-core. Draft
-# state: workflow_dispatch only, no push/release triggers, no PyPI
-# upload step. The first dispatch run produces artifacts that confirm
-# the matrix works; PyPI publish is a follow-up commit gated by:
-#   - Operator review of the artifact size + import smoke
-#   - TestPyPI dry-run
-#   - Real PyPI release
-# See `.claude/plans/2026-05-04-cycle-10-verified-runtime-release-preview.md`
-# task P5 and `sage-core/pyproject.toml` `[tool.maturin]` section for
-# the canonical default-feature set this workflow ships.
+# AUDITRUST.md Phase 9: multi-OS wheel build matrix + release trigger
+# + PyPI publish.  Triggered on version tags (v*) for release;
+# manual dispatch for audit/smoke runs.
+#
+# PyPI publish requires PYPI_TOKEN secret configured in repo settings.
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       reason:
@@ -258,3 +256,25 @@ jobs:
   #   5. Real PyPI publish via tag-triggered release workflow
   # Track this gate in the cycle-10 plan task P5 and the cycle-11 followup
   # ticket once the first dispatch run produces evidence.
+
+  # ── PyPI publish (Phase 9, tag-triggered only) ────────────────────────
+  # Requires PYPI_TOKEN secret configured in repository settings.
+  pypi-publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_TOKEN }}
+          skip-existing: true
