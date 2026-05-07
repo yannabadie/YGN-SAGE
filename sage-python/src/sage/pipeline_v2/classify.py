@@ -12,11 +12,12 @@ Stage 0 contract:
     `_last_routing_decision` / `_last_runtime_routing_*` accessors
     that downstream stages + telemetry read).
   - Priority 2: Python kNN fallback (Rust-accelerated embedding).
-    Accuracy claim `routing.knn_92pct` is `evidence_pending` in
-    `docs/CLAIMS.yaml` — historically cited as ~92%/93.3% GT.
+    `routing.knn_92pct` `delivered` in `docs/CLAIMS.yaml` at strict-equal
+    floor ≥50/60 LOO-CV on the 60-task GT (historical 92%/93.3% on
+    earlier 50-task GT subset are provenance only).
   - Priority 3: AdaptiveRouter heuristic — emergency fallback only.
-    Historical accuracy figures `evidence_pending` in
-    `docs/CLAIMS.yaml`.
+    Historical accuracy figures provenance only;
+    `routing.complexity_heuristic_emergency_only` `retired` in registry.
   - `sage.observability.spans.sage_span` instrumentation under
     `op="sage.classify"`.
   - Bandit-attribution lifecycle helpers
@@ -120,9 +121,10 @@ def classify(
                 runtime_events_mod.emit_bandit_attribution_mismatch(self, ctx, "router_fallback_degraded")
                 _bandit_attr.clear_bandit_decision(self, ctx)
 
-        # Priority 2: Python kNN — Rust-accelerated embedding (accuracy claim
-        # `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`;
-        # figure historically cited as ~92%/93.3% GT).
+        # Priority 2: Python kNN — Rust-accelerated embedding
+        # (`routing.knn_92pct` `delivered` floor ≥50/60 LOO-CV in
+        # `docs/CLAIMS.yaml`; historical 92%/93.3% on earlier
+        # 50-task GT provenance only).
         if self.router and hasattr(self.router, '_knn') and self.router._knn is not None:
             try:
                 knn_result = self.router._knn.route(ctx.task)

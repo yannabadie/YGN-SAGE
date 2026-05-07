@@ -8,7 +8,7 @@ paths:
 # Research-Backed Decisions
 
 ## Routing
-- **kNN on arctic-embed-m** (arXiv 2505.12601): PRIMARY router. Accuracy claim `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml` — figure historically cited as ~92% GT, awaiting CI-runnable seeded threshold test.
+- **kNN on arctic-embed-m** (arXiv 2505.12601): PRIMARY router. `routing.knn_92pct` `delivered` in `docs/CLAIMS.yaml` at strict-equal floor ≥50/60 LOO-CV on the 60-task GT, S1≥16/20, S2≥15/20, S3≥19/20 (historical 92% on earlier 50-task GT provenance only, not recertified by this floor).
 - **Cascade routing > upfront routing** on hard code tasks (ETH-SRI ICLR '25, Cascade Routing 2410.10347).
 - **Quality estimation is the bottleneck**, not routing algorithm (ETH-SRI).
 - **DeBERTa zero-shot: 52%** — needs fine-tuning, not zero-shot (arXiv eval).

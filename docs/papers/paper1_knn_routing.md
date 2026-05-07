@@ -1,10 +1,10 @@
 # Embedding-Based kNN Routing for Multi-Provider LLM Systems
 
-> **⚠ Non-autoritative / archive snapshot** — historic figures only. Current authoritative status: `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`. The accuracy numbers below (kNN 92%, SystemRouter 88%, etc.) are non-autoritative — see the registry until a CI-runnable seeded threshold test pins them.
+> **⚠ Non-autoritative / archive snapshot** — historic figures only. `routing.knn_92pct` was `evidence_pending` in this archive snapshot; current authoritative status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`. The accuracy numbers below (kNN 92%, SystemRouter 88%, etc.) are non-autoritative.
 
 ## Abstract
 
-(Historic / non-autoritative figures.) We present a simple yet effective routing method for multi-provider LLM systems based on k-nearest neighbor (kNN) classification on pre-computed task embeddings. Using arctic-embed-m (768-dim, 109M params) embeddings of 50 human-labeled tasks across three cognitive systems (S1 fast/S2 analytical/S3 formal), our kNN router was reported at historic 92% accuracy (now `evidence_pending` in `docs/CLAIMS.yaml`) — a +40pp improvement over a keyword heuristic (historic 52%, non-autoritative) and +48pp over structural features (historic 44%, non-autoritative). Leave-one-out cross-validation yielded 80%. The method requires no training, no GPU, and adds <5ms latency per decision. We validate findings from arXiv 2505.12601 that embedding-based kNN outperforms MLP, GNN, and attention-based routers on cognitive system classification, and show how kNN integrates into a multi-stage cascade router that achieves production-grade routing quality.
+(Historic / non-autoritative archive snapshot figures.) We present a simple yet effective routing method for multi-provider LLM systems based on k-nearest neighbor (kNN) classification on pre-computed task embeddings. Using arctic-embed-m (768-dim, 109M params) embeddings of 50 human-labeled tasks across three cognitive systems (S1 fast/S2 analytical/S3 formal), our kNN router was reported at historic 92% accuracy in this archive snapshot — `routing.knn_92pct` was `evidence_pending` in this snapshot; current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`. A +40pp improvement over a keyword heuristic (historic 52%, non-autoritative) and +48pp over structural features (historic 44%, non-autoritative). Leave-one-out cross-validation yielded 80%. The method requires no training, no GPU, and adds <5ms latency per decision. We validate findings from arXiv 2505.12601 that embedding-based kNN outperforms MLP, GNN, and attention-based routers on cognitive system classification, and show how kNN integrates into a multi-stage cascade router that achieves production-grade routing quality.
 
 ## 1. Introduction
 
@@ -14,7 +14,7 @@ Prior work approaches routing through learned classifiers (RouteLLM, BERT-based)
 
 ### Contributions
 
-1. **Empirical validation** of kNN routing superiority on cognitive system classification — historic 92% vs 52% heuristic (non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`)
+1. **Empirical validation** of kNN routing superiority on cognitive system classification — historic 92% vs 52% heuristic (non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this archive snapshot, current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`)
 2. **Error analysis** showing S1/S2 confusion is the primary failure mode, while S3 is perfectly separable
 3. **Cascade integration** demonstrating how kNN serves as Stage 0.5 in a multi-stage routing pipeline
 4. **Shadow routing validation** using 1,090 dual-routing traces comparing Rust and Python routers
@@ -51,16 +51,16 @@ kNN is wired as Stage 0.5 in the 4-stage AdaptiveRouter pipeline:
 
 (Historic / non-autoritative table — see `docs/CLAIMS.yaml`.)
 
-| Stage | Method | Accuracy (historic, `evidence_pending`) | Latency |
+| Stage | Method | Accuracy (archive snapshot, was `evidence_pending`; current status: `docs/CLAIMS.yaml`) | Latency |
 |-------|--------|----------|---------|
 | 0 | Structural features (regex, word counts) | historic 44% — non-autoritative | <1ms |
-| **0.5** | **kNN on embeddings** | historic **92%** — non-autoritative; `routing.knn_92pct` `evidence_pending` | **<5ms** |
+| **0.5** | **kNN on embeddings** | historic **92%** — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥50/60 LOO-CV in `docs/CLAIMS.yaml` | **<5ms** |
 | 1 | ONNX BERT classifier | — | ~10ms |
 | 2 | Entropy probe (active learning) | — | ~20ms |
 | 3 | Online learning (reserved, not yet implemented) | — | — |
 | — | Cascade fallback (heuristic ComplexityRouter — Priority-3 emergency fallback only, NOT dead code, AUDIT2 corrected) | — | variable |
 
-In production, kNN historically resolved 92% of decisions at Stage 0.5 (non-autoritative; `routing.knn_92pct` `evidence_pending`). The remaining 8% escalated to BERT or entropy probe.
+In production, kNN historically resolved 92% of decisions at Stage 0.5 (non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` floor in `docs/CLAIMS.yaml`). The remaining 8% escalated to BERT or entropy probe.
 
 ### 3.5 Exemplar Storage
 
@@ -70,12 +70,12 @@ Pre-computed embeddings stored at `config/routing_exemplars.npz` (140KB). Auto-r
 
 ### 4.1 Router Comparison
 
-(Historic / non-autoritative table — figures `evidence_pending` in `docs/CLAIMS.yaml`.)
+(Non-autoritative archive snapshot table — figures were `evidence_pending` in this snapshot; current status: `docs/CLAIMS.yaml`.)
 
 | Router | Accuracy (historic) | S1 (10) | S2 (20) | S3 (20) |
 |--------|----------|---------|---------|---------|
-| **kNN (ours)** | historic **92%** (46/50) — non-autoritative; `routing.knn_92pct` `evidence_pending` | 70% (7/10) | 95% (19/20) | **100%** (20/20) |
-| Rust SystemRouter | historic 88% (44/50) — non-autoritative; `routing.system_router_88pct` `evidence_pending` | 80% (8/10) | 95% (19/20) | 85% (17/20) |
+| **kNN (ours)** | historic **92%** (46/50) — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥50/60 LOO-CV in `docs/CLAIMS.yaml` | 70% (7/10) | 95% (19/20) | **100%** (20/20) |
+| Rust SystemRouter | historic 88% (44/50) — non-autoritative archive snapshot; `routing.system_router_88pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥52/60 in `docs/CLAIMS.yaml` | 80% (8/10) | 95% (19/20) | 85% (17/20) |
 | Keyword heuristic | historic 52% (26/50) — non-autoritative | 80% (8/10) | 50% (10/20) | 40% (8/20) |
 | DeBERTa zero-shot | historic 52% (26/50) — non-autoritative | — | — | 0% (0/20) |
 | Python AdaptiveRouter | historic 44% (22/50) — non-autoritative; Priority-3 emergency fallback only, NOT dead code (AUDIT2 corrected) | 80% (8/10) | 45% (9/20) | 0% (0/20) |
@@ -105,7 +105,7 @@ The Rust SystemRouter is well-calibrated against ground truth. The Python Adapti
 
 ### 4.4 Leave-One-Out Cross-Validation
 
-LOO-CV accuracy: historic 80% (40/50) — non-autoritative. The 12% gap between LOO-CV (80%) and full-set accuracy (historic 92% — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`) suggests moderate overfitting to the exemplar set, expected with N=50.
+LOO-CV accuracy: historic 80% (40/50) — non-autoritative archive snapshot. The 12% gap between LOO-CV (80%) and full-set accuracy (historic 92% — non-autoritative; `routing.knn_92pct` was `evidence_pending` in this archive snapshot, current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`) suggests moderate overfitting to the exemplar set, expected with N=50.
 
 ## 5. Discussion
 

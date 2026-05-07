@@ -794,7 +794,7 @@ async def routing_pipeline():
             "name": "kNN Embeddings",
             "order": 2,
             "method": "knn",
-            "description": "kNN primary router (arXiv 2505.12601, arctic-embed-m distance-weighted majority vote). Accuracy claim `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`.",
+            "description": "kNN primary router (arXiv 2505.12601, arctic-embed-m distance-weighted majority vote). `routing.knn_92pct` `delivered` floor >=50/60 LOO-CV in `docs/CLAIMS.yaml` (historical 92% provenance only).",
         },
         {
             "name": "ONNX BERT",

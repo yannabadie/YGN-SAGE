@@ -13,7 +13,7 @@ updated: 2026-04-07
 
 > **⚠ Non-autoritative / archive (cycle-13 K Phase 0.6c, 2026-05-06)**
 > This Obsidian-vault snapshot is **historical reference only — non-autoritative**.
-> Historic figures (kNN 93.3%/92% — non-autoritative) and (SystemRouter 88% — non-autoritative) and (ComplexityRouter 34% — non-autoritative) are tracked in `docs/CLAIMS.yaml` as `evidence_pending`.
+> Historic figures (kNN 93.3%/92% — non-autoritative) and (SystemRouter 88% — non-autoritative) and (ComplexityRouter 34% — non-autoritative) were `evidence_pending` in this archive snapshot; current authoritative status: `routing.knn_92pct` / `routing.system_router_88pct` `delivered` floors in `docs/CLAIMS.yaml`.
 > The `DEAD CODE` framing for ComplexityRouter is corrected (AUDIT2 2026-04-24): Priority-3 emergency fallback only, NOT dead code.
 > Do not cite numbers from this file as evidence of capability — see `docs/CLAIMS.yaml`.
 
@@ -28,13 +28,13 @@ updated: 2026-04-07
 ## Routeurs
 
 ### kNN Router (Primaire)
-- **Precision historique** : 93.3% GT (56/60) — archive, non-autoritative; current status: `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`.
+- **Precision historique** : 93.3% GT (56/60) — archive snapshot, non-autoritative; was `evidence_pending` in this snapshot. Current status: `routing.knn_92pct` `delivered` (≥50/60 LOO-CV) in `docs/CLAIMS.yaml`.
 - **Embeddings** : arctic-embed-m 768-dim, Rust ONNX
 - **Ref** : [[kNN-Routing|arXiv 2505.12601]]
 - **Exemplaires** : 60 taches etiquetees
 
 ### SystemRouter (Rust)
-- **Precision historique** : 88% GT — archive, non-autoritative; current status: `routing.system_router_88pct` `evidence_pending` in `docs/CLAIMS.yaml`.
+- **Precision historique** : 88% GT — archive snapshot, non-autoritative; was `evidence_pending` in this snapshot. Current status: `routing.system_router_88pct` `delivered` (≥52/60) in `docs/CLAIMS.yaml`.
 - **Usage** : Fallback si kNN indisponible
 - **Implementation** : Rust natif, pas d'embeddings
 

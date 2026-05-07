@@ -200,7 +200,7 @@ Plus:
 
 ### 5. Strategy — Cognitive Routing (Rust)
 
-- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (`routing.knn_92pct` in `docs/CLAIMS.yaml` is currently `evidence_pending`; backing research [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) validates kNN as a viable router class — RouterBench/AlpacaEval public scores 52-77% AUC), SystemRouter (`routing.system_router_88pct` is also `evidence_pending` until a CI-runnable test pins the figure)
+- **S1/S2/S3** cognitive routing (Kahneman dual-process): kNN primary (`routing.knn_92pct` in `docs/CLAIMS.yaml` `delivered` at the strict-equal 60-task floor ≥50/60 LOO-CV, S1≥16/20, S2≥15/20, S3≥19/20; backing research [arXiv 2505.12601](https://arxiv.org/abs/2505.12601) validates kNN as a viable router class — RouterBench/AlpacaEval public scores 52-77% AUC; historical 92% on the earlier 50-task GT is provenance only), SystemRouter (`routing.system_router_88pct` `delivered` at the floor ≥52/60 via route(task, 1.0); historical 88% provenance only)
 - **ContextualBandit** (Rust): per-arm Thompson sampling with Beta/Gamma posteriors, Pareto front selection. General principle — bandit must learn from actual quality signal — is from the [Cascade Routing ETH-SRI ICLR 2025](https://arxiv.org/abs/2410.10347) line of work.
 - **ModelAssigner** (Rust): per-node model selection with configurable weights + provider hints (+0.15 bonus)
 - **ProviderPool**: 7 API providers + Codex, per-node resolution, circuit breaker with auto-failover
@@ -423,7 +423,7 @@ YGN-SAGE/
 |       |-- protocols/   #   A2A v1.0, MCP server, unified serve
 |       |-- providers/   #   connector.py (single source of truth), OpenAI-compat wrapper
 |       |-- runtime/     #   2026-04-29 typed runtime spine (event_log, state, run_frame, oracle)
-|       |-- strategy/    #   S1/S2/S3 routing, kNN primary (accuracy `evidence_pending`), AdaptiveRouter
+|       |-- strategy/    #   S1/S2/S3 routing, kNN primary (delivered floor `routing.knn_92pct`), AdaptiveRouter
 |       |-- tools/       #   ToolForge, AgentTool, agent_mgmt, sandbox_executor, gap_detector
 |       |-- topology/    #   TopologyRunner (code node dispatch), LLM caller (optional learned-policy V1/V2), controller
 |       |-- verl/        #   Training: topology_env (4-state), reward (5-signal), manifest, cascaded_eval,

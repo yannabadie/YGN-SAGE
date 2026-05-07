@@ -1,6 +1,6 @@
 # YGN-SAGE: A Self-Adaptive Agent Development Kit with Five Cognitive Pillars
 
-> **⚠ Non-autoritative / archive snapshot** — historic figures only. Current authoritative status: `docs/CLAIMS.yaml`. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) are `evidence_pending`. Do not cite numbers from this paper as evidence of current capability.
+> **⚠ Non-autoritative / archive snapshot** — historic figures only. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) were `evidence_pending` in this archive snapshot; current authoritative status: `docs/CLAIMS.yaml` (`delivered` floors since 2026-05-07). Do not cite numbers from this paper as evidence of current capability.
 
 ## Abstract
 
@@ -14,7 +14,7 @@ Agent development kits face a fundamental tension: adding capabilities (memory, 
 
 1. **Five-pillar architecture** with Rust core (Arrow memory, SMT verification, topology execution) and Python SDK
 2. **Ablation study** confirming +15pp total framework gain; routing shows +5pp isolated contribution on code tasks (N=20); per-pillar attribution for memory, AVR, and guardrails pending larger-scale evaluation
-3. **kNN routing** with historic 92% accuracy on cognitive system classification, +40pp over heuristic (non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`)
+3. **kNN routing** with historic 92% accuracy on cognitive system classification, +40pp over heuristic (non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`)
 4. **Topology evaluation**: 4-topology HumanEval+ benchmark with multi-run variance analysis
 5. **Honest negative results**: evolution -10pp on simple tasks, GSM8K topology null result, SWE-Bench 0% without code access
 
@@ -36,7 +36,7 @@ CRAG-style relevance gate (keyword overlap, threshold=0.3) prevents irrelevant m
 
 **Pillar 4: Evolution.** DGM context injection with SAMPO solver (5 strategic actions). Self-modifying hyperparameters: actions 2/3/4 modify mutations_per_generation, clip_epsilon, filter_threshold. SnapBPF (Rust CoW memory snapshots) for mutation rollback.
 
-**Pillar 5: Strategy.** S1/S2/S3 cognitive routing (Kahneman dual-process theory extended). 4-stage pipeline: structural features -> kNN embeddings (historic 92% accuracy — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`) -> ONNX BERT -> entropy probe (cascade fallback to heuristic — Priority-3 emergency fallback only, NOT dead code, AUDIT2 corrected; stage 3 online learning reserved). Contextual bandit (Thompson sampling, Pareto front) for model selection within each system.
+**Pillar 5: Strategy.** S1/S2/S3 cognitive routing (Kahneman dual-process theory extended). 4-stage pipeline: structural features -> kNN embeddings (historic 92% accuracy — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`) -> ONNX BERT -> entropy probe (cascade fallback to heuristic — Priority-3 emergency fallback only, NOT dead code, AUDIT2 corrected; stage 3 online learning reserved). Contextual bandit (Thompson sampling, Pareto front) for model selection within each system.
 
 ### 2.2 Formal Verification
 
@@ -91,12 +91,12 @@ The full framework adds +15pp over the bare LLM baseline, with routing showing a
 
 ### 3.4 Routing
 
-(Historic / non-autoritative table — `evidence_pending` in `docs/CLAIMS.yaml`.)
+(Non-autoritative archive snapshot table — figures were `evidence_pending` in this snapshot; current status: `docs/CLAIMS.yaml`.)
 
 | Router | Accuracy (historic) | Notes |
 |--------|----------|-------|
-| **kNN (arctic-embed-m)** | historic **92%** (46/50) — non-autoritative; `routing.knn_92pct` `evidence_pending` | Non-circular GT, <5ms |
-| Rust SystemRouter | historic 88% (44/50) — non-autoritative; `routing.system_router_88pct` `evidence_pending` | Domain scoring |
+| **kNN (arctic-embed-m)** | historic **92%** (46/50) — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥50/60 LOO-CV in `docs/CLAIMS.yaml` | Non-circular GT, <5ms |
+| Rust SystemRouter | historic 88% (44/50) — non-autoritative archive snapshot; `routing.system_router_88pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥52/60 in `docs/CLAIMS.yaml` | Domain scoring |
 | Keyword heuristic | historic 52% (26/50) — non-autoritative | Regex + word counts |
 | DeBERTa zero-shot | historic 52% (26/50) — non-autoritative | S3=0%, needs fine-tuning |
 | Python AdaptiveRouter | historic 44% (22/50) — non-autoritative; Priority-3 emergency fallback only, NOT dead code (AUDIT2 corrected) | S1-biased, S3=0% |
@@ -177,7 +177,7 @@ Key architectural decisions and their rationale:
 ## 5. Limitations
 
 - **Small ablation sample** (20 tasks): The +15pp result is directionally correct but needs confirmation at larger scale.
-- **kNN ground truth** (50 tasks): LOO-CV gap (historic 80% vs 92% — non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`) suggests moderate overfitting. Needs expansion.
+- **kNN ground truth** (50 tasks): LOO-CV gap (historic 80% vs 92% — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`) suggests moderate overfitting. Needs expansion.
 - **Evolution negative result**: Only tested on simple tasks with budget model. Multi-model heterogeneous scenarios untested.
 - **Single model family**: All benchmarks use Gemini 2.5 Flash/Flash-Lite. Cross-model generalization unknown.
 - **SWE-Bench**: One-shot approach yields 0% resolved. Tool-using agent mode needed for competitive results.

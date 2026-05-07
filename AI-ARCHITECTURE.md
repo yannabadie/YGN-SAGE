@@ -22,7 +22,7 @@ YGN-SAGE est un **Agent Development Kit (ADK)** structuré en 3 packages : un no
 > comme preuve de capacité tant que `python -m sage.ops.claims_audit
 > --strict` ne pin pas l'évidence.
 
-- Route les tâches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (`routing.knn_92pct` = `evidence_pending`) + Rust SystemRouter (`routing.system_router_88pct` = `evidence_pending`) + bandit contextuel Thompson, avec **attribution causale** Stage-0 → Stage-5 (`route_integrated()` + `record_outcome_checked()` depuis cycle-9 `6f23eea4`).
+- Route les tâches vers 3 niveaux cognitifs (S1/S2/S3) via kNN sur embeddings (`routing.knn_92pct` = `delivered` au floor 60-task ≥50/60 LOO-CV, historique 92% sur l'ancien 50-task GT en provenance only) + Rust SystemRouter (`routing.system_router_88pct` = `delivered` au floor ≥52/60 via route(task, 1.0), historique 88% provenance only) + bandit contextuel Thompson, avec **attribution causale** Stage-0 → Stage-5 (`route_integrated()` + `record_outcome_checked()` depuis cycle-9 `6f23eea4`).
 - Génère des topologies multi-agents (11 templates + MAP-Elites + MCTS + CMA-ME + LLM synthesis) et les exécute via `TopologyRunner` avec résolution per-node de providers.
 - Pipeline 5-stages (CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN) avec boucle d'apprentissage bandit, **TopologyController Rust-primary** (ADR-012, 2026-04-20).
 - Sandbox **par défaut** : tree-sitter AST + RustPython wasm32-wasip1 deny-by-default WASI-p1 (ADR-013 §5 flip 2026-04-22, `validate_and_execute` ne fall-back plus en subprocess).
@@ -246,7 +246,7 @@ graph LR
 |---|---|---|---|---|
 | `SystemRouter` | `#[pyclass]` | Route tâche → S1/S2/S3 + model_id, **route_integrated** + record_outcome_checked | Runtime | Bandit attribution invariant (cycle-9 `6f23eea4`) |
 | `ContextualBandit` | `#[pyclass]` | Thompson sampling per-arm Beta/Gamma, persistence SQLite (cycle `cognitive`) | Runtime | `restore_arm` corrige context_sum/count (`d9b0b659`) |
-| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | accuracy: `routing.knn_92pct` `evidence_pending` |
+| `RustKnnRouter` | `#[pyclass]` | kNN cosine sur exemplars NPZ, OOD rejection | Runtime | floor: `routing.knn_92pct` `delivered` ≥50/60 LOO-CV (historique 92% sur ancien 50-task GT, provenance only) |
 | `ModelAssigner` | `#[pyclass]` | Assigne model_id par nœud topologie | Runtime | Domain-aware, budget-aware |
 | `ModelRegistry` | `#[pyclass]` | Catalogue TOML 23 modèles | Runtime | `cards.toml` |
 | `ModelCard` | `#[pyclass]` | Profil par modèle (scores, coûts, affinités) | Runtime | s1/s2/s3 affinity + domain scores |
@@ -406,9 +406,9 @@ graph LR
 
 3. pipeline.run(task) :
    Stage 0: classify_route_and_decide():
-     - kNN router (primary; accuracy: `routing.knn_92pct` `evidence_pending`)
+     - kNN router (primary; `routing.knn_92pct` `delivered` au floor ≥50/60, historique 92% provenance only)
      - Rust SystemRouter.route_integrated() → bandit decision_id
-     - ComplexityRouter (heuristic, emergency fallback Priority-3 — accuracy `evidence_pending`)
+     - ComplexityRouter (heuristic, emergency fallback Priority-3 — `retired` in registry, historique ~34%)
      - Stage 0 input guardrails (perceive.py:119) — skippable via _skip_guardrails
 
    Stage 1: decompose():
@@ -578,12 +578,12 @@ Source de vérité : `sage-core/config/cards.toml` (symlink depuis `sage-python/
 
 ```
 1. Pipeline Stage 0 (classify_route_and_decide) :
-   - kNN primary (RustKnnRouter; `routing.knn_92pct` `evidence_pending`) — Stage A
-   - Rust SystemRouter.route_integrated() — Stage B (`routing.system_router_88pct` `evidence_pending`)
+   - kNN primary (RustKnnRouter; `routing.knn_92pct` `delivered` au floor ≥50/60, historique 92% provenance only) — Stage A
+   - Rust SystemRouter.route_integrated() — Stage B (`routing.system_router_88pct` `delivered` au floor ≥52/60, historique 88% provenance only)
      - StructuralFeatures + formal keywords detection
      - ModelRegistry.best_model_for_system(system, budget)
      - ContextualBandit attribution decision_id
-   - ComplexityRouter heuristic — Priority-3 emergency fallback (accuracy `evidence_pending`)
+   - ComplexityRouter heuristic — Priority-3 emergency fallback (`retired` in registry, historique ~34%)
    - Stage 0 input guardrails (skippable via _skip_guardrails)
 
 2. ContextualBandit.select(decision_id, context_vec):
@@ -804,7 +804,7 @@ Lazy-loaded sur premier appel, fallback sur templates si output invalide.
 Hot-paths en Rust (routing, S-MMU, topologie, vérification, controller depuis ADR-012). Orchestration en Python.
 **Conséquence** : Double maintenance, fallbacks Python pour quelques modules (WorkingMemory mock).
 
-### ADR-2 : kNN comme routeur principal (accuracy: `routing.knn_92pct` `evidence_pending`)
+### ADR-2 : kNN comme routeur principal (`routing.knn_92pct` `delivered` au floor 60-task ≥50/60, historique 92% provenance only)
 arXiv 2505.12601 + ETH-SRI Cascade Routing 2410.10347.
 **Conséquence** : Dépendance ONNX + arctic-embed-m. Hash embeddings interdits.
 
@@ -934,7 +934,7 @@ PIPELINE: CLASSIFY → DECOMPOSE → TOPOLOGY → ASSIGN → EXECUTE → LEARN
   Stage 5 closure: record_outcome_checked() — bandit attribution invariant
 
 ROUTING:
-  kNN (primary; routing.knn_92pct evidence_pending) > Rust SystemRouter (routing.system_router_88pct evidence_pending) > ContextualBandit Thompson > ComplexityRouter heuristic (Priority-3 fallback, evidence_pending)
+  kNN (primary; routing.knn_92pct delivered au floor ≥50/60, historique 92% provenance only) > Rust SystemRouter (routing.system_router_88pct delivered au floor ≥52/60, historique 88% provenance only) > ContextualBandit Thompson > ComplexityRouter heuristic (Priority-3 fallback, retired registry, historique ~34%)
 
 TOPOLOGIE:
   11 templates: sequential, parallel, avr, selfmoa, hierarchical, hub, debate, brainstorming, robust, horizon_pipeline, parallel_fanout

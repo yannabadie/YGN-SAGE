@@ -11,7 +11,7 @@ updated: 2026-04-22
 
 | ADR | Decision | Status |
 |-----|----------|--------|
-| [[ADR-001-kNN-over-Heuristic]] | kNN plutot que heuristic pour le routing (historic accuracy figures non-autoritative; `routing.knn_92pct` `evidence_pending` in `docs/CLAIMS.yaml`) | accepte |
+| [[ADR-001-kNN-over-Heuristic]] | kNN plutot que heuristic pour le routing — archive snapshot, was `evidence_pending`; historic accuracy figures non-autoritative. Current status: `routing.knn_92pct` `delivered` floor ≥50/60 LOO-CV in `docs/CLAIMS.yaml`. | accepte |
 | [[ADR-002-Rust-First]] | Rust pour le core, Python pour l'orchestration | accepte |
 | [[ADR-003-No-HumanEval]] | Ne pas benchmarker sur HumanEval+/MBPP+/GSM8K | accepte |
 | [[ADR-004-Thompson-Sampling]] | Thompson sampling pour le bandit (pas UCB) | accepte |

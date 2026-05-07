@@ -251,21 +251,123 @@ _FORBIDDEN_PATTERNS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
         r"\bComplexityRouter\b[^\n]{0,160}\b45%",
         _ROUTING_HEURISTIC_ALLOW,
     ),
+    # Phase 4 (cgpro post-Phase-4 EDIT_REQUIRED 2026-05-07, Option C): the
+    # bare-XX% patterns above only fire when the offending line carries a
+    # numeric figure. They miss the inverse class — a line that says
+    # `routing.knn_92pct evidence_pending` (claim ID + stale status, no
+    # 92%) — which is exactly what survived in the README Strategy
+    # bullet + AI-ARCHITECTURE Stage 0 bullets after the routing flip.
+    #
+    # cgpro Option C lock: archive/historic docs MAY say claims "were
+    # evidence_pending at the March 2026 snapshot" (past tense + registry
+    # pointer), but MUST NOT say "are evidence_pending" / "currently
+    # evidence_pending" (present tense, since the registry now says
+    # `delivered`). The `_is_archive_historic_status_line` predicate
+    # below enforces the 3-token AND: archive context + past-tense
+    # status + current-registry pointer. The any-token allowlist
+    # alternative was rejected as too permissive.
+    (
+        "stale-routing-knn-status",
+        r"(routing\.knn_92pct[^\n]{0,160}evidence_pending|evidence_pending[^\n]{0,160}routing\.knn_92pct)",
+        (),
+    ),
+    (
+        "stale-routing-systemrouter-status",
+        r"(routing\.system_router_88pct[^\n]{0,160}evidence_pending|evidence_pending[^\n]{0,160}routing\.system_router_88pct)",
+        (),
+    ),
+    # Generic catch for the README project-tree style "kNN ... accuracy
+    # ... evidence_pending" wording (no claim ID, no figure, just the
+    # status drift).
+    (
+        "stale-knn-accuracy-pending",
+        r"\bkNN\b[^\n]{0,120}\baccuracy\b[^\n]{0,80}\bevidence_pending\b",
+        (),
+    ),
 )
+
+
+# Stale-status pattern labels — these use the archive-historic predicate
+# instead of the any-token allowlist, per cgpro Option C.
+_STALE_STATUS_PATTERN_LABELS = frozenset({
+    "stale-routing-knn-status",
+    "stale-routing-systemrouter-status",
+    "stale-knn-accuracy-pending",
+})
+
+# Archive context tokens (line must contain one of these for the line
+# to be considered archive/historic content).
+_ARCHIVE_CONTEXT_TOKENS = (
+    "archive snapshot",
+    "historic snapshot",
+    "historic figures",
+    "historical snapshot",
+    "non-autoritative",
+    "historique",
+)
+
+# Past-tense status tokens (line must explicitly past-tense the
+# evidence_pending status).
+_PAST_STATUS_TOKENS = (
+    "was `evidence_pending`",
+    "were `evidence_pending`",
+    "was evidence_pending",
+    "were evidence_pending",
+    "était `evidence_pending`",
+    "étaient `evidence_pending`",
+    "etait `evidence_pending`",
+    "etaient `evidence_pending`",
+    "was evidence_pending at",
+    "were evidence_pending in",
+    "was evidence_pending in",
+)
+
+# Current-registry pointer tokens (line must point readers at the
+# authoritative registry).
+_CURRENT_STATUS_POINTER_TOKENS = (
+    "current status",
+    "current authoritative status",
+    "current authoritative status lives",
+    "current status lives",
+    "docs/CLAIMS.yaml",
+)
+
+
+def _is_archive_historic_status_line(line: str) -> bool:
+    """cgpro Option C predicate for stale-status patterns.
+
+    Archive/historic docs MAY say claims were evidence_pending in the
+    past, but only when the line ALSO carries an archive-context token
+    AND points readers at the current registry. This blocks the
+    "non-autoritative + claims are evidence_pending" weasel pattern
+    (which is the failure mode the unrestricted allowlist would
+    permit).
+    """
+    lower = line.lower()
+    has_archive_context = any(t in lower for t in _ARCHIVE_CONTEXT_TOKENS)
+    has_past_status = any(t in lower for t in _PAST_STATUS_TOKENS)
+    has_registry_pointer = any(
+        t.lower() in lower for t in _CURRENT_STATUS_POINTER_TOKENS
+    )
+    return has_archive_context and has_past_status and has_registry_pointer
 
 
 def _scan_file(path: Path) -> list[tuple[int, str, str]]:
     """Return [(line_no, label, line_text), ...] of forbidden hits in `path`.
 
     Empty list when clean. Self-caveatted lines (allow_substrings on same
-    line) are excluded.
+    line) are excluded for normal patterns; stale-status patterns use
+    the archive-historic predicate instead per cgpro Option C 2026-05-07.
     """
     text = path.read_text(encoding="utf-8")
     hits: list[tuple[int, str, str]] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
         for label, regex, allow_substrings in _FORBIDDEN_PATTERNS:
             if re.search(regex, line):
-                if any(allow in line for allow in allow_substrings):
+                if label in _STALE_STATUS_PATTERN_LABELS:
+                    if _is_archive_historic_status_line(line):
+                        continue
+                elif any(allow in line for allow in allow_substrings):
                     continue
                 hits.append((line_no, label, line.strip()))
     return hits

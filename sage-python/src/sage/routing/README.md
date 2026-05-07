@@ -12,7 +12,7 @@ Dual Rust/Python routing with JSONL divergence traces. Runs both Rust SystemRout
 
 The Rust core provides the performance-critical routing components:
 
-- **SystemRouter** -- **PRIMARY**. Accuracy claim `routing.system_router_88pct` is `evidence_pending` in `docs/CLAIMS.yaml`. Cognitive system decision engine: hard constraints → structural scoring → telemetry-calibrated affinity → ContextualBandit model selection. `route_integrated()` is the Stage-0 end-to-end path; successful learning must return through `record_outcome_checked()`.
+- **SystemRouter** -- **PRIMARY**. `routing.system_router_88pct` `delivered` in `docs/CLAIMS.yaml` at strict-equal floor ≥52/60 via route(task, 1.0) (historical 88% provenance only). Cognitive system decision engine: hard constraints → structural scoring → telemetry-calibrated affinity → ContextualBandit model selection. `route_integrated()` is the Stage-0 end-to-end path; successful learning must return through `record_outcome_checked()`.
 - **ContextualBandit** -- Per-arm Beta/Gamma posteriors, Thompson sampling, Pareto front. Configurable decay_factor, warm_start_from_affinities.
 - **ModelRegistry** -- TOML-loaded model catalog with telemetry calibration (blended card prior + observed quality).
 - **ModelAssigner** -- Per-node model assignment using ModelCard scoring (affinity + domain + cost). Filters by capabilities and budget.

@@ -1,6 +1,6 @@
 # Benchmark Results
 
-> **⚠ Non-autoritative / archive snapshot (March 2026)** — historic figures only. Current authoritative status: `docs/CLAIMS.yaml`. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) are `evidence_pending`.
+> **⚠ Non-autoritative / archive snapshot (March 2026)** — historic figures only. Routing accuracy claims (`routing.knn_92pct`, `routing.system_router_88pct`) were `evidence_pending` in this archive snapshot; current authoritative status: `docs/CLAIMS.yaml` (`delivered` floors since 2026-05-07).
 
 All results as of March 13, 2026. Tests run using the YGN-SAGE framework with budget-tier Gemini 2.5 Flash unless otherwise noted.
 
@@ -126,12 +126,12 @@ Framework adds **+15 percentage points** over the bare LLM baseline. On the 20-t
 
 50 human-labeled tasks (10 S1 + 20 S2 + 20 S3). Labels assigned by domain expertise, NOT reverse-engineered from the heuristic.
 
-(Historic / non-autoritative table — `evidence_pending` in `docs/CLAIMS.yaml`. Do not cite as current capability.)
+(Non-autoritative archive snapshot table — figures were `evidence_pending` in this snapshot; current status: `docs/CLAIMS.yaml`. Do not cite as current capability.)
 
 | Router | Accuracy (historic) | S1 | S2 | S3 |
 |--------|----------|----|----|-----|
-| **kNN (arctic-embed-m)** | historic **92%** (46/50) — non-autoritative; `routing.knn_92pct` `evidence_pending` | 70% | 95% | 100% |
-| Rust SystemRouter | historic 88% (44/50) — non-autoritative; `routing.system_router_88pct` `evidence_pending` | 80% | 95% | 85% |
+| **kNN (arctic-embed-m)** | historic **92%** (46/50) — non-autoritative archive snapshot; `routing.knn_92pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥50/60 LOO-CV in `docs/CLAIMS.yaml` | 70% | 95% | 100% |
+| Rust SystemRouter | historic 88% (44/50) — non-autoritative archive snapshot; `routing.system_router_88pct` was `evidence_pending` in this snapshot, current status: `delivered` ≥52/60 in `docs/CLAIMS.yaml` | 80% | 95% | 85% |
 | Heuristic (ComplexityRouter) | historic 52% (26/50) — non-autoritative; Priority-3 emergency fallback only, NOT dead code (AUDIT2 corrected) | 80% | 50% | 40% |
 | DeBERTa zero-shot (NVIDIA) | historic 52% (26/50) — non-autoritative | -- | -- | S3=0% |
 | Python AdaptiveRouter | historic 44% (22/50) — non-autoritative | -- | -- | S3=0% |

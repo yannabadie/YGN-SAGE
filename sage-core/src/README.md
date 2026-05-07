@@ -54,10 +54,10 @@ PyFunctions for high-performance sorting (uses Rust pdqsort; placeholder for vqs
 
 ### `routing/` -- Cognitive Routing Engine
 
-SystemRouter (PRIMARY; accuracy claim `routing.system_router_88pct` is `evidence_pending` in `docs/CLAIMS.yaml`) + ContextualBandit + ModelRegistry + ModelAssigner. Stage 0 structural features always compiled.
+SystemRouter (PRIMARY; `routing.system_router_88pct` `delivered` floor ≥52/60 in `docs/CLAIMS.yaml`, historical 88% provenance only) + ContextualBandit + ModelRegistry + ModelAssigner. Stage 0 structural features always compiled.
 
 - **`features.rs`** -- `StructuralFeatures` (PyClass): word_count, has_code_block, has_question_mark, keyword_complexity, keyword_uncertainty, tool_required. `extract(task) -> Self`. 6 keyword groups. 6 unit tests.
-- **`system_router.rs`** -- `SystemRouter` (PyClass): cognitive system decision engine. Hard constraints → structural scoring → domain hint → bandit/budget selection. `route_integrated()`, `record_outcome()`. PRIMARY router (accuracy claim `routing.system_router_88pct` is `evidence_pending` in `docs/CLAIMS.yaml`).
+- **`system_router.rs`** -- `SystemRouter` (PyClass): cognitive system decision engine. Hard constraints → structural scoring → domain hint → bandit/budget selection. `route_integrated()`, `record_outcome()`. PRIMARY router (`routing.system_router_88pct` `delivered` floor ≥52/60 via route(task, 1.0); historical 88% provenance only).
 - **`model_card.rs`** -- `ModelCard` (PyClass): CognitiveSystem (S1/S2/S3) + domain_scores + safety_rating + TOML parsing.
 - **`model_registry.rs`** -- `ModelRegistry` (PyClass): TOML-loaded model catalog, telemetry calibration, `select_best_for_domain()`.
 - **`model_assigner.rs`** -- `ModelAssigner` (PyClass): per-node model assignment using ModelCard scoring (affinity 0.4 + domain 0.4 + cost 0.2). Filters by capabilities and budget. `assign_models()`, `assign_single_node()`.

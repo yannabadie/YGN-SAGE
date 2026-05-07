@@ -10,7 +10,7 @@ paths:
 Performance-critical code MUST be in Rust (sage-core). Python is orchestration + fallback only.
 - New modules: Rust first → PyO3 export → Python fallback optional
 - Check sage-core/src/ for existing Rust module before writing Python
-- Routing: Rust SystemRouter + Rust kNN are PRIMARY; accuracy claims `routing.system_router_88pct` / `routing.knn_92pct` are `evidence_pending` in `docs/CLAIMS.yaml`.
+- Routing: Rust SystemRouter + Rust kNN are PRIMARY; floor claims `routing.system_router_88pct` (≥52/60) and `routing.knn_92pct` (≥50/60) `delivered` in `docs/CLAIMS.yaml` (historical 88%/92% on the earlier 50-task GT subset are provenance only).
 - Quality: Rust QualityLabeler (Z3 formal) is PRIMARY
 - Topology: Rust TopologyEngine (6-path) is PRIMARY
 - Memory: Rust Arrow + S-MMU is PRIMARY
@@ -37,9 +37,9 @@ Direct HTTPS works. If SSL errors occur, the problem is elsewhere.
 SSL bypass is controlled by `SAGE_SSL_VERIFY=false` env var (default: verify=True).
 
 ## 4. kNN Router is Primary
-- KnnRouter — real router (arXiv 2505.12601). Accuracy claim `routing.knn_92pct` is `evidence_pending` in `docs/CLAIMS.yaml`.
-- Rust SystemRouter — domain scoring from cards.toml. Accuracy claim `routing.system_router_88pct` is `evidence_pending` in `docs/CLAIMS.yaml`.
-- ComplexityRouter heuristic — Priority-3 emergency fallback only (NOT dead code; AUDIT2 2026-04-24 corrected the prior "DEAD CODE" framing). Historical accuracy figure also `evidence_pending`.
+- KnnRouter — real router (arXiv 2505.12601). `routing.knn_92pct` `delivered` in `docs/CLAIMS.yaml` at strict-equal floor ≥50/60 LOO-CV on the 60-task GT (historical 92% on the earlier 50-task GT is provenance only).
+- Rust SystemRouter — domain scoring from cards.toml. `routing.system_router_88pct` `delivered` at strict-equal floor ≥52/60 via route(task, 1.0) (historical 88% provenance only).
+- ComplexityRouter heuristic — Priority-3 emergency fallback only (`retired` in registry; NOT dead code per AUDIT2 2026-04-24). Historical ~34% accuracy provenance only.
 - NEVER test/benchmark/optimize the heuristic router
 
 ## 5. Evidence Before Assertions
