@@ -478,12 +478,11 @@ claims:
     '
   _source_file: docs/claims/security.yaml
 - id: topology.adaptive_runtime_controller
-  status: evidence_pending
-  description: Rust-primary RustTopologyController (ADR-012, 2026-04-20) drives 5 adaptation decision
-    paths + state machine; Python wraps for embedder/SmtVerifier/topology-graph access.
-  evidence_test: evidence_pending
-  evidence_benchmark: evidence_pending
-  evidence_commit: evidence_pending
+  status: delivered
+  description: 'Rust-primary TopologyController (ADR-012) with 5 decision paths + Python e2e boundary tests.'
+  evidence_test: sage-python/tests/test_topology_controller_5_paths_e2e.py
+  evidence_benchmark: n/a
+  evidence_commit: 7ec46a4b
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
   notes: 'ADR-012 documents the contract; per-path coverage exists in
