@@ -24,7 +24,7 @@ claims:
     description: "Frozen kNN routing exemplar invariant: 5-NN weighted cosine LOO-CV over the 60-task human GT set must score >= 50/60 overall, with S1 >= 16/20, S2 >= 15/20, S3 >= 19/20. Historical ~92% was measured on an earlier 50-task GT and is provenance only, not recertified by this floor."
     evidence_test: "sage-python/tests/test_routing_gt_invariant.py::test_knn_routing_exemplars_loo_cv_floor"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "da582a77"
     last_verified_utc: "2026-05-07T00:00:00Z"
     owner: "yann"
     notes: |
@@ -58,7 +58,7 @@ claims:
     description: "Rust SystemRouter legacy route(task, budget=1.0) invariant: over the 60-task human GT set and `sage-core/config/cards.toml`, the router must score >= 52/60 overall. Historical ~88% is provenance only; this claim is pinned to the committed 60-task CI floor."
     evidence_test: "sage-python/tests/test_routing_gt_invariant.py::test_system_router_gt_floor"
     evidence_benchmark: "n/a"
-    evidence_commit: "evidence_pending"
+    evidence_commit: "da582a77"
     last_verified_utc: "2026-05-07T00:00:00Z"
     owner: "yann"
     notes: |

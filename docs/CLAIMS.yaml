@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-07T14:30:25+00:00'
+_generated_at_utc: '2026-05-07T14:37:07+00:00'
 _total_claims: 20
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -163,7 +163,7 @@ claims:
     measured on an earlier 50-task GT and is provenance only, not recertified by this floor.'
   evidence_test: sage-python/tests/test_routing_gt_invariant.py::test_knn_routing_exemplars_loo_cv_floor
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: da582a77
   last_verified_utc: '2026-05-07T00:00:00Z'
   owner: yann
   notes: 'CI-runnable strict-equal floor over committed
@@ -220,7 +220,7 @@ claims:
     provenance only; this claim is pinned to the committed 60-task CI floor.'
   evidence_test: sage-python/tests/test_routing_gt_invariant.py::test_system_router_gt_floor
   evidence_benchmark: n/a
-  evidence_commit: evidence_pending
+  evidence_commit: da582a77
   last_verified_utc: '2026-05-07T00:00:00Z'
   owner: yann
   notes: 'CI-runnable strict-equal floor over the committed GT and
