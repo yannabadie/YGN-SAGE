@@ -121,16 +121,6 @@ HELPER_METHODS_TO_DELETE: tuple[str, ...] = (
 
 
 @pytest.mark.parametrize("method_name", HELPER_METHODS_TO_DELETE)
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Phase 2.2 Stage A — helper delegators still present. "
-        "Contracts go green at Stage D, after pipeline_v2 internal "
-        "self._foo callsites are rewritten (Q7 audit list) and the "
-        "36 helpers are deleted from the class. Drop the xfail in the "
-        "same Stage D commit that deletes the methods."
-    ),
-)
 def test_helper_method_deleted_from_class(method_name: str) -> None:
     """Helper delegator must be absent at class level after Stage D."""
     assert not hasattr(CognitiveOrchestrationPipeline, method_name), (

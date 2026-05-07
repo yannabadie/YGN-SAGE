@@ -38,6 +38,7 @@ import pytest
 
 from sage.pipeline import CognitiveOrchestrationPipeline
 from sage.pipeline_v2 import select_topology as _select_topology_module
+from sage.pipeline_v2.topology_helpers import log_topology_structure
 
 
 @pytest.fixture(autouse=True)
@@ -754,7 +755,7 @@ def test_topology_edges_truncates_huge_adjacency(caplog: pytest.LogCaptureFixtur
             return list(self._edges)
 
     pipeline, _engine, _spy = _build_pipeline(system=2)
-    pipeline._log_topology_structure(_BigTopo(), source="archive_hit", confidence=0.90)
+    log_topology_structure(pipeline, _BigTopo(), source="archive_hit", confidence=0.90)
 
     edge_logs = [
         r for r in caplog.records if "topology.edges" in r.getMessage()
@@ -832,8 +833,8 @@ def test_topology_source_logs_attribution_engine_branch(caplog: pytest.LogCaptur
             return [(0, 1, "control"), (0, 2, "control"), (1, 3, "message")]
 
     pipeline, _engine, _spy = _build_pipeline(system=2)
-    pipeline._log_topology_structure(
-        _EngineTopo(), source="archive_hit", confidence=0.85,
+    log_topology_structure(
+        pipeline, _EngineTopo(), source="archive_hit", confidence=0.85,
     )
 
     source_logs = [
