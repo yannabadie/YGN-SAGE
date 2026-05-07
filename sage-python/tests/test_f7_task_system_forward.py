@@ -127,3 +127,90 @@ def test_domain_and_budget_still_forwarded_correctly():
     ctx = assign_models(pipeline, ctx)
     assert spy.last_call["domain"] == "math"
     assert spy.last_call["budget"] == 7.5
+
+
+# ── Option C (cgpro 2026-05-07): tier-constrained model assignment ────
+
+
+def test_budget_tier_clamps_task_system_3_to_1():
+    """S3 task under budget tier must receive task_system=1 (cheapest models)."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "budget"
+    ctx = PipelineContext(task="fix complex bug", budget=10.0)
+    ctx.system = 3
+    ctx.domain = "code"
+    ctx.topology = _Topology(3)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 1, (
+        f"budget tier must clamp S3→S1, got task_system={spy.last_call['task_system']}"
+    )
+
+
+def test_budget_tier_clamps_task_system_2_to_1():
+    """S2 task under budget tier must receive task_system=1."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "budget"
+    ctx = PipelineContext(task="medium task", budget=5.0)
+    ctx.system = 2
+    ctx.domain = "code"
+    ctx.topology = _Topology(2)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 1
+
+
+def test_budget_tier_does_not_lift_task_system_1():
+    """S1 task under budget tier stays S1 (no up-clamp)."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "budget"
+    ctx = PipelineContext(task="simple task", budget=1.0)
+    ctx.system = 1
+    ctx.domain = ""
+    ctx.topology = _Topology(1)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 1
+
+
+def test_fast_tier_clamps_task_system_3_to_2():
+    """S3 task under fast tier must clamp to S2."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "fast"
+    ctx = PipelineContext(task="complex task", budget=10.0)
+    ctx.system = 3
+    ctx.domain = "code"
+    ctx.topology = _Topology(3)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 2
+
+
+def test_reasoner_tier_does_not_clamp_task_system_3():
+    """S3 task under reasoner tier stays S3 (no clamp)."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "reasoner"
+    ctx = PipelineContext(task="complex task", budget=10.0)
+    ctx.system = 3
+    ctx.domain = "code"
+    ctx.topology = _Topology(3)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 3
+
+
+def test_no_tier_does_not_clamp_task_system():
+    """Unset tier (None or empty) must not clamp task_system."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = ""
+    ctx = PipelineContext(task="complex task", budget=10.0)
+    ctx.system = 3
+    ctx.domain = "code"
+    ctx.topology = _Topology(3)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] == 3
+
+
+def test_budget_tier_none_task_system_stays_none():
+    """When ctx.system is unset (→None), budget tier must not clamp None."""
+    pipeline, spy = _mk_pipeline_with_spy()
+    pipeline._llm_tier = "budget"
+    ctx = PipelineContext(task="x", budget=1.0)
+    ctx.topology = _Topology(1)
+    ctx = assign_models(pipeline, ctx)
+    assert spy.last_call["task_system"] is None

@@ -59,6 +59,21 @@ def assign_models(
             # against S1 affinity and picked a flash-lite model — see
             # docs/benchmarks/2026-04-17-swebench-smoke-debug.md.
             task_system = ctx.system if ctx.system in (1, 2, 3) else None
+            # Option C (cgpro 2026-05-07): clamp task_system to a
+            # tier-appropriate maximum so budget/fast tiers do not get
+            # OpenAI gpt-5.4/gpt-5.5-pro assigned to complex code tasks.
+            # The routing may still report system=3 for a SWE-bench task,
+            # but the tier cap ensures the Rust ModelAssigner picks models
+            # that the tier can actually afford.
+            _tier = getattr(self, "_llm_tier", "") or ""
+            _TIER_SYSTEM_CAP: dict[str, int] = {"budget": 1, "fast": 2}
+            _max_system = _TIER_SYSTEM_CAP.get(_tier, 3)
+            if task_system is not None and task_system > _max_system:
+                log.info(
+                    "Stage 3: clamping task_system %d→%d (tier=%s)",
+                    task_system, _max_system, _tier or "default",
+                )
+                task_system = _max_system
             n_assigned = self.assigner.assign_models(
                 ctx.topology,
                 ctx.domain,
