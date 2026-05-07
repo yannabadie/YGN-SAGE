@@ -1,15 +1,9 @@
-"""CognitiveOrchestrationPipeline — 6-stage cognitive orchestration façade.
+"""CognitiveOrchestrationPipeline — public façade.
 
-Stage bodies, orchestrator, helpers, and `PipelineContext` live in
-`sage.pipeline_v2`. This module retains: the public class
-`CognitiveOrchestrationPipeline` with its constructor + public
-entry points (`run`, `run_with_frame`, `run_with_bench_evaluator`)
-+ `_run_internal` private façade + `_emit` EventBus seam; module-level
-helpers consumed by the orchestrator (`_new_runtime_run_id`,
-`_resolve_task_budget_usd`, `_is_strict_governance`,
-`BUDGET_EXCEEDED_RESULT`, `_BANDIT_ATTRIBUTION_REASON_CODES`); and the
-`PipelineContext` re-export so legacy `from sage.pipeline import
-PipelineContext` keeps resolving.
+Stage bodies + orchestrator + helpers live in `sage.pipeline_v2`. This
+module retains the public class + entry points + `_emit` /
+`_run_internal` seams + module-level helpers consumed by the
+orchestrator + the `PipelineContext` re-export.
 """
 from __future__ import annotations
 
@@ -28,9 +22,8 @@ from sage.events import (
 from sage.runtime.oracle import OracleConfig
 from sage.runtime.run_frame import RunFrame
 
-# OxiZ formal verification — imported lazily to allow graceful fallback.
-# Annotated as `Any` so mypy does not infer the real Callable / type and
-# then complain about the `None` sentinels in the ImportError branch.
+# OxiZ formal verification — lazily imported. `Any` keeps mypy from inferring
+# the real callable/type and then flagging the `None` sentinels in the ImportError branch.
 verify_provider_assignment: Any = None
 ProviderSpec: Any = None
 _Z3_VERIFY_AVAILABLE = False
@@ -81,15 +74,7 @@ def _new_runtime_run_id() -> str:
 
 
 def _is_strict_governance() -> bool:
-    """Read the SAGE_STRICT_GOVERNANCE env var (A0b, 2026-04-23).
-
-    When truthy, governance failures (write-gate init failure,
-    verification-failed provider assignment) abort the pipeline
-    instead of logging-and-continuing. Default off — the existing
-    dev-friendly fail-open behaviour is preserved unless an operator
-    explicitly opts in. Accepts ``1`` / ``true`` / ``yes`` / ``on``
-    (case-insensitive) as truthy; everything else is off.
-    """
+    """Read SAGE_STRICT_GOVERNANCE — truthy aborts on governance failure (default off, A0b)."""
     v = os.environ.get("SAGE_STRICT_GOVERNANCE", "").strip().lower()
     return v in {"1", "true", "yes", "on"}
 
@@ -109,20 +94,47 @@ def _resolve_task_budget_usd(budget_usd: float | None) -> float:
         return 0.0
 
 
-# PipelineContext dataclass body lives in `sage.pipeline_v2.context`.
-# This re-export keeps `from sage.pipeline import PipelineContext`
-# resolving and pins `PipelineContext.__module__ == "sage.pipeline"`
-# (tests / bench / dashboards depend on the literal module-path).
+# PipelineContext re-export from `sage.pipeline_v2.context`. Pins
+# `PipelineContext.__module__ == "sage.pipeline"` (tests/bench/dashboards depend on the path).
 from sage.pipeline_v2.context import PipelineContext  # noqa: E402
 
 
 class CognitiveOrchestrationPipeline:
-    """6-stage pipeline: classify -> decompose -> select_topology -> assign_models -> execute -> learn."""
+    """Cognitive orchestration façade: classify -> decompose -> select_topology -> assign_models -> execute -> learn."""
 
-    # Class-level attribute declarations for transient runtime state.
-    # `_run_internal` body lives in `pipeline_v2/orchestrator.py`; mypy
-    # needs these declared on the class so the orchestrator's
-    # `pipeline.<attr> = X` assignments are type-clean.
+    # Instance attributes initialized by pipeline_v2.constructor.initialize_pipeline().
+    router: Any
+    engine: Any
+    assigner: Any
+    provider_pool: Any
+    bandit: Any
+    quality_estimator: Any
+    event_bus: Any
+    llm_provider: Any
+    llm_config: Any
+    prm: Any
+    controller: Any
+    tool_registry: Any
+    _rust_registry: Any
+    _rust_router: Any
+    _smmu: Any
+    consolidator: Any
+    working_memory: Any
+    episodic_memory: Any
+    semantic_memory: Any
+    memory_agent: Any
+    causal_memory: Any
+    tool_forge: Any
+    harness_config: Any
+    _harness_patcher: Any
+    _agent_loop: Any
+    _task_count: int
+    budget_usd: float
+    _llm_tier: str
+    _oracle_config: Any
+    _gate_config: dict[str, Any]
+    write_gate: Any
+    # Transient runtime state set by orchestrator / stage modules.
     _model_catalog: Any = None
     _last_routing_decision: Any = None
     _last_runtime_routing_source: str = "default"
@@ -188,17 +200,8 @@ class CognitiveOrchestrationPipeline:
             llm_tier=llm_tier,
         )
 
-    # ── EventBus seam (Q3a lock: stays as stateful pipeline._emit hook) ────
-
     def _emit(self, stage: str, data: dict) -> None:  # type: ignore[type-arg]
-        """Emit a PIPELINE event on EventBus if available.
-
-        Body lives in `sage.pipeline_v2.runtime_events.emit`. The method
-        form is preserved on the class because pipeline_v2/execute.py +
-        carved-out runtime helpers and many tests depend on
-        `pipeline._emit(stage, data)` being a stateful seam (Q3a lock).
-        LOCAL import per cgpro DESIGN trap on circular-import risk.
-        """
+        """Emit a PIPELINE event on EventBus (Q3a lock — stateful seam preserved on the class)."""
         from sage.pipeline_v2.runtime_events import emit as _v2_emit
         _v2_emit(self, stage, data)
 
