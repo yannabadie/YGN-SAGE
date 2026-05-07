@@ -5,8 +5,28 @@ When budget_usd is 0 (or negative), tracking is unlimited (never over budget).
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
+
+
+@dataclass(frozen=True)
+class BudgetUpdateResult:
+    """Outcome of a ``tighten_remaining_budget`` call.
+
+    ``accepted`` is True when the new cap was applied. ``reason`` is a
+    short slug suitable for a ``failure.payload.error_type`` field on
+    rejection (``budget_loosen_rejected`` / ``budget_invalid_value``)
+    or a ``budget.payload.kind`` slug on acceptance (``budget_tightened``).
+    The four numeric fields reflect the tracker's state AFTER the call —
+    on rejection they're identical to the pre-call snapshot.
+    """
+
+    accepted: bool
+    reason: str
+    budget_usd: float
+    remaining: float
+    total_spent: float
 
 
 @dataclass
@@ -73,3 +93,65 @@ class CostTracker:
             "remaining": self.remaining if self.budget_usd > 0 else None,
             "per_node": dict(self._spent),
         }
+
+    # ------------------------------------------------------------------
+    # Mid-run mutation (CLI ``set_budget`` v0 — tightening only)
+    # ------------------------------------------------------------------
+
+    def tighten_remaining_budget(
+        self, new_remaining_usd: float
+    ) -> BudgetUpdateResult:
+        """Tighten the remaining budget cap. NEVER loosens.
+
+        ``new_remaining_usd`` is the new REMAINING-budget cap (NOT the
+        absolute total cap). Per ``docs/contracts/SAGE_CLI_PROTOCOL.md``
+        invariant 7 (timeout/budget enforcement, attacker-can't-loosen):
+
+          - ``<= 0``, NaN, or ±inf values are REJECTED
+            (``budget_invalid_value``). Zero is rejected because
+            ``budget_usd <= 0`` is the unlimited sentinel — accepting
+            zero from an unlimited tracker would silently keep the
+            tracker unlimited.
+          - When the tracker is currently unlimited (``budget_usd <= 0``),
+            any positive finite value is accepted as a tightening
+            from infinite remaining.
+          - When the tracker has a finite cap, the new value MUST be
+            ``<= self.remaining``. Otherwise REJECTED
+            (``budget_loosen_rejected``).
+          - On accept, ``budget_usd`` is set to ``total_spent + new_remaining_usd``
+            so the cap is anchored at the current spend (the new
+            ``remaining`` exactly equals ``new_remaining_usd``).
+        """
+        # Per cgpro Stage B VERIFY round-2 (2026-05-07): reject ``<= 0.0``
+        # because ``budget_usd <= 0`` is the unlimited sentinel; accepting
+        # zero from an unlimited tracker would silently keep the tracker
+        # unlimited, violating the tighten-only invariant rather than
+        # enforcing it. ``new_remaining_usd`` MUST be a positive finite
+        # number.
+        if not math.isfinite(new_remaining_usd) or new_remaining_usd <= 0.0:
+            return BudgetUpdateResult(
+                accepted=False,
+                reason="budget_invalid_value",
+                budget_usd=self.budget_usd,
+                remaining=self.remaining,
+                total_spent=self.total_spent,
+            )
+        # Loosen check — only meaningful when the tracker has a finite cap.
+        # When unlimited (budget_usd <= 0), any finite value is a tightening
+        # from infinity.
+        if self.budget_usd > 0 and new_remaining_usd > self.remaining + 1e-9:
+            return BudgetUpdateResult(
+                accepted=False,
+                reason="budget_loosen_rejected",
+                budget_usd=self.budget_usd,
+                remaining=self.remaining,
+                total_spent=self.total_spent,
+            )
+        self.budget_usd = self.total_spent + new_remaining_usd
+        return BudgetUpdateResult(
+            accepted=True,
+            reason="budget_tightened",
+            budget_usd=self.budget_usd,
+            remaining=self.remaining,
+            total_spent=self.total_spent,
+        )

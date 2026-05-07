@@ -228,9 +228,21 @@ async def test_execute_budget_exceeded_event_emits_via_pipeline_emit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_budget_zero_default_has_no_tracker_and_keeps_existing_behavior(
+async def test_budget_zero_default_has_unlimited_tracker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """When the run starts with no budget cap, the orchestrator now creates
+    an UNLIMITED ``CostTracker(budget_usd=0.0)`` so the CLI ``set_budget``
+    command can tighten mid-run from infinity (cycle-13 K post-Phase-2.2
+    Stage B lock 2026-05-07: ``CostTracker.tighten_remaining_budget`` is
+    the root guard for the tightening-only invariant).
+
+    The unlimited tracker is bookkeeping only — ``is_over_budget`` stays
+    ``False``, ``remaining`` stays ``inf``, and no
+    ``EXECUTE_BUDGET_EXCEEDED`` event is emitted.
+    """
+    import math
+
     monkeypatch.delenv("SAGE_TASK_BUDGET_USD", raising=False)
     bus = _CapturingBus()
     pipeline = _single_agent_pipeline(event_bus=bus)
@@ -238,7 +250,11 @@ async def test_budget_zero_default_has_no_tracker_and_keeps_existing_behavior(
     result = await pipeline.run("normal run")
 
     assert result == "Pipeline test response"
-    assert getattr(pipeline.last_context, "cost_tracker", None) is None
+    tracker = pipeline.last_context.cost_tracker
+    assert tracker is not None
+    assert tracker.budget_usd == 0.0
+    assert tracker.remaining == math.inf
+    assert tracker.is_over_budget is False
     assert EXECUTE_BUDGET_EXCEEDED not in bus.stages
 
 
@@ -286,3 +302,59 @@ async def test_budget_wins_before_strict_governance_verification(
     assert result_ctx.result == BUDGET_SENTINEL
     assert EXECUTE_BUDGET_EXCEEDED in bus.stages
     assert "EXECUTE_HALTED_UNVERIFIED" not in bus.stages
+
+
+# ────────────────────────────────────────────────────────────────────
+# Stage B — pipeline.tighten_budget façade integration
+# ────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_tighten_budget_before_prompt_returns_budget_before_prompt() -> None:
+    """No active run → ``pipeline.tighten_budget()`` rejects with
+    ``budget_before_prompt`` (cgpro Stage B lock 2026-05-07)."""
+    pipeline = _single_agent_pipeline()
+    assert pipeline._active_context is None
+    result = pipeline.tighten_budget(5.0)
+    assert result.accepted is False
+    assert result.reason == "budget_before_prompt"
+
+
+def test_tighten_budget_with_active_context_updates_tracker() -> None:
+    """Façade test: with an active context whose cost_tracker has a finite
+    cap, ``pipeline.tighten_budget`` rebases the cap to the new remaining."""
+    pipeline = _single_agent_pipeline()
+    tracker = CostTracker(budget_usd=10.0)
+    tracker.record_spend(0.0)
+    pipeline._active_context = SimpleNamespace(cost_tracker=tracker)
+
+    result = pipeline.tighten_budget(3.0)
+
+    assert result.accepted is True
+    assert result.reason == "budget_tightened"
+    assert tracker.budget_usd == pytest.approx(3.0)
+    assert tracker.remaining == pytest.approx(3.0)
+
+
+def test_tighten_budget_loosen_attempt_rejected_keeps_old_cap() -> None:
+    """Façade test: loosen attempt leaves cap unchanged + returns reason
+    ``budget_loosen_rejected``."""
+    pipeline = _single_agent_pipeline()
+    tracker = CostTracker(budget_usd=5.0)
+    pipeline._active_context = SimpleNamespace(cost_tracker=tracker)
+
+    result = pipeline.tighten_budget(100.0)  # loosen attempt
+
+    assert result.accepted is False
+    assert result.reason == "budget_loosen_rejected"
+    assert tracker.budget_usd == 5.0  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_active_context_cleared_in_finally_after_run() -> None:
+    """The orchestrator's ``finally`` block clears ``pipeline._active_context``
+    so a stale ctx can't be mutated after the run finishes (Stage B lock)."""
+    pipeline = _single_agent_pipeline()
+    assert pipeline._active_context is None
+    await pipeline.run("any task")
+    assert pipeline._active_context is None

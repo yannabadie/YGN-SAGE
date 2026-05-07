@@ -380,6 +380,72 @@ _SeqCounter = _StdoutSeqCounter
 
 
 # ────────────────────────────────────────────────────────────────────────
+# set_budget command handler (Stage B — tightening-only contract)
+# ────────────────────────────────────────────────────────────────────────
+
+
+def _handle_set_budget(
+    cmd: Mapping[str, Any],
+    *,
+    pipeline: Any,
+    event_log: Any,
+) -> None:
+    """Apply a ``set_budget`` command, emitting a runtime event on the result.
+
+    Per ``docs/contracts/SAGE_CLI_PROTOCOL.md`` invariant 7
+    (TIGHTEN-ONLY) and Stage B lock 2026-05-07:
+
+      - Pre-run (``pipeline._active_context is None``): emit
+        ``failure(error_type="budget_before_prompt")``.
+      - ``args.budget_usd`` missing or non-numeric: emit
+        ``failure(error_type="budget_invalid_value")``.
+      - Otherwise call ``pipeline.tighten_budget(new_remaining_usd)``;
+        accept emits a ``budget(kind="budget_tightened", ...)`` event,
+        reject emits ``failure(kind="cli_command", error_type=<reason>)``.
+    """
+    args_obj = cmd.get("args")
+    args: Mapping[str, Any] = args_obj if isinstance(args_obj, Mapping) else {}
+    raw_budget = args.get("budget_usd")
+    if not isinstance(raw_budget, (int, float)) or isinstance(raw_budget, bool):
+        if event_log is not None:
+            event_log.emit_failure(
+                kind="cli_command",
+                error_type="budget_invalid_value",
+                message=(
+                    "set_budget rejected: 'budget_usd' must be a finite number"
+                ),
+            )
+        return
+    if pipeline is None or getattr(pipeline, "_active_context", None) is None:
+        if event_log is not None:
+            event_log.emit_failure(
+                kind="cli_command",
+                error_type="budget_before_prompt",
+                message="set_budget rejected before the run started",
+            )
+        return
+    result = pipeline.tighten_budget(float(raw_budget))
+    if not result.accepted:
+        if event_log is not None:
+            event_log.emit_failure(
+                kind="cli_command",
+                error_type=result.reason,
+                message=(
+                    f"set_budget rejected: {result.reason} "
+                    f"(budget_usd={result.budget_usd}, remaining={result.remaining})"
+                ),
+            )
+        return
+    if event_log is not None:
+        event_log.emit_budget(
+            kind="budget_tightened",
+            budget_limit_usd=float(result.budget_usd),
+            budget_remaining_usd=float(result.remaining),
+            cost_so_far_usd=float(result.total_spent),
+        )
+
+
+# ────────────────────────────────────────────────────────────────────────
 # Main entry: run_jsonl_async + main(argv)
 # ────────────────────────────────────────────────────────────────────────
 
@@ -484,6 +550,11 @@ async def run_jsonl_async(
     # ``cancel`` arrives.
     cancel_requested = asyncio.Event()
 
+    # Pipeline reference shared with the dispatcher. Populated after boot
+    # below so that set_budget arriving early (before prompt fully starts)
+    # is rejected with reason="budget_before_prompt" (Stage B lock).
+    pipeline_for_dispatcher: list[Any] = [None]
+
     async def _command_dispatcher() -> None:
         while True:
             cmd = await command_queue.get()
@@ -496,8 +567,15 @@ async def run_jsonl_async(
             if verb == "cancel":
                 cancel_requested.set()
                 return
-            # Other commands are NOT supported in this commit (set_budget,
-            # multi-prompt). Surface them as warnings but don't fail.
+            if verb == "set_budget":
+                _handle_set_budget(
+                    cmd,
+                    pipeline=pipeline_for_dispatcher[0],
+                    event_log=eventlog,
+                )
+                continue
+            # Other commands are NOT supported in this commit (multi-prompt).
+            # Surface them as warnings but don't fail.
             log.info("sage run: unsupported command in v0 prelude: %r", verb)
 
     dispatcher_task = asyncio.create_task(_command_dispatcher())
@@ -515,6 +593,11 @@ async def run_jsonl_async(
         pipeline = getattr(system, "pipeline", None)
         if pipeline is None:
             raise RuntimeError("boot_agent_system did not return a pipeline")
+        # Share the pipeline with the dispatcher so set_budget can reach
+        # ``pipeline.tighten_budget`` (Stage B lock). The dispatcher reads
+        # ``pipeline_for_dispatcher[0]`` lazily on each command, so runs
+        # that finish before any set_budget arrives never observe it.
+        pipeline_for_dispatcher[0] = pipeline
 
         # Wire the approval callback into the topology runner. The runner
         # is constructed per-run inside _stage_execute, so we set a default

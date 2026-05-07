@@ -141,7 +141,7 @@ version on `cli_started`.
 | `approve_tool_call` | `{ "id": "<correlation_id from cli_tool_request>" }` | Releases the awaited approval | If `id` doesn't match a pending request, ignored (idempotent). |
 | `deny_tool_call` | `{ "id": "<correlation_id>", "reason"?: "<text>" }` | Releases the wait, signals deny | The runner treats the tool as unavailable for this call (does NOT abort the run). |
 | `cancel` | `{ "reason"?: "<text>" }` | Graceful abort | Drains current node, emits `failure(reason="cancelled")`, then `cli_complete(outcome="cancelled")`. Idempotent. |
-| `set_budget` | `{ "budget_usd": <float> }` | Mid-run budget change | **TIGHTEN ONLY** (new value MUST be ≤ current `cost_tracker.remaining`). Loosen attempts are REJECTED with a `failure(reason="budget_loosen_rejected")` event. |
+| `set_budget` | `{ "budget_usd": <float> }` | Mid-run budget change | **TIGHTEN ONLY** — `budget_usd` is the new POSITIVE FINITE REMAINING budget cap (NOT absolute total). Accepted updates rebase `cost_tracker.budget_usd` to `total_spent + budget_usd` and emit a `budget(kind="budget_tightened", ...)` event. Rejection emits a non-terminal `failure(kind="cli_command", error_type=...)` event with one of the reason codes below; the run does NOT abort. Reason codes: `budget_before_prompt` (no active run yet), `budget_invalid_value` (zero / negative / NaN / inf / non-numeric `budget_usd` — zero is rejected because `budget_usd <= 0` is `CostTracker`'s unlimited sentinel), `budget_loosen_rejected` (new remaining > current `cost_tracker.remaining`). |
 
 The frontend MUST NOT send any other command. Unknown commands emit a
 `failure(reason="unknown_command", details=<command>)` event but do NOT abort
@@ -235,9 +235,22 @@ What pi-mono DOES own:
 - `final_result` and `oracle_verdict` are emitted within Stage 5; their
   ordering relative to each other is `final_result` → `oracle_verdict` →
   `run_frame_summary` (per cycle-7 R6.1c locked event order).
-- The frontend MAY assume that a `failure` event terminates the run UNLESS
-  the `failure.payload.recoverable=true` (used by the FrugalGPT cascade and
-  multi-agent error fallback).
+- A `failure` event with `failure.payload.kind == "cli_command"` is
+  ALWAYS non-terminal: the backend uses these to surface command
+  rejections (e.g. `set_budget` reason codes
+  `budget_before_prompt` / `budget_invalid_value` /
+  `budget_loosen_rejected`) without aborting the run. The CLI MUST
+  NOT add a `recoverable` field to `failure.payload`; the runtime
+  schema carries only `kind`, `error_type`, and `message` (cycle-13 K
+  Stage B lock 2026-05-07).
+- For `failure` events with other `kind` values (e.g. node-level
+  failures, multi-agent error fallback, FrugalGPT cascade), the
+  frontend SHOULD treat them as terminal-leaning: the run continues
+  only if a subsequent non-terminal frame appears before `cli_complete`.
+  The runtime does not currently expose a `recoverable` flag —
+  terminality is inferred from the surrounding event stream and the
+  `cli_complete.payload.outcome` field (`success` / `failure` /
+  `cancelled`).
 
 ---
 

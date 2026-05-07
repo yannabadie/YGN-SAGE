@@ -1,9 +1,7 @@
-"""CognitiveOrchestrationPipeline — public façade.
-
-Stage bodies + orchestrator + helpers live in `sage.pipeline_v2`. This
-module retains the public class + entry points + `_emit` /
-`_run_internal` seams + module-level helpers consumed by the
-orchestrator + the `PipelineContext` re-export.
+"""CognitiveOrchestrationPipeline — public façade. Stage bodies + orchestrator
++ helpers live in `sage.pipeline_v2`. This module retains the public class +
+entry points + `_emit` / `_run_internal` seams + module-level helpers +
+`PipelineContext` re-export.
 """
 from __future__ import annotations
 
@@ -18,6 +16,7 @@ from sage.events import (
     EXECUTE_HALTED_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
     EXECUTE_UNVERIFIED,  # noqa: F401 - imported by pipeline_v2.execute
 )
+from sage.contracts.cost_tracker import BudgetUpdateResult
 
 from sage.runtime.oracle import OracleConfig
 from sage.runtime.run_frame import RunFrame
@@ -141,6 +140,7 @@ class CognitiveOrchestrationPipeline:
     _last_runtime_routing_confidence: float | None = None
     _last_runtime_routing_model_id: str = ""
     last_context: "PipelineContext | None" = None
+    _active_context: "PipelineContext | None" = None
 
     def __init__(
         self,
@@ -226,12 +226,7 @@ class CognitiveOrchestrationPipeline:
         budget_usd: float | None = None,
         system_hint: int | None = None,
     ) -> tuple[str, RunFrame]:
-        """Like run() but returns (output, frozen RunFrame).
-
-        Signature mirrors run() so bench/traced adapters can use either
-        entry point without parameter loss (cgpro 2026-04-29 cycle 4
-        reassess R7.0.2).
-        """
+        """Like run() but returns (output, frozen RunFrame). Mirrors run() signature."""
         return await self._run_internal(
             task,
             budget_usd=budget_usd,
@@ -247,15 +242,11 @@ class CognitiveOrchestrationPipeline:
         budget_usd: float | None = None,
         system_hint: int | None = None,
     ) -> tuple[str, RunFrame]:
-        """Run the pipeline with a synchronous-eval bench evaluator wired in.
+        """Run with a synchronous-eval bench evaluator (BCB / EvalPlus / HumanEval) wired in.
 
-        Synchronous-eval benches (BigCodeBench, EvalPlus, HumanEval) need
-        their pass/fail available to the OracleStack BEFORE final_result
-        + oracle_verdict + Stage 5 learning fire. Locked event order:
-        execute → evaluator(final_output) → final_result → oracle_verdict
-        → learn → run_frame_summary. The evaluator returns a Mapping with
-        ``{"passed": bool}`` and optional ``score`` / ``reason`` / etc.
-        Sync and async evaluators are both supported.
+        Locked event order: execute → evaluator(final_output) → final_result →
+        oracle_verdict → learn → run_frame_summary. Evaluator returns a Mapping
+        with ``{"passed": bool}`` and optional ``score`` / ``reason``. Sync + async OK.
         """
         return await self._run_internal(
             task,
@@ -276,11 +267,7 @@ class CognitiveOrchestrationPipeline:
             "Callable[[str], Mapping[str, Any] | Awaitable[Mapping[str, Any]]] | None"
         ) = None,
     ) -> tuple[str, RunFrame]:
-        """Execute the full 6-stage pipeline.
-
-        Body lives in `sage.pipeline_v2.orchestrator.run_internal`; this
-        method is the subclass-override seam that calls it.
-        """
+        """Subclass-override seam delegating to ``pipeline_v2.orchestrator.run_internal``."""
         from sage.pipeline_v2.orchestrator import run_internal
         return await run_internal(
             self,
@@ -290,4 +277,23 @@ class CognitiveOrchestrationPipeline:
             emit_run_frame_summary=emit_run_frame_summary,
             bench_evaluator=bench_evaluator,
         )
+
+    def tighten_budget(self, new_remaining_usd: float) -> BudgetUpdateResult:
+        """Tighten the active run's remaining budget cap. NEVER loosens.
+
+        Returns ``BudgetUpdateResult(accepted=False, reason="budget_before_prompt", ...)``
+        when no run is active. Otherwise delegates to
+        ``ctx.cost_tracker.tighten_remaining_budget(new_remaining_usd)``.
+        """
+        ctx = self._active_context
+        tracker = getattr(ctx, "cost_tracker", None) if ctx is not None else None
+        if tracker is None:
+            return BudgetUpdateResult(
+                accepted=False,
+                reason="budget_before_prompt",
+                budget_usd=0.0,
+                remaining=0.0,
+                total_spent=0.0,
+            )
+        return tracker.tighten_remaining_budget(new_remaining_usd)
 

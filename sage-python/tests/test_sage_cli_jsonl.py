@@ -378,6 +378,163 @@ def test_final_seq_tracks_cli_tool_request_after_mirror() -> None:
     assert cli_complete_frame["payload"]["final_seq"] == 2
 
 
+def test_set_budget_before_prompt_emits_failure_with_reason_budget_before_prompt() -> None:
+    """Stage B: ``set_budget`` arriving before ``prompt`` (no active context)
+    is rejected non-terminally with ``failure(error_type="budget_before_prompt")``.
+    """
+    captured_failures: list[dict[str, Any]] = []
+
+    class _RecordingEventLog:
+        def emit_failure(
+            self, *, kind: str, error_type: str, message: str, node_id: str = "",
+        ) -> None:
+            captured_failures.append(
+                {"kind": kind, "error_type": error_type, "message": message},
+            )
+
+        def emit_budget(self, **kwargs: Any) -> None:
+            captured_failures.append({"_unexpected_budget_event": kwargs})
+
+    cli_run._handle_set_budget(
+        {"command": "set_budget", "args": {"budget_usd": 5.0}},
+        pipeline=None,  # no boot yet
+        event_log=_RecordingEventLog(),
+    )
+    assert len(captured_failures) == 1
+    assert captured_failures[0]["error_type"] == "budget_before_prompt"
+    assert captured_failures[0]["kind"] == "cli_command"
+
+
+def test_set_budget_invalid_value_emits_budget_invalid_value() -> None:
+    """Non-numeric / non-finite ``budget_usd`` is rejected before reaching
+    the pipeline. CostTracker root guard isn't even consulted."""
+    captured_failures: list[str] = []
+
+    class _RecordingEventLog:
+        def emit_failure(
+            self, *, kind: str, error_type: str, message: str, node_id: str = "",
+        ) -> None:
+            captured_failures.append(error_type)
+
+        def emit_budget(self, **kwargs: Any) -> None:
+            captured_failures.append("UNEXPECTED_budget_event")
+
+    for bad in [None, "12.34", True]:
+        cli_run._handle_set_budget(
+            {"command": "set_budget", "args": {"budget_usd": bad}},
+            pipeline=object(),
+            event_log=_RecordingEventLog(),
+        )
+
+    assert captured_failures == [
+        "budget_invalid_value", "budget_invalid_value", "budget_invalid_value",
+    ]
+
+
+def test_set_budget_zero_rejected_as_budget_invalid_value() -> None:
+    """Per cgpro Stage B VERIFY round-2 trap: ``budget_usd == 0`` is
+    rejected at the CostTracker root guard because the tracker's
+    unlimited sentinel is ``budget_usd <= 0``; accepting zero would
+    silently keep the tracker unlimited rather than freeze remaining."""
+
+    class _ActivePipeline:
+        _active_context = type("_C", (), {"cost_tracker": __import__(
+            "sage.contracts.cost_tracker", fromlist=["CostTracker"]
+        ).CostTracker(budget_usd=10.0)})()
+
+        def tighten_budget(self, new_remaining_usd: float) -> Any:
+            return self._active_context.cost_tracker.tighten_remaining_budget(
+                new_remaining_usd
+            )
+
+    captured: list[str] = []
+
+    class _RecordingEventLog:
+        def emit_failure(self, **kwargs: Any) -> None:
+            captured.append(("failure", kwargs.get("error_type")))
+
+        def emit_budget(self, **kwargs: Any) -> None:
+            captured.append(("budget", kwargs.get("kind")))
+
+    cli_run._handle_set_budget(
+        {"command": "set_budget", "args": {"budget_usd": 0}},
+        pipeline=_ActivePipeline(),
+        event_log=_RecordingEventLog(),
+    )
+    # Exactly one failure event, no budget event.
+    assert captured == [("failure", "budget_invalid_value")]
+
+
+def test_set_budget_loosen_emits_failure_budget_loosen_rejected() -> None:
+    """When the pipeline's ``tighten_budget`` rejects with
+    ``budget_loosen_rejected``, the dispatcher emits a non-terminal
+    ``failure`` event with that error_type."""
+    from sage.contracts.cost_tracker import BudgetUpdateResult
+
+    class _FakePipeline:
+        _active_context = object()  # truthy
+
+        def tighten_budget(self, new_remaining_usd: float) -> BudgetUpdateResult:
+            return BudgetUpdateResult(
+                accepted=False, reason="budget_loosen_rejected",
+                budget_usd=10.0, remaining=2.0, total_spent=8.0,
+            )
+
+    captured: list[dict[str, Any]] = []
+
+    class _RecordingEventLog:
+        def emit_failure(self, **kwargs: Any) -> None:
+            captured.append({"failure": kwargs})
+
+        def emit_budget(self, **kwargs: Any) -> None:
+            captured.append({"budget": kwargs})
+
+    cli_run._handle_set_budget(
+        {"command": "set_budget", "args": {"budget_usd": 100.0}},
+        pipeline=_FakePipeline(),
+        event_log=_RecordingEventLog(),
+    )
+    assert len(captured) == 1
+    assert "failure" in captured[0]
+    assert captured[0]["failure"]["error_type"] == "budget_loosen_rejected"
+
+
+def test_set_budget_accepted_emits_budget_event_kind_tightened() -> None:
+    """Accepted tighten emits a ``budget(kind="budget_tightened", ...)`` event
+    (NOT a CLI-shell event — protocol invariant: shell event set is fixed at 4)."""
+    from sage.contracts.cost_tracker import BudgetUpdateResult
+
+    class _FakePipeline:
+        _active_context = object()
+
+        def tighten_budget(self, new_remaining_usd: float) -> BudgetUpdateResult:
+            return BudgetUpdateResult(
+                accepted=True, reason="budget_tightened",
+                budget_usd=5.0, remaining=2.0, total_spent=3.0,
+            )
+
+    captured: list[dict[str, Any]] = []
+
+    class _RecordingEventLog:
+        def emit_failure(self, **kwargs: Any) -> None:
+            captured.append({"failure": kwargs})
+
+        def emit_budget(self, **kwargs: Any) -> None:
+            captured.append({"budget": kwargs})
+
+    cli_run._handle_set_budget(
+        {"command": "set_budget", "args": {"budget_usd": 2.0}},
+        pipeline=_FakePipeline(),
+        event_log=_RecordingEventLog(),
+    )
+    assert len(captured) == 1
+    assert "budget" in captured[0]
+    assert captured[0]["budget"]["kind"] == "budget_tightened"
+    assert captured[0]["budget"]["budget_limit_usd"] == 5.0
+    assert captured[0]["budget"]["budget_remaining_usd"] == 2.0
+    assert captured[0]["budget"]["cost_so_far_usd"] == 3.0
+
+
 def test_mirror_falls_through_on_unparseable_line() -> None:
     """Mirror is best-effort: malformed JSON is written verbatim so the
     forensic file's bytes still reach stdout (parser bugs are caller-side)."""

@@ -144,8 +144,18 @@ async def run_internal(
                 else pipeline_mod._resolve_task_budget_usd(budget_usd)
             )
             ctx = pipeline_mod.PipelineContext(task=task, budget=effective_budget_usd)
-            if effective_budget_usd > 0:
-                ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
+            # Cost tracker is ALWAYS created so the CLI ``set_budget`` command
+            # can tighten the budget mid-run even when the run starts unlimited
+            # (cycle-13 K post-Phase-2.2 cgpro `cgpro_cli_protocol_gaps_20260507`
+            # Stage B lock 2026-05-07). ``CostTracker(budget_usd=0.0)`` is the
+            # unlimited sentinel: ``is_over_budget`` stays False and
+            # ``remaining`` stays ``inf`` until ``tighten_remaining_budget``
+            # rebases the cap. Always-on tracker is bookkeeping for unlimited
+            # runs (cost.record is a no-op contract for is_over_budget).
+            ctx.cost_tracker = CostTracker(budget_usd=effective_budget_usd)
+            # Expose the active context so ``pipeline.tighten_budget()`` can
+            # find the per-run tracker. Cleared in ``finally`` below.
+            pipeline._active_context = ctx
 
             pipeline._last_routing_decision = None
             pipeline._last_runtime_routing_source = "default"
@@ -377,6 +387,9 @@ async def run_internal(
             run_frame_builder.record_final_result(seq=final_seq, status="failure")
         raise
     finally:
+        # Clear the active-context hook so a stale ctx can't be mutated
+        # after the run finishes (Stage B set_budget lock).
+        pipeline._active_context = None
         token.var.reset(token)
         event_log.close()
 
