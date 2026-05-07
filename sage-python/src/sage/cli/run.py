@@ -52,43 +52,83 @@ log = logging.getLogger(__name__)
 
 
 class _CliMirrorSinkHandle:
-    """Tees writes to a forensic file AND stdout (LF-only).
+    """Tees writes to a forensic file AND stdout, with stdout-side seq rewrite.
 
     Mirror of the ``_SinkHandle`` interface from
-    ``sage-python/src/sage/runtime/event_log/writer.py:110-136``. Keeps the
-    runtime archive file unchanged while also pushing each event to stdout
-    for the CLI protocol consumer.
+    ``sage-python/src/sage/runtime/event_log/writer.py:110-136``. The forensic
+    file is preserved BYTE-IDENTICAL — the runtime contract artifact keeps its
+    own ``RuntimeEventLog`` internal seq domain. The stdout mirror, on the other
+    hand, RE-NUMBERS each frame's ``seq`` field through a single per-run
+    ``_StdoutSeqCounter`` shared with the CLI envelope emitter. This unifies
+    the stdout stream into one monotonic seq domain so the frontend can
+    reconcile via ``cli_complete.payload.final_seq`` (protocol invariant 5 at
+    ``docs/contracts/SAGE_CLI_PROTOCOL.md`` — frontends use this as the
+    drop-detection check).
 
     The write semantics: ``RuntimeEventLog._emit`` already appends ``"\\n"``
-    to every JSON record, so we can pass writes through verbatim. Stdout is
-    flushed after every frame so the consumer sees frames promptly (vs
-    waiting for the OS pipe buffer to fill).
+    to every JSON record. We split on the trailing newline, parse the JSON,
+    rewrite ``seq``, re-serialize, and write to stdout. Parse failures
+    fall through verbatim (best-effort: the forensic file already has the
+    correct bytes; a malformed mirror line is preferable to silent loss).
 
     Per ``docs/contracts/SAGE_CLI_PROTOCOL.md``: stdout uses LF-only
-    delimiters. The TEE preserves whatever line endings the writer chose
-    (which is ``\\n``, not ``\\r\\n``); on Windows, opening stdout in text
-    mode would normally translate ``\\n`` → ``\\r\\n``, so callers MUST
-    reconfigure stdout to ``newline=""`` (or use the binary buffer) before
-    constructing the tee. See ``run_jsonl_async`` for the setup.
+    delimiters. On Windows, opening stdout in text mode would normally
+    translate ``\\n`` → ``\\r\\n``, so callers MUST reconfigure stdout to
+    ``newline=""`` (or use the binary buffer) before constructing the tee.
+    See ``run_jsonl_async`` for the setup.
     """
 
-    def __init__(self, file_handle: Any, stdout_stream: TextIO) -> None:
+    def __init__(
+        self,
+        file_handle: Any,
+        stdout_stream: TextIO,
+        stdout_seq_counter: "_StdoutSeqCounter",
+    ) -> None:
         self._file = file_handle
         self._stdout = stdout_stream
+        self._stdout_seq_counter = stdout_seq_counter
+        self.last_stdout_seq: int | None = None
+
+    def _rewrite_seq_for_stdout(self, value: str) -> str:
+        """Parse ``value`` (one JSON line + ``\\n``), rewrite ``seq``, re-serialize.
+
+        Falls back to verbatim ``value`` if parsing fails — the forensic file
+        already has the correct line; the mirror is best-effort.
+        """
+        if not value:
+            return value
+        suffix = ""
+        body = value
+        if body.endswith("\n"):
+            suffix = "\n"
+            body = body[:-1]
+        body_stripped = body.strip()
+        if not body_stripped:
+            return value
+        try:
+            frame = json.loads(body_stripped)
+        except (ValueError, TypeError):
+            return value
+        if not isinstance(frame, dict) or "seq" not in frame:
+            return value
+        new_seq = self._stdout_seq_counter.next()
+        frame["seq"] = new_seq
+        self.last_stdout_seq = new_seq
+        return json.dumps(frame, separators=(",", ":")) + suffix
 
     def write(self, value: str) -> int:
-        # File first (forensic archive — runtime contract artifact). The
+        # File first (forensic archive — runtime contract artifact, preserved
+        # byte-identical with the original RuntimeEventLog seq domain). The
         # file write MUST succeed; if it fails the runtime contract is
         # violated and RuntimeEventLog's ``_handle_sink_failure`` will
         # take over (it's wrapped above the _SinkHandle).
         n = self._file.write(value)
-        # Stdout mirror — CLI protocol consumer. Best-effort: if the
-        # consumer disconnected mid-run (broken pipe / closed stdout),
-        # the OSError MUST NOT propagate up because the forensic file
-        # write already succeeded and the runtime contract is intact.
-        # See test_tee_sink_swallows_stdout_broken_pipe.
+        # Stdout mirror — CLI protocol consumer. The seq is rewritten into
+        # the unified per-run stdout domain; bytes downstream of ``"seq":N``
+        # are otherwise preserved.
+        rewritten = self._rewrite_seq_for_stdout(value)
         try:
-            self._stdout.write(value)
+            self._stdout.write(rewritten)
             # Flush stdout immediately so frames are visible to the
             # consumer without waiting for buffer flush.
             self._stdout.flush()
@@ -96,9 +136,7 @@ class _CliMirrorSinkHandle:
             # stdout closed mid-run (e.g. pi-mono frontend hang-up).
             # Best-effort: keep writing to the file. Subsequent writes
             # will keep trying — the OS will keep raising EPIPE; we keep
-            # eating it. If we wanted, we could mark stdout dead after
-            # the first failure and skip future writes — TBD if pressure
-            # surfaces in CI.
+            # eating it.
             pass
         return n
 
@@ -301,21 +339,44 @@ class _CliApprovalBridge:
 
 
 # ────────────────────────────────────────────────────────────────────────
-# Seq counter — protocol-level monotonic for cli_* events ONLY.
-# Runtime events keep RuntimeEventLog's internal seq.
+# Stdout seq counter — unified per-run monotonic across CLI envelope frames
+# and mirrored RuntimeEventLog frames. The forensic file keeps its own
+# RuntimeEventLog internal seq; only the stdout mirror is renumbered, so
+# the frontend can reconcile via cli_complete.payload.final_seq (protocol
+# invariant 5).
 # ────────────────────────────────────────────────────────────────────────
 
 
-class _SeqCounter:
-    """Monotonic counter for CLI-shell envelope events (cli_*)."""
+class _StdoutSeqCounter:
+    """Monotonic counter for ALL stdout frames (CLI envelope + mirrored runtime).
+
+    The terminal ``cli_complete.payload.final_seq`` reads ``self.last`` to
+    find the seq of the frame immediately preceding ``cli_complete`` — this
+    is correct for both the success path (where the last mirrored frame is
+    ``run_frame_summary``) AND the cancel/failure paths (where the last
+    frame may be any CLI-shell event, e.g. ``cli_tool_request``).
+    """
 
     def __init__(self) -> None:
         self._n = 0
+        self._last: int | None = None
 
     def next(self) -> int:
         n = self._n
         self._n += 1
+        self._last = n
         return n
+
+    @property
+    def last(self) -> int | None:
+        """Seq of the last frame issued through ``next()``; ``None`` if never called."""
+        return self._last
+
+
+# Backward-compat alias for tests / external callers that imported
+# ``_SeqCounter``. Same behavior; the stdout-domain rename happens in
+# ``cli_gaps_stage_a``.
+_SeqCounter = _StdoutSeqCounter
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -355,7 +416,7 @@ async def run_jsonl_async(
     from sage.runtime.event_log import RuntimeEventLog, install_event_log
     from sage.pipeline import _new_runtime_run_id
 
-    seq_counter = _SeqCounter()
+    seq_counter = _StdoutSeqCounter()
     run_id = _new_runtime_run_id()
 
     # Emit cli_started BEFORE booting (so consumers see "sage is starting"
@@ -397,8 +458,10 @@ async def run_jsonl_async(
     # requires the assignment cast. Switching `_SinkHandle` to a
     # `typing.Protocol` is an option for cycle-12 Phase B; for now
     # the targeted ignore narrows the type-safety escape to one site.
+    mirror_sink: _CliMirrorSinkHandle | None = None
     if eventlog._fh is not None:  # type: ignore[attr-defined]
-        eventlog._fh = _CliMirrorSinkHandle(eventlog._fh, stdout)  # type: ignore[assignment]
+        mirror_sink = _CliMirrorSinkHandle(eventlog._fh, stdout, seq_counter)
+        eventlog._fh = mirror_sink  # type: ignore[assignment]
 
     log_token = install_event_log(eventlog)
 
@@ -528,6 +591,23 @@ async def run_jsonl_async(
             pass
 
         # Emit terminal CLI envelope frame. ALWAYS the last frame.
+        # ``final_seq`` is the stdout seq of the frame IMMEDIATELY PRECEDING
+        # this cli_complete (protocol invariant 5). On the success path
+        # that's the stdout-mirrored ``run_frame_summary``; on cancel /
+        # failure / mid-tool-call paths that's whichever stdout frame fired
+        # last — which may itself be a CLI-shell event like
+        # ``cli_tool_request``. Frontends use ``final_seq`` as a stream
+        # reconciliation gate: any frame with seq > final_seq after
+        # cli_complete is a stream-level violation.
+        #
+        # We pull from ``seq_counter.last`` (NOT ``mirror_sink.last_stdout_seq``)
+        # because the counter is the single source of truth for the unified
+        # stdout domain; the mirror only tracks its own subset.
+        last_emitted_seq = seq_counter.last
+        # cli_started always advances the counter to 0 before this point,
+        # so ``last`` is never None here. Defensive fallback for completeness.
+        if last_emitted_seq is None:
+            last_emitted_seq = 0
         _emit_cli_event(
             stdout,
             "cli_complete",
@@ -538,6 +618,7 @@ async def run_jsonl_async(
                 "total_cost_usd": total_cost_usd,
                 "total_latency_ms": total_latency_ms,
                 "trace_dir": str(trace_dir),
+                "final_seq": last_emitted_seq,
             },
             seq=seq_counter.next(),
         )

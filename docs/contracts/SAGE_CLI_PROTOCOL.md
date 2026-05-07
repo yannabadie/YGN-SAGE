@@ -103,6 +103,16 @@ them via the same writer, multiplexed onto stdout.
 | `oracle_verdict` | pipeline | Oracle gate firing (cycle-7+) | 2 (oracle evidence) |
 | `run_frame_summary` | pipeline | After learn, terminal frame for the run | 5 |
 
+Inherited runtime events preserve their payload schema and forensic
+archive bytes (the `RuntimeEventLog` file kept under `trace_dir`). When
+mirrored to stdout, the CLI driver rewrites only the envelope `seq`
+field into the per-run unified CLI stdout sequence domain so every
+stdout frame — inherited runtime AND CLI-shell envelope — sits on
+ONE monotonic counter. The `RuntimeEventLog` archive keeps its own
+internal sequence numbers unchanged for forensic reproducibility.
+Frontends consume the stdout stream and reconcile via `final_seq`
+(invariant 5); forensic consumers read `trace_dir` directly.
+
 ### CLI-shell envelope events (4 NEW types)
 
 These are emitted by the CLI driver, NOT through `RuntimeEventLog`. They are
@@ -151,7 +161,7 @@ ledger is reproduced here with the CLI-specific binding.
 | 2 | **Oracle evidence** | The CLI MUST NOT update bandit / MAP-Elites / online-evolution / training-memory based on its own state. All those updates remain gated by `OracleVerdict.trainable` inside `_stage_learn`. The CLI is a CONSUMER of `oracle_verdict` events (it can show "✓ Trainable" / "✗ Abstain" in the TUI), never a producer. |
 | 3 | **Posterior epoch** | CLI is read-only on bandit_state.db / archive_state.db / posterior_epoch.json. It does NOT call `engine.save_state` directly. The pipeline's existing periodic flush (post `213183c1` epoch preflight) and the atexit handler are the only writers. |
 | 4 | **Contaminated backup** | CLI MUST refuse to start when `~/.sage/_CONTAMINATED.json` is present. It surfaces the operator-readable poison-pill in `cli_started`'s `tier` field with `tier="contaminated_refuse"`, then exits 78 (EX_CONFIG). |
-| 5 | **RunFrame summary** | The terminal frame of the run is `run_frame_summary` (from RuntimeEventLog), THEN `cli_complete` (from CLI). The CLI's `cli_complete.payload.final_seq` MUST equal `run_frame_summary.seq` — frontends use this as a reconciliation check. |
+| 5 | **RunFrame summary** | `cli_complete` is always the terminal frame on stdout. `cli_complete.payload.final_seq` MUST equal the stdout `seq` of the frame IMMEDIATELY PRECEDING `cli_complete`. On the normal success path that frame is the stdout-mirrored `run_frame_summary`; on cancel / failure / mid-tool-call paths it may be any other stdout frame including a CLI-shell event such as `cli_tool_request`. Frontends use this as a stream reconciliation gate — any frame with `seq > final_seq` after `cli_complete` is a stream-level violation. |
 | 6 | **Bandit attribution** | The CLI MUST NOT short-circuit Stage 0 routing or Stage 5 learn. The Rust `SystemRouter.route_integrated()` is the only authoritative source of `bandit_decision_id`. Mismatches surface as `bandit_attribution_mismatch` events that the frontend SHOULD display. |
 | 7 | **Timeout enforcement** | Per-task `budget_usd` is wall-clock-bounded via the existing `CostTracker.is_over_budget`. The CLI's `set_budget` command can TIGHTEN the budget (security: attacker who got `set_budget` access can NOT exfiltrate by extending). |
 | 8 | **Control-surface completeness** | When `node_count > 0`, frames `topology_selected` + `model_assigned` MUST appear before `node_started`. Frontend SHOULD validate this ordering and refuse to render a topology card without both. |

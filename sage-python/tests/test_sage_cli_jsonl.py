@@ -123,23 +123,34 @@ class _RecordingFile:
         self.closed = True
 
 
-def test_tee_sink_writes_to_both_file_and_stdout() -> None:
-    """Every write is mirrored: file gets it, stdout gets it."""
+def test_tee_sink_writes_file_verbatim_and_renumbers_stdout_seq() -> None:
+    """File write is byte-identical (forensic), stdout seq is rewritten.
+
+    Stage A contract (cgpro `cgpro_cli_protocol_gaps_20260507`): the forensic
+    archive keeps the RuntimeEventLog internal seq domain unchanged, while
+    the stdout mirror is renumbered through the unified ``_StdoutSeqCounter``
+    so the frontend can reconcile the stream via ``cli_complete.payload.final_seq``.
+    """
     file = _RecordingFile()
     stdout = io.StringIO()
-    tee = cli_run._CliMirrorSinkHandle(file, stdout)
+    counter = cli_run._StdoutSeqCounter()
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
 
-    tee.write('{"event_type":"task_started","seq":0}\n')
+    tee.write('{"event_type":"task_started","seq":42}\n')
 
-    assert file.writes == ['{"event_type":"task_started","seq":0}\n']
+    # File: byte-identical to RuntimeEventLog's emit (forensic preserved).
+    assert file.writes == ['{"event_type":"task_started","seq":42}\n']
+    # Stdout: same fields but seq replaced with the next counter value (0).
     assert stdout.getvalue() == '{"event_type":"task_started","seq":0}\n'
+    # Mirror tracks the rewritten seq so cli_complete can pull final_seq.
+    assert tee.last_stdout_seq == 0
 
 
 def test_tee_sink_flush_propagates_to_both() -> None:
     """``flush()`` must hit both sinks so frames are visible to the consumer."""
     file = _RecordingFile()
     stdout = io.StringIO()
-    tee = cli_run._CliMirrorSinkHandle(file, stdout)
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, cli_run._StdoutSeqCounter())
 
     tee.write("data\n")
     tee.flush()
@@ -167,7 +178,7 @@ def test_tee_sink_close_only_closes_file_not_stdout() -> None:
 
     file = _RecordingFile()
     stdout = _StdoutDouble()
-    tee = cli_run._CliMirrorSinkHandle(file, stdout)
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, cli_run._StdoutSeqCounter())
 
     tee.close()
 
@@ -188,14 +199,14 @@ def test_tee_sink_swallows_stdout_broken_pipe() -> None:
 
     file = _RecordingFile()
     stdout = _BrokenStdout()
-    tee = cli_run._CliMirrorSinkHandle(file, stdout)
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, cli_run._StdoutSeqCounter())
 
     # Should NOT raise — the file write completes.
-    n = tee.write("data\n")
+    n = tee.write('{"event_type":"task_started","seq":0}\n')
 
     # File write succeeded; stdout was best-effort.
-    assert file.writes == ["data\n"]
-    assert n == len("data\n")
+    assert file.writes == ['{"event_type":"task_started","seq":0}\n']
+    assert n == len('{"event_type":"task_started","seq":0}\n')
 
 
 # ────────────────────────────────────────────────────────────────────
@@ -207,6 +218,180 @@ def test_seq_counter_monotonic() -> None:
     counter = cli_run._SeqCounter()
     seqs = [counter.next() for _ in range(5)]
     assert seqs == [0, 1, 2, 3, 4]
+
+
+# ────────────────────────────────────────────────────────────────────
+# 3.5 Global stdout seq + final_seq reconciliation (Stage A)
+# ────────────────────────────────────────────────────────────────────
+
+
+def test_stdout_global_seq_monotonic_across_cli_and_mirror() -> None:
+    """Stage A contract: every stdout frame, including mirrored runtime events,
+    is assigned one monotonic per-run stdout seq.
+
+    Replays a realistic frame sequence:
+    cli_started → 4 runtime events with raw seq starting at 0 (would
+    duplicate if we passed through verbatim) → run_frame_summary →
+    cli_complete. Asserts every stdout frame's seq is contiguous 0..N
+    with no duplicates / gaps.
+    """
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+
+    # cli_started (CLI envelope): emitted directly via _emit_cli_event.
+    cli_run._emit_cli_event(
+        stdout, "cli_started", run_id="R", payload={}, seq=counter.next(),
+    )
+
+    # Mirror sink renumbers runtime events.
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+    for raw_seq in range(4):
+        tee.write(
+            json.dumps({"event_type": "task_started", "seq": raw_seq}) + "\n"
+        )
+    # run_frame_summary is the last runtime event.
+    tee.write('{"event_type":"run_frame_summary","seq":99}\n')
+
+    # Pull seq from each stdout line.
+    lines = stdout.getvalue().splitlines()
+    seqs = [json.loads(line)["seq"] for line in lines]
+    assert seqs == [0, 1, 2, 3, 4, 5], f"non-contiguous stdout seqs: {seqs}"
+    # Mirror tracks the last rewritten seq → seed for cli_complete.final_seq.
+    assert tee.last_stdout_seq == 5
+
+
+def test_file_seq_unchanged_after_mirror_rewrite() -> None:
+    """Forensic archive (file) preserves the RuntimeEventLog internal seq
+    domain BYTE-IDENTICAL. Only stdout is renumbered."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    counter.next()  # simulate cli_started already emitted (stdout seq 0).
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+
+    # Runtime emits its own seq=7 from a long-running session.
+    tee.write('{"event_type":"task_started","seq":7}\n')
+
+    # File side: byte-identical to the runtime emit.
+    assert file.writes == ['{"event_type":"task_started","seq":7}\n']
+    # Stdout side: renumbered to the next stdout slot (1, since 0 was cli_started).
+    assert json.loads(stdout.getvalue())["seq"] == 1
+
+
+def test_final_seq_equals_last_mirrored_frame_seq() -> None:
+    """Protocol invariant 5 (docs/contracts/SAGE_CLI_PROTOCOL.md):
+    ``cli_complete.payload.final_seq`` equals the stdout seq of the last
+    mirrored frame (run_frame_summary on the success path)."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    cli_run._emit_cli_event(
+        stdout, "cli_started", run_id="R", payload={}, seq=counter.next(),
+    )
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+    tee.write('{"event_type":"task_started","seq":0}\n')
+    tee.write('{"event_type":"run_frame_summary","seq":99}\n')
+
+    final_seq_from_mirror = tee.last_stdout_seq
+    assert final_seq_from_mirror == 2  # 0=cli_started, 1=task_started, 2=run_frame_summary
+
+    # Now emit cli_complete with final_seq = mirror's last_stdout_seq.
+    cli_run._emit_cli_event(
+        stdout,
+        "cli_complete",
+        run_id="R",
+        payload={
+            "exit_code": 0,
+            "outcome": "success",
+            "final_seq": final_seq_from_mirror,
+        },
+        seq=counter.next(),
+    )
+
+    lines = stdout.getvalue().splitlines()
+    cli_complete_frame = json.loads(lines[-1])
+    assert cli_complete_frame["event_type"] == "cli_complete"
+    # cli_complete.seq is final_seq + 1 (it's the frame AFTER the last mirror frame).
+    assert cli_complete_frame["seq"] == final_seq_from_mirror + 1
+    # final_seq matches the run_frame_summary seq.
+    assert cli_complete_frame["payload"]["final_seq"] == final_seq_from_mirror
+    # cli_complete is the LAST frame.
+    assert all(
+        json.loads(line).get("event_type") != "cli_complete"
+        for line in lines[:-1]
+    )
+
+
+def test_final_seq_tracks_cli_tool_request_after_mirror() -> None:
+    """Per cgpro VERIFY round-2: ``final_seq`` MUST come from the global
+    stdout counter (``_StdoutSeqCounter.last``), NOT from the mirror's
+    own ``last_stdout_seq``. CLI-shell frames like ``cli_tool_request``
+    can fire AFTER the last mirrored runtime event (mid-tool-call cancel
+    path); the mirror tracker would miss those, but the counter never
+    misses.
+
+    Sequence:
+      cli_started        seq=0
+      mirrored task_started   seq=1
+      cli_tool_request   seq=2
+      cli_complete       seq=3, payload.final_seq=2
+    """
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+
+    cli_run._emit_cli_event(
+        stdout, "cli_started", run_id="R", payload={}, seq=counter.next(),
+    )
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+    tee.write('{"event_type":"task_started","seq":0}\n')
+    cli_run._emit_cli_event(
+        stdout,
+        "cli_tool_request",
+        run_id="R",
+        payload={"correlation_id": "c1", "tool_name": "noop"},
+        seq=counter.next(),
+    )
+
+    # Pre cli_complete: counter.last is the cli_tool_request seq (2),
+    # mirror.last_stdout_seq is the task_started seq (1). The terminal
+    # frame must use counter.last.
+    assert counter.last == 2
+    assert tee.last_stdout_seq == 1
+    final_seq = counter.last
+
+    cli_run._emit_cli_event(
+        stdout,
+        "cli_complete",
+        run_id="R",
+        payload={"exit_code": 0, "outcome": "success", "final_seq": final_seq},
+        seq=counter.next(),
+    )
+
+    lines = stdout.getvalue().splitlines()
+    seqs = [json.loads(line)["seq"] for line in lines]
+    assert seqs == [0, 1, 2, 3]
+    cli_complete_frame = json.loads(lines[-1])
+    assert cli_complete_frame["event_type"] == "cli_complete"
+    assert cli_complete_frame["seq"] == 3
+    assert cli_complete_frame["payload"]["final_seq"] == 2
+
+
+def test_mirror_falls_through_on_unparseable_line() -> None:
+    """Mirror is best-effort: malformed JSON is written verbatim so the
+    forensic file's bytes still reach stdout (parser bugs are caller-side)."""
+    file = _RecordingFile()
+    stdout = io.StringIO()
+    counter = cli_run._StdoutSeqCounter()
+    tee = cli_run._CliMirrorSinkHandle(file, stdout, counter)
+
+    tee.write("not-json\n")
+
+    assert file.writes == ["not-json\n"]
+    assert stdout.getvalue() == "not-json\n"
+    # No seq was rewritten — counter unchanged.
+    assert tee.last_stdout_seq is None
 
 
 # ────────────────────────────────────────────────────────────────────
