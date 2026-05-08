@@ -189,6 +189,55 @@ def _evidence_test_resolves(repo_root: Path, value: str) -> bool:
     return (repo_root / file_part).is_file()
 
 
+def _evidence_test_collects(repo_root: Path, value: str) -> bool:
+    """Verify the full pytest node id (including test name) exists.
+
+    Uses ``pytest --collect-only -q`` to check that the test is actually
+    discoverable.  Only called under ``--resolve-pytest``.
+    """
+    if "::" not in value:
+        return _evidence_test_resolves(repo_root, value)
+    import subprocess
+    file_part = value.split("::", 1)[0]
+    test_path = repo_root / file_part
+    if not test_path.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            ["python", "-m", "pytest", "--collect-only", "-q", str(test_path)],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(repo_root),
+        )
+        # pytest returns 0 if it collected tests; 5 if no tests collected
+        return result.returncode in (0,)
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return False
+
+
+def _evidence_commit_reachable(repo_root: Path, sha: str) -> bool:
+    """Verify the commit SHA exists and is reachable from origin/main.
+
+    Only called under ``--resolve-git``.
+    """
+    import subprocess
+    try:
+        # Step 1: does the commit exist?
+        result = subprocess.run(
+            ["git", "cat-file", "-e", f"{sha}^{{commit}}"],
+            capture_output=True, timeout=10, cwd=str(repo_root),
+        )
+        if result.returncode != 0:
+            return False
+        # Step 2: is it an ancestor of origin/main?
+        result = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", sha, "origin/main"],
+            capture_output=True, timeout=10, cwd=str(repo_root),
+        )
+        return result.returncode == 0
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return False
+
+
 _EVIDENCE_BENCHMARK_ALLOWED_PREFIXES: tuple[str, ...] = (
     "docs/benchmarks/",
     "docs/audits/",
@@ -235,7 +284,13 @@ def _is_stale(last_verified_utc: str) -> bool:
     return (datetime.now(timezone.utc) - ts) > _STALE_THRESHOLD
 
 
-def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
+def audit_claim(
+    repo_root: Path,
+    claim: dict[str, Any],
+    *,
+    resolve_pytest: bool = False,
+    resolve_git: bool = False,
+) -> list[Violation]:
     """Apply every contract to a single claim. Returns its violations."""
     cid = claim.get("id", "<missing-id>")
     out: list[Violation] = []
@@ -295,6 +350,15 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
                     f"evidence_test path `{ev_test}` does not exist on disk",
                 )
             )
+        elif test_pinned and resolve_pytest and not _evidence_test_collects(repo_root, ev_test):
+            out.append(
+                Violation(
+                    cid,
+                    "error",
+                    "evidence_test",
+                    f"evidence_test node `{ev_test}` not found by pytest --collect-only",
+                )
+            )
 
         if bench_pinned and not _evidence_benchmark_resolves(repo_root, ev_bench):
             out.append(
@@ -337,6 +401,15 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
                     f"evidence_commit `{ev_commit}` is not a 7-40 char hex SHA",
                 )
             )
+        elif resolve_git and not _evidence_commit_reachable(repo_root, ev_commit):
+            out.append(
+                Violation(
+                    cid,
+                    "error",
+                    "evidence_commit",
+                    f"evidence_commit `{ev_commit}` is not reachable from origin/main",
+                )
+            )
 
     # Stale verification timestamp (warning only).
     last_verified = claim.get("last_verified_utc", "")
@@ -353,14 +426,25 @@ def audit_claim(repo_root: Path, claim: dict[str, Any]) -> list[Violation]:
     return out
 
 
-def run_audit(repo_root: Path, strict: bool = False) -> AuditReport:
+def run_audit(
+    repo_root: Path,
+    strict: bool = False,
+    resolve_pytest: bool = False,
+    resolve_git: bool = False,
+) -> AuditReport:
     claims = load_claims(repo_root)
     report = AuditReport(total_claims=len(claims), mode="strict" if strict else "audit")
 
     for claim in claims:
         status = claim.get("status", "<missing>")
         report.by_status[status] = report.by_status.get(status, 0) + 1
-        report.violations.extend(audit_claim(repo_root, claim))
+        report.violations.extend(
+            audit_claim(
+                repo_root, claim,
+                resolve_pytest=resolve_pytest,
+                resolve_git=resolve_git,
+            ),
+        )
 
     if strict:
         report.ok = len(report.errors) == 0
@@ -397,10 +481,25 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Override repo-root detection (defaults to walking up from cwd).",
     )
+    parser.add_argument(
+        "--resolve-pytest",
+        action="store_true",
+        help="Verify that pytest node ids (after ::) actually exist in the test file.",
+    )
+    parser.add_argument(
+        "--resolve-git",
+        action="store_true",
+        help="Verify that evidence_commit SHAs exist and are reachable from origin/main.",
+    )
     args = parser.parse_args(argv)
 
     repo_root = args.repo_root if args.repo_root else _find_repo_root(Path.cwd())
-    report = run_audit(repo_root, strict=args.strict)
+    report = run_audit(
+        repo_root,
+        strict=args.strict,
+        resolve_pytest=args.resolve_pytest,
+        resolve_git=args.resolve_git,
+    )
 
     if args.json:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
