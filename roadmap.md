@@ -9,7 +9,7 @@ impact-over-effort.
 
 **Cycle-9 closure 2026-05-04 (commit `43726991`).** Stack since 2026-05-02: A2 v7 60/60 ablation passed gate (`full=4/10`, commit `ad6cd78f`), A3 N=50 launched then aborted at 34/300 by Windows Modern Standby S0 DRIPS, cgpro-validated 5-step recovery shipped (event ledger `a56a76e2` + wall-clock watchdog `b44156e7` + Windows keep-awake `46c280e3` + bench wiring `0036217b` + γ ledger 7th invariant `ae371202` + α CLI flags `8e1bf6dd` + α paired diagnostic results `970367b3` + DAG features in control_surface `43726991`). cgpro methodology trap caught: `no-guardrails` flag short-circuits `guardrail_pipeline`, NOT `TopologyController` — those are orthogonal levers. Fix C `a23e196b` is correctly applied (`controller_attached=False` in budget tier) but does NOT close the v7 4/10→7/10 gap; gap was task-mix-dependent + sample variance. **Cycle-10 candidates**: A3 N=50 cloud (RunPod) covering /17 + /37; perceive→TaskPlanner coupling unit test for BCB/82 (5→3 node shift); discriminant replay /17,/37,/82,/89,/101 + 3 stable.
 
-**Live test counts** (canonical at `docs/status/current.json`): **2940 Python collected** (was 2907; +24 cycle-9 A.1-A.4 recovery + 3 γ.2 host-suspend integration + 6 α.1+α.2 targeted-filter tests) / **549 Rust listed** / **100 sage-discover**. mypy 0 / ruff clean.
+**Live test counts** (canonical at `docs/status/current.json`): **3347 Python collected** / **557 Rust listed** / **100 sage-discover** (2026-05-08, snapshot `19b657b7`). mypy 0 / ruff clean.
 
 **Cycle-9 completed work (2026-05-02 HEAD `24f97f3c`):**
 - A14b Stage-0 attribution closure: `route_integrated()` + `record_outcome_checked()` + cancel-on-skip/refuse (commits `34e42ea5` → `6f23eea4`). cgpro-APPROVED.
