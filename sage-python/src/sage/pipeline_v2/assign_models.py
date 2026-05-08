@@ -104,8 +104,12 @@ def assign_models(
                 )
                 if node:
                     ctx.assignments[i] = getattr(node, "model_id", "")
-            from sage.pipeline_v2.assign_models import log_model_assigner_chosen_fallback
-            log_model_assigner_chosen_fallback(self, ctx)
+            from sage.pipeline_v2.assign_models import (
+                log_model_assigner_chosen_fallback,
+                log_model_assigner_trace_if_available,
+            )
+            if not log_model_assigner_trace_if_available(self, ctx):
+                log_model_assigner_chosen_fallback(self, ctx)
         except (ImportError, RuntimeError) as exc:
             log.warning("Stage 3 assign failed: %s", exc)
 
@@ -156,6 +160,9 @@ def log_model_assigner_chosen_fallback(
     if os.environ.get("SAGE_ASSIGNER_LOG_TOP3") != "1":
         return
     if pipeline.assigner is not None and hasattr(pipeline.assigner, "_score_candidates"):
+        return
+    # P1-2B: don't run fallback when Rust trace is available
+    if pipeline.assigner is not None and hasattr(pipeline.assigner, "last_assignment_trace"):
         return
     if ctx.topology is None:
         return
@@ -341,8 +348,57 @@ def verify_assignment_formal(
         )
 
 
+def log_model_assigner_trace_if_available(
+    pipeline: "CognitiveOrchestrationPipeline",
+    ctx: "PipelineContext",
+) -> bool:
+    """Log real Rust ModelAssigner top-3 trace when PyO3 exposes it (P1-2B).
+
+    Returns True when the assigner exposes a trace API, even if logging
+    is disabled or empty.  Returns False only when this is an assigner
+    without Rust trace support, so the P1-2A fallback can run.
+    """
+    assigner = getattr(pipeline, "assigner", None)
+    if assigner is None or not hasattr(assigner, "last_assignment_trace"):
+        return False
+
+    if os.environ.get("SAGE_ASSIGNER_LOG_TOP3") != "1":
+        return True
+
+    try:
+        trace = list(assigner.last_assignment_trace())
+    except (AttributeError, TypeError, RuntimeError, ValueError) as exc:
+        log.warning(
+            "model_assigner.trace_error trace_available=false "
+            "source=rust_pyo3_trace reason_code=rust_trace_error error=%s",
+            exc,
+        )
+        return True
+
+    for item in trace:
+        log.info(
+            "model_assigner.candidates node_id=%d rank=%d model=%s "
+            "trace_available=true source=rust_pyo3_trace reason_code=%s "
+            "score=%.6f affinity=%.6f domain=%.6f cost_norm=%.6f "
+            "hint_bonus=%.6f diversity_penalty=%.6f",
+            int(getattr(item, "node_idx", -1)),
+            int(getattr(item, "rank", 0)),
+            str(getattr(item, "model_id", "")),
+            str(getattr(item, "filtered_reason", "ok")),
+            float(getattr(item, "total_score", 0.0)),
+            float(getattr(item, "affinity_score", 0.0)),
+            float(getattr(item, "domain_score", 0.0)),
+            float(getattr(item, "cost_norm", 0.0)),
+            float(getattr(item, "hint_bonus", 0.0)),
+            float(getattr(item, "diversity_penalty", 0.0)),
+        )
+
+    return True
+
+
 __all__ = [
     "assign_models",
+    "log_model_assigner_trace_if_available",
     "log_model_assigner_chosen_fallback",
     "verify_assignment_formal",
 ]

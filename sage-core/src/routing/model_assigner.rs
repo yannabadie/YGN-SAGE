@@ -1,5 +1,8 @@
 //! ModelAssigner — per-node model assignment using ModelCard scoring.
 
+use std::sync::Mutex;
+use std::cmp::Ordering;
+
 use pyo3::prelude::*;
 use tracing::{info, warn};
 
@@ -125,8 +128,54 @@ fn effective_system(
     }
 }
 
+// ── PyModelCandidateTrace (P1-2B) ────────────────────────────────────────
+
+/// Per-model candidate trace exposed via PyO3 for top-3 logging.
 #[pyclass]
 #[derive(Debug, Clone)]
+pub struct PyModelCandidateTrace {
+    #[pyo3(get)]
+    pub node_idx: usize,
+    #[pyo3(get)]
+    pub rank: usize,
+    #[pyo3(get)]
+    pub model_id: String,
+    #[pyo3(get)]
+    pub total_score: f32,
+    #[pyo3(get)]
+    pub affinity_score: f32,
+    #[pyo3(get)]
+    pub domain_score: f32,
+    #[pyo3(get)]
+    pub cost_norm: f32,
+    #[pyo3(get)]
+    pub hint_bonus: f32,
+    #[pyo3(get)]
+    pub diversity_penalty: f32,
+    #[pyo3(get)]
+    pub filtered_reason: String,
+}
+
+#[pymethods]
+impl PyModelCandidateTrace {
+    fn __repr__(&self) -> String {
+        format!(
+            "PyModelCandidateTrace(node_idx={}, rank={}, model_id='{}', \
+             total_score={:.6}, affinity={:.6}, domain={:.6}, \
+             cost_norm={:.6}, hint_bonus={:.6}, diversity_penalty={:.6}, \
+             filtered_reason='{}')",
+            self.node_idx, self.rank, self.model_id,
+            self.total_score, self.affinity_score, self.domain_score,
+            self.cost_norm, self.hint_bonus, self.diversity_penalty,
+            self.filtered_reason,
+        )
+    }
+}
+
+// ── ModelAssigner ─────────────────────────────────────────────────────────
+
+#[pyclass]
+#[derive(Debug)]
 pub struct ModelAssigner {
     registry: ModelRegistry,
     /// Weight for cognitive system affinity (S1/S2/S3 match) — subject to ablation.
@@ -137,6 +186,10 @@ pub struct ModelAssigner {
     weight_cost: f32,
     /// Providers excluded from assignment (dead at boot health check).
     excluded_providers: Vec<String>,
+    /// Per-node top-3 trace buffer (P1-2B). Cleared at start of each
+    /// assign_models* call, populated per-node during scoring.
+    /// Mutex allows internal mutation through &self (PyO3 compatibility).
+    last_assignment_trace: Mutex<Vec<PyModelCandidateTrace>>,
 }
 
 impl ModelAssigner {
@@ -147,6 +200,7 @@ impl ModelAssigner {
             weight_domain: DEFAULT_WEIGHT_DOMAIN,
             weight_cost: DEFAULT_WEIGHT_COST,
             excluded_providers: Vec::new(),
+            last_assignment_trace: Mutex::new(Vec::new()),
         }
     }
 
@@ -166,7 +220,22 @@ impl ModelAssigner {
             weight_domain: weight_domain / norm,
             weight_cost: weight_cost / norm,
             excluded_providers: Vec::new(),
+            last_assignment_trace: Mutex::new(Vec::new()),
         }
+    }
+
+    // ── Trace helpers (P1-2B) ──────────────────────────────────────────
+
+    pub fn last_assignment_trace(&self) -> Vec<PyModelCandidateTrace> {
+        self.last_assignment_trace.lock().unwrap().clone()
+    }
+
+    fn replace_last_assignment_trace(&self, trace: Vec<PyModelCandidateTrace>) {
+        *self.last_assignment_trace.lock().unwrap() = trace;
+    }
+
+    fn clear_last_assignment_trace(&self) {
+        self.last_assignment_trace.lock().unwrap().clear();
     }
 
     /// Exclude providers from model assignment (dead at boot health check).
@@ -205,6 +274,7 @@ impl ModelAssigner {
         provider_hints: &[(usize, String)],
         task_system: Option<CognitiveSystem>,
     ) -> usize {
+        self.clear_last_assignment_trace();
         let node_count = graph.node_count();
         let mut remaining_budget = budget_usd;
         let mut assigned = 0usize;
@@ -287,6 +357,7 @@ impl ModelAssigner {
 
             let mut best_id: Option<String> = None;
             let mut best_score: f32 = f32::NEG_INFINITY;
+            let mut node_candidates: Vec<(usize, PyModelCandidateTrace)> = Vec::new();
 
             for (card_idx, card) in all_models.iter().enumerate() {
                 // Skip models from excluded providers (dead at boot health check)
@@ -312,25 +383,72 @@ impl ModelAssigner {
                     + self.weight_cost * (1.0 - cost_norm);
 
                 // Provider hint bonus: soft preference for the hinted provider
-                if !preferred_provider.is_empty() && card.provider == preferred_provider {
+                let hint_bonus = if !preferred_provider.is_empty()
+                    && card.provider == preferred_provider
+                {
                     score += PROVIDER_HINT_BONUS;
-                }
+                    PROVIDER_HINT_BONUS
+                } else {
+                    0.0
+                };
 
                 // Diversity penalty: -0.08 per previous assignment to the
-                // same provider in this call (capped at -0.20). Prevents
-                // one provider from taking every node even when it
-                // marginally wins on score. Observed impact: MiniMax
-                // saturation (88% of calls in v5f) → balanced across
-                // 2-3 providers, reducing rate-limit pressure.
+                // same provider in this call (capped at -0.20).
                 let concentration = provider_count.get(&card.provider).copied().unwrap_or(0);
-                let diversity_penalty = (concentration as f32 * 0.08_f32).min(0.20_f32);
+                let diversity_penalty =
+                    (concentration as f32 * 0.08_f32).min(0.20_f32);
                 score -= diversity_penalty;
+
+                // P1-2B: capture trace for this candidate
+                let filtered_reason = if score.is_finite() { "ok" } else { "non_finite_score" };
+                let seq = node_candidates.len();
+                node_candidates.push((
+                    seq,
+                    PyModelCandidateTrace {
+                        node_idx: idx,
+                        rank: 0, // assigned after sort
+                        model_id: card.id.clone(),
+                        total_score: score,
+                        affinity_score: affinity,
+                        domain_score: domain,
+                        cost_norm,
+                        hint_bonus,
+                        diversity_penalty,
+                        filtered_reason: filtered_reason.to_string(),
+                    },
+                ));
 
                 if score > best_score {
                     best_score = score;
                     best_id = Some(card.id.clone());
                 }
             }
+
+            // P1-2B: sort node candidates by score (desc), then by
+            // insertion order (stable tie-break), take top 3.
+            node_candidates.sort_by(|(seq_a, a), (seq_b, b)| {
+                let by_score = match (
+                    a.total_score.is_finite(),
+                    b.total_score.is_finite(),
+                ) {
+                    (true, true) => b
+                        .total_score
+                        .partial_cmp(&a.total_score)
+                        .unwrap_or(Ordering::Equal),
+                    (true, false) => Ordering::Less,
+                    (false, true) => Ordering::Greater,
+                    (false, false) => Ordering::Equal,
+                };
+                by_score.then_with(|| seq_a.cmp(seq_b))
+            });
+            let mut trace_buf = self.last_assignment_trace.lock().unwrap();
+            for (rank, (_, mut candidate)) in
+                node_candidates.into_iter().take(3).enumerate()
+            {
+                candidate.rank = rank + 1;
+                trace_buf.push(candidate);
+            }
+            drop(trace_buf);
 
             if let Some(model_id) = best_id {
                 remaining_budget -= self
@@ -529,6 +647,13 @@ impl ModelAssigner {
             task_sys,
         )
         .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("No candidate found"))
+    }
+
+    /// Return the top-3 per-node candidate trace from the most recent
+    /// ``assign_models`` call (P1-2B).  Empty if no assignment has run yet.
+    #[pyo3(name = "last_assignment_trace")]
+    fn py_last_assignment_trace(&self) -> Vec<PyModelCandidateTrace> {
+        self.last_assignment_trace()
     }
 }
 
@@ -1386,5 +1511,152 @@ mod tests {
                 d
             );
         }
+    }
+
+    // ── P1-2B trace tests ──────────────────────────────────────────────
+
+    fn _trace_registry() -> ModelRegistry {
+        let toml = r#"
+[[models]]
+id = "cheap"
+provider = "provider-a"
+family = "test"
+code_score = 0.5
+reasoning_score = 0.5
+tool_use_score = 0.5
+math_score = 0.5
+formal_z3_strength = 0.3
+cost_input_per_m = 0.1
+cost_output_per_m = 0.2
+latency_ttft_ms = 100.0
+tokens_per_sec = 200.0
+s1_affinity = 0.9
+s2_affinity = 0.4
+s3_affinity = 0.1
+recommended_topologies = ["sequential"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 128000
+[models.domain_scores]
+code = 0.5
+
+[[models]]
+id = "mid"
+provider = "provider-b"
+family = "test"
+code_score = 0.7
+reasoning_score = 0.7
+tool_use_score = 0.7
+math_score = 0.7
+formal_z3_strength = 0.5
+cost_input_per_m = 1.0
+cost_output_per_m = 2.0
+latency_ttft_ms = 200.0
+tokens_per_sec = 100.0
+s1_affinity = 0.5
+s2_affinity = 0.7
+s3_affinity = 0.4
+recommended_topologies = ["sequential"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 128000
+[models.domain_scores]
+code = 0.7
+
+[[models]]
+id = "smart"
+provider = "provider-c"
+family = "test"
+code_score = 0.9
+reasoning_score = 0.9
+tool_use_score = 0.9
+math_score = 0.9
+formal_z3_strength = 0.8
+cost_input_per_m = 2.0
+cost_output_per_m = 4.0
+latency_ttft_ms = 500.0
+tokens_per_sec = 50.0
+s1_affinity = 0.2
+s2_affinity = 0.95
+s3_affinity = 0.8
+recommended_topologies = ["sequential"]
+supports_tools = true
+supports_json_mode = true
+supports_vision = false
+context_window = 128000
+[models.domain_scores]
+code = 0.9
+"#;
+        ModelRegistry::from_toml_str(toml).unwrap()
+    }
+
+    #[test]
+    fn test_assignment_trace_top3_matches_selected_model() {
+        let registry = _trace_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        graph.add_node(TopologyNode::new(
+            "worker".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+        ));
+
+        let n = assigner.assign_models_inner(&mut graph, "code", 10.0);
+        assert_eq!(n, 1);
+
+        let trace = assigner.last_assignment_trace();
+        assert!(trace.len() >= 3, "expected >=3, got {}", trace.len());
+
+        assert_eq!(trace[0].node_idx, 0);
+        assert_eq!(trace[0].rank, 1);
+        assert_eq!(trace[1].rank, 2);
+        assert_eq!(trace[2].rank, 3);
+
+        let chosen = graph.try_get_node(0).unwrap().model_id.clone();
+        assert_eq!(trace[0].model_id, chosen);
+
+        assert!(trace[0].total_score.is_finite());
+        assert!(trace[0].affinity_score.is_finite());
+        assert!(trace[0].total_score >= trace[1].total_score);
+    }
+
+    #[test]
+    fn test_assignment_trace_records_provider_hint_bonus() {
+        let registry = _trace_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+        let mut graph = TopologyGraph::try_new("sequential").unwrap();
+        graph.add_node(TopologyNode::new(
+            "worker".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+        ));
+
+        let hints = vec![(0usize, "provider-b".to_string())];
+        assigner.assign_models_with_hints_inner(&mut graph, "code", 10.0, &hints, None);
+
+        let trace = assigner.last_assignment_trace();
+        assert!(
+            trace.iter().any(|t| t.hint_bonus > 0.0),
+            "expected at least one traced candidate to carry provider hint bonus"
+        );
+    }
+
+    #[test]
+    fn test_assignment_trace_is_cleared_between_calls() {
+        let registry = _trace_registry();
+        let assigner = ModelAssigner::from_registry(&registry);
+
+        let mut g1 = TopologyGraph::try_new("sequential").unwrap();
+        g1.add_node(TopologyNode::new(
+            "w1".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+        ));
+        assigner.assign_models_inner(&mut g1, "code", 10.0);
+        assert!(!assigner.last_assignment_trace().is_empty());
+
+        // Budget=0 → no models affordable
+        let mut g2 = TopologyGraph::try_new("sequential").unwrap();
+        g2.add_node(TopologyNode::new(
+            "w2".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+        ));
+        assigner.assign_models_inner(&mut g2, "code", 0.0);
+        assert!(assigner.last_assignment_trace().is_empty());
     }
 }
