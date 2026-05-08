@@ -1,7 +1,6 @@
 name: fuzz-smoke
 
 on:
-  pull_request:
   push:
     branches: [main]
 
@@ -9,7 +8,7 @@ jobs:
   fuzz-smoke:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Install nightly Rust
         run: rustup install nightly

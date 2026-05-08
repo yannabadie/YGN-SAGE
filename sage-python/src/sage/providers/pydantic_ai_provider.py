@@ -28,6 +28,8 @@ Design choices:
 """
 from __future__ import annotations
 
+import re
+
 import json
 import logging
 from typing import Any
@@ -78,7 +80,13 @@ def _build_pydantic_model(provider_name: str, model_id: str, api_key: str | None
         # model starting with "gpt-5.4-pro" or ending in "-pro" among the
         # gpt-5 family routes via Responses. (The previous LiteLLM path
         # used an `openai/responses/<model>` prefix — same mechanism.)
-        _responses_only = model_id.startswith("gpt-5.4-pro") or "responses" in model_id.lower()
+        _responses_only = (
+            # Any gpt-5.*-pro variant routes via Responses API
+            # (gpt-5.4-pro, gpt-5.5-pro, etc.).  The Chat Completions
+            # endpoint returns 404 for these reasoning-only models.
+            bool(re.match(r"^gpt-5\..*-pro", model_id))
+            or "responses" in model_id.lower()
+        )
         if _responses_only:
             from pydantic_ai.models.openai import OpenAIResponsesModel
             return OpenAIResponsesModel(

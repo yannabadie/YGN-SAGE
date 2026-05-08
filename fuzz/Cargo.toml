@@ -1,0 +1,26 @@
+[package]
+name = "sage-core-fuzz-targets"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.sage-core]
+path = "../sage-core"
+
+[[bin]]
+name = "topology_edge"
+path = "fuzz_targets/topology_edge.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "python_validator"
+path = "fuzz_targets/python_validator.rs"
+test = false
+doc = false
