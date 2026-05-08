@@ -54,30 +54,48 @@ def _probe_ssl() -> bool:
 
 
 def patch_genai_ssl(client) -> None:
-    """Patch a genai.Client for SSL bypass (sync httpx + async aiohttp)."""
+    """Patch a genai.Client to use the CA bundle when standard SSL fails.
+
+    Directive #3: NEVER use verify=False when ca-bundle.pem is available.
+    Prefer the CA bundle from REQUESTS_CA_BUNDLE or SSL_CERT_FILE.
+    Only fall back to verify=False when no bundle is configured.
+    """
     if ssl_verify():
         return
+
+    ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get(
+        "SSL_CERT_FILE"
+    )
+    verify_setting: str | bool = ca_bundle if ca_bundle else False
+
     try:
         import httpx
-        client._api_client._httpx_client = httpx.Client(verify=False, timeout=60)
-        # Also patch async httpx client if it exists
-        if hasattr(client._api_client, '_async_httpx_client'):
-            client._api_client._async_httpx_client = httpx.AsyncClient(verify=False, timeout=60)
+        client._api_client._httpx_client = httpx.Client(
+            verify=verify_setting, timeout=60,
+        )
+        if hasattr(client._api_client, "_async_httpx_client"):
+            client._api_client._async_httpx_client = httpx.AsyncClient(
+                verify=verify_setting, timeout=60,
+            )
     except Exception:
-        _log.debug("Failed to patch genai httpx client for SSL bypass", exc_info=True)
+        _log.debug("Failed to patch genai httpx client for SSL", exc_info=True)
 
     # google-genai async uses aiohttp internally — patch SSL context
     try:
         import aiohttp
-        no_verify_ctx = ssl.create_default_context()
-        no_verify_ctx.check_hostname = False
-        no_verify_ctx.verify_mode = ssl.CERT_NONE
-        connector = aiohttp.TCPConnector(ssl=no_verify_ctx)
-        if hasattr(client._api_client, '_async_client'):
-            client._api_client._async_client = aiohttp.ClientSession(connector=connector)
-        # Also set on the module-level default
+        ssl_ctx = ssl.create_default_context()
+        if isinstance(verify_setting, str):
+            ssl_ctx.load_verify_locations(cafile=verify_setting)
+        else:
+            ssl_ctx.check_hostname = False
+            ssl_ctx.verify_mode = ssl.CERT_NONE
+        connector = aiohttp.TCPConnector(ssl=ssl_ctx)
+        if hasattr(client._api_client, "_async_client"):
+            client._api_client._async_client = aiohttp.ClientSession(
+                connector=connector,
+            )
         import google.genai._api_client as _gc
-        if hasattr(_gc, '_DEFAULT_CONNECTOR'):
+        if hasattr(_gc, "_DEFAULT_CONNECTOR"):
             _gc._DEFAULT_CONNECTOR = connector
     except Exception:
-        _log.debug("Failed to patch genai aiohttp for SSL bypass", exc_info=True)
+        _log.debug("Failed to patch genai aiohttp for SSL", exc_info=True)

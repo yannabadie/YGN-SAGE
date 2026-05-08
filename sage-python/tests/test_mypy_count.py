@@ -124,7 +124,11 @@ from pathlib import Path
 # All three are the same `import-not-found` for `sage_core`; the
 # ceiling raises as the public class body is split into per-stage
 # modules, not because new diagnostic categories are silenced.
-_MAX_TYPE_IGNORES = 54
+# Raised from 54 to 55 (2026-05-08, SSL+OPENAI_FIX):
+#   +1 google.py:57 / _ssl.py rework
+#     — SSL CA bundle fallback; removed inline verify=False duplicate,
+#     delegated to patch_genai_ssl which adds no new diagnostic cat.
+_MAX_TYPE_IGNORES = 55
 
 _SAGE_SRC = Path(__file__).resolve().parent.parent / "src" / "sage"
 _PATTERN = re.compile(r"#\s*type:\s*ignore")
