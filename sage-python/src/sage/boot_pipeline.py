@@ -103,7 +103,9 @@ def _build_capability_matrix(
             continue
         _api_key = os.environ.get(_cfg["api_key_env"], "")
         if not _api_key and _pname == "deepseek":
-            _api_key = os.environ.get("DEEP_SEEK_API_KEY", "")
+            _api_key = os.environ.get(
+                "DEEPSEEK_API_KEY", os.environ.get("DEEP_SEEK_API_KEY", "")
+            )
         if not _api_key:
             continue
         _runtime_adapters[_pname] = PydanticAIProvider.for_sage_provider(

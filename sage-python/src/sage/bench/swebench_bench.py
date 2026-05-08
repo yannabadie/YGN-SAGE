@@ -126,11 +126,21 @@ def _classify_prediction(pred: str | None | dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _ssl_bypass() -> None:
-    """Disable SSL verification for corporate proxy environments."""
-    import ssl
-    ssl._create_default_https_context = ssl._create_unverified_context  # type: ignore[assignment]
-    os.environ.setdefault("CURL_CA_BUNDLE", "")
-    os.environ.setdefault("REQUESTS_CA_BUNDLE", "")
+    """Configure SSL for corporate proxy environments using the CA bundle.
+
+    Directive #3: NEVER use verify=False when ca-bundle.pem is available.
+    The CA bundle at C:\\Code\\certs\\ca-bundle.pem is configured via
+    REQUESTS_CA_BUNDLE / SSL_CERT_FILE env vars.  If those are not set,
+    SSL stays enabled (fail-closed) rather than being silently disabled.
+    """
+    ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get(
+        "SSL_CERT_FILE",
+    )
+    if ca_bundle:
+        os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+        os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+    # No longer disable SSL globally — see directive #3
 
 
 def load_swebench_dataset(
