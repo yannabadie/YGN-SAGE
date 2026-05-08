@@ -210,7 +210,7 @@ async def run_internal(
                         total_latency_ms=0.0,
                         node_count=0,
                     )
-                    return ctx.result, frame
+                    return ctx.result, run_frame_builder.finalize()
             except ImportError:
                 pass  # security module not available — non-blocking
 
