@@ -314,13 +314,15 @@ claims:
   evidence_commit: f647c5ae
   last_verified_utc: '2026-05-06T00:00:00Z'
   owner: yann
-  notes: 'Gaps NYI per cgpro DESIGN E trap Q5: cli_progress heartbeat,
+  notes: 'Cycle-13 K stages A-E (2026-05-07) closed all v0 gaps: cli_progress
 
-    set_budget mid-run, cancel cancellation token,
+    heartbeat (5s cadence, 10s idle guard), set_budget (tighten-only root
 
-    cli_complete.payload.final_seq. Phase 1.2 of cycle-13 K queue
+    guard), cancel (cooperative, failure frame + cli_complete), final_seq.
 
-    closes these and bumps protocol_version.
+    Known v0 limits: in-flight HTTP uninterruptible, Rust TopologyExecutor
+
+    not preemptible. TypeScript adapter (clients/pi-ygn-sage/) NYI.
 
     '
   _source_file: docs/claims/runtime.yaml
