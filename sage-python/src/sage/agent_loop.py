@@ -445,8 +445,8 @@ class AgentLoop:
         if getattr(self, "toolforge", None) is not None:
             try:
                 self.toolforge.reset_run()
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("ToolForge reset_run failed: %s", exc)
 
         # === PERCEIVE ===
         p_result = await perceive(task, self)
