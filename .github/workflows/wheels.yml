@@ -90,12 +90,20 @@ jobs:
         # First-time build is ~10-15 min; the cargo target cache above amortises
         # subsequent runs to under 1 min on the wasm artefact + ~5 min on the
         # PyO3 cdylib link.
+        #
+        # REVIEW3 P0-4 (2026-05-08): pin RustPython to the same SHA that CI
+        # validated.  Unpinned clone (--depth=1) risks embedding a different
+        # revision than the one tested in CI.
         shell: bash
         run: |
           if [ ! -f external/rustpython-wasm-target/wasm32-wasip1/release/rustpython.wasm ]; then
             rustup target add wasm32-wasip1
             if [ ! -d external/rustpython ]; then
-              git clone --depth=1 https://github.com/RustPython/RustPython external/rustpython
+              sha="$(tr -d '[:space:]' < sage-core/rustpython-wasm.sha)"
+              git init external/rustpython
+              git -C external/rustpython remote add origin https://github.com/RustPython/RustPython.git
+              git -C external/rustpython fetch --depth 1 origin "$sha"
+              git -C external/rustpython checkout --detach FETCH_HEAD
             fi
             cd external/rustpython && CARGO_TARGET_DIR=../rustpython-wasm-target \
               cargo build --release --target wasm32-wasip1 --features freeze-stdlib
