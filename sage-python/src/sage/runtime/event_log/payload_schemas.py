@@ -806,6 +806,13 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
                 "severity",
             ),
             required_fields=("pattern_name", "match_text"),
+            field_specs={
+                "pattern_name": _string(128),
+                "match_text": _string(4096),
+                "span_start": _int(),
+                "span_end": _int(),
+                "severity": _string(64),
+            },
             payload_kind="dict",
             current=True,
         )

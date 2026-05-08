@@ -22,5 +22,10 @@ jobs:
       - name: Coverage
         working-directory: sage-core
         run: |
-          cargo llvm-cov clean --workspace
-          cargo llvm-cov --workspace --fail-under-lines 65 --lcov --output-path lcov.info
+          cargo llvm-cov clean
+          cargo llvm-cov -p sage-core \
+            --no-default-features \
+            --features smt,cognitive,sandbox,cranelift,tool-executor \
+            --fail-under-lines 65 \
+            --lcov \
+            --output-path lcov.info

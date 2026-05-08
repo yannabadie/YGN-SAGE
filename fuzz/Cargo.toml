@@ -1,5 +1,3 @@
-[workspace]
-
 [package]
 name = "sage-core-fuzz-targets"
 version = "0.0.0"
