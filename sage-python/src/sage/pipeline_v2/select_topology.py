@@ -114,6 +114,14 @@ def select_topology(
 
         # Build topology from template hint. All DAG-selected templates go
         # through TemplateStore which creates multi-node topologies.
+        #
+        # REVIEW3 P0-2 (2026-05-08): the DAG-template is now a CANDIDATE,
+        # not an early return.  The dynamic engine.generate() is ALWAYS
+        # attempted when available; its result replaces the DAG template
+        # if it produces a valid topology.  This ensures the 6-path engine
+        # (S-MMU, archive, mutation, MCTS, LLM synthesis, template fallback)
+        # is actually exercised — not just documented.
+        _dag_template_topo = None
         if (
             not skip_dag_template
             and hint in (
@@ -125,32 +133,18 @@ def select_topology(
                 "parallel_fanout",
             )
         ):
-            topo = topology_helpers_mod.build_topology_from_hint(hint)
-            if topo:
-                ctx.topology = topo
-                # Cycle-11 cgpro VERIFY follow-up (2026-05-05):
-                # bench `_capture_control_surface` reads
-                # `ctx.topology_id` directly, NOT the disjunction
-                # at pipeline.py:648. Setting it here keeps the
-                # bench-visible topology id consistent across all
-                # branches that build a topology — was previously
-                # missing on the DAG-template branch (the common
-                # case for budget-tier S2), causing blank topology
-                # IDs in BCB control-surface telemetry.
-                ctx.topology_id = getattr(topo, "id", "") or ""
+            _dag_template_topo = topology_helpers_mod.build_topology_from_hint(hint)
+            if _dag_template_topo:
+                ctx.topology = _dag_template_topo
+                ctx.topology_id = getattr(_dag_template_topo, "id", "") or ""
                 log.info(
-                    "Stage 2: DAG-driven template=%s (%d nodes, omega=%s delta=%s gamma=%s)",
-                    hint, topo.node_count(),
-                    ctx.dag_features.omega if ctx.dag_features else "?",
-                    ctx.dag_features.delta if ctx.dag_features else "?",
-                    f"{ctx.dag_features.gamma:.2f}" if ctx.dag_features else "?",
+                    "Stage 2: DAG-built template=%s (%d nodes) — candidate, "
+                    "engine will also be evaluated",
+                    hint, _dag_template_topo.node_count(),
                 )
-                # Gap 1+2 (2026-04-21): emit structure log alongside template
-                # name so post-run analysis can attribute pass-rate by DAG
-                # shape (edges) and 6-path source, not just template name.
-                topology_helpers_mod.log_topology_structure(self, topo, source="dag_template", confidence=None)
-                topology_helpers_mod.apply_topology_budget_and_cache(self, ctx)
-                return ctx
+                topology_helpers_mod.log_topology_structure(
+                    self, _dag_template_topo, source="dag_template", confidence=None,
+                )
 
         # Try DynamicTopologyEngine
         if self.engine:
@@ -177,6 +171,14 @@ def select_topology(
                     else raw_result
                 )
                 if result and hasattr(result, "topology"):
+                    if _dag_template_topo is not None:
+                        log.info(
+                            "Stage 2: engine selected over DAG-template "
+                            "(engine_source=%s, engine_nodes=%d, dag_template=%s)",
+                            getattr(result, "source", "?"),
+                            result.topology.node_count(),
+                            hint,
+                        )
                     ctx.topology = result.topology
                     # Plan item 1.4a (2026-04-20): always use ctx.topology.id
                     # (full ULID) — the engine's topology_cache / archive lookup
@@ -228,18 +230,21 @@ def select_topology(
                     "Stage 2 topology engine failed: %s, using template", exc
                 )
 
-        # Fallback: create topology from template
-        try:
-            from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
+        # Fallback: create topology from template ONLY if the DAG template
+        # wasn't built either (e.g. hint is not in the DAG-template set,
+        # or build_topology_from_hint returned None).
+        if ctx.topology is None:
+            try:
+                from sage_core import TopologyGraph, TopologyNode  # type: ignore[import-not-found]
 
-            topo = TopologyGraph(hint)
-            node = TopologyNode(role="agent", model_id="", system=ctx.system)
-            topo.add_node(node)
-            ctx.topology = topo
-            log.debug("Stage 2 fallback to template: %s", hint)
-        except ImportError:
-            log.debug("sage_core unavailable, topology=None (single-agent mode)")
-            ctx.topology = None
+                topo = TopologyGraph(hint)
+                node = TopologyNode(role="agent", model_id="", system=ctx.system)
+                topo.add_node(node)
+                ctx.topology = topo
+                log.debug("Stage 2 fallback to template: %s", hint)
+            except ImportError:
+                log.debug("sage_core unavailable, topology=None (single-agent mode)")
+                ctx.topology = None
 
         # Gap 1+2 (2026-04-21): log structure for the fallback path too.
         if ctx.topology is not None:
