@@ -794,6 +794,23 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
             current=True,
         )
     },
+    "prompt_injection_detected": {
+        "v1": _schema(
+            event_type="prompt_injection_detected",
+            version="v1",
+            allowed_fields=(
+                "pattern_name",
+                "match_text",
+                "span_start",
+                "span_end",
+                "severity",
+            ),
+            required_fields=("pattern_name", "match_text"),
+            payload_kind="dict",
+            current=True,
+        )
+    },
+    },
 }
 
 def _current_schema_for(event_type: str) -> EventPayloadSchema:

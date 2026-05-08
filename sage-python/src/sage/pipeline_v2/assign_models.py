@@ -173,18 +173,11 @@ def log_model_assigner_chosen_fallback(
         if not model_id:
             continue
         log.info(
-            "model_assigner.candidates node_id=%d rank=1 model=%s "
-            "source=wrapper_fallback reason_code=non_finite_score "
-            "score=%.6f affinity=%.6f domain=%.6f cost_norm=%.6f "
-            "hint_bonus=%.6f diversity_penalty=%.6f",
+            "model_assigner.selected node_id=%d model=%s "
+            "trace_available=false score_source=unavailable "
+            "reason_code=rust_trace_not_exposed",
             node_idx,
             model_id,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
         )
 
 

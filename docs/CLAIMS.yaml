@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-08T06:56:15+00:00'
+_generated_at_utc: '2026-05-08T07:50:35+00:00'
 _total_claims: 20
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -181,19 +181,35 @@ claims:
 
     Empirical baseline 2026-05-07: 50/60 overall, S1=16/20, S2=15/20,
 
-    S3=19/20. Floors are strict-equal to the baseline because the
+    S3=19/20. The floor EQUALS the empirical baseline by design: this
 
-    dataset and scoring rule are frozen — any artifact regeneration or
+    is a **strict-equal drift sentinel**, not a statistical margin.
 
-    router/scoring drift that loses even one current correct route MUST
+    Because the dataset, embeddings, and scoring rule are fully frozen,
 
-    be visible in CI immediately. If `routing_ground_truth.json`,
+    the only legitimate source of variance is router/scoring drift or
 
-    `routing_exemplars.npz`, or the scoring logic changes intentionally,
+    intentional artifact regeneration — and both MUST trip CI
 
-    update the floor constants in the same commit, with the new measured
+    immediately.  Loose-margin floors would silently absorb a genuine
 
-    baseline documented here.
+    regression.
+
+
+    **target_next** (non-blocking aspiration, not CI-enforced):
+
+    knn≥52/60 overall. Future router improvements should push the
+
+    baseline above the current floor, creating a real statistical
+
+    margin before raising the floor.
+
+
+    If `routing_ground_truth.json`, `routing_exemplars.npz`, or the
+
+    scoring logic changes intentionally, update the floor constants
+
+    in the same commit, with the new measured baseline documented here.
 
 
     The historical 92% figure traces back to
@@ -247,6 +263,13 @@ claims:
     MUST have sage_core built (the canonical CI Python jobs do); a
 
     skip on CI is not acceptable closure evidence.
+
+
+    **target_next** (non-blocking aspiration, not CI-enforced):
+
+    SystemRouter≥54/60 overall. Future router improvements should push
+
+    the baseline above the current floor before raising it.
 
 
     The historical 88% figure is provenance only; SystemRouter routing

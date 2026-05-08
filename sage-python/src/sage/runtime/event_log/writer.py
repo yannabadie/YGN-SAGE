@@ -502,6 +502,36 @@ class RuntimeEventLog:
             _is_final=True,
         )
 
+
+    def emit_prompt_injection_detected(
+        self,
+        *,
+        pattern_name: str,
+        match_text: str,
+        span_start: int,
+        span_end: int,
+        severity: str = "medium",
+        parent_event_id: int | None = None,
+    ) -> int | None:
+        """Emit a prompt-injection detection event (P1-3 pipeline ingress)."""
+        payload = {
+            "pattern_name": pattern_name,
+            "match_text": match_text[:200],
+            "span_start": span_start,
+            "span_end": span_end,
+            "severity": severity,
+        }
+        return self._emit(
+            _Failure,  # reuse event core; distinguished by event_type
+            "prompt_injection_detected",
+            "pipeline",
+            payload=payload,
+            kind="prompt_injection",
+            error_type="detected",
+            parent_event_id=parent_event_id,
+        )
+    
+
     def emit_run_frame_summary(
         self,
         *,

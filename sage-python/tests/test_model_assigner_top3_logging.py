@@ -184,14 +184,17 @@ def test_pipeline_logs_chosen_model_when_top3_not_derivable(monkeypatch, caplog)
     lines = [
         record.getMessage()
         for record in caplog.records
-        if "model_assigner.candidates" in record.getMessage()
+        if "model_assigner.selected" in record.getMessage()
     ]
-    assert lines == [
-        "model_assigner.candidates node_id=0 rank=1 model=rust-choice "
-        "source=wrapper_fallback reason_code=non_finite_score "
-        "score=0.000000 affinity=0.000000 domain=0.000000 cost_norm=0.000000 "
-        "hint_bonus=0.000000 diversity_penalty=0.000000"
-    ]
+    assert len(lines) == 1, f"expected 1 log line, got {len(lines)}: {lines}"
+    assert "node_id=0 model=rust-choice" in lines[0], lines[0]
+    assert "trace_available=false" in lines[0], lines[0]
+    assert "score_source=unavailable" in lines[0], lines[0]
+    assert "reason_code=rust_trace_not_exposed" in lines[0], lines[0]
+    # No fake zeros
+    assert "0.000000" not in lines[0], (
+        f"fake zeros must not appear: {lines[0]}"
+    )
 
 
 class _NanCard:

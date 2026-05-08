@@ -18,6 +18,7 @@ EVENT_TYPES = (
     "final_result",
     "oracle_verdict",
     "run_frame_summary",
+    "prompt_injection_detected",
 )
 
 REDACTION_STATES = (

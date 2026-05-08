@@ -40,13 +40,22 @@ claims:
       builder's `--validate` path.
 
       Empirical baseline 2026-05-07: 50/60 overall, S1=16/20, S2=15/20,
-      S3=19/20. Floors are strict-equal to the baseline because the
-      dataset and scoring rule are frozen — any artifact regeneration or
-      router/scoring drift that loses even one current correct route MUST
-      be visible in CI immediately. If `routing_ground_truth.json`,
-      `routing_exemplars.npz`, or the scoring logic changes intentionally,
-      update the floor constants in the same commit, with the new measured
-      baseline documented here.
+      S3=19/20. The floor EQUALS the empirical baseline by design: this
+      is a **strict-equal drift sentinel**, not a statistical margin.
+      Because the dataset, embeddings, and scoring rule are fully frozen,
+      the only legitimate source of variance is router/scoring drift or
+      intentional artifact regeneration — and both MUST trip CI
+      immediately.  Loose-margin floors would silently absorb a genuine
+      regression.
+
+      **target_next** (non-blocking aspiration, not CI-enforced):
+      knn≥52/60 overall. Future router improvements should push the
+      baseline above the current floor, creating a real statistical
+      margin before raising the floor.
+
+      If `routing_ground_truth.json`, `routing_exemplars.npz`, or the
+      scoring logic changes intentionally, update the floor constants
+      in the same commit, with the new measured baseline documented here.
 
       The historical 92% figure traces back to
       `scripts/eval_deberta_zeroshot.py:625` — "kNN (arctic-embed): 92.0%
@@ -79,6 +88,10 @@ claims:
       environments where the PyO3 extension is not built. CI gate runs
       MUST have sage_core built (the canonical CI Python jobs do); a
       skip on CI is not acceptable closure evidence.
+
+      **target_next** (non-blocking aspiration, not CI-enforced):
+      SystemRouter≥54/60 overall. Future router improvements should push
+      the baseline above the current floor before raising it.
 
       The historical 88% figure is provenance only; SystemRouter routing
       logic uses structural features and formal-keyword detection plus

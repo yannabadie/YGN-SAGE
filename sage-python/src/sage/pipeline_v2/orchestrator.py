@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import inspect as _inspect
 import logging
+import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -177,6 +178,41 @@ async def run_internal(
             pipeline._last_runtime_routing_confidence = None
             pipeline._last_runtime_routing_model_id = ""
             event_log.emit_task_started(ctx.task)
+
+            # P1-3 (REVIEW4 2026-05-08): prompt-injection detection at
+            # pipeline ingress — before classify/decompose/topology.
+            # Default: log-only, emits events, does not interrupt.
+            # Strict (SAGE_PROMPT_INJECTION_STRICT=1): refuses the task
+            # before any orchestration begins.
+            try:
+                from sage.security.prompt_injection import detect as _pi_detect
+                _pi_matches = _pi_detect(task)
+                for _m in _pi_matches:
+                    event_log.emit_prompt_injection_detected(
+                        pattern_name=_m.pattern_name,
+                        match_text=_m.match_text[:200],
+                        span_start=_m.start,
+                        span_end=_m.end,
+                        severity=_m.severity,
+                        parent_event_id=None,
+                    )
+                if _pi_matches and os.environ.get("SAGE_PROMPT_INJECTION_STRICT") == "1":
+                    log.warning(
+                        "Stage 0: prompt injection detected (%d patterns), "
+                        "refusing under SAGE_PROMPT_INJECTION_STRICT=1",
+                        len(_pi_matches),
+                    )
+                    ctx.result = "[sage: prompt injection detected — task refused]"
+                    event_log.emit_final_result(
+                        status="failure",
+                        output="",
+                        total_cost_usd=0.0,
+                        total_latency_ms=0.0,
+                        node_count=0,
+                    )
+                    return ctx.result, frame
+            except ImportError:
+                pass  # security module not available — non-blocking
 
             # G-series (2026-04-19): rebuild write gate per task so entries from a
             # previous task don't persist as novelty penalties or exact-dedup hits
