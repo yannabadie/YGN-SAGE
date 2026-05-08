@@ -83,13 +83,27 @@ async def learn(
             except (RuntimeError, ValueError) as exc:
                 log.warning("PRM scoring failed in LEARN: %s", exc)
 
+        # REVIEW3 P0-5 (2026-05-08): accumulate oracle/bandit health counters
+        # so the run summary can detect oracle starvation.  Initialized in
+        # CognitiveOrchestrationPipeline constructor (pipeline.py).
+        _oc = getattr(self, "_oracle_trainable_count", 0)
+        _ac = getattr(self, "_oracle_abstain_count", 0)
+        _bc = getattr(self, "_bandit_update_count", 0)
+        _cc = getattr(self, "_bandit_cancel_count", 0)
+        if oracle_on:
+            if oracle_trainable:
+                self._oracle_trainable_count = _oc + 1
+            else:
+                self._oracle_abstain_count = _ac + 1
         # Only record to bandit when quality is known and attribution is causal.
         from sage.pipeline_v2 import bandit_attribution as _bandit_attr
         if quality is not None:
             _bandit_attr.record_bandit_outcome_checked(self, ctx, quality)
+            self._bandit_update_count = _bc + 1
         else:
             _bandit_attr.cancel_bandit_decision(self, ctx)
             _bandit_attr.clear_bandit_decision(self, ctx)
+            self._bandit_cancel_count = _cc + 1
 
         # Evolution feedback: record outcome in TopologyEngine archive
         # Feeds MAP-Elites + CMA-ME + S-MMU bridge for future topology selection

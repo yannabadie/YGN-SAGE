@@ -104,6 +104,12 @@ def initialize_pipeline(
             log.debug("meta_harness module not available, skipping harness config")
     self._agent_loop = agent_loop
     self._task_count = 0
+    # REVIEW3 P0-5 (2026-05-08): oracle/bandit health counters to detect
+    # silent oracle starvation.  Incremented in learn().
+    self._oracle_trainable_count = 0
+    self._oracle_abstain_count = 0
+    self._bandit_update_count = 0
+    self._bandit_cancel_count = 0
     self.budget_usd = _resolve_task_budget_usd(budget_usd)
     self._llm_tier = llm_tier
     self._oracle_config = oracle_config or OracleConfig()

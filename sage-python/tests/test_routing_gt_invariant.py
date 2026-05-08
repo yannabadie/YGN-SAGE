@@ -26,6 +26,12 @@ are frozen, hence the only sources of variance are intentional artifact
 regeneration or unintended router/scoring drift. Either should be visible
 in CI immediately, not absorbed by a margin.
 
+REVIEW3 P1-1 (2026-05-08) recommends adding 1-2 point safety margin.
+Deliberately NOT adopted: the 60-task GT set is human-labeled and
+frozen, and the scoring rule (k=5 weighted LOO-CV) is deterministic.
+Any change to the floor would hide a real regression.  If floors need
+to move, update the artifact and the baseline together in one commit.
+
 The historical ~92% / ~88% figures were measured on an earlier 50-task GT
 subset and are *provenance only*, not recertified by these floors. See
 ``docs/claims/routing.yaml``.
