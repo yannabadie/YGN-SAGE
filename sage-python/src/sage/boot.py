@@ -371,7 +371,7 @@ def boot_agent_system(
     # create_bypass_agent_loop`, and every `Tool.execute` call in this
     # process inherits the same effective policy without explicit
     # plumbing. cgpro DESIGN T14 covers the bypass-inheritance contract.
-    from sage.policy import ToolPolicy, set_current_tool_policy
+    from sage.policy import ToolCapability, ToolPolicy, set_current_tool_policy
 
     set_current_tool_policy(ToolPolicy.from_environment())
 
@@ -625,6 +625,7 @@ def boot_agent_system(
             },
         ),
         handler=_execute_bash_handler,
+        capability=ToolCapability.DANGEROUS,
     )
     # P0.1 (2026-04-22 audit remediation): gate raw bash behind the
     # `dangerous_tools=True` opt-in on the agent config. Typed repo
