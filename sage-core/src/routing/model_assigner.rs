@@ -230,6 +230,7 @@ impl ModelAssigner {
         self.last_assignment_trace.lock().unwrap().clone()
     }
 
+    #[allow(dead_code)]
     fn replace_last_assignment_trace(&self, trace: Vec<PyModelCandidateTrace>) {
         *self.last_assignment_trace.lock().unwrap() = trace;
     }

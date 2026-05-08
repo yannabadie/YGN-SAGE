@@ -129,8 +129,8 @@ jobs:
         with:
           components: clippy, rustfmt
       - run: cargo fmt --check
-      - run: cargo clippy --no-default-features -- -D warnings
-      - run: cargo test --no-default-features --lib
+      - run: cargo clippy --no-default-features --features smt,cognitive,sandbox,cranelift,tool-executor -- -D warnings
+      - run: cargo test --no-default-features --features smt,cognitive,sandbox,cranelift,tool-executor --lib
       - name: ONNX feature tests
         run: cargo test --no-default-features --features onnx --lib
 
@@ -450,7 +450,7 @@ jobs:
 
       - name: Rust unit tests
         working-directory: sage-core
-        run: cargo test --no-default-features --lib
+        run: cargo test --no-default-features --features smt,cognitive,sandbox,cranelift,tool-executor --lib
 
       - name: Rust check (ONNX feature)
         working-directory: sage-core
