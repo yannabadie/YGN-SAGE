@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-08T07:50:35+00:00'
+_generated_at_utc: '2026-05-08T07:54:35+00:00'
 _total_claims: 20
 claims:
 - id: benchmarks.bcb_hard_45_9

@@ -810,7 +810,6 @@ PAYLOAD_SCHEMAS: dict[str, dict[PayloadSchemaVersion, EventPayloadSchema]] = {
             current=True,
         )
     },
-    },
 }
 
 def _current_schema_for(event_type: str) -> EventPayloadSchema:

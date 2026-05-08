@@ -449,23 +449,32 @@ impl TopologyEngine {
             None
         });
 
-        // Path 6: Template fallback (always available unless explicitly disabled)
+        // Path 6: Template fallback — the safety net.  When explicitly
+        // disabled by GenerationOptions (Phase 2 deterministic testing),
+        // return a minimal single-node topology with a distinguishing
+        // source so callers can detect that the constraint was enforced.
         let result = result.unwrap_or_else(|| {
-            if !options.allow_template {
-                // All paths disabled — return a minimal fallback anyway
-                // to avoid a panic.  Template is the safety net.
-            }
             if effective_budget > 0.3 && !self.synthesizer.is_rate_limited() {
                 debug!("llm_synthesis_path_available_but_deferred_to_python");
             }
-            let fb = self.template_fallback(system);
-            info!(
-                source = "template_fallback",
-                confidence = fb.confidence,
-                template = fb.topology.template_type.as_str(),
-                "topology_generated"
-            );
-            fb
+            if options.allow_template {
+                let fb = self.template_fallback(system);
+                info!(
+                    source = "template_fallback",
+                    confidence = fb.confidence,
+                    template = fb.topology.template_type.as_str(),
+                    "topology_generated"
+                );
+                fb
+            } else {
+                // All generative paths exhausted and template is disabled.
+                // Use the same single-node topology as template_fallback
+                // but mark confidence=0.0 so callers can distinguish.
+                warn!("all allowed topology paths exhausted (template disabled), returning empty fallback");
+                let mut fb = self.template_fallback(system);
+                fb.confidence = 0.0;
+                fb
+            }
         });
 
         // Register the chosen path as a bandit arm.

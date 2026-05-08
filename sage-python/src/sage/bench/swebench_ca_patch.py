@@ -350,11 +350,16 @@ def apply_corporate_ca_patch() -> bool:
                 build_dir = args[5]
             if build_dir is not None:
                 try:
-                    dst = Path(build_dir)
-                    dst.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(ca_bundle, dst / "ca-bundle.crt")
-                    log.debug("swebench CA patch: copied %s → %s/ca-bundle.crt",
-                              ca_bundle, dst)
+                    # REVIEW5: resolve CA bundle at call time, not from
+                    # the captured closure variable (which may be stale
+                    # or point to a deleted temp file between tests).
+                    _bundle = _resolve_ca_bundle()
+                    if _bundle:
+                        dst = Path(build_dir)
+                        dst.mkdir(parents=True, exist_ok=True)
+                        shutil.copyfile(_bundle, dst / "ca-bundle.crt")
+                        log.debug("swebench CA patch: copied %s → %s/ca-bundle.crt",
+                                  _bundle, dst)
                 except Exception as exc:
                     log.warning("swebench CA patch: failed to copy bundle "
                                 "into %s: %s", build_dir, exc)

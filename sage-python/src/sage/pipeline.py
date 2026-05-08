@@ -128,6 +128,11 @@ class CognitiveOrchestrationPipeline:
     _harness_patcher: Any
     _agent_loop: Any
     _task_count: int
+    # REVIEW3 P0-5 (2026-05-08): oracle/bandit health counters
+    _oracle_trainable_count: int = 0
+    _oracle_abstain_count: int = 0
+    _bandit_update_count: int = 0
+    _bandit_cancel_count: int = 0
     budget_usd: float
     _llm_tier: str
     _oracle_config: Any

@@ -66,7 +66,11 @@ def patch_genai_ssl(client) -> None:
     ca_bundle = os.environ.get("REQUESTS_CA_BUNDLE") or os.environ.get(
         "SSL_CERT_FILE"
     )
-    verify_setting: str | bool = ca_bundle if ca_bundle else False
+    # Directive #3 / REVIEW5: NEVER silently fall back to verify=False.
+    # When no CA bundle is configured, keep SSL enabled (True) and let
+    # the caller diagnose the issue.  Explicit bypass requires
+    # SAGE_SSL_VERIFY=false.
+    verify_setting: str | bool = ca_bundle if ca_bundle else True
 
     try:
         import httpx
@@ -86,9 +90,9 @@ def patch_genai_ssl(client) -> None:
         ssl_ctx = ssl.create_default_context()
         if isinstance(verify_setting, str):
             ssl_ctx.load_verify_locations(cafile=verify_setting)
-        else:
-            ssl_ctx.check_hostname = False
-            ssl_ctx.verify_mode = ssl.CERT_NONE
+        # REVIEW5: no silent verify=False fallback.
+        # Default SSL context stays enabled (verify_mode=CERT_REQUIRED).
+        # Explicit bypass only via SAGE_SSL_VERIFY=false.
         connector = aiohttp.TCPConnector(ssl=ssl_ctx)
         if hasattr(client._api_client, "_async_client"):
             client._api_client._async_client = aiohttp.ClientSession(
