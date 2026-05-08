@@ -294,11 +294,7 @@ impl TopologyEngine {
 
     /// Seed multiple diverse outcomes so the archive has enough variety
     /// for mutation and MCTS to fire.  Returns the number actually inserted.
-    pub fn seed_archive_diversity(
-        &mut self,
-        smmu: &mut MultiViewMMU,
-        count: usize,
-    ) -> usize {
+    pub fn seed_archive_diversity(&mut self, smmu: &mut MultiViewMMU, count: usize) -> usize {
         let mut inserted = 0usize;
         let summaries = [
             "debug a Rust memory graph",
@@ -395,7 +391,11 @@ impl TopologyEngine {
         let result = if !skip_retrieval && options.allow_smmu {
             if let Some(result) = self.try_smmu_hit(smmu, task_description, task_embedding.clone())
             {
-                info!(source = "smmu_hit", confidence = result.confidence, "topology_generated");
+                info!(
+                    source = "smmu_hit",
+                    confidence = result.confidence,
+                    "topology_generated"
+                );
                 Some(result)
             } else {
                 None
@@ -408,7 +408,11 @@ impl TopologyEngine {
         let result = result.or_else(|| {
             if !skip_retrieval && options.allow_archive {
                 if let Some(r) = self.try_archive_hit(system, task_description) {
-                    info!(source = "archive_hit", confidence = r.confidence, "topology_generated");
+                    info!(
+                        source = "archive_hit",
+                        confidence = r.confidence,
+                        "topology_generated"
+                    );
                     return Some(r);
                 }
             }
@@ -419,7 +423,11 @@ impl TopologyEngine {
         let result = result.or_else(|| {
             if options.allow_mutation {
                 if let Some(r) = self.try_mutation() {
-                    info!(source = "mutation", confidence = r.confidence, "topology_generated");
+                    info!(
+                        source = "mutation",
+                        confidence = r.confidence,
+                        "topology_generated"
+                    );
                     return Some(r);
                 }
             }
@@ -430,7 +438,11 @@ impl TopologyEngine {
         let result = result.or_else(|| {
             if options.allow_mcts {
                 if let Some(r) = self.try_mcts_search() {
-                    info!(source = "mcts_search", confidence = r.confidence, "topology_generated");
+                    info!(
+                        source = "mcts_search",
+                        confidence = r.confidence,
+                        "topology_generated"
+                    );
                     return Some(r);
                 }
             }

@@ -255,13 +255,9 @@ impl PyTopologyEngine {
 
     /// Seed the archive with a single topology outcome for testing.
     #[pyo3(signature = (system=2, quality=0.85, task_summary="seed archive"))]
-    pub fn seed_archive_outcome(
-        &mut self,
-        system: u8,
-        quality: f32,
-        task_summary: &str,
-    ) -> String {
-        self.inner.seed_archive_outcome(&mut self.smmu, system, quality, task_summary)
+    pub fn seed_archive_outcome(&mut self, system: u8, quality: f32, task_summary: &str) -> String {
+        self.inner
+            .seed_archive_outcome(&mut self.smmu, system, quality, task_summary)
     }
 
     /// Seed the archive with diverse outcomes. Returns count inserted.

@@ -2,21 +2,19 @@
 
 claims:
   - id: topology.engine_6_paths
-    status: evidence_pending
-    description: "TopologyEngine generates topologies via 6 paths: S-MMU hit, archive, LLM synthesis, mutation, MCTS, template (11 templates)."
-    evidence_test: "evidence_pending"
-    evidence_benchmark: "evidence_pending"
-    evidence_commit: "evidence_pending"
-    last_verified_utc: "2026-05-06T00:00:00Z"
+    status: delivered
+    description: "TopologyEngine 6-path generation with deterministic per-path test harness (GenerationOptions)."
+    evidence_test: "sage-python/tests/test_topology_engine_six_paths.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "32345072"
+    last_verified_utc: "2026-05-08T00:00:00Z"
     owner: "yann"
     notes: |
-      Capability lives in `sage-core/src/topology/engine.rs`. Phase 0.4
-      could not identify a single end-to-end Python or Rust test that
-      exercises ALL 6 paths in one assertion (individual paths have
-      coverage in scattered Rust unit tests). Follow-up: ship
-      `tests/test_topology_engine_six_paths.py` with one assertion per
-      path verifying the path emits a non-empty graph in deterministic
-      conditions.
+      Phase 2 (2026-05-07): GenerationOptions struct with per-path
+      toggles (allow_smmu/archive/mutation/mcts/template).
+      generate_with_options() in engine.rs. Seed helpers:
+      seed_archive_outcome, seed_archive_diversity. 6 Python
+      boundary tests prove each source is reachable. 223 Rust tests.
 
   - id: topology.path6_learned
     status: opt-in
@@ -38,15 +36,16 @@ claims:
       in `tests/test_path6_default_off.py` is the binding contract.
 
   - id: topology.adaptive_runtime_controller
-    status: evidence_pending
-    description: "Rust-primary RustTopologyController (ADR-012, 2026-04-20) drives 5 adaptation decision paths + state machine; Python wraps for embedder/SmtVerifier/topology-graph access."
-    evidence_test: "evidence_pending"
-    evidence_benchmark: "evidence_pending"
-    evidence_commit: "evidence_pending"
-    last_verified_utc: "2026-05-06T00:00:00Z"
+    status: delivered
+    description: "Rust-primary TopologyController (ADR-012) with 5 decision paths + Python e2e observation hooks."
+    evidence_test: "sage-python/tests/test_topology_controller_5_paths_e2e.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "7ec46a4b"
+    last_verified_utc: "2026-05-08T00:00:00Z"
     owner: "yann"
     notes: |
-      ADR-012 documents the contract; per-path coverage exists in
-      `sage-core/tests/topology_controller.rs` but Phase 0.4 did not
-      pin one specific test as the canonical anchor. Follow-up: pin
-      `tests/test_topology_controller_5_paths.py` end-to-end harness.
+      Phase 7 (2026-05-07): _last_rust_decision_path observation hook
+      at each Rust call site (empty_error_reroute, quality_cascade,
+      parallel_inconsistency, importance_prune). 5 Python e2e tests
+      prove Python→Rust boundary. 223 Rust unit tests cover threshold
+      semantics, state mutations, and edge cases.

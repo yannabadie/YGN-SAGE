@@ -1,17 +1,17 @@
 {
-  "generated_at_utc": "2026-05-07T16:09:50+00:00",
+  "generated_at_utc": "2026-05-08T06:56:16+00:00",
   "git": {
     "branch": "main",
-    "commit_sha": "2826accae05f67dd66024dfd1899acf3a9121e77",
-    "dirty": false,
-    "generated_for_commit_sha": "2826accae05f67dd66024dfd1899acf3a9121e77",
-    "snapshot_commit_sha": "2826accae05f67dd66024dfd1899acf3a9121e77"
+    "commit_sha": "603f8a29663bb1bafbea84d2516cc84d2a06d970",
+    "dirty": true,
+    "generated_for_commit_sha": "603f8a29663bb1bafbea84d2516cc84d2a06d970",
+    "snapshot_commit_sha": "603f8a29663bb1bafbea84d2516cc84d2a06d970"
   },
   "notes": "Counts are pytest --collect-only / cargo test --list. They reflect the test surface available, not necessarily PASSING tests. For pass counts, run the full suite and consult CI artifacts.",
   "sage_core_tests": {
     "available": true,
     "features": "smt,cognitive,sandbox,cranelift,tool-executor",
-    "total": 555
+    "total": 557
   },
   "sage_discover_tests": {
     "available": true,
@@ -19,7 +19,7 @@
   },
   "sage_python_tests": {
     "available": true,
-    "total": 3292
+    "total": 3347
   },
   "schema_version": "v2"
 }

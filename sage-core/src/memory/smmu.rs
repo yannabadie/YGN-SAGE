@@ -627,7 +627,7 @@ impl PyMultiViewMMU {
     fn save_json(&self, path: &str) -> PyResult<()> {
         self.inner
             .save_json(Path::new(path))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e))
+            .map_err(pyo3::exceptions::PyIOError::new_err)
     }
 
     /// Load an S-MMU from a JSON file at `path`.  Returns a fresh
@@ -635,7 +635,7 @@ impl PyMultiViewMMU {
     #[staticmethod]
     fn load_json(path: &str) -> PyResult<Self> {
         let inner = MultiViewMMU::load_json(Path::new(path))
-            .map_err(|e| pyo3::exceptions::PyIOError::new_err(e))?;
+            .map_err(pyo3::exceptions::PyIOError::new_err)?;
         Ok(Self { inner })
     }
 }
@@ -1035,11 +1035,7 @@ mod tests {
     #[test]
     fn test_smmu_snapshot_json_roundtrip() {
         let mut smmu = MultiViewMMU::new();
-        smmu.register_chunk(
-            0, 1, "test chunk",
-            vec!["test".into()],
-            None, None,
-        );
+        smmu.register_chunk(0, 1, "test chunk", vec!["test".into()], None, None);
 
         let dir = std::env::temp_dir().join("smmu_test");
         let _ = std::fs::create_dir_all(&dir);
