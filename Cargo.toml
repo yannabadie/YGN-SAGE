@@ -1,6 +1,6 @@
 [workspace]
 members = ["sage-core"]
-exclude = ["sage-core/plugins/python-runner"]
+exclude = ["sage-core/plugins/python-runner", "fuzz"]
 resolver = "2"
 
 [workspace.package]

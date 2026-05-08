@@ -64,7 +64,7 @@ class Counters:
     @classmethod
     def from_current_json(cls, payload: dict[str, Any]) -> "Counters":
         return cls(
-            python=int(payload["sage_python_tests"]["total"]),
+            python=int(payload["sage_python_tests"].get("total", 0)),
             rust=int(payload["sage_core_tests"]["total"]),
             discover=int(payload["sage_discover_tests"]["total"]),
         )
