@@ -92,9 +92,12 @@ claims:
       (22 Node tests with fake backend subprocess fixture),
       `npm run typecheck`, `npm run build`, plus backend guard
       `python -m pytest sage-python/tests/test_sage_cli_jsonl.py -q`
-      (50 tests). Scope is deliberately local-contract bridge only.
+      (54 tests after the stdout-envelope repair). Scope is deliberately
+      local-contract bridge only.
       Not claimed: npm publication, pi-mono UI extension/API binding,
       benchmark arm wiring/results, real sage run --jsonl smoke, or
       full per-event payload schema validation. Backend remains
       authoritative for exact remaining-budget state and all runtime
-      side effects.
+      side effects. Real-backend cancel smoke is blocked/pending under
+      the documented v0 cooperative-cancellation limitation when it exceeds
+      the smoke cutoff or requires manual kill.

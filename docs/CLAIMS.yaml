@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-09T16:21:29+00:00'
+_generated_at_utc: '2026-05-09T16:57:04+00:00'
 _total_claims: 22
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -409,7 +409,9 @@ claims:
 
     `python -m pytest sage-python/tests/test_sage_cli_jsonl.py -q`
 
-    (50 tests). Scope is deliberately local-contract bridge only.
+    (54 tests after the stdout-envelope repair). Scope is deliberately
+
+    local-contract bridge only.
 
     Not claimed: npm publication, pi-mono UI extension/API binding,
 
@@ -419,7 +421,11 @@ claims:
 
     authoritative for exact remaining-budget state and all runtime
 
-    side effects.
+    side effects. Real-backend cancel smoke is blocked/pending under
+
+    the documented v0 cooperative-cancellation limitation when it exceeds
+
+    the smoke cutoff or requires manual kill.
 
     '
   _source_file: docs/claims/runtime.yaml

@@ -111,11 +111,12 @@ them via the same writer, multiplexed onto stdout.
 
 Inherited runtime events preserve their payload schema and forensic
 archive bytes (the `RuntimeEventLog` file kept under `trace_dir`). When
-mirrored to stdout, the CLI driver rewrites only the envelope `seq`
-field into the per-run unified CLI stdout sequence domain so every
-stdout frame — inherited runtime AND CLI-shell envelope — sits on
-ONE monotonic counter. The `RuntimeEventLog` archive keeps its own
-internal sequence numbers unchanged for forensic reproducibility.
+mirrored to stdout, the CLI driver rewrites the envelope `seq` into the
+per-run unified CLI stdout sequence domain and injects CLI-only envelope
+fields `protocol_version` and `ts_ms` so every stdout frame - inherited
+runtime AND CLI-shell envelope - satisfies the common CLI frame shape and
+sits on ONE monotonic counter. The `RuntimeEventLog` archive keeps its own
+internal sequence numbers and bytes unchanged for forensic reproducibility.
 Frontends consume the stdout stream and reconcile via `final_seq`
 (invariant 5); forensic consumers read `trace_dir` directly.
 
@@ -287,6 +288,15 @@ What pi-mono DOES own:
   contract). The frame is mirrored through the unified stdout sequence
   domain, so `cli_complete.payload.final_seq` equals the cancel
   failure's stdout `seq`.
+- Normal cancel emission uses `RuntimeEventLog.emit_failure(...)` so the
+  forensic archive and stdout mirror both observe the cancellation. If that
+  path fails to advance the unified stdout sequence because the forensic
+  writer is closed, disabled, or fail-open, the CLI driver emits a
+  cancel-only stdout fallback frame with the same flat redacted shape and a
+  deterministic payload hash over a synthetic redacted cancel payload. That
+  fallback exists only to preserve the external CLI stream contract; it does
+  not write a replacement forensic event and MUST NOT expose the raw cancel
+  reason.
 
 ---
 
@@ -304,6 +314,9 @@ runtime cancellation (signal-based interrupt of provider calls,
 Rust `TopologyExecutor` work) is out of scope for the cycle-13 K
 post-Phase-2.2 cli_gaps stage chain and is tracked as a
 follow-up cycle initiative.
+Real-backend cancel smoke remains `evidence_pending` while this limitation
+exists: a smoke that requires manual kill or exceeds its cutoff is BLOCKED,
+not a passing adapter/backend proof.
 
 ---
 
