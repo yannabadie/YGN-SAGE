@@ -1,7 +1,7 @@
 //! ModelAssigner — per-node model assignment using ModelCard scoring.
 
-use std::sync::Mutex;
 use std::cmp::Ordering;
+use std::sync::Mutex;
 
 use pyo3::prelude::*;
 use tracing::{info, warn};
@@ -164,9 +164,15 @@ impl PyModelCandidateTrace {
              total_score={:.6}, affinity={:.6}, domain={:.6}, \
              cost_norm={:.6}, hint_bonus={:.6}, diversity_penalty={:.6}, \
              filtered_reason='{}')",
-            self.node_idx, self.rank, self.model_id,
-            self.total_score, self.affinity_score, self.domain_score,
-            self.cost_norm, self.hint_bonus, self.diversity_penalty,
+            self.node_idx,
+            self.rank,
+            self.model_id,
+            self.total_score,
+            self.affinity_score,
+            self.domain_score,
+            self.cost_norm,
+            self.hint_bonus,
+            self.diversity_penalty,
             self.filtered_reason,
         )
     }
@@ -384,24 +390,26 @@ impl ModelAssigner {
                     + self.weight_cost * (1.0 - cost_norm);
 
                 // Provider hint bonus: soft preference for the hinted provider
-                let hint_bonus = if !preferred_provider.is_empty()
-                    && card.provider == preferred_provider
-                {
-                    score += PROVIDER_HINT_BONUS;
-                    PROVIDER_HINT_BONUS
-                } else {
-                    0.0
-                };
+                let hint_bonus =
+                    if !preferred_provider.is_empty() && card.provider == preferred_provider {
+                        score += PROVIDER_HINT_BONUS;
+                        PROVIDER_HINT_BONUS
+                    } else {
+                        0.0
+                    };
 
                 // Diversity penalty: -0.08 per previous assignment to the
                 // same provider in this call (capped at -0.20).
                 let concentration = provider_count.get(&card.provider).copied().unwrap_or(0);
-                let diversity_penalty =
-                    (concentration as f32 * 0.08_f32).min(0.20_f32);
+                let diversity_penalty = (concentration as f32 * 0.08_f32).min(0.20_f32);
                 score -= diversity_penalty;
 
                 // P1-2B: capture trace for this candidate
-                let filtered_reason = if score.is_finite() { "ok" } else { "non_finite_score" };
+                let filtered_reason = if score.is_finite() {
+                    "ok"
+                } else {
+                    "non_finite_score"
+                };
                 let seq = node_candidates.len();
                 node_candidates.push((
                     seq,
@@ -428,10 +436,7 @@ impl ModelAssigner {
             // P1-2B: sort node candidates by score (desc), then by
             // insertion order (stable tie-break), take top 3.
             node_candidates.sort_by(|(seq_a, a), (seq_b, b)| {
-                let by_score = match (
-                    a.total_score.is_finite(),
-                    b.total_score.is_finite(),
-                ) {
+                let by_score = match (a.total_score.is_finite(), b.total_score.is_finite()) {
                     (true, true) => b
                         .total_score
                         .partial_cmp(&a.total_score)
@@ -443,9 +448,7 @@ impl ModelAssigner {
                 by_score.then_with(|| seq_a.cmp(seq_b))
             });
             let mut trace_buf = self.last_assignment_trace.lock().unwrap();
-            for (rank, (_, mut candidate)) in
-                node_candidates.into_iter().take(3).enumerate()
-            {
+            for (rank, (_, mut candidate)) in node_candidates.into_iter().take(3).enumerate() {
                 candidate.rank = rank + 1;
                 trace_buf.push(candidate);
             }
@@ -1599,7 +1602,13 @@ code = 0.9
         let assigner = ModelAssigner::from_registry(&registry);
         let mut graph = TopologyGraph::try_new("sequential").unwrap();
         graph.add_node(TopologyNode::new(
-            "worker".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+            "worker".into(),
+            "".into(),
+            2,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
 
         let n = assigner.assign_models_inner(&mut graph, "code", 10.0);
@@ -1629,7 +1638,13 @@ code = 0.9
         let assigner = ModelAssigner::from_registry(&registry);
         let mut graph = TopologyGraph::try_new("sequential").unwrap();
         graph.add_node(TopologyNode::new(
-            "worker".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+            "worker".into(),
+            "".into(),
+            2,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
 
         let hints = vec![(0usize, "provider-b".to_string())];
@@ -1652,7 +1667,13 @@ code = 0.9
 
         let mut g1 = TopologyGraph::try_new("sequential").unwrap();
         g1.add_node(TopologyNode::new(
-            "w1".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+            "w1".into(),
+            "".into(),
+            2,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
         let n = assigner.assign_models_inner(&mut g1, "code", 10.0);
         if n == 0 {
@@ -1664,7 +1685,13 @@ code = 0.9
         // Budget=0 → no models affordable
         let mut g2 = TopologyGraph::try_new("sequential").unwrap();
         g2.add_node(TopologyNode::new(
-            "w2".into(), "".into(), 2, vec![], 0, 5.0, 60.0,
+            "w2".into(),
+            "".into(),
+            2,
+            vec![],
+            0,
+            5.0,
+            60.0,
         ));
         assigner.assign_models_inner(&mut g2, "code", 0.0);
         assert!(assigner.last_assignment_trace().is_empty());
