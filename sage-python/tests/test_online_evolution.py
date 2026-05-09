@@ -9,7 +9,7 @@ Verifies that:
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -283,22 +283,36 @@ class TestRealEngineEvolutionLoop:
         )
 
     def test_evolve_chain_end_to_end(self):
-        """Generate + cache + record across 8+ outcomes — should_evolve must
+        """Cache + record diverse topologies — should_evolve must
         flip True at some point and evolve() must mutate archive state.
 
         Reproduces the empirical poke that uncovered the cache_topology
-        bypass in the H1 commit. With the Stage 2 cache_topology fix, this
-        passes; without it, cell_count stays at 0 forever."""
+        bypass in the H1 commit. Use explicit template diversity instead of
+        relying on generate() to happen to visit enough MAP-Elites cells on
+        every Python/Rust build."""
         import sage_core
         engine = sage_core.TopologyEngine()
+        templates = sage_core.PyTemplateStore()
+        template_names = [
+            "sequential",
+            "parallel",
+            "avr",
+            "debate",
+            "hub",
+            "hierarchical",
+            "selfmoa",
+            "robust",
+            "horizon_pipeline",
+            "parallel_fanout",
+        ]
 
-        for i in range(20):
-            result = engine.generate(f"task-{i}", None, (i % 3) + 1, 1.0 + i * 0.5)
-            engine.cache_topology(result.topology)
+        for i, template_name in enumerate(template_names * 2):
+            topology = templates.create(template_name, f"model-{i % 3}")
+            engine.cache_topology(topology)
             engine.record_outcome(
-                topology_id=result.topology.id,
+                topology_id=topology.id,
                 task_summary=f"task-{i}",
-                keywords=[f"kw{i}"],
+                keywords=[f"kw{i}", template_name],
                 task_embedding=None,
                 quality=0.3 + (i % 7) * 0.1,
                 cost=0.01 * (i + 1),
