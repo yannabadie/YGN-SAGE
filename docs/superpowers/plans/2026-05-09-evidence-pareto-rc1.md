@@ -113,10 +113,14 @@ Keep deterministic S-MMU/MCTS reachability as `evidence_pending` unless a determ
 - Modify: `docs/benchmarks/cycle-13-canary-manifest.md` only if launching that manifest
 - Possibly create: `docs/benchmarks/2026-05-09-docker-grading-blocker.md`
 
-- [ ] **Step 1: Classify Docker blocker**
+- [x] **Step 1: Classify Docker blocker**
 
 If Docker Desktop Linux daemon remains unavailable, archive a `NO_GO_LOCAL_DOCKER` record with exact command/error and select cloud/Linux runner options.
 
-- [ ] **Step 2: Select grading path**
+Archived `NO_GO_LOCAL_DOCKER` in `docs/benchmarks/2026-05-09-docker-grading-blocker.md` with machine-readable artifact `docs/benchmarks/2026-05-09-swebench-pro-grader-preflight.json`.
+
+- [x] **Step 2: Select grading path**
 
 Use local Docker only if the daemon is healthy. Otherwise select Modal, GitHub larger runner, or another Linux runner and document the cost and reproducibility tradeoff before launching N=5.
+
+Selected next official grading path: clean Linux Docker runner first. Modal remains candidate only after token auth and a one-task grader job are verified.
