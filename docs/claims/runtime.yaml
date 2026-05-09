@@ -64,14 +64,16 @@ claims:
   - id: runtime.cli_protocol_v0
     status: delivered
     description: "sage run --jsonl: 15 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
-    evidence_test: "sage-python/tests/test_runtime_event_contracts.py"
+    evidence_test: "sage-python/tests/test_sage_cli_jsonl.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "f647c5ae"
-    last_verified_utc: "2026-05-06T00:00:00Z"
+    evidence_commit: "c2f8f1da"
+    last_verified_utc: "2026-05-09T11:22:46Z"
     owner: "yann"
     notes: |
-      Python backend v0 gaps are closed: cli_progress heartbeat,
-      tightening-only set_budget mid-run, cooperative cancel with
-      failure(kind="cli_cancel"), and cli_complete.payload.final_seq.
+      Python backend v0 gaps are closed: first-command stdin `prompt` startup,
+      cli_progress heartbeat, tightening-only set_budget mid-run, cooperative
+      cancel with failure(kind="cli_cancel"), post-start prompt/unknown command
+      rejections as non-terminal failure(kind="cli_command"), and
+      cli_complete.payload.final_seq.
       The TypeScript clients/pi-ygn-sage adapter is tracked separately
       and remains unshipped/NYI until implemented and tested.

@@ -308,8 +308,10 @@ follow-up cycle initiative.
 
 ## Verification
 
-Snapshot tests in `sage-python/tests/test_sage_cli_jsonl.py` (5 tests, golden
-JSONL files at `sage-python/tests/golden/cli_jsonl/`):
+Protocol/component tests in `sage-python/tests/test_sage_cli_jsonl.py`
+(including prompt-command startup, command rejection, cancel, final-seq,
+JSONL framing, and golden JSONL coverage under
+`sage-python/tests/golden/cli_jsonl/`):
 
 1. **S1 bypass golden** — single-agent task, expected sequence:
    `cli_started, task_started, routing_decision, final_result, oracle_verdict,
@@ -351,14 +353,20 @@ JSONL files at `sage-python/tests/golden/cli_jsonl/`):
 - 2026-05-05: Proposed (cycle-12 prelude, this document).
 - 2026-05-05 (`d09bed4d`, cycle-12 prelude): Accepted with `sage run --jsonl`
   implementation. cli_started + cli_complete envelope + RuntimeEventLog file
-  ↔ stdout TEE + prompt + cancel + approval bridge wired. 4 NYI gaps
-  documented in `cli/run.py:21-29` for follow-up (final_seq, set_budget,
-  cli_progress, cancel-failure-frame).
+  ↔ stdout TEE + cancel + approval bridge wired. The `prompt` command was
+  specified in v0, but stdin-first prompt startup was later corrected by the
+  2026-05-09 P0 CLI prompt contract fix. 4 NYI gaps documented in
+  `cli/run.py:21-29` for follow-up (final_seq, set_budget, cli_progress,
+  cancel-failure-frame).
 - 2026-05-07 (cycle-13 K cli_gaps stage chain): All 4 NYI gaps closed,
   Python backend contract complete:
     - Stage A `2d557b15`: unified stdout seq + populated `cli_complete.payload.final_seq`.
     - Stage B `7bd48c17`: tightening-only `set_budget` command via `CostTracker.tighten_remaining_budget` root guard.
     - Stage C `2ce3c877`: `cli_progress` idle heartbeat (timer-based, 5s cadence with 10s idle guard, 7 canonical stage labels).
     - Stage D `d0bfea2b`: cooperative Python cancellation hardening + terminal `failure(kind="cli_cancel")` frame + v0 limitation documented.
+- 2026-05-09 (`c2f8f1da`): P0 CLI prompt contract drift closed. With no
+  positional task, a first stdin JSONL `prompt` command now begins the run;
+  plain stdin batch mode remains preserved; post-start `prompt` and unknown
+  commands emit non-terminal `failure(kind="cli_command", ...)` frames.
 - TBD (cycle-13+): TypeScript adapter `clients/pi-ygn-sage/` shipped on npm with `protocol_version="v0"` pinned. Not yet started.
 - TBD: First `protocol_version="v1"` bump (any breaking change to the 19 events / 5 commands / 10 invariants).

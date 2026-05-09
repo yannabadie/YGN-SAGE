@@ -6,7 +6,7 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-09T10:24:12+00:00'
+_generated_at_utc: '2026-05-09T11:23:34+00:00'
 _total_claims: 20
 claims:
 - id: benchmarks.bcb_hard_45_9
@@ -326,16 +326,20 @@ claims:
   status: delivered
   description: 'sage run --jsonl: 15 RuntimeEventLog events tee''d + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete)
     + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md.'
-  evidence_test: sage-python/tests/test_runtime_event_contracts.py
+  evidence_test: sage-python/tests/test_sage_cli_jsonl.py
   evidence_benchmark: n/a
-  evidence_commit: f647c5ae
-  last_verified_utc: '2026-05-06T00:00:00Z'
+  evidence_commit: c2f8f1da
+  last_verified_utc: '2026-05-09T11:22:46Z'
   owner: yann
-  notes: 'Python backend v0 gaps are closed: cli_progress heartbeat,
+  notes: 'Python backend v0 gaps are closed: first-command stdin `prompt` startup,
 
-    tightening-only set_budget mid-run, cooperative cancel with
+    cli_progress heartbeat, tightening-only set_budget mid-run, cooperative
 
-    failure(kind="cli_cancel"), and cli_complete.payload.final_seq.
+    cancel with failure(kind="cli_cancel"), post-start prompt/unknown command
+
+    rejections as non-terminal failure(kind="cli_command"), and
+
+    cli_complete.payload.final_seq.
 
     The TypeScript clients/pi-ygn-sage adapter is tracked separately
 
