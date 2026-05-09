@@ -238,9 +238,11 @@ def _make_pipeline(*, provider_pool: _ProviderPool) -> Pipeline:
 
 
 def _read_event_types(trace_dir: Path) -> list[str]:
-    """Read all .jsonl files in trace_dir and return event_type list in order."""
+    """Read RuntimeEventLog .jsonl files and return event_type list in order."""
     events: list[str] = []
     for path in sorted(trace_dir.glob("*.jsonl")):
+        if path.name == "learning_side_effects.jsonl":
+            continue
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
