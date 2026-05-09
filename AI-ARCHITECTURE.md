@@ -334,11 +334,12 @@ graph LR
 
 | Sous-système | Fichier | Description |
 |---|---|---|
-| `runtime/event_log/` | `payload_schemas.py`, `writer.py`, `redaction.py`, `errors.py` | Event log avec payload schema versioning + 14 manifests (cycle-8 R6.1c) |
+| `runtime/event_log/` | `payload_schemas.py`, `writer.py`, `redaction.py`, `errors.py` | Event log avec payload schema versioning + 15 RuntimeEventLog event types (CLI envelope events remain separate) |
 | `runtime/oracle/` | `_oracles.py`, `stack.py`, `verdict.py`, `env.py` | OracleStack default-on (cycle-7 `128e1b89`). Kill-switch via `SAGE_ORACLE=0\|false\|off\|...` |
 | `runtime/evidence/` | `producers/*.py`, `payloads.py`, `delta.py` | EvidenceProducers (cycle-6 `25e604dd`). Trainable=True gate |
 | `runtime/run_frame/` | `builder.py`, `frame.py` | RunFrame summary avec `parent_event_id` consistency |
 | `runtime/state/` | `reducer.py`, `frame.py` | StateCore edge-channel separation (cycle-5 R6) |
+| `runtime/credit_assignment/` | `schema.py`, `writer.py`, `validate.py` | Learning Side-Effect Ledger v0: sidecar audit-only `learning_side_effects.jsonl`, hash-linked to RuntimeEventLog, no learning authorization |
 
 #### Bench infrastructure (cycle-9 NEW)
 
@@ -502,6 +503,7 @@ Pipeline emits *_event with payload :
   → EvidenceRef.evidence_hash : SHA-256 sur payload sanitisé (no raw stderr/secret)
   → if not any(v.trainable): bandit.record_outcome NOT called, MAP-Elites NOT updated
   → run_frame_summary.payload.parent_event_id = final_result.seq (RunFrame invariant)
+  → optional learning_side_effects.jsonl sidecar audits the decision but does not authorize it
 ```
 [Evidence: `runtime/oracle/`, `runtime/evidence/`, `runtime/run_frame/`] [Statut: Observé] [Reachability: Runtime] [Validation: 100+ tests]
 
@@ -833,9 +835,9 @@ S1 rapide/intuitif, S2 délibéré/analytique, S3 formel/vérification.
 
 ---
 
-## 17. Runtime Integrity Ledger — 8 Invariants
+## 17. Runtime Integrity Ledger — 10 Invariants
 
-Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émergé sur 5 cycles de "declared ≠ verified" traps.
+Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émergé sur plusieurs cycles de "declared ≠ verified" traps.
 
 | # | Invariant | Declared label | Verified content | Side-effect blocked if invalid |
 |---|---|---|---|---|
@@ -847,6 +849,8 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 | 6 | **Bandit attribution** | `bandit_decision_id` from Stage-0 | `record_outcome_checked()` verifies (model_id, template) | bandit posterior update |
 | 7 | **Timeout enforcement** (cycle-9) | per-task `timeout_s` bound to `asyncio.wait_for` | `elapsed_wall_ms ≤ timeout_s × grace_factor` (default 2.0) | pass-rate aggregation (TASK_ABORT excludes) |
 | 8 | **Control-surface completeness** (cycle-9 cgpro round-2) | `TASK_END.control_surface` claims topology mechanism | when `node_count > 0`, `executed_template` non-empty + `dag_features` present | "topology X → Y" mechanism claims |
+| 9 | **CLI protocol versioning** (cycle-12) | `protocol_version` in `sage run --jsonl` frames | spec literal in `docs/contracts/SAGE_CLI_PROTOCOL.md` matches backend constant and emitted frames | TypeScript/local CLI consumers fail-close on protocol mismatch |
+| 10 | **Tool capability declaration & grant enforcement** (cycle-13 K Phase 1.5) | each tool declares max capability | registration rejects missing capability and runtime policy checks the declared grant before execution | tool execution side-effects |
 
 ### 17.1 Cross-référence des modules
 
@@ -860,6 +864,8 @@ Source de vérité : `docs/contracts/runtime-integrity-ledger.md`. Pattern émer
 | Bandit attribution | `pipeline.py`, `runtime/event_log/payload_schemas.py` | `sage-core/src/routing/system_router.rs` | `test_pipeline_bandit_causality` + Rust |
 | Timeout enforcement | `bench/watchdog.py`, `bench/event_ledger.py`, `bench/bigcodebench_bench.py` | n/a | `test_bench_watchdog` (7) + `test_event_ledger` + `test_bench_host_suspend_integration` (3) |
 | Control-surface completeness | `bench/bigcodebench_bench.py:_capture_control_surface`, `pipeline.py:BenchContext` | n/a | `test_bench_host_suspend_integration::test_normal_task_emits_task_end` |
+| CLI protocol versioning | `cli/run.py`, `runtime/event_log/payload_schemas.py` | n/a | `test_runtime_event_contracts.py::test_cli_protocol_version_is_locked` |
+| Tool capability declaration & grant enforcement | `tools/base.py`, `policy/manifest.py` | n/a | tool policy declaration/grant tests |
 
 ---
 

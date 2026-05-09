@@ -6,8 +6,8 @@
 # Generated_at_utc is updated on every run; the canonical hashable diff is the
 # `claims:` array, which is sorted by id for stable output.
 
-_generated_at_utc: '2026-05-09T16:57:04+00:00'
-_total_claims: 22
+_generated_at_utc: '2026-05-09T20:11:32+00:00'
+_total_claims: 23
 claims:
 - id: benchmarks.bcb_hard_45_9
   status: delivered
@@ -369,6 +369,40 @@ claims:
     `## The N invariants` heading from the ledger AND counts table
 
     rows underneath, raising on heading/table mismatch.
+
+    '
+  _source_file: docs/claims/runtime.yaml
+- id: runtime.learning_side_effect_ledger_v0
+  status: delivered
+  description: 'Audit-only learning side-effect sidecar: writes learning_side_effects.jsonl next to RuntimeEventLog
+    traces, hash-links records to runtime events, and validates oracle-trainable gating for bandit / MAP-Elites
+    / online-evolution / training-memory decisions without changing CLI v0 stdout or authorizing learning.'
+  evidence_test: sage-python/tests/test_learning_side_effect_ledger_contract.py
+  evidence_benchmark: n/a
+  evidence_commit: 65f7c5c5
+  last_verified_utc: '2026-05-09T20:10:07Z'
+  owner: yann
+  notes: 'Sidecar contract lives in
+
+    docs/contracts/learning-side-effect-ledger.md. It is deliberately
+
+    NOT a new RuntimeEventLog event type and NOT an 11th runtime
+
+    integrity invariant: it reinforces invariant 2 (Oracle evidence)
+
+    and invariant 6 (Bandit attribution) as audit evidence only.
+
+    `validate_trace_dir()` checks sidecar existence, schema version,
+
+    monotonic seq/hash chain, parent RuntimeEventLog payload hashes,
+
+    oracle_verdict_ref consistency, and rejection of allowed oracle-on
+
+    learning updates unless the oracle verdict is trainable. Runtime
+
+    writes are fail-open; evidence gates should run the validator and
+
+    fail on absent/invalid ledgers.
 
     '
   _source_file: docs/claims/runtime.yaml

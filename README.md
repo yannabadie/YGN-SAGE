@@ -38,7 +38,9 @@ nothing is silently fabricated.
 
 For full architectural framing see [`AI-ARCHITECTURE.md`](AI-ARCHITECTURE.md)
 and the contract docs at `docs/contracts/runtime-integrity-ledger.md`
-(10 invariants binding declared labels to verified content).
+(10 invariants binding declared labels to verified content) and
+`docs/contracts/learning-side-effect-ledger.md` (audit-only sidecar for
+learning side-effect decisions).
 
 ## Install from source
 
@@ -136,6 +138,10 @@ If a provider fails, the circuit breaker opens and the runner falls back to the 
 - **Consolidation** transforms episodic memories into semantic knowledge (every 10 steps)
 - **Online evolution** (`should_evolve()` in Rust) triggers topology mutation when enough outcomes accumulate
 
+When tracing is enabled, Stage 6 also emits `learning_side_effects.jsonl`, an
+audit-only sidecar hash-linked to `RuntimeEventLog`; it does not authorize
+learning or change CLI v0 stdout.
+
 ## 5 Cognitive Pillars (architecture background)
 
 > The five-pillar framing is an **architectural decomposition**, not a
@@ -213,10 +219,11 @@ A 7-cycle arc shipped a typed runtime layer underneath the orchestration pipelin
 | Layer | Module | Flag | Purpose |
 |-------|--------|------|---------|
 | RuntimeContracts (cycle 1) | `sage/topology/runner.py` | always-on | Controller single-commit, unified `_run_core`, capability-aware fallback, sandbox fail-closed |
-| RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` (opt-in) | 13 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
+| RuntimeEventLog (cycle 2) | `sage/runtime/event_log/` | `SAGE_TRACE_JSONL_DIR=<path>` (opt-in) | 15 typed events, ULID `run_id`, full SHA-256 envelope hashes, redaction-on by default |
 | StateCore (cycle 3) | `sage/runtime/state/` | `SAGE_STATECORE=1` (opt-in) | Control / Message / State edge-channel partitioning, atomic delta reducer |
 | RunFrame (cycle 4) | `sage/runtime/run_frame/` | `SAGE_RUN_FRAME=1` (opt-in) | Private builder + public frozen snapshot, allowlisted env capture (8 keys, no wildcard) |
 | OracleStack (cycle 5) | `sage/runtime/oracle/` | **default-on (cycle 7); kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`** | Hierarchical quality verdicts (Exact > Tool > Formal > Spec > LLMJudge > Abstain) — Stage 6 learning ONLY consumes `trainable=True` evidence |
+| Learning Side-Effect Ledger v0 | `sage/runtime/credit_assignment/` | tied to active traced runtime log | Audit-only `learning_side_effects.jsonl` sidecar; validates hash-linked learning side-effect decisions without authorizing them |
 | EvidenceProducers (cycle 6, R6.1a) | `sage/runtime/evidence/` | gated by oracle (default-on) | 6 deterministic producers (tool / test / diff / formal / code-node / planner) emit typed `RuntimeDelta` records consumed by Tool/Formal/Spec v1 oracles |
 | Cycle-7 default-on flip | `sage/runtime/oracle/env.py` `oracle_enabled()` | predicate (default-on) | Centralised `SAGE_ORACLE` predicate; replaces 8 scattered `os.environ.get == "1"` checks. cgpro 2026-04-30 VERIFY round-1: forced `controller_decision.payload` is **allowlist-only** (no free-form `reason` leak), operator-friendly kill-switch values (`disable`/`disabled`). |
 
@@ -254,6 +261,7 @@ proof of capability.
 | **All 6 engine sources proven end-to-end in CI** | `evidence_pending` | `topology.engine_6_paths` in `docs/CLAIMS.yaml`. Current tests cover template fallback, archive, mutation, LLM synthesis mock, and disabled-template abstention; deterministic S-MMU and MCTS reachability remains pending. |
 | **Multi-provider runtime (7 providers + Codex)** | `delivered` | TTL'd circuit breaker + per-node provider resolution. |
 | **OracleStack trainable-evidence gate** | `default-on (cycle 7)` | Commit `128e1b89`. Kill-switch `SAGE_ORACLE=0\|false\|off\|no\|disable\|disabled`. |
+| **Learning side-effect ledger v0** | `delivered` | `runtime.learning_side_effect_ledger_v0` in `docs/CLAIMS.yaml`, anchored to `sage-python/tests/test_learning_side_effect_ledger_contract.py`. Audit-only sidecar; not a CLI v0 stdout event and not an authorization path. |
 | **Runtime integrity ledger (10 invariants)** | `delivered` | `docs/contracts/runtime-integrity-ledger.md`. Every label binds to verified content/schema/provenance/proof. Cycle-12 backported invariant 9 (CLI protocol versioning) per `f647c5ae`. |
 | **A14 epoch guard + `topology_state_manifest.json`** | `delivered` | Cycle-8 step 2 (`6b2ebcbe + f9521616`). Fail-closed boot if epoch ≠ DB SHA-256. |
 | **Wasm sandbox (RustPython wasm32-wasip1)** | `default-on (cycle 8)` | ADR-013 §5 flip 2026-04-22. `validate_and_execute` deny-by-default. `execute_raw` gated by `SAGE_UNSAFE_RAW_EXEC=1`. |

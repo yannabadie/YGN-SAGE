@@ -61,6 +61,27 @@ claims:
       an orphan ID. Bandit posteriors updated for arms whose model
       never executed.
 
+  - id: runtime.learning_side_effect_ledger_v0
+    status: delivered
+    description: "Audit-only learning side-effect sidecar: writes learning_side_effects.jsonl next to RuntimeEventLog traces, hash-links records to runtime events, and validates oracle-trainable gating for bandit / MAP-Elites / online-evolution / training-memory decisions without changing CLI v0 stdout or authorizing learning."
+    evidence_test: "sage-python/tests/test_learning_side_effect_ledger_contract.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "65f7c5c5"
+    last_verified_utc: "2026-05-09T20:10:07Z"
+    owner: "yann"
+    notes: |
+      Sidecar contract lives in
+      docs/contracts/learning-side-effect-ledger.md. It is deliberately
+      NOT a new RuntimeEventLog event type and NOT an 11th runtime
+      integrity invariant: it reinforces invariant 2 (Oracle evidence)
+      and invariant 6 (Bandit attribution) as audit evidence only.
+      `validate_trace_dir()` checks sidecar existence, schema version,
+      monotonic seq/hash chain, parent RuntimeEventLog payload hashes,
+      oracle_verdict_ref consistency, and rejection of allowed oracle-on
+      learning updates unless the oracle verdict is trainable. Runtime
+      writes are fail-open; evidence gates should run the validator and
+      fail on absent/invalid ledgers.
+
   - id: runtime.cli_protocol_v0
     status: delivered
     description: "sage run --jsonl: 15 RuntimeEventLog events tee'd + 4 envelope events (cli_started/cli_progress/cli_tool_request/cli_complete) + 5 inbound commands. v0 spec at docs/contracts/SAGE_CLI_PROTOCOL.md."
