@@ -2,9 +2,9 @@
 
 The Learning Side-Effect Ledger is an audit-only JSONL sidecar emitted next to
 `RuntimeEventLog` traces. It records the learning side-effect decisions already
-made by the runtime gates, so reviewers can verify that bandit, MAP-Elites,
-online evolution, and training-memory paths were not updated from unverified
-outputs.
+made by the runtime gates, so reviewers can verify recorded bandit,
+MAP-Elites, online evolution, and training-memory decisions against runtime
+evidence.
 
 It does **not** authorize learning. The authoritative gates remain the
 OracleStack, `record_outcome_checked()`, and the existing runtime-integrity
@@ -71,8 +71,11 @@ Each line is one canonical JSON object with:
 `validate_evidence_boundary()` (or CLI `--mode evidence-boundary`) is a
 separate fail-closed gate for traces explicitly declared by RC/canary/benchmark
 harnesses as learning-integrity evidence. It requires a concrete `run_id`, a
-sibling RuntimeEventLog for that run, at least one sidecar record for that run,
-and oracle-backed eligibility by default. If the harness also passes
+canonical sibling RuntimeEventLog named `<run_id>.jsonl`, at least one sidecar
+record for that run, and oracle-backed eligibility by default. In that default
+mode, every record except the safety-only `bandit_cancel_pending` decision must
+carry an `oracle_verdict_ref`, and referenced oracle verdict events must include
+a current RuntimeEventLog payload with `trainable`. If the harness also passes
 `--expect-default-pipeline-learn`, the validator requires the minimum current
 default Stage 5 decision set:
 

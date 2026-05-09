@@ -28,8 +28,12 @@ def validate_trace_dir(
     trace_dir: Path,
     *,
     run_id: str | None = None,
+    _runtime_events: dict[tuple[str, str, int], dict[str, Any]] | None = None,
+    _require_oracle_payload_trainable: bool = False,
 ) -> list[dict[str, Any]]:
-    runtime_events = _load_runtime_events(trace_dir)
+    runtime_events = (
+        _load_runtime_events(trace_dir) if _runtime_events is None else _runtime_events
+    )
     ledger_path = trace_dir / LEDGER_FILENAME
     if not ledger_path.exists():
         raise LearningSideEffectSchemaError(f"missing {LEDGER_FILENAME}")
@@ -54,7 +58,11 @@ def validate_trace_dir(
         if record["record_hash"] != expected_hash:
             raise LearningSideEffectSchemaError("invalid record_hash")
         _validate_parent_refs(record, runtime_events)
-        _validate_oracle_consistency(record, runtime_events)
+        _validate_oracle_consistency(
+            record,
+            runtime_events,
+            require_oracle_payload_trainable=_require_oracle_payload_trainable,
+        )
         previous_hash = record["record_hash"]
     if run_id is not None:
         return [record for record in records if record["run_id"] == run_id]
@@ -73,8 +81,17 @@ def validate_evidence_boundary(
     if not (trace_dir / f"{run_id}.jsonl").exists():
         raise LearningSideEffectSchemaError("missing RuntimeEventLog JSONL for run_id")
 
-    runtime_events = _load_runtime_events(trace_dir)
-    records = validate_trace_dir(trace_dir, run_id=run_id)
+    runtime_events = _load_runtime_events(
+        trace_dir,
+        run_id=run_id,
+        canonical_only=True,
+    )
+    records = validate_trace_dir(
+        trace_dir,
+        run_id=run_id,
+        _runtime_events=runtime_events,
+        _require_oracle_payload_trainable=not allow_oracle_disabled,
+    )
     if not records:
         raise LearningSideEffectSchemaError("no ledger records for run_id")
 
@@ -90,19 +107,36 @@ def validate_evidence_boundary(
             raise LearningSideEffectSchemaError(
                 "oracle-disabled trace is not eligible for oracle-gated evidence"
             )
+        _validate_boundary_oracle_backing(records)
 
     if expect_default_pipeline_learn:
         _validate_stage5_decision_coverage(records)
     return records
 
 
-def _load_runtime_events(trace_dir: Path) -> dict[tuple[str, str, int], dict[str, Any]]:
-    paths = sorted(trace_dir.glob("*.jsonl"))
-    runtime_paths = [path for path in paths if path.name != LEDGER_FILENAME and path.exists()]
+def _load_runtime_events(
+    trace_dir: Path,
+    *,
+    run_id: str | None = None,
+    canonical_only: bool = False,
+) -> dict[tuple[str, str, int], dict[str, Any]]:
+    if canonical_only:
+        if not run_id:
+            raise LearningSideEffectSchemaError(
+                "canonical RuntimeEventLog loading requires run_id"
+            )
+        runtime_paths = [trace_dir / f"{run_id}.jsonl"]
+    else:
+        paths = sorted(trace_dir.glob("*.jsonl"))
+        runtime_paths = [
+            path for path in paths if path.name != LEDGER_FILENAME and path.exists()
+        ]
     if not runtime_paths:
         raise LearningSideEffectSchemaError("missing RuntimeEventLog JSONL")
     events: dict[tuple[str, str, int], dict[str, Any]] = {}
     for path in runtime_paths:
+        if not path.exists():
+            raise LearningSideEffectSchemaError("missing RuntimeEventLog JSONL")
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue
@@ -117,7 +151,16 @@ def _load_runtime_events(trace_dir: Path) -> dict[tuple[str, str, int], dict[str
                 and isinstance(event_type, str)
                 and isinstance(seq, int)
             ):
-                events[(event_run_id, event_type, seq)] = event
+                if canonical_only and event_run_id != run_id:
+                    raise LearningSideEffectSchemaError(
+                        "RuntimeEventLog run_id mismatch"
+                    )
+                key = (event_run_id, event_type, seq)
+                if key in events:
+                    raise LearningSideEffectSchemaError(
+                        "duplicate RuntimeEventLog event key"
+                    )
+                events[key] = event
     return events
 
 
@@ -136,6 +179,8 @@ def _validate_parent_refs(
 def _validate_oracle_consistency(
     record: dict[str, Any],
     runtime_events: dict[tuple[str, str, int], dict[str, Any]],
+    *,
+    require_oracle_payload_trainable: bool = False,
 ) -> None:
     oracle_ref = record["oracle_verdict_ref"]
     if oracle_ref is None:
@@ -161,6 +206,10 @@ def _validate_oracle_consistency(
             raise LearningSideEffectSchemaError(
                 "oracle_verdict_ref.trainable does not match RuntimeEventLog payload"
             )
+    elif require_oracle_payload_trainable:
+        raise LearningSideEffectSchemaError(
+            "evidence-boundary oracle_verdict requires payload.trainable"
+        )
     if (
         record["decision"] == "allowed"
         and record["gate"].get("oracle_enabled") is True
@@ -178,6 +227,16 @@ def _validate_oracle_consistency(
         raise LearningSideEffectSchemaError(
             "allowed learning update requires allow_training_updates"
         )
+
+
+def _validate_boundary_oracle_backing(records: list[dict[str, Any]]) -> None:
+    for record in records:
+        if record["side_effect"] == "bandit_cancel_pending":
+            continue
+        if record["oracle_verdict_ref"] is None:
+            raise LearningSideEffectSchemaError(
+                "evidence-boundary record requires oracle_verdict_ref"
+            )
 
 
 def _validate_stage5_decision_coverage(

@@ -346,6 +346,196 @@ def test_validator_rejects_forged_oracle_ref_trainable(
         validate_trace_dir(trace_dir, run_id=log.run_id)
 
 
+def test_validator_rejects_duplicate_runtime_event_keys(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSEDUPLICATEKEY000001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger duplicate runtime key task")
+        _seed_trainable_oracle_trace(ctx, log)
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    canonical_lines = (trace_dir / f"{log.run_id}.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines()
+    (trace_dir / "spoofed-sibling.jsonl").write_text(
+        canonical_lines[0] + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="duplicate RuntimeEventLog event key",
+    ):
+        validate_trace_dir(trace_dir, run_id=log.run_id)
+
+
+def test_evidence_boundary_uses_canonical_runtime_log_not_spoofed_sibling(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSECANONICALONLY00001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger canonical runtime source task")
+        _seed_oracle_trace(ctx, log, trainable=False)
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    oracle_ref = ctx.runtime_event_refs["oracle_verdict"]
+    spoof_hash = "sha256:" + "f" * 64
+    spoofed_oracle = _runtime_event(trace_dir, log.run_id, "oracle_verdict")
+    spoofed_oracle["payload_hash"] = spoof_hash
+    spoofed_oracle["payload"]["trainable"] = True
+    (trace_dir / "spoofed-sibling.jsonl").write_text(
+        json.dumps(spoofed_oracle, ensure_ascii=False, separators=(",", ":")) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+    record = _minimal_record()
+    record.update(
+        {
+            "run_id": log.run_id,
+            "trace_id": log.run_id,
+            "task_hash": "canonical-only-task-hash",
+            "parent_event_refs": [ctx.runtime_event_refs["final_result"]],
+            "oracle_verdict_ref": {
+                "seq": oracle_ref["seq"],
+                "payload_hash": spoof_hash,
+                "trainable": True,
+                "verdict_source": "exact",
+                "quality_label": "pass",
+                "score": 1.0,
+                "evidence_hashes": [],
+            },
+            "side_effect": "map_elites_record_outcome",
+            "decision": "allowed",
+            "reason_code": "oracle_trainable",
+            "attempted": True,
+            "gate": {
+                "oracle_enabled": True,
+                "oracle_trainable": True,
+                "allow_training_updates": True,
+                "quality_source": "oracle",
+            },
+            "metrics": {"quality": 1.0, "cost_usd": 0.0, "latency_ms": 1.0},
+        }
+    )
+    _write_single_record(trace_dir, record)
+
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="oracle_verdict payload_hash mismatch",
+    ):
+        validate_evidence_boundary(trace_dir, run_id=log.run_id)
+
+
+def test_evidence_boundary_requires_per_record_oracle_ref(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSEBOUNDARYNOREF0001", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger boundary missing oracle ref task")
+        _seed_trainable_oracle_trace(ctx, log)
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    record = _minimal_record()
+    record.update(
+        {
+            "run_id": log.run_id,
+            "trace_id": log.run_id,
+            "task_hash": "missing-record-oracle-ref",
+            "parent_event_refs": [ctx.runtime_event_refs["final_result"]],
+            "side_effect": "online_evolution_should_evolve",
+            "decision": "skipped",
+            "reason_code": "should_evolve_false",
+            "attempted": True,
+            "gate": {
+                "oracle_enabled": True,
+                "oracle_trainable": True,
+                "allow_training_updates": True,
+                "quality_source": "oracle",
+            },
+            "metrics": {"quality": 1.0, "cost_usd": 0.0, "latency_ms": 1.0},
+        }
+    )
+    _write_single_record(trace_dir, record)
+
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="evidence-boundary record requires oracle_verdict_ref",
+    ):
+        validate_evidence_boundary(trace_dir, run_id=log.run_id)
+
+
+def test_evidence_boundary_requires_oracle_payload_trainable(
+    trace_dir: pathlib.Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("SAGE_ORACLE", "1")
+    log = RuntimeEventLog(run_id="01LSEBOUNDARYPAYLOAD01", trace_dir=trace_dir)
+    token = install_event_log(log)
+    try:
+        ctx = PipelineContext(task="ledger boundary missing oracle payload task")
+        _seed_trainable_oracle_trace(ctx, log)
+    finally:
+        token.var.reset(token)
+        log.close()
+
+    _remove_runtime_event_payload(trace_dir, log.run_id, "oracle_verdict")
+    oracle_ref = ctx.runtime_event_refs["oracle_verdict"]
+    record = _minimal_record()
+    record.update(
+        {
+            "run_id": log.run_id,
+            "trace_id": log.run_id,
+            "task_hash": "missing-oracle-payload-trainable",
+            "parent_event_refs": [ctx.runtime_event_refs["final_result"]],
+            "oracle_verdict_ref": {
+                "seq": oracle_ref["seq"],
+                "payload_hash": oracle_ref["payload_hash"],
+                "trainable": True,
+                "verdict_source": "exact",
+                "quality_label": "pass",
+                "score": 1.0,
+                "evidence_hashes": ["sha256:e1"],
+            },
+            "side_effect": "map_elites_record_outcome",
+            "decision": "allowed",
+            "reason_code": "oracle_trainable",
+            "attempted": True,
+            "gate": {
+                "oracle_enabled": True,
+                "oracle_trainable": True,
+                "allow_training_updates": True,
+                "quality_source": "oracle",
+            },
+            "metrics": {"quality": 1.0, "cost_usd": 0.0, "latency_ms": 1.0},
+        }
+    )
+    _write_single_record(trace_dir, record)
+
+    with pytest.raises(
+        LearningSideEffectSchemaError,
+        match="evidence-boundary oracle_verdict requires payload.trainable",
+    ):
+        validate_evidence_boundary(trace_dir, run_id=log.run_id)
+
+
 def test_runtime_event_taxonomy_remains_v0_15_types() -> None:
     assert len(EVENT_TYPES) == 15
     assert "learning_side_effect" not in EVENT_TYPES
@@ -414,6 +604,31 @@ def _record_hash(record: dict) -> str:
         canonical_json(record_hash_input(record)).encode("utf-8")
     ).hexdigest()
     return f"sha256:{digest}"
+
+
+def _runtime_event(trace_dir: pathlib.Path, run_id: str, event_type: str) -> dict:
+    for line in (trace_dir / f"{run_id}.jsonl").read_text(
+        encoding="utf-8"
+    ).splitlines():
+        event = json.loads(line)
+        if event["event_type"] == event_type:
+            return event
+    raise AssertionError(f"missing {event_type}")
+
+
+def _remove_runtime_event_payload(
+    trace_dir: pathlib.Path,
+    run_id: str,
+    event_type: str,
+) -> None:
+    path = trace_dir / f"{run_id}.jsonl"
+    lines: list[str] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        event = json.loads(line)
+        if event["event_type"] == event_type:
+            event.pop("payload", None)
+        lines.append(json.dumps(event, ensure_ascii=False, separators=(",", ":")))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def _store(ctx: PipelineContext, event_type: str, log: RuntimeEventLog) -> None:
