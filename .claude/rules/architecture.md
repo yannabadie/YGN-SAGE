@@ -8,7 +8,7 @@ paths:
 
 ## Project Structure
 - `sage-core/` — Rust orchestrator (PyO3). **560 tests** with `--features smt` (canonical: `docs/status/current.json`).
-- `sage-python/` — Python SDK. **3385 collected** (canonical: `docs/status/current.json`). 8 fail + 2 error all in API-key-gated files (`test_e2e_*`, `test_pydantic_ai_integration.py`) — pre-existing baseline. **mypy 0 errors / 250 files.** ruff clean. Type:ignore ceiling 54/54.
+- `sage-python/` — Python SDK. **3397 collected** (canonical: `docs/status/current.json`). 8 fail + 2 error all in API-key-gated files (`test_e2e_*`, `test_pydantic_ai_integration.py`) — pre-existing baseline. **mypy 0 errors / 250 files.** ruff clean. Type:ignore ceiling 54/54.
 - `sage-discover/` — Knowledge pipeline (arXiv → ExoCortex). **100 tests** (canonical: `docs/status/current.json`).
 - `ui/` — Dashboard (FastAPI + WebSocket).
 - `Researches/` — 25+ research papers backing architecture decisions.
