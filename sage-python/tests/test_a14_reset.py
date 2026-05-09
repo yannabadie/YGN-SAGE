@@ -130,7 +130,11 @@ def test_a14_reset_retries_windows_final_backup_rename(
             raise exc
         real_replace(src, dst)
 
-    monkeypatch.setattr(a14_reset.os, "name", "nt", raising=False)
+    monkeypatch.setattr(
+        a14_reset,
+        "_is_windows_transient_replace_error",
+        lambda exc, target: getattr(exc, "winerror", None) == 5 and not target.exists(),
+    )
     monkeypatch.setattr(a14_reset.os, "replace", flaky_replace)
 
     backup_dir = _run_reset(state_dir, audit_dir, "A14 reset under test")
@@ -164,7 +168,11 @@ def test_a14_reset_preserves_temp_and_poison_marks_on_final_rename_exhaustion(
             raise exc
         real_replace(src, dst)
 
-    monkeypatch.setattr(a14_reset.os, "name", "nt", raising=False)
+    monkeypatch.setattr(
+        a14_reset,
+        "_is_windows_transient_replace_error",
+        lambda exc, target: getattr(exc, "winerror", None) == 5 and not target.exists(),
+    )
     monkeypatch.setattr(a14_reset.os, "replace", failing_final_replace)
 
     with pytest.raises(PermissionError):
@@ -185,7 +193,7 @@ def test_a14_reset_preserves_temp_and_poison_marks_on_final_rename_exhaustion(
     assert "poison pill marker present" in message
 
 
-def test_a14_reset_final_backup_retry_is_windows_only(
+def test_a14_reset_final_backup_retry_stops_when_predicate_is_false(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -200,7 +208,11 @@ def test_a14_reset_final_backup_retry_is_windows_only(
         exc.winerror = 5  # type: ignore[attr-defined]
         raise exc
 
-    monkeypatch.setattr(a14_reset.os, "name", "posix", raising=False)
+    monkeypatch.setattr(
+        a14_reset,
+        "_is_windows_transient_replace_error",
+        lambda exc, target: False,
+    )
     monkeypatch.setattr(a14_reset.os, "replace", failing_replace)
 
     with pytest.raises(PermissionError):
