@@ -2,23 +2,44 @@
 
 claims:
   - id: security.prompt_injection_detection
-    status: opt-in
-    description: "PromptInjectionDetector module exists at sage-python/src/sage/security/prompt_injection.py. Wired at AgentLoop.run() task-ingest boundary. NOT wired in pipeline.py."
-    evidence_test: "sage-python/tests/security/test_prompt_injection.py"
+    status: default-on
+    description: "PromptInjectionDetector is wired at AgentLoop.run() task-ingest and canonical pipeline_v2 ingress. Both invoke detection by default; AgentLoop emits PROMPT_INJECTION_DETECTED through its event bus when present, and pipeline ingress emits RuntimeEventLog prompt_injection_detected when runtime event logging is active. Default behavior is detection/eventing only, not refusal."
+    evidence_test: "sage-python/tests/security/test_prompt_injection_pipeline.py"
     evidence_benchmark: "n/a"
-    evidence_commit: "5619b3cf"
-    last_verified_utc: "2026-05-06T00:00:00Z"
+    evidence_commit: "5984f6c9"
+    last_verified_utc: "2026-05-09T11:41:48Z"
     owner: "yann"
     notes: |
-      cgpro 2026-05-06 GitHub-verified: pipeline.py contains zero
-      prompt_injection / PROMPT_INJECTION matches. AgentLoop.run() calls
-      `_pi_detect(task)` at task ingest. Pipeline path therefore has no
-      prompt-injection check unless the task happens to flow through an
-      AgentLoop. Status `opt-in` is the truthful tag — propagating the
-      wiring to pipeline.py + TopologyRunner + bench harness is Phase
-      2.2 of cycle-13 K queue. Companion test
-      `tests/security/test_prompt_injection_wiring.py` covers the
-      integration path.
+      `sage.pipeline` is a facade; the canonical pipeline ingress lives in
+      `sage-python/src/sage/pipeline_v2/orchestrator.py`. Detection runs
+      after `task_started` and before classify/decompose/topology. The
+      default pipeline path continues after detection; when RuntimeEventLog is
+      active it emits `prompt_injection_detected`. `AgentLoop.run()` emits its
+      existing PROMPT_INJECTION_DETECTED event when its event bus is present.
+      This is not a claim of default event persistence, default refusal, full
+      prompt-injection mitigation, CLI adapter protection, benchmark harness
+      protection, or TypeScript adapter delivery. Companion tests
+      `tests/security/test_prompt_injection.py` and
+      `tests/security/test_prompt_injection_wiring.py` cover detector and
+      AgentLoop behavior.
+
+  - id: security.prompt_injection_strict_refusal
+    status: opt-in
+    description: "When SAGE_PROMPT_INJECTION_STRICT=1, canonical pipeline_v2 ingress refuses matched prompt-injection tasks before orchestration and emits final_result(status=failure, node_count=0)."
+    evidence_test: "sage-python/tests/security/test_prompt_injection_pipeline.py"
+    evidence_benchmark: "n/a"
+    evidence_commit: "5984f6c9"
+    last_verified_utc: "2026-05-09T11:41:48Z"
+    owner: "yann"
+    notes: |
+      Strict refusal is pipeline_v2 ingress behavior only. The test asserts
+      the refusal emits `task_started`, `prompt_injection_detected`, and
+      `final_result(status="failure", node_count=0)`, and that downstream
+      routing/topology/model/oracle/run-frame events plus patched classify,
+      decompose, select_topology, assign_models, execute, learn, and memory
+      recording are absent. AgentLoop.run() remains detection/eventing only;
+      this is not a claim of full prompt-injection mitigation or default
+      blocking.
 
   - id: security.sandbox_default_wasi
     status: default-on
